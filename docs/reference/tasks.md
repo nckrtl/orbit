@@ -488,6 +488,45 @@ The planner thread is not a reviewer. A planning group keeps it for planning. It
 
 The opening turn is a review packet of at most 16,000 characters, about 4 thousand tokens at four characters per token. No part is exempt. A part under its cap leaves the spare characters for the diff body. The diff body also stops at 16,384 bytes. The two retrieval commands are reserved first, at most 1,000 characters, and are never cut. The thread id is written into the generated closing instructions before that cap. Diff text and brief text are not rewritten to add it.
 
+### Render prompts for offline evaluation
+
+`php artisan tasks:render-prompt {role}` renders an agent prompt from one JSON object read from standard input, without starting an agent. The role is `implementer`, `reviewer` (the opening review packet), `reviewer-continue` (the continued review turn), or `planner`. The command writes one JSON object to standard output: `{"role":"…","prompt":"…","source_commit":"…"}`. `prompt` is the exact prompt text. `source_commit` is the Gateway version reported by its status endpoint: the configured `APP_VERSION`, which defaults to `dev` when unset. It does not fall back to a Git read, so a deployment without a configured commit version reports `dev`.
+
+The input is a single JSON object with only the following fields. Field names and types are part of the command contract; unknown fields are rejected.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `group.id` | integer | Task group id. |
+| `group.title` | string | Group title. |
+| `group.brief` | string | Group brief. |
+| `group.project_slug` | string | Project slug. |
+| `group.project_id` | integer | Project id. |
+| `group.default_branch` | string or null | Project default branch. |
+| `group.task_check` | string or null | Project task check command. |
+| `subtask.id` | integer | Subtask id. |
+| `subtask.title` | string | Subtask title. |
+| `subtask.brief` | string | Subtask brief. |
+| `subtask.position` | integer | Subtask position in the group. |
+| `subtask.deliverables` | array of deliverable objects | The subtask deliverables, in order. |
+| `thread_id` | integer or null | Agent thread id used to render thread-specific instructions. |
+| `review_packet` | object | Present only for `reviewer` and `reviewer-continue`; the opening or continued review inputs described below. |
+
+Each deliverable object has string fields `id`, `type`, and `description`. Its type-specific fields match the task deliverable: `file` has string `path` and `change`; `test` has string `project`, `file`, and `name`, plus boolean `fails_on_base`; `command` has string `command` and `directory`; `review` has no type-specific fields.
+
+`review_packet` contains `opens_pull_request` (boolean), `earlier_approved_subtasks` (an array of objects with string `title` and `summary`), `diff_files` (an ordered array of objects with string `path` and integer `insertions` and `deletions`), `files_complete` and `diff_available` (booleans), `diff_summary` (an object with integer `files`, `insertions`, and `deletions`), `diff_body` (string), `untracked_content` (an ordered array of objects with string `path` and `patch`), `handoff_check`, `start_commit` (string), and `held_resolution` (string or null).
+
+`diff_summary` always contains full capture totals, even when the path list or diff body was cut. When `files_complete` is false, `diff_files` is empty and the full totals in `diff_summary` provide the stat. `diff_available` says whether a diff body was captured; a false value means `diff_body` is empty. Do not infer stat totals or capture flags from `diff_body`.
+
+`diff_body` is the exact output of the tracked `git diff <start_commit>` command, including its original trailing newline. Each `untracked_content` entry contains the exact patch string produced for that path by `git diff --no-index -- /dev/null <path>`, including headers, mode, and trailing newline. Supply these patch strings instead of raw file contents; they preserve executable-file and symlink metadata without workspace access. The paths and order match untracked records in `diff_files` and the order returned by `git ls-files --others --exclude-standard`.
+
+To form the production diff, concatenate `diff_body` and the untracked `patch` strings in order with no added separators, then retain the first 20,000 bytes. The remote script adds one newline after that captured prefix before the summary marker; that separator newline is part of the parsed diff body, even when the prefix already ends in a newline. If the remote command output itself is truncated, production returns an empty file list and body with `files_complete` and `diff_available` both false, while `diff_summary` retains full totals. The flags and full summary must be supplied independently; do not infer them from the captured patch strings.
+
+`handoff_check` has string `status`, integer-or-null `exit_code`, and `evidence` (an object or null). Evidence has `diff` (an array of objects with string `status` and `path`, or null), `tests` (an object keyed by deliverable id; each value has integer `exit_code`, array `cases`, and optional base-run fields), and `commands` (an object keyed by deliverable id; each value has integer `exit_code` and string `output`).
+
+Each test case in `cases` or `base_cases` has string `name` and `status`, and optional string `kind` and `message`. Optional base-run fields are boolean `base_placed`, integer `base_exit_code`, boolean `base_timed_out`, integer `base_timeout_seconds`, and array `base_cases` of the same test-case objects. `opens_pull_request` supplies the value passed to the reviewer instructions: when true, the reviewer must provide pull request summary and change fields; when false, those fields are not requested. The value cannot be derived from the subtask position alone. A continued review uses the same input shape, but its rendered packet omits opening-only material such as earlier approvals and the held resolution.
+
+The renderer uses the same prompt construction as `TaskAgentSpawner` and `TaskReviewPacket`. Tests assert that a prompt rendered from these inputs is byte-identical to the prompt sent in production for the same inputs. The command never reads the database, the workspace, or the network; provide all prompt inputs in the JSON instead. This lets an offline evaluation harness render frozen cases without copying the production prompt template.
+
 | Part | Cap | When it does not fit |
 | --- | --- | --- |
 | Resolution | 2,000 | The end is cut. `tasks-comment-list` returns the comment |
