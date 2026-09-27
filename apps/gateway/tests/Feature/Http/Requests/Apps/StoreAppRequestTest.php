@@ -23,8 +23,10 @@ beforeEach(function (): void {
 
 it('accepts supported repository origins', function (string $repositoryUrl): void {
     $this
-        ->postJson('/api/v1/apps', [
+        ->postJson('/api/v1/projects', [
             'slug' => 'acme',
+            'type' => 'laravel-app',
+            'type' => 'laravel-app',
             'repository_url' => $repositoryUrl,
             'default_branch' => 'main',
             'root' => 'public',
@@ -48,8 +50,10 @@ it('returns 422 without persistence or secret exposure for credential-bearing re
 
     $response = $this
         ->withHeader('X-Orbit-Request-Id', $requestId)
-        ->postJson('/api/v1/apps', [
+        ->postJson('/api/v1/projects', [
             'slug' => 'acme',
+            'type' => 'laravel-app',
+            'type' => 'laravel-app',
             'repository_url' => $repositoryUrl,
             'default_branch' => 'main',
             'root' => 'public',
@@ -108,8 +112,10 @@ it('returns 422 without persistence or secret exposure for embedded repository c
 
     $response = $this
         ->withHeader('X-Orbit-Request-Id', $requestId)
-        ->postJson('/api/v1/apps', [
+        ->postJson('/api/v1/projects', [
             'slug' => 'acme',
+            'type' => 'laravel-app',
+            'type' => 'laravel-app',
             'repository_url' => $repositoryUrl,
             'default_branch' => 'main',
             'root' => 'public',
@@ -153,8 +159,10 @@ it('returns 422 without persistence or secret exposure for embedded repository c
 
 it('returns 422 without persistence when a repository origin contains a query or fragment', function (string $repositoryUrl): void {
     $this
-        ->postJson('/api/v1/apps', [
+        ->postJson('/api/v1/projects', [
             'slug' => 'acme',
+            'type' => 'laravel-app',
+            'type' => 'laravel-app',
             'repository_url' => $repositoryUrl,
             'default_branch' => 'main',
             'root' => 'public',

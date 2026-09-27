@@ -22,7 +22,7 @@ function instance_source_reply(string $class, array $data): array
 function instance_source_consent_case(string $family): array
 {
     $step = ['name' => 'migrate', 'phase' => 'before_activation', 'command' => 'php artisan migrate --force', 'timeout_seconds' => 300];
-    $instance = ['id' => 11, 'name' => 'source', 'node_id' => 2, 'app_id' => 3, 'status' => 'active',
+    $instance = ['id' => 11, 'name' => 'source', 'node_id' => 2, 'project_id' => 3, 'status' => 'active',
         'environment' => 'development', 'source_layout' => 'checkout', 'checkout_path' => '/work/source', 'deploy_steps' => [$step]];
     $case = match ($family) {
         'remove' => [

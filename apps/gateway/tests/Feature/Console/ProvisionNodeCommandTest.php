@@ -51,7 +51,6 @@ it('provisions the first peer from the gateway console', function (): void {
             '--role' => ['app-dev'],
             '--architecture' => 'x86_64',
             '--tld' => '.Operator.Orbit',
-            '--wireguard-address' => '10.44.0.2',
             '--wireguard-ip' => '10.44.0.2',
             '--cluster' => (string) $cluster->id,
             '--lan-ip' => '10.0.0.2',
@@ -79,20 +78,6 @@ it('provisions the first peer from the gateway console', function (): void {
         ->toHaveKey('wireguard_address')
         ->and($node->lan_ip)
         ->toBe('10.0.0.2');
-});
-
-it('rejects conflicting WireGuard options before provisioning', function (): void {
-    $this
-        ->artisan('orbit:node-provision', [
-            'name' => 'conflict',
-            'host' => '192.0.2.50',
-            '--wireguard-ip' => '10.44.0.5',
-            '--wireguard-address' => '10.44.0.6',
-        ])
-        ->expectsOutput('The WireGuard IP options conflict.')
-        ->assertExitCode(1);
-
-    expect(Node::query()->where('name', 'conflict')->exists())->toBeFalse();
 });
 
 it('reports typed provisioning failures without leaking command output', function (): void {

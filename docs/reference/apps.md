@@ -7,7 +7,7 @@ description: "How a Project records one repository, its type, its default branch
 
 A Project stores one repository, access URL, `type`, default branch, and normalized root path. New Instances inherit these source defaults. For Laravel apps the root is a web root; for package Projects it may be `.` to name the repository root. [ADR 0105](/decisions/0105-name-applications-as-project-and-instance) names the record. [ADR 0106](/decisions/0106-derive-instance-capabilities-from-project-type) owns type. [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity) defines default identity. [ADR 0026](/decisions/0026-identify-each-app-by-one-repository) defines repository ownership.
 
-The canonical HTTP surface is `/api/v1/projects` and the canonical CLI family is `project:*`. `/api/v1/apps` remains a dual-read and dual-write compatibility path for the same records so older CLI binaries and `app-*` MCP tools keep working.
+The HTTP surface is `/api/v1/projects`, and the CLI family is `project:*`.
 
 CLI JSON and SDK array output name the Project collection `projects` and the Instance collection `instances`. Instance registration also returns its collection as `instances`. These outputs do not emit the former `apps` or `app_instances` collection keys. Gateway list responses keep their standard `data` envelope. Stored table names and foreign keys are unchanged.
 
@@ -22,7 +22,7 @@ Use `project:create` with a slug, a type, and an HTTPS or SSH Git origin:
 orbit project:create acme laravel-app https://github.com/acme/site.git
 ```
 
-`type` is required on the canonical surface. Allowed values are `monorepo`, `laravel-app`, `laravel-package`, and `node-package`. Compatibility `POST /api/v1/apps` callers that omit `type` receive `laravel-app`.
+`type` is required. Allowed values are `monorepo`, `laravel-app`, `laravel-package`, and `node-package`.
 
 The command-line interface (CLI) uses `.` as the root for `laravel-package` and `node-package`, and `public` for other types, unless you set `--root`. Laravel apps use their relative web root. The API and SDK always require `root`. Without `--default-branch`, the Gateway reads and saves the repository's default branch once. A later remote change does not update the Project.
 
@@ -91,7 +91,7 @@ Edit the code in the web Project properties, or send `PATCH /api/v1/projects/{pr
 
 ## Update a Project
 
-Use `project:update` when an existing Project must change its type, slug, repository access URL, default branch, relative web root, or task check. The Gateway API accepts `PATCH /api/v1/projects/{project}` and the compatibility path `PATCH /api/v1/apps/{app}` with those same fields. The PHP SDK sends `UpdateAppRequest` to either path. Omitted fields stay unchanged; send `task_check: null` to clear the task check. The MCP `project-update` tool accepts the same string-or-null field. [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates) owns the source reconciliation lifecycle. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
+Use `project:update` when an existing Project must change its type, slug, repository access URL, default branch, relative web root, or task check. The Gateway API accepts `PATCH /api/v1/projects/{project}` with those same fields. The PHP SDK sends `UpdateAppRequest` to that path. Omitted fields stay unchanged; send `task_check: null` to clear the task check. The MCP `project-update` tool accepts the same string-or-null field. [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates) owns the source reconciliation lifecycle. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
 
 ```bash
 orbit project:update 3 --repository=https://github.com/acme/site.git --default-branch=stable

@@ -17,7 +17,6 @@ final class BootstrapGatewayCommand extends Command
         {public-host : Gateway public IP or hostname}
         {--name=gateway : Gateway node name}
         {--wireguard-ip= : Gateway WireGuard IP}
-        {--wireguard-address= : Deprecated alias for --wireguard-ip}
         {--wireguard-subnet=10.44.0.0/24 : Orbit WireGuard subnet}
         {--wireguard-port=51820 : Public WireGuard UDP port}
         {--wireguard-endpoint= : Public WireGuard endpoint}
@@ -92,15 +91,9 @@ final class BootstrapGatewayCommand extends Command
     /** @return array{valid: bool, value: ?string} */
     private function wireguardIp(?string $default = null): array
     {
-        $canonical = $this->stringOption('wireguard-ip');
-        $deprecated = $this->stringOption('wireguard-address');
-
-        if ($canonical !== null && $deprecated !== null && $canonical !== $deprecated) {
-            $this->error('The WireGuard IP options conflict.');
-
-            return ['valid' => false, 'value' => null];
-        }
-
-        return ['valid' => true, 'value' => $canonical ?? $deprecated ?? $default];
+        return [
+            'value' => $this->stringOption('wireguard-ip') ?? $default,
+            'valid' => true,
+        ];
     }
 }

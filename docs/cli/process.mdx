@@ -9,15 +9,15 @@ The [Project process and Schedule definitions](/reference/app-processes-and-sche
 
 ## Choose the owner
 
-`process:create` and `process:list` need exactly one selector. The CLI refuses two selectors together and refuses `--for` without `--project` or `--app` before it sends a request.
+`process:create` and `process:list` need exactly one selector. The CLI refuses two selectors together and refuses `--for` without `--project` or `--project` before it sends a request.
 
 | Selector | Owner | Result |
 | --- | --- | --- |
 | `--instance=ID` | Instance | The Gateway derives the host Node and runtime user from the Instance. |
 | `--node=ID-or-name` | Managed Node | The Process runs as the Node's managed runtime user for shared infrastructure such as a Docker database. |
-| `--project=ID --for=ENV[,ENV]` | Project definition | The Gateway records a reusable definition for `development`, `production`, or both. `--app` is accepted as the same identifier. Production preparation copies it into a new Instance Process. |
+| `--project=ID --for=ENV[,ENV]` | Project definition | The Gateway records a reusable definition for `development`, `production`, or both. `--project` is accepted as the same identifier. Production preparation copies it into a new Instance Process. |
 
-`process:show`, `process:update`, and `process:destroy` with `--project` or `--app` select a definition by name. `process:start`, `process:stop`, `process:restart`, `process:logs`, and `process:destroy` without those options take the numeric Process ID from `process:list`.
+`process:show`, `process:update`, and `process:destroy` with `--project` or `--project` select a definition by name. `process:start`, `process:stop`, `process:restart`, `process:logs`, and `process:destroy` without those options take the numeric Process ID from `process:list`.
 
 ## Commands
 
@@ -40,7 +40,7 @@ Every command accepts `--json`. Human and JSON output include the Gateway reques
 Install one stopped or initially running systemd service or Docker container, or record a Project-owned definition.
 
 ```bash
-orbit process:create <name> (--instance=ID-or-domain | --node=ID-or-name | --app=APP --for=ENV[,ENV]) [options]
+orbit process:create <name> (--instance=ID-or-domain | --node=ID-or-name | --project=APP --for=ENV[,ENV]) [options]
 ```
 
 | Argument | Required | Meaning |
@@ -52,8 +52,8 @@ orbit process:create <name> (--instance=ID-or-domain | --node=ID-or-name | --app
 | `--instance=ID-or-domain` | none | Positive Instance ID or exact, unambiguous development Route domain. |
 | `--preset=PRESET` | none | Configure a development Instance Process. Supported values are `vp-dev`, `agentation-mcp`, and `antigravity-watch`. |
 | `--node=ID-or-name` | none | Node ID or registered Node name. The CLI resolves a name through the Node list before it sends the request. |
-| `--app=APP` | none | Numeric Project ID for a definition. |
-| `--for=ENV[,ENV]` | none | Definition environments, `development` or `production`. Required with `--app`. |
+| `--project=APP` | none | Numeric Project ID for a definition. |
+| `--for=ENV[,ENV]` | none | Definition environments, `development` or `production`. Required with `--project`. |
 | `--runtime=RUNTIME` | `systemd` | `systemd` or `docker`. |
 | `--command=ARG` | none | One argv item. Repeat the option for each argument, at most 64 items of 4,096 bytes each. |
 | `--image=IMAGE` | none | Docker image. |
@@ -118,7 +118,7 @@ Record a queue worker definition that every production copy inherits:
 
 ```bash
 orbit process:create queue \
-  --app=1 \
+  --project=1 \
   --for=development,production \
   --runtime=systemd \
   --command=/usr/bin/php \
@@ -143,13 +143,13 @@ A prepared production home without a selected release accepts a stopped installa
 List the Process records of one Instance or Node with their desired and observed states and `keep_alive`, or the definitions of one Project without their commands.
 
 ```bash
-orbit process:list (--instance=ID | --node=ID-or-name | --app=APP) [--json]
+orbit process:list (--instance=ID | --node=ID-or-name | --project=APP) [--json]
 ```
 
 ```bash
 orbit process:list --instance=12
 orbit process:list --node=beast
-orbit process:list --app=1
+orbit process:list --project=1
 ```
 
 ## orbit process:show
@@ -157,7 +157,7 @@ orbit process:list --app=1
 Show one Project process definition by name, including its UUID and complete specification.
 
 ```bash
-orbit process:show <name> --app=APP [--json]
+orbit process:show <name> --project=APP [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -166,14 +166,14 @@ orbit process:show <name> --app=APP [--json]
 
 | Option | Meaning |
 | --- | --- |
-| `--app=APP` | Numeric Project ID that owns the definition. |
+| `--project=APP` | Numeric Project ID that owns the definition. |
 
 ## orbit process:update
 
-Replace one Project process definition with a complete specification. The command accepts the same runtime options as `process:create` and requires `--app` and `--for`.
+Replace one Project process definition with a complete specification. The command accepts the same runtime options as `process:create` and requires `--project` and `--for`.
 
 ```bash
-orbit process:update <name> --app=APP --for=ENV[,ENV] [runtime options] [--json]
+orbit process:update <name> --project=APP --for=ENV[,ENV] [runtime options] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -265,24 +265,24 @@ orbit process:logs 41 --follow
 
 ## orbit process:destroy
 
-Stop and remove the exact owned runtime artifacts of one Process, then delete its record. For a systemd Process, the Gateway also resets the unit's failed state, so a crashed unit leaves no `failed` record behind. With `--app`, destroy one Project process definition by name.
+Stop and remove the exact owned runtime artifacts of one Process, then delete its record. For a systemd Process, the Gateway also resets the unit's failed state, so a crashed unit leaves no `failed` record behind. With `--project`, destroy one Project process definition by name.
 
 ```bash
-orbit process:destroy <process> [--app=APP] [--yes] [--json]
+orbit process:destroy <process> [--project=APP] [--yes] [--json]
 ```
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `process` | yes | Numeric Process ID, or the definition name with `--app`. |
+| `process` | yes | Numeric Process ID, or the definition name with `--project`. |
 
 | Option | Meaning |
 | --- | --- |
-| `--app=APP` | Numeric Project ID. Selects a definition instead of an installed Process. |
+| `--project=APP` | Numeric Project ID. Selects a definition instead of an installed Process. |
 | `--yes` | Confirm destruction without prompting. Interactive confirmation defaults to No. A JSON or non-interactive call without `--yes` returns `input.confirmation_required`. Interactive decline, Ctrl-C, and EOF cancel with `input.cancelled`. |
 
 ```bash
 orbit process:destroy 41 --yes
-orbit process:destroy queue --app=1 --yes
+orbit process:destroy queue --project=1 --yes
 ```
 
 <Warning>

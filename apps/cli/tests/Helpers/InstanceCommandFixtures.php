@@ -9,9 +9,9 @@ function instance_payload(?array $removal = null): array
 {
     return [
         'id' => 5,
-        'app_id' => 3,
+        'project_id' => 3,
         'node_id' => 2,
-        'app' => ['id' => 3, 'name' => 'Orbit docs', 'slug' => 'orbit-docs'],
+        'project' => ['id' => 3, 'name' => 'Orbit docs', 'slug' => 'orbit-docs'],
         'node' => ['id' => 2, 'name' => 'beast'],
         'vite_port' => null,
         'name' => 'dev',

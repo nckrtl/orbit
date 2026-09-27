@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Commands\Processes;
 
 use App\Commands\Concerns\RendersAppRuntimeDefinitions;
-use App\Commands\Concerns\SelectsAppDefinitionTarget;
+use App\Commands\Concerns\SelectsProjectDefinitionTarget;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\GatewayRequest;
@@ -16,13 +16,12 @@ use Orbit\Sdk\Responses\Apps\AppRuntimeDefinitionResponse;
 final class DestroyProcessCommand extends ProcessActionCommand
 {
     use RendersAppRuntimeDefinitions;
-    use SelectsAppDefinitionTarget;
+    use SelectsProjectDefinitionTarget;
 
     #[\Override]
     protected $signature = 'process:destroy
         {process : Process ID or definition name}
         {--project= : Numeric Project ID}
-        {--app= : Numeric Project ID (compatibility)}
         {--yes : Skip the destructive confirmation prompt}
         {--json : Return machine-readable JSON}';
 
@@ -34,7 +33,7 @@ final class DestroyProcessCommand extends ProcessActionCommand
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $appId = $this->appIdOption();
+        $appId = $this->projectIdOption();
 
         if ($appId === false) {
             return self::FAILURE;

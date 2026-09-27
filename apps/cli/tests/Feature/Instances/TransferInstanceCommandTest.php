@@ -219,7 +219,7 @@ function transfer_cli_payload(): array
 {
     return [
         'id' => 11,
-        'app_id' => 3,
+        'project_id' => 3,
         'node_id' => 8,
         'name' => 'preview',
         'environment' => 'development',
@@ -238,7 +238,7 @@ function transfer_cli_payload(): array
         'route' => [
             'id' => 41,
             'kind' => 'app',
-            'app_id' => 3,
+            'project_id' => 3,
             'node_id' => null,
             'cluster_id' => 2,
             'generation_basis_node_id' => 8,
