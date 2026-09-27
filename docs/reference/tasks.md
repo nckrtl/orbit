@@ -716,6 +716,8 @@ Orbit opens the pull request after the approval of the last subtask. That approv
 
 Before Orbit commits the last subtask, Jev checks that the change list covers every subtask of the group except cancelled and failed subtasks. Jev reads the group and subtask briefs and the pull request fields. For each checked subtask, it answers whether a listed change delivers it. A subtask counts as covered when Jev gives "yes" a probability of at least one half. Jev cannot read code, so this checks coverage, not correctness. Each missing subtask fails `brief_coverage`, and the reviewer's reminder names it. A failed Jev request counts as a communication failure.
 
+On the last subtask, the reviewer owns the pull request change list, summary, and breaking-changes list in its approval. A missing or incomplete entry is never a reason to request changes; the reviewer writes the complete entries as part of its approval.
+
 ### Jev decision records and report
 
 Every call to Jev is stored in the Gateway's `jev_decisions` table, including failed calls. Each record captures its purpose, group, subtask, and agent-thread identifiers when the call concerns them. It records each question's type, options, and criteria, along with the input state sent with secrets redacted. Each answer stores its value, probability distribution, provider confidence when returned, and selected-answer probability separately. The record also stores the provider model identifier when returned, latency, and a sanitized error code on failure. The Gateway stores no secrets or raw provider error bodies. Records are retained indefinitely as Orbit's training and evaluation dataset.
