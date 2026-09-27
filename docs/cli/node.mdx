@@ -254,6 +254,8 @@ orbit node:access:add <consumer> <serving> [--json]
 
 Both Nodes must be active. Adding a grant that exists reports that it already exists.
 
+A grant to the active `gateway` Node lets the consumer act on every Node. The `gateway` Node itself, and the machine that the Gateway bootstrap recorded as its serving host, act on every Node without a grant.
+
 ## orbit node:access:remove
 
 Remove one access grant.
@@ -296,7 +298,7 @@ These reasons explain the design. Check them before you propose a change.
 
 ### A dedicated relocate for gateway
 
-The Gateway process serves the API. Removing the last `gateway` assignment and adding it again would drop the Gateway's authority and the `gateway.orbit` DNS record in between, so the second request might not run. Relocate keeps one active assignment for the whole move. Two active `gateway` assignments are rejected, because the fleet needs one authority and one address.
+The Gateway process serves the API. Removing the last `gateway` assignment and adding it again would drop the Gateway's authority and the `gateway.orbit` DNS record in between, so the second request might not run. Relocate keeps one active assignment for the whole move. Two active `gateway` assignments are rejected, because the fleet needs one authority and one address. The machine that runs the Gateway process keeps its authority during a move, because the bootstrap records it as the serving host.
 
 ### Relocate moves no secrets
 

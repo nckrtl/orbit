@@ -12,7 +12,7 @@ The Gateway broadcasts a small notice on the `orbit` channel whenever a task gro
 
 Proposed.
 
-This extends [ADR 0084](/decisions/0084-broadcast-record-changes-through-reverb) with task events and a Process usage event. It amends [ADR 0128](/decisions/0128-run-a-visibility-only-agent-on-managed-nodes) and [ADR 0129](/decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels): the agent also observes task checkouts, and its unit gains read access to them. It extends the Gateway view of [ADR 0148](/decisions/0148-keep-a-gateway-view-of-node-agent-state) with workspace state, and it carries out that ADR's deferred task tick, task diff, and CPU and memory items.
+This extends [ADR 0084](/decisions/0084-broadcast-record-changes-through-reverb) with task events and a Process usage event. It amends [ADR 0128](/reference/node-agent#the-agent-only-observes) and [ADR 0129](/decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels): the agent also observes task checkouts, and its unit gains read access to them. It extends the Gateway view of [ADR 0148](/reference/node-agent#gateway-view) with workspace state, and it carries out that ADR's deferred task tick, task diff, and CPU and memory items.
 
 ## Context
 
@@ -168,6 +168,6 @@ The agent reports the Git state of every task checkout on its Node. It reads onl
 ## Affects
 
 - Components: apps/gateway, apps/web, apps/docs
-- ADRs: extends [ADR 0084](/decisions/0084-broadcast-record-changes-through-reverb); amends [ADR 0128](/decisions/0128-run-a-visibility-only-agent-on-managed-nodes) and [ADR 0129](/decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels); extends [ADR 0148](/decisions/0148-keep-a-gateway-view-of-node-agent-state); keeps [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) and [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) unchanged
+- ADRs: extends [ADR 0084](/decisions/0084-broadcast-record-changes-through-reverb); amends [ADR 0128](/reference/node-agent#the-agent-only-observes) and [ADR 0129](/decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels); extends [ADR 0148](/reference/node-agent#gateway-view); keeps [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) and [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) unchanged
 - Detail: [Realtime events](/reference/events), [Node agent](/reference/node-agent), [Web app](/reference/web-app), [Tasks](/reference/tasks)
 - Verify: Gateway tests for task broadcasts and their coalescing, the workspace endpoint, the view's workspace rules, the two reads and their fallback, and the Process usage timer; agent tests in `apps/agent` for path checks, Git state, limits, and event sizes; web tests for event handling and fallback polling; an Incus proof that counts Gateway SSH commands and one tab's API calls before and after, stops an agent, and cuts realtime

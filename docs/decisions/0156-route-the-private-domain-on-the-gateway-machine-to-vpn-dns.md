@@ -12,7 +12,7 @@ The Gateway machine sends queries for the private domain, such as `*.orbit`, to 
 
 Proposed.
 
-This extends [ADR 0061](/decisions/0061-use-vpn-dns-by-default-on-managed-peers) to the machine that holds the `gateway` role. It fills the resolver part of the Gateway host follow-up that [ADR 0094](/decisions/0094-project-wireguard-hub-config-onto-the-vpn-node) leaves open.
+This extends [ADR 0061](/decisions/0061-use-vpn-dns-by-default-on-managed-peers) to the machine that holds the `gateway` role. It fills the resolver part of the Gateway host follow-up that [ADR 0094](/reference/node-provisioning#the-hub-stays-on-the-vpn-node) leaves open.
 
 ## Context
 

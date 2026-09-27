@@ -582,23 +582,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0001-tool-management.md",
-            "title": "ADR 0001: Adopt the closed Tool Management contract",
-            "kind": "decision",
-            "components": [],
-            "concepts": [
-                "Activity",
-                "Gateway",
-                "Node",
-                "Process",
-                "Role",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0001"
-            ]
-        },
-        {
             "path": "docs/decisions/0002-candidate-deployment-proof-boundary.md",
             "title": "ADR 0002: Keep proof resources task-owned and production separate",
             "kind": "decision",
@@ -649,22 +632,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0008-typed-app-dev-node-storage-settings.md",
-            "title": "ADR 0008: Define typed app-dev node storage settings",
-            "kind": "decision",
-            "components": [],
-            "concepts": [
-                "Deployment",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Role"
-            ],
-            "governing_adrs": [
-                "0008"
-            ]
-        },
-        {
             "path": "docs/decisions/0009-clustered-app-instance-routing.md",
             "title": "ADR 0009: Adopt clustered AppInstance routing",
             "kind": "decision",
@@ -681,7 +648,6 @@
                 "Schedule"
             ],
             "governing_adrs": [
-                "0008",
                 "0009"
             ]
         },
@@ -712,23 +678,6 @@
             "governing_adrs": [
                 "0009",
                 "0011"
-            ]
-        },
-        {
-            "path": "docs/decisions/0012-ubuntu-24-04-roleless-operator-clients.md",
-            "title": "ADR 0012: Ubuntu 24.04 operator clients (no longer supported)",
-            "kind": "decision",
-            "components": [],
-            "concepts": [
-                "Doctor",
-                "Gateway",
-                "Node",
-                "Role",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0012",
-                "0042"
             ]
         },
         {
@@ -1013,7 +962,6 @@
                 "Route"
             ],
             "governing_adrs": [
-                "0008",
                 "0009",
                 "0016",
                 "0018",
@@ -1319,49 +1267,6 @@
                 "0028",
                 "0039",
                 "0041"
-            ]
-        },
-        {
-            "path": "docs/decisions/0042-provision-tool-managers-on-demand.md",
-            "title": "ADR 0042: Provision Tool Managers on demand",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Gateway",
-                "Node",
-                "Role",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0001",
-                "0012",
-                "0042"
-            ]
-        },
-        {
-            "path": "docs/decisions/0043-manage-homebrew-core-formulae.md",
-            "title": "ADR 0043: Manage Homebrew Core formulae",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Gateway",
-                "Node",
-                "Process",
-                "Project",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0001",
-                "0042",
-                "0043"
             ]
         },
         {
@@ -1826,26 +1731,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0068-accept-only-apps-path-node-storage-setting.md",
-            "title": "ADR 0068: Accept only apps.path as the node storage setting path",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Gateway",
-                "Instance",
-                "Node"
-            ],
-            "governing_adrs": [
-                "0008",
-                "0009",
-                "0068"
-            ]
-        },
-        {
             "path": "docs/decisions/0069-allow-node-process-targets.md",
             "title": "ADR 0069: Allow Process targets of AppInstance or managed Node",
             "kind": "decision",
@@ -1865,27 +1750,6 @@
                 "0038",
                 "0048",
                 "0069"
-            ]
-        },
-        {
-            "path": "docs/decisions/0070-keep-the-database-role-as-a-docker-baseline.md",
-            "title": "ADR 0070: Keep the database role as a Docker baseline",
-            "kind": "decision",
-            "components": [
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Gateway",
-                "Node",
-                "Process",
-                "Role",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0001",
-                "0069",
-                "0070",
-                "0077"
             ]
         },
         {
@@ -1917,29 +1781,6 @@
                 "0048",
                 "0069",
                 "0071"
-            ]
-        },
-        {
-            "path": "docs/decisions/0072-add-and-remove-nodes-without-changing-the-machine.md",
-            "title": "ADR 0072: Add and remove Nodes without changing the machine",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Gateway",
-                "Node",
-                "Process",
-                "Role"
-            ],
-            "governing_adrs": [
-                "0069",
-                "0071",
-                "0072"
             ]
         },
         {
@@ -2036,27 +1877,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0077-allow-database-beside-router.md",
-            "title": "ADR 0077: Allow the database role beside router",
-            "kind": "decision",
-            "components": [
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Cluster",
-                "Doctor",
-                "Gateway",
-                "Node",
-                "Process",
-                "Role"
-            ],
-            "governing_adrs": [
-                "0069",
-                "0070",
-                "0077"
-            ]
-        },
-        {
             "path": "docs/decisions/0078-assign-vite-ports-to-development-appinstances.md",
             "title": "ADR 0078: Assign Vite ports to development App instances",
             "kind": "decision",
@@ -2079,23 +1899,6 @@
                 "0067",
                 "0074",
                 "0078"
-            ]
-        },
-        {
-            "path": "docs/decisions/0079-publish-orbit-cli-binaries-from-github-actions.md",
-            "title": "ADR 0079: Publish Orbit CLI binaries from GitHub Actions",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Gateway",
-                "Node",
-                "Project"
-            ],
-            "governing_adrs": [
-                "0079"
             ]
         },
         {
@@ -2142,7 +1945,6 @@
             ],
             "governing_adrs": [
                 "0071",
-                "0079",
                 "0081"
             ]
         },
@@ -2213,7 +2015,6 @@
                 "Schedule"
             ],
             "governing_adrs": [
-                "0072",
                 "0080",
                 "0084",
                 "0085",
@@ -2295,29 +2096,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0088-cli-reads-display-metrics-from-grafana.md",
-            "title": "ADR 0088: CLI reads display metrics from Grafana",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Gateway",
-                "Instance",
-                "Node",
-                "Role",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0084",
-                "0085",
-                "0088",
-                "0147"
-            ]
-        },
-        {
             "path": "docs/decisions/0089-index-appinstance-dependencies.md",
             "title": "ADR 0089: Index App instance dependencies",
             "kind": "decision",
@@ -2346,59 +2124,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0090-relocate-the-gateway-role-independently-of-vpn.md",
-            "title": "ADR 0090: Relocate the gateway role independently of vpn",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Gateway",
-                "Node",
-                "Process",
-                "Project",
-                "Role",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0061",
-                "0090",
-                "0091",
-                "0092",
-                "0094",
-                "0095"
-            ]
-        },
-        {
-            "path": "docs/decisions/0091-rename-a-node-without-changing-wireguard-identity.md",
-            "title": "ADR 0091: Rename a Node without changing WireGuard identity",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Gateway",
-                "Node",
-                "Role",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0061",
-                "0071",
-                "0072",
-                "0090",
-                "0091"
-            ]
-        },
-        {
             "path": "docs/decisions/0092-publish-private-dns-on-the-vpn-node-after-gateway-relocate.md",
             "title": "ADR 0092: Publish private DNS on the VPN node after gateway relocate",
             "kind": "decision",
@@ -2415,7 +2140,6 @@
             ],
             "governing_adrs": [
                 "0061",
-                "0090",
                 "0092"
             ]
         },
@@ -2438,28 +2162,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0094-project-wireguard-hub-config-onto-the-vpn-node.md",
-            "title": "ADR 0094: Project WireGuard hub config onto the VPN node",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Gateway",
-                "Node",
-                "Process",
-                "Project",
-                "Role"
-            ],
-            "governing_adrs": [
-                "0061",
-                "0090",
-                "0092",
-                "0094"
-            ]
-        },
-        {
             "path": "docs/decisions/0095-relocate-relocatable-singleton-roles.md",
             "title": "ADR 0095: Relocate relocatable singleton roles as one Orbit action",
             "kind": "decision",
@@ -2479,7 +2181,6 @@
                 "0061",
                 "0071",
                 "0087",
-                "0090",
                 "0092",
                 "0095"
             ]
@@ -2635,7 +2336,6 @@
             ],
             "governing_adrs": [
                 "0069",
-                "0070",
                 "0080",
                 "0104",
                 "0108",
@@ -3223,37 +2923,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0128-run-a-visibility-only-agent-on-managed-nodes.md",
-            "title": "ADR 0128: Run a visibility-only agent on managed Nodes",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Doctor",
-                "Gateway",
-                "Node",
-                "Node agent",
-                "Process",
-                "Project",
-                "Role",
-                "Task",
-                "Task workspace",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0127",
-                "0128",
-                "0129",
-                "0130",
-                "0148",
-                "0151",
-                "0155"
-            ]
-        },
-        {
             "path": "docs/decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels.md",
             "title": "ADR 0129: Publish Node presence and Process state on per-Node presence channels",
             "kind": "decision",
@@ -3272,31 +2941,8 @@
             "governing_adrs": [
                 "0084",
                 "0087",
-                "0128",
                 "0129",
-                "0148",
-                "0151",
-                "0154",
-                "0155"
-            ]
-        },
-        {
-            "path": "docs/decisions/0130-publish-agent-binaries-as-github-releases.md",
-            "title": "ADR 0130: Publish agent binaries as GitHub releases",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Gateway",
-                "Node",
-                "Node agent"
-            ],
-            "governing_adrs": [
-                "0079",
-                "0128",
-                "0130"
+                "0151"
             ]
         },
         {
@@ -3536,7 +3182,6 @@
                 "0011",
                 "0080",
                 "0100",
-                "0128",
                 "0137",
                 "0138",
                 "0139",
@@ -3565,25 +3210,6 @@
                 "0005",
                 "0136",
                 "0143"
-            ]
-        },
-        {
-            "path": "docs/decisions/0144-migrate-waiting-connections-when-caddy-reloads.md",
-            "title": "ADR 0144: Migrate waiting connections when Caddy reloads",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Doctor",
-                "Gateway",
-                "Node",
-                "Role"
-            ],
-            "governing_adrs": [
-                "0100",
-                "0144"
             ]
         },
         {
@@ -3626,37 +3252,9 @@
             ],
             "governing_adrs": [
                 "0085",
-                "0088",
                 "0123",
                 "0129",
                 "0147"
-            ]
-        },
-        {
-            "path": "docs/decisions/0148-keep-a-gateway-view-of-node-agent-state.md",
-            "title": "ADR 0148: Keep a Gateway view of Node agent state",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Doctor",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Node agent",
-                "Process",
-                "Role",
-                "Task"
-            ],
-            "governing_adrs": [
-                "0084",
-                "0087",
-                "0127",
-                "0128",
-                "0129",
-                "0148"
             ]
         },
         {
@@ -3724,9 +3322,7 @@
                 "0084",
                 "0103",
                 "0122",
-                "0128",
                 "0129",
-                "0148",
                 "0151"
             ]
         },
@@ -3777,62 +3373,9 @@
                 "Task"
             ],
             "governing_adrs": [
-                "0128",
                 "0129",
-                "0148",
                 "0151",
-                "0153",
-                "0155"
-            ]
-        },
-        {
-            "path": "docs/decisions/0154-recover-the-gateway-agent-view-without-a-membership-change.md",
-            "title": "ADR 0154: Recover the Gateway agent view without a membership change",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Doctor",
-                "Gateway",
-                "Node",
-                "Node agent",
-                "Process"
-            ],
-            "governing_adrs": [
-                "0129",
-                "0148",
-                "0154"
-            ]
-        },
-        {
-            "path": "docs/decisions/0155-authenticate-the-node-agent-with-a-per-node-secret.md",
-            "title": "ADR 0155: Authenticate the Node agent with a per-Node secret",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Doctor",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Node agent",
-                "Process",
-                "Project",
-                "Route",
-                "Task",
-                "Task workspace"
-            ],
-            "governing_adrs": [
-                "0033",
-                "0045",
-                "0128",
-                "0129",
-                "0148",
-                "0155"
+                "0153"
             ]
         },
         {
@@ -3847,14 +3390,12 @@
                 "Doctor",
                 "Gateway",
                 "Node",
-                "Project",
                 "Role",
                 "Route",
                 "Tool"
             ],
             "governing_adrs": [
                 "0061",
-                "0094",
                 "0156"
             ]
         },
@@ -4286,15 +3827,12 @@
                 "Tool"
             ],
             "governing_adrs": [
-                "0001",
                 "0002",
                 "0005",
                 "0006",
-                "0008",
                 "0009",
                 "0010",
                 "0011",
-                "0012",
                 "0013",
                 "0014",
                 "0015",
@@ -4323,8 +3861,6 @@
                 "0039",
                 "0040",
                 "0041",
-                "0042",
-                "0043",
                 "0044",
                 "0045",
                 "0046",
@@ -4347,18 +3883,13 @@
                 "0065",
                 "0066",
                 "0067",
-                "0068",
                 "0069",
-                "0070",
                 "0071",
-                "0072",
                 "0073",
                 "0074",
                 "0075",
                 "0076",
-                "0077",
                 "0078",
-                "0079",
                 "0080",
                 "0081",
                 "0082",
@@ -4367,13 +3898,9 @@
                 "0085",
                 "0086",
                 "0087",
-                "0088",
                 "0089",
-                "0090",
-                "0091",
                 "0092",
                 "0093",
-                "0094",
                 "0095",
                 "0097",
                 "0098",
@@ -4400,9 +3927,7 @@
                 "0125",
                 "0126",
                 "0127",
-                "0128",
                 "0129",
-                "0130",
                 "0131",
                 "0132",
                 "0133",
@@ -4415,17 +3940,13 @@
                 "0140",
                 "0141",
                 "0143",
-                "0144",
                 "0145",
                 "0147",
-                "0148",
                 "0149",
                 "0150",
                 "0151",
                 "0152",
                 "0153",
-                "0154",
-                "0155",
                 "0156",
                 "0157",
                 "0158",
@@ -4904,7 +4425,6 @@
             "governing_adrs": [
                 "0044",
                 "0069",
-                "0070",
                 "0081"
             ]
         },
@@ -5012,7 +4532,6 @@
             ],
             "governing_adrs": [
                 "0129",
-                "0148",
                 "0151",
                 "0152",
                 "0153",
@@ -5904,9 +5423,7 @@
                 "Route"
             ],
             "governing_adrs": [
-                "0091",
                 "0092",
-                "0094",
                 "0095",
                 "0149"
             ]
