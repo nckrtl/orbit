@@ -24,7 +24,6 @@ use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskPlannerMcp;
 use App\Domain\Tasks\TaskPullRequestDescription;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestHealth;
@@ -43,6 +42,7 @@ use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
+use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Infrastructure\Tasks\T3\T3Dispatcher;
@@ -68,7 +68,7 @@ use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Classification;
 use Laravel\Ai\Responses\Data\BooleanAnswer;
 use Tests\Feature\GitHub\GitHubTestSupport;
-use Tests\Support\AcceptingTaskPlannerMcp;
+use Tests\Support\AcceptingTaskWorkspaceMcp;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskRunReceipts;
 
@@ -227,7 +227,7 @@ function tick_dispatcher(): T3Dispatcher
 }
 
 beforeEach(function (): void {
-    app()->instance(TaskPlannerMcp::class, new AcceptingTaskPlannerMcp);
+    app()->instance(TaskWorkspaceMcp::class, new AcceptingTaskWorkspaceMcp);
     tick_workspace();
 });
 
@@ -255,7 +255,7 @@ it('archives the reviewer thread after a subtask completes', function (): void {
         ->and($reviewer->fresh()?->archived_at)->not->toBeNull();
 });
 
-it('archives the planner and remaining T3 threads when a group completes', function (): void {
+it('archives remaining T3 threads when a group completes', function (): void {
     $group = tick_group();
     test_link_agent_threads($group);
     $task = $group->tasks->firstOrFail();
@@ -4421,104 +4421,6 @@ describe('a thread that works outside the task phase', function (): void {
             ->and($task->fresh()?->review_notified_attempt)->toBe($task->fresh()?->review_attempt)
             ->and($task->fresh()?->review_notified_turn_id)->toBe('reviewer-thread-turn')
             ->and(app(TaskRunReceipts::class)->prepared)->toBe(['reviewer:final']);
-    });
-
-    it('starts a fresh reviewer instead of resuming the planner, and resumes a review that already started', function (): void {
-        $group = tick_group();
-        $task = $group->tasks->sole();
-        $planner = AgentThread::query()->findOrFail($group->reviewer_agent_thread_id);
-        $planner->update(['driver' => 'pi']);
-        $planner->node?->update([
-            'settings' => ['pi' => ['token' => 'pi-node-token-with-more-than-32-characters', 'url' => 'http://10.44.0.212:3774']],
-        ]);
-        app(TaskExtensionState::class)->enable();
-        $spawner = new class implements AgentSpawner
-        {
-            public int $reviews = 0;
-
-            public ?int $spawned = null;
-
-            public function spawnReviewer(Task $task): ?int
-            {
-                $thread = test_agent_thread($task->taskGroup, 'subtask-reviewer');
-                $thread->update(['task_id' => $task->id, 'driver' => 'pi', 'role' => TaskThreadRole::Reviewer->value]);
-
-                return $this->spawned = $thread->id;
-            }
-
-            public function spawnImplementer(Task $task): ?int
-            {
-                return null;
-            }
-
-            public function requestReview(Task $task): void
-            {
-                $this->reviews++;
-            }
-        };
-        app()->instance(AgentSpawner::class, $spawner);
-        app()->instance(T3ThreadReader::class, tick_thread_states(['implementer-thread' => 'done']));
-        $plannerState = (object) ['state' => 'working', 'error' => null, 'turnId' => 'other-turn'];
-        $reviewState = (object) ['state' => 'working', 'error' => null, 'turnId' => 'review-turn'];
-        /** @var list<array{session: string, key: string, text: string}> $messages */
-        $messages = [];
-        Http::fake(function (Request $request) use ($plannerState, $reviewState, &$messages) {
-            if (str_ends_with($request->url(), '/messages') && preg_match('#/sessions/([^/]+)/messages$#', $request->url(), $match) === 1) {
-                $messages[] = ['session' => $match[1], 'key' => (string) $request['key'], 'text' => (string) $request['text']];
-
-                return Http::response(['duplicate' => false], 202);
-            }
-            foreach (['reviewer-thread' => $plannerState, 'subtask-reviewer' => $reviewState] as $session => $state) {
-                if (! str_contains($request->url(), '/sessions/'.$session)) {
-                    continue;
-                }
-
-                return Http::response([
-                    'kind' => 'snapshot', 'run' => 'run-1', 'sequence' => 4,
-                    'session' => ['id' => $session],
-                    'state' => $state->state, 'error' => $state->error, 'turnId' => $state->turnId, 'entries' => [],
-                ]);
-            }
-
-            return null;
-        });
-
-        app(TaskScheduler::class)->tick();
-        app(TaskScheduler::class)->tick();
-
-        expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
-            ->and($spawner->reviews)->toBe(0)
-            ->and($spawner->spawned)->not->toBeNull()
-            ->and($spawner->spawned)->not->toBe($planner->id)
-            ->and($group->fresh()?->reviewer_agent_thread_id)->toBe($spawner->spawned)
-            ->and($task->fresh()?->review_notified_attempt)->toBe($task->fresh()?->review_attempt)
-            ->and($task->fresh()?->review_workspace_head)->toBe(str_repeat('a', 40))
-            ->and($task->fresh()?->review_workspace_tree)->toBe(str_repeat('b', 40))
-            ->and(app(TaskRunReceipts::class)->prepared)->toBe(['reviewer:final'])
-            ->and($task->fresh()?->pi_restart_resumes)->toBe(0)
-            ->and($task->fresh()?->pi_restart_key)->toBeNull()
-            ->and($messages)->toBe([]);
-
-        $plannerState->state = 'failed';
-        $plannerState->error = 'The Pi server restarted during the turn.';
-        $reviewState->state = 'failed';
-        $reviewState->error = 'The Pi server restarted during the turn.';
-        app(TaskScheduler::class)->tick();
-
-        $fresh = $task->fresh();
-        expect($spawner->reviews)->toBe(0)
-            ->and(app(TaskRunReceipts::class)->prepared)->toBe(['reviewer:final'])
-            ->and($fresh?->assistance_requested)->toBeFalse()
-            ->and($fresh?->pi_restart_resumes)->toBe(1)
-            ->and($fresh?->pi_restart_reservation)->toBe('pending')
-            ->and($fresh?->pi_restart_thread_id)->toBe($spawner->spawned)
-            ->and($fresh?->pi_restart_thread_id)->not->toBe($planner->id)
-            ->and($fresh?->pi_restart_source_turn_id)->toBe('review-turn')
-            ->and($messages)->toHaveCount(1)
-            ->and($messages[0]['session'])->toBe('subtask-reviewer')
-            ->and($messages[0]['text'])->toBe('Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the run script.')
-            ->and($messages[0]['key'])->toBe($fresh?->pi_restart_key)
-            ->and($messages[0]['key'])->not->toBe('review-turn');
     });
 
     it('relays review findings only once the implementer is idle', function (): void {

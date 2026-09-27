@@ -10,12 +10,12 @@ use App\Domain\Tasks\NullTaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskPlannerMcp;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskRunReceipts;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
+use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Infrastructure\Tasks\T3\T3Dispatcher;
 use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Models\AgentThread;
@@ -24,7 +24,7 @@ use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskGroup;
-use Tests\Support\AcceptingTaskPlannerMcp;
+use Tests\Support\AcceptingTaskWorkspaceMcp;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskRunReceipts;
 
@@ -116,7 +116,7 @@ it('starts a fresh subtask reviewer with a review resolution when that thread do
     ]);
     $group = TaskGroup::query()->create([
         'app_id' => $app->id, 'title' => 'Resolutions', 'brief' => 'Route each resolution to its subtask.',
-        'status' => TaskGroupStatus::Reviewing, 'plan' => true,
+        'status' => TaskGroupStatus::Reviewing,
         'assistance_requested' => true, 'assistance_reason' => 'The review diff could not be read.',
     ]);
     $group->taskable()->associate($instance);
@@ -133,7 +133,6 @@ it('starts a fresh subtask reviewer with a review resolution when that thread do
     $earlierReviewer = test_agent_thread($group, 'subtask-1-reviewer');
     $earlierReviewer->update(['task_id' => $earlier->id]);
     $group->update(['reviewer_agent_thread_id' => $earlierReviewer->id]);
-    test_agent_thread($group, 'planner-thread');
     $implementer = test_agent_thread($group, 'subtask-2-implementer', $task);
     $task->update(['implementer_agent_thread_id' => $implementer->id]);
     $dispatcher = new class implements T3Dispatcher
@@ -183,7 +182,7 @@ it('starts a fresh subtask reviewer with a review resolution when that thread do
     app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts);
     app()->instance(TaskReviewDiff::class, new NullTaskReviewDiff);
     app()->instance(TaskWorkspaceDiffReader::class, new NullTaskWorkspaceDiffReader);
-    app()->instance(TaskPlannerMcp::class, new AcceptingTaskPlannerMcp);
+    app()->instance(TaskWorkspaceMcp::class, new AcceptingTaskWorkspaceMcp);
     app(TaskScheduler::class)->tick();
 
     $task->refresh();
@@ -202,7 +201,6 @@ it('starts a fresh subtask reviewer with a review resolution when that thread do
         ->and($task->resolution_delivered_comment_id)->toBe($comment->id)
         ->and($threadIds)->toBe([$reviewer->external_id])
         ->and($threadIds)->not->toContain('subtask-1-reviewer')
-        ->and($threadIds)->not->toContain('planner-thread')
         ->and($text)->toContain('Ship the names as they are.');
 });
 

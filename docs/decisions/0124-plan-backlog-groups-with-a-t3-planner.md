@@ -10,7 +10,7 @@ A task group can start in Backlog with a planner. The Gateway gives the group it
 
 ## Status
 
-Proposed.
+Proposed. Superseded by [ADR 0178](/decisions/0178-run-project-agnostic-tasks-without-a-planner).
 
 This extends [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready), where a Backlog group has no Instance and no agents. It amends the reviewer start of [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt) and uses the driver boundary of [ADR 0112](/decisions/0112-isolate-agent-threads-behind-drivers) and the MCP server of [ADR 0086](/decisions/0086-offer-the-api-as-mcp-tools).
 

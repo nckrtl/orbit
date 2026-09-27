@@ -2591,6 +2591,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Project",
                 "Role",
                 "Task",
                 "Task group"
@@ -2600,7 +2601,8 @@
                 "0112",
                 "0121",
                 "0122",
-                "0124"
+                "0124",
+                "0178"
             ]
         },
         {
@@ -2763,7 +2765,8 @@
                 "0124",
                 "0125",
                 "0133",
-                "0163"
+                "0163",
+                "0178"
             ]
         },
         {
@@ -3532,6 +3535,37 @@
             ]
         },
         {
+            "path": "docs/decisions/0178-run-project-agnostic-tasks-without-a-planner.md",
+            "title": "ADR 0178: Run project-agnostic Tasks without a planner",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Process",
+                "Project",
+                "Role",
+                "Task",
+                "Task check"
+            ],
+            "governing_adrs": [
+                "0122",
+                "0124",
+                "0125",
+                "0133",
+                "0135",
+                "0163",
+                "0164",
+                "0178"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3692,7 +3726,8 @@
                 "0169",
                 "0170",
                 "0171",
-                "0173"
+                "0173",
+                "0178"
             ]
         },
         {
@@ -4901,7 +4936,6 @@
                 "0116",
                 "0121",
                 "0122",
-                "0124",
                 "0125",
                 "0132",
                 "0133",
@@ -4917,7 +4951,8 @@
                 "0170",
                 "0171",
                 "0172",
-                "0173"
+                "0173",
+                "0178"
             ]
         },
         {
