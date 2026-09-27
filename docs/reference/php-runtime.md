@@ -4,6 +4,7 @@ description: "How Orbit selects a PHP version for an Instance, runs shared devel
 covers:
   - apps/gateway/app/Domain/AppInstances/{AppInstancePhpVersionCatalog,ProductionPhpRuntimeIdentity,ProductionPhpRuntimeManager}.php
   - apps/gateway/app/Infrastructure/AppInstances/{RemoteProductionPhpRuntimeManager,RemoteProductionAppInstanceSourceLifecycle,ProductionPhpRuntimeConfigRenderer,ProductionPhpRuntimeConfiguration}.php
+  - apps/gateway/app/Infrastructure/AppProd/{RemoteAppProdPhpFpmManager,RemoteAppProdSourceManager}.php
   - apps/gateway/app/Infrastructure/Nodes/{PhpFpmRuntimeIniRenderer,RemotePhpPackageManager}.php
   - apps/gateway/app/Infrastructure/AppDev/{AppDevPhpFpmConfigRenderer,RemoteAppDevPhpFpmManager}.php
   - apps/gateway/app/Infrastructure/SharedOrbitDirectory.php
