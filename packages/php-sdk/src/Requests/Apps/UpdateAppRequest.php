@@ -28,8 +28,6 @@ final class UpdateAppRequest extends GatewayRequest implements HasBody
         private readonly ?string $root = null,
         private readonly ?string $taskCheck = null,
         private readonly bool $taskCheckProvided = false,
-        private readonly ?string $testCommand = null,
-        private readonly bool $testCommandProvided = false,
     ) {}
 
     public function resolveEndpoint(): string
@@ -53,9 +51,8 @@ final class UpdateAppRequest extends GatewayRequest implements HasBody
                 'default_branch' => $this->defaultBranch,
                 'root' => $this->root,
                 ...($this->taskCheckProvided ? ['task_check' => $this->taskCheck] : []),
-                ...($this->testCommandProvided ? ['test_command' => $this->testCommand] : []),
             ],
-            static fn (mixed $value, string $key): bool => in_array($key, ['task_check', 'test_command'], true) || $value !== null,
+            static fn (mixed $value, string $key): bool => $key === 'task_check' || $value !== null,
             ARRAY_FILTER_USE_BOTH,
         );
     }

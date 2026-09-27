@@ -985,6 +985,64 @@ it('records a missing start commit on a later tick', function (): void {
     expect($task->fresh()?->subtask_start_commit)->toBe($head);
 });
 
+it('keeps a migrated continuation on its source subtask start after the source commits', function (): void {
+    $app = scheduler_app('continuation-start');
+    $instance = scheduler_instance($app, scheduler_node('continuation-start-node', '10.44.0.74'), 'continuation');
+    $group = TaskGroup::query()->create([
+        'app_id' => $app->id,
+        'title' => 'Continuation start',
+        'brief' => 'Overflow deliverables preserve the source boundary.',
+        'status' => TaskGroupStatus::Running,
+        'assistance_requested' => true,
+        'assistance_reason' => 'Waiting.',
+    ]);
+    $group->taskable()->associate($instance);
+    $group->save();
+    $start = str_repeat('a', 40);
+    $source = Task::query()->create([
+        'task_group_id' => $group->id,
+        'position' => 1,
+        'title' => 'Original task',
+        'brief' => 'Implement tests and fix.',
+        'status' => TaskStatus::Completed,
+        'subtask_start_commit' => $start,
+    ]);
+    $continuation = Task::query()->create([
+        'task_group_id' => $group->id,
+        'position' => 2,
+        'title' => 'Original task (continued 1)',
+        'brief' => 'Implement tests and fix.',
+        'status' => TaskStatus::Running,
+        'continuation_of_task_id' => $source->id,
+        'assistance_requested' => true,
+    ]);
+    $laterHead = str_repeat('b', 40);
+    app()->instance(TaskWorkspaceStateReader::class, new class($laterHead) implements TaskWorkspaceStateReader
+    {
+        public function __construct(private string $head) {}
+
+        public function headCommit(AppInstance $instance): ?string
+        {
+            return $this->head;
+        }
+
+        public function currentBranch(AppInstance $instance): ?string
+        {
+            return 'task-continuation';
+        }
+
+        public function definesComposerCheckScript(AppInstance $instance): bool
+        {
+            return true;
+        }
+    });
+    app(TaskExtensionState::class)->enable();
+
+    app(TaskScheduler::class)->tick();
+
+    expect($continuation->fresh()?->subtask_start_commit)->toBe($start);
+});
+
 it('does not record a later head after the implementer starts and commits', function (): void {
     $app = scheduler_app('late-start');
     $instance = scheduler_instance($app, scheduler_node('late-start-node', '10.44.0.72'), 'late');

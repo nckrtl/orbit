@@ -424,7 +424,6 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Deliverable",
                 "Deployment",
                 "Gateway",
                 "Instance",
@@ -1691,6 +1690,7 @@
                 "Extension",
                 "Gateway",
                 "Instance",
+                "Node",
                 "Process",
                 "Project",
                 "Role",

@@ -14,8 +14,7 @@
             "default_branch": null,
             "root": null,
             "defaults": null,
-            "task_check": null,
-            "test_command": null
+            "task_check": null
         },
         "meta": {
             "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"

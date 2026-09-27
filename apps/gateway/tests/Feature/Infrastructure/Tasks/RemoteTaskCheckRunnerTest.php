@@ -357,6 +357,39 @@ describe('deliverable evidence', function (): void {
         ]);
     });
 
+    it('treats a missing command in the base tree as unable to reproduce', function (): void {
+        $checkout = check_runner_checkout('echo checks passed');
+        file_put_contents($checkout.'/status', "missing\n");
+        File::ensureDirectoryExists($checkout.'/tests');
+        file_put_contents($checkout.'/tests/check.sh', "#!/usr/bin/env bash\ncd \"$(dirname \"$0\")/..\"\nif grep -q missing status; then command-that-does-not-exist; else exit 0; fi\n");
+        (new Process(['git', 'add', '--all'], $checkout))->mustRun();
+        (new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '--quiet', '-m', 'base'], $checkout))->mustRun();
+        $start = trim((new Process(['git', 'rev-parse', 'HEAD'], $checkout))->mustRun()->getOutput());
+        file_put_contents($checkout.'/status', "available\n");
+        $instance = check_runner_instance($checkout);
+        $runner = check_runner(new LocalShellSshExecutor);
+
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'echo checks passed', [], [
+            'start' => $start,
+            'commands' => [['id' => 'missing-base-command', 'command' => 'bash tests/check.sh', 'directory' => '.', 'fails_on_base' => true, 'paths' => ['tests/check.sh']]],
+        ]));
+
+        expect($reading->deliverables['commands']['missing-base-command'])->toMatchArray([
+            'exit_code' => 0,
+            'base_started' => true,
+            'base_exit_code' => 127,
+        ]);
+        $deliverable = TaskDeliverable::fromArray([
+            'id' => 'missing-base-command', 'type' => 'command', 'description' => 'Run the check',
+            'command' => 'bash tests/check.sh', 'directory' => '.', 'fails_on_base' => true, 'paths' => ['tests/check.sh'],
+        ]);
+        $evidence = TaskDeliverableEvidence::fromArray([
+            'diff' => [],
+            'commands' => ['missing-base-command' => $reading->deliverables['commands']['missing-base-command']],
+        ]);
+        expect(TaskDeliverableVerifier::failures([$deliverable], $evidence))->not->toBe([]);
+    });
+
     it('does not substitute HEAD when the resolved start commit is unavailable', function (): void {
         [$checkout] = check_runner_deliverables_checkout();
         $instance = check_runner_instance($checkout);

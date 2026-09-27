@@ -23,7 +23,6 @@ final readonly class AppResponse
         /** @var list<array{project_id: int, project_slug: string, node_id: int, node_name: string, development_instance_count: int}>|null */
         public ?array $excludedNodes = null,
         public ?string $taskCheck = null,
-        public ?string $testCommand = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -50,7 +49,6 @@ final readonly class AppResponse
             requestId: $requestId,
             excludedNodes: self::exclusions($data['excluded_nodes'] ?? null),
             taskCheck: is_string($data['task_check'] ?? null) ? $data['task_check'] : null,
-            testCommand: is_string($data['test_command'] ?? null) ? $data['test_command'] : null,
         );
     }
 
@@ -66,7 +64,6 @@ final readonly class AppResponse
             'default_branch' => $this->defaultBranch,
             'root' => $this->root,
             'task_check' => $this->taskCheck,
-            'test_command' => $this->testCommand,
             'defaults' => $this->defaults,
             'request_id' => $this->requestId,
             ...($this->excludedNodes === null ? [] : ['excluded_nodes' => $this->excludedNodes]),

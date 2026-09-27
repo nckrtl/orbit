@@ -15,8 +15,7 @@
                 "default_branch": "main",
                 "root": "public",
                 "defaults": null,
-                "task_check": null,
-                "test_command": null
+                "task_check": null
             },
             {
                 "id": 2,
@@ -28,8 +27,7 @@
                 "default_branch": "main",
                 "root": "public",
                 "defaults": null,
-                "task_check": null,
-                "test_command": null
+                "task_check": null
             },
             {
                 "id": 3,
@@ -41,8 +39,7 @@
                 "default_branch": "release",
                 "root": "web/public",
                 "defaults": null,
-                "task_check": null,
-                "test_command": null
+                "task_check": null
             },
             {
                 "id": 4,
@@ -54,8 +51,7 @@
                 "default_branch": "main",
                 "root": "public",
                 "defaults": null,
-                "task_check": null,
-                "test_command": null
+                "task_check": null
             }
         ],
         "meta": {

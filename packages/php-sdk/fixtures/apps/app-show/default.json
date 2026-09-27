@@ -15,7 +15,6 @@
             "root": null,
             "defaults": null,
             "task_check": null,
-            "test_command": null,
             "excluded_nodes": []
         },
         "meta": {

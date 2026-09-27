@@ -60,6 +60,14 @@ it('requires a passing working-tree command and a failing base command', functio
         'diff' => [],
         'commands' => ['layout-repro' => ['base_started' => false, 'base_exit_code' => 127, 'base_output' => 'Could not extract base', 'exit_code' => 0, 'output' => '']],
     ]);
+    $baseCommandMissing = TaskDeliverableEvidence::fromArray([
+        'diff' => [],
+        'commands' => ['layout-repro' => ['base_started' => true, 'base_exit_code' => 127, 'base_output' => 'command not found', 'exit_code' => 0, 'output' => '']],
+    ]);
+    $baseCommandNotExecutable = TaskDeliverableEvidence::fromArray([
+        'diff' => [],
+        'commands' => ['layout-repro' => ['base_started' => true, 'base_exit_code' => 126, 'base_output' => 'permission denied', 'exit_code' => 0, 'output' => '']],
+    ]);
 
     expect(TaskDeliverableVerifier::failures([$deliverable], $pass))->toBe([])
         ->and(TaskDeliverableVerifier::failures([$deliverable], $basePass))->toBe([
@@ -68,6 +76,12 @@ it('requires a passing working-tree command and a failing base command', functio
         ->and(implode(' ', TaskDeliverableVerifier::failures([$deliverable], $workingTreeFails)))->toContain('`check-layout` in apps/gateway exited with 2.')
         ->and(TaskDeliverableVerifier::failures([$deliverable], $baseDidNotStart))->toBe([
             'layout-repro (command): Orbit could not run `check-layout` in apps/gateway on the start commit.',
+        ])
+        ->and(TaskDeliverableVerifier::failures([$deliverable], $baseCommandMissing))->toBe([
+            'layout-repro (command): Orbit could not run `check-layout` in apps/gateway on the start commit (exit 127).',
+        ])
+        ->and(TaskDeliverableVerifier::failures([$deliverable], $baseCommandNotExecutable))->toBe([
+            'layout-repro (command): Orbit could not run `check-layout` in apps/gateway on the start commit (exit 126).',
         ]);
 });
 

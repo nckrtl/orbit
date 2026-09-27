@@ -22,6 +22,7 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property int $task_group_id
  * @property int $position
+ * @property int|null $continuation_of_task_id
  * @property int $completion_attempt
  * @property int|null $completion_handoff_comment_id
  * @property int|null $completion_reminder_attempt
@@ -80,6 +81,7 @@ final class Task extends Model
     protected $fillable = [
         'type', 'target_thread_id', 'completion_summary',
         'task_group_id',
+        'continuation_of_task_id',
         'position',
         'title',
         'brief',

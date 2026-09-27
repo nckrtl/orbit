@@ -76,8 +76,6 @@ def optional(path):
 
 
 def start(checkout, setup=None, deliverables=None, command=None):
-    # A killed base run used to leave a registered orbit-base-* worktree. Drop those, and any leftover base directory, before this check runs.
-    retire_stale_base_worktrees(checkout)
     retire_stale_base_directories()
     setup, deliverables = optional(setup), optional(deliverables)
     if command:
@@ -180,11 +178,6 @@ def retire_stale_base_directories():
             shutil.rmtree(path, ignore_errors=True)
 
 
-def retire_stale_base_worktrees(_checkout):
-    # Base archives are never registered as Git worktrees.
-    return
-
-
 def process_group_exists(process_group):
     try:
         os.killpg(process_group, 0)
@@ -255,6 +248,22 @@ def run_base(command, cwd, log, timeout):
         return None, output[-COMMAND_OUTPUT_TAIL:].decode('utf-8', errors='replace'), True
 
 
+def copy_dependencies(checkout, scratch):
+    """Make installed dependency directories available to the archived base tree."""
+    for root, directories, _files in os.walk(checkout):
+        directories[:] = [name for name in directories if name not in {'.git', 'vendor', 'node_modules'}]
+        for name in ('vendor', 'node_modules'):
+            source = os.path.join(root, name)
+            if not os.path.isdir(source):
+                continue
+            relative = os.path.relpath(source, checkout)
+            destination = os.path.join(scratch, relative)
+            if os.path.exists(destination):
+                shutil.rmtree(destination)
+            os.makedirs(os.path.dirname(destination), exist_ok=True)
+            shutil.copytree(source, destination, symlinks=True, copy_function=shutil.copy2)
+
+
 def base_run(checkout, start, command, log):
     """Run a command on the start commit with only its declared paths overlaid."""
     timeout = BASE_RUN_TIMEOUT
@@ -266,6 +275,7 @@ def base_run(checkout, start, command, log):
         log.flush()
         if not extract_archive(checkout, start, scratch):
             return {'base_started': False, 'base_exit_code': 127, 'base_output': 'Could not extract the start commit.'}
+        copy_dependencies(checkout, scratch)
         for relative in command.get('paths', []):
             source = deliverable_path(checkout, relative)
             destination = deliverable_path(scratch, relative)

@@ -10,7 +10,7 @@ A `test` deliverable may set `fails_on_base` to `true`. At handoff, Orbit runs t
 
 ## Status
 
-Proposed.
+Proposed. Amended by ADR 0178.
 
 This extends [ADR 0133](/decisions/0133-verify-typed-subtask-deliverables-at-handoff), which checks a `test` deliverable by running it on the working tree. The rest of that record stays. A deliverable that omits `fails_on_base`, or sets it to `false`, keeps the single working-tree run from ADR 0133.
 

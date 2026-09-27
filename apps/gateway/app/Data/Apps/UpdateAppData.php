@@ -22,8 +22,6 @@ final readonly class UpdateAppData
         public ?string $code = null,
         public bool $taskCheckProvided = false,
         public ?string $taskCheck = null,
-        public bool $testCommandProvided = false,
-        public ?string $testCommand = null,
     ) {}
 
     public function hasChanges(): bool
@@ -34,8 +32,7 @@ final readonly class UpdateAppData
             || $this->repositoryUrlProvided
             || $this->defaultBranchProvided
             || $this->rootProvided
-            || $this->taskCheckProvided
-            || $this->testCommandProvided;
+            || $this->taskCheckProvided;
     }
 
     public function hasReconcilableChanges(): bool
@@ -56,7 +53,6 @@ final readonly class UpdateAppData
             'default_branch' => $this->defaultBranchProvided ? $this->defaultBranch : null,
             'root' => $this->rootProvided ? $this->root : null,
             'task_check' => $this->taskCheckProvided ? $this->taskCheck : null,
-            'test_command' => $this->testCommandProvided ? $this->testCommand : null,
             'provided' => [
                 $this->typeProvided,
                 $this->slugProvided,
@@ -64,7 +60,6 @@ final readonly class UpdateAppData
                 $this->defaultBranchProvided,
                 $this->rootProvided,
                 $this->taskCheckProvided,
-                $this->testCommandProvided,
             ],
         ], JSON_THROW_ON_ERROR));
     }

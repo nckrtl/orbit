@@ -5,6 +5,7 @@ covers:
   - "apps/gateway/app/Domain/Tasks/**"
   - "apps/gateway/app/Console/Commands/RenderTaskPromptCommand.php"
   - "apps/gateway/database/migrations/*_convert_test_deliverables_to_commands.php"
+  - "apps/gateway/database/migrations/*_add_*_to_tasks.php"
   - "apps/gateway/resources/tasks/check"
   - "bin/review-check"
 ---
@@ -163,11 +164,13 @@ Each deliverable is an object with an `id`, a `type`, a `description`, and the f
 | `command` | `command`: command to run. `directory`: working directory. Optional `fails_on_base` and `paths` | Command exits 0 on the working tree; when enabled, exits nonzero on the base and 0 on the working tree |
 | `review` | none | The reviewer confirms it in its approval |
 
-The `directory` is relative to the workspace root and defaults to `.`. `fails_on_base` is a boolean. `paths` is a list of workspace-relative files to copy over the start-commit archive for the base run, generalizing the common case of applying only a new test file. Without `fails_on_base`, the command runs only on the working tree.
+The `directory` is relative to the workspace root and defaults to `.`. `fails_on_base` is a boolean. `paths` is a list of workspace-relative files to copy over the start-commit archive for the base run, generalizing the common case of applying only a new test file. The engine also copies installed `vendor` and `node_modules` directories from the workspace when present. Base exit codes 126 and 127 mean the command could not run on the start commit, not that it reproduced the failure. Without `fails_on_base`, the command runs only on the working tree.
 
 The engine runs each command and owns the base archive, timeout, and recorded evidence. It does not interpret test names or runner output; the Project's own task policy and command define runner-specific matching, such as Pest test names or JUnit results. [Prove a command fails on the start commit](#prove-a-command-fails-on-the-start-commit) defines the two-run check.
 
-The engine has no `test` deliverable type or compatibility path. A data migration converts stored `test` deliverables in open groups to `command` deliverables; it does not reuse or modify the Project's `task_check`, which remains the workspace-root quality check. A Project may configure a separate `test_command` template with `{file}` or `{project_file}` and `{name}` placeholders; the migration expands these shell-quoted values at the workspace root. Since the removed `test` type explicitly represented named Pest tests, an unset `test_command` uses an explicit legacy mapping to the former Project's Pest executable, file, and filter. The migration normalizes the former project/file paths, carries over `fails_on_base`, and overlays the normalized file through `paths` for a base run.
+The engine has no `test` deliverable type or compatibility path. A data migration converts stored `test` deliverables in open groups to `command` deliverables. It does not reuse or modify the Project's `task_check`, which remains the workspace-root quality check. Since the removed `test` type explicitly represented named Pest tests, the migration uses an explicit legacy mapping to the former Project's Pest executable, file, and filter. It normalizes former project/file paths and carries over `fails_on_base`.
+
+The migration overlays each normalized file through `paths` for a base run and adds a `file` deliverable with `change: any` for every converted test file. Each command/file pair stays together, and IDs remain unique and at most 64 characters. If a converted list exceeds the five-item limit, the migration puts remaining pairs and proofs in continuation subtasks directly after the source task. Continuations inherit the source task's start commit for both diff and base-run verification, including when the source has already committed its fixes.
 
 ```json
 [

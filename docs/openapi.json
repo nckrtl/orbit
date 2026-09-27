@@ -13806,14 +13806,6 @@
                     ],
                     "maxLength": 4096,
                     "description": "Task check command; defaults to composer check for Laravel types and none otherwise"
-                  },
-                  "test_command": {
-                    "type": [
-                      "string",
-                      "null"
-                    ],
-                    "maxLength": 4096,
-                    "description": "File-aware test command template with file and test-name placeholders"
                   }
                 },
                 "required": [
@@ -14162,14 +14154,6 @@
                     ],
                     "maxLength": 4096,
                     "description": "New task check command for task baselines and handoffs"
-                  },
-                  "test_command": {
-                    "type": [
-                      "string",
-                      "null"
-                    ],
-                    "maxLength": 4096,
-                    "description": "File-aware test command template with file and test-name placeholders"
                   }
                 },
                 "additionalProperties": false
@@ -22641,12 +22625,6 @@
             "additionalProperties": true
           },
           "task_check": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "test_command": {
             "type": [
               "string",
               "null"

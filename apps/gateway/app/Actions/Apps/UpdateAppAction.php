@@ -88,7 +88,7 @@ final readonly class UpdateAppAction
             ->all());
 
         if (! $data->hasReconcilableChanges()) {
-            if ($data->taskCheckProvided || $data->testCommandProvided) {
+            if ($data->taskCheckProvided) {
                 $app = $this->operations->run(
                     $instanceIds,
                     fn (): OrbitApp => $this->applyProjectCommands($app->fresh() ?? $app, $data),
@@ -125,9 +125,6 @@ final readonly class UpdateAppAction
         $changes = [];
         if ($data->taskCheckProvided) {
             $changes['task_check'] = $data->taskCheck;
-        }
-        if ($data->testCommandProvided) {
-            $changes['test_command'] = $data->testCommand;
         }
         if ($changes === []) {
             return $app;

@@ -3044,6 +3044,17 @@ final readonly class TaskScheduler
         if (is_string($task->subtask_start_commit) && $task->subtask_start_commit !== '') {
             return;
         }
+        if ($task->continuation_of_task_id !== null) {
+            $source = Task::query()->find($task->continuation_of_task_id);
+            if ($source instanceof Task) {
+                $sourceStart = TaskReviewBase::commit($source);
+                if ($sourceStart !== '') {
+                    $task->update(['subtask_start_commit' => $sourceStart]);
+                }
+
+                return;
+            }
+        }
         if ($this->implementerTurnStarted($task)) {
             return;
         }

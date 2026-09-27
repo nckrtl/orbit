@@ -22,8 +22,6 @@ final class UpdateAppCommand extends GatewayCommand
         {--root= : New repository-relative root; package types may use .}
         {--task-check= : New task check command for task baselines and handoffs}
         {--clear-task-check : Remove the task check command so tasks run no check command}
-        {--test-command= : File-aware test command template with file and test-name placeholders}
-        {--clear-test-command : Remove the configured test command}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -46,8 +44,6 @@ final class UpdateAppCommand extends GatewayCommand
         $root = $this->stringOption('root');
         $taskCheck = $this->stringOption('task-check');
         $clearTaskCheck = $this->option('clear-task-check') === true;
-        $testCommand = $this->stringOption('test-command');
-        $clearTestCommand = $this->option('clear-test-command') === true;
 
         if ($slug !== null && (strlen($slug) > 63 || preg_match('/[\x00-\x1F\x7F]/', $slug) === 1)) {
             return $this->renderGatewayFailure(
@@ -73,22 +69,11 @@ final class UpdateAppCommand extends GatewayCommand
         if ($taskCheck !== null && $clearTaskCheck) {
             return $this->renderGatewayFailure('app.task_check_conflict', 'Choose either --task-check or --clear-task-check.');
         }
-        if ($testCommand !== null && $clearTestCommand) {
-            return $this->renderGatewayFailure('app.test_command_conflict', 'Choose either --test-command or --clear-test-command.');
-        }
 
         if ($taskCheck !== null && (trim($taskCheck) === '' || strlen($taskCheck) > 4096)) {
             return $this->renderGatewayFailure('app.task_check_invalid', 'Task check command is invalid.');
         }
-        if ($testCommand !== null && (
-            strlen($testCommand) > 4096
-            || (! str_contains($testCommand, '{file}') && ! str_contains($testCommand, '{project_file}'))
-            || ! str_contains($testCommand, '{name}')
-        )) {
-            return $this->renderGatewayFailure('app.test_command_invalid', 'Test command must include {file} or {project_file}, and {name}.');
-        }
-
-        if ($type === null && $slug === null && $repositoryUrl === null && $defaultBranch === null && $root === null && $taskCheck === null && ! $clearTaskCheck && $testCommand === null && ! $clearTestCommand) {
+        if ($type === null && $slug === null && $repositoryUrl === null && $defaultBranch === null && $root === null && $taskCheck === null && ! $clearTaskCheck) {
             return $this->renderGatewayFailure(
                 'app.update_required',
                 'Provide at least one Project update.',
@@ -112,8 +97,6 @@ final class UpdateAppCommand extends GatewayCommand
                 root: $root,
                 taskCheck: $clearTaskCheck ? null : $taskCheck,
                 taskCheckProvided: $clearTaskCheck || $taskCheck !== null,
-                testCommand: $clearTestCommand ? null : $testCommand,
-                testCommandProvided: $clearTestCommand || $testCommand !== null,
             ),
             AppResponse::class,
             ['Update Project', 'Updating Project', 'Updated Project'],

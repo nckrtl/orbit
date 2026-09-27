@@ -60,7 +60,6 @@ final readonly class CreateAppAction
                 'root' => $root,
                 'defaults' => $data->defaults,
                 'task_check' => $data->resolvedTaskCheck(),
-                'test_command' => $data->testCommand,
             ]);
             try {
                 $candidate->save();
@@ -142,7 +141,6 @@ final readonly class CreateAppAction
             && $app->root === $root
             && $app->defaults === $data->defaults
             && (! $data->taskCheckProvided || $app->task_check === $data->taskCheck)
-            && (! $data->testCommandProvided || $app->test_command === $data->testCommand)
         ) {
             return;
         }

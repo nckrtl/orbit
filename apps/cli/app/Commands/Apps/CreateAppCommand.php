@@ -21,7 +21,6 @@ final class CreateAppCommand extends GatewayCommand
         {--default-branch= : Stored default branch; resolve the remote default when omitted}
         {--root= : Repository-relative root; defaults to . for package types and public otherwise}
         {--task-check= : Task check command; defaults to composer check for Laravel types and none otherwise}
-        {--test-command= : File-aware test command template with file and test-name placeholders}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -78,19 +77,10 @@ final class CreateAppCommand extends GatewayCommand
 
         $root = $this->stringOption('root') ?? $this->defaultRoot($type);
         $taskCheck = $this->stringOption('task-check');
-        $testCommand = $this->stringOption('test-command');
 
         if ($taskCheck !== null && (trim($taskCheck) === '' || strlen($taskCheck) > 4096)) {
             return $this->renderGatewayFailure('app.task_check_invalid', 'Task check command is invalid.');
         }
-        if ($testCommand !== null && (
-            strlen($testCommand) > 4096
-            || (! str_contains($testCommand, '{file}') && ! str_contains($testCommand, '{project_file}'))
-            || ! str_contains($testCommand, '{name}')
-        )) {
-            return $this->renderGatewayFailure('app.test_command_invalid', 'Test command must include {file} or {project_file}, and {name}.');
-        }
-
         $app = $this->sendWithProgress(
             $connector,
             new CreateAppRequest(
@@ -102,7 +92,6 @@ final class CreateAppCommand extends GatewayCommand
                 defaultBranch: $this->stringOption('default-branch'),
                 taskCheck: $taskCheck,
                 taskCheckProvided: $taskCheck !== null,
-                testCommand: $testCommand,
             ),
             AppResponse::class,
             ['Create Project', 'Creating Project', 'Created Project'],

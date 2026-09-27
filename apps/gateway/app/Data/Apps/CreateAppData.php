@@ -22,8 +22,6 @@ final readonly class CreateAppData
         public ?string $code = null,
         public bool $taskCheckProvided = false,
         public ?string $taskCheck = null,
-        public ?string $testCommand = null,
-        public bool $testCommandProvided = false,
     ) {}
 
     /**

@@ -33,7 +33,6 @@ final class CreateAppRequest extends GatewayRequest implements HasBody
         private readonly ?array $defaults = null,
         private readonly ?string $taskCheck = null,
         private readonly bool $taskCheckProvided = false,
-        private readonly ?string $testCommand = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -62,7 +61,6 @@ final class CreateAppRequest extends GatewayRequest implements HasBody
                 'root' => $this->root,
                 'defaults' => $this->defaults,
                 ...($this->taskCheckProvided ? ['task_check' => $this->taskCheck] : []),
-                'test_command' => $this->testCommand,
             ],
             static fn (mixed $value, string $key): bool => $key === 'task_check' || $value !== null,
             ARRAY_FILTER_USE_BOTH,

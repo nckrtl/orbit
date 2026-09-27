@@ -98,6 +98,9 @@ final readonly class TaskDeliverableVerifier
             if (! isset($run['base_exit_code'])) {
                 return "Orbit did not run {$where} on the start commit.";
             }
+            if (in_array($run['base_exit_code'], [126, 127], true)) {
+                return "Orbit could not run {$where} on the start commit (exit {$run['base_exit_code']}).";
+            }
             if (($run['base_timed_out'] ?? false) !== true && $run['base_exit_code'] === 0) {
                 return "{$where} also exited 0 on the start commit, so it does not reproduce the failure.";
             }
