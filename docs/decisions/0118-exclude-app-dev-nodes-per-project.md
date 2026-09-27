@@ -12,7 +12,7 @@ A Project can exclude app-dev Nodes from its development placement. The Project 
 
 Proposed.
 
-This extends the task placement rule in [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension), the development transfer rule in [ADR 0066](/decisions/0066-transfer-development-appinstances-between-nodes), the association vocabulary in [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk), and the generated MCP catalogue in [ADR 0086](/decisions/0086-offer-the-api-as-mcp-tools).
+This extends the task placement rule in [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension), the development transfer rule in [ADR 0066](/decisions/0066-transfer-development-appinstances-between-nodes), the association vocabulary in [ADR 0071](/reference/cli-command-vocabulary#why-it-works-this-way), and the generated MCP catalogue in [ADR 0086](/decisions/0086-offer-the-api-as-mcp-tools).
 
 ## Context
 
@@ -55,6 +55,6 @@ Agents create task groups through MCP. The exclusion commands have to be on that
 ## Affects
 
 - Components: apps/cli, apps/docs, apps/gateway, packages/php-sdk
-- ADRs: extends [ADR 0066](/decisions/0066-transfer-development-appinstances-between-nodes), [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk), [ADR 0086](/decisions/0086-offer-the-api-as-mcp-tools), and [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension)
+- ADRs: extends [ADR 0066](/decisions/0066-transfer-development-appinstances-between-nodes), [ADR 0071](/reference/cli-command-vocabulary#why-it-works-this-way), [ADR 0086](/decisions/0086-offer-the-api-as-mcp-tools), and [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension)
 - Detail: [Development node exclusions](/reference/development-node-exclusions)
 - Verify: `composer docs-lint`; Gateway, PHP SDK, and CLI tests for both families, for placement refusal, and for role removal clearing the rows; `bin/mcp-tools --check`
