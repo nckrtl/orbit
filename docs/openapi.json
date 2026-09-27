@@ -7862,7 +7862,7 @@
             }
           },
           "409": {
-            "description": "The live log path is not available (`logs.live_unavailable`); `details.reason` is `ssh_only` for a production Instance, or `realtime_not_configured`, `subscriber_down`, `agent_unavailable`, `agent_not_joined`.",
+            "description": "The live log path is not available (`logs.live_unavailable`); `details.reason` is `ssh_only` for a production Instance, or `realtime_not_configured`, `subscriber_down`, `agent_unavailable`, or `agent_not_joined`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13066,7 +13066,7 @@
             }
           },
           "409": {
-            "description": "The live log path is not available (`logs.live_unavailable`); `details.reason` is `ssh_only` for a production Instance, or `realtime_not_configured`, `subscriber_down`, `agent_unavailable`, `agent_not_joined`.",
+            "description": "The live log path is not available (`logs.live_unavailable`); `details.reason` is `ssh_only` for a production Instance, or `realtime_not_configured`, `subscriber_down`, `agent_unavailable`, or `agent_not_joined`.",
             "content": {
               "application/json": {
                 "schema": {
