@@ -21,9 +21,9 @@ A task group is one feature. A subtask is one ordered step of it. The [tasks ref
 | [`tasks:cancel`](#orbit-taskscancel) | Cancel a group and remove its Instance. |
 | [`tasks:complete`](#orbit-taskscomplete) | Complete a settling group and remove its Instance. |
 | [`tasks:subtask:create`](#orbit-taskssubtaskcreate) | Append a subtask to a group. |
-| [`tasks:subtask:update`](#orbit-taskssubtaskupdate) | Change a subtask's title, brief, or position. |
+| [`tasks:subtask:update`](#orbit-taskssubtaskupdate) | Change a subtask's title, brief, position, or deliverables. |
 | [`tasks:subtask:destroy`](#orbit-taskssubtaskdestroy) | Delete a subtask. |
-| [`tasks:subtask:cancel`](#orbit-taskssubtaskcancel) | Cancel a running subtask and start the next one. |
+| [`tasks:subtask:cancel`](#orbit-taskssubtaskcancel) | Cancel a Todo or running subtask. |
 | [`tasks:comment:create`](#orbit-taskscommentcreate) | Ask for assistance on a subtask or resolve a request. |
 | [`tasks:comment:list`](#orbit-taskscommentlist) | List a subtask's comments. |
 | [`tasks:agents`](#orbit-tasksagents) | List a group's agent threads. |
@@ -187,7 +187,7 @@ In a terminal, the group list shows only `settling` groups. The question names t
 
 ## orbit tasks:subtask:create
 
-Append one subtask to a group at the next position, with status `todo`. This works in every group status. Outside `backlog`, the subtask needs deliverables. When the group is `settling` and its pull request is open, the next tick returns the group to `running` and starts this subtask. Another assistance cause keeps the group `settling`. The [tasks reference](/reference/tasks#fix-a-settling-pull-request) owns that transition.
+Append one subtask to a group at the next position, with status `todo`. This works in every group status except `completed` and `cancelled`. Outside `backlog`, the subtask needs deliverables. When the group is `settling` and its pull request is open, the next tick returns the group to `running` and starts this subtask. Another assistance cause keeps the group `settling`. The [tasks reference](/reference/tasks#fix-a-settling-pull-request) owns that transition.
 
 ```bash
 orbit tasks:subtask:create [group] [title] [--brief=TEXT] [--deliverables=FILE] [--json]
@@ -208,12 +208,13 @@ A `--json` or `-n` call fails with `tasks.title_required` or `tasks.brief_requir
 | Error code | Meaning |
 | --- | --- |
 | `tasks.deliverables_invalid` | The CLI cannot read the deliverables file, or its content is not an array of at most five objects. |
+| `tasks.group_closed` | The group is completed or cancelled and cannot accept a new subtask. |
 | `validation.failed` | The Gateway refuses a deliverable. The error details name each field, such as `deliverables.0.path`. |
 | `tasks.subtask_deliverables_missing` | A subtask without deliverables for a group outside `backlog`. |
 
 ## orbit tasks:subtask:update
 
-Change a subtask's title, brief, or position while its group is in `backlog`. A new position shifts the other subtasks, so positions stay gapless from 1. Replace a subtask's deliverables while its group is in `backlog`, or in any group status while the subtask is `todo`.
+Change a subtask's title, brief, position, or deliverables while its group is in `backlog`. In `todo`, `running`, `reviewing`, or `settling` groups, change any of those fields only while the subtask is `todo`. Deliverables cannot be empty. A new position moves only among `todo` subtasks; it cannot put one before a started or finished subtask. Positions stay gapless. Started subtasks keep their existing restrictions, and groups in `completed` or `cancelled` are read-only.
 
 ```bash
 orbit tasks:subtask:update [group] [subtask] [--title=TEXT] [--brief=TEXT] [--position=N] [--deliverables=FILE] [--json]
@@ -230,7 +231,7 @@ orbit tasks:subtask:update [group] [subtask] [--title=TEXT] [--brief=TEXT] [--po
 orbit tasks:subtask:update 58 88 --deliverables=deliverables.json
 ```
 
-In a terminal, the group list shows only `backlog` groups, unless `--deliverables` is the only change. Without a change option, the CLI asks which fields to change and prompts for each one with its current value. It does not prompt for deliverables. A `--json` or `-n` call without a change option fails with `tasks.update_required`. A position that is not a positive integer fails with `tasks.position_invalid`. A title, brief, or position change outside `backlog` fails with `tasks.not_in_backlog`. A deliverables change for a subtask that has started, including a `running` subtask, fails with `tasks.deliverables_locked` and leaves the stored list unchanged. The command never reports success while ignoring that list. An unreadable or malformed file fails with `tasks.deliverables_invalid`.
+In a terminal, the group list shows `backlog` groups and groups where a `todo` subtask can be edited. Without a change option, the CLI asks which fields to change and prompts for each one with its current value. It does not prompt for deliverables. A `--json` or `-n` call without a change option fails with `tasks.update_required`. A position that is not a positive integer fails with `tasks.position_invalid`. A title, brief, or position change where the group and subtask statuses do not permit it fails with `tasks.not_in_backlog`. A deliverables change for a subtask that has started fails with `tasks.deliverables_locked` and leaves the stored list unchanged. The command never reports success while ignoring that list. An unreadable or malformed file fails with `tasks.deliverables_invalid`.
 
 ## orbit tasks:subtask:destroy
 
@@ -248,7 +249,7 @@ In a terminal, the group list shows only `backlog` groups. The question names th
 
 ## orbit tasks:subtask:cancel
 
-Cancel a `running` subtask. The Gateway stops its implementer and its running check, keeps the group and its Instance, and starts the next `todo` subtask. When no `todo` subtask remains, the group moves to `settling`. The [tasks reference](/reference/tasks#groups-and-subtasks) owns these effects.
+Cancel a `todo` or `running` subtask. A `todo` subtask can be cancelled in a `todo`, `running`, `reviewing`, or `settling` group; cancellation marks it `cancelled` with `settled_at`, starts nothing, and does not ask for assistance. If it was the last open subtask and no reserved, running, or reviewing sibling remains, the group settles as after a completed subtask. Cancelling a running subtask stops its implementer and running check, keeps the group and its Instance, and starts the next `todo` subtask. The group settles only when no open subtask remains. The [tasks reference](/reference/tasks#groups-and-subtasks) owns these effects.
 
 ```bash
 orbit tasks:subtask:cancel [group] [subtask] [--yes] [--json]
@@ -258,11 +259,11 @@ orbit tasks:subtask:cancel [group] [subtask] [--yes] [--json]
 | --- | --- |
 | `--yes` | Confirm without a prompt. Required for `--json` and `-n` calls. |
 
-In a terminal, the group list shows only `running` groups, and the subtask list shows only `running` subtasks. The question names the subtask and its group and defaults to No. Consent failures match `tasks:cancel`. The CLI shows the cancelled subtask. JSON returns it.
+In a terminal, the group list shows groups with a cancellable `todo` or `running` subtask, and the subtask list shows those subtasks. The question names the subtask and its group and defaults to No. Consent failures match `tasks:cancel`. The CLI shows the cancelled subtask. JSON returns it.
 
 | Error code | Meaning |
 | --- | --- |
-| `tasks.subtask_not_running` | The subtask is not `running`, or it moved on while Orbit stopped it. |
+| `tasks.subtask_not_running` | The subtask is neither a cancellable `todo` subtask nor a `running` subtask, or it moved on while Orbit stopped it. |
 | `tasks.subtask_interrupt_failed` | Orbit could not stop the implementer or the check. The subtask stays `running`. Retry, or cancel the group. |
 
 ## orbit tasks:comment:create

@@ -4374,6 +4374,27 @@
             ]
         },
         {
+            "path": "docs/decisions/0170-edit-todo-subtasks-after-a-group-starts.md",
+            "title": "ADR 0170: Edit Todo subtasks after a group starts",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Database",
+                "Gateway",
+                "Task",
+                "Task group"
+            ],
+            "governing_adrs": [
+                "0122",
+                "0133",
+                "0170"
+            ]
+        },
+        {
             "path": "docs/decisions/0171-reset-fixup-caps-after-operator-work.md",
             "title": "ADR 0171: Reset fixup caps after operator work",
             "kind": "decision",
@@ -4606,6 +4627,7 @@
                 "0167",
                 "0168",
                 "0169",
+                "0170",
                 "0171"
             ]
         },
@@ -5866,6 +5888,7 @@
                 "0165",
                 "0167",
                 "0169",
+                "0170",
                 "0171",
                 "0172"
             ]

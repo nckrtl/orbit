@@ -11,6 +11,8 @@ This page tells an operator how the optional Gateway `tasks` extension runs a Co
 
 [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) owns the push after each approval and deletion of the workspace clone. [ADR 0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask) owns the fixup that returns a settling group to running. [ADR 0171](/decisions/0171-reset-fixup-caps-after-operator-work) owns when its fixup caps reset. [ADR 0165](/decisions/0165-record-per-thread-token-metrics) owns the per-thread token split. [ADR 0172](/decisions/0172-count-every-t3-model-call-in-thread-metrics) owns complete T3 per-call collection and gap handling. [ADR 0167](/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart) owns recovery of a Pi turn that a server restart interrupted. [ADR 0169](/decisions/0169-start-each-subtask-review-in-a-fresh-thread) owns the fresh reviewer thread for each subtask, the review packet, and the MCP search endpoint for the planner and the reviewer.
 
+[ADR 0170](/decisions/0170-edit-todo-subtasks-after-a-group-starts) changes the rule in ADR 0122 that limits subtask editing to Backlog. It defines edits and cancellation for Todo subtasks after a group starts. It preserves [ADR 0133](/decisions/0133-verify-typed-subtask-deliverables-at-handoff)'s deliverable contract.
+
 The extension is off until an authorized Gateway caller enables it. There is no web UI for create. Agents create groups through the [MCP server](/reference/mcp). The [`tasks` CLI family](/cli/tasks) runs every operation on this page from a terminal when MCP is unavailable.
 
 [ADR 0112](/decisions/0112-isolate-agent-threads-behind-drivers) defines the `AgentThread` and `AgentDriver` boundary. Orbit stores persistent conversations and delegates runtime communication to a driver. T3 is the first driver.
@@ -80,13 +82,17 @@ Create requires `app_id`, `title`, and `brief`. It may include an ordered `tasks
 
 Update changes a group's `title`, `brief`, or `status`. Title and brief change only while the group is in `backlog`. The status moves between `backlog` and `todo` in either direction. Moving to `todo` asks the scheduler to claim, as create does.
 
-Subtask create appends one subtask at the next position with status `todo`. It works in any group status, and it accepts `deliverables`. Outside `backlog`, a new subtask needs at least one deliverable. Subtask update changes `title`, `brief`, `position`, or `deliverables`, and the other subtasks shift to keep positions gapless from 1. A `deliverables` value replaces the whole list. Subtask destroy deletes the subtask and closes the gap. Subtask update and destroy work only while the group is in `backlog`, with one exception: the deliverables of a `todo` subtask can change in any group status.
+Subtask create appends one subtask at the next position with status `todo`. It works in any group status except `completed` and `cancelled`, and it accepts `deliverables`. Outside `backlog`, a new subtask needs at least one deliverable. Subtask update changes `title`, `brief`, `position`, or `deliverables`, and positions stay gapless from 1. A `deliverables` value replaces the whole list and cannot be empty.
+
+In a `todo`, `running`, `reviewing`, or `settling` group, a `todo` subtask can change all four fields. This is the limit of ADR 0133's exception for deliverable edits outside `backlog`; `completed` and `cancelled` groups allow no subtask edits. In these permitted statuses, a position change moves the subtask only among other `todo` subtasks; it cannot place it before a started or finished subtask. A started subtask keeps today's restrictions: its title, brief, and position cannot change, and its deliverables are locked. Subtask destroy deletes the subtask and closes the gap, and works only while the group is in `backlog`.
 
 Create does not change the group status. When the group is `settling` and its pull request is open, or when it is `settling` with no `pr_url`, the next tick returns the group to `running` and starts the subtask. Another assistance cause keeps the group `settling`. A reason that starts with `The settling group has no reviewed pull request URL.` does not keep the group `settling` when a `todo` subtask is waiting. [Fix a settling pull request](#fix-a-settling-pull-request) owns that transition.
 
 On a `running` subtask, `tasks:subtask:update` that includes `deliverables` refuses with HTTP 409 `tasks.deliverables_locked` and leaves the stored list unchanged. It never answers success while ignoring that list. The same refusal applies to every subtask that has started.
 
-Cancel a `running` subtask with `tasks:subtask:cancel`, or run `orbit tasks:subtask:cancel {group} {subtask}`. Only a `running` subtask can be cancelled; another status returns HTTP 409 `tasks.subtask_not_running`. Cancellation interrupts that subtask's implementer and stops its running [baseline or handoff check](#project-check). It keeps the group and its Instance and starts the lowest-position `todo` subtask. When no implementer has started in the group yet, that subtask runs the baseline check first. When no `todo` subtask remains, the group moves to `settling`.
+Cancel a `todo` or `running` subtask with `tasks:subtask:cancel`, or run `orbit tasks:subtask:cancel {group} {subtask}`. A `todo` subtask can be cancelled when its group is `todo`, `running`, `reviewing`, or `settling`. Its status becomes `cancelled` and it receives `settled_at`; cancellation starts nothing and does not ask for assistance. If it was the last open subtask, the group settles as it does after a completed subtask. An open sibling includes a subtask that is reserved, running, or reviewing.
+
+A started subtask keeps today's cancellation rules: only a `running` subtask can be cancelled, and another status returns HTTP 409 `tasks.subtask_not_running`. Cancellation interrupts that subtask's implementer and stops its running [baseline or handoff check](#project-check). It keeps the group and its Instance and starts the lowest-position `todo` subtask. When no implementer has started in the group yet, that subtask runs the baseline check first. The group moves to `settling` only when no open subtask remains, including reserved, running, or reviewing siblings.
 
 Orbit checks the subtask status before it stops anything. It interrupts the implementer first and then stops the check. It holds no database lock while it waits for the agent or the Node, so other Gateway writes continue. When the implementer or check cannot be stopped, cancellation returns HTTP 502 `tasks.subtask_interrupt_failed` and leaves the subtask and its check `running`, so an operator can retry. When the implementer's Node stays unreachable, cancel the group instead. A `cancelled` or `failed` subtask does not block the next subtask.
 
@@ -94,7 +100,7 @@ When the check cannot be stopped, the implementer may already be interrupted. Th
 
 After both stops succeed, Orbit records the cancel only when the subtask is still `running`. When a tick moved it on while Orbit stopped it, for example to `reviewing`, that new state stands and cancellation returns HTTP 409 `tasks.subtask_not_running`. The implementer and check were still stopped. Cancel the subtask again in its new state, or cancel the group.
 
-When cancellation leaves no `todo` subtask, the group moves to `settling` without a `pr_url`. Orbit opens a pull request only after the last subtask is approved. With no `todo` subtask, the group asks for assistance. Use `tasks:cancel` to end it. Append a `todo` subtask to continue the work. The next tick returns the group to `running` and starts that subtask.
+When cancellation of a running subtask leaves no open subtask, the group moves to `settling` without a `pr_url`. Orbit opens a pull request only after the last subtask is approved. If the group reaches `settling` with no open work and no pull request, it asks for assistance. Use `tasks:cancel` to end it. Append a `todo` subtask to continue the work. The next tick returns the group to `running` and starts that subtask.
 
 For a group with an approved subtask, and when the Node answers, cancellation first pushes the latest stored approved commit to `task-{group id}` on `origin`. Each approval already pushes its commit; this push sends any approved commit that has not reached `origin`, so those commits stay on the branch. Open a pull request from that branch if you want to keep the work.
 
@@ -108,8 +114,9 @@ Moving a group to `todo`, by create or update, needs at least one deliverable on
 | --- | --- | --- |
 | `tasks.no_subtasks` | 422 | Create with `status: todo`, or update to `todo`, on a group without subtasks |
 | `tasks.subtask_deliverables_missing` | 422 | Create with `status: todo`, or update to `todo`, while a subtask has no deliverables; or subtask create without deliverables outside `backlog`. `details` names each subtask |
-| `tasks.not_in_backlog` | 409 | Group title or brief update, or subtask title, brief, or position update or destroy, outside `backlog` |
-| `tasks.deliverables_locked` | 409 | Subtask deliverables update outside `backlog` for a subtask that has started |
+| `tasks.group_closed` | 409 | Subtask create in a `completed` or `cancelled` group |
+| `tasks.not_in_backlog` | 409 | Group title or brief update outside `backlog`, or subtask update or destroy where the current group status and subtask status do not permit it |
+| `tasks.deliverables_locked` | 409 | Subtask deliverables update for a subtask that has started |
 | `tasks.already_claimed` | 409 | Status update on a group the scheduler has already claimed |
 | `tasks.plan_requires_backlog` | 422 | Create with `plan: true` and `status: todo` |
 | `tasks.planner_driver_unavailable` | 409 | Create with `plan: true` when the reviewer driver is not T3 |

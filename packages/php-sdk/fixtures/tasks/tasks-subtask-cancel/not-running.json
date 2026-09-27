@@ -6,7 +6,7 @@
     "body": {
         "error": {
             "code": "tasks.subtask_not_running",
-            "message": "Only a running subtask can be cancelled.",
+            "message": "Only a todo or running subtask can be cancelled.",
             "details": {}
         }
     }
