@@ -153,6 +153,39 @@ describe('task broadcasts', function (): void {
             ->and($events[0]->data)->toBe(['id' => $comment->id, 'task_group_id' => $group->id, 'task_id' => $group->tasks[0]->id]);
     });
 
+    it('does not announce a reserved thread that has not started', function (): void {
+        $group = live_group();
+        app(TaskBroadcasts::class)->flush();
+        Event::fake([RecordBroadcast::class]);
+        $pending = AgentThread::query()->create([
+            'task_group_id' => $group->id,
+            'role' => 'reviewer',
+            'driver' => 't3',
+            'runtime_key' => 'test:'.$group->id,
+            'external_id' => 'pending:reserved',
+        ]);
+        app(TaskBroadcasts::class)->flush();
+        Event::assertNotDispatched(RecordBroadcast::class);
+
+        $pending->update(['state' => AgentThreadState::Working]);
+        app(TaskBroadcasts::class)->flush();
+        Event::assertNotDispatched(RecordBroadcast::class);
+
+        AgentThread::query()->create([
+            'task_group_id' => $group->id,
+            'task_id' => $group->tasks[0]->id,
+            'role' => 'implementer',
+            'driver' => 't3',
+            'runtime_key' => 'test:'.$group->id,
+            'external_id' => 'implementer-live',
+        ]);
+        app(TaskBroadcasts::class)->flush();
+
+        $events = live_broadcasts(RecordEventType::AgentThreadUpdated);
+        expect($events)->toHaveCount(1)
+            ->and($events[0]->data['task_id'])->toBe($group->tasks[0]->id);
+    });
+
     it('sends a thread notice when its state changes but not when only its tokens change', function (): void {
         $group = live_group();
         test_link_agent_threads($group, implementer: 'implementer-live');

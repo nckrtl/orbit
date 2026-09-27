@@ -33,6 +33,10 @@ final class FakeAgentDriver implements AgentDriver
     /** @var (Closure(AgentThread): void)|null runs while the interrupt is in flight */
     public ?Closure $duringInterrupt = null;
 
+    public bool $failNextSend = false;
+
+    public bool $failNextCreate = false;
+
     public function __construct(private readonly string $key = 'example') {}
 
     public function key(): string
@@ -47,7 +51,12 @@ final class FakeAgentDriver implements AgentDriver
 
     public function create(AgentThreadStart $intent): string
     {
-        $this->calls[] = ['operation' => 'create', 'prompt' => $intent->prompt];
+        $this->calls[] = ['operation' => 'create', 'prompt' => $intent->prompt, 'title' => $intent->title];
+        if ($this->failNextCreate) {
+            $this->failNextCreate = false;
+
+            throw new \RuntimeException('SQLSTATE[40001]: serialization failure');
+        }
 
         return 'conversation-'.count($this->calls);
     }
@@ -59,6 +68,11 @@ final class FakeAgentDriver implements AgentDriver
             $call['key'] = $key;
         }
         $this->calls[] = $call;
+        if ($this->failNextSend) {
+            $this->failNextSend = false;
+
+            throw new AgentDriverException('The thread cannot take a turn.');
+        }
     }
 
     public function respond(AgentThread $thread, AgentInputRequest $request, array $answers): void

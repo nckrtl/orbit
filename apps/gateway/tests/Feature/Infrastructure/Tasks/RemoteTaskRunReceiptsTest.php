@@ -99,6 +99,104 @@ it('installs the run script outside the tracked tree and reads the receipt it wr
         ->and($status)->toBe('');
 });
 
+it('does not apply a run receipt written by the other reviewer', function (): void {
+    $checkout = run_receipt_checkout();
+    $instance = run_receipt_instance($checkout);
+    $receipts = run_receipts(new LocalShellSshExecutor);
+    $receipts->prepare($instance, TaskThreadRole::Reviewer);
+    $turnPath = $checkout.'/.git/orbit/turn.json';
+    $turn = json_decode((string) file_get_contents($turnPath), true, 512, JSON_THROW_ON_ERROR);
+    $turn['thread'] = 42;
+    file_put_contents($turnPath, json_encode($turn, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n");
+
+    $written = run_receipt_script($checkout, ['--outcome=approved', '--summary=Approved the earlier subtask.']);
+
+    expect($written->getExitCode())->toBe(0)
+        ->and($written->getErrorOutput())->toBe('')
+        ->and(is_file($checkout.'/.git/orbit/run.json'))->toBeTrue()
+        ->and($receipts->read($instance))->toBeNull();
+
+    $other = run_receipt_script($checkout, ['--thread=7', '--outcome=approved', '--summary=Approved the earlier subtask.']);
+
+    expect($other->getExitCode())->toBe(0)
+        ->and((string) file_get_contents($checkout.'/.git/orbit/run.json'))->toContain('"thread": 7')
+        ->and($receipts->read($instance))->toBeNull();
+});
+
+it('applies the acting thread receipt for the reviewer and the implementer', function (): void {
+    $checkout = run_receipt_checkout();
+    $instance = run_receipt_instance($checkout);
+    $receipts = run_receipts(new LocalShellSshExecutor);
+
+    $receipts->prepare($instance, TaskThreadRole::Reviewer, threadId: 42);
+    $approved = run_receipt_script($checkout, ['--thread=42', '--outcome=approved', '--summary=Checked this subtask.']);
+    $receipt = $receipts->read($instance);
+
+    expect($approved->getExitCode())->toBe(0)
+        ->and($receipt?->outcome)->toBe(TaskRunOutcome::Approved)
+        ->and($receipt?->threadId)->toBe(42);
+
+    $receipts->clear($instance, $receipt ?? throw new RuntimeException('No receipt.'));
+    $receipts->prepare($instance, TaskThreadRole::Implementer, threadId: 9);
+    $handed = run_receipt_script($checkout, ['--thread=9', '--outcome=ready_for_review', '--summary=Added the export.']);
+    $implementer = $receipts->read($instance);
+
+    expect($handed->getExitCode())->toBe(0)
+        ->and($implementer?->outcome)->toBe(TaskRunOutcome::ReadyForReview)
+        ->and($implementer?->threadId)->toBe(9);
+
+    $receipts->clear($instance, $implementer ?? throw new RuntimeException('No receipt.'));
+    run_receipt_script($checkout, ['--thread=4', '--outcome=ready_for_review', '--summary=From another implementer.']);
+
+    expect($receipts->read($instance))->toBeNull();
+});
+
+it('applies the acting thread receipt when the turn file names another reviewer', function (): void {
+    $checkout = run_receipt_checkout();
+    $instance = run_receipt_instance($checkout);
+    $receipts = run_receipts(new LocalShellSshExecutor);
+    $receipts->prepare($instance, TaskThreadRole::Reviewer, threadId: 42);
+    $current = run_receipt_script($checkout, ['--thread=9', '--outcome=approved', '--summary=Approved this subtask.']);
+    $applied = $receipts->read($instance, 9);
+
+    expect($current->getExitCode())->toBe(0)
+        ->and($receipts->read($instance))->toBeNull()
+        ->and($receipts->read($instance, 42))->toBeNull()
+        ->and($applied?->threadId)->toBe(9)
+        ->and($applied?->outcome)->toBe(TaskRunOutcome::Approved);
+
+    $stale = run_receipt_script($checkout, ['--thread=42', '--outcome=approved', '--summary=Approved the earlier subtask.']);
+
+    expect($stale->getExitCode())->toBe(0)
+        ->and($receipts->read($instance)?->threadId)->toBe(42)
+        ->and($receipts->read($instance, 9))->toBeNull();
+});
+
+it('does not apply an unbound receipt from a legacy turn when the acting reviewer is known', function (): void {
+    $checkout = run_receipt_checkout();
+    $instance = run_receipt_instance($checkout);
+    $receipts = run_receipts(new LocalShellSshExecutor);
+    $receipts->prepare($instance, TaskThreadRole::Reviewer);
+    $legacy = run_receipt_script($checkout, ['--outcome=approved', '--summary=Approved the earlier subtask.']);
+
+    expect($legacy->getExitCode())->toBe(0)
+        ->and($receipts->hasLegacyTurn($instance))->toBeTrue()
+        ->and($receipts->read($instance, 42))->toBeNull();
+
+    $receipts->prepare($instance, TaskThreadRole::Reviewer, threadId: 42);
+    $stillUnbound = run_receipt_script($checkout, ['--outcome=approved', '--summary=Approved the earlier subtask.']);
+
+    expect($stillUnbound->getExitCode())->toBe(0)
+        ->and($receipts->hasLegacyTurn($instance))->toBeFalse()
+        ->and($receipts->read($instance, 42))->toBeNull();
+
+    $bound = run_receipt_script($checkout, ['--thread=42', '--outcome=approved', '--summary=Checked this subtask.']);
+
+    expect($bound->getExitCode())->toBe(0)
+        ->and($receipts->read($instance, 42)?->threadId)->toBe(42)
+        ->and($receipts->read($instance, 42)?->summary)->toBe('Checked this subtask.');
+});
+
 it('removes a receipt only while its content is unchanged', function (): void {
     $checkout = run_receipt_checkout();
     $instance = run_receipt_instance($checkout);

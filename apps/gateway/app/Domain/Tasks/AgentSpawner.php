@@ -10,8 +10,8 @@ use App\Models\Task;
  * Starts agent conversations on the Node that owns the group's App instance.
  *
  * A no-op implementation returns null. A spawner implementation starts a fresh
- * implementer per subtask and one reviewer for the group at its first handoff,
- * then sends that reviewer each later handoff.
+ * implementer per subtask and a fresh reviewer for that subtask's first review,
+ * then continues that reviewer on a later handoff of the same subtask.
  */
 interface AgentSpawner
 {

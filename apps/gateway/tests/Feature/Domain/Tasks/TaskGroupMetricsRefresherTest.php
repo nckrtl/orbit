@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 use App\Actions\Tasks\ShowTaskGroupAction;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\NullTaskWorkspaceDiffReader;
+use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupMetricsRefresher;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Infrastructure\Tasks\T3\T3ThreadReader;
+use App\Models\AgentThread;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
@@ -121,6 +124,44 @@ it('fills subtask session metrics from T3 and the group line diff from git', fun
         ->and($refreshed->tasks->first()?->tokens)->toBe(1200)
         ->and($refreshed->tasks->first()?->line_diff)->toBe(5)
         ->and($refreshed->tasks->first()?->duration_ms)->toBe(5000);
+});
+
+it('does not observe a reserved reviewer row', function (): void {
+    $group = metrics_running_group();
+    $instance = $group->taskable;
+    $nodeId = $instance instanceof AppInstance ? $instance->node_id : null;
+    AgentThread::query()->create([
+        'task_group_id' => $group->id,
+        'task_id' => $group->tasks->first()?->id,
+        'node_id' => $nodeId,
+        'driver' => 't3',
+        'runtime_key' => 'node:'.$nodeId,
+        'external_id' => TaskAgentSpawner::PendingPrefix.'reserved-reviewer',
+        'role' => 'reviewer',
+        'model' => 'reviewer',
+        'effort' => 'high',
+    ]);
+    $threads = new class implements T3ThreadReader
+    {
+        /** @var list<string> */
+        public array $seen = [];
+
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            $this->seen[] = $threadId;
+            if (str_starts_with($threadId, TaskAgentSpawner::PendingPrefix)) {
+                throw new RuntimeException('observed a reserved row');
+            }
+
+            return null;
+        }
+    };
+
+    new TaskGroupMetricsRefresher(test_agent_observer($threads), new NullTaskWorkspaceDiffReader)->refresh($group);
+
+    expect($threads->seen)->toContain('implementer-1')
+        ->and($threads->seen)->toContain('reviewer-thread')
+        ->and($threads->seen)->not->toContain(TaskAgentSpawner::PendingPrefix.'reserved-reviewer');
 });
 
 it('keeps stored thread metrics when T3 refuses the snapshot', function (): void {

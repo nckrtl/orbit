@@ -42,24 +42,19 @@ abstract class E2ECommand extends Command
     protected function request(): TopologyRequest
     {
         $worktree = $this->hasOption('worktree') ? $this->option('worktree') : null;
-
-        return app(WorktreeLocator::class)->locate(
-            $this->stringIssue($this->argument('issue')),
-            is_string($worktree) ? $worktree : null,
-        );
-    }
-
-    /**
-     * Artisan can pass a list for an argument the signature declares as one value.
-     * Larastan still types that argument as a string, so the check has to sit behind a mixed parameter.
-     */
-    private function stringIssue(mixed $issue): string
-    {
+        // argument() is typed from each subclass signature, and that type depends on
+        // command discovery order. The input value is what a caller actually passed.
+        // A mixed parameter would still call argument(), which Larastan checks on every
+        // subclass, including commands that do not declare issue.
+        $issue = $this->input->getArgument('issue');
         if (! is_string($issue)) {
             throw new InvalidArgumentException('The issue argument must be a string.');
         }
 
-        return $issue;
+        return app(WorktreeLocator::class)->locate(
+            $issue,
+            is_string($worktree) ? $worktree : null,
+        );
     }
 
     protected function state(TopologyRequest $request): IssueState

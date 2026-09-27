@@ -8,7 +8,6 @@ use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\NullAgentSpawner;
@@ -20,15 +19,18 @@ use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
+use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskJevDecision;
 use App\Domain\Tasks\TaskJevOutcome;
+use App\Domain\Tasks\TaskPlannerMcp;
 use App\Domain\Tasks\TaskPullRequestDescription;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskRunInstructions;
 use App\Domain\Tasks\TaskRunPullRequest;
+use App\Domain\Tasks\TaskRunReceipt;
 use App\Domain\Tasks\TaskRunReceiptException;
 use App\Domain\Tasks\TaskRunReceipts;
 use App\Domain\Tasks\TaskScheduler;
@@ -61,6 +63,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Classification;
 use Tests\Feature\GitHub\GitHubTestSupport;
+use Tests\Support\AcceptingTaskPlannerMcp;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskRunReceipts;
 
@@ -219,6 +222,7 @@ function tick_dispatcher(): T3Dispatcher
 }
 
 beforeEach(function (): void {
+    app()->instance(TaskPlannerMcp::class, new AcceptingTaskPlannerMcp);
     tick_workspace();
 });
 
@@ -1601,13 +1605,13 @@ it('advances the current subtask when Jev marks it done', function (): void {
     $dispatcher = tick_dispatcher();
     $spawner = new class implements AgentSpawner
     {
-        public int $reviews = 0;
+        public int $spawned = 0;
 
         public function spawnReviewer(Task $task): ?int
         {
-            $group = $task->taskGroup;
+            $this->spawned++;
 
-            return test_agent_thread($group, 'reviewer-thread')->id;
+            return test_agent_thread($task->taskGroup, 'reviewer-thread')->id;
         }
 
         public function spawnImplementer(Task $task): ?int
@@ -1615,10 +1619,7 @@ it('advances the current subtask when Jev marks it done', function (): void {
             return test_agent_thread($task->taskGroup, 'implementer-thread', $task)->id;
         }
 
-        public function requestReview(Task $task): void
-        {
-            $this->reviews++;
-        }
+        public function requestReview(Task $task): void {}
     };
     app()->instance(T3Dispatcher::class, $dispatcher);
     app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
@@ -1638,7 +1639,7 @@ it('advances the current subtask when Jev marks it done', function (): void {
         ->and($dispatcher->commands)->toBe([])
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Reviewing)
         ->and($group->fresh()?->tasks->first()?->status)->toBe(TaskStatus::Reviewing)
-        ->and($spawner->reviews)->toBe(1);
+        ->and($spawner->spawned)->toBe(1);
 });
 
 it('hands off only when Orbit can run the workspace check script', function (bool $definesCheckScript, TaskStatus $status, string $taskCheck = 'composer check'): void {
@@ -1709,7 +1710,9 @@ it('records an unreachable workspace as a communication failure without aborting
             return tick_checked_thread('done');
         }
     });
-    mock(TaskRunReceipts::class)->shouldReceive('read')->andThrow(new TaskRunReceiptException('The task workspace could not be reached for the run receipt.'));
+    $receipts = mock(TaskRunReceipts::class);
+    $receipts->shouldReceive('hasLegacyTurn')->andReturn(false);
+    $receipts->shouldReceive('read')->andThrow(new TaskRunReceiptException('The task workspace could not be reached for the run receipt.'));
 
     app(TaskScheduler::class)->tick();
 
@@ -1718,6 +1721,57 @@ it('records an unreachable workspace as a communication failure without aborting
         ->and($task->fresh()?->assistance_requested)->toBeFalse()
         ->and(app(T3Dispatcher::class)->commands)->toBe([]);
     Classification::assertNothingClassified();
+});
+
+it('records a legacy turn read failure without skipping the other group', function (): void {
+    $running = tick_group();
+    $implementer = $running->tasks->sole();
+    $app = OrbitApp::query()->create([
+        'name' => 'tick-review-legacy', 'slug' => 'tick-review-legacy',
+        'repository_url' => 'git@example.test:tick-review-legacy.git', 'default_branch' => 'main',
+        'task_check' => 'composer check',
+    ]);
+    $node = Node::query()->create([
+        'name' => 'tick-review-legacy-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
+        'public_ssh_host' => '10.44.0.213', 'wireguard_ip' => '10.44.0.213',
+    ]);
+    $instance = AppInstance::query()->create([
+        'app_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-22',
+        'checkout_path' => '/srv/orbit/apps/tick-review-legacy/task-22', 'branch' => 'task-22', 'status' => 'source_resolved',
+    ]);
+    $reviewing = TaskGroup::query()->create([
+        'app_id' => $app->id, 'title' => 'Tick review', 'brief' => 'Review the records.', 'status' => TaskGroupStatus::Reviewing,
+    ]);
+    $reviewing->taskable()->associate($instance);
+    $reviewing->save();
+    $reviewer = Task::query()->create([
+        'task_group_id' => $reviewing->id, 'position' => 1, 'title' => 'Review', 'brief' => 'Review the records.',
+        'status' => TaskStatus::Reviewing, 'started_at' => now(),
+        'review_notified_attempt' => 1, 'review_notified_turn_id' => 'handoff-turn',
+    ]);
+    test_link_agent_threads($reviewing);
+    app(TaskExtensionState::class)->enable();
+    app()->instance(T3Dispatcher::class, tick_dispatcher());
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => [
+                'session' => ['status' => 'done'],
+                'latestTurn' => ['id' => 'review-turn', 'state' => 'completed'],
+            ]];
+        }
+    });
+    $receipts = mock(TaskRunReceipts::class);
+    $receipts->shouldReceive('hasLegacyTurn')->andThrow(new TaskRunReceiptException('The task workspace could not be reached for the run receipt.'));
+
+    app(TaskScheduler::class)->tick();
+
+    expect($implementer->fresh()?->communication_failures)->toBe(1)
+        ->and($implementer->fresh()?->status)->toBe(TaskStatus::Running)
+        ->and($reviewer->fresh()?->communication_failures)->toBe(1)
+        ->and($reviewer->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($running->id)->toBeLessThan($reviewing->id);
 });
 
 it('stores a ready_for_review receipt, removes it, and hands off to the reviewer', function (): void {
@@ -2587,7 +2641,7 @@ it('reminds an implementer that ends a turn without a receipt once, then asks fo
 
     $reminder = $dispatcher->commands[0]['message']['text'];
     expect($dispatcher->commands)->toHaveCount(1)
-        ->and($reminder)->toBe('Orbit could not confirm the brief is complete. No run receipt was found. '.TaskRunInstructions::implementer())
+        ->and($reminder)->toBe('Orbit could not confirm the brief is complete. No run receipt was found. '.TaskRunInstructions::implementer(threadId: $task->implementer_agent_thread_id))
         ->and($receipts->prepared)->toBe(['implementer'])
         ->and($group->fresh()?->assistance_requested)->toBeFalse();
 
@@ -2948,11 +3002,18 @@ it('retries the reviewer nudge until the handoff send succeeds', function (): vo
     app(TaskExtensionState::class)->enable();
     $spawner = new class implements AgentSpawner
     {
-        public int $reviews = 0;
+        public int $spawns = 0;
 
         public function spawnReviewer(Task $task): ?int
         {
-            return null;
+            $this->spawns++;
+            if ($this->spawns === 1) {
+                return null;
+            }
+            $thread = test_agent_thread($task->taskGroup, 'reviewer-spawned');
+            $thread->update(['task_id' => $task->id]);
+
+            return $thread->id;
         }
 
         public function spawnImplementer(Task $task): ?int
@@ -2960,13 +3021,7 @@ it('retries the reviewer nudge until the handoff send succeeds', function (): vo
             return null;
         }
 
-        public function requestReview(Task $task): void
-        {
-            $this->reviews++;
-            if ($this->reviews === 1) {
-                throw new AgentDriverException('Reviewer send failed.');
-            }
-        }
+        public function requestReview(Task $task): void {}
     };
     app()->instance(AgentSpawner::class, $spawner);
     app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
@@ -2981,21 +3036,21 @@ it('retries the reviewer nudge until the handoff send succeeds', function (): vo
     app(TaskScheduler::class)->tick();
 
     $task = $group->tasks()->first();
-    expect($spawner->reviews)->toBe(1)
+    expect($spawner->spawns)->toBe(1)
         ->and($task?->status)->toBe(TaskStatus::Reviewing)
         ->and($task?->review_notified_attempt)->toBeNull()
         ->and($group->fresh()?->assistance_requested)->toBeFalse();
 
     app(TaskScheduler::class)->tick();
 
-    expect($spawner->reviews)->toBe(2)
+    expect($spawner->spawns)->toBe(2)
         ->and($task?->fresh()?->review_notified_attempt)->toBe($task?->review_attempt)
         ->and($task?->fresh()?->status)->toBe(TaskStatus::Reviewing)
         ->and($group->fresh()?->assistance_requested)->toBeFalse();
 
     app(TaskScheduler::class)->tick();
 
-    expect($spawner->reviews)->toBe(2)
+    expect($spawner->spawns)->toBe(2)
         ->and($task?->fresh()?->status)->toBe(TaskStatus::Reviewing)
         ->and($group->fresh()?->assistance_requested)->toBeFalse();
 });
@@ -3086,7 +3141,7 @@ it('retries review findings until the implementer receives them', function (): v
     expect($task->fresh()?->status)->toBe(TaskStatus::Running)
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
         ->and($dispatcher->commands[1]['message']['text'])->toContain('Add the missing test.')
-        ->and($dispatcher->commands[1]['message']['text'])->toContain(TaskRunInstructions::implementer())
+        ->and($dispatcher->commands[1]['message']['text'])->toContain(TaskRunInstructions::implementer(threadId: $task->implementer_agent_thread_id))
         ->and(app(TaskRunReceipts::class)->prepared)->toBe(['implementer', 'implementer']);
 });
 
@@ -3123,18 +3178,23 @@ it('handoff waits while reviewer still reports its old turn', function (): void 
     {
         public function snapshot(Node $node, string $threadId): ?array
         {
-            $snapshot = tick_checked_thread('done');
-            $snapshot['thread']['latestTurn'] = ['id' => $threadId.'-old', 'state' => 'completed'];
+            $snapshot = tick_checked_thread($threadId === 'implementer-thread' || $threadId === 'reviewer-thread' ? 'done' : 'running');
+            $snapshot['thread']['latestTurn'] = [
+                'id' => $threadId === 'implementer-thread' || $threadId === 'reviewer-thread' ? $threadId.'-old' : 'opening',
+                'state' => $threadId === 'implementer-thread' || $threadId === 'reviewer-thread' ? 'completed' : 'running',
+            ];
 
             return $snapshot;
         }
     });
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
-    expect($group->fresh()->status)->toBe(TaskGroupStatus::Reviewing);
-    expect($dispatcher->commands)->toHaveCount(1);
+    $reviewerId = $group->fresh()?->reviewer_agent_thread_id;
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Reviewing)
+        ->and(array_column($dispatcher->commands, 'type'))->toBe(['project.create', 'thread.create', 'thread.turn.start'])
+        ->and(AgentThread::query()->find($reviewerId)?->task_id)->toBe($group->tasks()->sole()->id);
     app(TaskScheduler::class)->tick();
-    expect($dispatcher->commands)->toHaveCount(1);
+    expect($dispatcher->commands)->toHaveCount(3);
 });
 
 it('unavailable implementer uses observation grace instead of rubric', function (): void {
@@ -3364,6 +3424,111 @@ function tick_review(array $receipts, bool $onBranch = true, bool $last = false)
     return [$group->fresh(['app', 'tasks', 'taskable']) ?? $group, $task, $receipts, $signer, $publisher];
 }
 
+it('does not apply a receipt from the thread named by a stale turn file', function (): void {
+    [$group, $task] = tick_review([null]);
+    $acting = (int) $group->reviewer_agent_thread_id;
+    app()->instance(TaskRunReceipts::class, new class($acting) implements TaskRunReceipts
+    {
+        public function __construct(private int $acting) {}
+
+        public function prepare(AppInstance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void {}
+
+        public function read(AppInstance $instance, ?int $actingThreadId = null): ?TaskRunReceipt
+        {
+            expect($actingThreadId)->toBe($this->acting);
+
+            return TaskRunReceipt::parse((string) json_encode([
+                'outcome' => 'approved', 'summary' => 'Approved the earlier subtask.', 'thread' => $this->acting + 1,
+            ], JSON_THROW_ON_ERROR));
+        }
+
+        public function clear(AppInstance $instance, TaskRunReceipt $receipt): void {}
+
+        public function hasLegacyTurn(AppInstance $instance): bool
+        {
+            return false;
+        }
+    });
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->comments()->count())->toBe(0)
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing);
+});
+
+it('does not apply an unbound legacy receipt and reissues the bound run command', function (): void {
+    [$group, $task] = tick_review([null]);
+    $acting = (int) $group->reviewer_agent_thread_id;
+    $receipts = new class implements TaskRunReceipts
+    {
+        public bool $legacy = true;
+
+        /** @var list<int|null> */
+        public array $preparedThreads = [];
+
+        public function prepare(AppInstance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void
+        {
+            $this->preparedThreads[] = $threadId;
+            $this->legacy = false;
+        }
+
+        public function read(AppInstance $instance, ?int $actingThreadId = null): ?TaskRunReceipt
+        {
+            return TaskRunReceipt::parse((string) json_encode([
+                'outcome' => 'approved', 'summary' => 'Approved the earlier subtask.',
+            ], JSON_THROW_ON_ERROR));
+        }
+
+        public function clear(AppInstance $instance, TaskRunReceipt $receipt): void {}
+
+        public function hasLegacyTurn(AppInstance $instance): bool
+        {
+            return $this->legacy;
+        }
+    };
+    app()->instance(TaskRunReceipts::class, $receipts);
+
+    app(TaskScheduler::class)->tick();
+
+    $text = (string) data_get(app(T3Dispatcher::class), 'commands.0.message.text');
+
+    expect($task->comments()->count())->toBe(0)
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($receipts->preparedThreads)->toBe([$acting])
+        ->and($text)->toContain('Orbit bound this turn to its thread.')
+        ->and($text)->toContain('.git/orbit/run --thread='.$acting.' --outcome=');
+});
+
+it('applies a receipt that names the acting reviewer', function (): void {
+    [$group, $task] = tick_review([null], last: true);
+    $acting = (int) $group->reviewer_agent_thread_id;
+    app()->instance(TaskRunReceipts::class, new class($acting) implements TaskRunReceipts
+    {
+        public function __construct(private int $acting) {}
+
+        public function prepare(AppInstance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void {}
+
+        public function read(AppInstance $instance, ?int $actingThreadId = null): ?TaskRunReceipt
+        {
+            return TaskRunReceipt::parse((string) json_encode([
+                'outcome' => 'approved', 'summary' => 'Checked this subtask.', 'thread' => $actingThreadId,
+            ], JSON_THROW_ON_ERROR));
+        }
+
+        public function clear(AppInstance $instance, TaskRunReceipt $receipt): void {}
+
+        public function hasLegacyTurn(AppInstance $instance): bool
+        {
+            return false;
+        }
+    });
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->comments()->sole()->getRawOriginal('type'))->toBe('approved')
+        ->and($task->comments()->sole()->body)->toBe('Checked this subtask.');
+});
+
 it('commits an approved subtask with the title and the reviewer summary, then starts the next subtask', function (): void {
     [$group, $task, $receipts, $signer, $publisher] = tick_review([FakeTaskRunReceipts::contents('approved', 'Checked the models and their tests.')]);
     $next = Task::query()->where('title', 'Routes')->sole();
@@ -3431,7 +3596,7 @@ it('does not commit an approval while the workspace is on another branch', funct
     $dispatcher = app(T3Dispatcher::class);
     expect($signer->messages)->toBe([])
         ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
-        ->and($dispatcher->commands[0]['message']['text'])->toBe('Orbit could not confirm the review is complete. The workspace branch is not task-'.$group->id.'. Switch back to it. '.TaskRunInstructions::reviewer());
+        ->and($dispatcher->commands[0]['message']['text'])->toBe('Orbit could not confirm the review is complete. The workspace branch is not task-'.$group->id.'. Switch back to it. '.TaskRunInstructions::reviewer(threadId: $group->reviewer_agent_thread_id));
 
     app(TaskScheduler::class)->tick();
 
@@ -3455,7 +3620,7 @@ it('reminds a reviewer that ends a turn without a receipt once, then asks for as
 
     app(TaskScheduler::class)->tick();
 
-    expect(app(T3Dispatcher::class)->commands[0]['message']['text'])->toBe('Orbit could not confirm the review is complete. No run receipt was found. '.TaskRunInstructions::reviewer())
+    expect(app(T3Dispatcher::class)->commands[0]['message']['text'])->toBe('Orbit could not confirm the review is complete. No run receipt was found. '.TaskRunInstructions::reviewer(threadId: $group->reviewer_agent_thread_id))
         ->and($receipts->prepared)->toBe(['reviewer']);
 
     app(TaskScheduler::class)->tick();
@@ -3617,7 +3782,7 @@ it('reminds the reviewer when the approval of the last subtask has no pull reque
 
     app(TaskScheduler::class)->tick();
 
-    expect(app(T3Dispatcher::class)->commands[0]['message']['text'])->toBe('Orbit could not confirm the review is complete. The approval of the last subtask needs --pr-summary, --pr-change, and --pr-breaking. '.TaskRunInstructions::reviewer(final: true))
+    expect(app(T3Dispatcher::class)->commands[0]['message']['text'])->toBe('Orbit could not confirm the review is complete. The approval of the last subtask needs --pr-summary, --pr-change, and --pr-breaking. '.TaskRunInstructions::reviewer(final: true, threadId: $group->reviewer_agent_thread_id))
         ->and($publishing->coverage->calls)->toBe(0)
         ->and($signer->messages)->toBe([]);
 });
@@ -3945,6 +4110,7 @@ describe('a thread that works outside the task phase', function (): void {
     it('moves a passing handoff to review but asks for the review only once the reviewer is idle', function (): void {
         $group = tick_group();
         $task = $group->tasks->sole();
+        AgentThread::query()->whereKey($group->reviewer_agent_thread_id)->update(['task_id' => $task->id]);
         app(TaskExtensionState::class)->enable();
         $spawner = new class implements AgentSpawner
         {
@@ -3990,12 +4156,12 @@ describe('a thread that works outside the task phase', function (): void {
             ->and(app(TaskRunReceipts::class)->prepared)->toBe(['reviewer:final']);
     });
 
-    it('requests the current review when the shared reviewer fails before that review starts, and resumes a review that already started', function (): void {
+    it('starts a fresh reviewer instead of resuming the planner, and resumes a review that already started', function (): void {
         $group = tick_group();
         $task = $group->tasks->sole();
-        $reviewer = AgentThread::query()->findOrFail($group->reviewer_agent_thread_id);
-        $reviewer->update(['driver' => 'pi']);
-        $reviewer->node?->update([
+        $planner = AgentThread::query()->findOrFail($group->reviewer_agent_thread_id);
+        $planner->update(['driver' => 'pi']);
+        $planner->node?->update([
             'settings' => ['pi' => ['token' => 'pi-node-token-with-more-than-32-characters', 'url' => 'http://10.44.0.212:3774']],
         ]);
         app(TaskExtensionState::class)->enable();
@@ -4003,9 +4169,14 @@ describe('a thread that works outside the task phase', function (): void {
         {
             public int $reviews = 0;
 
+            public ?int $spawned = null;
+
             public function spawnReviewer(Task $task): ?int
             {
-                return null;
+                $thread = test_agent_thread($task->taskGroup, 'subtask-reviewer');
+                $thread->update(['task_id' => $task->id, 'driver' => 'pi', 'role' => TaskThreadRole::Reviewer->value]);
+
+                return $this->spawned = $thread->id;
             }
 
             public function spawnImplementer(Task $task): ?int
@@ -4020,63 +4191,64 @@ describe('a thread that works outside the task phase', function (): void {
         };
         app()->instance(AgentSpawner::class, $spawner);
         app()->instance(T3ThreadReader::class, tick_thread_states(['implementer-thread' => 'done']));
-        $pi = (object) ['state' => 'working', 'error' => null, 'turnId' => 'other-turn'];
-        /** @var list<array{key: string, text: string}> $messages */
+        $plannerState = (object) ['state' => 'working', 'error' => null, 'turnId' => 'other-turn'];
+        $reviewState = (object) ['state' => 'working', 'error' => null, 'turnId' => 'review-turn'];
+        /** @var list<array{session: string, key: string, text: string}> $messages */
         $messages = [];
-        Http::fake(function (Request $request) use ($pi, &$messages) {
-            if (str_ends_with($request->url(), '/messages')) {
-                $messages[] = ['key' => (string) $request['key'], 'text' => (string) $request['text']];
+        Http::fake(function (Request $request) use ($plannerState, $reviewState, &$messages) {
+            if (str_ends_with($request->url(), '/messages') && preg_match('#/sessions/([^/]+)/messages$#', $request->url(), $match) === 1) {
+                $messages[] = ['session' => $match[1], 'key' => (string) $request['key'], 'text' => (string) $request['text']];
 
                 return Http::response(['duplicate' => false], 202);
             }
-            if (! str_contains($request->url(), '/sessions/reviewer-thread')) {
-                return null;
+            foreach (['reviewer-thread' => $plannerState, 'subtask-reviewer' => $reviewState] as $session => $state) {
+                if (! str_contains($request->url(), '/sessions/'.$session)) {
+                    continue;
+                }
+
+                return Http::response([
+                    'kind' => 'snapshot', 'run' => 'run-1', 'sequence' => 4,
+                    'session' => ['id' => $session],
+                    'state' => $state->state, 'error' => $state->error, 'turnId' => $state->turnId, 'entries' => [],
+                ]);
             }
 
-            return Http::response([
-                'kind' => 'snapshot', 'run' => 'run-1', 'sequence' => 4,
-                'session' => ['id' => 'reviewer-thread'],
-                'state' => $pi->state, 'error' => $pi->error, 'turnId' => $pi->turnId, 'entries' => [],
-            ]);
+            return null;
         });
 
         app(TaskScheduler::class)->tick();
         app(TaskScheduler::class)->tick();
-        app(TaskScheduler::class)->tick();
 
         expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
-            ->and($task->fresh()?->review_notified_attempt)->toBeNull()
             ->and($spawner->reviews)->toBe(0)
-            ->and(app(TaskRunReceipts::class)->prepared)->toBe([])
-            ->and($task->fresh()?->pi_restart_resumes)->toBe(0)
-            ->and($messages)->toBe([]);
-
-        $pi->state = 'failed';
-        $pi->error = 'The Pi server restarted during the turn.';
-        app(TaskScheduler::class)->tick();
-
-        expect($spawner->reviews)->toBe(1)
-            ->and(app(TaskRunReceipts::class)->prepared)->toBe(['reviewer:final'])
+            ->and($spawner->spawned)->not->toBeNull()
+            ->and($spawner->spawned)->not->toBe($planner->id)
+            ->and($group->fresh()?->reviewer_agent_thread_id)->toBe($spawner->spawned)
             ->and($task->fresh()?->review_notified_attempt)->toBe($task->fresh()?->review_attempt)
             ->and($task->fresh()?->review_workspace_head)->toBe(str_repeat('a', 40))
             ->and($task->fresh()?->review_workspace_tree)->toBe(str_repeat('b', 40))
+            ->and(app(TaskRunReceipts::class)->prepared)->toBe(['reviewer:final'])
             ->and($task->fresh()?->pi_restart_resumes)->toBe(0)
             ->and($task->fresh()?->pi_restart_key)->toBeNull()
-            ->and($task->fresh()?->assistance_requested)->toBeFalse()
             ->and($messages)->toBe([]);
 
-        $pi->turnId = 'review-turn';
+        $plannerState->state = 'failed';
+        $plannerState->error = 'The Pi server restarted during the turn.';
+        $reviewState->state = 'failed';
+        $reviewState->error = 'The Pi server restarted during the turn.';
         app(TaskScheduler::class)->tick();
 
         $fresh = $task->fresh();
-        expect($spawner->reviews)->toBe(1)
+        expect($spawner->reviews)->toBe(0)
             ->and(app(TaskRunReceipts::class)->prepared)->toBe(['reviewer:final'])
             ->and($fresh?->assistance_requested)->toBeFalse()
             ->and($fresh?->pi_restart_resumes)->toBe(1)
             ->and($fresh?->pi_restart_reservation)->toBe('pending')
-            ->and($fresh?->pi_restart_thread_id)->toBe($reviewer->id)
+            ->and($fresh?->pi_restart_thread_id)->toBe($spawner->spawned)
+            ->and($fresh?->pi_restart_thread_id)->not->toBe($planner->id)
             ->and($fresh?->pi_restart_source_turn_id)->toBe('review-turn')
             ->and($messages)->toHaveCount(1)
+            ->and($messages[0]['session'])->toBe('subtask-reviewer')
             ->and($messages[0]['text'])->toBe('Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the run script.')
             ->and($messages[0]['key'])->toBe($fresh?->pi_restart_key)
             ->and($messages[0]['key'])->not->toBe('review-turn');
@@ -4359,6 +4531,91 @@ describe('subtask deliverables at handoff', function (): void {
         ]])
             ->and($task->fresh()?->status)->toBe(TaskStatus::Running)
             ->and($reminder)->toContain('layout-repro (test): The test "it keeps the home screen layout" passes on the start commit, so it does not reproduce the bug.');
+    });
+
+    it('proves a fails_on_base test from the workspace starting commit when the start commit was never recorded', function (): void {
+        $starting = str_repeat('c', 40);
+        $later = str_repeat('d', 40);
+        $deliverable = ['id' => 'layout-repro', 'type' => 'test', 'description' => 'The layout fails before the fix', 'project' => 'apps/gateway', 'file' => 'tests/Feature/HomeScreenTest.php', 'name' => 'home screen layout', 'fails_on_base' => true];
+        [$group, $task, $checks] = tick_deliverables([$deliverable], ['layout-repro' => 'HomeScreenTest'], null);
+        $task->update(['subtask_start_commit' => null]);
+        $group->taskable?->update(['starting_commit' => $starting]);
+        app()->instance(TaskWorkspaceStateReader::class, new class($later) implements TaskWorkspaceStateReader
+        {
+            public function __construct(private string $later) {}
+
+            public function headCommit(AppInstance $instance): ?string
+            {
+                return $this->later;
+            }
+
+            public function currentBranch(AppInstance $instance): ?string
+            {
+                return 'task-21';
+            }
+
+            public function definesComposerCheckScript(AppInstance $instance): bool
+            {
+                return true;
+            }
+        });
+
+        app(TaskScheduler::class)->tick();
+
+        expect($checks->deliverables[0]['start'] ?? null)->toBe($starting)
+            ->and($task->fresh()?->subtask_start_commit)->toBeNull();
+    });
+
+    it('proves a fails_on_base test from the previous approved commit when the start commit was never recorded', function (): void {
+        $approved = str_repeat('e', 40);
+        $starting = str_repeat('f', 40);
+        $later = str_repeat('9', 40);
+        $deliverable = ['id' => 'layout-repro', 'type' => 'test', 'description' => 'The layout fails before the fix', 'project' => 'apps/gateway', 'file' => 'tests/Feature/HomeScreenTest.php', 'name' => 'home screen layout', 'fails_on_base' => true];
+        [$group, $task, $checks] = tick_deliverables([$deliverable], ['layout-repro' => 'HomeScreenTest'], null);
+        $earlier = Task::query()->create([
+            'task_group_id' => $group->id,
+            'position' => 0,
+            'title' => 'Earlier',
+            'brief' => 'Already approved.',
+            'status' => TaskStatus::Completed,
+        ]);
+        TaskComment::query()->create([
+            'task_group_id' => $group->id,
+            'task_id' => $earlier->id,
+            'type' => TaskCommentType::Approved,
+            'body' => 'Approved.',
+            'author' => 'reviewer',
+            'commit_sha' => $approved,
+            'posted_at' => now(),
+        ]);
+        $task->update(['subtask_start_commit' => null]);
+        $group->taskable?->update(['starting_commit' => $starting]);
+        app()->instance(TaskWorkspaceStateReader::class, new class($later) implements TaskWorkspaceStateReader
+        {
+            public function __construct(private string $later) {}
+
+            public function headCommit(AppInstance $instance): ?string
+            {
+                return $this->later;
+            }
+
+            public function currentBranch(AppInstance $instance): ?string
+            {
+                return 'task-21';
+            }
+
+            public function definesComposerCheckScript(AppInstance $instance): bool
+            {
+                return true;
+            }
+        });
+
+        app(TaskScheduler::class)->tick();
+
+        expect($checks->deliverables[0]['start'] ?? null)->toBe($approved)
+            ->and($checks->deliverables[0]['start'] ?? null)->not->toBe($starting)
+            ->and($checks->deliverables[0]['start'] ?? null)->not->toBe($later)
+            ->and($task->fresh()?->subtask_start_commit)->toBeNull();
     });
 
     it('asks for assistance when a test deliverable project or file is invalid, without reminding the implementer', function (): void {

@@ -28,7 +28,7 @@ afterEach(() => {
     FakeSource.instances = [];
 });
 
-it("shows the shared reviewer and selected subtask, streams updates, and closes old subscriptions", async () => {
+it("shows only that subtask's reviewer and implementer, streams updates, and closes old subscriptions", async () => {
     vi.stubGlobal("EventSource", FakeSource);
     const app = await openApp();
     const group = {
@@ -45,12 +45,32 @@ it("shows the shared reviewer and selected subtask, streams updates, and closes 
         {
             id: 1,
             task_group_id: 7,
-            task_id: null,
+            task_id: 9,
             node_id: 3,
             role: "reviewer",
             external_id: "review",
             driver: "t3",
             state: "idle",
+        },
+        {
+            id: 4,
+            task_group_id: 7,
+            task_id: null,
+            node_id: 3,
+            role: "reviewer",
+            external_id: "planner",
+            driver: "t3",
+            state: "idle",
+        },
+        {
+            id: 5,
+            task_group_id: 7,
+            task_id: 10,
+            node_id: 3,
+            role: "reviewer",
+            external_id: "earlier-review",
+            driver: "t3",
+            state: "done",
         },
         {
             id: 2,
@@ -191,6 +211,7 @@ it("shows the shared reviewer and selected subtask, streams updates, and closes 
     await app.router.navigate({ to: "/" });
     expect(reviewer.closed).toBe(true);
     await app.router.navigate({ to: "/tasks/$id", params: { id: "7" } });
+    await expect.poll(() => pane("Agents").getByRole("tab").all().length).toBe(5);
     await expect
         .poll(() => FakeSource.instances.at(-1)?.url)
         .toBe("/api/v1/task-groups/7/agents/3/stream");

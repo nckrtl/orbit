@@ -4341,6 +4341,38 @@
             ]
         },
         {
+            "path": "docs/decisions/0169-start-each-subtask-review-in-a-fresh-thread.md",
+            "title": "ADR 0169: Start each subtask review in a fresh thread",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "apps/web"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Project",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0086",
+                "0103",
+                "0112",
+                "0121",
+                "0124",
+                "0125",
+                "0132",
+                "0133",
+                "0163",
+                "0164",
+                "0165",
+                "0169"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -4537,7 +4569,8 @@
                 "0165",
                 "0166",
                 "0167",
-                "0168"
+                "0168",
+                "0169"
             ]
         },
         {
@@ -5795,7 +5828,8 @@
                 "0163",
                 "0164",
                 "0165",
-                "0167"
+                "0167",
+                "0169"
             ]
         },
         {
