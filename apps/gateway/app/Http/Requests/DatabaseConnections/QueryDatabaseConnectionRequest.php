@@ -33,7 +33,9 @@ final class QueryDatabaseConnectionRequest extends FormRequest
 
     public function sql(): string
     {
-        return $this->string('sql')->toString();
+        $validated = $this->validated();
+
+        return is_string($validated['sql'] ?? null) ? $validated['sql'] : '';
     }
 
     public function write(): bool

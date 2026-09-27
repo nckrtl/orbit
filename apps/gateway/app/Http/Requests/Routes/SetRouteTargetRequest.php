@@ -50,7 +50,7 @@ final class SetRouteTargetRequest extends FormRequest
 
     public function appInstanceId(): int
     {
-        return $this->integer('app_instance_id');
+        return self::integerValue($this->validated('app_instance_id'));
     }
 
     public function payload(): SetRouteTargetsData

@@ -235,7 +235,7 @@ final class StoreProcessRequest extends FormRequest
             $volumes[] = [
                 'source' => $volume['source'],
                 'target' => $volume['target'],
-                'read_only' => ($volume['read_only'] ?? false) === true,
+                'read_only' => in_array($volume['read_only'] ?? false, [true, 1, '1'], strict: true),
             ];
         }
 

@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Actions\Gateway;
 
 use App\Data\Gateway\GatewayStatusData;
-use App\Domain\Shared\Configured;
 use Illuminate\Foundation\Application;
+use Illuminate\Support\Facades\Config;
 
 final readonly class ShowGatewayStatusAction
 {
@@ -15,7 +15,7 @@ final readonly class ShowGatewayStatusAction
         return new GatewayStatusData(
             name: 'orbit-gateway',
             status: 'ok',
-            version: Configured::string('app.version'),
+            version: Config::string('app.version'),
             phpVersion: PHP_VERSION,
             laravelVersion: Application::VERSION,
         );

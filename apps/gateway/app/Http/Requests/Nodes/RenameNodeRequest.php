@@ -45,6 +45,8 @@ final class RenameNodeRequest extends FormRequest
 
     public function name(): string
     {
-        return $this->string('name')->toString();
+        $validated = $this->validated();
+
+        return is_string($validated['name'] ?? null) ? $validated['name'] : '';
     }
 }

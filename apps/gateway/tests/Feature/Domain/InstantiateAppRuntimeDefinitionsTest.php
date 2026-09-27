@@ -146,6 +146,28 @@ it('creates independent stopped copies for both Process backends and a disabled 
         ->and($this->scheduleRuntime->installed)->toBe(['report']);
 });
 
+it('normalizes integer read_only values when instantiating stored process definitions', function (): void {
+    orb225_process_definition($this->orbitApp, 'readonly', ['production'], [
+        'runtime' => 'docker',
+        'image' => 'redis:8-alpine',
+        'command' => ['redis-server'],
+        'volumes' => [['source' => 'readonly-data', 'target' => '/data', 'read_only' => 1]],
+    ]);
+    orb225_process_definition($this->orbitApp, 'writable', ['production'], [
+        'runtime' => 'docker',
+        'image' => 'redis:8-alpine',
+        'command' => ['redis-server'],
+        'volumes' => [['source' => 'writable-data', 'target' => '/data', 'read_only' => 0]],
+    ]);
+
+    $this->action->execute($this->target);
+
+    $copies = Process::query()->where('owner_id', $this->target->id)->get()->keyBy('name');
+
+    expect($copies['readonly']->runtime_config['volumes'][0]['read_only'])->toBeTrue()
+        ->and($copies['writable']->runtime_config['volumes'][0]['read_only'])->toBeFalse();
+});
+
 it('permits only captured copies to install before the production target becomes active', function (): void {
     $definition = orb225_process_definition($this->orbitApp, 'queue', ['production'], [
         'runtime' => 'systemd',

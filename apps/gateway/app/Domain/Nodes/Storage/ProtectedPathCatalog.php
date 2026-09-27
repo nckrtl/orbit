@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Nodes\Storage;
 
 use App\Domain\Nodes\ManagedUserAccount;
-use App\Domain\Shared\Configured;
+use Illuminate\Support\Facades\Config;
 
 final readonly class ProtectedPathCatalog
 {
@@ -35,7 +35,7 @@ final readonly class ProtectedPathCatalog
             }
         }
 
-        $gatewayCheckout = StoragePath::tryParse(rtrim(Configured::string('orbit.gateway_checkout'), '/'));
+        $gatewayCheckout = StoragePath::tryParse(rtrim(Config::string('orbit.gateway_checkout'), '/'));
 
         if ($gatewayCheckout instanceof StoragePath && $path->overlaps($gatewayCheckout)) {
             return true;

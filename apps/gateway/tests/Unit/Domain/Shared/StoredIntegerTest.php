@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\Shared\Configured;
 use App\Domain\Shared\StoredInteger;
 use Tests\TestCase;
 
@@ -37,30 +36,5 @@ describe(StoredInteger::class, function (): void {
             ->toThrow(UnexpectedValueException::class)
             ->and(fn () => StoredInteger::listFrom([1, null]))
             ->toThrow(UnexpectedValueException::class);
-    });
-});
-
-describe(Configured::class, function (): void {
-    it('reads a configured string or integer', function (): void {
-        config()->set('orbit.testing.configured_string', 'gateway');
-        config()->set('orbit.testing.configured_int', 15);
-
-        expect(Configured::string('orbit.testing.configured_string'))->toBe('gateway')
-            ->and(Configured::int('orbit.testing.configured_int'))->toBe(15);
-    });
-
-    it('uses the default only when the entry is missing', function (): void {
-        expect(Configured::string('orbit.testing.missing_string', 't3'))->toBe('t3')
-            ->and(Configured::int('orbit.testing.missing_int', 120))->toBe(120);
-    });
-
-    it('rejects a configured value of the wrong type', function (): void {
-        config()->set('orbit.testing.configured_string', 12);
-        config()->set('orbit.testing.configured_int', '12');
-
-        expect(fn () => Configured::string('orbit.testing.configured_string'))
-            ->toThrow(RuntimeException::class, 'Configuration [orbit.testing.configured_string] must be a string.')
-            ->and(fn () => Configured::int('orbit.testing.configured_int'))
-            ->toThrow(RuntimeException::class, 'Configuration [orbit.testing.configured_int] must be an integer.');
     });
 });

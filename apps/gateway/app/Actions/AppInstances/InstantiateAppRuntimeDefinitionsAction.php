@@ -305,7 +305,7 @@ final readonly class InstantiateAppRuntimeDefinitionsAction
                 ! is_array($volume)
                 || ! is_string($volume['source'] ?? null)
                 || ! is_string($volume['target'] ?? null)
-                || ! is_bool($readOnly)
+                || ! in_array($readOnly, [true, false, 1, 0, '1', '0'], strict: true)
             ) {
                 throw new \RuntimeException('Process definition contains invalid volume data.');
             }
@@ -313,7 +313,7 @@ final readonly class InstantiateAppRuntimeDefinitionsAction
             $volumes[] = [
                 'source' => $volume['source'],
                 'target' => $volume['target'],
-                'read_only' => $readOnly,
+                'read_only' => in_array($readOnly, [true, 1, '1'], strict: true),
             ];
         }
 

@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace App\Actions\Annotations;
 
 use App\Data\Annotations\AnnotationData;
-use App\Domain\Shared\Configured;
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskStatus;
 use App\Infrastructure\Tasks\T3\T3Dispatcher;
 use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Models\Annotation;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -104,7 +104,7 @@ final readonly class DispatchAnnotationsAction
     private function prompt(Annotation $annotation): string
     {
         $path = '/api/v1/instances/'.$annotation->app_instance_id.'/annotations/'.$annotation->id.'/status';
-        $url = rtrim(Configured::string('app.url'), '/').$path;
+        $url = rtrim(Config::string('app.url'), '/').$path;
         $quote = static fn (string $value): string => "'".str_replace("'", "'\\''", $value)."'";
         $curl = static fn (array $body): string => 'curl --fail-with-body -sS -X POST '.$quote($url)." -H 'Content-Type: application/json' --data ".$quote(json_encode($body, JSON_THROW_ON_ERROR));
         $context = AnnotationData::fromModel($annotation)->annotation;

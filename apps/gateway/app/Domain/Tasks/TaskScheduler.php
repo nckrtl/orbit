@@ -7,7 +7,6 @@ namespace App\Domain\Tasks;
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\Projects\LifecyclePhase;
-use App\Domain\Shared\Configured;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
 use App\Models\AgentThread;
@@ -21,6 +20,7 @@ use Closure;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -1237,7 +1237,7 @@ final readonly class TaskScheduler
     {
         TaskGroup::query()->whereKey($group->id)->whereNull('agent_unavailable_since')->update(['agent_unavailable_since' => now()]);
         $group->refresh();
-        $grace = max(0, Configured::int('orbit.tasks.observation_grace_seconds', 120));
+        $grace = max(0, Config::integer('orbit.tasks.observation_grace_seconds', 120));
         if ($group->agent_unavailable_since !== null && $group->agent_unavailable_since->lte(now()->subSeconds($grace))) {
             $claimed = TaskGroup::query()->whereKey($group->id)
                 ->where('agent_unavailable_since', $group->agent_unavailable_since)

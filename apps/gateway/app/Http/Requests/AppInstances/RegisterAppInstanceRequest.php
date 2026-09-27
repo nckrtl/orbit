@@ -96,7 +96,7 @@ final class RegisterAppInstanceRequest extends FormRequest
         $values = $this->validated();
 
         return new RegisterAppInstanceData(
-            sourcePath: $this->string('source_path')->toString(),
+            sourcePath: is_string($values['source_path'] ?? null) ? $values['source_path'] : '',
             includeWorktrees: ($values['include_worktrees'] ?? false) === true,
             appId: is_int($values['project_id'] ?? null)
                 ? $values['project_id']

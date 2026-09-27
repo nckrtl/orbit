@@ -141,7 +141,7 @@ final class ProvisionNodeRequest extends FormRequest
         $roles = is_array($validated['roles'] ?? null) ? $validated['roles'] : [];
 
         return new ProvisionNodeData(
-            name: $this->string('name')->toString(),
+            name: is_string($validated['name'] ?? null) ? $validated['name'] : '',
             publicSshHost: is_string($validated['public_ssh_host'] ?? null) ? $validated['public_ssh_host'] : '',
             roles: array_values(array_map(
                 static function (mixed $role): RoleName {
