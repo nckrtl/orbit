@@ -564,6 +564,32 @@ it('transfers only the selected SQLite snapshot after the source pause', functio
         ->toBeLessThan(array_search('relocate', $this->runtime->calls, true));
 });
 
+it('refuses an unreadable env instead of silently transferring without it', function (): void {
+    $this->reader->failure = new ResourceOperationException(
+        'env.import_preflight_failed',
+        'The recorded AppInstance environment file cannot be read safely.',
+        409,
+    );
+
+    expect(fn () => $this->action->execute($this->instance, $this->data))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('env.import_preflight_failed'));
+
+    expect($this->instance->environmentValues()->where('env_key', 'NEW_FROM_ENV')->exists())->toBeFalse()
+        ->and(AppInstanceTransfer::query()->sole()->status)->toBe(AppInstanceTransferStatus::Failed);
+});
+
+it('imports no environment values when the source env is missing', function (): void {
+    $this->reader->failure = new ResourceOperationException(
+        'env.import_source_missing',
+        'The recorded AppInstance environment file does not exist.',
+        404,
+    );
+
+    $this->action->execute($this->instance, $this->data);
+
+    expect($this->instance->environmentValues()->pluck('env_key')->all())->toBe(['APP_KEY', 'APP_URL']);
+});
+
 it('imports source .env without overwriting stored keys and rebuilds destination values', function (): void {
     $this->reader->contents = "APP_KEY=from-file\nNEW_FROM_ENV=imported\n";
     $this->action->execute($this->instance, $this->data);
@@ -604,6 +630,50 @@ it('restores the source and discards destination state when transfer fails befor
     expect($result['created'])->toBeFalse()
         ->and($result['transfer']->status)->toBe(AppInstanceTransferStatus::Completed)
         ->and($result['appInstance']->node_id)->toBe($this->destinationNode->id);
+});
+
+it('rolls back imported env when route preparation fails before cutover', function (): void {
+    $this->reader->contents = "APP_KEY=from-file\nNEW_FROM_ENV=imported\n";
+    Route::creating(static function (Route $route): void {
+        if ($route->status === RouteStatus::Pending) {
+            throw new ResourceOperationException('route.prepare_failed', 'Route preparation failed.', 409);
+        }
+    });
+
+    expect(fn () => $this->action->execute($this->instance, $this->data))
+        ->toThrow(ResourceOperationException::class);
+
+    expect($this->instance->environmentValues()->pluck('env_key')->all())->toBe(['APP_KEY', 'APP_URL'])
+        ->and(AppInstanceTransfer::query()->sole()->imported_environment_keys)->toBe([]);
+});
+
+it('rolls back previously imported env keys after retry adds new imports', function (): void {
+    Route::creating(static function (Route $route): void {
+        if ($route->status === RouteStatus::Pending) {
+            throw new ResourceOperationException('route.prepare_failed', 'Route preparation failed.', 409);
+        }
+    });
+    $this->reader->contents = "IMPORTED_A=one\n";
+
+    expect(fn () => $this->action->execute($this->instance, $this->data))
+        ->toThrow(ResourceOperationException::class);
+
+    $transfer = AppInstanceTransfer::query()->sole();
+    expect($this->instance->environmentValues()->where('env_key', 'IMPORTED_A')->exists())->toBeFalse();
+
+    // Simulate A surviving an incomplete rollback; the transfer must retain ownership of it.
+    $this->instance->environmentValues()->create([
+        'env_key' => 'IMPORTED_A',
+        'env_value' => 'one',
+    ]);
+    $transfer->update(['imported_environment_keys' => ['IMPORTED_A']]);
+    $this->reader->contents = "IMPORTED_B=two\n";
+
+    expect(fn () => $this->action->execute($this->instance->refresh(), $this->data))
+        ->toThrow(ResourceOperationException::class);
+
+    expect($this->instance->environmentValues()->pluck('env_key')->all())->toBe(['APP_KEY', 'APP_URL'])
+        ->and($transfer->refresh()->imported_environment_keys)->toBe([]);
 });
 
 it('continues only forward after cutover and does not recopy source', function (): void {

@@ -266,8 +266,14 @@ final class Orb245EnvironmentReader implements AppInstanceEnvironmentReader
 {
     public string $contents = "APP_KEY=from-file\nNEW_FROM_ENV=imported\n";
 
+    public ?ResourceOperationException $failure = null;
+
     public function read(AppInstanceEnvironmentContext $context): string
     {
+        if ($this->failure instanceof ResourceOperationException) {
+            throw $this->failure;
+        }
+
         return $this->contents;
     }
 }
