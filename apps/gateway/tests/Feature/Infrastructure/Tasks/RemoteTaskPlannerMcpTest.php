@@ -63,7 +63,7 @@ afterEach(function (): void {
     TestOrbitHome::clearScratch();
 });
 
-it('writes an untracked .mcp.json for this Gateway that Git ignores', function (): void {
+it('writes an untracked .mcp.json that points at the Gateway search endpoint and that Git ignores', function (): void {
     config()->set('app.url', 'https://gateway.orbit/');
     $checkout = planner_mcp_checkout();
     $instance = planner_mcp_instance($checkout);
@@ -75,9 +75,43 @@ it('writes an untracked .mcp.json for this Gateway that Git ignores', function (
     $exclude = (string) file_get_contents($checkout.'/.git/info/exclude');
 
     expect(json_decode((string) file_get_contents($checkout.'/.mcp.json'), true))
-        ->toBe(['mcpServers' => ['orbit' => ['type' => 'http', 'url' => 'https://gateway.orbit/mcp']]])
+        ->toBe(['mcpServers' => ['orbit' => ['type' => 'http', 'url' => 'https://gateway.orbit/mcp/search']]])
         ->and($status)->toBe('')
         ->and(substr_count($exclude, "/.mcp.json\n"))->toBe(1);
+});
+
+it('writes the search endpoint for a reviewer when the workspace has no .mcp.json', function (): void {
+    config()->set('app.url', 'https://gateway.orbit/');
+    $checkout = planner_mcp_checkout();
+    $instance = planner_mcp_instance($checkout);
+
+    expect(planner_mcp()->installWhenMissing($instance))->toBeTrue()
+        ->and(planner_mcp()->installWhenMissing($instance))->toBeTrue();
+
+    expect(json_decode((string) file_get_contents($checkout.'/.mcp.json'), true))
+        ->toBe(['mcpServers' => ['orbit' => ['type' => 'http', 'url' => 'https://gateway.orbit/mcp/search']]]);
+});
+
+it('leaves an existing .mcp.json unchanged when a reviewer starts', function (): void {
+    config()->set('app.url', 'https://gateway.orbit/');
+    $checkout = planner_mcp_checkout();
+    file_put_contents($checkout.'/.mcp.json', "{\"mcpServers\":{\"kept\":true}}\n");
+    $instance = planner_mcp_instance($checkout);
+
+    expect(planner_mcp()->installWhenMissing($instance))->toBeTrue()
+        ->and((string) file_get_contents($checkout.'/.mcp.json'))->toBe("{\"mcpServers\":{\"kept\":true}}\n");
+});
+
+it('replaces an untracked .mcp.json with the search endpoint for the planner', function (): void {
+    config()->set('app.url', 'https://gateway.orbit');
+    $checkout = planner_mcp_checkout();
+    file_put_contents($checkout.'/.mcp.json', "{\"mcpServers\":{\"orbit\":{\"url\":\"https://gateway.orbit/mcp\"}}}\n");
+    $instance = planner_mcp_instance($checkout);
+
+    expect(planner_mcp()->install($instance))->toBeTrue();
+
+    expect(json_decode((string) file_get_contents($checkout.'/.mcp.json'), true))
+        ->toBe(['mcpServers' => ['orbit' => ['type' => 'http', 'url' => 'https://gateway.orbit/mcp/search']]]);
 });
 
 it('leaves a tracked .mcp.json unchanged', function (): void {
@@ -94,5 +128,6 @@ it('reports failure for a workspace without a checkout', function (): void {
     $instance = planner_mcp_instance(planner_mcp_checkout());
     $instance->checkout_path = '';
 
-    expect(planner_mcp()->install($instance))->toBeFalse();
+    expect(planner_mcp()->install($instance))->toBeFalse()
+        ->and(planner_mcp()->installWhenMissing($instance))->toBeFalse();
 });

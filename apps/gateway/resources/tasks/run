@@ -5,7 +5,9 @@ declare(strict_types=1);
 
 /*
  * Orbit run receipt. The Gateway installs this script and turn.json in .git/orbit/.
- * An agent ends its turn with: .git/orbit/run --outcome=OUTCOME --summary="..."
+ * An agent ends its turn with: .git/orbit/run --thread=ID --outcome=OUTCOME --summary="..."
+ * --thread is the Orbit thread id from that thread's instructions. The tick applies the receipt only
+ * when it is the acting thread.
  * A blocked turn also asks the operator one specific question: --question="..."
  * The approval of the last subtask also describes the pull request:
  * --pr-summary="..." --pr-change="..." (repeat) --pr-breaking="..." (repeat, or none)
@@ -43,7 +45,7 @@ $options = [];
 $arguments = array_slice($argv, 1);
 while ($arguments !== []) {
     $argument = array_shift($arguments);
-    if (preg_match('/\A--(outcome|summary|question|pr-summary|pr-change|pr-breaking|deliverable)(?:=(.*))?\z/s', $argument, $match) !== 1) {
+    if (preg_match('/\A--(outcome|summary|question|pr-summary|pr-change|pr-breaking|deliverable|thread)(?:=(.*))?\z/s', $argument, $match) !== 1) {
         refuse("unknown argument {$argument}.");
     }
     $name = $match[1];
@@ -83,7 +85,7 @@ if ($outcome !== 'blocked' && array_key_exists('question', $options)) {
 $confirmations = [];
 foreach ($options['deliverable'] ?? [] as $confirmation) {
     if (preg_match('/\A([a-z0-9]+(?:-[a-z0-9]+)*)=(.*)\z/s', $confirmation, $match) !== 1) {
-        refuse("--deliverable needs the form ID=evidence, such as --deliverable=export-test=\"tests/Feature/ExportTest.php\".");
+        refuse('--deliverable needs the form ID=evidence, such as --deliverable=export-test="tests/Feature/ExportTest.php".');
     }
     [, $id, $evidence] = $match;
     if (! array_key_exists($id, $deliverables)) {
@@ -107,11 +109,22 @@ if ($confirms) {
         : array_keys(array_filter($deliverables, static fn (string $type): bool => $type === 'review'));
     $missing = array_values(array_diff($required, array_keys($confirmations)));
     if ($missing !== []) {
-        refuse(($role === 'implementer' ? 'ready_for_review' : 'approved')." needs --deliverable=ID=evidence for: ".implode(', ', $missing).'. Say where or how each one is met.');
+        refuse(($role === 'implementer' ? 'ready_for_review' : 'approved').' needs --deliverable=ID=evidence for: '.implode(', ', $missing).'. Say where or how each one is met.');
     }
 }
 
+$threadId = null;
+if (array_key_exists('thread', $options)) {
+    if (preg_match('/\A[1-9][0-9]*\z/', $options['thread']) !== 1) {
+        refuse('--thread must be the Orbit thread id.');
+    }
+    $threadId = (int) $options['thread'];
+}
+
 $receipt = ['outcome' => $outcome, 'summary' => $options['summary']];
+if ($threadId !== null) {
+    $receipt['thread'] = $threadId;
+}
 if ($confirmations !== []) {
     $receipt['deliverables'] = $confirmations;
 }

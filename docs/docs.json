@@ -739,7 +739,8 @@
               "decisions/0165-record-per-thread-token-metrics",
               "decisions/0166-raise-phpstan-one-level-at-a-time",
               "decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart",
-              "decisions/0168-offload-large-pi-tool-output"
+              "decisions/0168-offload-large-pi-tool-output",
+              "decisions/0169-start-each-subtask-review-in-a-fresh-thread"
             ]
           }
         ]

@@ -20,7 +20,7 @@ The layout bug on the iPhone home screen shipped twice. Nothing proved that the 
 
 [ADR 0133](/decisions/0133-verify-typed-subtask-deliverables-at-handoff) records the limit. A `test` deliverable proves that a named test exists in the diff and passes. It does not prove that the test fails before the fix.
 
-The start commit is the commit Orbit records when the subtask starts. The diff and this extra run both use that commit.
+The start commit is the commit Orbit records when the subtask starts, before the implementer's first turn. When that read never succeeds, the diff and this extra run both use the same fallback: the previous subtask's approved commit, or the workspace starting commit for the first subtask. Otherwise the diff and this extra run both use the recorded start commit.
 
 ### A killed base run
 

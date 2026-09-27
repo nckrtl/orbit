@@ -7,9 +7,12 @@ namespace App\Actions\Tasks;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\CoderSettleNotifier;
+use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskThreadRole;
 use App\Models\Activity;
+use App\Models\AgentThread;
 use App\Models\Task;
 use App\Models\TaskComment;
 use Illuminate\Support\Carbon;
@@ -48,28 +51,20 @@ final readonly class StoreTaskCommentAction
         });
 
         if ($deliverResolution) {
-            $task->loadMissing('implementerThread', 'taskGroup.reviewerThread');
-            // A task under review is blocked on the group's reviewer; otherwise on its implementer.
+            $task->loadMissing('implementerThread');
+            // A reviewing subtask is blocked on its own reviewer. The group pointer can still name an older thread.
             $reviewing = $task->status === TaskStatus::Reviewing;
             try {
-                $thread = $reviewing ? $task->taskGroup->reviewerThread : $task->implementerThread;
-                if ($thread === null) {
-                    throw new AgentDriverException('Blocked AgentThread is unavailable.');
-                }
-                $this->drivers->get($thread->driver)->send($thread, $comment->body);
-                DB::transaction(function () use ($task, $comment, $reviewing): void {
-                    $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-                    if (! $locked->assistance_requested) {
-                        return;
+                $thread = $reviewing ? $this->subtaskReviewer($task) : $task->implementerThread;
+                if ($reviewing && $thread === null) {
+                    $this->holdResolutionForFreshReviewer($task, $comment);
+                } else {
+                    if ($thread === null) {
+                        throw new AgentDriverException('Blocked AgentThread is unavailable.');
                     }
-                    // The resolution is the reviewer's next request, so the tick must not send another.
-                    $attempt = $reviewing
-                        ? ['review_attempt' => $locked->review_attempt + 1, 'review_notified_attempt' => $locked->review_attempt + 1]
-                        : ['completion_attempt' => $locked->completion_attempt + 1, 'completion_reminder_attempt' => null, 'completion_reminder_input_id' => null];
-                    $locked->update([...$attempt, 'assistance_requested' => false, 'assistance_reason' => null, 'communication_failures' => 0, 'review_reminder_attempt' => null, 'review_reminder_input_id' => null, 'resolution_delivered_comment_id' => $comment->id]);
-                    $locked->taskGroup()->update(['assistance_requested' => false, 'assistance_reason' => null]);
-                    $this->log($locked, $comment, 'resolution delivered');
-                });
+                    $this->drivers->get($thread->driver)->send($thread, $comment->body);
+                    $this->recordResolutionDelivered($task, $comment, $reviewing);
+                }
             } catch (AgentDriverException) {
                 DB::transaction(function () use ($task, $comment): void {
                     $this->log($task, $comment, 'resolution delivery failed');
@@ -83,6 +78,66 @@ final readonly class StoreTaskCommentAction
         }
 
         return $comment;
+    }
+
+    /** The reviewer thread for this subtask, preferring the one the group currently points at. */
+    private function subtaskReviewer(Task $task): ?AgentThread
+    {
+        $reviewers = AgentThread::query()
+            ->where('task_group_id', $task->task_group_id)
+            ->where('task_id', $task->id)
+            ->where('role', TaskThreadRole::Reviewer->value)
+            ->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%');
+        $pointed = $task->taskGroup()->value('reviewer_agent_thread_id');
+        if (is_numeric($pointed)) {
+            $match = (clone $reviewers)->whereKey((int) $pointed)->first();
+            if ($match instanceof AgentThread) {
+                return $match;
+            }
+        }
+
+        return $reviewers->orderByDesc('id')->first();
+    }
+
+    /**
+     * No reviewer exists for this subtask. Clear assistance without marking the review sent,
+     * so the tick starts a fresh reviewer and its opening packet can carry this resolution.
+     */
+    private function holdResolutionForFreshReviewer(Task $task, TaskComment $comment): void
+    {
+        DB::transaction(function () use ($task, $comment): void {
+            $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
+            if (! $locked->assistance_requested) {
+                return;
+            }
+            $comment->update(['review_attempt' => $locked->review_attempt]);
+            $locked->update([
+                'assistance_requested' => false,
+                'assistance_reason' => null,
+                'communication_failures' => 0,
+                'review_reminder_attempt' => null,
+                'review_reminder_input_id' => null,
+            ]);
+            $locked->taskGroup()->update(['assistance_requested' => false, 'assistance_reason' => null]);
+            $this->log($locked, $comment, 'resolution held for reviewer');
+        });
+    }
+
+    private function recordResolutionDelivered(Task $task, TaskComment $comment, bool $reviewing): void
+    {
+        DB::transaction(function () use ($task, $comment, $reviewing): void {
+            $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
+            if (! $locked->assistance_requested) {
+                return;
+            }
+            // The resolution is the reviewer's next request, so the tick must not send another.
+            $attempt = $reviewing
+                ? ['review_attempt' => $locked->review_attempt + 1, 'review_notified_attempt' => $locked->review_attempt + 1]
+                : ['completion_attempt' => $locked->completion_attempt + 1, 'completion_reminder_attempt' => null, 'completion_reminder_input_id' => null];
+            $locked->update([...$attempt, 'assistance_requested' => false, 'assistance_reason' => null, 'communication_failures' => 0, 'review_reminder_attempt' => null, 'review_reminder_input_id' => null, 'resolution_delivered_comment_id' => $comment->id]);
+            $locked->taskGroup()->update(['assistance_requested' => false, 'assistance_reason' => null]);
+            $this->log($locked, $comment, 'resolution delivered');
+        });
     }
 
     private function log(Task $task, TaskComment $comment, string $description): void

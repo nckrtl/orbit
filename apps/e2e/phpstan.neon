@@ -19,8 +19,3 @@ parameters:
             message: '#^Command "(?:topology\-snapshot:rebuild|topology\-snapshot:recover\-legacy|topology\-snapshot:refresh|topology\-snapshot:restore|topology:acquire)" does not have option "worktree"\.$#'
             path: app/Console/Commands/E2ECommand.php
             count: 5
-        -
-            identifier: larastan.console.undefinedArgument
-            message: '#^Command "(?:topology\-snapshot:rebuild|topology\-snapshot:recover\-legacy|topology\-snapshot:refresh|topology\-snapshot:restore)" does not have argument "issue"\.$#'
-            path: app/Console/Commands/E2ECommand.php
-            count: 4

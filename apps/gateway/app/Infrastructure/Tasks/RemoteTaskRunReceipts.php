@@ -26,13 +26,13 @@ final readonly class RemoteTaskRunReceipts implements TaskRunReceipts
 
     public function __construct(private AppDevSshExecutor $ssh) {}
 
-    public function prepare(AppInstance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = []): void
+    public function prepare(AppInstance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void
     {
         $script = file_get_contents(resource_path('tasks/run'));
         if ($script === false) {
             throw new TaskRunReceiptException('The run script is missing from the Gateway.');
         }
-        $turn = json_encode([
+        $turnFields = [
             'role' => $role->value,
             'final' => $final,
             'deliverables' => array_map(static function (TaskDeliverable $deliverable): array {
@@ -45,7 +45,11 @@ final readonly class RemoteTaskRunReceipts implements TaskRunReceipts
 
                 return $fields;
             }, $deliverables),
-        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        ];
+        if ($threadId !== null) {
+            $turnFields['thread'] = $threadId;
+        }
+        $turn = json_encode($turnFields, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $this->run($instance, [], "script='".base64_encode($script)."'\nturn='".base64_encode($turn)."'\n".<<<'BASH'
             install -d -m 0755 -- "$dir"
             rm -f -- "$dir/run.json"
@@ -58,24 +62,77 @@ final readonly class RemoteTaskRunReceipts implements TaskRunReceipts
             BASH);
     }
 
-    public function read(AppInstance $instance): ?TaskRunReceipt
+    public function read(AppInstance $instance, ?int $actingThreadId = null): ?TaskRunReceipt
     {
         $output = $this->run($instance, [], <<<'BASH'
             if [ -f "$dir/run.json" ]; then
                 printf 'receipt\n'
+                if [ -f "$dir/turn.json" ]; then
+                    cat -- "$dir/turn.json"
+                fi
                 cat -- "$dir/run.json"
             else
                 printf 'none\n'
             fi
             BASH);
-        if (str_starts_with($output, "receipt\n")) {
-            return TaskRunReceipt::parse(substr($output, 8));
-        }
         if ($output === "none\n") {
             return null;
         }
+        if (! str_starts_with($output, "receipt\n")) {
+            throw new TaskRunReceiptException('The run receipt could not be read.');
+        }
+        [$expectedThread, $contents] = self::split(substr($output, 8));
+        $receipt = TaskRunReceipt::parse($contents);
+        if ($actingThreadId !== null) {
+            return $receipt->threadId === $actingThreadId ? $receipt : null;
+        }
+        if ($expectedThread !== null && $receipt->threadId !== $expectedThread) {
+            return null;
+        }
 
-        throw new TaskRunReceiptException('The run receipt could not be read.');
+        return $receipt;
+    }
+
+    public function hasLegacyTurn(AppInstance $instance): bool
+    {
+        $output = $this->run($instance, [], <<<'BASH'
+            if [ -f "$dir/turn.json" ]; then
+                printf 'turn\n'
+                cat -- "$dir/turn.json"
+            else
+                printf 'missing\n'
+            fi
+            BASH);
+        if (! str_starts_with($output, "turn\n")) {
+            return false;
+        }
+        $turn = json_decode(substr($output, 5), true);
+        $thread = is_array($turn) ? ($turn['thread'] ?? null) : null;
+        $bound = (is_int($thread) && $thread > 0) || (is_string($thread) && preg_match('/\A[1-9][0-9]*\z/', $thread) === 1);
+
+        return ! $bound;
+    }
+
+    /**
+     * A turn file on its own line names the acting thread. Older readers, and tests that supply only
+     * the receipt, leave the body as one receipt.
+     *
+     * @return array{0: ?int, 1: string}
+     */
+    private static function split(string $body): array
+    {
+        $newline = strpos($body, "\n");
+        if ($newline === false) {
+            return [null, $body];
+        }
+        $turn = json_decode(substr($body, 0, $newline), true);
+        if (! is_array($turn) || ! is_string($turn['role'] ?? null)) {
+            return [null, $body];
+        }
+        $thread = $turn['thread'] ?? null;
+        $expected = is_int($thread) ? $thread : (is_string($thread) && preg_match('/\A[1-9][0-9]*\z/', $thread) === 1 ? (int) $thread : null);
+
+        return [$expected !== null && $expected > 0 ? $expected : null, substr($body, $newline + 1)];
     }
 
     public function clear(AppInstance $instance, TaskRunReceipt $receipt): void

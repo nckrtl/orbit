@@ -46,18 +46,30 @@ final class FakeTaskRunReceipts implements TaskRunReceipts
     /** @var list<list<string>> the deliverable IDs written into each prepared turn */
     public array $turnDeliverables = [];
 
-    public function prepare(AppInstance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = []): void
+    public function prepare(AppInstance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void
     {
         $this->prepared[] = $role->value.($final ? ':final' : '');
         $this->turnDeliverables[] = array_map(static fn (TaskDeliverable $deliverable): string => $deliverable->id, $deliverables);
     }
 
-    public function read(AppInstance $instance): ?TaskRunReceipt
+    public function read(AppInstance $instance, ?int $actingThreadId = null): ?TaskRunReceipt
     {
         $this->reads++;
         $contents = array_shift($this->receipts);
+        if ($contents === null) {
+            return null;
+        }
+        $receipt = TaskRunReceipt::parse($contents);
+        if ($receipt->threadId === null && $actingThreadId !== null) {
+            return $receipt->withThread($actingThreadId);
+        }
 
-        return $contents === null ? null : TaskRunReceipt::parse($contents);
+        return $receipt;
+    }
+
+    public function hasLegacyTurn(AppInstance $instance): bool
+    {
+        return false;
     }
 
     public function clear(AppInstance $instance, TaskRunReceipt $receipt): void

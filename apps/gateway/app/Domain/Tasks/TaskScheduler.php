@@ -45,6 +45,9 @@ final readonly class TaskScheduler
     /** Assistance set when a settling group has no pull request and no todo subtask (ADR 0164). */
     public const string MissingPullRequestPrefix = 'The settling group has no reviewed pull request URL.';
 
+    /** Assistance set when a review request fails. The exception class follows; the message does not. */
+    public const string ReviewRequestFailedReason = 'The review could not be requested';
+
     /** Re-evaluations of cancelled or unstarted checks on one head before the group asks for assistance (ADR 0164). */
     public const int InfrastructureCheckRetries = 5;
 
@@ -171,6 +174,9 @@ final readonly class TaskScheduler
                 if (! $task instanceof Task || ! in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true)) {
                     continue;
                 }
+                if ($task->status === TaskStatus::Running) {
+                    $this->recordSubtaskStart($task);
+                }
                 if ($task->assistance_requested || $group->assistance_requested) {
                     if ($task->status === TaskStatus::Reviewing) {
                         $group = $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
@@ -275,6 +281,9 @@ final readonly class TaskScheduler
         }
 
         if ($task->completion_handoff_attempt !== null && ! $this->newerTurnHasStopped($task->completion_handoff_turn_id, $implementer)) {
+            return true;
+        }
+        if ($this->reissueLegacyTurn($group, $task, $implementer)) {
             return true;
         }
 
@@ -454,9 +463,9 @@ final readonly class TaskScheduler
     private function handleReviewerOutcome(TaskGroup $group, Task $task, TaskSessionObservation $observation): bool
     {
         $reviewer = $observation->thread(TaskThreadRole::Reviewer);
-        // The shared reviewer can still be on another conversation when this subtask reaches review.
-        // A Pi restart of that turn is not this subtask's review. Request the review first, and recover
-        // only a review that was already requested (ADR 0167).
+        // Before this subtask's review is requested, the observed reviewer can be the planner or an
+        // earlier subtask's thread. A Pi restart of that turn is not this review. Request the review
+        // first, and recover only a review that was already requested (ADR 0167, ADR 0169).
         if ($reviewer === null || $task->review_notified_attempt !== $task->review_attempt) {
             $this->nudgeReviewer($task, $reviewer);
 
@@ -475,6 +484,9 @@ final readonly class TaskScheduler
             return false;
         }
         if (! $this->newerTurnHasStopped($task->review_notified_turn_id, $reviewer)) {
+            return true;
+        }
+        if ($this->reissueLegacyTurn($group, $task, $reviewer)) {
             return true;
         }
 
@@ -791,7 +803,7 @@ final readonly class TaskScheduler
             return;
         }
         try {
-            $this->prepareTurn($group, $task, TaskThreadRole::Implementer);
+            $this->prepareTurn($group, $task, TaskThreadRole::Implementer, $implementer->threadId);
             $this->actor->relayReviewBody($group, $implementer, $findings->body);
         } catch (AgentDriverException|TaskRunReceiptException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
@@ -852,7 +864,7 @@ final readonly class TaskScheduler
 
     /**
      * ADR 0133: what the handoff check needs to record deliverable evidence, or null for a subtask without deliverables.
-     * ADR 0163: a test with fails_on_base true asks for the extra run on the start commit.
+     * ADR 0163: a test with fails_on_base true asks for the extra run on the same base as the review diff.
      *
      * @return array{start: string|null, tests: list<array{id: string, project: string, file: string, fails_on_base?: bool}>, commands: list<array{id: string, command: string, directory: string}>}|null
      */
@@ -876,7 +888,9 @@ final readonly class TaskScheduler
             }
         }
 
-        return ['start' => $task->subtask_start_commit, 'tests' => $tests, 'commands' => $commands];
+        $start = TaskReviewBase::commit($task);
+
+        return ['start' => $start !== '' ? $start : null, 'tests' => $tests, 'commands' => $commands];
     }
 
     private function receiptItem(?TaskRunReceipt $read, ?TaskComment $receipt): TaskRubricItem
@@ -900,8 +914,9 @@ final readonly class TaskScheduler
         if (! $instance instanceof AppInstance) {
             throw new TaskRunReceiptException('The task workspace is unavailable.');
         }
-        $receipt = $this->receipts->read($instance);
-        if (! $receipt instanceof TaskRunReceipt) {
+        $actingThreadId = $this->actingThreadId($group, $task, $role);
+        $receipt = $this->receipts->read($instance, $actingThreadId);
+        if (! $receipt instanceof TaskRunReceipt || ! $this->receiptMatchesActingThread($receipt, $actingThreadId)) {
             return null;
         }
         if ($receipt->outcome instanceof TaskRunOutcome && $receipt->fits($role)) {
@@ -921,6 +936,47 @@ final readonly class TaskScheduler
         $this->receipts->clear($instance, $receipt);
 
         return $receipt;
+    }
+
+    /** The Orbit id of the thread this phase acts as, or null when that thread has not been stored. */
+    private function actingThreadId(TaskGroup $group, Task $task, TaskThreadRole $role): ?int
+    {
+        $id = $role === TaskThreadRole::Implementer ? $task->implementer_agent_thread_id : $group->reviewer_agent_thread_id;
+
+        return is_numeric($id) ? (int) $id : null;
+    }
+
+    /** A receipt applies only when it names the acting thread. An unbound receipt does not. */
+    private function receiptMatchesActingThread(TaskRunReceipt $receipt, ?int $actingThreadId): bool
+    {
+        return $actingThreadId === null || $receipt->threadId === $actingThreadId;
+    }
+
+    /**
+     * Rewrites a legacy turn file for the acting thread and sends the bound run command.
+     * The unidentified receipt is not applied.
+     */
+    private function reissueLegacyTurn(TaskGroup $group, Task $task, TaskThreadObservation $thread): bool
+    {
+        $actingThreadId = $this->actingThreadId($group, $task, $thread->role);
+        $instance = $group->taskable;
+        if ($actingThreadId === null || $thread->threadId !== $actingThreadId || ! $instance instanceof AppInstance) {
+            return false;
+        }
+        try {
+            if (! $this->receipts->hasLegacyTurn($instance)) {
+                return false;
+            }
+            $this->prepareTurn($group, $task, $thread->role, $actingThreadId);
+            $instructions = $thread->role === TaskThreadRole::Implementer
+                ? TaskRunInstructions::implementer($task->deliverableList(), $group->app->taskCheckCommand(), $actingThreadId)
+                : TaskRunInstructions::reviewer($task->opensPullRequest(), $task->deliverableList(), $actingThreadId);
+            $this->actor->remindRubric($group, $thread, 'Orbit bound this turn to its thread. '.$instructions);
+        } catch (AgentDriverException|TaskRunReceiptException $exception) {
+            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+        }
+
+        return true;
     }
 
     /**
@@ -949,13 +1005,13 @@ final readonly class TaskScheduler
     }
 
     /** @throws TaskRunReceiptException */
-    private function prepareTurn(TaskGroup $group, Task $task, TaskThreadRole $role): void
+    private function prepareTurn(TaskGroup $group, Task $task, TaskThreadRole $role, ?int $threadId = null): void
     {
         $instance = $group->taskable;
         if (! $instance instanceof AppInstance) {
             throw new TaskRunReceiptException('The task workspace is unavailable.');
         }
-        $this->receipts->prepare($instance, $role, $role === TaskThreadRole::Reviewer && $task->opensPullRequest(), $task->deliverableList());
+        $this->receipts->prepare($instance, $role, $role === TaskThreadRole::Reviewer && $task->opensPullRequest(), $task->deliverableList(), $threadId);
     }
 
     private function waitingItem(TaskThreadObservation $thread): ?TaskRubricItem
@@ -991,8 +1047,8 @@ final readonly class TaskScheduler
         }
         if ($task->{$reminder} !== $task->{$attempt}) {
             try {
-                $this->prepareTurn($group, $task, $thread->role);
-                $this->actor->remindRubric($group, $thread, TaskRubricReminder::compose($thread->role, $failures, ! $implementer && $task->opensPullRequest(), $task->deliverableList(), $group->app->taskCheckCommand()));
+                $this->prepareTurn($group, $task, $thread->role, $thread->threadId);
+                $this->actor->remindRubric($group, $thread, TaskRubricReminder::compose($thread->role, $failures, ! $implementer && $task->opensPullRequest(), $task->deliverableList(), $group->app->taskCheckCommand(), $thread->threadId));
             } catch (AgentDriverException|TaskRunReceiptException $exception) {
                 $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
@@ -1886,13 +1942,17 @@ final readonly class TaskScheduler
     }
 
     /**
-     * Starts the reviewer at the first handoff, or asks the existing reviewer for the next review.
-     * A working reviewer gets no request. The task stays unnotified, so a later tick sends the request
-     * once the reviewer is idle.
+     * Starts a fresh reviewer for this subtask's first review, or continues that subtask's reviewer.
+     * A working continued reviewer gets no request. The planner and an earlier subtask's reviewer do not
+     * delay a fresh review. The task stays unnotified until the request is sent.
      */
     private function nudgeReviewer(Task $task, ?TaskThreadObservation $reviewer): void
     {
-        if ($task->review_notified_attempt === $task->review_attempt || $this->isWorking($reviewer)) {
+        if ($task->review_notified_attempt === $task->review_attempt) {
+            return;
+        }
+        $existing = $this->subtaskReviewer($task);
+        if ($existing !== null && $reviewer !== null && $reviewer->threadId === $existing->id && $this->isWorking($reviewer)) {
             return;
         }
         $group = $task->taskGroup()->with('taskable')->firstOrFail();
@@ -1900,18 +1960,29 @@ final readonly class TaskScheduler
         try {
             // Read at send time. Do not copy the hash from an earlier check row: the request may have waited.
             $snapshot = $this->workspaceSnapshot($group);
-            $this->prepareTurn($group, $task, TaskThreadRole::Reviewer);
-            if ($group->reviewer_agent_thread_id === null) {
+            if ($existing === null && $this->spawner instanceof TaskAgentSpawner) {
+                $reserved = $this->spawner->reserveReviewer($task);
+                $this->prepareTurn($group, $task, TaskThreadRole::Reviewer, $reserved);
                 $threadId = $this->spawner->spawnReviewer($task);
                 if ($threadId === null) {
                     throw new AgentDriverException('The reviewer conversation could not be started.');
                 }
-                $group->update(['reviewer_agent_thread_id' => $threadId]);
+            } elseif ($existing === null) {
+                $this->prepareTurn($group, $task, TaskThreadRole::Reviewer);
+                $threadId = $this->spawner->spawnReviewer($task);
+                if ($threadId === null) {
+                    throw new AgentDriverException('The reviewer conversation could not be started.');
+                }
             } else {
+                $this->prepareTurn($group, $task, TaskThreadRole::Reviewer, $existing->id);
                 $this->spawner->requestReview($task);
+                $continued = $this->subtaskReviewer($task);
+                $threadId = $continued instanceof AgentThread ? $continued->id : $existing->id;
             }
-        } catch (AgentDriverException|TaskRunReceiptException|TaskCheckException $exception) {
-            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+            $group->update(['reviewer_agent_thread_id' => $threadId]);
+        } catch (Throwable $exception) {
+            report($exception);
+            $this->recordCommunicationFailure($task, $group, self::ReviewRequestFailedReason.' ('.class_basename($exception).').');
 
             return;
         }
@@ -1923,6 +1994,25 @@ final readonly class TaskScheduler
             'review_workspace_tree' => $snapshot->tree,
         ]);
         $this->clearCommunicationFailures($task);
+    }
+
+    /** The reviewer thread for this subtask, preferring the one the group currently points at. */
+    private function subtaskReviewer(Task $task): ?AgentThread
+    {
+        $query = AgentThread::query()
+            ->where('task_group_id', $task->task_group_id)
+            ->where('task_id', $task->id)
+            ->where('role', TaskThreadRole::Reviewer->value)
+            ->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%');
+        $pointed = TaskGroup::query()->whereKey($task->task_group_id)->value('reviewer_agent_thread_id');
+        if (is_numeric($pointed)) {
+            $match = (clone $query)->whereKey((int) $pointed)->first();
+            if ($match instanceof AgentThread) {
+                return $match;
+            }
+        }
+
+        return $query->orderByDesc('id')->first();
     }
 
     /**
@@ -2666,7 +2756,7 @@ final readonly class TaskScheduler
     private function needsBaseline(Task $task): bool
     {
         $started = Task::query()->where('task_group_id', $task->task_group_id)->whereNotNull('implementer_agent_thread_id')->exists()
-            || AgentThread::query()->where('task_group_id', $task->task_group_id)->where('role', TaskThreadRole::Implementer->value)->exists();
+            || AgentThread::query()->where('task_group_id', $task->task_group_id)->where('role', TaskThreadRole::Implementer->value)->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%')->exists();
 
         return ! $started && ! TaskCheck::query()->where('task_id', $task->id)->where('kind', TaskCheckKind::Baseline->value)
             ->where('status', TaskCheckStatus::Passed->value)->exists();
@@ -2675,7 +2765,28 @@ final readonly class TaskScheduler
     private function hasImplementer(Task $task): bool
     {
         return $task->implementer_agent_thread_id !== null
-            || AgentThread::query()->where('task_id', $task->id)->where('role', TaskThreadRole::Implementer->value)->exists();
+            || AgentThread::query()->where('task_id', $task->id)->where('role', TaskThreadRole::Implementer->value)->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%')->exists();
+    }
+
+    /**
+     * The implementer's first turn has started once its conversation exists.
+     * A reserved row has not started, so a failed start read can still be retried.
+     */
+    private function implementerTurnStarted(Task $task): bool
+    {
+        $threadId = $task->implementer_agent_thread_id;
+        if ($threadId !== null) {
+            $externalId = AgentThread::query()->whereKey($threadId)->value('external_id');
+            if (is_string($externalId) && ! str_starts_with($externalId, TaskAgentSpawner::PendingPrefix)) {
+                return true;
+            }
+        }
+
+        return AgentThread::query()
+            ->where('task_id', $task->id)
+            ->where('role', TaskThreadRole::Implementer->value)
+            ->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%')
+            ->exists();
     }
 
     /**
@@ -2811,7 +2922,11 @@ final readonly class TaskScheduler
         $threadId = null;
         try {
             if ($group instanceof TaskGroup) {
-                $this->prepareTurn($group, $task, TaskThreadRole::Implementer);
+                $reserved = $task->implementer_agent_thread_id;
+                if ($reserved === null && $this->spawner instanceof TaskAgentSpawner) {
+                    $reserved = $this->spawner->reserveImplementer($task->fresh() ?? $task);
+                }
+                $this->prepareTurn($group, $task, TaskThreadRole::Implementer, $reserved === null ? null : (int) $reserved);
                 $threadId = $this->spawner->spawnImplementer($task->fresh() ?? $task);
             }
         } catch (TaskRunReceiptException $exception) {
@@ -2828,12 +2943,29 @@ final readonly class TaskScheduler
         $task->save();
     }
 
+    /**
+     * Records the workspace HEAD as this subtask's start. A failed read stays empty so a later tick
+     * can try again, until the implementer's first turn starts. After that turn, a later HEAD would
+     * hide the implementer's commits, so the start stays empty and the review uses its fallback base.
+     * A start that is already recorded is not replaced.
+     */
     private function recordSubtaskStart(Task $task): void
     {
-        $instance = $task->taskGroup()->with('taskable')->first()?->taskable;
-        if ($instance instanceof AppInstance) {
-            $task->update(['subtask_start_commit' => $this->workspace->headCommit($instance)]);
+        if (is_string($task->subtask_start_commit) && $task->subtask_start_commit !== '') {
+            return;
         }
+        if ($this->implementerTurnStarted($task)) {
+            return;
+        }
+        $instance = $task->taskGroup()->with('taskable')->first()?->taskable;
+        if (! $instance instanceof AppInstance) {
+            return;
+        }
+        $head = $this->workspace->headCommit($instance);
+        if (! is_string($head) || $head === '') {
+            return;
+        }
+        $task->update(['subtask_start_commit' => $head]);
     }
 
     /** @return Collection<int, Task> */

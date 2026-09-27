@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Tasks\TaskAgentSpawner;
 use App\Infrastructure\Tasks\T3\T3Stream as TaskAgentStream;
 use App\Models\AgentThread;
 use App\Models\App as OrbitApp;
@@ -25,6 +26,12 @@ function agent_viewer_fixture(): array
 describe('task agent viewer', function (): void {
     it('lists persisted links after the workspace is removed', function (): void {
         [$group, $session] = agent_viewer_fixture();
+        AgentThread::query()->create([
+            'task_group_id' => $group->id, 'node_id' => $session->node_id, 'role' => 'reviewer',
+            'model' => 'claude-opus', 'effort' => 'high', 'external_id' => TaskAgentSpawner::PendingPrefix.'not-started',
+            'driver' => 't3', 'runtime_key' => 'node:'.$session->node_id,
+        ]);
+
         $this->getJson("/api/v1/task-groups/{$group->id}/agents")
             ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.external_id', 'thread-one')
             ->assertJsonPath('data.0.task_group_id', $group->id)->assertJsonPath('data.0.node_id', $session->node_id)

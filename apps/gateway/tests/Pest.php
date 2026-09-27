@@ -14,8 +14,10 @@ use App\Domain\Logs\LogStreamStore;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\NullTaskReviewDiff;
 use App\Domain\Tasks\TaskBridgeWorktreeRemover;
 use App\Domain\Tasks\TaskCheckRunner;
+use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskRunReceipts;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\AgentView\CacheAgentStateView;
@@ -69,6 +71,7 @@ uses(TestCase::class, RefreshDatabase::class)
         app()->instance(ClusterRouterDnsSelectionReconciler::class, new FakeClusterRouterDnsSelectionReconciler);
         app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts);
         app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
+        app()->instance(TaskReviewDiff::class, new NullTaskReviewDiff);
         // Bridge removal runs Git on the Node. Feature tests skip it unless they opt in.
         app()->instance(TaskBridgeWorktreeRemover::class, new class implements TaskBridgeWorktreeRemover
         {

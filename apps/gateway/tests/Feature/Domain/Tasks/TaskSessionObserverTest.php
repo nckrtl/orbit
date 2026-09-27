@@ -10,6 +10,7 @@ use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Infrastructure\Tasks\T3\T3ThreadReader;
+use App\Models\AgentThread;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
@@ -172,6 +173,9 @@ it('reads a pending user-input request id from subscribeThread activities', func
 it('defers a task while the thread that acts in its phase is active, before inspecting context', function (string $status, TaskStatus $taskStatus, string $activeThread): void {
     $group = observer_group();
     $group->tasks->first()->update(['status' => $taskStatus]);
+    if ($activeThread === 'reviewer-thread') {
+        AgentThread::query()->where('external_id', 'reviewer-thread')->where('task_group_id', $group->id)->update(['task_id' => $group->tasks->first()->id]);
+    }
     $snapshots = [
         'implementer-thread' => ['thread' => ['session' => ['status' => 'idle']]],
         'reviewer-thread' => ['thread' => ['session' => ['status' => 'idle']]],
