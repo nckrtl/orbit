@@ -125,14 +125,14 @@ MCP tool names follow the API operation identifiers: `tasks-create`, `tasks-upda
 
 ## Deliverables
 
-A deliverable is one item that a subtask must deliver, in a form Orbit can check. The Project's external ADE or an authorized operator writes them next to the brief. The implementer confirms each one when it hands off. Orbit verifies the mechanical deliverables before the reviewer starts. [ADR 0133](/decisions/0133-verify-typed-subtask-deliverables-at-handoff) records the existing contract; [ADR 0178](/decisions/0178-run-project-agnostic-tasks-without-a-planner) defines its generic direction.
+A deliverable is one item that a subtask must deliver, in a form Orbit can check. The Project's external ADE or an authorized operator writes them next to the brief. The implementer confirms each one when it hands off. Orbit verifies the mechanical deliverables before the reviewer starts. [ADR 0133](/decisions/0133-verify-typed-subtask-deliverables-at-handoff) records the contract.
 
 Each deliverable is an object with an `id`, a `type`, a `description`, and the fields of its type:
 
 | Type | Fields | Orbit checks |
 | --- | --- | --- |
 | `file` | `path`: a path or glob from the workspace root. `change`: `created`, `modified`, or `any` | A matching path in the subtask's diff, added for `created`, modified for `modified`, either for `any` |
-| `test` | `project`: directory or `.`. `file`: test file in that project. `name`: test-name substring | The changed test file passes. A subsequent group replaces this legacy form with generic command deliverables (ADR 0178). |
+| `test` | `project`: directory or `.`. `file`: test file in that project. `name`: test-name substring | The test file is added or modified in the diff, at least one test whose name contains `name` exists, and all matching tests pass |
 | `command` | `command`: the command to run. `directory`: where to run it, relative to the workspace root; default `.` | Orbit's run of the command exits with 0 |
 | `review` | none | The reviewer confirms it in its approval |
 
@@ -161,7 +161,6 @@ A `test` deliverable may set `fails_on_base` to `true`. [Reproduce a bug on the 
 
 A field that belongs to another type is refused. Only a `file` deliverable's `path` accepts a glob. In that `path`, `*` matches within one directory, `**` matches across directories, and `?` matches one character.
 
-The current `test` deliverable identifies one exact test file relative to its `project`. ADR 0178 directs a subsequent implementation group to move validation to generic command deliverables.
 
 Group create, subtask create, and subtask update refuse any other `file` with HTTP 422 `validation.failed`. The error names that deliverable's `id`.
 
@@ -169,7 +168,7 @@ The subtask's diff runs from its start commit to the working tree that Orbit's c
 
 ### Reproduce a bug on the start commit
 
-A `test` deliverable may set `fails_on_base` to `true`. Omitted and `false` are the same: Orbit runs the file once, on the working tree. Show and the turn file include the boolean. An omitted input is stored as `false`.
+A `test` deliverable may set `fails_on_base` to `true`. Omitted and `false` are the same: Orbit runs the file once, on the working tree. Show and the turn file include the boolean. An omitted input is stored as `false`. Orbit runs the test directly with `vendor/bin/pest FILE --log-junit=...`, with test impact analysis off, as `resources/tasks/check` does.
 
 When the value is `true`, Orbit runs that file twice at handoff.
 
@@ -232,15 +231,19 @@ A subtask with no deliverables skips these steps. Groups that left Backlog befor
 Use Backlog to prepare a group before any agent runs. Backlog groups have no Instance. An external ADE plans and steers, and Orbit runs the assigned subtasks.
 
 1. Create the group. It starts in `backlog`.
-2. Prepare the branch and feature contract using the Project's own task policy. For Orbit, see the [Orbit Tasks skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md).
-3. Add ordered subtasks and typed deliverables that the Gateway can validate.
-4. Move the group to `todo` with `tasks:update` when the Project is ready to execute.
+2. In a worktree, create the branch `task-{group id}` from the Project default branch.
+3. Write the feature's ADRs and documentation on that branch, following the [contributor guide](/contributor-guide), then push the branch.
+4. Split the work into ordered subtasks using the Project's own task policy.
+5. Add typed deliverables that the Gateway can validate.
+6. Move the group to `todo` with `tasks:update` when the Project is ready to execute.
 
-The provisioner checks out the branch for the shared Instance after the scheduler claims the group. Prompts and review behavior are described in [Review a subtask](#review-a-subtask).
+For Orbit, the [Orbit Tasks skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) describes task policy. Each subtask has one concise goal and at most five deliverables. Its brief cites the ADRs and documentation it implements.
+
+The provisioner checks out the pushed `task-{group id}` branch for the shared Instance. The implementer and reviewer prompts name the ADRs and documentation that this branch changes as the feature's contract. [Review a subtask](#review-a-subtask) describes the review behavior. The Gateway does not check the branch contents. A group without a pushed branch runs on a fresh branch from the default branch.
 
 ## Backlog and Project policy
 
-Backlog is for preparing a task group before it is claimed. A Backlog group has no Instance. An authorized caller creates the group and its ordered subtasks; moving it to `todo` makes it eligible for the scheduler to claim. An external ADE plans and steers; Orbit runs the assigned subtasks. The planner path was removed by [ADR 0178](/decisions/0178-run-project-agnostic-tasks-without-a-planner).
+Backlog is for preparing a task group before it is claimed. A Backlog group has no Instance. An authorized caller creates the group and its ordered subtasks; moving it to `todo` makes it eligible for the scheduler to claim. An external ADE plans and steers; Orbit runs the assigned subtasks. See [ADR 0178](/decisions/0178-run-project-agnostic-tasks-without-a-planner).
 
 Each Project keeps its own task policy in an `orbit-tasks` skill under `.agents/skills/` and enforces that policy through its own task-check command. See the Orbit repository's [task policy skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) as an example. The Gateway runs the configured task check as provided, while applying the current Project-type defaults, Composer check rubric, and baseline dependency preparation described in [Project check](#project-check).
 
@@ -764,7 +767,22 @@ When a problem has fewer than two fixups, one tick appends one fixup and returns
 
 A conflict fixup is titled `Merge origin/{base}`. Its brief is `Merge origin/{base} into the task branch and resolve the conflicts. Do not rebase and do not force-push.` A check fixup is titled `Fix {name}`, cut off at 160 characters. Its brief is `Check {name} failed: {url}. Do not rebase and do not force-push.` With no URL, the brief is `Check {name} failed. Do not rebase and do not force-push.`
 
-A fixup receives the normal `composer check` command deliverable. For a recognized failed check when the Project slug is `orbit`, it also receives the command and working directory from the Gateway's slug-keyed reproduction table. Other Project slugs and unrecognized check names receive only `composer check`. The configured Project task check also runs through the normal handoff gate.
+Every fixup has a `command` deliverable `composer-check`: command `composer check`, directory `.`, description `Run composer check`. When the Project slug is `orbit` and the table lists the check name, the fixup also has `reproduce-check` with that command and directory. Its description is `Reproduce {name}`. The same command and directory are stored once.
+
+| Check name | Command | Directory |
+| --- | --- | --- |
+| `CLI` | `composer check` | `apps/cli` |
+| `Docs` | `composer check` | `apps/docs` |
+| `Gateway` | `composer check` | `apps/gateway` |
+| `E2E` | `composer check` | `apps/e2e` |
+| `PHP SDK` | `composer check` | `packages/php-sdk` |
+| `API reference` | `bin/docs-openapi --check && bin/mcp-tools --check` | `.` |
+| `Web` | `copy=$(mktemp) && cp src/api/schema.d.ts "$copy" && bun run types && git diff --exit-code --no-index "$copy" src/api/schema.d.ts && bun run check && bun run test && bun run build` | `apps/web` |
+| `Pi server` | `bun run check && bun run test && bun run build` | `apps/pi-server` |
+| `Agent annotation` | `bun run check && bun run build && bun run test` | `packages/agent-annotation` |
+| `Rust agent` | `cargo fmt --all -- --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked` | `apps/agent` |
+
+These rows apply only when the Project slug is `orbit`. The command is the job's check steps, not its setup. Any other slug, and any name not listed, has no reproduction command. The Web row also checks API schema freshness. It copies `src/api/schema.d.ts`, runs `bun run types`, and diffs that copy with `git diff --exit-code --no-index`. CI runs `bun run types && git diff --exit-code src/api/schema.d.ts` on a clean checkout. The copy lets an uncommitted schema that already matches the generator pass.
 
 The fixup uses a new implementer thread and a new reviewer thread for that subtask. The handoff check runs the Project task check and the deliverable commands. After approval, Orbit commits and pushes that stored commit with the [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) refspec. The push is not a force push. Orbit does not rebase. The open pull request takes the new commits. Orbit does not open a second pull request, and `pr_url` stays.
 

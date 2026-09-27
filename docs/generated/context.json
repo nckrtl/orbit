@@ -5651,8 +5651,12 @@
             "title": "Tasks",
             "kind": "reference",
             "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
                 "apps/gateway",
-                "apps/web"
+                "apps/web",
+                "packages/php-sdk"
             ],
             "concepts": [
                 "Activity",
