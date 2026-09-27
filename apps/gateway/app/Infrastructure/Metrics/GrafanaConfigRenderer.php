@@ -12,7 +12,7 @@ final readonly class GrafanaConfigRenderer
             throw new \InvalidArgumentException('Invalid datasource URL.');
         }
 
-        return "apiVersion: 1\ndeleteDatasources:\n  - name: Prometheus\n    orgId: 1\nprune: true\ndatasources:\n  - name: orbit-prometheus\n    type: prometheus\n    uid: orbit-prometheus\n    orgId: 1\n    version: 1\n    url: {$url}\n    access: proxy\n    isDefault: true\n";
+        return "apiVersion: 1\nprune: true\ndatasources:\n  - name: orbit-prometheus\n    type: prometheus\n    uid: orbit-prometheus\n    orgId: 1\n    version: 1\n    url: {$url}\n    access: proxy\n    isDefault: true\n";
     }
 
     /**

@@ -61,7 +61,6 @@ it('converges protected exporter configuration and exact Metrics-owned firewall 
         metricsExporterResult(exitCode: 1),
         metricsExporterResult(stdout: "Status: active\n"),
         metricsExporterResult(exitCode: 3, stdout: "inactive\n"),
-        metricsExporterResult(),
         metricsExporterResult(exitCode: 1),
         metricsExporterResult(),
         metricsExporterResult(),
@@ -233,7 +232,6 @@ it('removes only proven exporter configuration and firewall state', function ():
         metricsExporterResult(),
         metricsExporterResult(),
         metricsExporterResult(),
-        metricsExporterResult(),
         metricsExporterResult(exitCode: 1),
         metricsExporterResult(exitCode: 3, stdout: "inactive\n"),
         metricsExporterResult(stdout: "Status: active\n"),
@@ -252,7 +250,6 @@ it('removes only proven exporter configuration and firewall state', function ():
         ['sudo', 'systemctl', 'disable', '--now', 'prometheus-node-exporter'],
         ['sudo', 'rm', '-f', '--', '/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf'],
         ['sudo', 'ufw', '--force', 'delete', '5'],
-        metricsExporterRetiredArtifactCleanupArguments(),
     );
 });
 
@@ -353,11 +350,7 @@ it('restores absent exporter state when convergence verification fails', functio
         ->and($ssh->serviceActive)
         ->toBeFalse()
         ->and($ssh->firewall)
-        ->toBeFalse()
-        ->and($ssh->retiredArtifacts)
-        ->toBeFalse()
-        ->and(metricsExporterRetiredArtifactCommands($ssh->commands))
-        ->toBe([metricsExporterRetiredArtifactCleanupArguments()]);
+        ->toBeFalse();
 });
 
 it('restores active exporter state when removal fails after service disablement', function (): void {
@@ -381,11 +374,7 @@ it('restores active exporter state when removal fails after service disablement'
         ->and($ssh->serviceActive)
         ->toBeTrue()
         ->and($ssh->firewall)
-        ->toBeTrue()
-        ->and($ssh->retiredArtifacts)
-        ->toBeFalse()
-        ->and(metricsExporterRetiredArtifactCommands($ssh->commands))
-        ->toBe([metricsExporterRetiredArtifactCleanupArguments()]);
+        ->toBeTrue();
 });
 
 it('fails removal when the exporter service remains active', function (): void {
@@ -429,142 +418,6 @@ it('only verifies an installed exporter package and bounds a missing one by the 
         expect($installs[0]->timeout)->toBe(MetricsRemoteCommand::DownloadTimeoutSeconds);
     }
 })->with(['installed' => [true], 'missing' => [false]]);
-
-it('deletes both retired artifacts without inspecting them before convergence mutation', function (): void {
-    $ssh = new MetricsExporterStatefulSsh(
-        configuration: null,
-        serviceActive: false,
-        firewall: false,
-    );
-    $executor = metricsExporterExecutor($ssh);
-
-    $executor->converge(
-        metricsExporterNode('app-prod', '10.44.0.4'),
-        metricsExporterNode('metrics', '10.44.0.3'),
-    );
-
-    $arguments = array_map(
-        static fn (RemoteCommand $command): array => $command->arguments,
-        $ssh->commands,
-    );
-    $cleanup = metricsExporterRetiredArtifactCleanupArguments();
-    $cleanupIndex = array_search($cleanup, $arguments, strict: true);
-    $mutationIndex = array_search(
-        ['sudo', 'apt-get', '-o', 'DPkg::Lock::Timeout=60', 'install', '--yes', '--no-install-recommends', '--', 'prometheus-node-exporter'],
-        $arguments,
-        strict: true,
-    );
-
-    expect(metricsExporterRetiredArtifactCommands($ssh->commands))
-        ->toBe([$cleanup])
-        ->and($ssh->retiredArtifacts)
-        ->toBeFalse()
-        ->and(is_int($cleanupIndex) && is_int($mutationIndex) && $cleanupIndex < $mutationIndex)
-        ->toBeTrue();
-});
-
-it('deletes both retired artifacts without inspecting them before reachable removal mutation', function (): void {
-    $configuration = metricsExporterConfiguration('10.44.0.4');
-    $ssh = new MetricsExporterStatefulSsh(
-        configuration: $configuration,
-        serviceActive: true,
-        firewall: true,
-    );
-    $executor = metricsExporterExecutor($ssh);
-
-    $executor->remove(
-        metricsExporterNode('app-prod', '10.44.0.4'),
-        metricsExporterNode('metrics', '10.44.0.3'),
-    );
-
-    $arguments = array_map(
-        static fn (RemoteCommand $command): array => $command->arguments,
-        $ssh->commands,
-    );
-    $cleanup = metricsExporterRetiredArtifactCleanupArguments();
-    $cleanupIndex = array_search($cleanup, $arguments, strict: true);
-    $mutationIndex = array_search(
-        ['sudo', 'systemctl', 'disable', '--now', 'prometheus-node-exporter'],
-        $arguments,
-        strict: true,
-    );
-
-    expect(metricsExporterRetiredArtifactCommands($ssh->commands))
-        ->toBe([$cleanup])
-        ->and($ssh->retiredArtifacts)
-        ->toBeFalse()
-        ->and(is_int($cleanupIndex) && is_int($mutationIndex) && $cleanupIndex < $mutationIndex)
-        ->toBeTrue();
-});
-
-it('maps a convergence cleanup failure before exporter mutation', function (): void {
-    $cleanup = metricsExporterRetiredArtifactCleanupArguments();
-    $ssh = new MetricsExporterStatefulSsh(
-        configuration: null,
-        serviceActive: false,
-        firewall: false,
-        failArguments: $cleanup,
-    );
-    $executor = metricsExporterExecutor($ssh);
-
-    try {
-        $executor->converge(
-            metricsExporterNode('app-prod', '10.44.0.4'),
-            metricsExporterNode('metrics', '10.44.0.3'),
-        );
-        $exception = null;
-    } catch (ResourceOperationException $caught) {
-        $exception = $caught;
-    }
-
-    $arguments = array_map(
-        static fn (RemoteCommand $command): array => $command->arguments,
-        $ssh->commands,
-    );
-
-    expect($exception?->errorCode)
-        ->toBe('metrics.retired_artifact_cleanup_failed')
-        ->and($ssh->retiredArtifacts)
-        ->toBeTrue()
-        ->and($arguments)
-        ->not->toContain(
-            ['sudo', 'apt-get', '-o', 'DPkg::Lock::Timeout=60', 'install', '--yes', '--no-install-recommends', '--', 'prometheus-node-exporter'],
-        );
-});
-
-it('maps a reachable removal cleanup failure before exporter mutation', function (): void {
-    $cleanup = metricsExporterRetiredArtifactCleanupArguments();
-    $configuration = metricsExporterConfiguration('10.44.0.4');
-    $ssh = new MetricsExporterStatefulSsh(
-        configuration: $configuration,
-        serviceActive: true,
-        firewall: true,
-        failArguments: $cleanup,
-    );
-    $executor = metricsExporterExecutor($ssh);
-
-    try {
-        $executor->remove(
-            metricsExporterNode('app-prod', '10.44.0.4'),
-            metricsExporterNode('metrics', '10.44.0.3'),
-        );
-        $exception = null;
-    } catch (ResourceOperationException $caught) {
-        $exception = $caught;
-    }
-
-    $arguments = array_map(
-        static fn (RemoteCommand $command): array => $command->arguments,
-        $ssh->commands,
-    );
-
-    expect($exception?->errorCode)
-        ->toBe('metrics.retired_artifact_cleanup_failed')
-        ->and($ssh->retiredArtifacts)
-        ->toBeTrue()
-        ->and($arguments)
-        ->not->toContain(['sudo', 'systemctl', 'disable', '--now', 'prometheus-node-exporter']);
-});
 
 function metricsExporterExecutor(SshExecutor $ssh): MetricsExporterSshExecutor
 {
@@ -610,44 +463,6 @@ function metricsExporterFirewallArguments(string $source): array
         'sudo', 'ufw', 'allow', 'in', 'on', 'orbit', 'proto', 'tcp',
         'from', $source, 'to', '10.44.0.4', 'port', '9100', 'comment', 'orbit:metrics-node-exporter',
     ];
-}
-
-/** @return list<string> */
-function metricsExporterRetiredArtifactCleanupArguments(): array
-{
-    return [
-        'sudo',
-        'rm',
-        '-f',
-        '--',
-        '/usr/local/sbin/orbit-metrics-uninstall',
-        '/usr/local/sbin/orbit-metrics-uninstall.orbit-candidate',
-    ];
-}
-
-/**
- * @param  list<RemoteCommand>  $commands
- * @return list<list<string>>
- */
-function metricsExporterRetiredArtifactCommands(array $commands): array
-{
-    $matching = array_filter(
-        $commands,
-        static fn (RemoteCommand $command): bool => (
-            array_intersect(
-                $command->arguments,
-                [
-                    '/usr/local/sbin/orbit-metrics-uninstall',
-                    '/usr/local/sbin/orbit-metrics-uninstall.orbit-candidate',
-                ],
-            ) !== []
-        ),
-    );
-
-    return array_values(array_map(
-        static fn (RemoteCommand $command): array => $command->arguments,
-        $matching,
-    ));
 }
 
 /**
@@ -712,7 +527,6 @@ final class MetricsExporterStatefulSsh implements SshExecutor
         private ?array $failArguments = null,
         private int $failOccurrence = 1,
         private bool $disableChangesState = true,
-        public bool $retiredArtifacts = true,
         private bool $removeFirewallChangesState = true,
         public string $firewallSource = '10.44.0.3',
         private bool $packageInstalled = false,
@@ -789,14 +603,6 @@ final class MetricsExporterStatefulSsh implements SshExecutor
                 stdout: $this->serviceActive ? "active\n" : "inactive\n",
             ),
             ['sudo', 'ufw', '--force', 'delete', '5'] => $this->removeFirewall(),
-            [
-                'sudo',
-                'rm',
-                '-f',
-                '--',
-                '/usr/local/sbin/orbit-metrics-uninstall',
-                '/usr/local/sbin/orbit-metrics-uninstall.orbit-candidate',
-            ] => $this->cleanupRetiredArtifacts(),
             default => metricsExporterResult(),
         };
     }
@@ -867,13 +673,6 @@ final class MetricsExporterStatefulSsh implements SshExecutor
         if ($this->removeFirewallChangesState) {
             $this->firewall = false;
         }
-
-        return metricsExporterResult();
-    }
-
-    private function cleanupRetiredArtifacts(): CommandResult
-    {
-        $this->retiredArtifacts = false;
 
         return metricsExporterResult();
     }

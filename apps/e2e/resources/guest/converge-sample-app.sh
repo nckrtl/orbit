@@ -208,23 +208,13 @@ case ${1-} in
         if [[ "$production_count" -eq 0 && -z "$previous_production" ]]; then
           development_checkout=$(php -r '$v=json_decode($argv[1], true, 16, JSON_THROW_ON_ERROR); echo $v["checkout_path"];' "$typed_state")
           if [[ "$environment_contract" -eq 1 && -f "$development_checkout/.env" ]]; then
-            for import_attempt in 1 2; do
-              if import_response=$("$orbit" env:import --instance="$typed_instance_id" --json); then
-                break
-              fi
+            if ! import_response=$("$orbit" env:import --instance="$typed_instance_id" --json); then
               import_code=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); echo $v["error"]["code"] ?? "unknown";' <<<"$import_response")
-              case "$import_code" in
-                env.import_conflict) break ;;
-                instance.source_profile_missing)
-                  [[ "$import_attempt" -eq 1 ]] || exit 65
-                  recovery_args=(instance:create "$app_id" "$dev_id" e2e-dev --domain=e2e-dev.orbit --recover-source-profile)
-                  recovery_branch=$(php -r '$v=json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); foreach($v["instances"] as $x) if(($x["id"] ?? null)===(int)$argv[1]) { $b=$x["branch_override"] ?? null; if($b!==null && !is_string($b)) exit(65); echo $b ?? ""; }' "$typed_instance_id" <<<"$typed_instances")
-                  [[ -z "$recovery_branch" ]] || recovery_args+=(--branch="$recovery_branch")
-                  "$orbit" "${recovery_args[@]}" --json >/dev/null
-                  ;;
-                *) echo 'sample environment import failed before production clone' >&2; exit 65 ;;
-              esac
-            done
+              if [[ "$import_code" != env.import_conflict ]]; then
+                echo 'sample environment import failed before production clone' >&2
+                exit 65
+              fi
+            fi
           fi
           # These operations are deliberately unguarded. A selected supported
           # operation failure must never enter the older direct-create path.

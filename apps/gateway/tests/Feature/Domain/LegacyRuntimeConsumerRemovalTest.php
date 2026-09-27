@@ -12,7 +12,6 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
-use App\Infrastructure\AppProd\AppProdSiteRepository;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
@@ -50,13 +49,7 @@ it('treats leftover Instance and Workspace checkouts as unmanaged for overlap an
         'instance.path_taken',
     );
 
-    expect(new AppProdSiteRepository()->forNode($node))
-        ->toBeEmpty()
-        ->and(new AppProdSiteRepository()->hasLivePublicFootprint($node))
-        ->toBeFalse()
-        ->and(new AppProdSiteRepository()->requiresPublicFirewall($node))
-        ->toBeFalse()
-        ->and(Schema::hasTable('instances'))
+    expect(Schema::hasTable('instances'))
         ->toBeFalse()
         ->and(Schema::hasTable('workspaces'))
         ->toBeFalse();

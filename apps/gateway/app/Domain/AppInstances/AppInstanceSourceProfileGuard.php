@@ -12,7 +12,7 @@ final readonly class AppInstanceSourceProfileGuard
     {
         throw new ResourceOperationException(
             errorCode: 'instance.source_profile_missing',
-            message: 'The AppInstance has no recorded source profile. Repeat the same creation request with recover_source_profile to inspect the source and store the complete profile.',
+            message: 'The AppInstance has no recorded source profile and cannot be used.',
             status: 409,
         );
     }

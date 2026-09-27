@@ -4141,10 +4141,6 @@
                     "type": "string",
                     "maxLength": 255,
                     "description": "Optional explicit source branch"
-                  },
-                  "recover_source_profile": {
-                    "type": "boolean",
-                    "description": "Adopt complete source evidence for a legacy incomplete checkpoint"
                   }
                 },
                 "required": [

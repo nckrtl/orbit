@@ -34,7 +34,7 @@ The Gateway records the Node as `provisioning` and runs these steps in order:
 | 9 | Reconcile the [Metrics exporters](/reference/metrics#exporter-selection). |
 | 10 | Install or upgrade the [Node agent](/reference/node-agent), at step `agent`. |
 
-The Gateway console command `orbit:node-provision` runs the same steps for the first Node.
+The Gateway console command `orbit:node-provision` runs the same steps for the first Node. Role firewall state comes from the shared Node firewall rule catalog, keeping initial provisioning and later role reconciliation consistent.
 
 ### Bootstrap identity
 

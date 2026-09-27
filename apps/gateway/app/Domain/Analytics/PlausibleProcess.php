@@ -13,8 +13,7 @@ use SensitiveParameter;
 
 /**
  * The one Process the analytics role owns: Plausible Community Edition as a Node-targeted Docker
- * Process. The image, the startup command, and the port are the ones the earlier Orbit analytics
- * role ran in production.
+ * Process.
  */
 final readonly class PlausibleProcess
 {
@@ -35,7 +34,7 @@ final readonly class PlausibleProcess
         #[SensitiveParameter]
         string $secretKeyBase,
     ): AddProcessData {
-        if (preg_match('/\A\d+\.\d+\.\d+\z/', $version) !== 1) {
+        if (preg_match('/\A\d+\.\d+\.\d+\z/D', $version) !== 1) {
             throw new ResourceOperationException(
                 errorCode: 'analytics.version_invalid',
                 message: 'A Plausible version has the form 3.2.1.',

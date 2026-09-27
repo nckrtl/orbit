@@ -1025,7 +1025,7 @@ EXAMPLE_BY_NAME = {
     'calendar': 'daily', 'timeout_seconds': 3600, 'target_type': 'node', 'families': ['node', 'instance'], 'limit': 25, 'lines': 100,
     'manager': 'vp', 'package': '@openai/codex', 'version_constraint': '^0.150',
     'php_version': '8.5', 'source_path': '/srv/orbit/apps/acme/main', 'environments': ['production'], 'phase': 'before_activation', 'release': '20260914T101500Z', 'value': 'log', 'status': 'success', 'state': 'active',
-    'force': True, 'offline': False, 'replace': True, 'converge': False, 'purge_data': False, 'include_worktrees': False, 'recover_source_profile': False,
+    'force': True, 'offline': False, 'replace': True, 'converge': False, 'purge_data': False, 'include_worktrees': False,
     'source': '10.6.0.0/24', 'protocol': 'tcp', 'instance_id': 4, 'sqlite_source_path': '/home/acme/database/database.sqlite', 'apps': {'path': '/srv/orbit/apps'}, 'settings': {'apps': {'path': '/srv/orbit/apps'}},
     'title': 'Absorb Commander', 'brief': 'Persist groups. Accept when create and list work.',
 }

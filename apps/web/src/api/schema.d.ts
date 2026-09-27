@@ -5845,8 +5845,6 @@ export interface operations {
                     domain?: string;
                     /** @description Optional explicit source branch */
                     branch?: string;
-                    /** @description Adopt complete source evidence for a legacy incomplete checkpoint */
-                    recover_source_profile?: boolean;
                 };
             };
         };
