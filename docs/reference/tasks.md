@@ -1,6 +1,9 @@
 ---
 title: "Tasks"
 description: "How the Gateway tasks extension holds TaskGroup features in Backlog and runs Todo groups on a shared Instance. Agents end turns with run receipts. Orbit commits and pushes each approved subtask, opens the pull request, and removes the workspace clone when the group ends."
+covers:
+  - "apps/gateway/app/Domain/Tasks/**"
+  - "bin/review-check"
 ---
 
 # Tasks
@@ -8,6 +11,8 @@ description: "How the Gateway tasks extension holds TaskGroup features in Backlo
 This page tells an operator how the optional Gateway `tasks` extension runs a Commander-style feature group. A group waits in Backlog while its branch, ADRs, documentation, and subtasks are prepared. Once the group is in Todo, the Gateway provisions its shared Instance, starts agents, and moves each task from turn to turn with run receipts and mechanical checks. It commits approved work and pushes that commit to `origin`, opens and watches the pull request, retains capacity through assistance and merge wait, and removes the workspace clone when the group is cancelled or completed.
 
 [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) owns the extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing. [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) owns completion gates. [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) owns Backlog and Todo. [ADR 0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner) owns planning. [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) owns the push after each approval and deletion of the workspace clone. [ADR 0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask) owns the fixup that returns a settling group to running. [ADR 0171](/decisions/0171-reset-fixup-caps-after-operator-work) owns when its fixup caps reset. [ADR 0165](/decisions/0165-record-per-thread-token-metrics) owns the per-thread token split. [ADR 0167](/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart) owns recovery of a Pi turn that a server restart interrupted. [ADR 0169](/decisions/0169-start-each-subtask-review-in-a-fresh-thread) owns the fresh reviewer thread for each subtask, the review packet, and the MCP search endpoint for the planner and the reviewer.
+
+[ADR 0175](/decisions/0175-deterministic-docs-impact-check) owns the deterministic docs-impact report and the docs-first gate. Reference, CLI, and solution pages may declare `covers` globs to connect code paths to their documentation; docs-lint checks that each glob matches a tracked repository path. Pages may omit `covers`, but the committed ratchet in `apps/docs/config/docs-covers-ratchet.php` prevents a page that already has coverage from dropping it. This page is the initial ratchet entry; the list only grows as domain documentation is updated.
 
 The extension is off until an authorized Gateway caller enables it. There is no web UI for create. Agents create groups through the [MCP server](/reference/mcp). The [`tasks` CLI family](/cli/tasks) runs every operation on this page from a terminal when MCP is unavailable.
 
@@ -237,6 +242,26 @@ A group in Backlog without a planner has an id but no Instance and no agents. Us
 6. Move the group to `todo` with `tasks:update`.
 
 The provisioner checks out the pushed `task-{group id}` branch for the shared Instance. The implementer and reviewer prompts name the ADRs and documentation that this branch changes as the feature's contract. The reviewer prompt also says that the implementer has no web access, asks the reviewer to confirm framework and library usage against documentation for the Project's versions, and tells the reviewer not to repeat checks the handoff already passed. [Review a subtask](#review-a-subtask) states that rule. The Gateway does not check the branch contents. A group without a pushed branch runs on a fresh branch from the default branch.
+
+## Run the docs-first impact check
+
+Every group starts with a docs-first subtask, before any implementation subtask. The subtask either updates the documentation named by the impact report or records a reviewer-confirmed `no_docs_change` result; implementation does not begin before this handoff.
+
+Run the check against the group's start commit and the paths in the brief, including paths that do not exist yet:
+
+```bash
+bin/docs-impact --base <start-commit> --paths apps/gateway/app/Domain/Tasks --paths bin/review-check
+```
+
+`--base` names the commit from which the group started. Repeat `--paths` for planned paths. The check takes the union of those planned paths and the changed paths in the base comparison, then prints stable JSON. Before a pull request opens, run it again without planned paths so it covers the whole group diff.
+
+The extractor reports API operations and schemas, CLI signatures and options, configuration and environment keys, error and Doctor issue codes, migrations, scheduled and Artisan commands, and MCP tools. It also matches changed paths against `covers` globs in the frontmatter of pages under `docs/reference`, `docs/cli`, and `docs/solutions`. CLI sources under `docs/commands` render to the matching `docs/cli/*` pages. Each surface names its owning page or existing generator, including `bin/docs-openapi`, `bin/mcp-tools`, `bin/cli-contract`, and the Docs project's lint/build checks. The [deterministic docs-impact ADR](/decisions/0175-deterministic-docs-impact-check) defines the extraction rules and owners.
+
+The JSON report includes `base`, `paths`, `impacted_pages`, `surfaces_handled_by_generator`, and `verdict`. An impacted page includes its path and reasons. `verdict` is `docs_required` when a page must change or a generator output is stale or missing. It is `no_docs_change` only when no maintained page or generator output is affected.
+
+For `docs_required`, the docs-first subtask updates every listed page or runs the named generator and includes the result in its handoff. For `no_docs_change`, it hands off the complete JSON report with its `--deliverable` evidence; the reviewer confirms that the planned paths are complete and records the report in the approval. This is the fast path: the report travels in the review packet, so the reviewer does not write an ADR or spend a model turn defending a reference-only conclusion.
+
+Before the pull request opens, the final gate rejects any impacted page or surface that the group diff did not update and prints the complete list. The reviewer may explicitly confirm an exception with `docs-unaffected: <page> — <reason>` in the approval; Orbit records that line and includes it in the pull request description. This exception never bypasses a required generator check. A later Jev yes/no signal per impacted page may add context, as recorded by ADR 0173, but it never replaces this deterministic report and is out of scope for the first version.
 
 ## Plan a group with a planner
 
