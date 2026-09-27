@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
 use Illuminate\Testing\TestResponse;
@@ -163,20 +164,23 @@ describe('the agent secret', function (): void {
         agent_endpoint_call($this, 'auth', $this->secret)->assertForbidden()->assertJsonPath('error.code', 'agent.secret_invalid');
     });
 
-    it('refuses a Node that must send a secret but has none recorded', function (): void {
-        $this->node->forceFill(['agent_secret_hash' => null, 'agent_secret_exempt' => false])->save();
+    it('refuses an unmanaged Node without a stored secret on every agent endpoint', function (string $endpoint): void {
+        $unmanaged = Node::query()->forceCreate([
+            'name' => 'unmanaged-agent-peer',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'public_ssh_host' => '192.0.2.34',
+            'wireguard_ip' => '10.44.0.34',
+            'ssh_host_fingerprint' => null,
+            'agent_secret_hash' => null,
+        ]);
 
-        agent_endpoint_call($this, 'realtime', null)->assertUnauthorized()->assertJsonPath('error.code', 'agent.secret_required');
-        agent_endpoint_call($this, 'realtime', $this->secret)->assertForbidden()->assertJsonPath('error.code', 'agent.secret_invalid');
-    });
+        expect(app(ManagedNodeEligibility::class)->allows($unmanaged))->toBeFalse();
 
-    it('accepts an exempt Node without a secret until it has one', function (): void {
-        $this->node->forceFill(['agent_secret_hash' => null, 'agent_secret_exempt' => true])->save();
-        agent_endpoint_call($this, 'realtime', null)->assertOk();
-
-        $this->node->forceFill(['agent_secret_hash' => hash('sha256', $this->secret), 'agent_secret_exempt' => false])->save();
-        agent_endpoint_call($this, 'realtime', null)->assertUnauthorized();
-    });
+        $this->withServerVariables(['REMOTE_ADDR' => $unmanaged->wireguard_ip]);
+        agent_endpoint_call($this, $endpoint, null)->assertUnauthorized()->assertJsonPath('error.code', 'agent.secret_required');
+        agent_endpoint_call($this, $endpoint, $this->secret)->assertForbidden()->assertJsonPath('error.code', 'agent.secret_invalid');
+    })->with(['realtime', 'auth', 'workspaces', 'log-streams']);
 
     it('never returns the secret hash', function (): void {
         $body = agent_endpoint_call($this, 'realtime', $this->secret)->assertOk()->getContent();
