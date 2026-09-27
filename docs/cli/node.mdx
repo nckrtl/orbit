@@ -1,41 +1,48 @@
 ---
 title: "node"
-description: "Add machines to the fleet, rename Nodes, assign roles, grant Node-to-Node access, set storage settings, and remove Nodes."
+description: "Add machines to the fleet, rename Nodes, assign and move roles, grant access, set the apps root, read metrics, and remove Nodes."
+covers:
+  - apps/cli/app/Commands/Nodes/**
+  - apps/cli/app/Support/NodeSettingOptions.php
+  - apps/gateway/app/Actions/Nodes/{RenameNodeAction,RelocateNodeRoleAction,GrantGatewayRoleAccessAction,AddNodeAccessAction,RemoveNodeAccessAction,ShowNodeMetricsAction}.php
+  - apps/gateway/app/Http/Controllers/Api/{NodesController,NodeRolesController,NodeAccessController}.php
+  - apps/gateway/app/Http/Requests/Nodes/**
+  - packages/php-sdk/src/Requests/Nodes/**
+  - packages/php-sdk/src/Responses/Nodes/**
 ---
 
-A Node is a machine that the Gateway manages over SSH and reaches over WireGuard. The `node` family provisions a machine, converges it again after a change, changes the unique registry name, assigns and removes roles, records which Node may call which, and sets the apps root.
+A Node is a machine that the Gateway manages over SSH and reaches over WireGuard. The `node` family adds a machine, converges it again, renames it, assigns and moves its roles, records which Node may act on which, sets its apps root, and removes it.
 
-The [Node provisioning](/reference/node-provisioning), [Node settings](/reference/node-settings), and [Node retarget](/reference/node-retarget) references own the bootstrap identity, the storage contract, and the public SSH boundaries that these commands follow.
+[Node provisioning](/reference/node-provisioning) explains what add, converge, role changes, and removal do on the machine. [Node settings](/reference/node-settings) owns the apps root.
 
 ## Commands
 
 | Command | Result |
 | --- | --- |
-| [`node:add`](#orbit-nodeadd) | Provision a new machine or converge an existing Node. |
-| [`node:list`](#orbit-nodelist) | List Nodes registered with the active Gateway. |
+| [`node:add`](#orbit-nodeadd) | Add a machine, or converge an existing Node. |
+| [`node:list`](#orbit-nodelist) | List the Nodes. |
 | [`node:show`](#orbit-nodeshow) | Show one Node. |
-| [`node:metrics`](#orbit-nodemetrics) | Show one synchronous metrics snapshot for a Node. |
-| [`node:remove`](#orbit-noderemove) | Remove a Node and restore its public SSH recovery rule. |
-| [`node:rename`](#orbit-noderename) | Change the unique registry name of one Node. |
-| [`node:role:add`](#orbit-noderoleadd) | Add or converge one role assignment. |
-| [`node:role:list`](#orbit-noderolelist) | List the role assignments of one Node. |
-| [`node:role:relocate`](#orbit-noderolerelocate) | Move a relocatable singleton role (`gateway`, `websocket`, or `metrics`) to another Node. |
-| [`node:role:remove`](#orbit-noderoleremove) | Remove one role assignment and its dependent state. |
-| [`node:access:add`](#orbit-nodeaccessadd) | Allow one Node to run commands on another Node. |
-| [`node:access:remove`](#orbit-nodeaccessremove) | Remove one access edge. |
-| [`node:settings`](#orbit-nodesettings) | Update the typed storage settings of one Node. |
+| [`node:metrics`](#orbit-nodemetrics) | Show one metrics snapshot of a Node. |
+| [`node:rename`](#orbit-noderename) | Change the name of a Node. |
+| [`node:settings`](#orbit-nodesettings) | Set the apps root of a Node. |
+| [`node:role:add`](#orbit-noderoleadd) | Add a role, or converge an existing role. |
+| [`node:role:list`](#orbit-noderolelist) | List the roles of a Node. |
+| [`node:role:relocate`](#orbit-noderolerelocate) | Move `gateway`, `websocket`, or `metrics` to another Node. |
+| [`node:role:remove`](#orbit-noderoleremove) | Remove a role. |
+| [`node:access:add`](#orbit-nodeaccessadd) | Grant one Node access to another. |
+| [`node:access:remove`](#orbit-nodeaccessremove) | Remove an access grant. |
+| [`node:remove`](#orbit-noderemove) | Remove a Node and hand the machine back. |
+| `node:excluded-project:add`, `node:excluded-project:list`, `node:excluded-project:remove` | Keep a Project off an `app-dev` Node. See [Development node exclusions](/reference/development-node-exclusions). |
 
-Every command accepts `--json`. Commands that take a `node` argument or `--node` option accept the numeric Node ID; `node:rename`, `node:role:*`, and `node:settings` also accept the registered Node name.
+Every command accepts `--json`. `node:show`, `node:remove`, and `node:access:*` take a numeric Node ID. The other commands also accept a Node name.
 
-Node and role lists use read-only tables with every column retained at narrow widths. Below the minimum table width, each row becomes a labeled record. Empty lists say `No nodes.` or `No roles.`. Node details use an aligned tree; absent human values use an em dash, and TLDs include their leading dot. JSON retains the existing fields and null values.
+Lists use tables. Below the minimum table width, each row becomes a labeled record. Details use an aligned tree, with an em dash for an empty value. While the Gateway works, the CLI shows one progress indicator per request, because it does not receive the steps. JSON output contains only the response.
 
-Requests show an indeterminate progress tree while the Gateway works. The CLI does not receive individual provisioning steps. It settles the operation before showing its result or error and request ID. Piped output keeps readable waiting and settled results without animation; JSON contains only the response.
-
-Arguments and settings remain explicit in every mode. Removal confirmations default to No and identify the target and effect. Declining, cancelling, or reaching end of input exits 1 before removal. Automation, including JSON, requires the existing `--force` consent option. `--offline` and `--purge-data` do not supply consent.
+Destructive commands ask for confirmation. The default answer is No. Declining, Ctrl-C, or end of input exits 1 and changes nothing. Without a terminal, and with `--json`, pass `--force`. `--offline` and `--purge-data` never give consent.
 
 ## orbit node:add
 
-Add a machine to the fleet. The same command provisions a new machine and converges an existing Node after you change its TLD, roles, or settings.
+Add a machine to the fleet. For an existing Node, the same command converges it again after you change its TLD, roles, or settings.
 
 ```bash
 orbit node:add <name> [host] [options]
@@ -43,52 +50,41 @@ orbit node:add <name> [host] [options]
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `name` | yes | Unique registry name. Change it later with [`node:rename`](#orbit-noderename). |
-| `host` | no | Public SSH host. Required for a new machine. |
+| `name` | yes | Unique Node name. |
+| `host` | for a new Node | Public SSH host. |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
+| `--host-key-fingerprint=SHA256` | none | Approved SSH host key fingerprint. Required for a new Node. |
 | `--ssh-port=PORT` | `22` | Public SSH port. |
-| `--user=USER` | `root` for a new Node, the managed user for an existing Node | Bootstrap SSH user. Name one when the host allows no root login or the managed user cannot log in. |
-| `--orbit-user=USER` | `orbit` | Orbit-managed system user that every later Gateway command runs as. |
-| `--platform=PLATFORM` | `linux` | Node platform. Only `linux` is accepted. |
-| `--architecture=ARCH` | observed on the machine | Machine architecture such as `x86_64` or `aarch64`. A new Node records the observed value, and an explicit value must equal it. |
-| `--tld=TLD` | none | Node TLD. Generated development Route domains use it when no active Cluster TLD owns the Node. Production clone previews still use the Node TLD. |
-| `--role=ROLE` | none | Initial role assignment. Repeat the option for more than one role. |
-| `--host-key-fingerprint=SHA256` | none | Approved SSH host key fingerprint. |
-| `--cluster=ID` | none | Numeric Cluster ID to join. |
-| `--wireguard-ip=IP` | generated | Stable WireGuard IP address. |
-| `--lan-ip=IP` | none | Cluster-local LAN IPv4 address that a Router uses to reach this Node. |
-| `--wireguard-endpoint=HOST:PORT` | generated | Per-node WireGuard endpoint override. See [WireGuard endpoints](/reference/wireguard-endpoints). |
-| `--dns-server=IP` | Orbit VPN DNS | Per-node DNS server override. See [Private DNS](/reference/private-dns). |
-| `--setting=PATH:VALUE` | none | Repeatable typed Node setting. The only setting path is `apps.path`. |
+| `--user=USER` | `root` for a new Node, the managed user for an existing Node | Bootstrap SSH user. |
+| `--orbit-user=USER` | `orbit` for a new Node | Managed user that every later Gateway command uses. |
+| `--platform=PLATFORM` | `linux` | Only `linux` is accepted. |
+| `--architecture=ARCH` | the observed value | Machine architecture, such as `x86_64`. A given value must equal the observed one. |
+| `--tld=TLD` | none | Node TLD. Required for `app-dev`, unless the Node joins an active Cluster with a TLD. A production Node needs it for [clone](/cli/instance#orbit-instanceclone) preview domains. |
+| `--role=ROLE` | none | Role to assign. Repeat for more roles. |
+| `--cluster=ID` | none | Cluster to join. |
+| `--wireguard-ip=IP` | generated | Stable WireGuard address. |
+| `--lan-ip=IP` | none | LAN IPv4 address that a Cluster Router uses to reach this Node. |
+| `--wireguard-endpoint=HOST:PORT` | generated | WireGuard endpoint override. See [WireGuard endpoints](/reference/wireguard-endpoints). |
+| `--dns-server=IP` | Orbit VPN DNS | DNS server override. See [Private DNS](/reference/private-dns). |
+| `--setting=PATH:VALUE` | none | Node setting. The only path is `apps.path`. |
 
-The Gateway opens one SSH session as the bootstrap user, installs the base packages, creates the managed user, and then verifies SSH as that user. Bootstrap opens the `orbit:public-ssh-recovery` firewall rule; the first role convergence closes public SSH again, so a Node provisioned with roles ends reachable only over WireGuard.
-
-Provision an app-dev machine with its own TLD and apps root:
+`--role` accepts `app-dev`, `app-prod`, `database`, `metrics`, `websocket`, `gateway`, and `vpn`. Add `ingress` and `analytics` with [`node:role:add`](#orbit-noderoleadd). A Cluster Router comes from [`cluster:router:set`](/cli/cluster#orbit-clusterrouterset).
 
 ```bash
 orbit node:add beast beast.example.com \
+  --host-key-fingerprint=SHA256:... \
   --role=app-dev \
   --tld=test \
   --setting=apps.path:/srv/orbit/apps
-```
 
-Converge an existing Node after adding a role:
-
-```bash
 orbit node:add beast --role=app-dev --role=database
 ```
 
-<Note>
-A production Node that receives clones needs `--tld`; the [instance:clone](/cli/instance#orbit-instanceclone) command derives its preview domain from that value.
-</Note>
-
-The roles you can assign are `app-dev`, `app-prod`, `router`, `ingress`, `database`, `metrics`, `websocket`, `gateway`, and `vpn`. The [Database role](/reference/database-role) and [Metrics](/reference/metrics) references list which roles may share one Node. The `websocket` role runs Reverb for realtime events and has no role conflicts, so it combines with `gateway` today. Move `websocket` or `metrics` with [`node:role:relocate`](#orbit-noderolerelocate); see [Realtime events with Reverb](/solutions/realtime-reverb). The `gateway` role is a singleton you can relocate without moving `vpn`; see [Relocate the gateway role](/solutions/relocate-gateway-role). `vpn` stays protected from generic add and remove.
-
 ## orbit node:list
 
-List every Node registered with the active Gateway, with its status, roles, and addresses.
+List every Node with its status, roles, and addresses.
 
 ```bash
 orbit node:list [--json]
@@ -96,107 +92,78 @@ orbit node:list [--json]
 
 ## orbit node:show
 
-Show one Node, including its recorded architecture, WireGuard and LAN addresses, roles, and configured apps path. JSON includes the raw `settings` member.
+Show one Node, with its architecture, WireGuard and LAN addresses, roles, and apps path. JSON includes the stored `settings` and `excluded_projects`.
 
 ```bash
 orbit node:show <node> [--json]
 ```
 
-| Argument | Required | Meaning |
-| --- | --- | --- |
-| `node` | yes | Numeric Node ID. |
-
 ## orbit node:metrics
 
-Show one synchronous metrics snapshot for a Node: per-core CPU, memory, swap, load averages, uptime, pressure, and disks.
+Show one metrics snapshot of an active Node: CPU per core, memory, swap, load, uptime, pressure, and disks.
 
 ```bash
 orbit node:metrics <node> [--json]
 ```
 
-| Argument | Required | Meaning |
-| --- | --- | --- |
-| `node` | yes | Numeric Node ID or registered Node name. |
+The Gateway reads the snapshot from the [Metrics role](/reference/metrics#read-node-metrics) through Grafana. It runs four queries for the Node's exporter: one for memory, swap, load, and uptime, and one each for cores, pressure, and disks. Only the first decides whether the Node has metrics. The Gateway stores no sample.
 
-```bash
-orbit node:metrics beast
-```
-
-The Gateway reads the snapshot from the [Metrics role's](/reference/metrics) own Prometheus, through the same Grafana datasource proxy `metrics.orbit` uses to serve dashboards: it authenticates with the stored Grafana credential, resolves the Prometheus datasource, and runs one instant PromQL query per metric group (cores, memory and swap, load and uptime, pressure, disks), filtered to this Node's exporter instance (`WireGuardIP:9100`). No software needs to run on the Node itself beyond the Metrics role's own `prometheus-node-exporter` unit, and the Gateway never stores a sample. The Gateway answers `node.metrics_unavailable` (HTTP 422) for a Node that is not active or has no WireGuard address, `metrics.assignment_missing` (HTTP 409) when no Node carries the Metrics role, and `node.metrics_unreachable` (HTTP 502) when Grafana could not be read or Prometheus has no samples yet for this Node's exporter.
-
-The snapshot reports `cores` as a list of per-core busy ratios from 0 to 1, `memory` and `swap` as used and total bytes, `load` as the 1, 5, and 15-minute averages, `uptime_seconds`, `pressure` as the `some` `avg10` value from each of CPU, memory, and I/O pressure (`0` when the Node's kernel has no PSI support), and `disks` as a list of mount, used, and total bytes, with pseudo filesystems (`tmpfs`, `proc`, `sysfs`, and similar) excluded and `/` listed first. Human output renders bytes and durations in readable units; JSON keeps the raw numbers.
-
-The [web app](/reference/web-app) reads the same Prometheus data directly from the Metrics role's Grafana, for every Node at once, rather than calling `node:metrics` per Node; see [ADR 0088](/decisions/0088-cli-reads-display-metrics-from-grafana).
-
-## orbit node:remove
-
-Remove a Node record and its Gateway-side projections. The Gateway restores the public SSH recovery rule and leaves the machine reachable on its recorded public SSH target so you can provision it again.
-
-```bash
-orbit node:remove <node> [--force] [--offline] [--json]
-```
-
-| Argument | Required | Meaning |
-| --- | --- | --- |
-| `node` | yes | Numeric Node ID. |
-
-| Option | Meaning |
+| Field | Meaning |
 | --- | --- |
-| `--force` | Skip the confirmation prompt. Required with `--offline`. |
-| `--offline` | Shed roles on the Gateway side and remove a Node that the Gateway cannot reach. The Gateway probes the Node first; a Node that answers keeps every ordinary guard. |
+| `cores` | The busy ratio of each core, from 0 to 1. |
+| `memory`, `swap` | Used and total bytes. |
+| `load` | The 1, 5, and 15-minute load averages. |
+| `uptime_seconds` | Time since boot. |
+| `pressure` | The `some` `avg10` value for CPU, memory, and I/O. `0` when the kernel has no pressure data. |
+| `disks` | Mount, used bytes, and total bytes. Pseudo filesystems such as `tmpfs` and `proc` are left out. `/` comes first. |
 
-The Gateway refuses the request while the Node still owns Instances, legacy instances, firewall rules, roles, or Processes. It never removes the Gateway or VPN Node, or the Node that sends the request.
+Human output shows bytes and durations in readable units. JSON keeps the raw numbers.
 
-```bash
-orbit node:remove 7
-orbit node:remove 7 --offline --force
-```
-
-<Warning>
-`--offline --force` changes nothing on the machine. Caddy sites, checkouts, containers, units, and UFW rules stay in place, public SSH stays closed, and the response lists what remains under `retained_on_node`.
-</Warning>
-
-The [Node provisioning reference](/reference/node-provisioning#remove-a-node) lists each removal step and failure code.
+| Code | HTTP | Meaning |
+| --- | --- | --- |
+| `node.metrics_unavailable` | 422 | The Node is not active or has no WireGuard address. |
+| `metrics.assignment_missing` | 409 | No Node has the Metrics role. |
+| `node.metrics_unreachable` | 502 | Grafana could not answer, or Prometheus has no samples for the Node yet. |
 
 ## orbit node:rename
 
-Change the unique registry name of one Node. The name is not WireGuard peer material. Keys, addresses, SSH identity, and role assignments stay on the same Node.
+Change the name of a Node. The name is only a registry identifier. Keys, addresses, SSH identity, and roles stay the same.
 
 ```bash
 orbit node:rename <node> <name> [--json]
 ```
 
-| Argument | Required | Meaning |
-| --- | --- | --- |
-| `node` | yes | Node ID or registered name. |
-| `name` | yes | New unique registry name. ASCII letters, digits, dashes, and underscores. Maximum 63 characters. |
-
-A request that repeats the current name succeeds and writes nothing. The Gateway holds the provisioning lock for the current name and then for the new name so a concurrent `node:add` cannot claim the destination.
+The new name uses ASCII letters, digits, dashes, and underscores, at most 63 characters, and must be unique. Repeating the current name succeeds and writes nothing. The Gateway holds the [lifecycle lock](/reference/node-retarget#one-lifecycle-owner-per-node-name) for the current name and then for the new name, so a concurrent `node:add` cannot take the new name.
 
 ```bash
 orbit node:rename gateway vpn
 ```
 
-Rename the current `gateway` Node to `vpn` before you register a new VPS as `gateway`. [Relocate the gateway role](/solutions/relocate-gateway-role) owns that cutover order. [ADR 0091](/decisions/0091-rename-a-node-without-changing-wireguard-identity) owns the command.
+After a rename, callers must use the new name or the numeric ID. [Relocate the gateway role](/solutions/relocate-gateway-role) uses a rename to free the name `gateway` for a new machine.
+
+## orbit node:settings
+
+Set the apps root of a Node, the directory under which the Gateway creates development Instance checkouts.
+
+```bash
+orbit node:settings <node> --setting=apps.path:/mnt/apps [--json]
+```
+
+The command needs at least one `--setting`. An empty value unsets the path: `--setting=apps.path:`. A change never moves an existing checkout. [Node settings](/reference/node-settings) lists the validation rules and failure codes.
 
 ## orbit node:role:add
 
-Add one role assignment to a Node, or converge an existing assignment again.
+Add one role to a Node, or converge an existing role again.
 
 ```bash
 orbit node:role:add <node> <role> [--converge] [--postgres-process=ID] [--clickhouse-process=ID] [--json]
 ```
 
-| Argument | Required | Meaning |
-| --- | --- | --- |
-| `node` | yes | Node ID or registered name. |
-| `role` | yes | Role name. |
-
 | Option | Meaning |
 | --- | --- |
-| `--converge` | Re-run convergence for an assignment that is active, whose failed step starts with `converge:`, or that has stayed `provisioning` for 11 minutes, the role lock's request term plus a 1-minute margin, while no operation holds the Node's role lock. |
-| `--postgres-process=ID` | For `analytics` only: the PostgreSQL 16 Process on a database Node that holds the Plausible accounts. |
-| `--clickhouse-process=ID` | For `analytics` only: the ClickHouse Process on a database Node that holds the events. |
+| `--converge` | Converge an existing role again. It works for a role that is `active`, `failed` at a `converge:` step, or `provisioning` for more than 11 minutes with no operation holding the Node's role lock. |
+| `--postgres-process=ID` | For `analytics` only: the PostgreSQL 16 Process that holds the Plausible accounts. |
+| `--clickhouse-process=ID` | For `analytics` only: the ClickHouse Process that holds the events. |
 
 ```bash
 orbit node:role:add beast database
@@ -204,19 +171,17 @@ orbit node:role:add beast metrics --converge
 orbit node:role:add services analytics --postgres-process=41 --clickhouse-process=42
 ```
 
-The `analytics` role needs both Process options. In a terminal the command lists the Docker Processes that run the right image and asks you to pick each one you left out; with `--json` or `--no-interaction` it refuses. The [Analytics role](/reference/analytics) page owns what the role runs and publishes.
+`vpn` and `router` fail with `validation.failed` and `Role [ROLE] is protected from generic mutation.` A role that conflicts with one the Node holds fails with `validation.failed` before anything changes. [Role compatibility](/reference/node-provisioning#role-compatibility) lists the pairs. For `analytics`, a terminal lists the Docker Processes that run the right image and asks for each missing option. With `--json` or without a terminal, the command refuses. The [Analytics role](/reference/analytics) page describes that role.
 
-The command refuses a role that conflicts with one the Node holds, before it converges anything, with `validation.failed` and `Role [ingress] conflicts with assigned role [gateway].`. For example, `ingress` never runs on the Gateway Node. [Role compatibility](/reference/node-provisioning#role-compatibility) lists every conflicting pair.
+Role operations on one Node run one at a time. A command that waits more than 2 minutes fails with `node_role.convergence_failed`, `details.step` `converge:node-lock`, and `details.error_code` `node_role.node_busy`. Run it again.
 
-Role operations on one Node run one at a time, as [Node provisioning](/reference/node-provisioning#role-operations-on-one-node) describes. A command that waits too long fails with `node_role.convergence_failed`, `details.step` `converge:node-lock`, and `details.error_code` `node_role.node_busy`, and leaves the assignment as it was; run it again. Human output prints the step and the error code under the message.
+Some steps report a failure without failing the role. The role stays `active`, and `follow_up` in the response names the failure and the retry. The CLI prints it as a warning. The `gateway` role's [private DNS route](/reference/private-dns#the-gateway-machine) reports this way.
 
-A convergence step that does not fail the role still reports its failure. The role stays `active`, and `follow_up` in the response names what failed and how to retry it. The command prints it as a warning after the result. Today only the `gateway` role's [private DNS route](/reference/private-dns#the-gateway-machine) reports this way, on `node:role:add` and on `node:role:relocate`.
-
-`gateway`, `websocket`, and `metrics` are mutable singletons. Prefer [`node:role:relocate`](#orbit-noderolerelocate) when the assignment already exists. Adding `gateway` grants directed access from that Node to the active `vpn` node and the active `metrics` node when those nodes exist and are not the Gateway itself. `vpn` is refused.
+Adding `gateway` grants the new Gateway Node access to the active `vpn` and `metrics` Nodes, when they are other Nodes. Prefer [`node:role:relocate`](#orbit-noderolerelocate) to move `gateway`, `websocket`, or `metrics`.
 
 ## orbit node:role:list
 
-List the role assignments of one Node with their lifecycle status and failed step, when one exists.
+List the roles of one Node with their status and failed step.
 
 ```bash
 orbit node:role:list <node> [--json]
@@ -224,37 +189,35 @@ orbit node:role:list <node> [--json]
 
 ## orbit node:role:relocate
 
-Move a relocatable singleton role (`gateway`, `websocket`, or `metrics`) from its current Node onto the named Node. The command keeps one active assignment for the whole request.
-
-The target must not hold a conflicting role. `gateway` is refused onto a Node that holds `ingress`, `app-dev`, `app-prod`, `database`, or `analytics`, with `validation.failed` and `Role [gateway] conflicts with assigned role [ROLE].`.
+Move `gateway`, `websocket`, or `metrics` from its current Node to another Node. One assignment stays active for the whole request.
 
 ```bash
-orbit node:role:relocate <node> <role> [--from] [--force] [--json]
+orbit node:role:relocate <node> <role> [--from=NODE] [--force] [--json]
 ```
 
-| Argument | Required | Meaning |
-| --- | --- | --- |
-| `node` | yes | Node ID or registered name of the target. |
-| `role` | yes | `gateway`, `websocket`, or `metrics`. |
-
-| Option | Meaning |
+| Argument or option | Meaning |
 | --- | --- |
-| `--from` | Optional source Node ID or name. Omit to use the current holder. Required to reconcile leftovers when the target already holds the role. |
-| `--force` | Confirm the transfer. Required in JSON and other non-interactive modes. |
-
-For `gateway`, the Gateway opens the gateway HTTPS firewall on the target, transfers the assignment, grants the new Gateway access to the `vpn` and `metrics` nodes, republishes private DNS on the `vpn` node, and adds the [private DNS route](/reference/private-dns#the-gateway-machine) on the target. It then removes that route from the source and retracts that firewall there. A failed target route does not stop the move, and the command prints its `follow_up` as a warning. A failed source removal leaves the move incomplete, and the error names the `--from` command that finishes it. The target must not already hold `app-dev`, `app-prod`, or `database`. Relocate does not move `vpn`, stop Caddy or PHP-FPM on the source, or copy the serving checkout. After the split, `node:add` and peer converge install hub WireGuard credentials on the `vpn` node, not on the Gateway PHP host. [Relocate the gateway role](/solutions/relocate-gateway-role) owns ordering, the leftover serving stack, and CLI profile updates. The granted access set is `vpn` and `metrics`.
-
-For `websocket` and `metrics`, relocate copies missing role-owned credentials onto the target, transfers the assignment, converges the target baseline, and retracts the source publication and runtime. It does not overwrite credentials the target already has. When the target already holds the role, pass `--from` to move leftover source resources and retract that Node. When converging the target or retracting the source fails, the role already runs on the target. The command then fails with its usual error code, the failing step's own code in `details.error_code`, such as `metrics.docker_unavailable`, `details.step` set to `converge:STEP` on the target or `remove:STEP` on the source, and a message that the move is incomplete and names the `--from` command that finishes it once the source Node is reachable. A relocation reconciles Metrics once, after the source is retracted, so a slow Metrics Node never holds the source retraction. The move is complete by then, so a failed Metrics reconcile does not fail the command: it succeeds with a warning in `follow_up` that names the Metrics Node and the `orbit node:role:add <metrics-node> metrics --converge` command that reconciles it.
+| `node` | Target Node ID or name. It must be active and hold no conflicting role. |
+| `role` | `gateway`, `websocket`, or `metrics`. |
+| `--from=NODE` | Source Node. Omit it to use the current holder. When the target already holds the role, `--from` names the Node whose leftovers to remove. |
+| `--force` | Confirm the move. Required without a terminal and with `--json`. |
 
 ```bash
 orbit node:role:relocate beast gateway --force
-orbit node:role:relocate services websocket --force
-orbit node:role:relocate services websocket --from beast --force
+orbit node:role:relocate services websocket --from=beast --force
 ```
+
+For `gateway`, the Gateway opens the `orbit:gateway-https` firewall rule on the target and moves the assignment. It grants the new Gateway Node access to the `vpn` and `metrics` Nodes, publishes private DNS on the `vpn` Node, and adds the [private DNS route](/reference/private-dns#the-gateway-machine) on the target. It then removes that route and the firewall rule from the source. A failed route on the target reports `follow_up` and does not stop the move.
+
+Relocating `gateway` does not move `vpn`, the Gateway checkout, its SQLite database, the Orbit CA, or the SSH keys. It does not stop Caddy or PHP-FPM on the source, so clients that still use the old address keep working. [Relocate the gateway role](/solutions/relocate-gateway-role) gives the full order.
+
+For `websocket` and `metrics`, the Gateway copies role credentials that the target lacks, without overwriting any. It moves the assignment, converges the target, and removes the runtime and publication from the source.
+
+When a step on the target or the source fails, the role already runs on the target. The command fails with its usual code, `details.step` set to `converge:STEP` or `remove:STEP`, and `details.error_code` set to the step's own code. The message names the `--from` command that finishes the move. The Gateway reconciles Metrics once, after the source is done. A failed reconcile does not fail the move: `follow_up` names the Metrics Node and the `orbit node:role:add <metrics-node> metrics --converge` command.
 
 ## orbit node:role:remove
 
-Remove one role assignment from a Node. Removing the last role restores the public SSH recovery rule before the Gateway deletes the assignment.
+Remove one role from a Node.
 
 ```bash
 orbit node:role:remove <node> <role> [--force] [--purge-data] [--offline] [--json]
@@ -262,63 +225,87 @@ orbit node:role:remove <node> <role> [--force] [--purge-data] [--offline] [--jso
 
 | Option | Meaning |
 | --- | --- |
-| `--force` | Confirm destructive role removal and dependent cleanup. |
-| `--purge-data` | Request supported role-owned data cleanup. For `metrics`, this deletes the Prometheus and Grafana volumes and stored credentials. For `websocket`, this deletes the Reverb checkout at its install path. |
+| `--force` | Confirm the removal and its dependent cleanup. |
+| `--purge-data` | Also delete role data. For `metrics`, the Prometheus and Grafana volumes and the stored credentials. For `websocket`, the Reverb checkout. |
 | `--offline` | Remove the role from a Node the Gateway cannot reach. |
 
 ```bash
 orbit node:role:remove beast database --force
 ```
 
-A role that still hosts a Route target, such as `app-dev` or `app-prod` with active Instances, is refused until those Instances are removed.
+`app-dev` cannot be removed while the Node owns Instances, and no role can be removed while a Route depends on it. Removing the last role restores public SSH first, as [Public SSH](/reference/node-provisioning#public-ssh) describes.
 
-When two removals of the same role run together, the second waits for the Node's role lock. If the first removed the role meanwhile, the second fails with `node_role.already_removed` (409) and changes nothing. A role the Node never had returns `http.404`.
+The command removes a role that is `active` or `failed`. Each removal step is safe to repeat over what a failed convergence left. A role that is `provisioning` or `removing` is refused until its claim is stale. A failed removal leaves the role `failed` at `remove:STEP` and returns the step's own code in `details.error_code`. Run the same command again.
 
-The command removes a role that is `active`, or `failed` after a convergence (`failed_step=converge:STEP`) or an earlier removal (`failed_step=remove:STEP`). Each removal step repeats safely over what a failed convergence left behind: on a Node that never received Caddy or Docker, the Caddy build and the Metrics container cleanup find nothing to remove. A role that is still converging or being removed is refused until it has stayed `provisioning` or `removing` for 11 minutes, the role lock's request term plus a 1-minute margin, and no operation holds the Node's role lock. A failed removal leaves the role `failed` with `failed_step=remove:STEP` and returns the step's own code in `details.error_code`. A Caddy build failure on `ingress` uses `details.step` `remove:caddy-config` and `details.error_code` `ingress.caddy_config_failed`. [Caddy configuration](/reference/caddy-configuration#when-a-build-fails) describes the codes and the message. Run the same command again.
+When two removals of one role run together, the second waits for the role lock. If the first finished meanwhile, the second fails with `node_role.already_removed` (HTTP 409). A role the Node never had returns `http.404`.
 
 ## orbit node:access:add
 
-Allow one Node to run Gateway commands on another Node. Access edges authorize Orbit commands and Gateway API actions; they do not change private network reachability, which WireGuard membership already grants. Adding or relocating the `gateway` role creates the Gateway → `vpn` and Gateway → `metrics` edges automatically.
+Grant one Node access to act on another Node through the Gateway. An access grant authorizes Gateway commands. It does not change network reachability, which WireGuard membership already gives.
 
 ```bash
 orbit node:access:add <consumer> <serving> [--json]
 ```
 
-| Argument | Required | Meaning |
-| --- | --- | --- |
-| `consumer` | yes | Numeric ID of the Node that sends commands. |
-| `serving` | yes | Numeric ID of the Node that receives them. |
+| Argument | Meaning |
+| --- | --- |
+| `consumer` | Numeric ID of the Node that sends commands. |
+| `serving` | Numeric ID of the Node that the commands act on. |
 
-```bash
-orbit node:access:add 3 7
-```
+Both Nodes must be active. Adding a grant that exists reports that it already exists.
 
 ## orbit node:access:remove
 
-Remove one access edge from the active Gateway.
+Remove one access grant.
 
 ```bash
 orbit node:access:remove <consumer> <serving> [--force] [--json]
 ```
 
-| Option | Meaning |
-| --- | --- |
-| `--force` | Skip the confirmation prompt. |
+Removing a grant to the Gateway Node also revokes Grafana access that depends on it. The CLI warns when you removed your own access to the Gateway Node.
 
-## orbit node:settings
+## orbit node:remove
 
-Update the typed storage settings of one Node. The only setting path is `apps.path`, the root under which the Gateway creates Instance checkouts.
+Remove a Node record and its Gateway configuration. The Gateway restores public SSH on the machine, so you can add it again.
 
 ```bash
-orbit node:settings <node> --setting=apps.path:/mnt/apps [--json]
+orbit node:remove <node> [--force] [--offline] [--json]
 ```
-
-| Argument | Required | Meaning |
-| --- | --- | --- |
-| `node` | yes | Node ID or registered name. |
 
 | Option | Meaning |
 | --- | --- |
-| `--setting=PATH:VALUE` | Repeatable setting. The CLI splits at the first colon, so a value may contain more colons. An empty value unsets the setting: `--setting=apps.path:`. |
+| `--force` | Confirm the removal. Required with `--offline`. |
+| `--offline` | Remove a Node that the Gateway cannot reach. The Gateway probes the Node first, and a Node that answers keeps every guard. |
 
-The command requires at least one `--setting` option. Changing the apps root does not move, rewrite, or delete an existing checkout; the [Node settings reference](/reference/node-settings) lists the validation and failure codes.
+```bash
+orbit node:remove 7
+orbit node:remove 7 --offline --force
+```
+
+The Gateway refuses while the Node owns Instances, Routes, Schedules, roles, Processes, or firewall rules. It never removes the caller's Node, the `gateway` Node, or the `vpn` Node.
+
+<Warning>
+`--offline --force` changes nothing on the machine. Caddy sites, checkouts, containers, units, UFW rules, and the Node agent stay in place, and public SSH stays closed. The response lists them under `retained_on_node`.
+</Warning>
+
+[Remove a Node](/reference/node-provisioning#remove-a-node) lists each step and failure code.
+
+## Why it works this way
+
+These reasons explain the design. Check them before you propose a change.
+
+### A dedicated relocate for gateway
+
+The Gateway process serves the API. Removing the last `gateway` assignment and adding it again would drop the Gateway's authority and the `gateway.orbit` DNS record in between, so the second request might not run. Relocate keeps one active assignment for the whole move. Two active `gateway` assignments are rejected, because the fleet needs one authority and one address.
+
+### Relocate moves no secrets
+
+The checkout, the SQLite database, the Orbit CA, and the SSH keys live on the machine that runs the Gateway process. Copying them inside relocate would turn it into a secret-moving installer. You copy that state yourself and then converge the Gateway web stack on the new machine.
+
+### vpn does not move
+
+The WireGuard hub and private DNS stay on their original Node. `vpn` is protected from `node:role:add`, `node:role:remove`, and relocate.
+
+### Rename is its own verb
+
+A rename changes one identity field and does not touch WireGuard. Removing and adding the Node again would delete its WireGuard peer and records. `node:update` is rejected as a name, because update means a partial field patch.

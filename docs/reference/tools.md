@@ -92,7 +92,7 @@ Retry the same command with the Tool ID. The Gateway reads the live package stat
 
 Each operation locks its Tool and its manager's scope on the Node. A busy lock fails at once with `tool.operation_locked`. [Per-Node locks](/reference/node-provisioning#per-node-locks) lists every lock and its term.
 
-## Doctor
+## Check removal with Doctor
 
 The `tool` family of [Doctor](/cli/doctor) compares each Tool record with the Node. A record whose package is absent reports `tool.not_installed`. A version that differs from the record reports `tool.version_mismatch`. The report never contains raw dpkg output.
 

@@ -34,7 +34,7 @@ The API uses the same shape:
 
 `POST /api/v1/nodes` accepts an optional `settings` member. `PATCH /api/v1/nodes/{node}/settings` needs the `apps` member. `"path": null` or `"apps": null` removes the path. Node responses return the stored value only. They return `settings: null` when no path is set, never the default. `orbit node:show` shows the path, or an em dash when none is set.
 
-## The effective apps root
+## Derive the effective root
 
 The apps root is `apps.path`, or `<managed-user-home>/apps` when the path is not set. The Gateway computes the default each time and does not store it.
 

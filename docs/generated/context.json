@@ -313,20 +313,24 @@
             "path": "docs/cli/node.mdx",
             "title": "node",
             "kind": "product",
-            "components": [],
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
             "concepts": [
+                "Access grant",
                 "Cluster",
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
+                "Project",
                 "Role",
                 "Route"
             ],
-            "governing_adrs": [
-                "0088",
-                "0091"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/cli/overview.mdx",
@@ -5338,11 +5342,13 @@
             "path": "docs/reference/node-agent.md",
             "title": "Node agent",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/gateway"
+            ],
             "concepts": [
+                "Access grant",
                 "Activity",
                 "Doctor",
-                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -5353,16 +5359,7 @@
                 "Task",
                 "Task group"
             ],
-            "governing_adrs": [
-                "0128",
-                "0129",
-                "0130",
-                "0148",
-                "0151",
-                "0153",
-                "0154",
-                "0155"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/node-provisioning.md",
@@ -5391,7 +5388,8 @@
             "title": "Node retarget",
             "kind": "reference",
             "components": [
-                "apps/e2e"
+                "apps/e2e",
+                "apps/gateway"
             ],
             "concepts": [
                 "Gateway",
