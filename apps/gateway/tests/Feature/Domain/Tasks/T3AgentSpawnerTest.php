@@ -411,6 +411,40 @@ it('does not open a review when the bound diff reader fails', function (): void 
         ->and($dispatcher->commands)->toBe([]);
 });
 
+it('deletes a reserved reviewer when creating the conversation throws', function (): void {
+    app()->instance(TaskReviewDiff::class, new class implements TaskReviewDiff
+    {
+        public function read(AppInstance $instance, string $startCommit): array
+        {
+            return [
+                'files' => [],
+                'diff' => '',
+                'files_complete' => true,
+                'diff_available' => true,
+                'summary' => ['files' => 0, 'insertions' => 0, 'deletions' => 0],
+            ];
+        }
+    });
+    $driver = new FakeAgentDriver('t3');
+    $driver->failNextCreate = true;
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+    app()->forgetInstance(AgentSpawner::class);
+    app()->forgetInstance(TaskReviewPacketBuilder::class);
+    $group = t3_spawner_group();
+    $task = $group->tasks->firstOrFail();
+
+    expect(fn () => app(AgentSpawner::class)->spawnReviewer($task))
+        ->toThrow(RuntimeException::class, 'serialization failure')
+        ->and(AgentThread::query()->where('task_group_id', $group->id)->count())->toBe(0);
+
+    $id = app(AgentSpawner::class)->spawnReviewer($task->fresh() ?? $task);
+
+    expect($id)->toBeInt()
+        ->and(AgentThread::query()->where('task_group_id', $group->id)->count())->toBe(1)
+        ->and(AgentThread::query()->find($id)?->external_id)->not->toStartWith(TaskAgentSpawner::PendingPrefix)
+        ->and(array_column($driver->calls, 'operation'))->toBe(['create', 'create']);
+});
+
 it('does not start a replacement reviewer when the turn file cannot be written', function (): void {
     $group = t3_spawner_group();
     $task = $group->tasks->firstOrFail();
@@ -448,6 +482,39 @@ it('does not start a replacement reviewer when the turn file cannot be written',
         ->and(AgentThread::query()->where('task_id', $task->id)->where('external_id', 'like', TaskAgentSpawner::PendingPrefix.'%')->count())->toBe(0)
         ->and(AgentThread::query()->where('task_id', $task->id)->count())->toBe(1)
         ->and(array_column($driver->calls, 'operation'))->toBe(['send']);
+});
+
+it('deletes a reserved reviewer when preparing the turn throws', function (): void {
+    $group = t3_spawner_group();
+    $task = $group->tasks->firstOrFail();
+    $driver = new FakeAgentDriver('t3');
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+    app()->instance(TaskRunReceipts::class, new class implements TaskRunReceipts
+    {
+        public function prepare(AppInstance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void
+        {
+            throw new RuntimeException('The turn file could not be written.');
+        }
+
+        public function read(AppInstance $instance, ?int $actingThreadId = null): ?TaskRunReceipt
+        {
+            return null;
+        }
+
+        public function clear(AppInstance $instance, TaskRunReceipt $receipt): void {}
+
+        public function hasLegacyTurn(AppInstance $instance): bool
+        {
+            return false;
+        }
+    });
+    app()->forgetInstance(AgentSpawner::class);
+    app()->forgetInstance(TaskReviewPacketBuilder::class);
+
+    expect(fn () => app(AgentSpawner::class)->spawnReviewer($task))
+        ->toThrow(RuntimeException::class, 'The turn file could not be written.')
+        ->and(AgentThread::query()->where('task_group_id', $group->id)->count())->toBe(0)
+        ->and($driver->calls)->toBe([]);
 });
 
 it('leaves run commands in the diff unchanged and keeps the driver prompt within the packet cap', function (): void {

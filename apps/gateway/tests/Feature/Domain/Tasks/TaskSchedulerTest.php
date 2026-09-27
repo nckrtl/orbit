@@ -74,6 +74,7 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskGroup;
+use Illuminate\Support\Facades\Exceptions;
 use Tests\Support\AcceptingTaskPlannerMcp;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskCheckRunner;
@@ -1012,17 +1013,134 @@ it('records a missing start commit on a later tick', function (): void {
     expect($task->fresh()?->subtask_start_commit)->toBe($head);
 });
 
+it('does not record a later head after the implementer starts and commits', function (): void {
+    $app = scheduler_app('late-start');
+    $instance = scheduler_instance($app, scheduler_node('late-start-node', '10.44.0.72'), 'late');
+    $group = TaskGroup::query()->create([
+        'app_id' => $app->id,
+        'title' => 'Late start',
+        'brief' => 'The start read failed until the implementer had committed.',
+        'status' => TaskGroupStatus::Running,
+        'assistance_requested' => true,
+        'assistance_reason' => 'Waiting.',
+    ]);
+    $group->taskable()->associate($instance);
+    $group->save();
+    $task = Task::query()->create([
+        'task_group_id' => $group->id,
+        'position' => 1,
+        'title' => 'Work',
+        'brief' => 'Work.',
+        'status' => TaskStatus::Running,
+        'assistance_requested' => true,
+    ]);
+    $reads = 0;
+    $later = str_repeat('b', 40);
+    app()->instance(TaskWorkspaceStateReader::class, new class($later, $reads) implements TaskWorkspaceStateReader
+    {
+        public function __construct(private string $later, private int &$reads) {}
+
+        public function headCommit(AppInstance $instance): ?string
+        {
+            $this->reads++;
+
+            return $this->reads === 1 ? null : $this->later;
+        }
+
+        public function currentBranch(AppInstance $instance): ?string
+        {
+            return 'task-late';
+        }
+
+        public function definesComposerCheckScript(AppInstance $instance): bool
+        {
+            return true;
+        }
+    });
+    app(TaskExtensionState::class)->enable();
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->subtask_start_commit)->toBeNull();
+
+    $implementer = test_agent_thread($group, 'implementer-started', $task);
+    $task->update(['implementer_agent_thread_id' => $implementer->id]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->subtask_start_commit)->toBeNull();
+});
+
+it('records a start commit on a later tick while the implementer is only reserved', function (): void {
+    $app = scheduler_app('reserved-start');
+    $instance = scheduler_instance($app, scheduler_node('reserved-start-node', '10.44.0.73'), 'reserved');
+    $group = TaskGroup::query()->create([
+        'app_id' => $app->id,
+        'title' => 'Reserved start',
+        'brief' => 'The implementer row is not a turn yet.',
+        'status' => TaskGroupStatus::Running,
+        'assistance_requested' => true,
+        'assistance_reason' => 'Waiting.',
+    ]);
+    $group->taskable()->associate($instance);
+    $group->save();
+    $task = Task::query()->create([
+        'task_group_id' => $group->id,
+        'position' => 1,
+        'title' => 'Work',
+        'brief' => 'Work.',
+        'status' => TaskStatus::Running,
+        'assistance_requested' => true,
+    ]);
+    $later = str_repeat('c', 40);
+    $reads = 0;
+    app()->instance(TaskWorkspaceStateReader::class, new class($later, $reads) implements TaskWorkspaceStateReader
+    {
+        public function __construct(private string $later, private int &$reads) {}
+
+        public function headCommit(AppInstance $instance): ?string
+        {
+            $this->reads++;
+
+            return $this->reads === 1 ? null : $this->later;
+        }
+
+        public function currentBranch(AppInstance $instance): ?string
+        {
+            return 'task-reserved';
+        }
+
+        public function definesComposerCheckScript(AppInstance $instance): bool
+        {
+            return true;
+        }
+    });
+    app(TaskExtensionState::class)->enable();
+
+    app(TaskScheduler::class)->tick();
+
+    $reserved = test_agent_thread($group, TaskAgentSpawner::PendingPrefix.'implementer', $task);
+    $task->update(['implementer_agent_thread_id' => $reserved->id]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->subtask_start_commit)->toBe($later);
+});
+
 it('records a review-request failure and still reviews the other group', function (): void {
+    Exceptions::fake();
     [, $first] = scheduler_review([], notified: false);
     [, $second] = scheduler_review([], notified: false);
-    app()->instance(AgentSpawner::class, new class($first->id) implements AgentSpawner
+    app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
+    $raw = 'Malformed UTF-8 characters, possibly incorrectly encoded';
+    app()->instance(AgentSpawner::class, new class($first->id, $raw) implements AgentSpawner
     {
-        public function __construct(private int $taskId) {}
+        public function __construct(private int $taskId, private string $raw) {}
 
         public function spawnReviewer(Task $task): ?int
         {
             if ($task->id === $this->taskId) {
-                throw new RuntimeException('Malformed UTF-8 characters, possibly incorrectly encoded');
+                throw new RuntimeException($this->raw);
             }
 
             return test_agent_thread($task->taskGroup, 'spawned-reviewer-'.$task->id)->id;
@@ -1042,6 +1160,20 @@ it('records a review-request failure and still reviews the other group', functio
         ->and($first->fresh()?->review_notified_attempt)->toBeNull()
         ->and($second->fresh()?->review_notified_attempt)->toBe($second->review_attempt)
         ->and($second->fresh()?->communication_failures)->toBe(0);
+    Exceptions::assertReported(fn (RuntimeException $exception): bool => $exception->getMessage() === $raw);
+
+    foreach (range(1, 4) as $ignored) {
+        app(TaskScheduler::class)->tick();
+    }
+
+    $reason = TaskScheduler::ReviewRequestFailedReason.' (RuntimeException).';
+    expect($first->fresh()?->communication_failures)->toBe(5)
+        ->and($first->fresh()?->assistance_requested)->toBeTrue()
+        ->and($first->fresh()?->assistance_reason)->toBe($reason)
+        ->and($first->fresh()?->assistance_reason)->not->toContain($raw)
+        ->and($first->taskGroup->fresh()?->assistance_reason)->toBe($reason)
+        ->and($second->fresh()?->review_notified_attempt)->toBe($second->review_attempt)
+        ->and($second->fresh()?->assistance_requested)->toBeFalse();
 });
 
 /**

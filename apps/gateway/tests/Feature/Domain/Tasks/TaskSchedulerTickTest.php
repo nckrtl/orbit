@@ -19,6 +19,7 @@ use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
+use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskJevDecision;
@@ -4466,5 +4467,90 @@ describe('subtask deliverables at handoff', function (): void {
         ]])
             ->and($task->fresh()?->status)->toBe(TaskStatus::Running)
             ->and($reminder)->toContain('layout-repro (test): The test "it keeps the home screen layout" passes on the start commit, so it does not reproduce the bug.');
+    });
+
+    it('proves a fails_on_base test from the workspace starting commit when the start commit was never recorded', function (): void {
+        $starting = str_repeat('c', 40);
+        $later = str_repeat('d', 40);
+        $deliverable = ['id' => 'layout-repro', 'type' => 'test', 'description' => 'The layout fails before the fix', 'project' => 'apps/gateway', 'file' => 'tests/Feature/HomeScreenTest.php', 'name' => 'home screen layout', 'fails_on_base' => true];
+        [$group, $task, $checks] = tick_deliverables([$deliverable], ['layout-repro' => 'HomeScreenTest'], null);
+        $task->update(['subtask_start_commit' => null]);
+        $group->taskable?->update(['starting_commit' => $starting]);
+        app()->instance(TaskWorkspaceStateReader::class, new class($later) implements TaskWorkspaceStateReader
+        {
+            public function __construct(private string $later) {}
+
+            public function headCommit(AppInstance $instance): ?string
+            {
+                return $this->later;
+            }
+
+            public function currentBranch(AppInstance $instance): ?string
+            {
+                return 'task-21';
+            }
+
+            public function definesComposerCheckScript(AppInstance $instance): bool
+            {
+                return true;
+            }
+        });
+
+        app(TaskScheduler::class)->tick();
+
+        expect($checks->deliverables[0]['start'] ?? null)->toBe($starting)
+            ->and($task->fresh()?->subtask_start_commit)->toBeNull();
+    });
+
+    it('proves a fails_on_base test from the previous approved commit when the start commit was never recorded', function (): void {
+        $approved = str_repeat('e', 40);
+        $starting = str_repeat('f', 40);
+        $later = str_repeat('9', 40);
+        $deliverable = ['id' => 'layout-repro', 'type' => 'test', 'description' => 'The layout fails before the fix', 'project' => 'apps/gateway', 'file' => 'tests/Feature/HomeScreenTest.php', 'name' => 'home screen layout', 'fails_on_base' => true];
+        [$group, $task, $checks] = tick_deliverables([$deliverable], ['layout-repro' => 'HomeScreenTest'], null);
+        $earlier = Task::query()->create([
+            'task_group_id' => $group->id,
+            'position' => 0,
+            'title' => 'Earlier',
+            'brief' => 'Already approved.',
+            'status' => TaskStatus::Completed,
+        ]);
+        TaskComment::query()->create([
+            'task_group_id' => $group->id,
+            'task_id' => $earlier->id,
+            'type' => TaskCommentType::Approved,
+            'body' => 'Approved.',
+            'author' => 'reviewer',
+            'commit_sha' => $approved,
+            'posted_at' => now(),
+        ]);
+        $task->update(['subtask_start_commit' => null]);
+        $group->taskable?->update(['starting_commit' => $starting]);
+        app()->instance(TaskWorkspaceStateReader::class, new class($later) implements TaskWorkspaceStateReader
+        {
+            public function __construct(private string $later) {}
+
+            public function headCommit(AppInstance $instance): ?string
+            {
+                return $this->later;
+            }
+
+            public function currentBranch(AppInstance $instance): ?string
+            {
+                return 'task-21';
+            }
+
+            public function definesComposerCheckScript(AppInstance $instance): bool
+            {
+                return true;
+            }
+        });
+
+        app(TaskScheduler::class)->tick();
+
+        expect($checks->deliverables[0]['start'] ?? null)->toBe($approved)
+            ->and($checks->deliverables[0]['start'] ?? null)->not->toBe($starting)
+            ->and($checks->deliverables[0]['start'] ?? null)->not->toBe($later)
+            ->and($task->fresh()?->subtask_start_commit)->toBeNull();
     });
 });

@@ -35,6 +35,8 @@ final class FakeAgentDriver implements AgentDriver
 
     public bool $failNextSend = false;
 
+    public bool $failNextCreate = false;
+
     public function __construct(private readonly string $key = 'example') {}
 
     public function key(): string
@@ -50,6 +52,11 @@ final class FakeAgentDriver implements AgentDriver
     public function create(AgentThreadStart $intent): string
     {
         $this->calls[] = ['operation' => 'create', 'prompt' => $intent->prompt, 'title' => $intent->title];
+        if ($this->failNextCreate) {
+            $this->failNextCreate = false;
+
+            throw new \RuntimeException('SQLSTATE[40001]: serialization failure');
+        }
 
         return 'conversation-'.count($this->calls);
     }

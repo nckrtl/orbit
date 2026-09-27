@@ -45,7 +45,7 @@ The thread title is `Orbit task #{group id} · Review: {subtask title}`. Its rol
 
 On a planning group, before the first review, `reviewer_agent_thread_id` points at the planner thread. That is how the group remembers the planner. The planner keeps `task_id` null and the title `Orbit task #{group id} · Planner: {title}`. The first review replaces `reviewer_agent_thread_id` with the new reviewer thread. The planner row stays in `agent_threads`. The scheduler sends a review only to the thread it started for that subtask, or continues that thread. It never sends a review to the planner. A resolution during review follows the same rule. When the subtask has no started reviewer thread yet, including a reserved row that has not started, the resolution waits in that fresh thread's opening packet.
 
-The opening turn of a fresh thread is the review packet. The thread id goes into the generated instructions before the packet is capped. Diff text and brief text are not rewritten to add it. Orbit reserves the thread row before that prompt, so the prompt and `.git/orbit/turn.json` can name the Orbit thread id. A spawn that does not start the turn deletes the row and stores no thread id. The next tick tries again. When a continued thread cannot take a turn, Orbit starts a fresh thread and sends a full packet.
+The opening turn of a fresh thread is the review packet. The thread id goes into the generated instructions before the packet is capped. Diff text and brief text are not rewritten to add it. Orbit reserves the thread row before that prompt, so the prompt and `.git/orbit/turn.json` can name the Orbit thread id. Its external id starts with `pending:` until the conversation starts. A spawn that does not start the turn deletes the row and stores no thread id. Any other failure while creating the conversation deletes that row too, so the next attempt does not reuse it. The reserved row is not listed, measured, or broadcast, and Orbit does not read it from the driver. The next tick tries again. When a continued thread cannot take a turn, Orbit starts a fresh thread and sends a full packet.
 
 The acting thread while a subtask is `reviewing` is that subtask's reviewer. The planner does not defer the subtask. An operator talking to an earlier reviewer does not defer the new review. [ADR 0132](/decisions/0132-pause-only-for-the-acting-thread-and-a-real-question) still pauses only for the acting thread or a real question. The Gateway sends no turn to a working thread. On a continued reviewer, the task still moves to `reviewing` and the request waits until that thread stops.
 
@@ -55,7 +55,7 @@ The acting thread is the subtask's reviewer or its implementer, not only the id 
 
 A fixup is a subtask. Its review follows this rule: a fresh reviewer thread, not the planner and not an earlier subtask's reviewer.
 
-The group `tokens` total sums each subtask's `tokens` and the reported tokens of every thread whose role is reviewer. That includes the planner and each subtask reviewer. The tick keeps reading the planner thread while the group is in Backlog, Todo, running, or reviewing, so that count stays current. The read asks Jev nothing.
+The group `tokens` total sums each subtask's `tokens` and the reported tokens of every started thread whose role is reviewer. That includes the planner and each subtask reviewer. A reserved row is not included. The tick keeps reading the planner thread while the group is in Backlog, Todo, running, or reviewing, so that count stays current. The read asks Jev nothing.
 
 ### Review packet
 
@@ -86,7 +86,7 @@ git diff --stat START; git ls-files --others --exclude-standard -z | while IFS= 
 
 Orbit does not send a review when it cannot read the diff. That attempt is a communication failure, and the next tick tries again. Any other failure while requesting that review is also a communication failure for that subtask. The tick still reviews the other groups. It does not describe that failure as zero files changed. When the captured stat output is cut, the summary counts stay complete, the path list is omitted, and the packet says the stat command prints the rest. The retained tail of a cut capture is not shown as the whole diff. The diff and the stat replace bytes that are not valid UTF-8 before the caps are applied, both when the diff fits and when it is cut.
 
-Orbit records the subtask's start commit when the subtask starts. When that read fails, Orbit leaves the commit empty. While the subtask is running, the next tick tries the read again. When the review has no start commit, the packet uses the previous subtask's approved commit. The first subtask uses the workspace starting commit.
+Orbit records the subtask's start commit when the subtask starts, before the implementer's first turn. When that read fails, Orbit leaves the commit empty. The next tick tries the read again until that turn starts. Once the turn has started, Orbit leaves the start commit empty. The review diff and the fails_on_base base run then use the same fallback: the previous subtask's approved commit, or the workspace starting commit for the first subtask.
 
 The opening packet names the feature contract: the ADRs and documentation this branch changes against the Project default branch. A continued turn does not repeat that sentence.
 
@@ -121,7 +121,7 @@ Orbit writes the file before the planner starts, and before a reviewer starts wh
 - The operator keeps the planner thread for planning. Reviews are separate threads on the same driver and model.
 - The planner and the reviewer search the catalogue before an unfamiliar Orbit action. The full catalogue at `/mcp` stays for other clients.
 - A tracked `.mcp.json` stays unchanged. Those agents reach `/mcp/search` only when that file or the Node provides it.
-- The group token total adds every thread whose role is reviewer, including the planner and each subtask reviewer.
+- The group token total adds every started thread whose role is reviewer, including the planner and each subtask reviewer. A reserved row is not included.
 - The acting reviewer is the subtask's reviewer thread. The planner does not defer a subtask. A review resolution is not sent to the planner or to an earlier subtask's reviewer.
 - A run receipt applies only when its thread id is the acting thread. A receipt with no thread id does not move the current subtask. Orbit rewrites a legacy turn file and sends the bound run command.
 - When a reviewing subtask has no reviewer thread, a resolution clears assistance without marking the review requested. The next tick starts the fresh reviewer, and the opening packet includes the resolution.

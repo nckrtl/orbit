@@ -11,6 +11,7 @@ use App\Models\TaskComment;
 use App\Models\TaskGroup;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Throwable;
 
 final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawner
 {
@@ -241,8 +242,10 @@ final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawne
     {
         try {
             $this->prepareReceipt($thread);
-        } catch (TaskRunReceiptException $exception) {
-            $thread->delete();
+        } catch (Throwable $exception) {
+            if ($thread->exists) {
+                $thread->delete();
+            }
 
             throw $exception;
         }
@@ -275,6 +278,12 @@ final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawne
             $thread->delete();
 
             return null;
+        } catch (Throwable $exception) {
+            if ($thread->exists) {
+                $thread->delete();
+            }
+
+            throw $exception;
         }
         if ($externalId === '') {
             $thread->delete();

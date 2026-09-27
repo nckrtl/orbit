@@ -12,6 +12,9 @@ final readonly class AgentThreadObserver
 
     public function observe(AgentThread $thread): ?AgentObservation
     {
+        if (str_starts_with($thread->external_id, TaskAgentSpawner::PendingPrefix)) {
+            return null;
+        }
         try {
             $observation = $this->drivers->get($thread->driver)->observe($thread);
         } catch (AgentDriverException) {

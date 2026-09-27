@@ -21,7 +21,7 @@ final readonly class TaskReviewPacketBuilder
     {
         $task->loadMissing(['taskGroup.app', 'taskGroup.taskable']);
         $group = $task->taskGroup;
-        $start = $this->reviewBase($task, $group);
+        $start = TaskReviewBase::commit($task);
         $instance = $group->taskable;
         if (! $instance instanceof AppInstance) {
             throw new TaskReviewDiffException('The review diff could not be read.');
@@ -55,56 +55,6 @@ final readonly class TaskReviewPacketBuilder
             resolution: $continued ? '' : $this->pendingResolution($task),
             threadId: $threadId,
         )->render();
-    }
-
-    /**
-     * The recorded start commit, or a fallback when that read never succeeded.
-     * A later subtask uses the previous approved commit. The first uses the workspace starting commit.
-     */
-    private function reviewBase(Task $task, TaskGroup $group): string
-    {
-        $recorded = $task->subtask_start_commit;
-        if (self::isCommit($recorded)) {
-            return $recorded;
-        }
-        $previous = $this->previousApprovedCommit($group, $task);
-        if ($previous !== null) {
-            return $previous;
-        }
-        $instance = $group->taskable;
-        $starting = $instance instanceof AppInstance ? $instance->starting_commit : null;
-
-        return self::isCommit($starting) ? $starting : '';
-    }
-
-    private function previousApprovedCommit(TaskGroup $group, Task $task): ?string
-    {
-        $earlier = Task::query()
-            ->where('task_group_id', $group->id)
-            ->where(function ($query) use ($task): void {
-                $query->where('position', '<', $task->position)
-                    ->orWhere(function ($query) use ($task): void {
-                        $query->where('position', $task->position)->where('id', '<', $task->id);
-                    });
-            })
-            ->pluck('id');
-        if ($earlier->isEmpty()) {
-            return null;
-        }
-        $commit = TaskComment::query()
-            ->whereIn('task_id', $earlier)
-            ->where('type', TaskCommentType::Approved->value)
-            ->whereNotNull('commit_sha')
-            ->latest('id')
-            ->value('commit_sha');
-
-        return self::isCommit($commit) ? $commit : null;
-    }
-
-    /** @phpstan-assert-if-true string $value */
-    private static function isCommit(mixed $value): bool
-    {
-        return is_string($value) && preg_match('/\A[0-9a-f]{7,64}\z/i', $value) === 1;
     }
 
     /** A resolution held for this attempt because the subtask had no reviewer thread yet. */

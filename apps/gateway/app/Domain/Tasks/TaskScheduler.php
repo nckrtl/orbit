@@ -43,6 +43,9 @@ final readonly class TaskScheduler
     /** Assistance set when a settling group has no pull request and no todo subtask (ADR 0164). */
     public const string MissingPullRequestPrefix = 'The settling group has no reviewed pull request URL.';
 
+    /** Assistance set when a review request fails. The exception class follows; the message does not. */
+    public const string ReviewRequestFailedReason = 'The review could not be requested';
+
     /** Re-evaluations of cancelled or unstarted checks on one head before the group asks for assistance (ADR 0164). */
     public const int InfrastructureCheckRetries = 5;
 
@@ -838,7 +841,7 @@ final readonly class TaskScheduler
 
     /**
      * ADR 0133: what the handoff check needs to record deliverable evidence, or null for a subtask without deliverables.
-     * ADR 0163: a test with fails_on_base true asks for the extra run on the start commit.
+     * ADR 0163: a test with fails_on_base true asks for the extra run on the same base as the review diff.
      *
      * @return array{start: string|null, tests: list<array{id: string, project: string, file: string, fails_on_base?: bool}>, commands: list<array{id: string, command: string, directory: string}>}|null
      */
@@ -862,7 +865,9 @@ final readonly class TaskScheduler
             }
         }
 
-        return ['start' => $task->subtask_start_commit, 'tests' => $tests, 'commands' => $commands];
+        $start = TaskReviewBase::commit($task);
+
+        return ['start' => $start !== '' ? $start : null, 'tests' => $tests, 'commands' => $commands];
     }
 
     private function receiptItem(?TaskRunReceipt $read, ?TaskComment $receipt): TaskRubricItem
@@ -1951,7 +1956,8 @@ final readonly class TaskScheduler
             }
             $group->update(['reviewer_agent_thread_id' => $threadId]);
         } catch (Throwable $exception) {
-            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+            report($exception);
+            $this->recordCommunicationFailure($task, $group, self::ReviewRequestFailedReason.' ('.class_basename($exception).').');
 
             return;
         }
@@ -2738,6 +2744,27 @@ final readonly class TaskScheduler
     }
 
     /**
+     * The implementer's first turn has started once its conversation exists.
+     * A reserved row has not started, so a failed start read can still be retried.
+     */
+    private function implementerTurnStarted(Task $task): bool
+    {
+        $threadId = $task->implementer_agent_thread_id;
+        if ($threadId !== null) {
+            $externalId = AgentThread::query()->whereKey($threadId)->value('external_id');
+            if (is_string($externalId) && ! str_starts_with($externalId, TaskAgentSpawner::PendingPrefix)) {
+                return true;
+            }
+        }
+
+        return AgentThread::query()
+            ->where('task_id', $task->id)
+            ->where('role', TaskThreadRole::Implementer->value)
+            ->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%')
+            ->exists();
+    }
+
+    /**
      * Runs the Project's setup steps and check on the fresh workspace. The first implementer starts only
      * after it passes, so an agent never starts on a broken checkout.
      */
@@ -2892,12 +2919,17 @@ final readonly class TaskScheduler
     }
 
     /**
-     * Records the workspace HEAD as this subtask's start. A failed read is left empty so a later
-     * tick can try again. A start that is already recorded is not replaced.
+     * Records the workspace HEAD as this subtask's start. A failed read stays empty so a later tick
+     * can try again, until the implementer's first turn starts. After that turn, a later HEAD would
+     * hide the implementer's commits, so the start stays empty and the review uses its fallback base.
+     * A start that is already recorded is not replaced.
      */
     private function recordSubtaskStart(Task $task): void
     {
         if (is_string($task->subtask_start_commit) && $task->subtask_start_commit !== '') {
+            return;
+        }
+        if ($this->implementerTurnStarted($task)) {
             return;
         }
         $instance = $task->taskGroup()->with('taskable')->first()?->taskable;

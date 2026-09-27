@@ -161,7 +161,7 @@ A `test` deliverable's `file` is one exact Pest test file, relative to its `proj
 
 Group create, subtask create, and subtask update refuse any other `file` with HTTP 422 `validation.failed`. The error names that deliverable's `id`.
 
-The subtask's diff runs from its start commit to the working tree that Orbit's check sees, uncommitted and untracked files included. Orbit records the start commit when the subtask starts. Deleted and ignored files never match.
+The subtask's diff runs from its start commit to the working tree that Orbit's check sees, uncommitted and untracked files included. Orbit records the start commit when the subtask starts, before the implementer's first turn. When that commit is empty, the diff uses the fallback described in [Review a subtask](#review-a-subtask). Deleted and ignored files never match.
 
 ### Reproduce a bug on the start commit
 
@@ -171,10 +171,10 @@ When the value is `true`, Orbit runs that file twice at handoff.
 
 | Run | Code under test | Passes when |
 | --- | --- | --- |
-| Base | The start commit, plus only this test file from the working tree | At least one test whose name contains `name` fails |
+| Base | The start commit, or its fallback when that commit was never recorded, plus only this test file from the working tree | At least one test whose name contains `name` fails |
 | Working tree | The implementer's tree | Every test whose name contains `name` passes, and at least one such test exists |
 
-The base run reads that test file from the working tree, including an uncommitted or untracked file. No other file from the diff is present. Dependencies already installed in the workspace stay available, so Pest can run. The base run does not change the workspace.
+The base run reads that test file from the working tree, including an uncommitted or untracked file. No other file from the diff is present. Dependencies already installed in the workspace stay available, so Pest can run. The base run does not change the workspace. When the recorded start commit is empty, this run uses the same fallback as the review diff: the previous subtask's approved commit, or the workspace starting commit for the first subtask.
 
 The base run builds the start commit in a directory under the clone's `.git/orbit/`. It archives that commit and extracts the archive there. It does not register a Git worktree, and the directory is not in the apps root. The check removes the directory when the base run finishes or the check is cancelled. A base run killed with SIGKILL can leave the directory. Nothing is registered, so removing the clone removes the leftover with it.
 
@@ -374,9 +374,9 @@ Doctor expects the same final state. A non-visitable task workspace is healthy i
 
 ## Agent viewer
 
-The task group page shows an Agents section below Subtasks. Vertical tabs list every thread: the planner, each subtask reviewer, and each implementer. A subtask page shows only that subtask's implementer and that subtask's reviewer. The planner and every other reviewer stay on the group page. Finished conversations remain available. Activity and connection health have separate labels; a disconnected viewer retains the last known activity state.
+The task group page shows an Agents section below Subtasks. Vertical tabs list every started thread: the planner, each subtask reviewer, and each implementer. A reserved row that has not started is left out. A subtask page shows only that subtask's implementer and that subtask's reviewer. The planner and every other reviewer stay on the group page. Finished conversations remain available. Activity and connection health have separate labels; a disconnected viewer retains the last known activity state.
 
-`GET /api/v1/task-groups/{group}/agents` lists persisted threads, including driver, external ID, state, observation time, errors, and metrics. Metrics include `tokens` and the [thread token metrics](#thread-token-metrics). Each split field is present and null when the driver did not report it. `GET /api/v1/task-groups/{group}/agents/{session}/stream` streams normalized conversation data for an Orbit thread ID. Both routes require Gateway access and an enabled tasks extension. Runtime credentials stay server-side. A missing original Node leaves the link visible but unavailable for streaming.
+`GET /api/v1/task-groups/{group}/agents` lists persisted threads, including driver, external ID, state, observation time, errors, and metrics. It leaves out a reserved row whose external id starts with `pending:`. Metrics include `tokens` and the [thread token metrics](#thread-token-metrics). Each split field is present and null when the driver did not report it. `GET /api/v1/task-groups/{group}/agents/{session}/stream` streams normalized conversation data for an Orbit thread ID. Both routes require Gateway access and an enabled tasks extension. Runtime credentials stay server-side. A missing original Node leaves the link visible but unavailable for streaming.
 
 Snapshots replace the browser transcript. Entries merge by ID and kind, so a repeated or updated entry replaces the earlier one in place.
 
@@ -385,6 +385,8 @@ The browser supplies an opaque `Last-Event-ID` on reconnect. A tab that returns 
 ## Agent threads and drivers
 
 An `AgentThread` is one persistent conversation. It records the driver, external conversation ID, original Node, task links, role, model, and effort. Task and TaskGroup thread pointers refer to Orbit thread IDs. Existing T3 session links migrate with their IDs and ownership preserved. The external runtime retains the transcript. The integer `reviewer_agent_thread_id` and `implementer_agent_thread_id` fields replace external string pointers. The migration preserves old record IDs and imports missing legacy links.
+
+Orbit reserves a row before it starts a conversation, so the opening prompt can name the Orbit thread id. That row's external id starts with `pending:` until the conversation starts. It is not a conversation yet. The agents list, the Agents section, token totals, and `agent_thread.updated` leave it out, and Orbit does not read it from the driver. If starting the conversation throws, Orbit deletes the row. The next attempt does not reuse it.
 
 It is forward-only; reverting to an older Gateway requires restoring a database backup or a reviewed forward migration. Ownership conflicts are checked before schema changes. Take a backup before migrating. If a database without transactional DDL stops partway through a schema change, restore that backup before retrying; do not rerun against the partial schema.
 
@@ -495,11 +497,15 @@ The handoff lines name the Project task check, each deliverable `test` and `comm
 
 The diff stat's summary line is the file count and the insertion and deletion counts, including untracked files. Dropped deliverable lines, dropped approval lines, and dropped handoff lines each leave one line that names how many were omitted. Orbit does not send a review when it cannot read the diff. That attempt is a communication failure, and the next tick tries again. It does not describe that failure as zero files changed. When the captured stat output is cut, the summary counts stay complete, the path list is left out, and the packet says the stat command prints the rest.
 
-Any other failure while requesting that review is also a communication failure for that subtask. The tick still reviews the other groups. The diff and the stat in the packet are valid UTF-8. Orbit replaces bytes that are not before it keeps the text or cuts it.
+Any other failure while requesting that review is also a communication failure for that subtask. The tick still reviews the other groups. Orbit records the exception. After five failures the group asks for assistance. The reason is `The review could not be requested (ExceptionClass).` It names the exception class and does not include the exception message.
+
+The diff and the stat in the packet are valid UTF-8. Orbit replaces bytes that are not before it keeps the text or cuts it.
 
 The stat command prints the tracked stat and a stat for each untracked file. The diff command prints tracked changes and the content of each untracked file. Neither command updates the index. `git diff START` prints no untracked file, so the loop prints that content. `git status` is not used, because it prints paths only. Replace `START` with the subtask's start commit. `git diff --no-index` exits 1 when a file differs from empty, and `|| true` keeps the loop going.
 
-Orbit records that commit when the subtask starts. When the read fails, Orbit does not store an empty commit. While the subtask is running, the next tick tries the read again. When the review has no start commit, the diff base is the previous subtask's approved commit. The first subtask uses the workspace starting commit, recorded when Orbit created the group workspace.
+Orbit records that commit when the subtask starts, before the implementer's first turn. When the read fails, Orbit does not store an empty commit. The next tick tries the read again until that turn starts. Once the turn has started, Orbit leaves the start commit empty, even if a later read succeeds. A commit recorded after that turn would drop the implementer's changes from the diff and from the base run.
+
+When the start commit is empty, the review diff and the base run use the same fallback. A later subtask uses the previous subtask's approved commit. The first subtask uses the workspace starting commit, recorded when Orbit created the group workspace.
 
 ```bash
 git diff --stat START; git ls-files --others --exclude-standard -z | while IFS= read -r -d '' path; do git diff --no-index --stat -- /dev/null "$path" || true; done
@@ -761,7 +767,7 @@ The Gateway then writes settle metrics. Active groups also refresh these fields 
 | `line_diff` | Task | Reported insertions plus deletions for the current implementer. Failed reads preserve stored values |
 | `lines_added`, `lines_deleted` | Task | Separate checkpoint insertion and deletion counts; null before observation |
 | `duration_ms` | Task | Elapsed milliseconds from `started_at` to `settled_at`, or to now while the subtask is still open |
-| `tokens` | TaskGroup | Sum of Task `tokens` plus reported tokens on every reviewer thread, planner included, or `0` when none are stored |
+| `tokens` | TaskGroup | Sum of Task `tokens` plus reported tokens on every started reviewer thread, planner included, or `0` when none are stored. A reserved row is not included |
 | `line_diff` | TaskGroup | Insertions plus deletions of `git diff --numstat {default_branch}...HEAD` in the shared checkout, or `0` when git cannot run. This is the whole feature branch, not the sum of subtask session diffs |
 | `lines_added`, `lines_deleted` | TaskGroup | Separate branch insertion and deletion counts; null before a successful observation |
 | `duration_ms` | TaskGroup | Elapsed milliseconds from `started_at` to settle, or to now while the group is still active, or `0` when `started_at` is empty |
