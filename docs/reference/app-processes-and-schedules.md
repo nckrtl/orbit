@@ -15,8 +15,8 @@ The Gateway exposes the two collections through these API resources.
 
 | Definition kind | Collection | Item operations |
 | --- | --- | --- |
-| Process | `GET` and `POST` on `/api/v1/apps/{app}/process-definitions` | `GET`, full `PUT` replacement, and `DELETE` on `/api/v1/apps/{app}/process-definitions/{definition}` |
-| Schedule | `GET` and `POST` on `/api/v1/apps/{app}/schedule-definitions` | `GET`, full `PUT` replacement, and `DELETE` on `/api/v1/apps/{app}/schedule-definitions/{definition}` |
+| Process | `GET` and `POST` on `/api/v1/projects/{app}/process-definitions` | `GET`, full `PUT` replacement, and `DELETE` on `/api/v1/projects/{app}/process-definitions/{definition}` |
+| Schedule | `GET` and `POST` on `/api/v1/projects/{app}/schedule-definitions` | `GET`, full `PUT` replacement, and `DELETE` on `/api/v1/projects/{app}/schedule-definitions/{definition}` |
 
 Both kinds accept the common definition fields below.
 
@@ -44,28 +44,28 @@ Preparation records completed copies and resumes only unfinished installation af
 
 ## Manage definitions from the CLI
 
-The process and schedule families select Project-owned definitions with `--app`. `APP` is a positive numeric Project ID. `NAME` is unique within that Project and definition kind. `--for` names the environments the definition applies to. Because `--environment` already names Docker variables on `process:create`, `--for` is the only spelling for definition environments.
+The process and schedule families select Project-owned definitions with `--project`. `APP` is a positive numeric Project ID. `NAME` is unique within that Project and definition kind. `--for` names the environments the definition applies to. Because `--environment` already names Docker variables on `process:create`, `--for` is the only spelling for definition environments.
 
 | Command | Result |
 | --- | --- |
-| `orbit process:create NAME --app=APP --for=ENV[,ENV] ...` | Record a process definition on the Project with the runtime, command, image, working-directory, environment, port, volume, restart, and keep-alive options of an Instance target. |
-| `orbit process:list --app=APP` | List the Project's process definitions. |
-| `orbit process:show NAME --app=APP` | Show one process definition by name. |
-| `orbit process:update NAME --app=APP --for=ENV[,ENV] ...` | Replace one process definition with a complete specification. |
-| `orbit process:destroy NAME --app=APP [--yes]` | Destroy one process definition by name. Interactive confirmation defaults to No. |
-| `orbit schedule:create NAME --app=APP --for=ENV[,ENV] --calendar=CALENDAR --command=COMMAND` | Record a Schedule definition on the Project. Add `--timeout=SECONDS` to change the 3600-second execution timeout. |
-| `orbit schedule:list --app=APP` | List the Project's Schedule definitions. |
-| `orbit schedule:show NAME --app=APP` | Show one Schedule definition by name. |
-| `orbit schedule:update NAME --app=APP --for=ENV[,ENV] --calendar=CALENDAR --command=COMMAND` | Replace one Schedule definition with a complete specification. |
-| `orbit schedule:destroy NAME --app=APP [--yes]` | Destroy one Schedule definition by name. Interactive confirmation defaults to No. |
+| `orbit process:create NAME --project=APP --for=ENV[,ENV] ...` | Record a process definition on the Project with the runtime, command, image, working-directory, environment, port, volume, restart, and keep-alive options of an Instance target. |
+| `orbit process:list --project=APP` | List the Project's process definitions. |
+| `orbit process:show NAME --project=APP` | Show one process definition by name. |
+| `orbit process:update NAME --project=APP --for=ENV[,ENV] ...` | Replace one process definition with a complete specification. |
+| `orbit process:destroy NAME --project=APP [--yes]` | Destroy one process definition by name. Interactive confirmation defaults to No. |
+| `orbit schedule:create NAME --project=APP --for=ENV[,ENV] --calendar=CALENDAR --command=COMMAND` | Record a Schedule definition on the Project. Add `--timeout=SECONDS` to change the 3600-second execution timeout. |
+| `orbit schedule:list --project=APP` | List the Project's Schedule definitions. |
+| `orbit schedule:show NAME --project=APP` | Show one Schedule definition by name. |
+| `orbit schedule:update NAME --project=APP --for=ENV[,ENV] --calendar=CALENDAR --command=COMMAND` | Replace one Schedule definition with a complete specification. |
+| `orbit schedule:destroy NAME --project=APP [--yes]` | Destroy one Schedule definition by name. Interactive confirmation defaults to No. |
 
-`--for` is required with `--app` on create and update. The CLI refuses `--app` together with `--instance` or `--node`, and it refuses `--for` on an Instance or Node target, before it sends an HTTP request. Create refuses a name that another definition of that Project and kind already uses. `process:start`, `process:stop`, `process:restart`, and `process:logs` do not accept `--app`. `schedule:run`, `schedule:logs`, and `schedule:enable` do not accept `--app`. Every command also accepts `--json`. Human and JSON results include the Gateway request ID, and safe errors include that ID when the Gateway supplies it.
+`--for` is required with `--project` on create and update. The CLI refuses `--project` together with `--instance` or `--node`, and it refuses `--for` on an Instance or Node target, before it sends an HTTP request. Create refuses a name that another definition of that Project and kind already uses. `process:start`, `process:stop`, `process:restart`, and `process:logs` do not accept `--project`. `schedule:run`, `schedule:logs`, and `schedule:enable` do not accept `--project`. Every command also accepts `--json`. Human and JSON results include the Gateway request ID, and safe errors include that ID when the Gateway supplies it.
 
 The CLI sends the structured flags as the Gateway request body. It does not read a definition file, execute a definition command, or apply the definition to a machine. An operator can record a systemd process definition and a production Schedule definition like this:
 
 ```bash
 orbit process:create queue \
-  --app=1 \
+  --project=1 \
   --for=development,production \
   --runtime=systemd \
   --command=/usr/bin/php \
@@ -75,7 +75,7 @@ orbit process:create queue \
   --keep-alive
 
 orbit schedule:create hourly-report \
-  --app=1 \
+  --project=1 \
   --for=production \
   --calendar=hourly \
   --command="php artisan report:send" \
@@ -86,7 +86,7 @@ List output omits each definition's command. Show, create, update, and destroy r
 
 ## Select the owner
 
-A Process has exactly one target: an Instance or a managed Node. The `process:create` and `process:list` commands require one selector: `--instance=ID` or `--node=ID-or-name` for a Process, or `--app=APP` for a Project-owned definition. The CLI refuses more than one of those selectors together. The public API and PHP software development kit (SDK) send the Process target token `instance` or `node` with a positive numeric ID. Process start, stop, restart, logs, and destroy accept a positive Process ID and use that record's owner.
+A Process has exactly one target: an Instance or a managed Node. The `process:create` and `process:list` commands require one selector: `--instance=ID` or `--node=ID-or-name` for a Process, or `--project=APP` for a Project-owned definition. The CLI refuses more than one of those selectors together. The public API and PHP software development kit (SDK) send the Process target token `instance` or `node` with a positive numeric ID. Process start, stop, restart, logs, and destroy accept a positive Process ID and use that record's owner.
 
 Orbit accepts no Workspace Process target. It does not convert or adopt legacy Process records or runtime artifacts, and it does not create a synthetic Instance to host a Node-scoped service. A fleet operator owns any required legacy transition outside Orbit, and Orbit provides no migration command or compatibility selector.
 
@@ -139,18 +139,18 @@ The CLI exposes these Process operations through the Gateway.
 | `orbit process:create NAME --instance=ID ...` | Install one stopped or initially running systemd service or Docker container on an Instance. |
 | `orbit process:create NAME --instance=ID --preset=PRESET` | Install a VitePlus, Agentation HTTP, or Antigravity watcher Process. Supported presets are `vp-dev`, `agentation-mcp`, and `antigravity-watch`. |
 | `orbit process:create NAME --node=ID-or-name ...` | Install one stopped or initially running systemd service or Docker container on a managed Node. |
-| `orbit process:create NAME --app=APP --for=ENV[,ENV] ...` | Record one Project-owned process definition. |
+| `orbit process:create NAME --project=APP --for=ENV[,ENV] ...` | Record one Project-owned process definition. |
 | `orbit process:list --instance=ID` | List the Process records owned by one Instance with their desired and observed states. |
 | `orbit process:list --node=ID-or-name` | List the Process records owned by one Node with their desired and observed states. |
-| `orbit process:list --app=APP` | List the Project's process definitions. |
-| `orbit process:show NAME --app=APP` | Show one process definition by name. |
-| `orbit process:update NAME --app=APP --for=ENV[,ENV] ...` | Replace one process definition with a complete specification. |
+| `orbit process:list --project=APP` | List the Project's process definitions. |
+| `orbit process:show NAME --project=APP` | Show one process definition by name. |
+| `orbit process:update NAME --project=APP --for=ENV[,ENV] ...` | Replace one process definition with a complete specification. |
 | `orbit process:start PROCESS` | Start an installed Process and record the running desired state. |
 | `orbit process:stop PROCESS` | Stop an installed Process and record the stopped desired state. |
 | `orbit process:restart PROCESS` | Restart an installed Process and record the running desired state. |
 | `orbit process:logs PROCESS --lines=COUNT [--follow]` | Return a tail from 1 through 1,000 lines. With `--follow`, keep printing new lines from a [live log stream](/reference/live-logs). |
 | `orbit process:destroy PROCESS [--yes]` | Stop and remove the exact owned runtime artifacts, then delete the Process record. Interactive confirmation defaults to No. |
-| `orbit process:destroy NAME --app=APP [--yes]` | Destroy one process definition by name. Interactive confirmation defaults to No. |
+| `orbit process:destroy NAME --project=APP [--yes]` | Destroy one process definition by name. Interactive confirmation defaults to No. |
 
 Creating or starting an Instance Process requires an active, available Instance and reachable active Node. Creating or starting a Node Process requires a reachable active managed Node. Orbit refuses either operation before mutation when that target is unavailable or inactive. Cleanup can use the recorded placement of a failed or removing Instance while its Node remains reachable, and Node-owned cleanup can use an active Node.
 

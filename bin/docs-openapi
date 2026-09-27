@@ -438,7 +438,6 @@ TAGS = [
     ('metrics', 'Metrics', 'The Prometheus and Grafana role and its exporters.'),
     ('github', 'GitHub App', "The Gateway's own read-only GitHub App and the accounts that installed it."),
     ('analytics', 'Analytics', 'The analytics role, its Plausible version, and the Stats API key the Gateway uses to read visits.'),
-    ('app', 'Apps', 'Compatibility surface for Project records at /api/v1/apps.'),
     ('project', 'Projects', 'Repository records with one type, default branch, and web root each.'),
     ('instance', 'Instances', 'Development checkouts and production releases of a Project on one Node.'),
     ('env', 'Environment', 'Stored Instance environment configuration and its .env projection.'),
@@ -470,7 +469,7 @@ DEFINITION_ROUTES = {
     'AppRuntimeDefinitionsController@scheduleDestroy': 'Remove a Schedule definition',
 }
 SUMMARIES = {
-    'app:update': 'Update an App (Project)', 'instance:transfer': 'Transfer an Instance',
+    'instance:transfer': 'Transfer an Instance',
     'gateway:status': 'Show Gateway status', 'gateway:trust': 'Fetch the root CA certificate',
     'node:list': 'List Nodes', 'node:show': 'Show a Node', 'node:add': 'Add a Node', 'node:remove': 'Remove a Node', 'node:settings': 'Update Node settings',
     'node:role:list': 'List the roles of a Node', 'node:role:add': 'Add a role to a Node', 'node:role:remove': 'Remove a role from a Node',
@@ -483,7 +482,6 @@ SUMMARIES = {
     'github:app:register': 'Serve the GitHub App manifest page', 'github:app:callback': 'Complete a GitHub App registration',
     'metrics:enable': 'Enable Metrics', 'metrics:disable': 'Disable Metrics', 'metrics:status': 'Show Metrics status', 'metrics:credentials': 'Show Metrics credentials', 'metrics:credentials:reset': 'Reset Metrics credentials',
     'metrics:exporter:enable': 'Enable an exporter', 'metrics:exporter:disable': 'Disable an exporter', 'metrics:grafana:authorize': 'Authorize Grafana access', 'metrics:node:list': 'List Node metrics',
-    'app:list': 'List Apps (Projects)', 'app:show': 'Show an App (Project)', 'app:create': 'Create an App (Project)', 'app:destroy': 'Remove an App (Project)',
     'project:list': 'List Projects', 'project:show': 'Show a Project', 'project:create': 'Create a Project', 'project:update': 'Update a Project', 'project:destroy': 'Remove a Project',
     'project:process-definition:list': 'List process definitions', 'project:process-definition:create': 'Create a process definition',
     'project:process-definition:show': 'Show a process definition', 'project:process-definition:update': 'Replace a process definition',
@@ -1013,7 +1011,7 @@ def route_key(route):
     return (route['method'], '/' + re.sub(r'\{[^}]+\}', '{}', route['uri']))
 
 
-NAME_BY_TAG = {'Nodes': 'beast', 'Apps': 'acme', 'Database connections': 'app', 'Processes': 'vite', 'Schedules': 'daily-report', 'Clusters': 'lab', 'Firewall': 'office-postgres', 'Workspaces': 'feature-search', 'Instances': 'default'}
+NAME_BY_TAG = {'Nodes': 'beast', 'Database connections': 'app', 'Processes': 'vite', 'Schedules': 'daily-report', 'Clusters': 'lab', 'Firewall': 'office-postgres', 'Workspaces': 'feature-search', 'Instances': 'default'}
 EXAMPLE_BY_NAME = {
     'code': 'ACM', 'slug': 'acme', 'domain': 'app.example.test', 'repository_url': 'https://github.com/acme/site.git', 'default_branch': 'main', 'root': 'public',
     'public_ssh_host': 'beast.example.com', 'public_ssh_port': 22, 'user': 'root', 'orbit_user': 'orbit', 'platform': 'linux', 'architecture': 'x86_64', 'tld': 'test', 'roles': ['app-dev'], 'role': 'app-dev',

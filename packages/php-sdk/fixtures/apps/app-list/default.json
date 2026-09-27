@@ -1,7 +1,7 @@
 {
     "schema": 1,
     "request": "Orbit\\Sdk\\Requests\\Apps\\ListAppsRequest",
-    "route": "GET /api/v1/apps",
+    "route": "GET /api/v1/projects",
     "status": 200,
     "body": {
         "data": [

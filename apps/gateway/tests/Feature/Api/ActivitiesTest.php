@@ -33,9 +33,9 @@ describe('activity reads', function (): void {
     it('lists the latest completed activity without returning its own running attempt', function (): void {
         activity_api_record(
             requestId: '11111111-1111-4111-8111-111111111111',
-            command: 'app:list',
+            command: 'project:list',
             status: 'succeeded',
-            properties: ['method' => 'GET', 'path' => 'api/v1/apps'],
+            properties: ['method' => 'GET', 'path' => 'api/v1/projects'],
         );
         $latest = activity_api_record(
             requestId: '22222222-2222-4222-8222-222222222222',
@@ -103,9 +103,9 @@ describe('activity reads', function (): void {
         );
         activity_api_record(
             requestId: '55555555-5555-4555-8555-555555555555',
-            command: 'app:list',
+            command: 'project:list',
             status: 'succeeded',
-            properties: ['method' => 'GET', 'path' => 'api/v1/apps'],
+            properties: ['method' => 'GET', 'path' => 'api/v1/projects'],
         );
 
         $this
@@ -131,7 +131,7 @@ describe('activity reads', function (): void {
     it('pages older rows with before_id', function (): void {
         $oldest = activity_api_record(
             requestId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',
-            command: 'app:list',
+            command: 'project:list',
             status: 'succeeded',
             properties: [],
         );

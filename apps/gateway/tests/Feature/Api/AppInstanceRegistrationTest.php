@@ -360,7 +360,7 @@ it('returns the same identities on an identical retry and refuses conflicting ev
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    $payload = ['source_path' => '/work/acme', 'app_id' => $app->id];
+    $payload = ['source_path' => '/work/acme', 'project_id' => $app->id];
     $first = $this->postJson('/api/v1/instances/register', $payload)->assertOk();
     $this->registrationSource->invalid = true;
     $second = $this->postJson('/api/v1/instances/register', $payload)->assertOk();
@@ -399,14 +399,14 @@ it('preserves an ordinary retained root when retry input is omitted or identical
     ]);
     $payload = [
         'source_path' => '/work/acme',
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'root' => 'web',
     ];
 
     $first = $this->postJson('/api/v1/instances/register', $payload)->assertOk();
     $omitted = $this->postJson('/api/v1/instances/register', [
         'source_path' => '/work/acme',
-        'app_id' => $app->id,
+        'project_id' => $app->id,
     ])->assertOk();
     $identical = $this->postJson('/api/v1/instances/register', $payload)->assertOk();
     $instance = AppInstance::query()->sole();
@@ -416,7 +416,7 @@ it('preserves an ordinary retained root when retry input is omitted or identical
     $this
         ->postJson('/api/v1/instances/register', [
             'source_path' => '/work/acme',
-            'app_id' => $app->id,
+            'project_id' => $app->id,
             'root' => 'public',
         ])
         ->assertConflict()
@@ -487,7 +487,7 @@ it('returns 409 before mutation when the App root conflicts with retained migrat
     $this
         ->postJson('/api/v1/instances/register', [
             'source_path' => $source,
-            'app_id' => $app->id,
+            'project_id' => $app->id,
             'root' => 'public',
         ])
         ->assertConflict()
@@ -511,7 +511,7 @@ it('retains explicit hostname intent before Route creation and rejects a changed
     ]);
     $payload = [
         'source_path' => '/work/acme',
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'domain' => 'original.test',
     ];
     $this->registrationSource->failRelocateOnce = true;
@@ -527,7 +527,7 @@ it('retains explicit hostname intent before Route creation and rejects a changed
     $this
         ->postJson('/api/v1/instances/register', [
             'source_path' => '/work/acme',
-            'app_id' => $app->id,
+            'project_id' => $app->id,
             'domain' => 'changed.test',
         ])
         ->assertConflict()
@@ -545,7 +545,7 @@ it('retains explicit hostname intent before Route creation and rejects a changed
     $identical = $this->postJson('/api/v1/instances/register', $payload)->assertOk();
     $omitted = $this->postJson('/api/v1/instances/register', [
         'source_path' => '/work/acme',
-        'app_id' => $app->id,
+        'project_id' => $app->id,
     ])->assertOk();
 
     expect($identical->json('data.app_instance.route.domain'))
@@ -566,7 +566,7 @@ it('preserves explicit hostname intent after Route creation and returns 409 for 
     ]);
     $payload = [
         'source_path' => '/work/acme',
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'domain' => 'preserved.test',
     ];
     $this->projection->fail = true;
@@ -584,7 +584,7 @@ it('preserves explicit hostname intent after Route creation and returns 409 for 
     $this
         ->postJson('/api/v1/instances/register', [
             'source_path' => '/work/acme',
-            'app_id' => $app->id,
+            'project_id' => $app->id,
             'domain' => 'changed.test',
         ])
         ->assertConflict()
@@ -598,7 +598,7 @@ it('preserves explicit hostname intent after Route creation and returns 409 for 
     $this->projection->fail = false;
     $omitted = $this->postJson('/api/v1/instances/register', [
         'source_path' => '/work/acme',
-        'app_id' => $app->id,
+        'project_id' => $app->id,
     ])->assertOk();
     $identical = $this->postJson('/api/v1/instances/register', $payload)->assertOk();
 
@@ -623,7 +623,7 @@ it('retains generated hostname provenance and returns 409 for a later explicit h
     $this
         ->postJson('/api/v1/instances/register', [
             'source_path' => '/work/acme',
-            'app_id' => $app->id,
+            'project_id' => $app->id,
         ])
         ->assertStatus(502)
         ->assertJsonPath('error.code', 'instance.registration_incomplete');
@@ -634,7 +634,7 @@ it('retains generated hostname provenance and returns 409 for a later explicit h
     $this
         ->postJson('/api/v1/instances/register', [
             'source_path' => '/work/acme',
-            'app_id' => $app->id,
+            'project_id' => $app->id,
             'domain' => 'changed.test',
         ])
         ->assertConflict()
@@ -651,7 +651,7 @@ it('retains generated hostname provenance and returns 409 for a later explicit h
 
     $response = $this->postJson('/api/v1/instances/register', [
         'source_path' => '/work/acme',
-        'app_id' => $app->id,
+        'project_id' => $app->id,
     ])->assertOk();
 
     expect($response->json('data.app_instance.route.provenance'))
@@ -670,7 +670,7 @@ it('uses the current sole Route after publication for omitted, matching, and con
     ]);
     $payload = [
         'source_path' => '/work/acme',
-        'app_id' => $app->id,
+        'project_id' => $app->id,
     ];
     $first = $this->postJson('/api/v1/instances/register', [
         ...$payload,
@@ -794,7 +794,7 @@ it('switches a retained migration from initial intent to the current Route only 
     $this
         ->postJson('/api/v1/instances/register', [
             'source_path' => $source,
-            'app_id' => $app->id,
+            'project_id' => $app->id,
         ])
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.registration_evidence_invalid');
@@ -816,7 +816,7 @@ it('switches a retained migration from initial intent to the current Route only 
     $this
         ->postJson('/api/v1/instances/register', [
             'source_path' => $source,
-            'app_id' => $app->id,
+            'project_id' => $app->id,
             'domain' => 'original.test',
         ])
         ->assertConflict()
@@ -828,11 +828,11 @@ it('switches a retained migration from initial intent to the current Route only 
 
     $omitted = $this->postJson('/api/v1/instances/register', [
         'source_path' => $source,
-        'app_id' => $app->id,
+        'project_id' => $app->id,
     ])->assertOk();
     $matching = $this->postJson('/api/v1/instances/register', [
         'source_path' => $source,
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'domain' => 'changed.test',
     ])->assertOk();
 
@@ -860,7 +860,7 @@ it('refuses registration while the authoritative Route domain change is incomple
     ]);
     $payload = [
         'source_path' => '/work/acme',
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'domain' => 'original.test',
     ];
     $this->postJson('/api/v1/instances/register', $payload)->assertOk();
@@ -906,7 +906,7 @@ it('refuses colliding complete-set identities before reservation on every retry'
     $payload = [
         'source_path' => $paths[0],
         'include_worktrees' => true,
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         ...($name === null ? [] : ['instance_name' => $name]),
     ];
 
@@ -974,7 +974,7 @@ it('refuses retained registration evidence that omits one requested worktree', f
             ->postJson('/api/v1/instances/register', [
                 'source_path' => $paths[0],
                 'include_worktrees' => true,
-                'app_id' => $app->id,
+                'project_id' => $app->id,
             ])
             ->assertConflict()
             ->assertJsonPath('error.code', 'instance.registration_evidence_invalid');
@@ -1056,7 +1056,7 @@ it('returns 409 for a retained secondary request and keeps the complete primary 
         ->postJson('/api/v1/instances/register', [
             'source_path' => $submittedPath,
             'include_worktrees' => $includeWorktrees,
-            'app_id' => $app->id,
+            'project_id' => $app->id,
             'instance_name' => 'intruder',
             'domain' => 'intruder.test',
         ])
@@ -1082,7 +1082,7 @@ it('returns 409 for a retained secondary request and keeps the complete primary 
     $response = $this->postJson('/api/v1/instances/register', [
         'source_path' => $paths[0],
         'include_worktrees' => true,
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'instance_name' => 'default',
         'domain' => 'primary.test',
     ])->assertOk();
@@ -1190,7 +1190,7 @@ it('accepts evidence-backed managed primary retries after completion and interru
     $response = $this->postJson('/api/v1/instances/register', [
         'source_path' => $destinations[0],
         'include_worktrees' => $includeWorktrees,
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'domain' => 'primary.test',
     ])->assertOk();
     $retried = collect($response->json('data.instances'))->keyBy('name');
@@ -1264,7 +1264,7 @@ it('restores a failed default migration and completes the identical retry with s
     ]);
     $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
-    $payload = ['source_path' => '/work/acme', 'app_id' => $app->id];
+    $payload = ['source_path' => '/work/acme', 'project_id' => $app->id];
     $authoritativeBefore = $instance->only([
         'name',
         'source_layout',
@@ -1414,7 +1414,7 @@ it('resumes a manual migration from the durable post-transition boundary', funct
 
     $response = $this->postJson('/api/v1/instances/register', [
         'source_path' => '/work/acme',
-        'app_id' => $app->id,
+        'project_id' => $app->id,
     ])->assertOk();
 
     expect($response->json('data.app_instance.id'))
@@ -1490,7 +1490,7 @@ it('finishes the same published registration without downgrading its active prov
 
     $response = $this->postJson('/api/v1/instances/register', [
         'source_path' => '/work/acme',
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'domain' => 'preserved.test',
     ])->assertOk();
 
@@ -1538,7 +1538,7 @@ it('retries receipt cleanup after registration completion without republishing o
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    $payload = ['source_path' => '/work/acme', 'app_id' => $app->id];
+    $payload = ['source_path' => '/work/acme', 'project_id' => $app->id];
     $this->registrationSource->failDiscardOnce = true;
 
     $this
@@ -1610,7 +1610,7 @@ it('recovers a same-filesystem move that outran its relocation checkpoint', func
 
     $response = $this->postJson('/api/v1/instances/register', [
         'source_path' => '/work/acme',
-        'app_id' => $app->id,
+        'project_id' => $app->id,
     ])->assertOk();
 
     expect($response->json('data.app_instance.id'))
@@ -1661,7 +1661,7 @@ it('refuses a future managed primary path before relocation makes it a candidate
     $this
         ->postJson('/api/v1/instances/register', [
             'source_path' => $destination,
-            'app_id' => $app->id,
+            'project_id' => $app->id,
         ])
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.registration_conflict');
@@ -1829,7 +1829,7 @@ it('migrates a marked default source independently of its original directory nam
 
     $response = $this->postJson('/api/v1/instances/register', [
         'source_path' => $source,
-        'app_id' => $app->id,
+        'project_id' => $app->id,
     ])->assertOk();
 
     expect($response->json('data.app_instance.id'))
@@ -1896,7 +1896,7 @@ it('returns 409 when retained default migration input conflicts with planned int
     $this
         ->postJson('/api/v1/instances/register', [
             'source_path' => $source,
-            'app_id' => $app->id,
+            'project_id' => $app->id,
             ...$input,
         ])
         ->assertConflict()
@@ -2048,7 +2048,7 @@ it('refuses mismatched migration evidence at every managed recovery boundary wit
     $this
         ->postJson('/api/v1/instances/register', [
             'source_path' => $destination,
-            'app_id' => $app->id,
+            'project_id' => $app->id,
         ])
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.registration_conflict');
@@ -2096,7 +2096,7 @@ it('refuses to adopt an AppInstance already owned through instance new', functio
     $this
         ->postJson('/api/v1/instances/register', [
             'source_path' => '/work/acme',
-            'app_id' => $app->id,
+            'project_id' => $app->id,
         ])
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.source_conflict');
@@ -2123,7 +2123,7 @@ it('uses an explicit hostname only for the primary member of a requested source 
     $response = $this->postJson('/api/v1/instances/register', [
         'source_path' => $paths[0],
         'include_worktrees' => true,
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'domain' => 'primary.test',
     ])->assertOk();
 
@@ -2131,7 +2131,7 @@ it('uses an explicit hostname only for the primary member of a requested source 
     $retry = $this->postJson('/api/v1/instances/register', [
         'source_path' => $paths[0],
         'include_worktrees' => true,
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'domain' => 'primary.test',
     ])->assertOk();
     $retried = collect($retry->json('data.instances'))->keyBy('name');
@@ -2175,7 +2175,7 @@ it('adopts an unregistered source already at its calculated managed destination'
     $this
         ->postJson('/api/v1/instances/register', [
             'source_path' => $path,
-            'app_id' => $app->id,
+            'project_id' => $app->id,
         ])
         ->assertOk()
         ->assertJsonPath('data.app_instance.checkout_path', $path);
@@ -2199,7 +2199,7 @@ it('preflights every member source profile before reservation or relocation', fu
         ->postJson('/api/v1/instances/register', [
             'source_path' => $paths[0],
             'include_worktrees' => true,
-            'app_id' => $app->id,
+            'project_id' => $app->id,
         ])
         ->assertStatus(502)
         ->assertJsonPath('error.code', 'app-dev.source_metadata_unsafe');
@@ -2220,7 +2220,7 @@ it('refuses retained source identity replacement before activation', function ()
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    $payload = ['source_path' => '/work/acme', 'app_id' => $app->id];
+    $payload = ['source_path' => '/work/acme', 'project_id' => $app->id];
     $this->projection->fail = true;
     $this->postJson('/api/v1/instances/register', $payload)->assertStatus(502);
     $this->registrationSource->retainedInvalid = true;
@@ -2278,7 +2278,7 @@ it('refuses a source nested in an AppInstance checkout', function (): void {
     $this
         ->postJson('/api/v1/instances/register', [
             'source_path' => $source,
-            'app_id' => $app->id,
+            'project_id' => $app->id,
         ])
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.source_conflict');
