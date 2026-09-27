@@ -21,7 +21,7 @@ function orb247_gate_fixture(): array
     }
 
     copy(base_path('../../bin/review-check'), $root.'/bin/review-check');
-    file_put_contents($root.'/bin/docs-impact', "#!/usr/bin/env sh\nexit 0\n");
+    copy($fixture.'/docs-impact', $root.'/bin/docs-impact');
     copy($fixture.'/tia-cache', $root.'/bin/tia-cache');
     copy($fixture.'/composer', $root.'/tooling/composer');
     chmod($root.'/bin/review-check', 0o700);

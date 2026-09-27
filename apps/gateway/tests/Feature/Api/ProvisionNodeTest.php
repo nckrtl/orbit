@@ -51,6 +51,10 @@ describe('POST /api/v1/nodes', function (): void {
                 ?string $expectedSshHostFingerprint = null,
                 bool $rolelessOperator = false,
             ): NodeObservation {
+                if ($expectedSshHostFingerprint !== null) {
+                    $node->update(['ssh_host_fingerprint' => $expectedSshHostFingerprint]);
+                }
+
                 return new NodeObservation('x86_64');
             }
         });

@@ -437,38 +437,6 @@ describe('instance:create', function (): void {
         ]);
     });
 
-    it('transports explicit source profile recovery and preserves ordinary omission', function (): void {
-        $mockClient = MockClient::global([
-            CreateAppInstanceRequest::class => instance_mock_response(200),
-        ]);
-
-        $this
-            ->artisan('instance:create', [
-                'project' => '3',
-                'node' => '2',
-                'name' => 'default',
-                '--recover-source-profile' => true,
-            ])
-            ->assertExitCode(0);
-
-        expect($mockClient->getLastRequest()?->body()->all())->toBe([
-            'project_id' => 3,
-            'node_id' => 2,
-            'name' => 'default',
-            'recover_source_profile' => true,
-        ]);
-
-        $this
-            ->artisan('instance:create', [
-                'project' => '3',
-                'node' => '2',
-                'name' => 'default',
-            ])
-            ->assertExitCode(0);
-
-        expect($mockClient->getLastRequest()?->body()->all())->not->toHaveKey('recover_source_profile');
-    });
-
     it('reports the created AppInstance for humans', function (): void {
         MockClient::global([CreateAppInstanceRequest::class => instance_mock_response(201)]);
 

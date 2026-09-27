@@ -155,11 +155,8 @@ function bind_task_workspace_fakes(): object
             $this->reserves++;
         }
 
-        public function complete(
-            AppInstance $appInstance,
-            ?string $domain,
-            bool $recoverSourceProfile = false,
-        ): AppInstance {
+        public function complete(AppInstance $appInstance, ?string $domain): AppInstance
+        {
             $this->completes++;
 
             return $appInstance->refresh();

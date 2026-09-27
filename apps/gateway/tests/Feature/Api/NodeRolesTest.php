@@ -9,6 +9,7 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\GatewayPrivateDnsRoute;
+use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeLockLoss;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\NodeRoleDependencySet;
@@ -36,12 +37,14 @@ use Illuminate\Routing\Route;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\FakeGatewayPrivateDnsRoute;
+use Tests\Support\FakeNodeConverger;
 use Tests\Support\FakeNodeRoleFirewallManager;
 use Tests\Support\FakeToolManagerMaterializer;
 use Tests\TestCase;
 
 beforeEach(function (): void {
     app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
+    app()->instance(NodeConverger::class, new FakeNodeConverger);
     $this->roleLifecycle = new NodeRoleApiLifecycleFake;
     app()->instance(RoleBaselineConverger::class, $this->roleLifecycle);
     app()->instance(NodeRoleDependentCleaner::class, $this->roleLifecycle);

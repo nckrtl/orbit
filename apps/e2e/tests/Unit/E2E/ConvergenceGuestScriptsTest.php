@@ -379,11 +379,7 @@ function typed_sample_resource_fixture(): array
             ;;
           instance:create)
             [[ -e "$state/verified" ]] || touch "$state/instance-before-cluster"
-            if [[ "$*" == 'instance:create 1 2 e2e-dev --domain=e2e-dev.orbit --recover-source-profile --json' ]]; then
-              touch "$state/source-recovered"
-            else
-              [[ "$*" == 'instance:create 1 2 e2e-dev --domain=e2e-dev.orbit --json' ]]
-            fi
+            [[ "$*" == 'instance:create 1 2 e2e-dev --domain=e2e-dev.orbit --json' ]]
             touch "$state/instance"
             touch "$state/route"
             printf '{"id":4}'
@@ -406,7 +402,7 @@ function typed_sample_resource_fixture(): array
             printf '{"id":5,"status":"active"}'
             ;;
           env:import)
-            if [[ -n "${IMPORT_ERROR:-}" && ! -e "$state/source-recovered" ]]; then
+            if [[ -n "${IMPORT_ERROR:-}" ]]; then
               printf '{"error":{"code":"%s"}}' "$IMPORT_ERROR"
               exit 19
             fi
@@ -3545,7 +3541,7 @@ describe('convergence guest scripts', function () {
         }
     });
 
-    it('recovers missing development source metadata before the first production clone', function (string $error, bool $recovers, bool $succeeds): void {
+    it('refuses the first production clone when environment import is unavailable', function (string $error, bool $succeeds): void {
         $fixture = typed_sample_resource_fixture();
         mkdir("{$fixture['root']}/laravel-typed/e2e-dev", 0700, true);
         file_put_contents("{$fixture['root']}/laravel-typed/e2e-dev/.env", "APP_NAME=fixture\n");
@@ -3556,21 +3552,16 @@ describe('convergence guest scripts', function () {
             ]);
             expect($process->run() === 0)->toBe($succeeds, $process->getErrorOutput());
             $commands = file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES);
-            $recovery = array_search('instance:create 1 2 e2e-dev --domain=e2e-dev.orbit --recover-source-profile --json', $commands, true);
             $clone = array_search('instance:clone 4 3 e2e-prod --preview-name=e2e-prod --branch=main --json', $commands, true);
-            expect($recovery !== false)->toBe($recovers)
-                ->and($clone !== false)->toBe($succeeds);
-            if ($recovers) {
-                expect($recovery)->toBeLessThan($clone)
-                    ->and(array_values(array_filter($commands, static fn (string $command): bool => $command === 'env:import --instance=4 --json')))->toHaveCount(2);
-            }
+            expect($clone !== false)->toBe($succeeds)
+                ->and(array_values(array_filter($commands, static fn (string $command): bool => $command === 'env:import --instance=4 --json')))->toHaveCount(1);
         } finally {
             new Filesystem()->deleteDirectory($fixture['root']);
         }
     })->with([
-        'missing profile' => ['instance.source_profile_missing', true, true],
-        'stored environment is preserved' => ['env.import_conflict', false, true],
-        'unrelated failure refuses clone' => ['instance.node_unreachable', false, false],
+        'missing source profile' => ['instance.source_profile_missing', false],
+        'stored environment is preserved' => ['env.import_conflict', true],
+        'unrelated failure refuses clone' => ['instance.node_unreachable', false],
     ]);
 
     it('does not enter the direct path after a selected clone fails', function (): void {

@@ -127,7 +127,7 @@ The host answers two paths and nothing else:
 | `/api/event` | The Plausible event endpoint |
 | Every other path | 404, so the dashboard never becomes public |
 
-The serving Node reaches Plausible over WireGuard. While the analytics role converges, the host keeps its Caddy site and its private DNS record. A tracking Route has no target and no upstream of its own. `route:update`, `route:target:set`, and `route:target:unset` refuse it with `route.kind_unsupported`, and `route:create` cannot create one.
+The serving Node reaches Plausible over WireGuard. While the analytics role converges, the host keeps its Caddy site and its private DNS record. A tracking Route has no target and no upstream of its own. `route:update`, `route:target:set`, and `route:target:unset` refuse it with `route.kind_unsupported`, and `route:create` cannot create one. `route:destroy` refuses direct removal with `route.tracking_managed`; disable analytics on the Instance instead. If the Route kind is not valid for the analytics removal path, the Gateway returns `route.kind_invalid`.
 
 `orbit instance:analytics:show INSTANCE` returns each host with its Route, script URL, event URL, and the DNS record to create. The Gateway knows no public address. So the record is a `CNAME` from the tracking host to the Instance's own domain. The answer also carries the script tag for the first host. Its `data-domain` is the Instance's own domain. `orbit instance:analytics:disable INSTANCE` removes the hosts. You still create the site in Plausible and add the script tag to the Project.
 

@@ -10,7 +10,7 @@ covers:
 
 Every managed Node runs Uncomplicated Firewall (UFW). Orbit owns the rules it needs for public SSH recovery, WireGuard member trust, and each role. Those rules carry an `orbit:` prefix. The rule `orbit:wireguard-members` admits every WireGuard member on the Node's WireGuard address, as [private network trust](/reference/routes#private-network-trust) describes. The `firewall` family adds operator rules beside them, each identified by a stable name on one Node.
 
-The Gateway applies each rule over SSH, verifies it in the UFW status output, and records the result. Doctor checks the `firewall` family and reports a rule that is missing or different from its record without changing the machine.
+The Gateway applies each rule over SSH, verifies it in the UFW status output, and records the result. The Node firewall catalog is the single source of Orbit-managed rules, so role provisioning and firewall commands use the same projection. Doctor checks the `firewall` family and reports a rule that is missing or different from its record without changing the machine.
 
 ## Commands
 

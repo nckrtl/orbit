@@ -127,6 +127,7 @@ During a domain change, `route:show` shows both Routes, `replacement_step`, `fai
 | `route.domain_conflict` | Another Route owns the new domain. |
 | `route.domain_change_conflict` | Another domain change is in progress. |
 | `route.reconciliation_required` | The Route or its targets do not allow this change, for example a public domain for development Instances. |
+| `instance.source_profile_missing` | A target has no recorded source profile. Orbit does not recover missing profiles on older Instances; see ADR 0177. |
 
 ## orbit route:target:set
 
@@ -173,7 +174,7 @@ orbit route:destroy <route> [--yes]
 ```
 
 <Warning>
-The Gateway refuses removal with `route.target_conflict` while an active Instance depends on the Route. Remove the Instance with `instance:destroy` instead. That removal deletes the Route when it removes the last target.
+The Gateway refuses removal with `route.target_conflict` while an active Instance depends on the Route. Remove the Instance with `instance:destroy` instead. That removal deletes the Route when it removes the last target. The Gateway also refuses direct removal of analytics tracking Routes with `route.tracking_managed`; disable analytics on the Instance instead. A Route kind that cannot be destroyed returns `route.kind_invalid`.
 </Warning>
 
 `route:destroy` and `route:target:unset` resolve the Route and then ask for confirmation, with No selected. Pass `--yes` for automation, also with `--json`. Declining, Ctrl-C, or end of input returns `input.cancelled` and sends nothing. A call without a terminal and without `--yes` returns `input.confirmation_required`.
