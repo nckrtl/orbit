@@ -1,3 +1,9 @@
 #!/usr/bin/env sh
-# The synthetic review-check repository has no product paths to inspect.
+
+# The candidate gate runs the docs impact gate from the repository root against the main merge base.
+if [ "$#" -ne 3 ] || [ "$1" != --gate ] || [ "$2" != --base ] || [ "$(git rev-parse --verify --quiet "$3^{commit}")" != "$3" ]; then
+    echo "Unexpected docs impact gate call: $*" >&2
+    exit 64
+fi
+
 exit 0
