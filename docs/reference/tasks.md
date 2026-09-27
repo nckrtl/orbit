@@ -752,6 +752,10 @@ Orbit opens the pull request after the approval of the last subtask. That approv
 
 Before Orbit commits the last subtask, Jev checks that the change list covers every subtask of the group except cancelled and failed subtasks. Jev reads the group and subtask briefs and the pull request fields. For each checked subtask, it answers whether a listed change delivers it. A subtask counts as covered when Jev gives "yes" a probability of at least one half. Jev cannot read code, so this checks coverage, not correctness. Each missing subtask fails `brief_coverage`, and the reviewer's reminder names it. A failed Jev request counts as a communication failure.
 
+On the last subtask, the reviewer owns the pull request change list, summary, and breaking-changes list in its approval. A missing or incomplete entry is never a reason to request changes; the reviewer writes the complete entries as part of its approval.
+
+Guarantees against injected failures, such as a lost response, a crash between writes, or a restart mid-step, are follow-ups unless the brief, an ADR, or a deliverable requires them. The reviewer names these follow-ups in the approval summary rather than blocking approval on them.
+
 After every approved commit, including the last, the Gateway pushes that stored commit to `task-{group id}` on `origin` through the [Gateway GitHub App](/reference/github-app). The push uses that repository's installation token with `Contents: write` and `Pull requests: write`, passed on the SSH process standard input, and runs `git push --quiet origin <commit_sha>:refs/heads/task-{group id}`. `<commit_sha>` is the commit stored on the approval. The push never uses `HEAD`.
 
 That push is the same one that opens the pull request. [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) records the decision.
