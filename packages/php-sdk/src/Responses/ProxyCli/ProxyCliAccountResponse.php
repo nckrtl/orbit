@@ -72,13 +72,30 @@ final readonly class ProxyCliAccountResponse
                         );
                     }
 
-                    return ProxyCliWindowResponse::fromGatewayData($window, $requestId);
+                    return ProxyCliWindowResponse::fromGatewayData(self::stringKeyed($window), $requestId);
                 },
                 $windows,
             ),
             $error,
             $requestId,
         );
+    }
+
+    /**
+     * @param  array<mixed, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private static function stringKeyed(#[SensitiveParameter] array $data): array
+    {
+        $result = [];
+
+        foreach ($data as $key => $value) {
+            if (is_string($key)) {
+                $result[$key] = $value;
+            }
+        }
+
+        return $result;
     }
 
     /**

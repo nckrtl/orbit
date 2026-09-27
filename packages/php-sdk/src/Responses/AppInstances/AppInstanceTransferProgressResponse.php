@@ -50,8 +50,28 @@ final readonly class AppInstanceTransferProgressResponse
             cleanupCompleted: ($data['cleanup_completed'] ?? null) === true,
             failedStep: is_string($data['failed_step'] ?? null) ? $data['failed_step'] : null,
             errorCode: GatewayErrorCode::fromTransport($data['error_code'] ?? null),
-            recoveryEvidence: is_array($evidence) ? $evidence : null,
+            recoveryEvidence: self::stringKeyedMap($evidence),
         );
+    }
+
+    /** @return array<string, mixed>|null */
+    private static function stringKeyedMap(#[SensitiveParameter] mixed $evidence): ?array
+    {
+        if (! is_array($evidence)) {
+            return null;
+        }
+
+        $map = [];
+
+        foreach ($evidence as $key => $value) {
+            if (! is_string($key)) {
+                continue;
+            }
+
+            $map[$key] = $value;
+        }
+
+        return $map;
     }
 
     /** @return array<string, mixed> */

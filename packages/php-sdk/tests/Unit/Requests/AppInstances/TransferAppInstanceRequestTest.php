@@ -6,6 +6,7 @@ use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\AppInstances\TransferAppInstanceRequest;
 use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
+use Orbit\Sdk\Responses\AppInstances\AppInstanceTransferProgressResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -113,6 +114,21 @@ describe(TransferAppInstanceRequest::class, function (): void {
 
         $parameter = new ReflectionParameter([TransferAppInstanceRequest::class, '__construct'], 'sqliteSourcePath');
         expect($parameter->getAttributes(SensitiveParameter::class))->toHaveCount(1);
+    });
+
+    it('keeps string-keyed recovery evidence and drops list indexes', function (): void {
+        $response = AppInstanceTransferProgressResponse::fromGatewayData([
+            'recovery_evidence' => [
+                'incomplete' => ['source-checkout'],
+                'source_path' => '/srv/source',
+                0 => 'ignored',
+            ],
+        ]);
+
+        expect($response->recoveryEvidence)->toBe([
+            'incomplete' => ['source-checkout'],
+            'source_path' => '/srv/source',
+        ]);
     });
 });
 

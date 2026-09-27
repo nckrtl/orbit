@@ -10,6 +10,65 @@ use Orbit\Sdk\Responses\Nodes\NodeIdentityResponse;
 use Orbit\Sdk\Responses\Routes\RouteResponse;
 use SensitiveParameter;
 
+/**
+ * @phpstan-type InstanceRecordFields array{
+ *     id: int,
+ *     app_id: int,
+ *     node_id: int,
+ *     app: array{id: int, name: string, slug: string}|null,
+ *     node: array{id: int, name: string}|null,
+ *     vite_port: int|null,
+ *     name: string,
+ *     environment: string,
+ *     source_layout: string,
+ *     checkout_path: string,
+ *     production_user: string|null,
+ *     production_home: string|null,
+ *     root: string|null,
+ *     effective_root: string|null,
+ *     selected_branch: string|null,
+ *     branch_override: string|null,
+ *     migration_required: bool,
+ *     starting_commit: string|null,
+ *     detached: bool,
+ *     status: string,
+ *     route: array<string, int|string|null|array{id: int, app_instance_id: int, position: int}|list<array{id: int, app_instance_id: int, position: int}>>|null,
+ *     domain: string|null,
+ *     url: string|null,
+ *     removal: array<string, bool|int|string|null>|null,
+ *     transfer: array<string, mixed>|null,
+ *     deploy_steps: list<array{name: string, phase: string, command: string, timeout_seconds: int}>
+ * }
+ * @phpstan-type InstanceRecord array{
+ *     id: int,
+ *     app_id: int,
+ *     node_id: int,
+ *     app: array{id: int, name: string, slug: string}|null,
+ *     node: array{id: int, name: string}|null,
+ *     vite_port: int|null,
+ *     name: string,
+ *     environment: string,
+ *     source_layout: string,
+ *     checkout_path: string,
+ *     production_user: string|null,
+ *     production_home: string|null,
+ *     root: string|null,
+ *     effective_root: string|null,
+ *     selected_branch: string|null,
+ *     branch_override: string|null,
+ *     migration_required: bool,
+ *     starting_commit: string|null,
+ *     detached: bool,
+ *     status: string,
+ *     route: array<string, int|string|null|array{id: int, app_instance_id: int, position: int}|list<array{id: int, app_instance_id: int, position: int}>>|null,
+ *     domain: string|null,
+ *     url: string|null,
+ *     removal: array<string, bool|int|string|null>|null,
+ *     transfer: array<string, mixed>|null,
+ *     deploy_steps: list<array{name: string, phase: string, command: string, timeout_seconds: int}>,
+ *     request_id: string
+ * }
+ */
 final readonly class AppInstanceResponse
 {
     public function __construct(
@@ -81,7 +140,7 @@ final readonly class AppInstanceResponse
         );
     }
 
-    /** @return array<string, mixed> */
+    /** @return InstanceRecord */
     public function toArray(): array
     {
         return [

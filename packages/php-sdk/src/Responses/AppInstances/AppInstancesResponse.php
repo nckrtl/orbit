@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Orbit\Sdk\Responses\AppInstances;
 
+/**
+ * @phpstan-import-type InstanceRecordFields from AppInstanceResponse
+ */
 final readonly class AppInstancesResponse
 {
     /** @param list<AppInstanceResponse> $appInstances */
@@ -12,7 +15,7 @@ final readonly class AppInstancesResponse
         public string $requestId,
     ) {}
 
-    /** @return array{instances: list<array<string, bool|int|string|null|array<string, mixed>>>, request_id: string} */
+    /** @return array{instances: list<InstanceRecordFields>, request_id: string} */
     public function toArray(): array
     {
         return [
