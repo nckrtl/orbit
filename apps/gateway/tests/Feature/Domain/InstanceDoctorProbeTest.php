@@ -181,10 +181,10 @@ it('reports one stuck issue for an Instance with provisioning in flight beyond t
         ->and($calls)->toBe(0);
 });
 
-it('checks Instances with completed provisioning steps inside and beyond the stuck bound', function (): void {
+it('checks Instances with the active provisioning step inside and beyond the stuck bound', function (): void {
     $node = instance_probe_node();
 
-    foreach (['active', 'clone-completed'] as $step) {
+    foreach (['active'] as $step) {
         foreach ([false, true] as $olderThanBound) {
             $instance = instance_probe_instance(instance_probe_app(), $node);
             $instance->update(['provisioning_step' => $step]);
@@ -208,9 +208,9 @@ it('checks Instances with completed provisioning steps inside and beyond the stu
         }
     })->inspect(instance_probe_context($node));
 
-    expect($report->checked)->toBe(4)
+    expect($report->checked)->toBe(2)
         ->and($report->issues)->toBeEmpty()
-        ->and($calls)->toBe(4);
+        ->and($calls)->toBe(2);
 });
 
 it('reports a settled task workspace in a later lifecycle state as lifecycle drift', function (): void {

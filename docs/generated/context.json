@@ -595,9 +595,12 @@
                 "Process",
                 "Project",
                 "Task",
+                "Task check",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0175"
+            ]
         },
         {
             "path": "docs/decisions/0017-optional-cluster-placement-and-tld-precedence.md",
@@ -1627,6 +1630,35 @@
             ]
         },
         {
+            "path": "docs/decisions/0175-docs-impact-check-in-orbit-repo.md",
+            "title": "ADR 0175: Keep the docs-impact check in Orbit's repository",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Activity",
+                "Cluster",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Route",
+                "Schedule",
+                "Task",
+                "Task check",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0175"
+            ]
+        },
+        {
             "path": "docs/decisions/0177-remove-the-app-compatibility-surface.md",
             "title": "ADR 0177: Remove the app compatibility surface",
             "kind": "decision",
@@ -1789,6 +1821,7 @@
                 "0170",
                 "0171",
                 "0173",
+                "0175",
                 "0178"
             ]
         },
@@ -2905,6 +2938,7 @@
                 "0171",
                 "0172",
                 "0173",
+                "0175",
                 "0178",
                 "0179"
             ]

@@ -87,6 +87,26 @@ def main():
     report = {'schema': 1, 'role': 'builder', 'candidate': head, 'committed': committed, 'tree': tree,
               'worktree': str(root), 'base': base, 'changed_paths': paths, 'started_at': time.time(),
               'checks': [], 'warnings': [], 'passed': False}
+    if base is not None:
+        log = directory / 'docs-impact-gate.log'
+        started = time.monotonic()
+        with log.open('w') as output:
+            result = subprocess.run([str(root / 'bin/docs-impact'), '--gate', '--base', base], cwd=root,
+                                    stdout=output, stderr=subprocess.STDOUT)
+        check = {'project': 'repository', 'command': ['bin/docs-impact', '--gate', '--base', base],
+                 'exit_code': result.returncode, 'seconds': round(time.monotonic() - started, 3), 'log': str(log)}
+        report['checks'].append(check)
+        print(f'[repository] bin/docs-impact --gate --base {base}: '
+              f'{"passed" if result.returncode == 0 else "FAILED"} ({log})', flush=True)
+        if result.returncode:
+            print(log.read_text(), flush=True)
+    else:
+        log = directory / 'docs-impact-gate.log'
+        log.write_text('Unable to determine the group start commit: no main branch merge base is available.\n')
+        report['checks'].append({'project': 'repository', 'command': ['bin/docs-impact', '--gate'],
+                                 'exit_code': 1, 'seconds': 0, 'log': str(log)})
+        print(f'[repository] bin/docs-impact --gate: FAILED ({log})', flush=True)
+        print(log.read_text(), flush=True)
     # Seed absent quality and test caches first, so a fresh clone does not run every check cold.
     # A cache miss or a missing seeding script only makes the checks slower.
     for seed in (['bin/worktree-cache', '--worktree', str(root)], ['bin/tia-cache', 'seed', '--repository', str(root)]):
