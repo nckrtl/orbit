@@ -3596,7 +3596,6 @@ export interface components {
             manager?: string;
             package?: string;
             version_constraint?: string | null;
-            protected?: boolean;
             status?: string;
             installed_version?: string | null;
             failed_operation?: string | null;

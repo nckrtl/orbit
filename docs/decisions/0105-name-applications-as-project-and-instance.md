@@ -10,7 +10,7 @@ Orbit's repository-owned record is a Project. A managed placement of that Projec
 
 ## Status
 
-Proposed. Amends [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity) for Project and Instance terminology and the reserved `default` identity. Amends [ADR 0071](/reference/cli-command-vocabulary#why-it-works-this-way) for one compatibility window that keeps the previous App HTTP and MCP names. Extends [ADR 0036](/decisions/0036-support-only-appinstances) and [ADR 0086](/decisions/0086-offer-the-api-as-mcp-tools).
+Proposed. Amends [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity) for Project and Instance terminology and the reserved `default` identity. Amends [ADR 0071](/reference/cli-command-vocabulary#why-it-works-this-way) for one compatibility window that keeps the previous App HTTP and MCP names. Extends [ADR 0036](/decisions/0036-support-only-appinstances) and [ADR 0086](/reference/mcp#why-it-works-this-way).
 
 ## Context
 
@@ -27,7 +27,7 @@ GitHub App, `app-dev`, `app-prod`, `APP_ENV`, `APP_DEBUG`, and the monorepo dire
 - Morph writers store the alias `instance` for Process owners, Schedule targets, and TaskGroup `taskable` values. The upgrade rewrites stored `App\Models\AppInstance` class names to `instance` and leaves every id in place.
 - Canonical HTTP for the repository record is `/api/v1/projects` with route names `project:*`. `/api/v1/apps` and route names `app:*` remain a dual-read and dual-write compatibility surface for the same controllers and records.
 - Canonical CLI for the repository record is `project:*`. This repository's command surface drops `app:*`. Older CLI binaries keep working because they still call `/api/v1/apps`.
-- MCP keeps generated `app-*` tools from the compatibility routes and adds `project-*` tools from the canonical routes ([ADR 0086](/decisions/0086-offer-the-api-as-mcp-tools)).
+- MCP keeps generated `app-*` tools from the compatibility routes and adds `project-*` tools from the canonical routes ([ADR 0086](/reference/mcp#why-it-works-this-way)).
 - CLI and SDK collection output uses `projects` and `instances`, including the Instance registration collection. These collection keys have no output aliases. The Incus harness reads previous snapshot metadata and normalizes it to the current names. Gateway list responses keep the standard `data` envelope.
 - Instance JSON uses `project_id` and `project` as the canonical nested owner. During the compatibility window the payload also includes `app_id` and `app` with the same values. Create and update input accepts either `project_id` or `app_id`.
 - Process and Schedule definition paths exist under both `/api/v1/projects/{project}/…` and `/api/v1/apps/{app}/…`. `--project` is the canonical CLI option; `--app` remains accepted as the same identifier.
@@ -51,6 +51,6 @@ GitHub App, `app-dev`, `app-prod`, `APP_ENV`, `APP_DEBUG`, and the monorepo dire
 ## Affects
 
 - Components: apps/cli, apps/docs, apps/e2e, apps/gateway, packages/php-sdk
-- ADRs: amends [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity) and [ADR 0071](/reference/cli-command-vocabulary#why-it-works-this-way); extends [ADR 0036](/decisions/0036-support-only-appinstances) and [ADR 0086](/decisions/0086-offer-the-api-as-mcp-tools)
+- ADRs: amends [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity) and [ADR 0071](/reference/cli-command-vocabulary#why-it-works-this-way); extends [ADR 0036](/decisions/0036-support-only-appinstances) and [ADR 0086](/reference/mcp#why-it-works-this-way)
 - Detail: [Projects](/reference/apps), [Applications](/domains/applications), [Concepts](/concepts)
 - Verify: `composer docs-lint`; Gateway dual-read tests; CLI command-surface test; PHP SDK transport tests

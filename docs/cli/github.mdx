@@ -1,9 +1,11 @@
 ---
 title: "github"
-description: "Register the Gateway's read-only GitHub App, install it on a GitHub account, show it, or remove it from the Gateway."
+description: "Register the Gateway's GitHub App, install it on a GitHub account, show it, or remove it from the Gateway."
+covers:
+  - apps/cli/app/Commands/GitHub/**
 ---
 
-The `github` family manages the Gateway's own GitHub App. Orbit uses the App to read private `github.com` repositories. The [GitHub App reference](/reference/github-app) explains registration, installations, and how reads use short-lived tokens.
+The `github` family manages the Gateway's own GitHub App. Orbit uses the App to read private `github.com` repositories and to publish task pull requests. The [GitHub App reference](/reference/github-app) explains registration, installations, and the short-lived tokens.
 
 ## Commands
 
@@ -20,7 +22,7 @@ Every command accepts `--json`.
 Open GitHub in a browser to register the App, install it, or both.
 
 ```bash
-orbit github:app:install [--name=NAME] [--owner=ORGANIZATION]
+orbit github:app:install [--name=NAME] [--owner=ORGANIZATION] [--json]
 ```
 
 | Option | Default | Meaning |
@@ -62,7 +64,7 @@ The command waits up to ten minutes and asks the Gateway every three seconds. Wi
 Show the App name, slug, App ID, owner, GitHub URL, and one row for each installation.
 
 ```bash
-orbit github:app:show
+orbit github:app:show [--json]
 ```
 
 | Installation field | Meaning |
@@ -81,10 +83,10 @@ The Gateway lists installations on GitHub for each call, so the result reflects 
 
 ## orbit github:app:destroy
 
-Delete the App ID, slug, and private key from the Gateway. Orbit then reads every repository without a credential.
+Delete the App ID, slug, and private key from the Gateway. Orbit then reads every repository without a credential and cannot publish task pull requests.
 
 ```bash
-orbit github:app:destroy [--yes]
+orbit github:app:destroy [--yes] [--json]
 ```
 
 | Option | Meaning |
@@ -96,6 +98,8 @@ The command prints the GitHub page where you delete the App registration. GitHub
 | Error code | Meaning |
 | --- | --- |
 | `github.app_missing` | The Gateway has no GitHub App. |
+| `input.confirmation_required` | `--yes` is missing with `--json` or without a terminal. |
+| `input.cancelled` | The prompt was declined. |
 
 ## Related
 

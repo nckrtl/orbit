@@ -1,6 +1,13 @@
 ---
 title: "Gateway response fixtures"
 description: "Recorded Gateway responses are the contract that CLI tests replay, so a response change shows which commands it reaches before it ships."
+covers:
+  - packages/php-sdk/fixtures/**
+  - apps/gateway/tests/Support/ResponseFixtures.php
+  - apps/cli/tests/Helpers/GatewayFixtures.php
+  - bin/api-fixtures
+  - bin/cli-contract
+  - apps/web/fixtures/**
 ---
 
 # Gateway response fixtures
@@ -62,14 +69,4 @@ The web app's demo mode and its tests run against the files under `apps/web/fixt
 
 ## Families with fixtures
 
-These families have recorded fixtures and contract tests.
-
-| Family | Fixtures |
-| --- | --- |
-| `node` | `node-list/default`, `node-show/default`, `node-add/created`, `node-add/tld-required`, `node-add/fingerprint-required`, `node-role-remove/step-failed`, `node-metrics/default` |
-| `app` | `app-list/default`, `app-show/default`, `app-create/created`, `app-destroy/removed` |
-| `instance` | `instance-list/default`, `instance-show/default`, `instance-create/created`, `instance-create/candidate-required`, `instance-deployment-list/default`, `instance-deployment-show/default` |
-| `database-connection` | `database-user-list/default` |
-| `realtime` | `realtime-show/configured`, `realtime-show/unconfigured` |
-
-Add a family by recording from its Gateway tests with `record_fixture()` and writing its CLI contract test in the same change. `bin/cli-contract --coverage` shows what is left.
+The directories under `packages/php-sdk/fixtures` list the families that have recorded fixtures and contract tests. Add a family by recording from its Gateway tests with `record_fixture()` and writing its CLI contract test in the same change. `bin/cli-contract --coverage` shows the commands that still have no expected output.
