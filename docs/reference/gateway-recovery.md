@@ -1,21 +1,27 @@
 ---
 title: "Update and recover a Gateway"
-description: "Preserve source, state, and keys through an update or recovery."
+description: "Preserve source, state, and keys through a Gateway update, recover from a failed update, and find the request logs."
+covers:
+  - apps/gateway/config/app.php
+  - apps/gateway/config/logging.php
+  - apps/gateway/app/Infrastructure/Logging/**
+  - apps/gateway/app/Domain/Gateway/GatewayCacheStore.php
+  - apps/gateway/app/Infrastructure/Gateway/GatewayCheckoutAccessConverger.php
 ---
 
 # Update and recover a Gateway
 
-This guide helps an operator preserve Gateway state during a source update and recover when an update fails. It covers the installation layout from the [Quickstart](/quickstart#install-orbit). Test the procedure on a disposable copy before relying on it for important data.
+This guide helps an operator keep Gateway state safe during a source update and recover when an update fails. It uses the installation layout from the [Quickstart](/quickstart). Test the procedure on a disposable copy before you rely on it for important data.
 
 ## Gateway request logs
 
-Exceptions rendered with a status below 500 are client refusals and are not logged. Activity already records failed requests. Exceptions rendered with a status of 500 or higher are reported at `ERROR`.
+The Gateway logs an exception at `ERROR` when its response status is 500 or higher. A lower status is a client refusal. The Gateway does not log it, because [Activity](/cli/activity) already records the failed request.
 
 Every log entry written during an HTTP request carries that request's `request_id`. When the request creates an Activity row, its `activity_log.request_id` has the same value. Search the Gateway logs for the Activity row's request ID to find all related request log entries.
 
-Gateway log files rotate daily and retain 14 days. The daily rotation bounds disk usage instead of writing indefinitely to one file.
+Gateway log files rotate daily and keep 14 days. `LOG_DAILY_DAYS` changes the count.
 
-Gateway web setup grants Caddy access to regular files and directories under the checkout’s `public` directory, including files restored with restrictive permissions. It does not follow public symlinks or change private source permissions. The Gateway `.env` stays at mode `0600`.
+Gateway web setup lets Caddy read the regular files and directories under the checkout's `public` directory, also files restored with restrictive permissions. It does not follow symlinks there or change the permissions of other source files. The Gateway `.env` stays at mode `0600`.
 
 ## Preserve a complete state set
 
@@ -24,9 +30,9 @@ The database alone is not a recoverable Gateway backup. Keep these inputs togeth
 | Input | Why it matters |
 | --- | --- |
 | Exact monorepo commit and lock files | Reinstalls the matching CLI, Gateway, and SDK code. |
-| Gateway `.env` | Holds configuration and may contain the encryption key or a custom database path. |
-| Complete `ORBIT_HOME` | Includes `gateway.sqlite`, SQLite journal files, SSH identity and known hosts, WireGuard keys, the root CA, generated state, and a possible `gateway.app-key`. |
-| Machine configuration or VM snapshot | Preserves service, firewall, DNS, network, ownership, and package state if an update changes them. |
+| Gateway `.env` | Holds configuration. It can hold the encryption key or a custom database path. |
+| Complete `ORBIT_HOME` | Holds `gateway.sqlite` and its WAL files, the SSH identity and known hosts, WireGuard keys, the root CA, generated state, and `gateway.app-key` when the `.env` has no key. |
+| Machine configuration or VM snapshot | Keeps service, firewall, DNS, network, ownership, and package state when an update changes them. |
 | Application backups | Application databases, uploads, and source are separate from Gateway state. |
 
 A nonempty `APP_KEY` in the environment takes precedence over `ORBIT_HOME/gateway.app-key`. Preserve the effective key with its encrypted data. Do not generate a replacement key during an update or restore. A retained public CA certificate cannot replace its private key.
@@ -59,7 +65,7 @@ sudo chmod 0600 /root/orbit-backups/gateway-before-update.tar.gz
 sudo tar -tzf /root/orbit-backups/gateway-before-update.tar.gz
 ```
 
-Adjust the paths when `ORBIT_HOME` or `DB_DATABASE` differs. Include an external database path and its SQLite sidecar files. Pause Gateway timers and external automation too; stopping the web services alone does not stop console writers. Do not copy a live SQLite file without its journal state. Transfer the archive to protected storage and verify that it can be read before changing source.
+Adjust the paths when `ORBIT_HOME` or `DB_DATABASE` differs. Include an external database path and its `-wal` and `-shm` files, as [SQLite WAL default](/solutions/sqlite-wal-default) explains. Pause Gateway timers and external automation too; stopping the web services alone does not stop console writers. Do not copy a live SQLite file without its journal state. Transfer the archive to protected storage and verify that it can be read before changing source.
 
 The archive contains secrets. Do not attach it to a bug report or commit it to Git. A successful archive listing verifies readability, not restore behavior.
 
@@ -82,7 +88,7 @@ php artisan migrate --force
 
 The agent view subscriber, `orbit-agent-view.service`, writes only to its cache files in `ORBIT_HOME/cache/agent-view`, never to the database, so it can keep running during a backup and an update. A backup does not need those files: the view rebuilds within seconds. Within 60 seconds of a source change, it exits and systemd starts it with the new code. [Gateway view](/reference/node-agent#gateway-view) describes it.
 
-The Gateway refuses to start when its cache store cannot hold locks across processes, and names `CACHE_STORE=file` in the error. `composer install`, `php artisan config:clear`, and `php artisan optimize:clear` still run, so a stale cached configuration can be cleared after `.env` is fixed.
+The Gateway refuses to start when its cache store cannot hold locks across processes. The error names `CACHE_STORE=file` as the fix. `composer install`, `php artisan config:clear`, and `php artisan optimize:clear` still run, so a stale cached configuration can be cleared after `.env` is fixed.
 
 Read the release notes before migrations. Do not run `composer update`, `composer setup`, `key:generate`, or Gateway bootstrap as a generic update step. Dependency installation uses the committed locks; bootstrap changes machine configuration and needs its own explicit instructions.
 
