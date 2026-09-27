@@ -52,7 +52,11 @@ The Gateway checks the path before it stores it. A path must:
 
 The Gateway then checks the path on the Node. When the Node has an active `app-dev` role, it prepares the path: it creates each missing directory, owned by the managed user and group with mode `0755`. Otherwise the path must already exist. `app-dev` convergence prepares the apps root in the same way.
 
-An existing directory must be a real directory, not a symlink, owned by the managed user and group. Group and others must not have write access. The Gateway never changes the owner or mode of an existing directory. When a check fails, the stored setting stays unchanged. A directory that the Gateway created before the failure can remain.
+An existing directory must be a real directory, not a symlink, owned by the managed user and group. The owner must have read, write, and execute access, and group and others must not have write access. The Gateway never changes the owner or mode of an existing directory. When a check fails, the stored setting stays unchanged. A directory that the Gateway created before the failure can remain.
+
+### Caddy access
+
+Caddy runs as its own user and must reach each development site's document root, also when the apps root lies outside the managed user's home. When a development site publishes, the Gateway adds execute access for the `caddy` user on each ancestor directory of the document root that Caddy cannot enter yet. It adds no read access to those directories, so Caddy can pass through them but cannot list them. Inside the checkout, Caddy can read only the document root and the public storage target.
 
 ## Failure codes
 

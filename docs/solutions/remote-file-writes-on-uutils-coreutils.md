@@ -11,7 +11,7 @@ covers:
 
 ## Problem
 
-A convergence that writes a file on a Node succeeds once and fails on every later run. The remote command prints only `install: No such file or directory`, although the directory exists. In Metrics, this showed as `metrics.configuration_publish_failed` and `metrics.exporter_configuration_failed`.
+A convergence that writes a file on a Node succeeds once and fails on every later run. The remote command prints only `install: No such file or directory`, although the directory exists. In Metrics, the codes are `metrics.configuration_publish_failed` and `metrics.exporter_configuration_failed`.
 
 ## Cause
 

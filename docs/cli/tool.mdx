@@ -56,7 +56,7 @@ orbit tool:install ripgrep --node=12 --manager=brew
 
 Use `vp` for npm packages such as Codex and Claude Code, `composer` for `vendor/package` tools, `apt` for Ubuntu packages, and `brew` for a Homebrew Core formula with a Linux bottle.
 
-The result is `applied` for a new install. It is `unchanged` when a retry finds the package already installed. When an install fails after the Gateway created the Tool, the error names the Tool ID, so you can retry or remove it.
+The result is `applied` for a new install. It is `unchanged` when the Tool already exists and its package is installed, such as on a retry or a repeated install. When an install fails after the Gateway created the Tool, the error names the Tool ID, so you can retry or remove it.
 
 ## orbit tool:list
 

@@ -50,7 +50,7 @@ A caller sends only the Node, the manager, the package name, and an optional ver
 
 The Gateway refuses a package that is already on the Node without a Tool record, with `tool.already_installed_unmanaged` (HTTP 409). It never takes over a package that someone else installed.
 
-A new install creates the Tool as `installing`, installs the package, and reads the installed version. A success marks the Tool `installed` and reports `applied`. A failure after the Tool exists marks it `failed` and returns its ID in the error, so you can retry or remove it. Running the same install again retries a Tool whose install failed. When the package is present by then, the result is `unchanged`.
+A new install creates the Tool as `installing`, installs the package, and reads the installed version. A success marks the Tool `installed` and reports `applied`. A failure after the Tool exists marks it `failed` and returns its ID in the error, so you can retry or remove it. Running the same install again retries a Tool whose install failed. An install of a Tool that is already `installed`, with the same constraint, checks the package again. When the package is present, the result is `unchanged`.
 
 The optional constraint is a SemVer range, such as `^0.150`. It only stops an unsafe version. Before an install, the Gateway reads the manager's candidate version. A candidate outside the range fails with `tool.version_constraint_blocked`, and the Gateway installs nothing. The Gateway never searches for another matching version and never downgrades. When a manager's version cannot be read as SemVer, a constrained install fails. A Tool keeps its constraint: installing it again with another constraint fails with `tool.constraint_conflict`.
 
@@ -87,6 +87,10 @@ The Gateway first reads the installed version. For `apt`, it then plans the remo
 | The removal fails or the package stays | `tool.remove_failed` | Kept as `failed` |
 
 Retry the same command with the Tool ID. The Gateway reads the live package state before it acts again.
+
+## Errors
+
+A Tool error carries a stable `code`, a message, and `details` with the `step`, the `outcome`, and the Tool `id` when a Tool exists. The Gateway never stores or returns the raw output of a package manager.
 
 ## Locks
 

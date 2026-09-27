@@ -139,7 +139,7 @@ The new name uses ASCII letters, digits, dashes, and underscores, at most 63 cha
 orbit node:rename gateway vpn
 ```
 
-After a rename, callers must use the new name or the numeric ID. [Relocate the gateway role](/solutions/relocate-gateway-role) uses a rename to free the name `gateway` for a new machine.
+After a rename, callers must use the new name or the numeric ID. The WireGuard hub configuration names each peer in a comment. That comment keeps the old name until the Gateway next projects the hub, for example on the next `node:add` of any Node. [Relocate the gateway role](/solutions/relocate-gateway-role) uses a rename to free the name `gateway` for a new machine.
 
 ## orbit node:settings
 
@@ -237,7 +237,7 @@ orbit node:role:remove beast database --force
 
 The command removes a role that is `active` or `failed`. Each removal step is safe to repeat over what a failed convergence left. A role that is `provisioning` or `removing` is refused until its claim is stale. A failed removal leaves the role `failed` at `remove:STEP` and returns the step's own code in `details.error_code`. Run the same command again.
 
-When two removals of one role run together, the second waits for the role lock. If the first finished meanwhile, the second fails with `node_role.already_removed` (HTTP 409). A role the Node never had returns `http.404`.
+When two removals of one role run together, the second waits for the role lock. If the first finished meanwhile, the second fails with `node_role.already_removed` (HTTP 409). A role the Node never had returns `http.404`, except `ingress`: a confirmed removal of an `ingress` role that the Node does not hold succeeds and changes nothing.
 
 ## orbit node:access:add
 
@@ -276,8 +276,8 @@ orbit node:remove <node> [--force] [--offline] [--json]
 
 | Option | Meaning |
 | --- | --- |
-| `--force` | Confirm the removal. Required with `--offline`. |
-| `--offline` | Remove a Node that the Gateway cannot reach. The Gateway probes the Node first, and a Node that answers keeps every guard. |
+| `--force` | Confirm the removal without a prompt. Required without a terminal and with `--json`. |
+| `--offline` | Remove a Node that the Gateway cannot reach. The Gateway probes the Node first, and a Node that answers keeps every guard. A Node that does not answer still needs no Instances, Routes, Schedules, or firewall rules. |
 
 ```bash
 orbit node:remove 7

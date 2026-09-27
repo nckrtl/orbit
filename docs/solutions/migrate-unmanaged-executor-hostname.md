@@ -10,7 +10,7 @@ covers:
 
 ## Problem
 
-A Node runs a service, such as a self-hosted Executor, as a Node-owned Docker Process. Its private hostname was published by hand: a Caddy fragment such as `executor.caddy` and an Orbit CA certificate under `/etc/caddy/orbit-certificates/executor/`. The name, often `executor.test`, does not appear in `route:list`. Doctor does not check it, and the Node Caddy build does not render it.
+A Node runs a service, such as a self-hosted Executor, as a Node-owned Docker Process. Its private hostname is published by hand: a Caddy fragment such as `executor.caddy` and an Orbit CA certificate under `/etc/caddy/orbit-certificates/executor/`. The name, often `executor.test`, does not appear in `route:list`. Doctor does not check it, and the Node Caddy build does not render it.
 
 ## Cause
 

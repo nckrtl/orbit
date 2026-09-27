@@ -286,7 +286,7 @@ The Node downloads the asset to a candidate file, checks the checksum, and moves
 
 The unit runs the agent as `root` with `Restart=always` and `RestartSec=2`. It grants no capabilities and sets `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=tmpfs`, `BindReadOnlyPaths=-{Instance root}`, `PrivateTmp=yes`, `MemoryMax=128M`, and `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`.
 
-The Instance root is the Node's [apps root](/reference/node-settings#derive-the-effective-root). The bind line appears only when the root lies under `/home`. When the Gateway cannot resolve the managed user, or the root has characters other than letters, digits, `.`, `_`, `-`, and `/`, the unit sets `ProtectHome=yes`, and the Gateway reads that Node's checkouts over SSH.
+The Instance root is the Node's [apps root](/reference/node-settings#derive-the-effective-root). The bind line appears only when the root lies under `/home` or `/root`. When the Gateway cannot resolve the managed user, or the root has characters other than letters, digits, `.`, `_`, `-`, and `/`, the unit sets `ProtectHome=yes`, and the Gateway reads that Node's checkouts over SSH.
 
 | Path | What the agent can read |
 | --- | --- |

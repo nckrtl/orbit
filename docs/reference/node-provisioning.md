@@ -61,6 +61,8 @@ Each failure names the check or step that stopped the request.
 | `node.platform_unsupported` | The platform is not `linux`. |
 | `node.ssh_host_fingerprint_required` | A new Node has no approved host key fingerprint. |
 | `node.ssh_host_key_scan_failed` | The Gateway could not read the host key. |
+| `node.ssh_host_key_mismatch` | The host key differs from `--host-key-fingerprint`. |
+| `node.ssh_host_key_changed` | The host key differs from the fingerprint stored for the Node. |
 | `node.bootstrap_failed` | The bootstrap failed as the bootstrap user. |
 | `node.orbit_ssh_failed` | The Gateway could not connect as the managed user after the bootstrap. |
 | `node.architecture_unavailable` | The Gateway could not read the architecture. |
@@ -72,7 +74,18 @@ Each failure names the check or step that stopped the request.
 
 `node:add` for a recorded Node converges the machine again. It refuses a Node that owns Instances with `node.has_app_instances`. One exception: it changes only the TLD of a Node with an active `app-dev` role.
 
-A new Node that fails becomes `failed` at the step that stopped. An existing `active` Node returns to `active` when a step up to the agent fails, and its earlier network state is restored. So a serving Gateway never stays in `provisioning`. Two steps are different: a failure to prepare the storage settings or to reconcile the Metrics exporters marks the Node `failed`, also when it was `active`.
+What a failure leaves depends on the step.
+
+| Failed step | New Node | Node that was `active` |
+| --- | --- | --- |
+| Steps 1 to 6 | `failed` at that step | `active` again, with its earlier record and network state restored |
+| 8, storage settings | `active`, with no settings stored | `active`, with the earlier settings kept |
+| 9, Metrics exporters | `failed` at `metrics-exporters` | `failed` at `metrics-exporters` |
+| 10, Node agent | `failed` at `agent` | `active` again |
+
+A storage-settings failure returns its `node.settings_*` code, and the request skips steps 9 and 10. Only an unexpected error in step 8 marks the Node `failed` at `node-storage-root`.
+
+Step 9 runs whenever a Metrics role exists. It fails when the Metrics runtime on the Metrics Node fails to converge, or when an exporter change fails on a Node that answers. An exporter Node that does not answer is only marked degraded. A step 9 failure marks even the `gateway` Node `failed`. A Gateway Node that is not `active` loses its authority: its own requests fail with `peer.identity_unknown`, and access grants to it authorize nothing. So check the Metrics role before you converge the `gateway` Node with `node:add`.
 
 ## Role compatibility
 
@@ -161,7 +174,7 @@ Four locks guard work on one Node. They live in a file cache store under `ORBIT_
 | Role | Role operations | 10 minutes | Waits up to 2 minutes, then `node_role.node_busy` |
 | Node agent | The [agent converge](/reference/node-agent#install-and-upgrade) | 4 minutes | Waits up to 2 minutes, then `agent.converge_busy` |
 
-A Tool operation takes its Tool lock, then its manager lock. Several manager locks are taken in the order `apt`, `vp`, `composer`, `brew`. A role operation takes the role lock, then the manager locks it needs. The Node agent lock comes last. The locks cannot deadlock: the Tool and manager locks never wait, and no code takes the role lock while it holds the agent lock.
+A Tool operation takes its Tool lock, then its manager lock. Several manager locks are taken in the order `apt`, `vp`, `composer`, `brew`. A role operation on `app-dev` or `app-prod` takes the `vp` and `composer` manager locks first, and then the role lock. The Node agent lock comes last. The locks cannot deadlock: the Tool and manager locks never wait, and no code takes the role lock while it holds the agent lock.
 
 ### Lock renewal
 
@@ -184,7 +197,7 @@ The bootstrap adds the UFW rule `orbit:public-ssh-recovery` and enables UFW. Onc
 
 The Node with the `vpn` role holds the WireGuard hub: its private key, address, listen port, and the list of peers. When a peer changes, the Gateway renders the hub configuration and installs it there.
 
-When the `vpn` and `gateway` roles share a machine, or no `gateway` role is active, the Gateway installs the configuration locally with `sudo`. When they are on different Nodes, the Gateway sends the configuration over SSH to the `vpn` Node, with the private key on standard input, and activates `wg-quick@orbit` there. Without SSH, the projection fails with `vpn.server_config_install_failed`. It never writes the hub configuration on the Gateway machine in that case.
+When the `vpn` and `gateway` roles share a machine, or no `gateway` role is active, the Gateway installs the configuration locally with `sudo`. When they are on different Nodes, the Gateway sends the configuration over SSH to the `vpn` Node, with the private key on standard input, and activates `wg-quick@orbit` there. Without SSH, the projection fails with `vpn.server_config_install_failed` and never installs the configuration in `/etc/wireguard` on the Gateway machine. The Gateway always keeps the rendered hub configuration, private key included, at `ORBIT_HOME/generated/wireguard/orbit.conf`.
 
 ## Remove a Node
 
@@ -218,15 +231,15 @@ A failed step returns the Node record to the status it had, restores the Metrics
 
 Use `--offline` only for a Node that the Gateway cannot reach. The Gateway probes the Node first. A Node that answers keeps every guard above, but the removal still skips `firewall-recovery`. So omit `--offline` for a Node that is up.
 
-For a Node that does not answer, `--offline` needs `--force`, or the Gateway refuses with `node.confirmation_required`. The Gateway then removes every role on its own side, deletes the Node's Process records, removes the WireGuard peer, and deletes the record. It changes nothing on the machine. Caddy sites, checkouts, containers, Process units, Orbit UFW rules, the Metrics exporter, and the Node agent stay in place, and public SSH stays closed. The response lists what remains under `retained_on_node`.
+For a Node that does not answer, the API needs `force`, or the Gateway refuses with `node.confirmation_required`. The CLI sends it after `--force` or a yes at the prompt. The guards for Instances, Routes, Schedules, protected Nodes, and firewall rules still apply. The Gateway then removes every role on its own side, deletes the Node's Process records, removes the WireGuard peer, and deletes the record. It changes nothing on the machine. Caddy sites, checkouts, containers, Process units, Orbit UFW rules, the Metrics exporter, and the Node agent stay in place, and public SSH stays closed. The response lists what remains under `retained_on_node`.
 
 ### Add the machine again
 
-After an online removal, the machine keeps its WireGuard tunnel, which can still point DNS at Orbit. When a new bootstrap cannot resolve the package sources for that reason, it clears only the DNS server and route-all domain that match Orbit's ownership record on the `orbit` link.
+After an online removal, the machine keeps its WireGuard tunnel, which can still point DNS at Orbit. When a new bootstrap cannot resolve the package sources for that reason, and the request names at least one role and no `--dns-server` override, it clears only the DNS server and route-all domain that match Orbit's ownership record on the `orbit` link.
 
-The bootstrap then uses the machine's own DNS for the base packages and restores the earlier link values. It keeps operator overrides, refuses missing or changed ownership state, and changes no global resolver file or IP route. When the machine's own DNS cannot resolve the sources either, the bootstrap fails before it sets up the managed user.
+The bootstrap then uses the machine's own DNS for the base packages and restores the earlier link values. It keeps operator overrides, refuses missing or changed ownership state, and changes no global resolver file or IP route. When the machine's own DNS cannot resolve the sources either, the bootstrap fails before it sets up the managed user. A Node added again without a role, or with a DNS server override, keeps its DNS as it is, and the bootstrap fails when the sources do not resolve.
 
-Provisioning then writes a new tunnel configuration and restarts `wg-quick@orbit`. The configuration has a `PostUp` hook that points the link at Orbit DNS. It has no `PreDown` hook, because the AppArmor profile that Ubuntu 26.04 ships for wg-quick denies the resolver revert call.
+Provisioning then writes a new tunnel configuration and restarts `wg-quick@orbit`. When the Node sends private DNS through WireGuard, the configuration has a `PostUp` hook that points the link at Orbit DNS. It never has a `PreDown` hook, because the AppArmor profile that Ubuntu 26.04 ships for wg-quick denies the resolver revert call.
 
 ## Why it works this way
 
@@ -246,4 +259,4 @@ When `gateway` runs on another machine, that machine is itself a WireGuard peer.
 
 ### A kernel setting for Caddy reloads
 
-Caddy's `grace_period` and `shutdown_delay`, a reload through the admin API, and a certificate cache that survives reloads did not reduce the resets in measurements. Handing Caddy a systemd socket would change every listener for the same effect. `net.ipv4.tcp_migrate_req` cut the resets by about 93%. It needs Linux 5.14 or newer, which every supported Ubuntu release has.
+Caddy's `grace_period` and `shutdown_delay`, a reload through the admin API, and a certificate cache that survives reloads leave the reset count unchanged in measurements. Handing Caddy a systemd socket would change every listener for the same effect. `net.ipv4.tcp_migrate_req` cut the resets by about 93%. It needs Linux 5.14 or newer, which every supported Ubuntu release has.
