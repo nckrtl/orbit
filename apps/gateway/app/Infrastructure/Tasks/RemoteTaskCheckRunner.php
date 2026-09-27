@@ -20,6 +20,9 @@ use JsonException;
  */
 final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
 {
+    /** A finished status carries the result, the deliverable evidence and a 16 KiB output tail. It outgrows the 64 KiB process default. */
+    public const int OutputLimitBytes = 8 * 1024 * 1024;
+
     public function __construct(private AppDevSshExecutor $ssh) {}
 
     public function start(AppInstance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess
@@ -153,6 +156,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
             $result = $this->ssh->execute($instance->node, new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $instance->checkout_path, ...$arguments],
                 input: "checkout=\$1\ndir=\$(git -C \"\$checkout\" rev-parse --absolute-git-dir)/orbit\n{$command}\n",
+                maxOutputBytes: self::OutputLimitBytes,
             ), 'task-check', 'tasks.check_failed');
         } catch (RuntimeConvergenceException $exception) {
             throw new TaskCheckException($unreachable, previous: $exception);
