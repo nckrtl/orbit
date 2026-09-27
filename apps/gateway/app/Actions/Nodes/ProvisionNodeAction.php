@@ -249,15 +249,15 @@ final readonly class ProvisionNodeAction
         $requestedAddress = $data->wireguardIp ?? (is_string($node->wireguard_ip) ? $node->wireguard_ip : null);
         $wireguardIp = $this->addresses->forProvisioning($requestedAddress, $node);
         $publicSshHost = $data->publicSshHost;
-        /** @var ?string $failedStep */
+
         $failedStep = $node->getAttribute('failed_step');
-        /** @var ?string $errorCode */
+
         $errorCode = $node->getAttribute('error_code');
-        /** @var ?string $sshHostKeyType */
+
         $sshHostKeyType = $node->getAttribute('ssh_host_key_type');
-        /** @var ?string $sshHostKey */
+
         $sshHostKey = $node->getAttribute('ssh_host_key');
-        /** @var ?array<string, mixed> $priorActiveState */
+
         $priorActiveState = $node->exists && $node->status === LifecycleStatus::Active
             ? [
                 'status' => $node->status,

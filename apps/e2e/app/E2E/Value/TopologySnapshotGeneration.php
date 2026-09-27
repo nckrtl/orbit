@@ -169,20 +169,9 @@ final readonly class TopologySnapshotGeneration
             $snapshots[$role] = $snapshot;
         }
 
-        if (
-            ! array_all($value['topology']['roles'], static fn (mixed $item, string|int $key): bool => is_string($item))
-            || ! array_all($value['topology']['checkout_roles'], static fn (
-                mixed $item,
-                string|int $key,
-            ): bool => is_string($item))
-        ) {
-            throw new InvalidArgumentException('The generation schema is invalid.');
-        }
-        /** @var list<string> $topologyRoles */
-        $topologyRoles = array_values($value['topology']['roles']);
-        /** @var list<string> $checkoutRoles */
-        $checkoutRoles = array_values($value['topology']['checkout_roles']);
-        /** @var array<string, list<string>>|null $assignments */
+        $topologyRoles = SerializedArrays::stringList($value['topology']['roles']);
+        $checkoutRoles = SerializedArrays::stringList($value['topology']['checkout_roles']);
+
         $assignments = null;
         if ($schema === self::SCHEMA) {
             if (! is_array($value['topology']['assignments']) || array_is_list($value['topology']['assignments'])) {
@@ -194,12 +183,11 @@ final readonly class TopologySnapshotGeneration
                     ! is_string($node)
                     || ! is_array($rolesForNode)
                     || ! array_is_list($rolesForNode)
-                    || ! array_all($rolesForNode, static fn (mixed $role): bool => is_string($role))
                 ) {
                     throw new InvalidArgumentException('The generation schema is invalid.');
                 }
-                /** @var list<string> $orderedRoles */
-                $orderedRoles = $rolesForNode;
+
+                $orderedRoles = SerializedArrays::stringList($rolesForNode);
                 $assignments[$node] = $orderedRoles;
             }
         }

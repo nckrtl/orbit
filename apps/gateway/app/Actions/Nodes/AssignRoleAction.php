@@ -41,9 +41,7 @@ final readonly class AssignRoleAction
     public function execute(Node $node, RoleName $role): NodeRole
     {
         try {
-            /**
-             * @var NodeRole $assignment
-             */
+
             $assignment = DB::transaction(function () use ($node, $role): NodeRole {
                 $this->lockRoleClaims();
                 $persistedNode = Node::query()->select('cluster_id')->findOrFail($node->id);

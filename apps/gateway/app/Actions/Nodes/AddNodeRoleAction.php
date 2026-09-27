@@ -127,9 +127,7 @@ final readonly class AddNodeRoleAction
     /** @return array{assignment: NodeRole, created: bool} */
     private function claimNew(Node $node, RoleName $role): array
     {
-        /**
-         * @var array{assignment: NodeRole, created: bool} $claim
-         */
+
         $claim = DB::transaction(function () use ($node, $role): array {
             $assignment = $this->assignRole->execute($node, $role);
 
@@ -152,9 +150,7 @@ final readonly class AddNodeRoleAction
     /** @return array{assignment: NodeRole, created: bool} */
     private function claimExisting(Node $node, RoleName $role): array
     {
-        /**
-         * @var array{assignment: NodeRole, created: bool} $claim
-         */
+
         $claim = DB::transaction(function () use ($node, $role): array {
             $assignment = $this->assignRole->execute($node, $role);
 

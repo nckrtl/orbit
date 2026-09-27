@@ -79,6 +79,8 @@ function orb247_gate_sentinel(string $operation, string $database): array
 
 it('keeps the root candidate check away from an inherited caller database', function (): void {
     $fixture = orb247_gate_fixture();
+    mkdir($fixture['root'].'/apps/gateway/app', 0o700, true);
+    file_put_contents($fixture['root'].'/apps/gateway/app/GateFixture.php', "<?php\n\nfinal class GateFixture {}\n");
     $sentinel = temporaryFile('orbit-gateway-caller-');
     $before = orb247_gate_sentinel('create', $sentinel);
     $composer = trim((new Process(['which', 'composer']))->mustRun()->getOutput());
@@ -103,6 +105,8 @@ it('keeps the root candidate check away from an inherited caller database', func
 
 it('records a database safety refusal as a failed gate and retains normal success', function (): void {
     $fixture = orb247_gate_fixture();
+    mkdir($fixture['root'].'/apps/gateway/app', 0o700, true);
+    file_put_contents($fixture['root'].'/apps/gateway/app/GateFixture.php', "<?php\n\nfinal class GateFixture {}\n");
     $refusal = new Process([$fixture['root'].'/bin/review-check'], $fixture['root'], [
         'ORBIT_GATEWAY_GATE_REFUSAL' => '1',
         'PATH' => $fixture['path'],

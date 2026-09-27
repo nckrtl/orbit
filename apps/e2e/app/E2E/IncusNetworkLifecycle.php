@@ -85,7 +85,7 @@ final readonly class IncusNetworkLifecycle
                 throw new RuntimeException("Incus network {$name} IPv4 subnet is already used by {$otherName}.");
             }
         }
-        /** @var array<string, string> $configurationDrift */
+
         $configurationDrift = [];
         $lastAddress = $this->lastAddressFromRange($network->config['ipv4.dhcp.ranges'] ?? null, $slot);
         foreach ($this->networkConfiguration($slot, $lastAddress) as $key => $value) {

@@ -1294,7 +1294,7 @@ final readonly class WorktreeSynchronizer
                 throw new RuntimeException('Guest source batch result is invalid.');
             }
             $evidence = json_decode(trim($result->stdout), true, 16, JSON_THROW_ON_ERROR);
-            /** @var mixed $evidence */
+
             if (
                 ! is_array($evidence)
                 || ($evidence['sha'] ?? null) !== $sha

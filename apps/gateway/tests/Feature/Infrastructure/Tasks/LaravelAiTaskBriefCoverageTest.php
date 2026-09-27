@@ -34,7 +34,7 @@ it('names each subtask that no listed change delivers', function (): void {
     Classification::fake([[
         'subtask_'.$export->id => new BooleanAnswer(0.97),
         'subtask_'.$route->id => new BooleanAnswer(0.2),
-    ]]);
+    ]])->preventStrayClassifications();
 
     expect(app(LaravelAiTaskBriefCoverage::class)->missing($group, coverage_pull_request()))->toBe(['Route']);
     Classification::assertClassified(static fn (ClassificationPrompt $prompt): bool => is_array($prompt->state)
@@ -48,7 +48,7 @@ it('counts a subtask as covered from a probability of one half', function (): vo
     Classification::fake([[
         'subtask_'.$export->id => new BooleanAnswer(0.69),
         'subtask_'.$route->id => new BooleanAnswer(0.4),
-    ]]);
+    ]])->preventStrayClassifications();
 
     expect(app(LaravelAiTaskBriefCoverage::class)->missing($group, coverage_pull_request()))->toBe(['Route']);
 });
@@ -56,7 +56,7 @@ it('counts a subtask as covered from a probability of one half', function (): vo
 it('reports a failed or incomplete Jev answer as a classification failure', function (): void {
     [$group] = coverage_group();
     config()->set('ai.providers.typesafe.key', 'typesafe-test-key');
-    Classification::fake(fn () => throw new ConnectionException('Connection refused'));
+    Classification::fake(fn () => throw new ConnectionException('Connection refused'))->preventStrayClassifications();
 
     expect(fn () => app(LaravelAiTaskBriefCoverage::class)->missing($group, coverage_pull_request()))
         ->toThrow(TaskSessionClassificationException::class, 'TypeSafe Jev request failed (ConnectionException).');

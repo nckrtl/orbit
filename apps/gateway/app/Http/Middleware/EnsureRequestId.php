@@ -23,7 +23,6 @@ final class EnsureRequestId
 
         $request->attributes->set('orbit.request_id', $requestId);
 
-        /** @var Response $response */
         $response = $next($request);
         $response->headers->set('X-Orbit-Request-Id', $requestId);
 

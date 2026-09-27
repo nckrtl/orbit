@@ -33,7 +33,6 @@ final readonly class ProxyCliProvidersResponse
             }
         }
 
-        /** @var list<ProxyCliProviderResponse> $providers */
         $this->providers = $providers;
         $this->requestId = GatewayRequestId::fromTransport($requestId) ?? $requestId;
     }

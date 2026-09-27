@@ -313,7 +313,6 @@ final readonly class GatewayConfigRepository
             throw new GatewayConfigException('Orbit gateway configuration is invalid.');
         }
 
-        /** @var array<string, array<string, mixed>> $profiles */
         $profiles = [];
 
         foreach (get_object_vars($value) as $name => $profileData) {

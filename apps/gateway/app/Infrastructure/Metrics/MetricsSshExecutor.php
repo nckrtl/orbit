@@ -228,7 +228,7 @@ final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, Met
 
     public function convergeContainers(Node $node, array $specs): void
     {
-        /** @var list<MetricsContainerReplacementProgress> $services */
+
         $services = [];
 
         foreach ($specs as $spec) {
@@ -250,7 +250,7 @@ final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, Met
         }
 
         $createdVolumes = [];
-        /** @var list<MetricsContainerReplacementProgress> $replacements */
+
         $replacements = [];
 
         try {
@@ -1116,7 +1116,7 @@ final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, Met
     private function labels(string $json, string $resource): array
     {
         try {
-            /** @var mixed $decoded */
+
             $decoded = json_decode(trim($json), true, flags: JSON_THROW_ON_ERROR);
         } catch (JsonException) {
             throw new ResourceOperationException(
@@ -1136,7 +1136,6 @@ final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, Met
 
         $labels = [];
 
-        /** @var mixed $value */
         foreach ($decoded as $key => $value) {
             if (! is_string($key) || ! is_string($value)) {
                 throw new ResourceOperationException(

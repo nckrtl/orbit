@@ -2,6 +2,7 @@
 """Run the quality checks and affected tests on one candidate: a commit, or a working tree with uncommitted changes."""
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 import subprocess
@@ -52,7 +53,7 @@ def candidate_paths(root, head, committed):
     return None, []
 
 
-def selected_projects(paths):
+def selected_projects(paths, root):
     """Return project profiles selected by changed paths and the OpenAPI schema dependency."""
     selected = [(project, PHP_COMMANDS) for project in PHP_PROJECTS
                 if any(path.startswith(project + '/') for path in paths)]
@@ -64,14 +65,65 @@ def selected_projects(paths):
         selected.append(('apps/web', (WEB_INSTALL, WEB_TYPES)))
     if any(path.startswith('apps/pi-server/') for path in paths):
         selected.append(('apps/pi-server', PI_SERVER_COMMANDS))
+    for project, _commands in list(selected):
+        if project not in PHP_PROJECTS:
+            continue
+        test_sources = [path[len(project) + 1:] for path in changed_php_test_sources(paths)
+                        if path.startswith(project + '/') and (root / path).is_file()]
+        if test_sources:
+            selected.append((project, (('php', '../../bin/check-classification-fakes', *test_sources),)))
     return selected
 
 
 def command_log_name(command):
     """Return a concise, unique log label for a gate command."""
+    if len(command) > 1 and command[1] == '../../bin/check-classification-fakes':
+        return 'classification-fakes'
     if command == WEB_TYPES:
         return 'generated-types'
     return '-'.join(command).replace('/', '-').replace(':', '-')
+
+
+def changed_php_tests(paths):
+    """Return changed Pest test files among the selected PHP projects."""
+    return [path for path in paths if path.endswith('Test.php') and '/tests/' in path]
+
+
+def changed_php_test_sources(paths):
+    """Return every changed PHP source under a selected project's tests directory."""
+    return [path for path in paths if path.endswith('.php') and '/tests/' in path]
+
+
+def project_tia_directory(root, project):
+    """Resolve the directory used by the project's Pest bootstrap."""
+    configured = os.environ.get('ORBIT_TIA_DIRECTORY')
+    if configured:
+        directory = Path(configured)
+        return directory if directory.is_absolute() else (root / project / directory).resolve()
+    return root / project / '.orbit-tia'
+
+
+def prepare_tia_directory(root, project, destination):
+    """Copy the configured TIA cache into a fresh, run-specific directory."""
+    source = project_tia_directory(root, project)
+    destination.mkdir(parents=True, exist_ok=True)
+    if source.is_dir() and source.resolve() != destination.resolve() and destination.resolve() not in source.resolve().parents:
+        shutil.copytree(source, destination, dirs_exist_ok=True)
+    (destination / 'affected.json').unlink(missing_ok=True)
+
+
+def selected_test_files(tia_directory):
+    """Return current-run selected tests only when TIA wrote valid evidence."""
+    artifact = tia_directory / 'affected.json'
+    if not artifact.is_file():
+        return set(), False
+    try:
+        selected = json.loads(artifact.read_text())
+    except (OSError, json.JSONDecodeError):
+        return set(), False
+    if not isinstance(selected, list) or not all(isinstance(item, str) for item in selected):
+        return set(), False
+    return {item.removeprefix('./') for item in selected}, True
 
 
 def selection_warning(project, command, exit_code, log, paths):
@@ -102,19 +154,33 @@ def main():
     for seed in (['bin/worktree-cache', '--worktree', str(root)], ['bin/tia-cache', 'seed', '--repository', str(root)]):
         if (root / seed[0]).is_file():
             subprocess.run([str(root / seed[0]), *seed[1:]], check=False)
-    for project, commands in selected_projects(paths):
-        for command in commands:
-            command_name = command_log_name(command)
-            log = directory / (project.replace('/', '-') + '-' + command_name + '.log')
+    for project, project_commands in selected_projects(paths, root):
+        commands = list(project_commands)
+        index = 0
+        while index < len(commands):
+            command = commands[index]
+            index += 1
+            log = directory / (project.replace('/', '-') + '-' + command_log_name(command) + '.log')
             started = time.monotonic()
+            command_environment = {**os.environ, 'COMPOSER_PROCESS_TIMEOUT': '0'}
+            run_tia_directory = None
+            if command == AFFECTED:
+                run_tia_directory = directory / 'tia' / project.replace('/', '-')
+                prepare_tia_directory(root, project, run_tia_directory)
+                command_environment['ORBIT_TIA_DIRECTORY'] = str(run_tia_directory)
             with log.open('w') as output:
                 try:
                     result = subprocess.run(command, cwd=root / project, stdout=output, stderr=subprocess.STDOUT,
-                                            env={**os.environ, 'COMPOSER_PROCESS_TIMEOUT': '0'})
+                                            env=command_environment)
                 except FileNotFoundError as error:
                     missing = error.filename or command[0]
                     output.write(f'{missing}: required tool not found\n')
                     result = subprocess.CompletedProcess(command, 127)
+            if len(command) > 1 and command[1] == '--list-tests' and result.returncode == 0:
+                if not re.search(r'^\s*-\s+\S+', log.read_text(errors='replace'), re.MULTILINE):
+                    result = subprocess.CompletedProcess(command, 1)
+                    with log.open('a') as output:
+                        output.write('Pest did not discover any tests in the changed file.\n')
             check = {'project': project, 'command': list(command), 'exit_code': result.returncode,
                      'seconds': round(time.monotonic() - started, 3), 'log': str(log)}
             warning = selection_warning(project, command, result.returncode, log, paths)
@@ -127,6 +193,19 @@ def main():
                 print(f'[{project}] WARNING: {warning["message"]} ({log})', flush=True)
             if result.returncode:
                 print(log.read_text(), flush=True)
+            if command == AFFECTED and result.returncode == 0:
+                selected_tests, has_current_evidence = selected_test_files(run_tia_directory)
+                check['selected_test_files'] = sorted(selected_tests)
+                check['selection_evidence_current'] = has_current_evidence
+                check['selection_artifact'] = str(run_tia_directory / 'affected.json')
+                for test in changed_php_tests(paths):
+                    if not test.startswith(project + '/'):
+                        continue
+                    relative = test[len(project) + 1:]
+                    if (root / test).is_file() and relative not in selected_tests:
+                        commands.extend((('vendor/bin/pest', '--list-tests', relative),
+                                         ('../../bin/pest-plain', 'vendor/bin/pest', '--no-tia',
+                                          '--fail-on-empty-test-suite', '--compact', '--colors=never', relative)))
     report['unchanged'] = head == git(root, 'rev-parse', 'HEAD') and tree == working_tree(root)
     report['passed'] = report['unchanged'] and all(check['exit_code'] == 0 for check in report['checks'])
     report['finished_at'] = time.time()

@@ -17,8 +17,9 @@ final class ResolveDependencyInstanceController extends Controller
 {
     public function __invoke(ResolveDependencyInstanceRequest $request, ResolveDependencyInstanceAction $action): JsonResponse
     {
-        /** @var Node $consumer */
+
         $consumer = $request->user();
+        abort_unless($consumer instanceof Node, 401);
 
         $domain = $request->validated('domain');
 

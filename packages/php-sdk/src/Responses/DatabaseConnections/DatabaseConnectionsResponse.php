@@ -34,7 +34,6 @@ final readonly class DatabaseConnectionsResponse
             }
         }
 
-        /** @var list<DatabaseConnectionResponse> $connections */
         $this->connections = $connections;
         $this->requestId = GatewayRequestId::fromTransport($requestId) ?? '';
     }

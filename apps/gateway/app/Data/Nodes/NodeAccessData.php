@@ -23,13 +23,13 @@ final class NodeAccessData extends Data
 
     public static function fromModel(Node $node): self
     {
-        /** @var list<NodeAccessNodeData> $canAccess */
+
         $canAccess = $node
             ->accessibleNodes
             ->map(NodeAccessNodeData::fromModel(...))
             ->values()
             ->all();
-        /** @var list<NodeAccessNodeData> $accessibleBy */
+
         $accessibleBy = $node
             ->accessingNodes
             ->map(NodeAccessNodeData::fromModel(...))
@@ -37,8 +37,8 @@ final class NodeAccessData extends Data
             ->all();
 
         return new self(
-            canAccess: $canAccess,
-            accessibleBy: $accessibleBy,
+            canAccess: array_values($canAccess),
+            accessibleBy: array_values($accessibleBy),
         );
     }
 }

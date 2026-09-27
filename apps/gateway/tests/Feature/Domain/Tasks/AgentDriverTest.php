@@ -117,7 +117,7 @@ it('retains state and metrics on an unavailable observation and waits without cl
     $thread->update(['state' => AgentThreadState::Done, 'tokens' => 900, 'observed_at' => now()->subMinute()]);
     $observedAt = $thread->observed_at;
     $result = new AgentThreadObserver($registry)->observe($thread);
-    Classification::fake();
+    Classification::fake()->preventStrayClassifications();
     app(TaskExtensionState::class)->enable();
     app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
     $decisions = app(TaskScheduler::class)->tick();

@@ -39,7 +39,7 @@ final class StoreToolRequest extends FormRequest
 
     public function payload(): InstallToolData
     {
-        /** @var array<string, mixed> $validated */
+
         $validated = $this->validated();
 
         return new InstallToolData(

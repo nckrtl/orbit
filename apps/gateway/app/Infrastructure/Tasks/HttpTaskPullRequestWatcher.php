@@ -137,7 +137,7 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestWatche
             return ['failed' => [], 'pending' => []];
         }
         $key = 'tasks:pull-request-checks:v3:'.$repository->owner.'/'.$repository->name.'#'.$number.'@'.$pullRequest->headSha;
-        /** @var array{failed: list<array{name: string, conclusion: string, url: ?string}>, pending: list<array{id: ?int, name: string, url: ?string, started_at: ?string}>}|null $cached */
+
         $cached = Cache::get($key);
         if (! is_array($cached)) {
             $token = $this->access->checksToken($repository);
@@ -160,15 +160,61 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestWatche
         }
 
         return [
-            'failed' => array_map(
-                static fn (array $run): GitHubCheckRun => new GitHubCheckRun($run['name'], $run['conclusion'], $run['url']),
-                $cached['failed'],
-            ),
-            'pending' => array_map(
-                static fn (array $run): GitHubCheckRun => new GitHubCheckRun($run['name'], null, $run['url'], $run['id'], $run['started_at']),
-                $cached['pending'],
-            ),
+            'failed' => $this->failedRuns($cached['failed'] ?? null),
+            'pending' => $this->pendingRuns($cached['pending'] ?? null),
         ];
+    }
+
+    /** @return list<GitHubCheckRun> */
+    private function failedRuns(mixed $runs): array
+    {
+        if (! is_array($runs) || ! array_is_list($runs)) {
+            return [];
+        }
+        $checks = [];
+        foreach ($runs as $run) {
+            if (! is_array($run)) {
+                continue;
+            }
+            $name = $run['name'] ?? null;
+            $conclusion = $run['conclusion'] ?? null;
+            $url = $run['url'] ?? null;
+            if (! is_string($name) || ! is_string($conclusion) || ($url !== null && ! is_string($url))) {
+                continue;
+            }
+            $checks[] = new GitHubCheckRun($name, $conclusion, $url);
+        }
+
+        return $checks;
+    }
+
+    /** @return list<GitHubCheckRun> */
+    private function pendingRuns(mixed $runs): array
+    {
+        if (! is_array($runs) || ! array_is_list($runs)) {
+            return [];
+        }
+        $checks = [];
+        foreach ($runs as $run) {
+            if (! is_array($run)) {
+                continue;
+            }
+            $id = $run['id'] ?? null;
+            $name = $run['name'] ?? null;
+            $url = $run['url'] ?? null;
+            $startedAt = $run['started_at'] ?? null;
+            if (
+                ($id !== null && ! is_int($id))
+                || ! is_string($name)
+                || ($url !== null && ! is_string($url))
+                || ($startedAt !== null && ! is_string($startedAt))
+            ) {
+                continue;
+            }
+            $checks[] = new GitHubCheckRun($name, null, $url, $id, $startedAt);
+        }
+
+        return $checks;
     }
 
     /**

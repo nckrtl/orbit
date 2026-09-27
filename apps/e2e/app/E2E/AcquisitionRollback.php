@@ -40,7 +40,7 @@ final readonly class AcquisitionRollback
             ) {
                 throw new RuntimeException('Rollback resource list is invalid.');
             }
-            /** @var list<string> $instances */
+
             $instances = array_values(array_filter(
                 $resources,
                 static fn (mixed $resource): bool => $resource !== $target->network(),
@@ -115,7 +115,7 @@ final readonly class AcquisitionRollback
 
             return $results;
         }
-        /** @var array<string, IncusInstance|IncusNetwork> $preflight */
+
         $preflight = [];
         try {
             $inventory = ($this->readBatch)($resources);

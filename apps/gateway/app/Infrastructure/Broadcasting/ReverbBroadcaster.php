@@ -56,7 +56,7 @@ final class ReverbBroadcaster extends PusherBroadcaster
 
         try {
             foreach (array_chunk($this->formatChannels($channels), 100) as $chunk) {
-                /** @var list<string> $names */
+
                 $names = array_map(strval(...), $chunk);
                 $this->refuseInvalidChannelsOrSocket($names, $parameters['socket_id'] ?? null);
                 $this->pusher->post('/events', self::body((string) $event, $payload, $names, $parameters));

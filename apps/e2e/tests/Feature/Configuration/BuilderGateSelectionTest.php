@@ -35,7 +35,7 @@ function orb277_tia_directory(string $root, string|false $override): string
 }
 
 /** @return array{root: string, main: string, candidate: string, path: string} */
-function orb277_gate_fixture(?string $candidatePath = null): array
+function orb277_gate_fixture(?string $candidatePath = null, ?string $mainTestPath = null): array
 {
     $root = temporaryPath('orbit-builder-gate-', 6);
 
@@ -46,6 +46,7 @@ function orb277_gate_fixture(?string $candidatePath = null): array
     mkdir($root.'/apps/pi-server', 0o700, true);
     mkdir($root.'/packages/agent-annotation', 0o700, true);
     mkdir($root.'/docs', 0o700, true);
+    file_put_contents($root.'/.gitignore', ".orbit-tia/\n");
     file_put_contents($root.'/packages/agent-annotation/.gitkeep', '');
     file_put_contents($root.'/apps/web/src/api/schema.d.ts', "export type Example = string;\n");
     file_put_contents($root.'/docs/openapi.json', "{}\n");
@@ -54,8 +55,28 @@ function orb277_gate_fixture(?string $candidatePath = null): array
         mkdir($root.'/'.$project, 0o700, true);
         file_put_contents($root.'/'.$project.'/.gitkeep', '');
     }
+    mkdir($root.'/apps/gateway/vendor/bin', 0o700, true);
+    file_put_contents($root.'/apps/gateway/vendor/bin/pest', <<<'SH'
+#!/usr/bin/env sh
+if [ "$1" = "--list-tests" ]; then
+    if [ "${ORBIT_GATE_HIDE_TESTS:-}" = 1 ]; then
+        echo 'Available test:'
+    else
+        echo 'Available test:'
+        echo ' - ExampleTest::exists'
+    fi
+elif [ "${ORBIT_GATE_HIDE_TESTS:-}" = 1 ]; then
+    echo 'No tests ran.'
+    exit 1
+fi
+exit 0
+SH);
+    chmod($root.'/apps/gateway/vendor/bin/pest', 0o700);
+    file_put_contents($root.'/bin/pest-plain', "#!/usr/bin/env sh\nexec \"$@\"\n");
+    chmod($root.'/bin/pest-plain', 0o700);
 
     copy(base_path('../../bin/review-check'), $root.'/bin/review-check');
+    copy(base_path('../../bin/check-classification-fakes'), $root.'/bin/check-classification-fakes');
     copy(base_path('tests/Fixtures/BuilderGate/composer'), $root.'/tooling/composer');
     file_put_contents($root.'/bin/tia-cache', "#!/usr/bin/env sh\n\nexit 0\n");
     foreach (['bun', 'vp'] as $tool) {
@@ -83,8 +104,17 @@ exit 2
 SH);
     chmod($root.'/apps/web/node_modules/.bin/openapi-typescript', 0o700);
     chmod($root.'/bin/review-check', 0o700);
+    chmod($root.'/bin/check-classification-fakes', 0o700);
     chmod($root.'/bin/tia-cache', 0o700);
     chmod($root.'/tooling/composer', 0o700);
+
+    if ($mainTestPath !== null) {
+        $path = $root.'/'.$mainTestPath;
+        if (! is_dir(dirname($path))) {
+            mkdir(dirname($path), 0o700, true);
+        }
+        file_put_contents($path, "<?php\n\nit('legacy test', fn () => expect(true)->toBeTrue());\n");
+    }
 
     foreach ([
         ['git', 'init', '--quiet', '--initial-branch=main'],
@@ -101,7 +131,9 @@ SH);
     $candidatePath ??= 'apps/gateway/app/Example.php';
     if ($candidatePath === 'apps/gateway/app/Example.php') {
         mkdir($root.'/apps/gateway/app', 0o700, true);
-        mkdir($root.'/apps/gateway/tests', 0o700, true);
+        if (! is_dir($root.'/apps/gateway/tests')) {
+            mkdir($root.'/apps/gateway/tests', 0o700, true);
+        }
         file_put_contents($root.'/apps/gateway/app/Example.php', "<?php\n\nfinal class Example {}\n");
         file_put_contents($root.'/apps/gateway/tests/ExampleTest.php', "<?php\n\nit('exists', fn () => expect(true)->toBeTrue());\n");
     } elseif ($candidatePath === 'docs/openapi.json') {
@@ -131,11 +163,19 @@ SH);
 }
 
 /** @return array{process: Process, receipt: array<string, mixed>} */
-function orb277_run_gate(array $fixture, string $unselected, string $failInstall = '', int $expectedExit = 0): array
-{
+function orb277_run_gate(
+    array $fixture,
+    string $unselected,
+    string $failInstall = '',
+    int $expectedExit = 0,
+    bool $discoverTests = true,
+    string $tiaDirectory = '',
+): array {
     $process = new Process([$fixture['root'].'/bin/review-check'], $fixture['root'], [
-        'ORBIT_GATE_UNSELECTED' => $unselected,
+        'ORBIT_GATE_UNSELECTED' => $discoverTests ? $unselected : trim($unselected.',apps/gateway', ','),
         'ORBIT_GATE_FAIL_INSTALL' => $failInstall,
+        'ORBIT_GATE_HIDE_TESTS' => $discoverTests ? '' : '1',
+        'ORBIT_TIA_DIRECTORY' => $tiaDirectory === '' ? false : $tiaDirectory,
         'PATH' => $fixture['path'],
     ]);
     $process->setTimeout(60);
@@ -254,6 +294,25 @@ describe('Builder gate', function (): void {
         expect($ignored->getExitCode())->toBe(0, 'The guidance cache must stay out of the candidate tree.');
     })->with(orb277_projects());
 
+    it('fails when Pest does not discover a changed test file', function (): void {
+        $fixture = orb277_gate_fixture();
+        $run = orb277_run_gate($fixture, '', expectedExit: 1, discoverTests: false);
+        $check = collect($run['receipt']['checks'])->first(
+            static fn (array $check): bool => $check['command'] === ['vendor/bin/pest', '--list-tests', 'tests/ExampleTest.php'],
+        );
+
+        expect($check)->not->toBeNull()
+            ->and($check['exit_code'])->toBe(1)
+            ->and(file_get_contents($check['log']))->toContain('Pest did not discover any tests');
+        $pathRun = collect($run['receipt']['checks'])->first(
+            static fn (array $check): bool => $check['command'] === [
+                '../../bin/pest-plain', 'vendor/bin/pest', '--no-tia', '--fail-on-empty-test-suite',
+                '--compact', '--colors=never', 'tests/ExampleTest.php',
+            ],
+        );
+        expect($pathRun)->not->toBeNull()->and($pathRun['exit_code'])->toBe(1);
+    });
+
     it('records a selection warning when affected tests select nothing for a changed project', function (): void {
         $fixture = orb277_gate_fixture();
         $run = orb277_run_gate($fixture, 'apps/gateway,apps/cli');
@@ -271,10 +330,104 @@ describe('Builder gate', function (): void {
         expect(orb277_check($receipt, 'apps/gateway', 'test:affected'))
             ->toHaveKey('warning', $receipt['warnings'][0]['message']);
         expect(collect($receipt['checks'])->pluck('project')->unique()->values()->all())->toBe(['apps/gateway']);
+        expect(collect($receipt['checks'])->pluck('command')->all())
+            ->toContain(['vendor/bin/pest', '--list-tests', 'tests/ExampleTest.php'])
+            ->toContain(['../../bin/pest-plain', 'vendor/bin/pest', '--no-tia', '--fail-on-empty-test-suite', '--compact', '--colors=never', 'tests/ExampleTest.php']);
         expect(orb277_check($receipt, 'apps/gateway', 'check'))->not->toHaveKey('warning');
         expect($run['process']->getOutput())
             ->toContain('[apps/gateway] WARNING: composer test:affected selected no tests', 'Selection warnings: 1')
             ->not->toContain('[apps/cli] WARNING');
+    });
+
+    it('runs only changed tests that affected-test analysis did not select', function (): void {
+        $fixture = orb277_gate_fixture();
+        $additionalTest = $fixture['root'].'/apps/gateway/tests/AdditionalTest.php';
+        file_put_contents($additionalTest, "<?php\n\nit('additional', fn () => expect(true)->toBeTrue());\n");
+
+        $receipt = orb277_run_gate($fixture, '')['receipt'];
+        $commands = collect($receipt['checks'])->pluck('command')->all();
+
+        expect(orb277_check($receipt, 'apps/gateway', 'test:affected'))
+            ->toHaveKey('selected_test_files', ['tests/ExampleTest.php']);
+        expect($commands)
+            ->toContain(['vendor/bin/pest', '--list-tests', 'tests/AdditionalTest.php'])
+            ->toContain(['../../bin/pest-plain', 'vendor/bin/pest', '--no-tia', '--fail-on-empty-test-suite', '--compact', '--colors=never', 'tests/AdditionalTest.php'])
+            ->not->toContain(['vendor/bin/pest', '--list-tests', 'tests/ExampleTest.php']);
+    });
+
+    it('checks changed Pest setup and helper sources for guarded classification fakes', function (): void {
+        $fixture = orb277_gate_fixture();
+        $root = $fixture['root'];
+        file_put_contents($root.'/apps/gateway/tests/Pest.php', <<<'PHP'
+<?php
+use Laravel\Ai\Classification;
+Classification::fake(fn (): array => [])->preventStrayClassifications();
+PHP);
+        mkdir($root.'/apps/gateway/tests/Support', 0o700, true);
+        file_put_contents($root.'/apps/gateway/tests/Support/ClassificationFixtures.php', <<<'PHP'
+<?php
+\Laravel\Ai\Classification::fake(function (): array {
+    return [];
+})->preventStrayClassifications();
+PHP);
+
+        $receipt = orb277_run_gate($fixture, '')['receipt'];
+        $check = collect($receipt['checks'])->first(
+            static fn (array $check): bool => ($check['command'][1] ?? null) === '../../bin/check-classification-fakes',
+        );
+
+        expect($receipt['passed'])->toBeTrue()
+            ->and($check['command'] ?? [])->toBe([
+                'php', '../../bin/check-classification-fakes', 'tests/ExampleTest.php', 'tests/Pest.php',
+                'tests/Support/ClassificationFixtures.php',
+            ]);
+    });
+
+    it('uses current-run TIA evidence under an override instead of stale default evidence', function (): void {
+        $fixture = orb277_gate_fixture();
+        $root = $fixture['root'];
+        mkdir($root.'/apps/gateway/.orbit-tia', 0o700, true);
+        file_put_contents($root.'/apps/gateway/.orbit-tia/affected.json', '["tests/ExampleTest.php"]');
+        $tiaDirectory = $root.'/.git/custom-tia';
+        mkdir($tiaDirectory, 0o700, true);
+
+        $receipt = orb277_run_gate(
+            $fixture,
+            'apps/gateway',
+            tiaDirectory: $tiaDirectory,
+        )['receipt'];
+        $commands = collect($receipt['checks'])->pluck('command')->all();
+
+        expect(orb277_check($receipt, 'apps/gateway', 'test:affected'))
+            ->toHaveKey('selected_test_files', []);
+        expect($commands)
+            ->toContain(['vendor/bin/pest', '--list-tests', 'tests/ExampleTest.php'])
+            ->toContain(['../../bin/pest-plain', 'vendor/bin/pest', '--no-tia', '--fail-on-empty-test-suite', '--compact', '--colors=never', 'tests/ExampleTest.php']);
+    });
+
+    it('does not try to run a changed test file that was deleted', function (): void {
+        $fixture = orb277_gate_fixture(mainTestPath: 'apps/gateway/tests/LegacyTest.php');
+        unlink($fixture['root'].'/apps/gateway/tests/LegacyTest.php');
+
+        $receipt = orb277_run_gate($fixture, '')['receipt'];
+        $commands = collect($receipt['checks'])->pluck('command')->all();
+
+        expect($receipt['passed'])->toBeTrue()
+            ->and($commands)->not->toContain(['vendor/bin/pest', '--list-tests', 'tests/LegacyTest.php']);
+    });
+
+    it('does not try to run a test under its old name after a rename', function (): void {
+        $fixture = orb277_gate_fixture(mainTestPath: 'apps/gateway/tests/LegacyTest.php');
+        rename(
+            $fixture['root'].'/apps/gateway/tests/LegacyTest.php',
+            $fixture['root'].'/apps/gateway/tests/Legacy.php',
+        );
+
+        $receipt = orb277_run_gate($fixture, '')['receipt'];
+        $commands = collect($receipt['checks'])->pluck('command')->all();
+
+        expect($receipt['passed'])->toBeTrue()
+            ->and($commands)->not->toContain(['vendor/bin/pest', '--list-tests', 'tests/LegacyTest.php']);
     });
 
     it('records no selection warning when the changed project executes tests or the candidate is main', function (): void {
@@ -285,6 +438,10 @@ describe('Builder gate', function (): void {
         expect(collect($executed['checks'])->pluck('project')->unique()->values()->all())->toBe(['apps/gateway']);
         expect($executed['warnings'])->toBe([]);
         expect(collect($executed['checks'])->pluck('warning')->filter()->all())->toBe([]);
+        expect(orb277_check($executed, 'apps/gateway', 'test:affected'))
+            ->toHaveKey('selected_test_files', ['tests/ExampleTest.php']);
+        expect(collect($executed['checks'])->pluck('command')->all())
+            ->not->toContain(['vendor/bin/pest', '--list-tests', 'tests/ExampleTest.php']);
 
         (new Process(['git', 'checkout', '--quiet', 'main'], $fixture['root']))->mustRun();
         $main = orb277_run_gate($fixture, 'apps/gateway');

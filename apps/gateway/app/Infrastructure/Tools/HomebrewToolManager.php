@@ -366,7 +366,7 @@ final readonly class HomebrewToolManager implements ToolManager
         }
 
         try {
-            /** @var mixed $decoded */
+
             $decoded = json_decode($result->stdout, flags: JSON_THROW_ON_ERROR);
         } catch (JsonException $exception) {
             throw new ToolManagerException(
@@ -387,22 +387,20 @@ final readonly class HomebrewToolManager implements ToolManager
             throw $this->malformedCandidate($result);
         }
 
-        /** @var mixed $formula */
         $formula = $decoded->formulae[0];
 
         if (! $formula instanceof stdClass) {
             throw $this->malformedCandidate($result);
         }
 
-        /** @var mixed $name */
         $name = $formula->name ?? null;
-        /** @var mixed $fullName */
+
         $fullName = $formula->full_name ?? null;
-        /** @var mixed $tap */
+
         $tap = $formula->tap ?? null;
-        /** @var mixed $versions */
+
         $versions = $formula->versions ?? null;
-        /** @var mixed $bottle */
+
         $bottle = $formula->bottle ?? null;
 
         if (
@@ -416,34 +414,30 @@ final readonly class HomebrewToolManager implements ToolManager
             throw $this->malformedCandidate($result);
         }
 
-        /** @var mixed $stableVersion */
         $stableVersion = $versions->stable ?? null;
-        /** @var mixed $hasBottle */
+
         $hasBottle = $versions->bottle ?? null;
-        /** @var mixed $stableBottle */
+
         $stableBottle = $bottle->stable ?? null;
 
         if (! is_string($stableVersion) || ! $this->isSafeVersion($stableVersion) || $hasBottle !== true) {
             throw $this->malformedCandidate($result);
         }
 
-        /** @var mixed $files */
         $files = $stableBottle instanceof stdClass ? $stableBottle->files ?? null : null;
 
         if (! $files instanceof stdClass) {
             throw $this->malformedCandidate($result);
         }
 
-        /** @var mixed $file */
         $file = $files->{$architecture} ?? null;
 
         if (! $file instanceof stdClass) {
             throw $this->malformedCandidate($result);
         }
 
-        /** @var mixed $sha256 */
         $sha256 = $file->sha256 ?? null;
-        /** @var mixed $url */
+
         $url = $file->url ?? null;
 
         if (

@@ -76,9 +76,7 @@ final readonly class AttachClusterNodeAction
         }
 
         try {
-            /**
-             * @var Cluster $updated
-             */
+
             $updated = DB::transaction(function () use ($cluster, $node): Cluster {
                 $lockedCluster = Cluster::query()->lockForUpdate()->findOrFail($cluster->id);
                 $lockedNode = Node::query()->lockForUpdate()->findOrFail($node->id);

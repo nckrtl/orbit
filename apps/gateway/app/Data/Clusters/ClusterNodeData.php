@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Data\Clusters;
 
 use App\Models\Node;
+use App\Support\ValidatedData;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
@@ -22,17 +23,17 @@ final class ClusterNodeData extends Data
 
     public static function fromModel(Node $node): self
     {
-        /** @var ?string $wireguardIp */
+
         $wireguardIp = $node->getAttribute('wireguard_ip');
-        /** @var ?string $lanIp */
+
         $lanIp = $node->getAttribute('lan_ip');
 
         return new self(
             id: $node->id,
             name: $node->name,
             status: $node->status->value,
-            wireguardIp: $wireguardIp,
-            lanIp: $lanIp,
+            wireguardIp: ValidatedData::nullableString($wireguardIp),
+            lanIp: ValidatedData::nullableString($lanIp),
         );
     }
 }

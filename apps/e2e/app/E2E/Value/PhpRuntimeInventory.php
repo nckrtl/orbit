@@ -30,9 +30,7 @@ final readonly class PhpRuntimeInventory
     /** @var list<array{role:string,php_version:string,fpm_version:string,pcov_version:?string,package_versions:array<string,string>}> */
     public array $runtimes;
 
-    /**
-     * @param  list<array<string, mixed>>  $runtimes
-     */
+    /** @param array<array-key, mixed> $runtimes */
     private function __construct(array $runtimes, bool $pcovRequired)
     {
         $this->runtimes = $this->validate($runtimes, $pcovRequired);
@@ -53,7 +51,7 @@ final readonly class PhpRuntimeInventory
     /** @param array<array-key, mixed> $runtimes */
     public static function pcovRequired(array $runtimes): self
     {
-        /** @var list<array<string, mixed>> $runtimes */
+
         return new self($runtimes, true);
     }
 
@@ -115,12 +113,22 @@ final readonly class PhpRuntimeInventory
 
         $packages = $pcovRequired ? self::PACKAGES : self::RUNTIME_PACKAGES;
         $shared = null;
+        $validatedRuntimes = [];
         foreach ($runtimes as $index => $runtime) {
-            $packageVersions = is_array($runtime) ? ($runtime['package_versions'] ?? null) : null;
+            if (! is_array($runtime)) {
+                throw new InvalidArgumentException('An observed PHP runtime entry is invalid.');
+            }
+            $runtime = SerializedArrays::stringKeyed($runtime);
+            $packageVersions = $runtime['package_versions'] ?? null;
             $versions = [];
+            $normalizedVersions = [];
             $packageVersionsValid = is_array($packageVersions) && array_keys($packageVersions) === $packages;
             if ($packageVersionsValid) {
-                foreach ($packageVersions as $version) {
+                foreach ($packageVersions as $package => $version) {
+                    if (! is_string($package)) {
+                        $packageVersionsValid = false;
+                        break;
+                    }
                     if (
                         ! is_string($version)
                         || $version === ''
@@ -131,14 +139,14 @@ final readonly class PhpRuntimeInventory
                         break;
                     }
                     $versions[] = $version;
+                    $normalizedVersions[$package] = $version;
                 }
             }
-            $phpVersion = is_array($runtime) ? ($runtime['php_version'] ?? null) : null;
-            $fpmVersion = is_array($runtime) ? ($runtime['fpm_version'] ?? null) : null;
-            $pcovVersion = is_array($runtime) ? ($runtime['pcov_version'] ?? null) : null;
+            $phpVersion = $runtime['php_version'] ?? null;
+            $fpmVersion = $runtime['fpm_version'] ?? null;
+            $pcovVersion = $runtime['pcov_version'] ?? null;
             if (
-                ! is_array($runtime)
-                || array_keys($runtime) !== [
+                array_keys($runtime) !== [
                     'role',
                     'php_version',
                     'fpm_version',
@@ -168,12 +176,18 @@ final readonly class PhpRuntimeInventory
                 throw new InvalidArgumentException('The observed PHP runtime inventories are not identical.');
             }
             $shared = $comparison;
+            $validatedRuntimes[] = [
+                'role' => self::ROLES[$index],
+                'php_version' => $phpVersion,
+                'fpm_version' => $fpmVersion,
+                'pcov_version' => $pcovVersion,
+                'package_versions' => $normalizedVersions,
+            ];
         }
         if (count($runtimes) !== count(self::ROLES)) {
             throw new InvalidArgumentException('The observed PHP runtime inventory is incomplete.');
         }
 
-        /** @var list<array{role:string,php_version:string,fpm_version:string,pcov_version:?string,package_versions:array<string,string>}> $runtimes */
-        return $runtimes;
+        return $validatedRuntimes;
     }
 }

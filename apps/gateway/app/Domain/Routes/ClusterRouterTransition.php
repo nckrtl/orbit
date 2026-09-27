@@ -8,7 +8,6 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
 use App\Models\NodeRole;
-use Illuminate\Support\Collection;
 
 /**
  * Reads a Router replacement from its stored `router` role rows. From `router-caddy` until
@@ -35,7 +34,7 @@ final readonly class ClusterRouterTransition
             ->whereNotNull('cluster_id')
             ->orderBy('id')
             ->get();
-        /** @var Collection<int, NodeRole> $active */
+
         $active = $rows
             ->filter(static fn (NodeRole $row): bool => $row->status === LifecycleStatus::Active)
             ->keyBy('cluster_id');

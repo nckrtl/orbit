@@ -121,9 +121,9 @@ final readonly class ProofEquivalenceReport
         if ($result === null) {
             throw new InvalidArgumentException('The equivalence report result is invalid.');
         }
-        /** @var list<array{path:string,previous_path:?string,change:string,classification:string}> $changedPaths */
+
         $changedPaths = $value['changed_paths'];
-        /** @var list<string> $errors */
+
         $errors = $value['errors'];
         $report = new self(
             $value['proved_sha'],

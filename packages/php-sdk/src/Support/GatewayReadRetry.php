@@ -49,7 +49,6 @@ final class GatewayReadRetry
         ) use ($handler): PromiseInterface {
             $startedAt = microtime(true);
 
-            /** @var PromiseInterface $first */
             $first = $handler($request, $options);
 
             if (! self::isRetryableRead($request, $options)) {
@@ -67,7 +66,6 @@ final class GatewayReadRetry
                     return Create::rejectionFor($reason);
                 }
 
-                /** @var PromiseInterface $retry */
                 $retry = $handler($request, $retryOptions);
 
                 return $retry;

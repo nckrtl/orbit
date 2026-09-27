@@ -6,7 +6,6 @@ namespace App\Domain\Logs;
 
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Models\AppInstance;
-use App\Models\AppInstanceEnvironmentValue;
 use App\Models\Process;
 use SensitiveParameter;
 
@@ -51,7 +50,7 @@ final readonly class LogRedactor
 
         if ($record instanceof AppInstance) {
             foreach ($record->environmentValues as $value) {
-                /** @var AppInstanceEnvironmentValue $value */
+
                 $environment[] = [$value->env_key, $value->env_value];
             }
         } else {

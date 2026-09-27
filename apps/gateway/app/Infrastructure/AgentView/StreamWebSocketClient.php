@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AgentView;
 
+use App\Support\ValidatedData;
+
 /**
  * A dependency-free RFC 6455 client on PHP streams, for the agent view subscriber.
  *
@@ -233,8 +235,7 @@ final class StreamWebSocketClient implements WebSocketClient
             $decoded = json_decode($payload, associative: true);
 
             if (is_array($decoded) && ! array_is_list($decoded)) {
-                /** @var array<string, mixed> $decoded */
-                $messages[] = $decoded;
+                $messages[] = ValidatedData::object($decoded);
             }
         }
 
@@ -311,8 +312,12 @@ final class StreamWebSocketClient implements WebSocketClient
                 return null;
             }
 
-            /** @var array{1: int} $unpacked */
             $unpacked = unpack('J', substr($this->buffer, 2, 8));
+            if (! is_array($unpacked) || ! is_int($unpacked[1] ?? null)) {
+                $this->close();
+
+                return null;
+            }
             $payloadLength = $unpacked[1];
             $offset = 10;
         }

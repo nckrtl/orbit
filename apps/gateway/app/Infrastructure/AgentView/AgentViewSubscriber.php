@@ -14,6 +14,7 @@ use App\Domain\WebSocket\WebSocketCredentials;
 use App\Domain\WebSocket\WebSocketHostname;
 use App\Infrastructure\Shared\StoredValue;
 use App\Models\Node;
+use App\Support\ValidatedData;
 use Closure;
 use Psr\Log\LoggerInterface;
 use Throwable;
@@ -937,8 +938,7 @@ final class AgentViewSubscriber
             return [];
         }
 
-        /** @var array<string, mixed> $data */
-        return $data;
+        return ValidatedData::object($data);
     }
 
     private function now(): float

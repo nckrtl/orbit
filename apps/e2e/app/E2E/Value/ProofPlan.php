@@ -75,7 +75,7 @@ final readonly class ProofPlan
     public static function fromJson(string $content): self
     {
         try {
-            /** @var mixed $decoded */
+
             $decoded = json_decode($content, associative: false, depth: 16, flags: JSON_THROW_ON_ERROR);
             if (! $decoded instanceof stdClass) {
                 throw new InvalidArgumentException('The proof plan must be a JSON object.');
@@ -86,8 +86,11 @@ final readonly class ProofPlan
                     throw new InvalidArgumentException("The proof plan section [{$section}] must be a list.");
                 }
             }
-            /** @var array<array-key, mixed> $plan */
+
             $plan = json_decode($content, associative: true, depth: 16, flags: JSON_THROW_ON_ERROR);
+            if (! is_array($plan)) {
+                throw new InvalidArgumentException('The proof plan must be a JSON object.');
+            }
         } catch (JsonException) {
             throw new InvalidArgumentException('The proof plan must be a JSON object.');
         }
@@ -168,7 +171,7 @@ final readonly class ProofPlan
         }
         $sections = [];
         foreach (self::SECTIONS as $section) {
-            /** @var mixed $declared */
+
             $declared = $plan[$section];
             if (! is_array($declared) || ! array_is_list($declared)) {
                 throw new InvalidArgumentException("The proof plan section [{$section}] must be a list.");
@@ -215,7 +218,7 @@ final readonly class ProofPlan
                     "Proof action [{$label}] must have exactly the keys id, node, argv, and timeout_seconds.",
                 );
             }
-            /** @var mixed $id */
+
             $id = $action['id'];
             if (
                 ! is_string($id)
@@ -232,14 +235,14 @@ final readonly class ProofPlan
                 throw new InvalidArgumentException("Proof action ID [{$id}] is declared more than once.");
             }
             $ids[$id] = true;
-            /** @var mixed $node */
+
             $node = $action['node'];
             if (! is_string($node) || ! $recipe->hasNode($node)) {
                 throw new InvalidArgumentException(
                     "Proof action [{$id}] must name a node from ".implode(', ', $recipe->nodeKeys()).'.',
                 );
             }
-            /** @var mixed $argv */
+
             $argv = $action['argv'];
             if (! is_array($argv) || $argv === [] || ! array_is_list($argv)) {
                 throw new InvalidArgumentException("Proof action [{$id}] must have a non-empty argument vector.");
@@ -258,7 +261,7 @@ final readonly class ProofPlan
                 }
                 $arguments[] = $argument;
             }
-            /** @var mixed $timeout */
+
             $timeout = $action['timeout_seconds'];
             if (! is_int($timeout) || $timeout < 1 || $timeout > self::MAX_TIMEOUT_SECONDS) {
                 throw new InvalidArgumentException(

@@ -63,13 +63,12 @@ final readonly class ToolDoctorProbe implements DoctorFamilyProbe
             ]);
         }
 
-        /** @var list<DoctorIssueData> $issues */
         $issues = [];
         $tools = $tools->values();
         $outcomes = $this->inspector->inspectMany(array_values($tools->all()));
 
         foreach ($tools as $index => $tool) {
-            /** @var Tool $tool */
+
             try {
                 $inspection = $outcomes[$index]->data();
                 if (! $inspection->installed) {

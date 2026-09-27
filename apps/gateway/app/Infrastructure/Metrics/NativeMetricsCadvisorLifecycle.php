@@ -61,7 +61,7 @@ final readonly class NativeMetricsCadvisorLifecycle implements MetricsCadvisorLi
     /** @param Closure(MetricsExporterProjectionItem): mixed $mutation */
     private function mutateFleet(Node $metricsNode, Closure $mutation): void
     {
-        /** @var list<array{item: MetricsExporterProjectionItem, state: MetricsExporterState}> $snapshots */
+
         $snapshots = [];
 
         foreach ($this->projection->for($metricsNode) as $item) {

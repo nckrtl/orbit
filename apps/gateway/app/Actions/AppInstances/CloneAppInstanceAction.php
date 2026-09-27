@@ -223,7 +223,7 @@ final readonly class CloneAppInstanceAction
         $home = "/home/{$user}";
 
         try {
-            /** @var AppInstance $target */
+
             $target = DB::transaction(function () use (
                 $candidate,
                 $node,

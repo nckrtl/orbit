@@ -44,7 +44,7 @@ final class UpdateClusterRequest extends FormRequest
 
     public function payload(): UpdateClusterData
     {
-        /** @var array<string, mixed> $validated */
+
         $validated = $this->validated();
 
         return new UpdateClusterData(

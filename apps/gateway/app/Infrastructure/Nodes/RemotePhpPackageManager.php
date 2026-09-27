@@ -104,7 +104,6 @@ final readonly class RemotePhpPackageManager
             return;
         }
 
-        /** @var array<string, list<string>> $profiles */
         $profiles = [];
 
         foreach ($versions as $version) {
@@ -145,7 +144,6 @@ final readonly class RemotePhpPackageManager
             return;
         }
 
-        /** @var array<string, list<string>> $profiles */
         $profiles = [];
 
         foreach ($versions as $version) {

@@ -110,8 +110,14 @@ final readonly class PrometheusProcessRuntimeStatusIndex implements ProcessRunti
         $cached = Cache::get(self::CACHE_KEY);
 
         if (is_array($cached)) {
-            /** @var array<string, string> $cached */
-            return $cached;
+            $states = [];
+            foreach ($cached as $name => $status) {
+                if (is_string($name) && is_string($status)) {
+                    $states[$name] = $status;
+                }
+            }
+
+            return $states;
         }
 
         try {

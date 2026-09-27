@@ -162,8 +162,7 @@ final readonly class FeatureTopology
             throw new InvalidArgumentException('The feature topology attempt purpose is invalid.');
         }
 
-        /** @var array<string, array{device:string,source:string,path:string}> $mounts */
-        $mounts = $value['mounts'];
+        $mounts = SerializedArrays::mounts($value['mounts']);
 
         $construction = TopologyConstructionInputs::fromArray($value['construction']);
 

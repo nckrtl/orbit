@@ -12,9 +12,9 @@ return new class extends Migration
 {
     public function up(): void
     {
-        /** @var array<int, string> $identities */
+
         $identities = [];
-        /** @var array<string, list<int>> $owners */
+
         $owners = [];
 
         foreach (DB::table('apps')->orderBy('id')->get(['id', 'repository_url']) as $app) {
@@ -24,7 +24,6 @@ return new class extends Migration
             $owners[$identity][] = $id;
         }
 
-        /** @var list<int> $conflictingIds */
         $conflictingIds = [];
 
         foreach ($owners as $ids) {

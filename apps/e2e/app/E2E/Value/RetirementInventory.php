@@ -35,7 +35,7 @@ final readonly class RetirementInventory
         public string $createdAt,
     ) {
         self::validateGroups($candidates, self::CANDIDATE_KINDS);
-        /** @var array<string, list<array<string, mixed>>> $preserved */
+
         self::validateGroups($preserved, self::PRESERVED_KINDS);
         if (DateTimeImmutable::createFromFormat(DATE_ATOM, $createdAt) === false) {
             throw new InvalidArgumentException('The retirement inventory timestamp is invalid.');
@@ -45,7 +45,7 @@ final readonly class RetirementInventory
     /** @return array{version: int, created_at: string, candidates: array<string, list<array<string, mixed>>>, preserved: array<string, list<array<string, mixed>>>} */
     public function toArray(): array
     {
-        /** @var array<string, list<array<string, mixed>>> $preserved */
+
         $preserved = $this->preserved;
 
         return [
@@ -69,10 +69,8 @@ final readonly class RetirementInventory
             throw new InvalidArgumentException('The retirement inventory is invalid.');
         }
 
-        /** @var array<string, list<array<string, mixed>>> $candidates */
-        $candidates = $value['candidates'];
-        /** @var array<string, list<array<string, mixed>>> $preserved */
-        $preserved = $value['preserved'];
+        $candidates = SerializedArrays::recordGroups($value['candidates']);
+        $preserved = SerializedArrays::recordGroups($value['preserved']);
 
         return new self($candidates, $preserved, $value['created_at']);
     }
@@ -280,7 +278,7 @@ final readonly class RetirementInventory
             }
         }
         if (isset($resource['metadata'])) {
-            /** @var array<array-key, mixed> $metadata */
+
             $metadata = $resource['metadata'];
             foreach ($metadata as $key => $value) {
                 if (! is_string($key) || ! is_string($value)) {
@@ -289,7 +287,7 @@ final readonly class RetirementInventory
             }
         }
         if (isset($resource['dependencies'])) {
-            /** @var array<array-key, mixed> $dependencies */
+
             $dependencies = $resource['dependencies'];
             if (! array_is_list($dependencies)) {
                 throw new InvalidArgumentException('Retirement inventory dependencies must be a list.');

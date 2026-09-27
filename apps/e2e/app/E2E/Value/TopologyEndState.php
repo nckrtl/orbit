@@ -57,7 +57,7 @@ final readonly class TopologyEndState
                 'The proof plan key ends_with must be an object with exactly the key nodes.',
             );
         }
-        /** @var mixed $nodes */
+
         $nodes = $declared[self::NODES];
         if (! is_array($nodes) || ! array_is_list($nodes) || $nodes === []) {
             throw new InvalidArgumentException('The proof plan key ends_with.nodes must be a non-empty list.');

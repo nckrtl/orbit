@@ -37,7 +37,7 @@ final readonly class PiEventLines
                 $buffer = substr($buffer, $newline + 1);
                 $event = json_decode($line, true);
                 if (is_array($event) && is_string($event['kind'] ?? null)) {
-                    /** @var array<string, mixed> $event */
+
                     yield $event;
                 }
             }

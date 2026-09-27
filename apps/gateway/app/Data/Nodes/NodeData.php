@@ -7,7 +7,7 @@ namespace App\Data\Nodes;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Models\Node;
-use Illuminate\Support\Collection;
+use App\Support\ValidatedData;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
@@ -41,27 +41,27 @@ final class NodeData extends Data
 
     public static function fromModel(Node $node): self
     {
-        /** @var ?string $platform */
+
         $platform = $node->getAttribute('platform');
-        /** @var ?string $architecture */
+
         $architecture = $node->getAttribute('architecture');
-        /** @var ?string $tld */
+
         $tld = $node->getAttribute('tld');
-        /** @var ?string $wireguardIp */
+
         $wireguardIp = $node->getAttribute('wireguard_ip');
-        /** @var ?string $lanIp */
+
         $lanIp = $node->getAttribute('lan_ip');
-        /** @var ?string $wireguardPublicKey */
+
         $wireguardPublicKey = $node->getAttribute('wireguard_public_key');
-        /** @var ?string $wireguardEndpointOverride */
+
         $wireguardEndpointOverride = $node->getAttribute('wireguard_endpoint_override');
-        /** @var ?string $dnsServerOverride */
+
         $dnsServerOverride = $node->getAttribute('dns_server_override');
-        /** @var ?string $sshHostFingerprint */
+
         $sshHostFingerprint = $node->getAttribute('ssh_host_fingerprint');
-        /** @var ?string $failedStep */
+
         $failedStep = $node->getAttribute('failed_step');
-        /** @var ?string $errorCode */
+
         $errorCode = $node->getAttribute('error_code');
 
         return new self(
@@ -69,20 +69,20 @@ final class NodeData extends Data
             clusterId: $node->cluster_id,
             name: $node->name,
             status: $node->status->value,
-            platform: $platform,
-            architecture: $architecture,
-            tld: $tld,
+            platform: ValidatedData::nullableString($platform),
+            architecture: ValidatedData::nullableString($architecture),
+            tld: ValidatedData::nullableString($tld),
             publicSshHost: $node->public_ssh_host,
             publicSshPort: $node->public_ssh_port,
             user: $node->user,
-            wireguardIp: $wireguardIp,
-            lanIp: $lanIp,
-            wireguardPublicKey: $wireguardPublicKey,
-            wireguardEndpointOverride: $wireguardEndpointOverride,
-            dnsServerOverride: $dnsServerOverride,
-            sshHostFingerprint: $sshHostFingerprint,
-            failedStep: $failedStep,
-            errorCode: $errorCode,
+            wireguardIp: ValidatedData::nullableString($wireguardIp),
+            lanIp: ValidatedData::nullableString($lanIp),
+            wireguardPublicKey: ValidatedData::nullableString($wireguardPublicKey),
+            wireguardEndpointOverride: ValidatedData::nullableString($wireguardEndpointOverride),
+            dnsServerOverride: ValidatedData::nullableString($dnsServerOverride),
+            sshHostFingerprint: ValidatedData::nullableString($sshHostFingerprint),
+            failedStep: ValidatedData::nullableString($failedStep),
+            errorCode: ValidatedData::nullableString($errorCode),
             roles: self::roles($node),
             settings: new NodeSettingsNormalizer()->fromStored($node->settings),
         );
@@ -91,26 +91,21 @@ final class NodeData extends Data
     /** @return list<string> */
     private static function roles(Node $node): array
     {
-        /** @var array<string, int> $roleOrder */
-        $roleOrder = collect(RoleName::cases())
-            ->map(static fn (RoleName $role): string => $role->value)
-            ->values()
-            ->flip()
-            ->map(static fn (int $index): int => $index)
-            ->all();
 
-        /** @var Collection<int, RoleName> $roles */
-        $roles = $node->roles->pluck('role');
+        $roleOrder = array_flip(array_map(
+            static fn (RoleName $role): string => $role->value,
+            RoleName::cases(),
+        ));
+        $roles = [];
+        foreach ($node->roles as $nodeRole) {
+            $roles[] = $nodeRole->role;
+        }
+        usort(
+            $roles,
+            static fn (RoleName $left, RoleName $right): int => $roleOrder[$left->value]
+                <=> $roleOrder[$right->value],
+        );
 
-        /** @var list<string> $sortedRoles */
-        $sortedRoles = $roles
-            ->sortBy(
-                static fn (RoleName $role): int => $roleOrder[$role->value] ?? PHP_INT_MAX,
-            )
-            ->map(static fn (RoleName $role): string => $role->value)
-            ->values()
-            ->all();
-
-        return $sortedRoles;
+        return array_map(static fn (RoleName $role): string => $role->value, $roles);
     }
 }

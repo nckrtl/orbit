@@ -69,7 +69,7 @@ final readonly class CancelRunningSubtaskAction
      */
     private function stopCheck(TaskGroup $group, Task $task): void
     {
-        /** @var TaskCheck|null $check */
+
         $check = $task->checks()->where('status', TaskCheckStatus::Running->value)->latest('id')->first();
         if (! $check instanceof TaskCheck) {
             return;

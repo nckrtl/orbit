@@ -54,7 +54,7 @@ final class StoreScheduleRequest extends FormRequest
 
     public function payload(): AddScheduleData
     {
-        /** @var array<string, mixed> $validated */
+
         $validated = $this->validated();
 
         return new AddScheduleData(

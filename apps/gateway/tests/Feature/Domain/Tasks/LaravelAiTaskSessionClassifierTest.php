@@ -76,7 +76,7 @@ it('returns the faked Choice as the next action', function (): void {
     Http::preventStrayRequests();
     Classification::fake([[
         'next_action' => new ChoiceAnswer(TaskSessionNextAction::DrainApproval->value, [], 0.91),
-    ]]);
+    ]])->preventStrayClassifications();
 
     $decision = app(LaravelAiTaskSessionClassifier::class)->classify(
         classifier_observation(pendingApprovalId: 'approval-1'),
@@ -88,7 +88,7 @@ it('returns the faked Choice as the next action', function (): void {
 });
 
 it('uses the package fake without a TypeSafe key', function (): void {
-    Classification::fake();
+    Classification::fake([[]])->preventStrayClassifications();
     config()->set('ai.providers.typesafe.key', null);
 
     expect(app(LaravelAiTaskSessionClassifier::class)->classify(classifier_observation())->action)
@@ -98,7 +98,7 @@ it('uses the package fake without a TypeSafe key', function (): void {
 it('selects drain_approval for a pending approval fixture', function (): void {
     Classification::fake([[
         'next_action' => new ChoiceAnswer(TaskSessionNextAction::DrainApproval->value, [], 0.88),
-    ]]);
+    ]])->preventStrayClassifications();
 
     expect(app(LaravelAiTaskSessionClassifier::class)->classify(
         classifier_observation(sessState: 'waiting', idle: false, pendingApprovalId: 'approval-9'),
@@ -108,7 +108,7 @@ it('selects drain_approval for a pending approval fixture', function (): void {
 it('relays a reviewer summary when the implementer is idle', function (): void {
     Classification::fake([[
         'next_action' => new ChoiceAnswer(TaskSessionNextAction::RelayReviewToImplementer->value, [], 0.84),
-    ]]);
+    ]])->preventStrayClassifications();
 
     expect(app(LaravelAiTaskSessionClassifier::class)->classify(
         classifier_observation(reviewerText: 'Please add tests, then stop.'),
@@ -118,7 +118,7 @@ it('relays a reviewer summary when the implementer is idle', function (): void {
 it('marks a verified subtask done when more work remains', function (): void {
     Classification::fake([[
         'next_action' => new ChoiceAnswer(TaskSessionNextAction::MarkSubtaskDone->value, [], 0.9),
-    ]]);
+    ]])->preventStrayClassifications();
 
     expect(app(LaravelAiTaskSessionClassifier::class)->classify(
         classifier_observation(prUrl: 'https://github.com/nckrtl/orbit/pull/21'),
@@ -128,7 +128,7 @@ it('marks a verified subtask done when more work remains', function (): void {
 it('settles a verified commit with a pull request', function (): void {
     Classification::fake([[
         'next_action' => new ChoiceAnswer(TaskSessionNextAction::SettleGroup->value, [], 0.93),
-    ]]);
+    ]])->preventStrayClassifications();
 
     $decision = app(LaravelAiTaskSessionClassifier::class)->classify(
         classifier_observation(
@@ -143,7 +143,7 @@ it('settles a verified commit with a pull request', function (): void {
 it('treats a Choice without confidence as a missing answer', function (): void {
     Classification::fake([[
         'next_action' => new ChoiceAnswer(TaskSessionNextAction::DrainApproval->value, []),
-    ]]);
+    ]])->preventStrayClassifications();
 
     expect(fn () => app(LaravelAiTaskSessionClassifier::class)->classify(classifier_observation()))
         ->toThrow(TaskSessionClassificationException::class, 'TypeSafe Jev did not return a confidence for the next_action Choice.');
@@ -152,7 +152,7 @@ it('treats a Choice without confidence as a missing answer', function (): void {
 it('treats an outcome Choice without confidence as a missing answer', function (): void {
     Classification::fake([[
         'outcome' => new ChoiceAnswer(TaskJevOutcome::AssistanceRequired->value, []),
-    ]]);
+    ]])->preventStrayClassifications();
 
     expect(fn () => app(LaravelAiTaskSessionClassifier::class)->classifyOutcome(
         classifier_observation(),
@@ -164,7 +164,7 @@ it('escalates when Choice confidence is below the gate', function (): void {
     config()->set('orbit.tasks.jev_confidence_threshold', 0.75);
     Classification::fake([[
         'next_action' => new ChoiceAnswer(TaskSessionNextAction::DrainApproval->value, [], 0.2),
-    ]]);
+    ]])->preventStrayClassifications();
 
     $decision = app(LaravelAiTaskSessionClassifier::class)->classify(
         classifier_observation(pendingApprovalId: 'approval-low'),
@@ -185,7 +185,7 @@ it('offers only the three ADR 0113 Jev outcomes', function (): void {
 });
 
 it('requires a passing composer check in the last five messages for completion', function (): void {
-    Classification::fake([['outcome' => new ChoiceAnswer(TaskJevOutcome::CompletedSuccessfully->value, [], 0.95)]]);
+    Classification::fake([['outcome' => new ChoiceAnswer(TaskJevOutcome::CompletedSuccessfully->value, [], 0.95)]])->preventStrayClassifications();
 
     $decision = app(LaravelAiTaskSessionClassifier::class)->classifyOutcome(
         classifier_observation(recentMessages: [[
@@ -199,7 +199,7 @@ it('requires a passing composer check in the last five messages for completion',
 });
 
 it('does not treat an assistant claim as composer check evidence', function (): void {
-    Classification::fake([['outcome' => new ChoiceAnswer(TaskJevOutcome::CompletedSuccessfully->value, [], 0.95)]]);
+    Classification::fake([['outcome' => new ChoiceAnswer(TaskJevOutcome::CompletedSuccessfully->value, [], 0.95)]])->preventStrayClassifications();
 
     $decision = app(LaravelAiTaskSessionClassifier::class)->classifyOutcome(
         classifier_observation(recentMessages: [[
@@ -215,7 +215,7 @@ it('does not treat an assistant claim as composer check evidence', function (): 
 describe('provider failures', function (): void {
     it('reports a provider error as a classification failure without the response body', function (): void {
         config()->set('ai.providers.typesafe.key', 'typesafe-test-key');
-        Classification::fake(fn () => throw new RequestException(new Response(new Psr7Response(500, [], '{"detail":"provider body"}'))));
+        Classification::fake(fn () => throw new RequestException(new Response(new Psr7Response(500, [], '{"detail":"provider body"}'))))->preventStrayClassifications();
 
         expect(fn () => app(LaravelAiTaskSessionClassifier::class)->classify(classifier_observation()))
             ->toThrow(TaskSessionClassificationException::class, 'TypeSafe Jev request failed (RequestException).');
@@ -228,7 +228,7 @@ describe('provider failures', function (): void {
 
     it('reports an unreachable provider as a classification failure', function (): void {
         config()->set('ai.providers.typesafe.key', 'typesafe-test-key');
-        Classification::fake(fn () => throw new ConnectionException('Connection refused'));
+        Classification::fake(fn () => throw new ConnectionException('Connection refused'))->preventStrayClassifications();
 
         expect(fn () => app(LaravelAiTaskSessionClassifier::class)->classify(classifier_observation()))
             ->toThrow(TaskSessionClassificationException::class, 'TypeSafe Jev request failed (ConnectionException).');
@@ -236,7 +236,7 @@ describe('provider failures', function (): void {
 
     it('names the missing key when a request fails without one', function (?string $key): void {
         config()->set('ai.providers.typesafe.key', $key);
-        Classification::fake(fn () => throw new RequestException(new Response(new Psr7Response(403, [], '{"detail":"Must supply an API key!"}'))));
+        Classification::fake(fn () => throw new RequestException(new Response(new Psr7Response(403, [], '{"detail":"Must supply an API key!"}'))))->preventStrayClassifications();
 
         expect(fn () => app(LaravelAiTaskSessionClassifier::class)->classifyOutcome(classifier_observation(), TaskThreadRole::Implementer))
             ->toThrow(TaskSessionClassificationException::class, 'TypeSafe Jev is not configured. Set TYPESAFE_API_KEY.');

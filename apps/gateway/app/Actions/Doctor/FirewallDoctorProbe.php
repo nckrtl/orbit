@@ -54,9 +54,9 @@ final readonly class FirewallDoctorProbe implements DoctorFamilyProbe
                 'unreachable',
             )]);
         }
-        /** @var list<DoctorIssueData|FirewallInspectionTarget> $entries */
+
         $entries = [];
-        /** @var list<FirewallInspectionTarget> $targets */
+
         $targets = [];
 
         foreach ($rules as $rule) {

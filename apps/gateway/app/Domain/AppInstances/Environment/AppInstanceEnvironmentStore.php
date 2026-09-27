@@ -24,7 +24,7 @@ final readonly class AppInstanceEnvironmentStore
         array $imported,
         bool $replace,
     ): AppInstanceEnvironmentResult {
-        /** @var AppInstanceEnvironmentResult $result */
+
         $result = DB::transaction(function () use ($expected, $imported, $replace): AppInstanceEnvironmentResult {
             $this->assertCurrent($expected, requireActiveNode: true);
             $stored = $this->storedValues($expected->appInstanceId);
@@ -74,7 +74,7 @@ final readonly class AppInstanceEnvironmentStore
         array $values,
         string $operation,
     ): AppInstanceEnvironmentResult {
-        /** @var AppInstanceEnvironmentResult $result */
+
         $result = DB::transaction(function () use ($expected, $values, $operation): AppInstanceEnvironmentResult {
             $this->assertCurrent($expected, requireActiveNode: false);
             $stored = $this->storedValues($expected->appInstanceId);
@@ -113,7 +113,7 @@ final readonly class AppInstanceEnvironmentStore
         array $keys,
         string $operation,
     ): AppInstanceEnvironmentResult {
-        /** @var AppInstanceEnvironmentResult $result */
+
         $result = DB::transaction(function () use ($expected, $keys, $operation): AppInstanceEnvironmentResult {
             $this->assertCurrent($expected, requireActiveNode: false);
             $stored = $this->storedValues($expected->appInstanceId);
@@ -146,7 +146,7 @@ final readonly class AppInstanceEnvironmentStore
         #[\SensitiveParameter]
         string $value,
     ): AppInstanceEnvironmentResult {
-        /** @var AppInstanceEnvironmentResult $result */
+
         $result = DB::transaction(function () use ($expected, $key, $value): AppInstanceEnvironmentResult {
             $this->assertCurrent($expected, requireActiveNode: false);
             $stored = $this->storedValues($expected->appInstanceId);
@@ -174,7 +174,7 @@ final readonly class AppInstanceEnvironmentStore
 
     public function synchronizationCapacity(AppInstanceEnvironmentContext $expected): int
     {
-        /** @var int $requiredCapacity */
+
         $requiredCapacity = DB::transaction(function () use ($expected): int {
             $this->assertCurrent($expected, requireActiveNode: true);
             $rows = DB::table('app_instance_environment_values')
@@ -205,7 +205,7 @@ final readonly class AppInstanceEnvironmentStore
     public function synchronizationSnapshot(
         AppInstanceEnvironmentContext $expected,
     ): AppInstanceEnvironmentSynchronizationSnapshot {
-        /** @var AppInstanceEnvironmentSynchronizationSnapshot $snapshot */
+
         $snapshot = DB::transaction(function () use ($expected): AppInstanceEnvironmentSynchronizationSnapshot {
             $this->assertCurrent($expected, requireActiveNode: true);
             $values = $this->storedValues($expected->appInstanceId);
@@ -264,7 +264,7 @@ final readonly class AppInstanceEnvironmentStore
 
     public function cloneSynchronizationCapacity(AppInstanceEnvironmentContext $expected): int
     {
-        /** @var int $requiredCapacity */
+
         $requiredCapacity = DB::transaction(function () use ($expected): int {
             $this->assertCloneCurrent($expected, requireActiveNode: true);
             $rows = DB::table('app_instance_environment_values')
@@ -290,7 +290,7 @@ final readonly class AppInstanceEnvironmentStore
     public function cloneSynchronizationSnapshot(
         AppInstanceEnvironmentContext $expected,
     ): AppInstanceEnvironmentSynchronizationSnapshot {
-        /** @var AppInstanceEnvironmentSynchronizationSnapshot $snapshot */
+
         $snapshot = DB::transaction(function () use ($expected): AppInstanceEnvironmentSynchronizationSnapshot {
             $this->assertCloneCurrent($expected, requireActiveNode: true);
 

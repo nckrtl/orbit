@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Tasks\T3;
 
+use App\Support\ValidatedData;
+
 /**
  * Tokens and line diff observed on one T3 thread snapshot.
  *
@@ -36,8 +38,8 @@ final readonly class T3ThreadMetrics
         if (! is_array($thread)) {
             return new self(null, null);
         }
+        $thread = ValidatedData::object($thread);
 
-        /** @var array<string, mixed> $thread */
         $split = self::split($thread);
 
         return new self(
@@ -205,8 +207,13 @@ final readonly class T3ThreadMetrics
     private static function walk(array $node, callable $visitor): void
     {
         if (self::isMap($node)) {
-            /** @var array<string, mixed> $node */
-            $visitor($node);
+            $object = [];
+            foreach ($node as $key => $value) {
+                if (is_string($key)) {
+                    $object[$key] = $value;
+                }
+            }
+            $visitor($object);
         }
 
         foreach ($node as $child) {

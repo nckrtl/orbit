@@ -42,7 +42,6 @@ final readonly class UpdateRouteAction
             );
         }
 
-        /** @var list<int> $targetIds */
         $targetIds = $route
             ->targets()
             ->orderBy('app_instance_id')
@@ -50,7 +49,7 @@ final readonly class UpdateRouteAction
             ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->values()
             ->all();
-
+        $targetIds = array_values($targetIds);
         $result = $this->environmentOperations->run(
             $targetIds,
             fn (): Route => $this->executeOwned($route, $data, $targetIds),
@@ -119,7 +118,6 @@ final readonly class UpdateRouteAction
             return $this->replacePending($route, $domain);
         }
 
-        /** @var Route $updated */
         $updated = DB::transaction(function () use ($route, $data): Route {
             $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
             $attributes = [];
@@ -165,7 +163,7 @@ final readonly class UpdateRouteAction
 
     private function replacePending(Route $route, string $domain): Route
     {
-        /** @var Route $replacement */
+
         $replacement = DB::transaction(function () use ($route, $domain): Route {
             $locked = Route::query()->with('targets')->lockForUpdate()->findOrFail($route->id);
 

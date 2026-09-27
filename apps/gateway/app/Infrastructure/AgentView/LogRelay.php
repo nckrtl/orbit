@@ -53,7 +53,7 @@ final readonly class LogRelay
      */
     public function relay(array $batch): int
     {
-        /** @var array<string, list<string>|null> $values Environment values by stream, read once per run. */
+
         $values = [];
 
         foreach ($batch['items'] as $item) {
@@ -95,7 +95,6 @@ final readonly class LogRelay
             return;
         }
 
-        /** @var list<string> $lines */
         $lines = $lines === [] ? [] : explode("\n", $this->redactor->redact(implode("\n", $lines), $values[$streamId]));
         $cursor = $this->streams->cursor($streamId);
         $sequence = $cursor->sequence ?? 0;

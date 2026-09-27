@@ -1220,13 +1220,21 @@ class ReviewGateTest(unittest.TestCase):
             seed.write_text(f'#!/bin/sh\nprintf "{name} %s\\n" "$*" >> "$GATE_TEST_SEEDS"\n')
             seed.chmod(0o755)
         for project in cache.PROJECTS:
-            (self.root / project).mkdir(parents=True)
+            directory = self.root / project
+            directory.mkdir(parents=True)
+            (directory / '.gitkeep').write_text('')
+        (self.root / '.gitignore').write_text('.orbit-tia/\n')
         self.commit_change('gate fixture')
         fake_bin = Path(self.temporary.name) / 'fake-bin'
         fake_bin.mkdir()
         composer = fake_bin / 'composer'
         composer.write_text("""#!/bin/sh
 printf '%s|%s\\n' "$PWD" "$*" >> "$GATE_TEST_CALLS"
+if [ "$1" = test:affected ]; then
+    tia_directory="${ORBIT_TIA_DIRECTORY:-.orbit-tia}"
+    mkdir -p "$tia_directory"
+    printf '[]\n' > "$tia_directory/affected.json"
+fi
 if [ "$1" = check ] && [ "${PWD##*/}" = e2e ]; then
     case "$GATE_TEST_MODE" in
         fail) exit 7 ;;

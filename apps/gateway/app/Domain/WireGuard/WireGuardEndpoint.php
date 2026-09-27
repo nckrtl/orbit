@@ -17,7 +17,7 @@ final class WireGuardEndpoint
 
     public static function isValid(string $endpoint): bool
     {
-        /** @var array<int, string> $matches */
+
         $matches = [];
 
         if ($endpoint === '' || preg_match('/[\x00-\x20\x7f]/', $endpoint) === 1) {

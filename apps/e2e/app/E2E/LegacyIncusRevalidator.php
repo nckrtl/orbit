@@ -53,7 +53,6 @@ final readonly class LegacyIncusRevalidator
             }
         }
 
-        /** @var array<string, list<string>> $commands */
         $commands = [];
         $references = [];
         foreach ($groups as $kind => $resources) {
@@ -67,7 +66,7 @@ final readonly class LegacyIncusRevalidator
         try {
             $results = Process::pool(function (Pool $pool) use ($commands): void {
                 foreach ($commands as $label => $command) {
-                    /** @var list<string> $command */
+
                     $pool->as($label)->timeout(300)->command($command);
                 }
             })->run()->collect()->all();
@@ -100,7 +99,6 @@ final readonly class LegacyIncusRevalidator
             $current[$kind][] = $resource;
         }
 
-        /** @var array<string, list<array<string, mixed>>> $current */
         return $current;
     }
 
@@ -118,7 +116,7 @@ final readonly class LegacyIncusRevalidator
         }
 
         $command = $this->queryCommand($kind, $expected);
-        /** @var list<string> $command */
+
         $result = $this->run($command);
         $live = $this->classifyResult($result);
         if ($live === null) {
@@ -214,14 +212,15 @@ final readonly class LegacyIncusRevalidator
         if (! is_array($value) || array_is_list($value)) {
             throw new RuntimeException('Incus returned an invalid live resource object.');
         }
-        foreach (array_keys($value) as $key) {
+        $object = [];
+        foreach ($value as $key => $item) {
             if (! is_string($key)) {
                 throw new RuntimeException('Incus returned an invalid live resource object.');
             }
+            $object[$key] = $item;
         }
 
-        /** @var array<string, mixed> $value */
-        return $value;
+        return $object;
     }
 
     /**
@@ -275,8 +274,7 @@ final readonly class LegacyIncusRevalidator
         if (! is_array($liveMetadata) || $liveMetadata !== [] && array_is_list($liveMetadata)) {
             throw new RuntimeException('The live Incus resource metadata changed.');
         }
-        /** @var array<string, mixed> $expectedMetadata */
-        /** @var array<string, mixed> $liveMetadata */
+
         if ($this->stableMetadata($expectedMetadata) !== $this->stableMetadata($liveMetadata)) {
             throw new RuntimeException('The live Incus resource metadata changed.');
         }

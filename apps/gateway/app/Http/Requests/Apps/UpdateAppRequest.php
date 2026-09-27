@@ -93,7 +93,7 @@ final class UpdateAppRequest extends FormRequest
 
     public function payload(): UpdateAppData
     {
-        /** @var array<string, mixed> $validated */
+
         $validated = $this->validated();
 
         return new UpdateAppData(

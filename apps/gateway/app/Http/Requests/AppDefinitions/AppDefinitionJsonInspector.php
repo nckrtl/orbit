@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\AppDefinitions;
 
+use App\Support\ValidatedData;
 use JsonException;
 use stdClass;
 use UnexpectedValueException;
@@ -108,8 +109,7 @@ final readonly class AppDefinitionJsonInspector
             $this->fail('The request body must be a valid JSON object.');
         }
 
-        /** @var array<string, mixed> $value */
-        return $value;
+        return ValidatedData::object($value);
     }
 
     /** @param list<string> $allowed */
@@ -122,7 +122,7 @@ final readonly class AppDefinitionJsonInspector
 
     private function hasDuplicateObjectKeys(#[\SensitiveParameter] string $json): bool
     {
-        /** @var list<array{type: string, keys?: array<string, true>, expects_key?: bool}> $stack */
+
         $stack = [];
         $length = strlen($json);
 

@@ -28,8 +28,8 @@ final readonly class ObservedPhpInputs
     public array $phases;
 
     /**
-     * @param  list<array{role:string,php_version:string,fpm_version:string,pcov_version:string,package_versions:array<string,string>}>  $runtimes
-     * @param  array{setup:list<array{role:string,process_type:string,processes:list<array{id:string,started_at:string,finished_at:string}>,paths:list<string>}>,acceptance:list<array{role:string,process_type:string,processes:list<array{id:string,started_at:string,finished_at:string}>,paths:list<string>}>}  $phases
+     * @param  array<array-key, mixed>  $runtimes
+     * @param  array<array-key, mixed>  $phases
      */
     public function __construct(array $runtimes, array $phases)
     {
@@ -63,9 +63,8 @@ final readonly class ObservedPhpInputs
             throw new InvalidArgumentException('The observed PHP input schema is invalid.');
         }
 
-        /** @var list<array{role:string,php_version:string,fpm_version:string,pcov_version:string,package_versions:array<string,string>}> $runtimes */
         $runtimes = $value['runtimes'];
-        /** @var array{setup:list<array{role:string,process_type:string,processes:list<array{id:string,started_at:string,finished_at:string}>,paths:list<string>}>,acceptance:list<array{role:string,process_type:string,processes:list<array{id:string,started_at:string,finished_at:string}>,paths:list<string>}>} $phases */
+
         $phases = $value['phases'];
 
         return new self($runtimes, $phases);
