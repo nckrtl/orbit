@@ -58,9 +58,9 @@ Pages can optionally declare `covers:` globs in their frontmatter. Globs associa
 
 At each subtask handoff, Orbit's task check runs `bin/docs-impact` on the candidate diff from the group's start commit. If the diff impacts a page that it does not change, `bin/review-check` fails and lists that page. A reviewer may confirm an exception only when the candidate diff adds the matching `page: reason` line to `docs/.docs-unaffected`. This committed record makes the exception auditable and does not waive generator checks.
 
-The first subtask in every Orbit group is docs-first. If it finds `docs_required`, it updates the listed pages or runs the named generator. If it finds `no_docs_change`, it submits the JSON report as evidence, and the reviewer confirms the report and completeness of the planned paths. That report is the fast path; the subtask does not need a prose defense of its conclusion.
+The first subtask in every Orbit group is docs-first, before any implementation subtask. It runs `bin/docs-impact` against the group's start commit and every planned path named in the brief, including paths that do not exist yet. If it finds `docs_required`, it updates the listed pages or runs the named generator. If it finds `no_docs_change`, it submits the complete JSON report as evidence. The reviewer confirms that the report and planned paths are complete before implementation starts. That report is the fast path; the subtask does not need a prose defense of its conclusion. The [Orbit Tasks skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) carries this repository policy.
 
-Orbit documents this repository policy today in `.agents/skills/creating-tasks`. A separate change will move it to an `orbit-tasks` skill. The first version does not use Jev.
+The first version does not use Jev.
 
 ## Rejected alternatives
 
