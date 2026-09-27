@@ -10,7 +10,7 @@ In the context of removing an AppInstance with owned processes and schedules, fa
 
 ## Status
 
-Accepted on 2026-09-06. Extends [ADR 0036](/decisions/0036-support-only-appinstances). Supersedes [ADR 0013](/decisions/0013-native-systemd-schedule-management) for AppInstance target-deletion guards and waiting for active Schedule execution during cascading AppInstance removal.
+Accepted on 2026-09-06. Extends [ADR 0036](/decisions/0036-support-only-appinstances). Supersedes [ADR 0013](/reference/schedules) for AppInstance target-deletion guards and waiting for active Schedule execution during cascading AppInstance removal.
 
 ## Context
 
@@ -44,6 +44,6 @@ Processes are being given AppInstance ownership as legacy Instance and Workspace
 ## Affects
 
 - Components: apps/gateway, packages/php-sdk, apps/cli
-- ADRs: extends [ADR 0036](/decisions/0036-support-only-appinstances); supersedes [ADR 0013](/decisions/0013-native-systemd-schedule-management) for cascading AppInstance removal
+- ADRs: extends [ADR 0036](/decisions/0036-support-only-appinstances); supersedes [ADR 0013](/reference/schedules) for cascading AppInstance removal
 - Detail: docs/reference/appinstance-removal.md
 - Verify: `composer docs-lint`; implementation conformance through Gateway lifecycle tests and declared Incus cascade-removal acceptance

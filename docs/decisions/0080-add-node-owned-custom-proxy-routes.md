@@ -12,7 +12,7 @@ Orbit stores a second Route kind for Node-local services. A custom proxy Route o
 
 Proposed.
 
-This proposal extends [ADR 0009](/decisions/0009-clustered-app-instance-routing) and [ADR 0064](/decisions/0064-name-application-endpoints-as-domains) with a Node-owned Route kind. It extends [ADR 0069](/decisions/0069-allow-node-process-targets) so a Node Process can receive a hostname without a synthetic App instance. It does not change App instance Route generation, Cluster TLD precedence, or platform names.
+This proposal extends [ADR 0009](/decisions/0009-clustered-app-instance-routing) and [ADR 0064](/decisions/0064-name-application-endpoints-as-domains) with a Node-owned Route kind. It extends [ADR 0069](/reference/app-processes-and-schedules#owners) so a Node Process can receive a hostname without a synthetic App instance. It does not change App instance Route generation, Cluster TLD precedence, or platform names.
 
 ## Context
 
@@ -39,7 +39,7 @@ A dummy App instance would attach the App instance lifecycle, PHP handle, and re
 
 ## Rejected alternatives
 
-- Synthetic App instance for Executor: rejected because App instance lifecycle, PHP/Caddy handles, and removal cascade are the wrong owner for a Node service. [ADR 0069](/decisions/0069-allow-node-process-targets) already rejected synthetic App instances for Node Processes.
+- Synthetic App instance for Executor: rejected because App instance lifecycle, PHP/Caddy handles, and removal cascade are the wrong owner for a Node service. [ADR 0069](/reference/app-processes-and-schedules#owners) already rejected synthetic App instances for Node Processes.
 - A separate proxy resource outside Routes: rejected because hostname uniqueness, `route:list` / `route:show`, private DNS, and Doctor would duplicate the Route identity.
 - Reusing `isProxy()` HTTPS hop sites for loopback: rejected because those sites force `https://` plus Route SNI and would not reach an HTTP Docker publish.
 - Operator-supplied Caddyfile or certificate files: rejected because Gateway intent would leave the unmanaged sidecar path in place.
@@ -57,6 +57,6 @@ A dummy App instance would attach the App instance lifecycle, PHP handle, and re
 ## Affects
 
 - Components: apps/cli, apps/gateway, packages/php-sdk, apps/docs
-- ADRs: extends [ADR 0009](/decisions/0009-clustered-app-instance-routing), [ADR 0064](/decisions/0064-name-application-endpoints-as-domains), and [ADR 0069](/decisions/0069-allow-node-process-targets)
+- ADRs: extends [ADR 0009](/decisions/0009-clustered-app-instance-routing), [ADR 0064](/decisions/0064-name-application-endpoints-as-domains), and [ADR 0069](/reference/app-processes-and-schedules#owners)
 - Detail: [Routes](/reference/routes#custom-proxy-routes)
 - Verify: Gateway create, uniqueness, projection, destroy, Node and Process refusal tests; CLI and SDK contract tests; `composer docs-lint`
