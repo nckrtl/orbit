@@ -300,6 +300,14 @@ These reasons explain the design. Check them before you propose a change.
 
 The Gateway process serves the API. Removing the last `gateway` assignment and adding it again would drop the Gateway's authority and the `gateway.orbit` DNS record in between, so the second request might not run. Relocate keeps one active assignment for the whole move. Two active `gateway` assignments are rejected, because the fleet needs one authority and one address. The machine that runs the Gateway process keeps its authority during a move, because the bootstrap records it as the serving host.
 
+### One relocate action for every relocatable role
+
+Each role definition states whether the role is relocatable. Orbit does not infer it from singleton and mutable, because generic add and remove is a wider contract than a move. `gateway`, `websocket`, and `metrics` are relocatable. One relocate action runs the shared steps for all three: the singleton lock, the source check, the settings copy, and the assignment transfer. Role-specific work runs as a step for that role inside the same action. A new relocatable role adds the flag and its step, not a new command.
+
+### The target's credentials win
+
+A target that already holds working role credentials keeps them. Relocate copies only the credentials the target lacks, because overwriting a working identity would break its clients.
+
 ### Relocate moves no secrets
 
 The checkout, the SQLite database, the Orbit CA, and the SSH keys live on the machine that runs the Gateway process. Copying them inside relocate would turn it into a secret-moving installer. You copy that state yourself and then converge the Gateway web stack on the new machine.
