@@ -4373,6 +4373,23 @@
             ]
         },
         {
+            "path": "docs/decisions/0173-record-and-label-jev-decisions.md",
+            "title": "ADR 0173: Record and label every Jev decision",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0117",
+                "0173"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -4570,7 +4587,8 @@
                 "0166",
                 "0167",
                 "0168",
-                "0169"
+                "0169",
+                "0173"
             ]
         },
         {
@@ -5829,7 +5847,8 @@
                 "0164",
                 "0165",
                 "0167",
-                "0169"
+                "0169",
+                "0173"
             ]
         },
         {
