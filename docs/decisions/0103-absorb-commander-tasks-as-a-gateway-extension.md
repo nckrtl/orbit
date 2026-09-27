@@ -74,6 +74,6 @@ A read-only Gateway relay subscribes to one persisted T3 thread over WebSocket a
 ## Affects
 
 - Components: apps/gateway, apps/docs
-- ADRs: [ADR 0086](/reference/mcp#why-it-works-this-way), [ADR 0036](/decisions/0036-support-only-appinstances), [ADR 0098](/reference/github-app#why-it-works-this-way)
+- ADRs: [ADR 0086](/reference/mcp#why-it-works-this-way), [ADR 0036](/domains/applications#one-application-model), [ADR 0098](/reference/github-app#why-it-works-this-way)
 - Detail: [Tasks](/reference/tasks)
 - Verify: `apps/gateway/tests/Feature/Api/TasksRoutesTest.php`, `apps/gateway/tests/Feature/Domain/Tasks/TaskSchedulerTest.php`, `apps/gateway/tests/Feature/Domain/Tasks/TaskSchedulerTickTest.php`, `apps/gateway/tests/Feature/Domain/Tasks/TaskWorkspaceProvisionerTest.php`, `apps/gateway/tests/Feature/Domain/Tasks/T3AgentSpawnerTest.php`, `apps/gateway/tests/Feature/Domain/Tasks/CompleteTaskGroupActionTest.php`, `apps/gateway/tests/Feature/Domain/Tasks/TaskGroupMetricsRefresherTest.php`, `apps/gateway/tests/Feature/Infrastructure/Tasks/HttpT3DispatcherTest.php`, `apps/gateway/tests/Feature/Infrastructure/Tasks/HttpT3ThreadReaderTest.php`, `apps/gateway/tests/Feature/Infrastructure/Tasks/HttpCoderSettleNotifierTest.php`, `apps/gateway/tests/Feature/Infrastructure/Tasks/HttpTaskPullRequestWatcherTest.php`, `apps/gateway/tests/Feature/Infrastructure/Tasks/RemoteTaskWorkspaceDiffReaderTest.php`, `apps/gateway/tests/Feature/Database/TaskTablesMigrationTest.php`, `apps/gateway/tests/Unit/Domain/Tasks/T3ThreadMetricsTest.php`
