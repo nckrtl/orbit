@@ -40,9 +40,6 @@ it('renders grafana, publication, and secret contracts', function (): void {
     expect(new GrafanaConfigRenderer()->datasource())
         ->toBe(<<<'YAML'
             apiVersion: 1
-            deleteDatasources:
-              - name: Prometheus
-                orgId: 1
             prune: true
             datasources:
               - name: orbit-prometheus

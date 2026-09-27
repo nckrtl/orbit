@@ -12,7 +12,7 @@ covers:
 
 # Service metrics
 
-The [Metrics role](/reference/metrics) also collects service metrics. It scrapes Caddy's own metrics on selected `ingress` Nodes. It runs Cbox FPM Exporter on selected `app-prod` Nodes.
+The [Metrics role](/reference/metrics) also collects service metrics. It scrapes Caddy's own metrics on selected `ingress` Nodes. It runs Cbox FPM Exporter on selected `app-prod` Nodes. Dashboard generation uses the same service-metrics projection as collection and selection.
 
 ## Selection
 

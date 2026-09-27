@@ -46,7 +46,6 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
         private string $orbitHome,
         private UfwStoredRuleParser $storedFirewallParser = new UfwStoredRuleParser,
         private SystemdVpnOrderingDropIn $vpnOrdering = new SystemdVpnOrderingDropIn,
-        private RetiredDnsmasqSnippets $stockDnsSnippets = new RetiredDnsmasqSnippets,
         private UplinkDnsResolvers $uplinkResolvers = new UplinkDnsResolvers,
         private GatewayPrivateDnsResolver $resolver = new GatewayPrivateDnsResolver,
     ) {}
@@ -250,7 +249,6 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
     private function convergeDns(BootstrapGatewayData $data): void
     {
         $this->removeDnsOrderingDropIn();
-        $this->retireStockDnsSnippets();
         $configuration = implode(PHP_EOL, [
             '# Managed by Orbit.',
             'listen-address='.VpnDnsmasqBackendListen::Address,
@@ -318,23 +316,6 @@ final readonly class NativeGatewayVpnConverger implements GatewayVpnConverger
                     exit 1
                 fi
                 BASH,
-        );
-    }
-
-    /**
-     * Retires the stock dnsmasq snippets that would add extra listen
-     * addresses beside the managed loopback backend. `dnsmasq --test`
-     * accepts a mixed conf directory, so only the restart in the fragment
-     * step exposes a listen conflict. That restart runs because
-     * `systemctl is-active` also reports a failed unit as inactive.
-     */
-    private function retireStockDnsSnippets(): void
-    {
-        $this->run(
-            step: 'vpn-dns-conflicts',
-            errorCode: 'vpn.dns_config_failed',
-            arguments: $this->stockDnsSnippets->arguments(),
-            input: $this->stockDnsSnippets->script(),
         );
     }
 

@@ -3,7 +3,8 @@ title: "PHP runtimes"
 description: "How Orbit selects a PHP version for an Instance, runs shared development and dedicated production PHP-FPM services, and refreshes production OPcache."
 covers:
   - apps/gateway/app/Domain/AppInstances/{AppInstancePhpVersionCatalog,ProductionPhpRuntimeIdentity,ProductionPhpRuntimeManager}.php
-  - apps/gateway/app/Infrastructure/AppInstances/{RemoteProductionPhpRuntimeManager,ProductionPhpRuntimeConfigRenderer,ProductionPhpRuntimeConfiguration}.php
+  - apps/gateway/app/Infrastructure/AppInstances/{RemoteProductionPhpRuntimeManager,RemoteProductionAppInstanceSourceLifecycle,ProductionPhpRuntimeConfigRenderer,ProductionPhpRuntimeConfiguration}.php
+  - apps/gateway/app/Infrastructure/AppProd/{RemoteAppProdPhpFpmManager,RemoteAppProdSourceManager}.php
   - apps/gateway/app/Infrastructure/Nodes/{PhpFpmRuntimeIniRenderer,RemotePhpPackageManager}.php
   - apps/gateway/app/Infrastructure/AppDev/{AppDevPhpFpmConfigRenderer,RemoteAppDevPhpFpmManager}.php
   - apps/gateway/app/Infrastructure/SharedOrbitDirectory.php
@@ -26,6 +27,8 @@ The Gateway reads the source's `composer.json` once, before it publishes the run
 | The version is missing from the Sury source | `app-dev.php_package_source_unavailable` or `app-prod.php_package_source_unavailable`. |
 
 The Instance records the selected version in its [source profile](/domains/applications#provision-the-application-endpoint). There is no input or output field to choose a version. The Node role installs, configures, and removes every selected version.
+
+Orbit does not recover missing source profiles on older Instances. ADR 0177 records the no-legacy-support rule.
 
 ## Development runtime
 

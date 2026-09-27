@@ -6,13 +6,9 @@ namespace App\Infrastructure\AppInstances;
 
 use App\Actions\Routes\CreateRouteAction;
 use App\Data\AppInstances\CreateAppInstanceData;
-use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
-use App\Domain\AppInstances\DevelopmentSourceProfile;
 use App\Domain\AppInstances\ProductionAppInstanceProvisioner;
-use App\Domain\AppInstances\ProductionAppInstanceSourceLifecycle;
-use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\App;
 use App\Models\AppInstance;
@@ -20,11 +16,7 @@ use App\Models\Node;
 
 final readonly class NativeProductionAppInstanceProvisioner implements ProductionAppInstanceProvisioner
 {
-    public function __construct(
-        private AppDevSourceOperationLock $sourceLock,
-        private ProductionAppInstanceSourceLifecycle $source,
-        private CreateRouteAction $routes,
-    ) {}
+    public function __construct(private CreateRouteAction $routes) {}
 
     /** @return array{appInstance: AppInstance, created: bool} */
     public function execute(CreateAppInstanceData $data, App $app, Node $node, ?string $root): array
@@ -51,13 +43,6 @@ final readonly class NativeProductionAppInstanceProvisioner implements Productio
                 "{$expectedHome}/releases/initial",
             );
             $this->routes->ensureForAppInstance($existing, $data->domain);
-
-            if ($data->recoverSourceProfile && $existing->source_is_laravel === null) {
-                $existing = $this->sourceLock->synchronized(
-                    $node->id,
-                    fn (): AppInstance => $this->recoverActiveSourceProfile($existing),
-                );
-            }
 
             return ['appInstance' => $existing->load('routes.targets'), 'created' => false];
         }
@@ -97,36 +82,6 @@ final readonly class NativeProductionAppInstanceProvisioner implements Productio
         ) {
             throw $this->conflict('instance.placement_conflict', 'AppInstance placement is immutable.');
         }
-    }
-
-    private function recoverActiveSourceProfile(AppInstance $appInstance): AppInstance
-    {
-        $appInstance->refresh()->loadMissing(['app', 'node']);
-
-        if ($appInstance->source_is_laravel !== null) {
-            return $appInstance;
-        }
-
-        $profile = $this->source->inspectProfile($appInstance);
-        $appInstance->update([
-            'source_is_laravel' => $profile->laravel,
-            ...$this->recoveredRuntime($appInstance, $profile),
-        ]);
-
-        return $appInstance->refresh();
-    }
-
-    /** @return array<string, string> */
-    private function recoveredRuntime(AppInstance $appInstance, DevelopmentSourceProfile $profile): array
-    {
-        if ($appInstance->selected_php_version !== null || ! is_string($profile->phpVersion)) {
-            return [];
-        }
-
-        return [
-            'selected_php_version' => $profile->phpVersion,
-            ...ProductionPhpRuntimeIdentity::forProvisioning($appInstance, $profile->phpVersion)->attributes(),
-        ];
     }
 
     private function conflict(string $errorCode, string $message): ResourceOperationException

@@ -14,7 +14,7 @@ covers:
 
 # Metrics role
 
-The `metrics` role runs Prometheus and Grafana on one Node. It collects metrics from the selected managed Nodes. Open the dashboards at `https://metrics.orbit`. [`metrics`](/cli/metrics) lists the commands. [Service metrics](/reference/service-metrics) adds Caddy and PHP-FPM metrics to the same role.
+The `metrics` role runs Prometheus and Grafana on one Node. It collects metrics from the selected managed Nodes. The Gateway's managed-Node eligibility boundary is shared with Node-agent installation. Open the dashboards at `https://metrics.orbit`. [`metrics`](/cli/metrics) lists the commands. [Service metrics](/reference/service-metrics) adds Caddy and PHP-FPM metrics to the same role.
 
 ## What runs where
 

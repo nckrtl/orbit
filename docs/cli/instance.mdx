@@ -87,6 +87,14 @@ orbit instance:create <project> <node> <name> [options]
 | `--domain=HOST` | generated | Explicit Route domain for the development source. Without it, Orbit generates a domain from the active Cluster TLD, then the Node TLD. |
 | `--branch=BRANCH` | see [branch selection](/domains/applications#create-a-development-instance) | Explicit source branch. |
 
+Development placement and branch selection follow the requested name.
+
+| Creation input | Managed placement | Selected branch |
+| --- | --- | --- |
+| `default` without `--branch` | `<node-apps-root>/<app-slug>/default` | The Project `default_branch`. |
+| Another name without `--branch` | `<node-apps-root>/<app-slug>/<name>` | The matching remote branch, or a new branch from the fetched `default_branch` commit. |
+| Any name with `--branch` | The placement for the requested name | The existing remote branch, or a new branch from the fetched `default_branch` commit when `--branch` matches a non-default Instance name. |
+
 ```bash
 orbit instance:create 4 7 default
 orbit instance:create 4 7 feature-one --branch=release --domain=feature.example.test

@@ -27,7 +27,7 @@ Creating a new file works, and overwriting from a regular file works. Only an ov
 
 ## Solution
 
-Never point a remote `install` from standard input at a live path. Remove any stale `<path>.orbit-candidate`, write the candidate, and then `mv -fT` it onto the target. The move is atomic, which running containers and systemd units need anyway. `MetricsSshExecutor::publishFile()`, `MetricsExporterSshExecutor::publishConfiguration()`, and `NodeAgentSshExecutor::publishFile()` use this sequence. `RemoteProcessRuntimeManager` writes each unit to its own candidate directory, `/etc/orbit/systemd-candidates`, first.
+Never point a remote `install` from standard input at a live path. Remove any stale `<path>.orbit-candidate`, write the candidate, and then `mv -fT` it onto the target. The move is atomic, which running containers and systemd units need anyway. Metrics SSH publishers, `MetricsExporterSshExecutor::publishConfiguration()`, and `NodeAgentSshExecutor::publishFile()` use this sequence. `RemoteProcessRuntimeManager` writes each unit to its own candidate directory, `/etc/orbit/systemd-candidates`, first. Metrics exporter SSH lifecycle operations now delegate file publication to the shared publisher.
 
 ## Limits
 
