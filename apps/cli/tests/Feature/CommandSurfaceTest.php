@@ -901,7 +901,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'realtime:tail' => [[], ['types' => null, 'json' => false]],
         'route:list' => [[], ['json' => false]],
         'route:create' => [
-            ['app', 'domain'],
+            ['instance', 'domain'],
             [
                 'publication' => 'private',
                 'node' => null,
@@ -999,7 +999,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'metrics:enable', 'project:excluded-node:add', 'project:excluded-node:remove' => ['node'],
             'node:excluded-project:add', 'node:excluded-project:remove' => ['project'],
             'analytics:update' => ['version'],
-            'route:create' => ['app', 'domain'],
+            'route:create' => ['instance', 'domain'],
             'tasks:agents', 'tasks:cancel', 'tasks:complete', 'tasks:show', 'tasks:update' => ['group'],
             'tasks:comment:create', 'tasks:comment:list', 'tasks:subtask:cancel', 'tasks:subtask:destroy', 'tasks:subtask:update' => ['group', 'subtask'],
             'tasks:create' => ['title'],
@@ -1258,7 +1258,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'realtime:show' => [[], ...$profileMissing],
         'realtime:tail' => [[], ...$profileMissing],
         'route:list' => [[], ...$profileMissing],
-        'route:create' => [['app' => '1', 'domain' => 'app.test'], ...$profileMissing],
+        'route:create' => [['instance' => '1', 'domain' => 'app.test'], ...$profileMissing],
         'route:destroy' => [['route' => '1'], ...$profileMissing],
         'route:show' => [['route' => '1'], ...$profileMissing],
         'route:target:unset' => [['route' => '1'], ...$profileMissing],

@@ -38,11 +38,27 @@ afterEach(function (): void {
     new Filesystem()->deleteDirectory($this->orbitHome);
 });
 
+it('uses the instance argument to create a Route for Instance 12 at shop.test', function (): void {
+    $mock = MockClient::global([CreateRouteRequest::class => route_mock_response(201)]);
+
+    $this->artisan('route:create', [
+        'instance' => '12',
+        'domain' => 'shop.test',
+        '--json' => true,
+    ])->assertExitCode(0);
+
+    expect($mock->getLastRequest()?->body()->all())->toBe([
+        'domain' => 'shop.test',
+        'publication' => 'private',
+        'app_instance_id' => 12,
+    ]);
+});
+
 it('creates an app Route for an Instance while transporting publication intent', function (): void {
     $mock = MockClient::global([CreateRouteRequest::class => route_mock_response(201)]);
 
     $this->artisan('route:create', [
-        'app' => '7',
+        'instance' => '7',
         'domain' => 'Odd_Value',
         '--publication' => 'future-policy',
         '--json' => true,
@@ -54,7 +70,7 @@ it('creates an app Route for an Instance while transporting publication intent',
         'app_instance_id' => 7,
     ]);
 
-    $this->artisan('route:create', ['app' => '8', 'domain' => 'node.test'])->assertExitCode(0);
+    $this->artisan('route:create', ['instance' => '8', 'domain' => 'node.test'])->assertExitCode(0);
 
     expect($mock->getLastRequest()?->body()->all())->toHaveKey('app_instance_id', 8)
         ->not->toHaveKey('node_id');
@@ -73,7 +89,7 @@ it('creates a custom proxy Route from a node name and upstream', function (): vo
     ]);
 
     $this->artisan('route:create', [
-        'app' => 'executor.orbit',
+        'instance' => 'executor.orbit',
         '--node' => 'beast',
         '--upstream' => 'http://127.0.0.1:4788',
         '--json' => true,
@@ -100,7 +116,7 @@ it('creates a custom proxy Route from a numeric node and Process name', function
     ]);
 
     $this->artisan('route:create', [
-        'app' => 'executor.orbit',
+        'instance' => 'executor.orbit',
         '--node' => '4',
         '--process' => 'executor',
         '--json' => true,
@@ -123,7 +139,7 @@ it('resolves a numeric Process ID without listing Processes', function (): void 
     ]);
 
     $this->artisan('route:create', [
-        'app' => 'executor.orbit',
+        'instance' => 'executor.orbit',
         '--node' => '4',
         '--process' => '12',
     ])->assertExitCode(0);
@@ -151,7 +167,7 @@ it('rejects custom proxy create shapes before transport', function (array $argum
 })->with([
     'second positional' => [
         [
-            'app' => 'executor.orbit',
+            'instance' => 'executor.orbit',
             'domain' => 'other.orbit',
             '--node' => 'beast',
             '--upstream' => 'http://127.0.0.1:4788',
@@ -161,7 +177,7 @@ it('rejects custom proxy create shapes before transport', function (array $argum
     ],
     'missing node' => [
         [
-            'app' => 'executor.orbit',
+            'instance' => 'executor.orbit',
             '--upstream' => 'http://127.0.0.1:4788',
             '--json' => true,
         ],
@@ -169,7 +185,7 @@ it('rejects custom proxy create shapes before transport', function (array $argum
     ],
     'public publication' => [
         [
-            'app' => 'executor.orbit',
+            'instance' => 'executor.orbit',
             '--node' => '4',
             '--upstream' => 'http://127.0.0.1:4788',
             '--publication' => 'public',
@@ -179,7 +195,7 @@ it('rejects custom proxy create shapes before transport', function (array $argum
     ],
     'both selectors' => [
         [
-            'app' => 'executor.orbit',
+            'instance' => 'executor.orbit',
             '--node' => '4',
             '--upstream' => 'http://127.0.0.1:4788',
             '--process' => 'executor',
@@ -226,7 +242,7 @@ it('transports explicit private and public publication intents unchanged', funct
     ]);
 
     $this->artisan('route:create', [
-        'app' => '3',
+        'instance' => '3',
         'domain' => 'app.test',
         '--publication' => $publication,
         '--json' => true,
@@ -269,8 +285,8 @@ it('refuses a missing publication value before transport', function (
         ->assertExitCode(1);
     expect($mock->getLastPendingRequest())->toBeNull();
 })->with([
-    'create without value' => ['route:create', ['app' => '1', 'domain' => 'pubtest.orbit', '--publication' => null]],
-    'create with empty value' => ['route:create', ['app' => '1', 'domain' => 'pubtest.orbit', '--publication' => '']],
+    'create without value' => ['route:create', ['instance' => '1', 'domain' => 'pubtest.orbit', '--publication' => null]],
+    'create with empty value' => ['route:create', ['instance' => '1', 'domain' => 'pubtest.orbit', '--publication' => '']],
     'update without value' => ['route:update', ['route' => '11', '--publication' => null]],
     'update with empty value' => ['route:update', ['route' => '11', '--publication' => '']],
     'update with domain and no publication value' => ['route:update', ['route' => '11', '--domain' => 'next.test', '--publication' => null]],
@@ -303,16 +319,23 @@ it('rejects impossible create shapes before transport', function (array $argumen
 })->with([
     'instance with node scope' => [
         [
-            'app' => '3',
+            'instance' => '3',
             'domain' => 'app.test',
             '--node' => '4',
             '--json' => true,
         ],
         'route.scope_conflict',
     ],
+    'missing Instance in JSON mode' => [
+        [
+            'domain' => 'app.test',
+            '--json' => true,
+        ],
+        'instance.id_invalid',
+    ],
     'invalid Instance' => [
         [
-            'app' => 'many',
+            'instance' => 'many',
             'domain' => 'app.test',
             '--json' => true,
         ],
@@ -320,7 +343,7 @@ it('rejects impossible create shapes before transport', function (array $argumen
     ],
     'publication without value' => [
         [
-            'app' => '3',
+            'instance' => '3',
             'domain' => 'app.test',
             '--publication' => null,
             '--json' => true,
@@ -329,7 +352,7 @@ it('rejects impossible create shapes before transport', function (array $argumen
     ],
     'missing domain' => [
         [
-            'app' => '3',
+            'instance' => '3',
             'domain' => '',
             '--json' => true,
         ],
@@ -361,7 +384,7 @@ it('renders only the first invalid input as one JSON document', function (
     'create Route' => [
         'route:create',
         [
-            'app' => 'invalid',
+            'instance' => 'invalid',
             'domain' => '',
             '--publication' => null,
             '--node' => 'invalid',
@@ -461,7 +484,7 @@ it('rejects the removed hostname argument and option', function (string $command
 })->with([
     'create hostname argument' => [
         'route:create',
-        ['app' => '3', 'hostname' => 'app.test', '--node' => '4', '--json' => true],
+        ['instance' => '3', 'hostname' => 'app.test', '--node' => '4', '--json' => true],
         'The "hostname" argument does not exist.',
     ],
     'update hostname option' => [
@@ -470,6 +493,21 @@ it('rejects the removed hostname argument and option', function (string $command
         'The "--hostname" option does not exist.',
     ],
 ]);
+
+it('rejects removed route create scope options before transport', function (string $option): void {
+    $mock = MockClient::global();
+    $tester = new CommandTester(app(Kernel::class)->all()['route:create']);
+
+    expect($tester->execute([
+        'instance' => '12',
+        'domain' => 'shop.test',
+        $option => '4',
+        '--json' => true,
+    ], ['interactive' => false]))->toBe(1);
+    expect(json_decode(trim($tester->getDisplay()), associative: true, flags: JSON_THROW_ON_ERROR)['error']['code'])
+        ->toBe('input.invalid');
+    expect($mock->getLastPendingRequest())->toBeNull();
+})->with(['--target', '--cluster']);
 
 it('rejects an empty update and invalid IDs before transport', function (): void {
     $mock = MockClient::global();
