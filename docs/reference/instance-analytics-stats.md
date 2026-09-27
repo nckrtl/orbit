@@ -1,11 +1,15 @@
 ---
 title: "Instance analytics stats"
 description: "How the Gateway reads live visitors, period visitor counts, and top pages for an Instance, and when the Orbit web page shows that panel."
+covers:
+  - apps/gateway/app/Actions/Analytics/ShowInstanceAnalyticsStatsAction.php
+  - apps/gateway/app/Domain/Analytics/{AnalyticsStatsDriver,AnalyticsStatsRead,AnalyticsPageStat}.php
+  - apps/gateway/app/Infrastructure/Analytics/PlausibleCommunityEditionStatsDriver.php
 ---
 
 # Instance analytics stats
 
-This page tells an operator how the Gateway reports visits for an Instance that publishes a tracking host. The report comes from the fleet analytics driver. The first driver reads the Plausible Community Edition Stats API of the analytics role. [Analytics role](/reference/analytics) owns the role, the tracking host, and the Stats API key. [ADR 0102](/decisions/0102-read-app-instance-analytics-through-a-fleet-driver) owns the driver and the panel.
+The Gateway reports visits for an Instance that publishes a tracking host. The report comes from the fleet analytics driver, which reads the Plausible Community Edition Stats API of the analytics role. [Analytics role](/reference/analytics) owns the role, the tracking host, and the Stats API key.
 
 ## Read the stats
 

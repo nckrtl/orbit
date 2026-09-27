@@ -77,7 +77,7 @@ describe('retired workspace requests', function (): void {
             ->toBe('/api/v1/instances')
             ->and((new ShowAppInstanceRequest(7))->resolveEndpoint())
             ->toBe('/api/v1/instances/7')
-            ->and((new CreateAppInstanceRequest(appId: 3, nodeId: 4, name: 'default'))->resolveEndpoint())
+            ->and((new CreateAppInstanceRequest(projectId: 3, nodeId: 4, name: 'default'))->resolveEndpoint())
             ->toBe('/api/v1/instances')
             ->and((new DestroyAppInstanceRequest(7))->resolveEndpoint())
             ->toBe('/api/v1/instances/7');

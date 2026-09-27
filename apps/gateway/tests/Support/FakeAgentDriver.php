@@ -98,12 +98,17 @@ final class FakeAgentDriver implements AgentDriver
         }
     }
 
+    public function archive(AgentThread $thread, string $commandId): void
+    {
+        $this->calls[] = ['operation' => 'archive', 'thread' => $thread->external_id, 'command_id' => $commandId];
+    }
+
     public function observe(AgentThread $thread): AgentObservation
     {
         return $this->observation ?? throw new AgentDriverException('Unavailable');
     }
 
-    public function events(AgentThread $thread, ?string $cursor): iterable
+    public function events(AgentThread $thread, ?string $cursor, ?float $timeoutSeconds = null): iterable
     {
         return [];
     }

@@ -391,11 +391,11 @@ The response contains only `instance_id`, `app_id`, `node_id`, and `environment`
 
 The fleet scan requires a complete listing envelope before it captures targets. The envelope must be a JSON object. `data` must be present as a JSON array, not a JSON object. A missing `data` field, `null`, a scalar, `{}`, or a numeric-key object raises a safe `GatewayApiException` and starts no scans.
 
-Each array member must be a JSON object with a positive `id`, `app_id`, `node_id`, non-empty `name`, and supported `environment`. Empty objects, array members, missing or invalid identity fields, and a malformed row after a valid row fail the entire listing. The command does not skip invalid rows or default a missing collection to an empty authorized set. A valid empty `data` array is a successful zero-target result.
+Each array member must be a JSON object with a positive `id`, `project_id`, `node_id`, non-empty `name`, and supported `environment`. Empty objects, array members, missing or invalid identity fields, and a malformed row after a valid row fail the entire listing. The command does not skip invalid rows or default a missing collection to an empty authorized set. A valid empty `data` array is a successful zero-target result.
 
 A listing transport or structured error envelope returns the ordinary CLI `error` envelope and starts no scans. Each scan outcome is recorded even when that instance fails. Later captured targets still run. HTTP 200 inventory results keep the typed composer and JavaScript graphs. Authorization, unavailability, timeout, and other request failures become a per-instance error without a successful empty graph. SIGINT or SIGTERM during a scan stops remaining targets, preserves attempted outcomes, and marks unattempted IDs as skipped rather than complete.
 
-`--json` returns `{succeeded, summary, instances, request_id}`. `summary` counts attempted, succeeded, failed, and skipped targets. `request_id` is the listing correlation. Instance rows include `instance_id`, `app_id`, `node_id`, `name`, `environment`, and `domain`. The command does not update packages or deploy.
+`--json` returns `{succeeded, summary, instances, request_id}`. `summary` counts attempted, succeeded, failed, and skipped targets. `request_id` is the listing correlation. Instance rows include `instance_id`, `project_id`, `node_id`, `name`, `environment`, and `domain`. The command does not update packages or deploy.
 
 
 ## Nightly Gateway Schedule

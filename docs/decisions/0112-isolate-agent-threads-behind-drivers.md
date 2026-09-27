@@ -87,7 +87,7 @@ T3 is the first implementation. OpenCode and Codex App Server can be added as se
 - Adding a driver requires protocol translation and registration while existing consumers retain their Orbit contracts.
 - The refactor includes persistence, scheduler references, Node eligibility, observations, actions, metrics, API data, and browser events.
 - Driver mappings must preserve input request identity, transcript ordering, reconnect behavior, and metric meaning. Protocol differences cannot be hidden by silently dropping unsupported behavior.
-- `ORBIT_TASKS_AGENT_DRIVER` selects a registered driver for new groups and defaults to `t3`. Each group retains its selection. Additional drivers need their own capability and runtime verification.
+- `ORBIT_TASKS_AGENT_DRIVER` selected a registered driver for new groups and defaulted to `t3`. Each group retains its selection. Additional drivers need their own capability and runtime verification. [ADR 0177](/decisions/0177-remove-the-app-compatibility-surface) amends this environment-variable contract: each role variable now uses `t3` as its default, and Orbit no longer reads `ORBIT_TASKS_AGENT_DRIVER`.
 
 ## Affects
 

@@ -37,9 +37,9 @@ HELP;
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $appId = $this->positiveId('project', 'Project', 'app.id_invalid');
+        $projectId = $this->positiveId('project', 'Project', 'app.id_invalid');
 
-        if ($appId === null) {
+        if ($projectId === null) {
             return self::FAILURE;
         }
 
@@ -64,7 +64,7 @@ HELP;
         $instance = $this->sendWithProgress(
             $connector,
             new CreateAppInstanceRequest(
-                appId: $appId,
+                projectId: $projectId,
                 nodeId: $nodeId,
                 name: $name,
                 root: $this->stringOption('root'),

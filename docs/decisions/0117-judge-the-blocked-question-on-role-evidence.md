@@ -81,4 +81,4 @@ A Jev answer without a confidence counts as a missing answer and uses the commun
 - Components: apps/gateway, apps/docs
 - ADRs: [ADR 0114](/decisions/0114-judge-task-completion-as-separate-checks)
 - Detail: [Tasks](/reference/tasks)
-- Verify: `TaskSchedulerTickTest`, `LaravelAiTaskSessionClassifierTest`, `TaskRubricReminderTest`, `composer test:calibration` with `TYPESAFE_API_KEY`, and `composer check` in `apps/gateway`
+- Verify: `TaskSchedulerTickTest`, `TaskRubricReminderTest`, `BriefCoverageCancelledTest`, and `composer check` in `apps/gateway`

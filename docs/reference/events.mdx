@@ -136,7 +136,7 @@ Task events are notices. They carry identifiers, status, and counts, never title
 | `agent_thread.updated` | An agent thread is created, or its state, error, or observation error changes. | `{ id, task_group_id, task_id, state }` |
 | `tasks.updated` | The tasks extension is enabled or disabled. | `{ enabled }` |
 
-`id` is the group's id for `task_group.*`, the comment's id for `task_comment.created`, the thread's id for `agent_thread.updated`, and `0` for `tasks.updated`. `task_id` is null for the planner thread. A subtask's reviewer and implementer carry that subtask's id. A reserved thread row whose external id starts with `pending:` does not send `agent_thread.updated`.
+`id` is the group's id for `task_group.*`, the comment's id for `task_comment.created`, the thread's id for `agent_thread.updated`, and `0` for `tasks.updated`. A group-level thread has a null `task_id`; a subtask's reviewer and implementer carry that subtask's id. A reserved thread row whose external id starts with `pending:` does not send `agent_thread.updated`.
 
 A change only to a group's or subtask's tokens, line counts, or duration does not broadcast by itself, because showing a group refreshes those values. They reach clients with the next other change. The Gateway collects the task changes of one request, one scheduler tick, or one agent view pass, and broadcasts each record once when that work ends.
 
@@ -229,7 +229,7 @@ There is no environment variable to set. The Gateway resolves the active connect
 
 ## Node agent channels
 
-Each Node has a presence channel, `presence-node.{id}`, where its [Node agent](/reference/node-agent) publishes presence and Process runtime state. The Gateway does not broadcast on these channels. Its agent view subscriber joins every channel and keeps the latest state as the [Gateway view](/reference/node-agent#gateway-view). [ADR 0129](/decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels) records the channel design, and [ADR 0148](/decisions/0148-keep-a-gateway-view-of-node-agent-state) records the Gateway view.
+Each Node has a presence channel, `presence-node.{id}`, where its [Node agent](/reference/node-agent) publishes presence and Process runtime state. The Gateway does not broadcast on these channels. Its agent view subscriber joins every channel and keeps the latest state as the [Gateway view](/reference/node-agent#gateway-view). [ADR 0129](/decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels) records the channel design.
 
 ### Membership
 
@@ -276,7 +276,7 @@ A subscriber treats the Node's agent as online while `agent.{id}` is a member an
 
 ## Log channels
 
-[Live log streams](/reference/live-logs) use two kinds of channel. No log line is sent on `orbit` or on `presence-node.{id}`. [ADR 0153](/decisions/0153-tail-instance-and-process-logs-live-through-the-node-agent) records the design.
+[Live log streams](/reference/live-logs) use two kinds of channel. No log line is sent on `orbit` or on `presence-node.{id}`. [Live logs](/reference/live-logs#why-it-works-this-way) records the reasons.
 
 | Channel | Members | Signed by |
 | --- | --- | --- |

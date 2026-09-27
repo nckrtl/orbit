@@ -65,7 +65,7 @@ export const scheduleListColumns = (fleet: Fleet): Column<Schedule>[] => [
 
 export const instanceColumns = (show: "project" | "node"): Column<Instance>[] => [
     ...(show === "project"
-        ? [{ header: "Project", width: 22, value: (i: Instance) => i.app.slug }]
+        ? [{ header: "Project", width: 22, value: (i: Instance) => i.project.slug }]
         : []),
     { header: "Name", width: 16, value: (i) => i.name },
     { header: "Environment", width: 16, value: (i) => i.environment },

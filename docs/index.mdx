@@ -1,62 +1,38 @@
 ---
 title: "Orbit documentation"
 sidebarTitle: "Overview"
-description: "Orbit turns the machines you already own into an always-on development network. Your agent provisions, routes, and repairs it."
+description: "Orbit turns the machines you own into an always-on network for developing and hosting your applications. Your agent operates it. You steer."
 ---
 
-Orbit connects local development, production hosting, and machine maintenance. Use the command-line interface (CLI) yourself or through an AI agent. The Gateway coordinates your machines and applications.
+Orbit turns the machines you own into an always-on network for developing and hosting your applications. Your agent operates it through the CLI or MCP, and you steer. These pages describe how Orbit works today.
 
 <CardGroup cols={2}>
   <Card title="Quickstart" icon="rocket" href="/quickstart">
-    Bootstrap a Gateway, add a Node, and serve a Project on its own hostname.
+    Bootstrap a Gateway, add a Node, and serve a Project on its own domain.
   </Card>
-  <Card title="CLI reference" icon="terminal" href="/cli/overview">
-    Every command family, with each argument, option, and guard.
-  </Card>
-  <Card title="Concepts" icon="book-open" href="/concepts">
-    Gateway, Node, Cluster, Project, Instance, Route, and the other terms Orbit uses.
+  <Card title="Mission" icon="compass" href="/mission">
+    What Orbit is for, where it stops, and the principles behind every decision.
   </Card>
   <Card title="Architecture" icon="network" href="/architecture">
-    Follow a command from the CLI through the Gateway to a managed Node.
+    The components, how they trust each other, and the paths between them.
+  </Card>
+  <Card title="Concepts" icon="book-open" href="/concepts">
+    The core terms every part of Orbit shares.
   </Card>
 </CardGroup>
 
-## How it fits together
-
-```text
-Human or AI agent
-        ↓
-       CLI
-        ↓
-      HTTP
-        ↓
-     Gateway
-        ↓
-       SSH
-        ↓
-  Managed Nodes
-```
-
-The Gateway stores Orbit's data in SQLite, authorizes each action, and applies it to Nodes over SSH. Nodes reach each other over a private WireGuard network. Web traffic takes a separate path through [Routes](/reference/routes).
-
-## Built for humans and agents
-
-Humans and agents use the same commands. Human output is readable in a terminal, and `--json` returns the same result as one structured document with the Gateway request ID. The Gateway records who ran what, so you can read what happened instead of guessing.
-
-Agents get focused, visible, and testable actions rather than unrestricted access. Orbit manages only the machines and resources you explicitly add.
-
 ## Where to go next
-
-To add a feature or fix a bug, follow the [contributor guide](/contributor-guide).
 
 <CardGroup cols={3}>
   <Card title="Applications" icon="boxes" href="/domains/applications">
     Create an Instance, configure its runtime, and give it a domain.
   </Card>
-  <Card title="Fleet references" icon="server" href="/reference/node-provisioning">
-    Node provisioning, private DNS, Tools, Metrics, and Gateway trust.
+  <Card title="Fleet" icon="server" href="/reference/node-provisioning">
+    Add Nodes, assign roles, and keep the fleet healthy.
   </Card>
-  <Card title="Decisions" icon="git-branch" href="/decisions/overview">
-    The architecture decision records behind every durable boundary.
+  <Card title="CLI reference" icon="terminal" href="/cli/overview">
+    Every command, with its arguments, options, and guards.
   </Card>
 </CardGroup>
+
+To change Orbit itself, follow the [contributor guide](/contributor-guide).

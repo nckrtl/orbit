@@ -1,30 +1,36 @@
 ---
 title: "Instance queue"
 description: "How the Gateway reads the Laravel Horizon queue of an Instance, what it returns, and what it never returns."
+covers:
+  - apps/gateway/app/Actions/AppInstances/ShowAppInstanceQueueAction.php
+  - apps/gateway/app/Http/Controllers/Api/AppInstanceQueueController.php
+  - apps/gateway/app/Http/Requests/AppInstances/AppInstanceQueueRequest.php
+  - apps/gateway/app/Infrastructure/AppInstances/RemoteAppInstanceQueueReader.php
 ---
 
 # Instance queue
 
-This page tells an operator how the Gateway reports the queue of an Instance that runs Laravel Horizon. The report shows the state of Horizon, the workload of each queue, and the newest pending, completed, or failed jobs. [Project Processes and Schedules](/reference/app-processes-and-schedules) owns the Process that runs Horizon, and [Instance logs](/reference/instance-logs) owns the application log.
+The Gateway reports the queue of an Instance that runs Laravel Horizon. The report shows the state of Horizon, the load of each queue, and the newest pending, completed, or failed jobs. [Processes and schedules](/reference/app-processes-and-schedules) describes the Process that runs Horizon.
 
 ## Read the queue
 
-`GET /api/v1/instances/{instance}/queue` returns one report. `state` selects the job list: `pending`, `completed`, or `failed`, and the default is `pending`. `limit` sets the number of jobs from 1 through 50, and the default is 50. The Orbit web page shows this report on the Instance page. The CLI and the PHP SDK have no counterpart yet.
+`GET /api/v1/instances/{instance}/queue` returns one report. `state` selects the job list: `pending`, `completed`, or `failed`, and the default is `pending`. `limit` sets the number of jobs from 1 through 50, and the default is 50. The web app shows this report on the Instance page. The CLI and the PHP SDK have no command for it.
 
 | Field | Meaning |
 | --- | --- |
 | `available` | False when the Instance has no queue to report. Every other field but `state` is then absent. |
+| `process_id` | The ID of the Horizon Process. |
 | `status` | `running`, `paused` when every master supervisor is paused, or `inactive` when none runs. |
 | `jobs_per_minute`, `recent_jobs`, `recently_failed_jobs` | The counters the Horizon dashboard shows. |
 | `processes` | The worker processes across all supervisors. |
 | `totals` | The number of pending, completed, and failed jobs Horizon retains. |
-| `queues` | Each queue with its `length`, its `wait_seconds`, and its `processes`. |
+| `queues` | Up to 50 queues, each with its `name`, `length`, `wait_seconds`, and `processes`. |
 | `jobs` | The newest jobs in `state`: `id`, `name`, `queue`, `status`, `pushed_at`, `completed_at`, `failed_at`, `exception`, and `url`. |
 | `dashboard_url` | The Horizon dashboard on the domain of the Instance. Each job `url` opens that job in it. |
 
 ## Know when a queue is available
 
-The Gateway reports a queue when the Instance owns a systemd Process whose command is `artisan horizon`, and the application has Horizon installed. An Instance without that Process answers `available: false`, and the Gateway makes no remote call for it. A Docker Process does not count, because the Gateway cannot run PHP in its checkout the way that Process does.
+The Gateway reports a queue when the Instance owns a systemd Process whose command is `<php> artisan horizon`, and the application has Horizon installed. An Instance without that Process answers `available: false` without a remote call. An Instance without Horizon installed also answers `available: false`. A Docker Process does not count, because the Gateway cannot run PHP in its checkout the way that Process does.
 
 ## Know how the Gateway reads it
 

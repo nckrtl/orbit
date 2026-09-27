@@ -31,6 +31,10 @@ final readonly class TaskPullRequestHealth
         public array $infrastructureChecks = [],
         public bool $checksPending = false,
         public bool $checksYoungPending = false,
+        public ?int $pullRequestNumber = null,
+        public ?string $mergeBody = null,
+        public ?string $mergeSha = null,
+        public ?string $mergedAt = null,
     ) {}
 
     public function reason(?string $extra = null): string

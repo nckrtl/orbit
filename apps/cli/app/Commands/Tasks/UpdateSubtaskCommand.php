@@ -70,9 +70,8 @@ final class UpdateSubtaskCommand extends TaskCommand
             return self::FAILURE;
         }
 
-        // The deliverables of a todo subtask change in any group status; everything else only in backlog.
-        $onlyDeliverables = $deliverables !== null && $title === null && $brief === null && $position === null;
-        $groupId ??= $this->selectGroup($connector, $onlyDeliverables ? [] : ['backlog']);
+        // A todo subtask can change in a group that is still open; started subtasks keep their restrictions.
+        $groupId ??= $this->selectGroup($connector, ['backlog', 'todo', 'running', 'reviewing', 'settling']);
 
         if ($groupId === null) {
             return self::FAILURE;

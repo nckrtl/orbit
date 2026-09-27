@@ -9,5 +9,9 @@ final readonly class AppInspectionData
     public function __construct(
         public int $checkoutCount,
         public bool $repositoryOriginsMatch,
+        /** @var list<int> */
+        public array $mismatchingInstanceIds = [],
+        /** @var list<int> */
+        public array $failedInstanceIds = [],
     ) {}
 }

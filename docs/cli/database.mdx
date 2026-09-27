@@ -1,11 +1,13 @@
 ---
 title: "database"
 description: "Register, inspect, update, and destroy the mysql, pgsql, sqlite, and redis connections that Instances can attach, and create a MySQL user through a Node Process."
+covers:
+  - apps/cli/app/Commands/Database/**
 ---
 
-A Database connection is a Gateway-owned registry record with an encrypted password. The `database` family manages that registry and inspects a registered connection. It does not start or stop a database; a shared database server on a Node is a Docker [Node Process](/cli/process), and the optional [Database role](/reference/database-role) converges Docker for it. `database:user:create` creates a MySQL user and database through that Process, then registers or refreshes the connection.
+A Database connection is a Gateway record with an encrypted password. The `database` family manages the records and inspects a registered database. It never starts or stops a database. A shared database server runs as a Docker [Node Process](/cli/process), and the optional [Database role](/reference/database-role) prepares Docker for it.
 
-The [Database connections reference](/reference/database-connections) owns the driver fields, the API, and the keys that an attachment writes. Attach a registered connection to an Instance with [`instance:database:add`](/cli/instance#orbit-instancedatabaseadd).
+[Database connections](/reference/database-connections) describes the driver fields, the API, inspection, and the keys that an attachment writes. Attach a connection to an Instance with [`instance:database:add`](/cli/instance#orbit-instancedatabaseadd).
 
 ## Commands
 
@@ -23,9 +25,7 @@ The [Database connections reference](/reference/database-connections) owns the d
 | [`database:schema`](#orbit-databaseschema) | Show columns for every table on a registered connection. |
 | [`database:describe`](#orbit-databasedescribe) | Show columns for one table on a registered connection. |
 
-Every command accepts `--json`. No response ever includes the password; `has_password` reports whether one is stored.
-
-Human list and inspection commands use the shared table. Show, create, update, destroy, user-create, add, and remove use the shared detail tree. Gateway calls show progress until the request settles. `database:destroy` and `instance:database:remove` require default-No confirmation or `--force`. JSON and piped calls never imply consent.
+Every command accepts `--json`, and every result includes the request ID. No output contains a password; `has_password` shows whether one is stored. `database:destroy` asks for confirmation, and the default is No. JSON and piped calls need `--force`.
 
 ## orbit database:create
 
@@ -66,13 +66,7 @@ orbit database:create cache --driver=redis --host=127.0.0.1 --database=0
 
 The Gateway answers `validation.failed` when a mysql, pgsql, or redis record includes `--path`, when a sqlite record includes `--host`, `--port`, or `--database`, when a redis record omits `--host`, or when the request includes an unsupported field. A duplicate slug returns `database.slug_conflict` and leaves the existing record unchanged.
 
-<Note>
-`database:query`, `database:tables`, `database:schema`, and `database:describe` refuse a redis connection with `database.driver_unsupported`. Redis is not a relational store and has no PDO inspector.
-</Note>
-
-<Note>
-A connection with `--node` can align with a Node-owned Docker Process on that Node. When an Instance on the same Node attaches it, the Gateway writes `127.0.0.1` and the published host port instead of the stored host and port.
-</Note>
+Query, tables, schema, and describe refuse a redis connection with `database.driver_unsupported`. A connection with `--node` lets an Instance on the same Node reach a Docker Process there through `127.0.0.1`.
 
 ## orbit database:list
 
@@ -143,9 +137,7 @@ orbit database:user:create <slug> --process=ID --database=NAME --username=USER -
 orbit database:user:create app --process=12 --database=app --username=app --password=secret
 ```
 
-The Process must be Node-owned and Docker, use a `mysql` or `mysql-server` image, publish container port `3306`, and store `MYSQL_ROOT_PASSWORD`. The Gateway creates the user through that Process. The CLI does not open SSH. A slug that already names a mysql connection is refreshed. A pgsql or sqlite slug returns `database.slug_conflict`.
-
-The [Database connections reference](/reference/database-connections#create-a-managed-mysql-user) owns the Process checks, stored host and port, and failure codes.
+The Process must be a Docker Node Process with a `mysql` or `mysql-server` image, a published container port `3306`, and `MYSQL_ROOT_PASSWORD` in its environment. A slug that already names a mysql connection is refreshed. [Database connections](/reference/database-connections#create-a-managed-mysql-user) lists the checks and error codes.
 
 ## orbit database:user:list
 
@@ -191,7 +183,7 @@ The Gateway answers `database.connection_attached` while any Instance still atta
 
 ## orbit database:query
 
-Run one SQL statement against a registered connection. The command is read-only unless `--write` is set. The Gateway refuses SQL that is not sent against a stored slug.
+Run one SQL statement against a registered connection. Without `--write`, the Gateway refuses a statement whose leading verb writes. That check reads only the leading verb; see [Inspect a registered connection](/reference/database-connections#inspect-a-registered-connection). The Gateway refuses SQL that is not sent against a stored slug.
 
 ```bash
 orbit database:query <slug> <sql> [--write] [--json]
@@ -206,9 +198,9 @@ orbit database:query <slug> <sql> [--write] [--json]
 | --- | --- |
 | `--write` | Allow a write statement. Omission returns `database.write_required` for write SQL. |
 
-The Gateway answers `database.sql_multiple_statements` when the statement is stacked. SQLite query runs on the associated Node through the hidden Orbit CLI command that opens the file with PDO, and answers `database.sqlite_node_required` when that Node is missing. Query returns at most 500 rows and sets `truncated` when more remain. `--write` is write permission, not proof that rows mutated. Human output shows write permission, the reported row count, an empty-read message or Statement completed for a successful no-rowset write-enabled statement, and a truncation warning after the rowset without inventing omitted totals. JSON keeps `write`, `row_count`, and `truncated`.
+A stacked statement returns `database.sql_multiple_statements`. SQLite runs on the linked Node and returns `database.sqlite_node_required` without one. The Gateway returns at most 500 rows and sets `truncated` when more exist. `--write` is permission, not proof that rows changed.
 
-Human query cells keep SQL null, empty string, and other scalars distinct: null renders as `NULL`, an empty string as `""`, booleans as `true` or `false`, and other values as safe text. Table headers stay uppercase. JSON cells stay exact, including JSON `null`.
+Human output shows the write permission, the reported row count, and a truncation warning after the rows. It shows SQL null as `NULL` and an empty string as `""`. JSON keeps `write`, `row_count`, `truncated`, and the exact cell values.
 
 ```bash
 orbit database:query app "SELECT id, email FROM users"

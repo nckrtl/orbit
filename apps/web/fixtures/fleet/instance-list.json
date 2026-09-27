@@ -6,9 +6,9 @@
         "data": [
             {
                 "id": 1,
-                "app_id": 3,
+                "project_id": 3,
                 "node_id": 2,
-                "app": {
+                "project": {
                     "id": 3,
                     "name": "Charlie shop",
                     "slug": "charlie-shop"
@@ -81,19 +81,13 @@
                         "timeout_seconds": 120
                     }
                 ],
-                "vite_port": 5173,
-                "project_id": 3,
-                "project": {
-                    "id": 3,
-                    "name": "Charlie shop",
-                    "slug": "charlie-shop"
-                }
+                "vite_port": 5173
             },
             {
                 "id": 2,
-                "app_id": 3,
+                "project_id": 3,
                 "node_id": 2,
-                "app": {
+                "project": {
                     "id": 3,
                     "name": "Charlie shop",
                     "slug": "charlie-shop"
@@ -153,19 +147,13 @@
                 "removal": null,
                 "transfer": null,
                 "deploy_steps": [],
-                "vite_port": 5173,
-                "project_id": 3,
-                "project": {
-                    "id": 3,
-                    "name": "Charlie shop",
-                    "slug": "charlie-shop"
-                }
+                "vite_port": 5173
             },
             {
                 "id": 3,
-                "app_id": 1,
+                "project_id": 1,
                 "node_id": 2,
-                "app": {
+                "project": {
                     "id": 1,
                     "name": "Acme",
                     "slug": "acme"
@@ -225,19 +213,13 @@
                 "removal": null,
                 "transfer": null,
                 "deploy_steps": [],
-                "vite_port": 5173,
-                "project_id": 1,
-                "project": {
-                    "id": 1,
-                    "name": "Acme",
-                    "slug": "acme"
-                }
+                "vite_port": 5173
             },
             {
                 "id": 4,
-                "app_id": 1,
+                "project_id": 1,
                 "node_id": 3,
-                "app": {
+                "project": {
                     "id": 1,
                     "name": "Acme",
                     "slug": "acme"
@@ -297,13 +279,7 @@
                 "removal": null,
                 "transfer": null,
                 "deploy_steps": [],
-                "vite_port": 5173,
-                "project_id": 1,
-                "project": {
-                    "id": 1,
-                    "name": "Acme",
-                    "slug": "acme"
-                }
+                "vite_port": 5173
             }
         ],
         "meta": {

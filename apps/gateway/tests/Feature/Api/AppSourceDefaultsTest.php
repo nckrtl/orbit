@@ -62,9 +62,10 @@ beforeEach(function (): void {
 });
 
 it('stores explicit source defaults and returns them through every App response', function (): void {
-    $created = $this->postJson('/api/v1/apps', [
+    $created = $this->postJson('/api/v1/projects', [
         'name' => 'Acme',
         'slug' => 'acme',
+        'type' => 'laravel-app',
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => 'stable',
         'root' => 'web/public',
@@ -78,12 +79,12 @@ it('stores explicit source defaults and returns them through every App response'
         ->assertJsonPath('data.root', 'web/public');
     $appId = $created->json('data.id');
     $this
-        ->getJson('/api/v1/apps')
+        ->getJson('/api/v1/projects')
         ->assertOk()
         ->assertJsonPath('data.0.default_branch', 'stable')
         ->assertJsonPath('data.0.root', 'web/public');
     $this
-        ->getJson("/api/v1/apps/{$appId}")
+        ->getJson("/api/v1/projects/{$appId}")
         ->assertOk()
         ->assertJsonPath('data.default_branch', 'stable')
         ->assertJsonPath('data.root', 'web/public');
@@ -107,18 +108,19 @@ it('resolves an omitted default branch once and returns the existing App on an e
     $payload = [
         'name' => 'Acme',
         'slug' => 'acme',
+        'type' => 'laravel-app',
         'repository_url' => 'https://github.com/acme/site.git',
         'root' => 'public',
         'defaults' => ['php_version' => '8.5'],
     ];
 
     $created = $this
-        ->postJson('/api/v1/apps', $payload)
+        ->postJson('/api/v1/projects', $payload)
         ->assertCreated()
         ->assertJsonPath('data.default_branch', 'trunk');
     $this->branches->defaultBranch = 'renamed-default';
     $retried = $this
-        ->postJson('/api/v1/apps', $payload)
+        ->postJson('/api/v1/projects', $payload)
         ->assertOk()
         ->assertJsonPath('data.id', $created->json('data.id'))
         ->assertJsonPath('data.default_branch', 'trunk');
@@ -135,17 +137,18 @@ it('rejects conflicting creation identity without mutation or remote access', fu
     $payload = [
         'name' => 'Acme',
         'slug' => 'acme',
+        'type' => 'laravel-app',
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => 'main',
         'root' => 'public',
         'defaults' => ['php_version' => '8.5'],
     ];
 
-    $this->postJson('/api/v1/apps', $payload)->assertCreated();
+    $this->postJson('/api/v1/projects', $payload)->assertCreated();
     $this->branches->verifiedBranches = [];
 
     $this
-        ->postJson('/api/v1/apps', [...$payload, ...$changes])
+        ->postJson('/api/v1/projects', [...$payload, ...$changes])
         ->assertConflict()
         ->assertJsonPath('error.code', 'app.identity_conflict');
 
@@ -182,13 +185,14 @@ it('returns null source defaults truthfully for a legacy App', function (): void
     $app = OrbitApp::query()->create([
         'name' => 'Legacy',
         'slug' => 'legacy',
+        'type' => 'laravel-app',
         'repository_url' => 'https://github.com/acme/legacy.git',
         'default_branch' => null,
         'root' => null,
     ]);
 
     $this
-        ->getJson("/api/v1/apps/{$app->id}")
+        ->getJson("/api/v1/projects/{$app->id}")
         ->assertOk()
         ->assertJsonPath('data.default_branch', null)
         ->assertJsonPath('data.root', null);
@@ -198,52 +202,60 @@ it('returns null source defaults truthfully for a legacy App', function (): void
 });
 
 it('rejects invalid or incomplete source defaults without persistence', function (array $payload): void {
-    $this->postJson('/api/v1/apps', $payload)->assertUnprocessable();
+    $this->postJson('/api/v1/projects', $payload)->assertUnprocessable();
 
     expect(OrbitApp::query()->count())->toBe(0);
 })->with([
     'missing repository' => [[
         'slug' => 'acme',
+        'type' => 'laravel-app',
         'default_branch' => 'main',
         'root' => 'public',
     ]],
     'missing root' => [[
         'slug' => 'acme',
+        'type' => 'laravel-app',
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => 'main',
     ]],
     'invalid branch' => [[
         'slug' => 'acme',
+        'type' => 'laravel-app',
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => '../main',
         'root' => 'public',
     ]],
     'absolute root' => [[
         'slug' => 'acme',
+        'type' => 'laravel-app',
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => 'main',
         'root' => '/public',
     ]],
     'traversing root' => [[
         'slug' => 'acme',
+        'type' => 'laravel-app',
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => 'main',
         'root' => '../public',
     ]],
     'leading dot segment' => [[
         'slug' => 'acme',
+        'type' => 'laravel-app',
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => 'main',
         'root' => './public',
     ]],
     'nested dot segment' => [[
         'slug' => 'acme',
+        'type' => 'laravel-app',
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => 'main',
         'root' => 'public/./assets',
     ]],
     'empty root' => [[
         'slug' => 'acme',
+        'type' => 'laravel-app',
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => 'main',
         'root' => '',
@@ -255,6 +267,7 @@ it('rejects an unavailable explicit or default branch with one stable error', fu
     $repository = 'https://example.test/private-repository.git';
     $payload = [
         'slug' => 'acme',
+        'type' => 'laravel-app',
         'repository_url' => $repository,
         'root' => 'public',
     ];
@@ -264,7 +277,7 @@ it('rejects an unavailable explicit or default branch with one stable error', fu
     }
 
     $response = $this
-        ->postJson('/api/v1/apps', $payload)
+        ->postJson('/api/v1/projects', $payload)
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'app.default_branch_unavailable')
         ->assertJsonPath(
@@ -296,8 +309,9 @@ it('returns 422 without persistence when the remote default branch is malformed 
     );
 
     $this
-        ->postJson('/api/v1/apps', [
+        ->postJson('/api/v1/projects', [
             'slug' => 'acme',
+            'type' => 'laravel-app',
             'repository_url' => 'https://github.com/acme/site.git',
             'root' => 'public',
         ])
@@ -310,7 +324,7 @@ it('returns 422 without persistence when the remote default branch is malformed 
 it('rejects unsupported and duplicate App source keys', function (string $body): void {
     $this
         ->withHeader('Content-Type', 'application/json')
-        ->call('POST', '/api/v1/apps', content: $body)
+        ->call('POST', '/api/v1/projects', content: $body)
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation.failed');
 

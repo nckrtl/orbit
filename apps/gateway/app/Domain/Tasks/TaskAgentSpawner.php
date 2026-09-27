@@ -13,14 +13,14 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
 
-final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawner
+final readonly class TaskAgentSpawner implements AgentSpawner
 {
     public const string PendingPrefix = 'pending:';
 
     public function __construct(
         private AgentDriverRegistry $drivers,
         private TaskReviewPacketBuilder $packets,
-        private TaskPlannerMcp $mcp,
+        private TaskWorkspaceMcp $mcp,
     ) {}
 
     public function spawnReviewer(Task $task): ?int
@@ -70,15 +70,6 @@ final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawne
         return $this->insertPending($task->taskGroup, $task->id, TaskThreadRole::Implementer)?->id;
     }
 
-    public function spawnPlanner(TaskGroup $group): ?int
-    {
-        if ($group->reviewer_agent_thread_id !== null) {
-            return $group->reviewer_agent_thread_id;
-        }
-
-        return $this->spawn($group, null, TaskThreadRole::Reviewer, 'Orbit task #'.$group->id.' · Planner: '.$group->title, $this->plannerPrompt($group));
-    }
-
     public function spawnImplementer(Task $task): ?int
     {
         if ($task->implementer_agent_thread_id !== null) {
@@ -96,19 +87,6 @@ final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawne
         }
 
         return $this->startPending($pending, $title, $this->implementerPrompt($group, $task, $pending->id));
-    }
-
-    private function spawn(TaskGroup $group, ?int $taskId, TaskThreadRole $role, string $title, string $prompt): ?int
-    {
-        $thread = $this->insertPending($group, $taskId, $role);
-        if ($thread === null) {
-            return null;
-        }
-        if ($taskId !== null) {
-            $this->installReceipt($thread);
-        }
-
-        return $this->startPending($thread, $title, $prompt);
     }
 
     public function requestReview(Task $task): void
@@ -334,33 +312,26 @@ final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawne
         return $this->packets->build($task, $continued, $threadId);
     }
 
-    private function plannerPrompt(TaskGroup $group): string
-    {
-        return implode("\n\n", [
-            'You are the planner for this Orbit task group. Shape the feature with the operator in this thread before any agent implements it.',
-            'Orbit task group #'.$group->id.' for Project '.$group->app->slug.' (app_id '.$group->app_id.')',
-            'Feature: '.$group->title,
-            $group->brief,
-            'Follow this repository\'s instructions for designing a feature. Write the ADRs and documentation in this workspace on the branch task-'.$group->id.' and leave them uncommitted. Orbit commits them when the group moves to Todo.',
-            'Keep the group current through Orbit MCP: tasks-update for the title and brief, and tasks-subtask-create, tasks-subtask-update, and tasks-subtask-destroy for the subtasks. Split the feature with the creating-tasks skill (.agents/skills/creating-tasks/SKILL.md): each subtask has one concise goal that an implementer finishes and a reviewer verifies in one turn, and its brief names the ADR sections and documentation it implements.',
-            'Give every subtask at least one deliverable and at most five in its deliverables list, and turn each explicit item of its brief into one. A subtask that needs more than five is too large: split it. A deliverable has an id (a lowercase slug, unique in the subtask), a type, and a description. Use type file with path and change (created, modified, or any) for a file the step must create or change; type test with project, file, and name for a Pest test it must add or change and that must pass, and set fails_on_base to true when at least one test whose name contains name must fail on the start commit before every such test passes; type command with command and directory for a check in another ecosystem that must exit 0; and type review for an item only the reviewer can judge. Orbit verifies file, test, and command deliverables before each review, and refuses to move the group to Todo while a subtask has none.',
-            'When the operator agrees the plan is ready, move the group to Todo with tasks-update and status todo. Orbit then runs the implementers. This thread stays the planner. Each subtask review starts a fresh reviewer thread.',
-        ]);
-    }
-
     private function implementerPrompt(TaskGroup $group, Task $task, ?int $threadId = null): string
     {
-        $deliverables = $task->deliverableList();
-
-        return implode("\n\n", array_filter([
-            'Implement this subtask in the shared workspace. '.TaskRunInstructions::implementer($deliverables, $group->app->taskCheckCommand(), $threadId),
-            'Orbit task group #'.$group->id,
-            'Feature: '.$group->title,
-            'Orbit subtask #'.$task->id,
-            'Subtask: '.$task->title,
-            $task->brief,
-            TaskRunInstructions::deliverables($deliverables),
-            TaskRunInstructions::contract(is_string($group->app->default_branch) ? $group->app->default_branch : null).' Build to them.',
-        ], static fn (string $part): bool => $part !== ''));
+        return TaskPromptRenderer::implementer(
+            new TaskPromptGroup(
+                id: $group->id,
+                title: $group->title,
+                brief: $group->brief,
+                projectSlug: $group->app->slug,
+                projectId: $group->app_id,
+                defaultBranch: is_string($group->app->default_branch) ? $group->app->default_branch : null,
+                taskCheck: $group->app->taskCheckCommand(),
+            ),
+            new TaskPromptSubtask(
+                id: $task->id,
+                title: $task->title,
+                brief: $task->brief,
+                position: $task->position,
+                deliverables: $task->deliverableList(),
+            ),
+            $threadId,
+        );
     }
 }

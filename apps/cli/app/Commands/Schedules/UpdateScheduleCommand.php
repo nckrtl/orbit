@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Commands\Schedules;
 
 use App\Commands\Concerns\RendersAppRuntimeDefinitions;
-use App\Commands\Concerns\SelectsAppDefinitionTarget;
+use App\Commands\Concerns\SelectsProjectDefinitionTarget;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use JsonException;
@@ -15,13 +15,12 @@ use Orbit\Sdk\Responses\Apps\AppRuntimeDefinitionResponse;
 final class UpdateScheduleCommand extends ScheduleCommand
 {
     use RendersAppRuntimeDefinitions;
-    use SelectsAppDefinitionTarget;
+    use SelectsProjectDefinitionTarget;
 
     #[\Override]
     protected $signature = 'schedule:update
         {name : Schedule definition name}
         {--project= : Numeric Project ID}
-        {--app= : Numeric Project ID (compatibility)}
         {--for= : Comma-separated definition environments}
         {--calendar= : Native systemd calendar expression}
         {--command= : Command to run}
@@ -75,7 +74,7 @@ final class UpdateScheduleCommand extends ScheduleCommand
             );
         }
 
-        $appId = $this->appIdOption();
+        $appId = $this->projectIdOption();
 
         if ($appId === false) {
             return self::FAILURE;
@@ -84,7 +83,7 @@ final class UpdateScheduleCommand extends ScheduleCommand
         if ($appId === null) {
             return $this->renderGatewayFailure(
                 'schedule.target_required',
-                'The --project or --app option is required.',
+                'The --project option is required.',
             );
         }
 

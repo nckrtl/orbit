@@ -59,4 +59,4 @@ What matters is a fail-closed Choice over observed task-thread facts, mechanical
 - Components: apps/gateway, apps/docs
 - ADRs: [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension)
 - Detail: [Tasks](/reference/tasks)
-- Verify: `apps/gateway/tests/Feature/Domain/Tasks/TaskSessionObserverTest.php`, `apps/gateway/tests/Feature/Domain/Tasks/LaravelAiTaskSessionClassifierTest.php`, `apps/gateway/tests/Feature/Domain/Tasks/TaskSessionRouterTest.php`, `apps/gateway/tests/Feature/Domain/Tasks/TaskSchedulerTickTest.php`, `apps/gateway/tests/Feature/Infrastructure/Tasks/HttpCoderSettleNotifierTest.php`, `apps/gateway/tests/Feature/Domain/Tasks/T3AgentSpawnerTest.php`
+- Verify: `apps/gateway/tests/Feature/Domain/Tasks/TaskSessionObserverTest.php`, `apps/gateway/tests/Feature/Domain/Tasks/TaskSessionRouterTest.php`, `apps/gateway/tests/Feature/Domain/Tasks/TaskSchedulerTickTest.php`, `apps/gateway/tests/Feature/Infrastructure/Tasks/HttpCoderSettleNotifierTest.php`, `apps/gateway/tests/Feature/Domain/Tasks/T3AgentSpawnerTest.php`

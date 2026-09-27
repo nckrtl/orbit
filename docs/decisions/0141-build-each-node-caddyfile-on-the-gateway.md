@@ -10,7 +10,7 @@ The Gateway renders the complete Caddyfile for one Node from stored state in one
 
 ## Status
 
-Proposed. Amended by [ADR 0146](/decisions/0146-retire-the-herdr-integration), which removes the Herdr observer site source, by [ADR 0157](/decisions/0157-keep-private-caddy-sites-off-the-public-listener), which keeps Router and workload sites off `0.0.0.0` on an Ingress Node, guards every site that is not public by client address, and keeps Ingress off the Gateway Node instead of failing its build, and by [ADR 0161](/decisions/0161-set-a-stale-caddyfile-aside-when-caddy-is-absent), which moves a stale live Caddyfile aside when a build skips because Caddy is absent. The Context keeps the Herdr publisher as it was surveyed.
+Proposed. Amended by ADR 0146, which removes the Herdr observer site source, by [ADR 0157](/decisions/0157-keep-private-caddy-sites-off-the-public-listener), which keeps Router and workload sites off `0.0.0.0` on an Ingress Node, guards every site that is not public by client address, and keeps Ingress off the Gateway Node instead of failing its build, and by [ADR 0161](/decisions/0161-set-a-stale-caddyfile-aside-when-caddy-is-absent), which moves a stale live Caddyfile aside when a build skips because Caddy is absent. The Context keeps the Herdr publisher as it was surveyed.
 
 ## Context
 
@@ -103,7 +103,7 @@ The Gateway owns every Caddy file on a Node through one build per Node. The rule
 
 - This decision supersedes [ADR 0137](/decisions/0137-refuse-carried-caddy-global-options). No fragment is carried, so the carried global options guard is removed. Orbit still writes the only global options block.
 - [ADR 0138](/decisions/0138-opt-public-ingress-sites-into-caddy-certificate-automation) and [ADR 0139](/decisions/0139-collect-caddy-http-metrics-on-every-node) keep their global block and per-site certificate rules. The build renders them.
-- It amends [ADR 0099](/decisions/0099-collect-role-specific-service-metrics): the Node Caddy build, not a shared Caddy publisher, owns composition, validation, publication, and recovery for the scrape site.
+- It amends [ADR 0099](/reference/service-metrics): the Node Caddy build, not a shared Caddy publisher, owns composition, validation, publication, and recovery for the scrape site.
 - It extends [ADR 0100](/decisions/0100-install-caddy-from-the-pinned-caddy-apt-source) to the Gateway machine, `ingress`, and ProxyCli Nodes, and adds the release check to every build.
 - It amends a consequence of [ADR 0080](/decisions/0080-add-node-owned-custom-proxy-routes): unmanaged Caddy fragments do not stay in place. They are backed up and stop serving at the first build.
 - The sites that [ADR 0009](/decisions/0009-clustered-app-instance-routing) and [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement) describe as fragments in one composed Caddy service become sites in one rendered Caddyfile. Their ownership does not change.
@@ -115,7 +115,7 @@ The Gateway owns every Caddy file on a Node through one build per Node. The rule
 - Adopt a foreign Caddyfile as a carried fragment: rejected because it keeps the Node's files as an input to every build, which is the problem this decision removes. A backup keeps the content without serving it.
 - Save the placement candidate as a second Route row: rejected because `routes.domain` is unique and both rows would carry the same domain.
 - Choose `0.0.0.0` for every site on a port whenever one site needs it: rejected because it would put `gateway.orbit` and `metrics.orbit` on the public listener of a Node that also holds `ingress`.
-- Render on the Node from data the Gateway sends: rejected because the Node would need Orbit's renderers, and [ADR 0128](/decisions/0128-run-a-visibility-only-agent-on-managed-nodes) keeps Nodes free of agents that run commands.
+- Render on the Node from data the Gateway sends: rejected because the Node would need Orbit's renderers, and [ADR 0128](/reference/node-agent#the-agent-only-observes) keeps Nodes free of agents that run commands.
 - Coalesce build requests in a queue: rejected because the Gateway runs infrastructure steps synchronously and has no queue. Deterministic renders make a repeated build cheap.
 - Give the Gateway machine its own renderer and publisher: rejected because it keeps a second publication path with its own gaps, as the missing global block, lock, and rollback show.
 
@@ -135,6 +135,6 @@ The Gateway owns every Caddy file on a Node through one build per Node. The rule
 ## Affects
 
 - Components: apps/gateway, apps/e2e, apps/docs
-- ADRs: supersedes [ADR 0137](/decisions/0137-refuse-carried-caddy-global-options); amends [ADR 0099](/decisions/0099-collect-role-specific-service-metrics) and [ADR 0080](/decisions/0080-add-node-owned-custom-proxy-routes); extends [ADR 0100](/decisions/0100-install-caddy-from-the-pinned-caddy-apt-source); keeps [ADR 0138](/decisions/0138-opt-public-ingress-sites-into-caddy-certificate-automation) and [ADR 0139](/decisions/0139-collect-caddy-http-metrics-on-every-node)
+- ADRs: supersedes [ADR 0137](/decisions/0137-refuse-carried-caddy-global-options); amends [ADR 0099](/reference/service-metrics) and [ADR 0080](/decisions/0080-add-node-owned-custom-proxy-routes); extends [ADR 0100](/decisions/0100-install-caddy-from-the-pinned-caddy-apt-source); keeps [ADR 0138](/decisions/0138-opt-public-ingress-sites-into-caddy-certificate-automation) and [ADR 0139](/decisions/0139-collect-caddy-http-metrics-on-every-node)
 - Detail: [Caddy configuration](/reference/caddy-configuration#node-caddy-build), [Node provisioning](/reference/node-provisioning#package-sources), [Service metrics](/reference/service-metrics), [Routes](/reference/routes)
 - Verify: `apps/gateway` Pest tests for the renderer per site source, deterministic output, duplicate addresses, listener rules, stored transition states, and the push script against a temporary `/etc/caddy`; Incus proofs that concurrent publishers on one Node keep both sites, that each Route and Router transition step serves the expected sites, that a foreign Caddyfile is backed up and replaced, that a failed reload restores the previous version, that a WireGuard-only site and a public Ingress site share port 443 on Caddy 2.9.x, and that a rebuilt Gateway installs Caddy 2.9.0 or newer before its first build

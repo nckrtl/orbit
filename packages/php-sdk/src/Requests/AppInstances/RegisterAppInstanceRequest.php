@@ -21,7 +21,7 @@ final class RegisterAppInstanceRequest extends GatewayRequest implements HasBody
     public function __construct(
         private readonly string $sourcePath,
         private readonly bool $includeWorktrees = false,
-        private readonly ?int $appId = null,
+        private readonly ?int $projectId = null,
         private readonly ?string $appName = null,
         private readonly ?string $appSlug = null,
         private readonly ?string $defaultBranch = null,
@@ -58,7 +58,7 @@ final class RegisterAppInstanceRequest extends GatewayRequest implements HasBody
         }
 
         foreach ([
-            'app_id' => $this->appId,
+            'project_id' => $this->projectId,
             'app_name' => $this->appName,
             'app_slug' => $this->appSlug,
             'default_branch' => $this->defaultBranch,

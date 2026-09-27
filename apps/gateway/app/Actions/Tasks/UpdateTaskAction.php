@@ -27,21 +27,27 @@ final readonly class UpdateTaskAction
             $locked = TaskGroup::query()->lockForUpdate()->findOrFail($group->id);
             $task = Task::query()->lockForUpdate()->findOrFail($task->id);
             $backlog = $locked->status === TaskGroupStatus::Backlog;
+            $todoOutsideBacklog = $task->status === TaskStatus::Todo && in_array($locked->status, [
+                TaskGroupStatus::Todo,
+                TaskGroupStatus::Running,
+                TaskGroupStatus::Reviewing,
+                TaskGroupStatus::Settling,
+            ], true);
 
-            if (! $backlog && ($data->title !== null || $data->brief !== null || $data->position !== null)) {
+            if (! $backlog && ! $todoOutsideBacklog) {
+                if ($data->deliverables !== null && $task->status !== TaskStatus::Todo) {
+                    throw TaskGroupGuard::deliverablesLocked();
+                }
+
                 throw TaskGroupGuard::notInBacklog();
             }
 
-            // ADR 0133: a started subtask keeps its deliverables. A todo subtask's list changes in any group status, but never to none outside backlog.
+            // ADR 0133: a started subtask keeps its deliverables. A todo subtask can replace its list after the group starts, but never with none.
             if ($data->deliverables !== null && $task->status !== TaskStatus::Todo) {
                 throw TaskGroupGuard::deliverablesLocked();
             }
             if (! $backlog && $data->deliverables === []) {
                 throw TaskGroupGuard::deliverablesRequired();
-            }
-
-            if (! $backlog && $data->deliverables === null) {
-                throw TaskGroupGuard::notInBacklog();
             }
 
             $task->title = $data->title ?? $task->title;
@@ -53,7 +59,20 @@ final readonly class UpdateTaskAction
                 /** @var list<int> $ids */
                 $ids = Task::query()->where('task_group_id', $locked->id)->whereKeyNot($task->id)->orderBy('position')->pluck('id')->all();
 
-                if ($data->position > count($ids) + 1) {
+                if ($todoOutsideBacklog) {
+                    $ordered = Task::query()
+                        ->where('task_group_id', $locked->id)
+                        ->orderBy('position')
+                        ->get(['id', 'position', 'status']);
+                    $lastStartedOrFinished = $ordered
+                        ->filter(static fn (Task $candidate): bool => $candidate->status !== TaskStatus::Todo)
+                        ->max('position');
+                    $tailStart = (is_int($lastStartedOrFinished) ? $lastStartedOrFinished : 0) + 1;
+
+                    if ($task->position < $tailStart || $data->position < $tailStart || $data->position > $ordered->count()) {
+                        throw ValidationException::withMessages(['position' => [__('A todo subtask can move only within the todo tail.')]]);
+                    }
+                } elseif ($data->position > count($ids) + 1) {
                     throw ValidationException::withMessages(['position' => [__('The position must be between 1 and :count.', ['count' => count($ids) + 1])]]);
                 }
 

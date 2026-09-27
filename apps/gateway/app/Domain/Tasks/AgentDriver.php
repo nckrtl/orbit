@@ -22,8 +22,10 @@ interface AgentDriver
 
     public function interrupt(AgentThread $thread): void;
 
+    public function archive(AgentThread $thread, string $commandId): void;
+
     public function observe(AgentThread $thread): AgentObservation;
 
     /** @return iterable<AgentThreadEvent> */
-    public function events(AgentThread $thread, ?string $cursor): iterable;
+    public function events(AgentThread $thread, ?string $cursor, ?float $timeoutSeconds = null): iterable;
 }
