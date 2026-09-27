@@ -16,7 +16,7 @@ Proposed.
 
 Operators need application commands, such as dependency installation, to run while a development Instance is created, and to see which command failed. A single script reports one block of output. A file in the checkout is a path, not the command the operator recorded. Old Orbit stored each command as a row and ran that string in the instance directory.
 
-The command family is the Instance lifecycle. `process:create --project` already records a Project-owned definition under the family of the thing that runs. [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk) names owned records with `create` and `destroy`. [ADR 0073](/decisions/0073-store-deploy-steps-as-named-appinstance-records) stores each production deploy command as a named row with a timeout and an explicit order. [ADR 0027](/decisions/0027-adopt-local-git-sources-into-appinstance-ownership) makes registration an ownership transfer of a checkout the operator already has, and makes `instance:destroy` the removal of that source.
+The command family is the Instance lifecycle. `process:create --project` already records a Project-owned definition under the family of the thing that runs. [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk) names owned records with `create` and `destroy`. [ADR 0073](/reference/deployments#deploy-steps) stores each production deploy command as a named row with a timeout and an explicit order. [ADR 0027](/decisions/0027-adopt-local-git-sources-into-appinstance-ownership) makes registration an ownership transfer of a checkout the operator already has, and makes `instance:destroy` the removal of that source.
 
 Production preparation already runs deploy steps. Production removal retains application content.
 
@@ -62,6 +62,6 @@ Production preparation already runs deploy steps. Production removal retains app
 ## Affects
 
 - Components: apps/cli, apps/docs, apps/e2e, apps/gateway, packages/php-sdk
-- ADRs: extends [ADR 0027](/decisions/0027-adopt-local-git-sources-into-appinstance-ownership), [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk), and [ADR 0073](/decisions/0073-store-deploy-steps-as-named-appinstance-records)
+- ADRs: extends [ADR 0027](/decisions/0027-adopt-local-git-sources-into-appinstance-ownership), [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk), and [ADR 0073](/reference/deployments#deploy-steps)
 - Detail: [Instance setup and teardown](/reference/instance-setup)
 - Verify: `composer docs-lint`; Gateway, PHP SDK, and CLI tests for step records and for create, register, setup, and destroy; Incus proof that a failing setup command removes the new Instance and a failing teardown command leaves a development Instance in place

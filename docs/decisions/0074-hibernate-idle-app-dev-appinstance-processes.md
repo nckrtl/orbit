@@ -10,11 +10,11 @@ In the context of development AppInstances that keep Vite and other lifecycle Pr
 
 ## Status
 
-Accepted on 2026-09-14. Extends [ADR 0036](/decisions/0036-support-only-appinstances) and [ADR 0069](/decisions/0069-allow-node-process-targets).
+Accepted on 2026-09-14. Extends [ADR 0036](/decisions/0036-support-only-appinstances) and [ADR 0069](/reference/app-processes-and-schedules#owners).
 
 ## Context
 
-Development AppInstances install lifecycle Processes such as Vite on the app-dev Node. Those Processes stay running after the operator leaves the site. PHP is served by Caddy to a per-site PHP-FPM pool on the shared per-version service in [ADR 0021](/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role); those pools are not Processes. [ADR 0036](/decisions/0036-support-only-appinstances) removed Workspace as an application model, and [ADR 0069](/decisions/0069-allow-node-process-targets) allows Node-owned Processes that must keep their own lifecycle. Schedules are native systemd timers on [the Schedules page](/reference/schedules) and are not Processes.
+Development AppInstances install lifecycle Processes such as Vite on the app-dev Node. Those Processes stay running after the operator leaves the site. PHP is served by Caddy to a per-site PHP-FPM pool on the shared per-version service in [ADR 0021](/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role); those pools are not Processes. [ADR 0036](/decisions/0036-support-only-appinstances) removed Workspace as an application model, and [ADR 0069](/reference/app-processes-and-schedules#owners) allows Node-owned Processes that must keep their own lifecycle. Schedules are native systemd timers on [the Schedules page](/reference/schedules) and are not Processes.
 
 ## Decision
 
@@ -50,6 +50,6 @@ Development AppInstances install lifecycle Processes such as Vite on the app-dev
 ## Affects
 
 - Components: apps/gateway
-- ADRs: extends [ADR 0036](/decisions/0036-support-only-appinstances) and [ADR 0069](/decisions/0069-allow-node-process-targets)
+- ADRs: extends [ADR 0036](/decisions/0036-support-only-appinstances) and [ADR 0069](/reference/app-processes-and-schedules#owners)
 - Detail: [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation)
 - Verify: `composer docs-lint`; Gateway hibernation, Caddy wake, and Process on-demand start tests

@@ -15,7 +15,7 @@ Proposed.
 
 An App identifies a repository, while its instances can select different source and dependency versions. A fleet inventory needs to identify which instances resolve a package and which dependency paths introduce it. Direct requirements alone omit transitive dependencies; regular requirements alone omit build and development tools.
 
-[ADR 0046](/decisions/0046-own-production-release-deployment-in-orbit) binds production serving content to the selected release. [ADR 0075](/decisions/0075-prune-idle-app-dev-checkout-dependencies) permits removal of reconstructable development dependency directories while retaining lockfiles. Installed directories therefore cannot supply a durable inventory for idle instances.
+[ADR 0046](/reference/deployments) binds production serving content to the selected release. [ADR 0075](/decisions/0075-prune-idle-app-dev-checkout-dependencies) permits removal of reconstructable development dependency directories while retaining lockfiles. Installed directories therefore cannot supply a durable inventory for idle instances.
 
 ## Decision
 
@@ -58,6 +58,6 @@ An App identifies a repository, while its instances can select different source 
 ## Affects
 
 - Components: apps/gateway, packages/php-sdk, apps/cli, apps/e2e, apps/docs
-- ADRs: extends [ADR 0046](/decisions/0046-own-production-release-deployment-in-orbit), [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk), and [ADR 0075](/decisions/0075-prune-idle-app-dev-checkout-dependencies)
+- ADRs: extends [ADR 0046](/reference/deployments), [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk), and [ADR 0075](/decisions/0075-prune-idle-app-dev-checkout-dependencies)
 - Detail: [App instance dependencies](/reference/instance-dependencies), [Gateway dependency contracts](/reference/instance-dependency-contracts)
 - Verify: `composer docs-build`; `composer docs-lint`; parser fixtures, Gateway inventory and mutation tests, SDK contracts, CLI selector and result tests, and Incus scan, update, production refusal, and nightly Schedule verification
