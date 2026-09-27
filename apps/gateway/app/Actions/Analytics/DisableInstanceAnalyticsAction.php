@@ -34,6 +34,6 @@ final readonly class DisableInstanceAnalyticsAction
     /** An active public edge cannot be removed with its Route, so the host leaves the Ingress first. */
     public function removeRoute(Route $route): void
     {
-        $this->remove->execute($this->publication->withdraw($route));
+        $this->remove->executeTrackingRoute($this->publication->withdraw($route));
     }
 }

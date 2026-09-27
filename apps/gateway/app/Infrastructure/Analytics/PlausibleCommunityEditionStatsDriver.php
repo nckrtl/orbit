@@ -160,23 +160,7 @@ final readonly class PlausibleCommunityEditionStatsDriver implements AnalyticsSt
 
     private function liveVisitors(Response $response): ?int
     {
-        $body = $response->json();
-
-        if (is_int($body) || is_float($body)) {
-            return $this->count($body);
-        }
-
-        if (is_array($body)) {
-            foreach (['visitors', 'realtime_visitors'] as $key) {
-                $count = $this->count($body[$key] ?? null);
-
-                if ($count !== null) {
-                    return $count;
-                }
-            }
-        }
-
-        return $this->count($response->body());
+        return $this->count($response->json());
     }
 
     private function aggregateVisitors(Response $response): ?int
@@ -202,7 +186,7 @@ final readonly class PlausibleCommunityEditionStatsDriver implements AnalyticsSt
                 return null;
             }
 
-            $path = $row['page'] ?? $row['event:page'] ?? null;
+            $path = $row['page'] ?? null;
             $visitors = $this->count($row['visitors'] ?? null);
 
             if (! is_string($path) || $path === '' || $visitors === null) {
@@ -217,14 +201,6 @@ final readonly class PlausibleCommunityEditionStatsDriver implements AnalyticsSt
 
     private function count(mixed $value): ?int
     {
-        if (is_int($value)) {
-            return max(0, $value);
-        }
-
-        if (is_float($value) || (is_string($value) && is_numeric($value))) {
-            return max(0, (int) $value);
-        }
-
-        return null;
+        return is_int($value) ? max(0, $value) : null;
     }
 }

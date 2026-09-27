@@ -122,7 +122,7 @@ final readonly class RetargetNodeAction
                 $data->publicSshPort,
                 $this->sshKeys->privateKeyPath(),
                 $this->knownHosts->path(),
-            ));
+            ), rolelessOperator: true);
             $address = $this->wireGuardAddress($node);
             $this->probeWireGuard($node, $address);
             $this->knownHosts->put($address, 22, $key);

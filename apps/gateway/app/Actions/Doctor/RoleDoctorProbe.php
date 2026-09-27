@@ -393,11 +393,6 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
                 $state->dnsConfigMatches,
                 'Private DNS projection does not match managed intent.',
             ],
-            [
-                RoleDoctorIssueCode::DnsSnippetConflict,
-                $state->dnsConflictAbsent,
-                'A retired stock DNS snippet is still present.',
-            ],
         ] as [$code, $matches, $summary]) {
             if ($matches) {
                 continue;

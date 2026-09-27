@@ -284,7 +284,6 @@ describe('PreparedStateFingerprint', function (): void {
                 'apps/gateway/app/Infrastructure/Nodes/NativeNodeConverger.php',
                 'apps/gateway/app/Infrastructure/WireGuard/NativeWireGuardPeerConverger.php',
                 'apps/gateway/app/Infrastructure/AppDev/AppDevPhpFpmConfigRenderer.php',
-                'apps/gateway/app/Infrastructure/AppProd/AppProdPhpFpmConfigRenderer.php',
                 'apps/gateway/app/Infrastructure/Caddy/Build/NodeCaddyfileRenderer.php',
                 'apps/gateway/app/Infrastructure/Caddy/Build/NodeCaddyPushScript.php',
                 'apps/gateway/app/Infrastructure/AppInstances/NativeProductionAppInstanceProvisioner.php',

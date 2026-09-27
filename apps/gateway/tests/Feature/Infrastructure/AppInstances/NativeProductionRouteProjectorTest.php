@@ -22,16 +22,13 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
 use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
-use App\Infrastructure\AppDev\AppDevPhpFpmConfigRenderer;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
-use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppInstances\NativeProductionRouteProjector;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
-use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -93,6 +90,26 @@ it('creates an Instance Route with the native production projector on a separate
         ->and($commands->contains(static fn (RemoteCommand $command): bool => in_array('s_client', $command->arguments, true)))->toBeTrue();
 });
 
+it('refuses to project production without its dedicated PHP-FPM service', function (): void {
+    [$appInstance, $route] = orb199_production_route_models(
+        workloadLan: '10.10.0.10',
+        routerLan: '10.10.0.20',
+    );
+    $appInstance->update([
+        'production_php_service' => null,
+        'production_php_pool' => null,
+        'production_php_socket' => null,
+    ]);
+    [$projector] = orb199_production_route_projector();
+
+    expect(fn () => $projector->prepareRuntime($appInstance, $route))
+        ->toThrow(function (RuntimeConvergenceException $exception): void {
+            expect($exception->errorCode)->toBe('app-prod.php_service_missing')
+                ->and($exception->getMessage())
+                ->toBe('The production Instance has no recorded dedicated PHP-FPM service.');
+        });
+});
+
 it('projects a production workload through a remote Router over LAN without public infrastructure', function (): void {
     [$appInstance, $route, $workload, $router] = orb199_production_route_models(
         workloadLan: '10.10.0.10',
@@ -119,10 +136,9 @@ it('projects a production workload through a remote Router over LAN without publ
     $leaf = collect($ssh->commands)
         ->pluck('command')
         ->first(static fn (RemoteCommand $command): bool => in_array('s_client', $command->arguments, true));
-    $sites = new AppDevSiteRepository;
     $workloadConfiguration = app(NodeCaddyfileRenderer::class)->render($workload)->content;
     $routerConfiguration = app(NodeCaddyfileRenderer::class)->render($router)->content;
-    $dnsConfiguration = new AppDevDnsConfigRenderer($sites)->render();
+    $dnsConfiguration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
     $pushed = collect($ssh->commands)
         ->map(static fn (array $entry): ?string => SshNodeCaddyBuilds::pushed($entry['command']))
         ->filter();
@@ -408,13 +424,6 @@ function orb199_production_route_projector(?Closure $failSsh = null): array
     $firewall = new Orb199ProductionFirewall;
     $projector = new NativeProductionRouteProjector(
         $productionPhp,
-        new RemoteAppDevPhpFpmManager(
-            $sites,
-            new AppDevPhpFpmConfigRenderer,
-            $executor,
-            $accounts,
-            new RemotePhpPackageManager,
-        ),
         new RemoteAppDevCertificateManager($executor, $signer, $accounts),
         $firewall,
         new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($ssh), $executor),

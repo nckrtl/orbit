@@ -8,6 +8,7 @@ covers:
   - apps/gateway/app/Infrastructure/Firewall/NodeFirewallRuleCatalog.php
   - apps/gateway/app/Infrastructure/WireGuard/NativeGatewayPeerProjectionManager.php
   - apps/gateway/app/Console/Commands/ProvisionNodeCommand.php
+  - apps/gateway/app/Infrastructure/Ssh/{NativeSshExecutor,SshConnection}.php
 ---
 
 # Node provisioning
@@ -33,7 +34,7 @@ The Gateway records the Node as `provisioning` and runs these steps in order:
 | 9 | Reconcile the [Metrics exporters](/reference/metrics#exporter-selection). |
 | 10 | Install or upgrade the [Node agent](/reference/node-agent), at step `agent`. |
 
-The Gateway console command `orbit:node-provision` runs the same steps for the first Node.
+The Gateway console command `orbit:node-provision` runs the same steps for the first Node. Role firewall state comes from the shared Node firewall rule catalog, keeping initial provisioning and later role reconciliation consistent.
 
 ### Bootstrap identity
 
@@ -91,11 +92,11 @@ The `DNS =` line is in `/etc/wireguard/orbit.conf`, and `wg-quick` applies it wh
 
 A later `node:add` without `--role` keeps this setup. To call the Gateway API from the Node, grant it access with [`node:access:add`](/cli/node#orbit-nodeaccessadd). The Gateway identifies the caller by its WireGuard address.
 
-`node:role:add` accepts the same roles as on any other Node. The first active role closes public SSH. The `DNS =` line stays, because role changes and a later `node:add` of the active Node do not publish the WireGuard peer again.
+`node:role:add` accepts the same roles as on any other Node. Adding the first role closes public SSH and moves the Node to managed DNS in the same operation.
 
-[`orbit:node-dns-repair`](/reference/private-dns#repair-one-peer) refuses a Node without roles with `node.dns_repair_operator_owned`. After the Node gets a role, the repair fails with `vpn.peer_dns_state_unsupported`, because the Node has no `orbit.dns-link`.
+[`orbit:node-dns-repair`](/reference/private-dns#repair-one-peer) still refuses a Node without roles with `node.dns_repair_operator_owned`.
 
-[Node retarget](/reference/node-retarget) of a Node without roles publishes the peer again with the resolver policy of [Private DNS](/reference/private-dns#resolver-selection). The `DNS =` line goes, and the Node gets an `orbit.dns-link`.
+[Node retarget](/reference/node-retarget) keeps a Node without roles in operator DNS mode. The `DNS =` line stays, and the Node does not get an `orbit.dns-link`.
 
 Doctor checks a Node without roles like any other Node when the Gateway has a pinned SSH host key for it. The `role` family reports nothing. The `schedule` family skips its orphan scan unless the Node hosts a Schedule. A Node without roles and without a pinned SSH host key gets only the lifecycle check.
 
@@ -212,6 +213,19 @@ The 10-minute term matches the Gateway's PHP-FPM request limit. In an Artisan co
 
 Before each command that a process runs, on the Node or on the Gateway, the Gateway renews every lock that the process holds for its full term. So a long operation keeps its locks, and a process that dies blocks the Node for at most one term after its last command started. A renewal fails only when the lock has expired. The command then does not run and fails with `node.lock_lost`, and so does every later command of the operation. A role operation that lost its lock stops, reports `details.error_code` `node.lock_lost`, and leaves the role `failed` with that code.
 
+## SSH connections
+
+The Gateway runs every remote command as a channel on one shared OpenSSH connection per Node. The first command opens the connection. Later commands reuse it, and it closes after 60 idle seconds. A command on a shared connection takes about 18 ms, and a command on a new connection about 190 ms.
+
+The sockets live in `ORBIT_HOME/ssh/mux`, and the directory has mode `0700`. Every Gateway process runs as the `orbit` user. So web requests, the scheduler, and commands share the same connections. Each socket name hashes the user, the Node address, and the port. A Node with a new address or port therefore gets a new connection at once.
+
+- A dead Node ends its connection within about 10 seconds, through `ServerAliveInterval=5` and `ServerAliveCountMax=2`.
+- A key or host-key change on the Node applies when the connection closes.
+- When the socket path is too long for a Unix socket, or the directory cannot be created, each command opens its own connection.
+- When a Node refuses another channel, OpenSSH opens a direct connection for that command and writes two warning lines to its stderr.
+
+A reachability check always opens a new connection. Doctor's Node inspection, the `--offline` probe of role and Node removal, and the Node probe of task group cancellation use it. File copies between Nodes for Instance transfer and clone use `scp` on their own connections.
+
 ## Public SSH
 
 The bootstrap adds the UFW rule `orbit:public-ssh-recovery` and enables UFW. Once SSH answers over WireGuard, the Gateway adds `orbit:wireguard-members` and keeps public SSH open. The first active role removes the public SSH rule, so the Gateway then reaches the Node only over WireGuard.
@@ -278,6 +292,10 @@ These reasons explain the design. Check them before you propose a change.
 ### Removal does not clean the machine
 
 `node:remove` is a registry and VPN change, plus one firewall rule. Cleaning the machine during removal would change it while the command says it does not, and a failed cleanup would leave a half-removed Node. So you remove Processes, roles, and Instances with their own commands first. `node:add` covers both provisioning and convergence, so the pair is add and remove. Create and destroy stay reserved for machines at a hosting provider.
+
+### One shared SSH connection per Node
+
+Converges and removals run long chains of commands, and a new connection costs about ten times the command. A persistent SSH tunnel is rejected, because WireGuard already gives the private network. A higher `MaxSessions` on every Node is rejected, because OpenSSH already falls back to a direct connection. A reachability check cannot use the shared connection, because that connection outlives a stopped sshd and would report a Node as reachable.
 
 ### Public SSH before the peer goes
 

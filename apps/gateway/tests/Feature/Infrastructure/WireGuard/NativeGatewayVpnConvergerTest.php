@@ -12,7 +12,6 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\WireGuard\NativeGatewayVpnConverger;
-use App\Infrastructure\WireGuard\RetiredDnsmasqSnippets;
 use App\Infrastructure\WireGuard\UplinkDnsResolvers;
 use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
 use App\Models\Node;
@@ -43,10 +42,10 @@ it('activates the gateway WireGuard address through a validated atomic server co
             orbitHome: $orbitHome,
         );
         assert_gateway_firewall_commands(arguments: $arguments);
-        expect($arguments[19])->toBe(['sudo', 'bash', '-seu', '--', GatewayPrivateDnsResolver::DROP_IN])
-            ->and($processes->calls[19]->input)
+        expect($arguments[18])->toBe(['sudo', 'bash', '-seu', '--', GatewayPrivateDnsResolver::DROP_IN])
+            ->and($processes->calls[18]->input)
             ->toBe(new GatewayPrivateDnsResolver()->convergeScript('10.44.0.1', 'orbit'))
-            ->and($arguments)->toHaveCount(20);
+            ->and($arguments)->toHaveCount(19);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
     }
@@ -206,21 +205,8 @@ function assert_gateway_publication_commands(
             'systemctl restart "$service"',
         )
         ->not->toContain('After=wg-quick@orbit.service');
-    expect($arguments[9])
-        ->toBe([
-            'sudo',
-            'bash',
-            '-seu',
-            '--',
-            '/etc/dnsmasq.d',
-            '/var/lib/orbit/dnsmasq/disabled',
-            'ubuntu-fan',
-        ]);
+    expect($arguments[9])->toBe(['sudo', 'bash', '-seu']);
     expect($processes->calls[9]->input)
-        ->toBe(new RetiredDnsmasqSnippets()->script())
-        ->toContain('mv -fT -- "$stock" "$retired_directory/$snippet"');
-    expect($arguments[10])->toBe(['sudo', 'bash', '-seu']);
-    expect($processes->calls[10]->input)
         ->toContain(
             'exec 9>/run/lock/orbit-dnsmasq.lock',
             'flock -w 30 9',
@@ -232,7 +218,7 @@ function assert_gateway_publication_commands(
             'systemctl restart dnsmasq || true',
         );
     expect(base64_decode(
-        Str::match('/\x27([A-Za-z0-9+\/=]+)\x27 \| base64 --decode/', $processes->calls[10]->input ?? ''),
+        Str::match('/\x27([A-Za-z0-9+\/=]+)\x27 \| base64 --decode/', $processes->calls[9]->input ?? ''),
         strict: true,
     ))->toContain('listen-address=127.0.0.55', 'bind-interfaces');
 }
@@ -240,7 +226,7 @@ function assert_gateway_publication_commands(
 /** @param list<list<string>> $arguments */
 function assert_gateway_firewall_commands(array $arguments): void
 {
-    expect(array_slice(array: $arguments, offset: 11, length: 8))->toBe([
+    expect(array_slice(array: $arguments, offset: 10, length: 8))->toBe([
         ['sudo', 'ufw', 'status', 'numbered'],
         [
             'sudo',
@@ -728,7 +714,7 @@ it('reports the bounded dnsmasq journal tail when the managed restart fails', fu
 
     try {
         $converger->converge($node, gateway_bootstrap_data());
-        [$exitCode, $stderr] = gateway_dnsmasq_restart_failure($processes->calls[10]->input ?? '');
+        [$exitCode, $stderr] = gateway_dnsmasq_restart_failure($processes->calls[9]->input ?? '');
 
         expect($exitCode)
             ->toBe(1)

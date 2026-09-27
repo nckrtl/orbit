@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AppInstances;
 
+use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
 use App\Domain\AppInstances\ProductionPhpRuntimeManager;
 use App\Domain\AppInstances\Removal\AppInstanceRemovalProjector;
 use App\Domain\Metrics\MetricsFleetReconciler;
@@ -122,8 +123,21 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
     public function cleanupRuntime(AppInstanceRemovalMember $member): void
     {
         $appInstance = AppInstance::query()->with('node')->findOrFail($member->app_instance_id);
-        if ($appInstance->placedOnAppProd() && $appInstance->production_php_service !== null) {
-            $this->productionPhp()->remove($appInstance);
+        if ($appInstance->placedOnAppProd()) {
+            if (! ProductionPhpRuntimeIdentity::isAbsent($appInstance)) {
+                if (
+                    $appInstance->selected_php_version !== null
+                    && (! is_string($appInstance->production_php_service) || $appInstance->production_php_service === '')
+                ) {
+                    throw new ResourceOperationException(
+                        errorCode: 'app-prod.php_service_missing',
+                        message: 'The production PHP Instance has no recorded dedicated PHP-FPM service.',
+                        status: 409,
+                    );
+                }
+
+                $this->productionPhp()->remove($appInstance);
+            }
         } else {
             $this->php->converge($appInstance->node);
         }

@@ -12,6 +12,7 @@ use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RecoverableNodeConverger;
+use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\HostKeyScanner;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -67,7 +68,8 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
     ): void {
         [$hostKey, $wireguardIp, $observation] = $this->prepare($node, $identity, $expectedSshHostFingerprint, $rolelessOperator);
 
-        if ($node->roles()->exists()) {
+        /** Failed or unfinished first-role attempts may have rolled back the peer, even with multiple assignments. */
+        if ($node->roles()->where('status', LifecycleStatus::Active)->exists()) {
             $this->finishWireGuard($node, $identity->managedUser, $hostKey, $wireguardIp);
             $completion($observation);
 

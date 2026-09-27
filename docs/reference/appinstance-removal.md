@@ -13,7 +13,7 @@ covers:
 
 # Instance removal
 
-`instance:destroy` removes one Instance with its Route, Processes, Schedules, and runtime. A development removal deletes the checkout or worktree. A production removal keeps the application content in the production home.
+`instance:destroy` removes one Instance with its Route, Processes, Schedules, and runtime. A development removal deletes the checkout or worktree. A production removal keeps the application content in the production home. The native removal projector also removes managed Route and runtime projections; a missing production PHP service is reported as a bounded resource failure.
 
 ```bash
 orbit instance:destroy <instance> [--yes] [--force] [--json]

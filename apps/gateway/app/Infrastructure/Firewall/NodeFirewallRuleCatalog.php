@@ -14,7 +14,6 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppProd\AppProdSiteRepository;
 use App\Infrastructure\Metrics\MetricsFootprint;
 use App\Infrastructure\Metrics\ServiceMetricsConfigRenderer;
 use App\Models\Node;
@@ -24,7 +23,6 @@ use App\Models\Process;
 final readonly class NodeFirewallRuleCatalog
 {
     public function __construct(
-        private AppProdSiteRepository $appProdSites = new AppProdSiteRepository,
         private PublicRouteEligibility $publicRoutes = new PublicRouteEligibility,
     ) {}
 
@@ -81,12 +79,7 @@ final readonly class NodeFirewallRuleCatalog
             RoleName::Router => $this->routerLanIngress($node),
             RoleName::Ingress => $this->ingressPublicHttp($node),
             RoleName::AppDev => [],
-            RoleName::AppProd => $this->appProdSites->requiresPublicFirewall($node)
-                ? [
-                    $this->rule('orbit:app-prod-http', '80'),
-                    $this->rule('orbit:app-prod-https', '443'),
-                ]
-                : [],
+            RoleName::AppProd => [],
             RoleName::Metrics, RoleName::Database => [],
             RoleName::WebSocket => [],
             RoleName::Analytics => [
@@ -159,10 +152,6 @@ final readonly class NodeFirewallRuleCatalog
         }
 
         if ($role === RoleName::AppProd) {
-            if ($this->appProdSites->requiresPublicFirewall($node)) {
-                return $rules;
-            }
-
             return [
                 ...$rules,
                 $this->rule('orbit:app-prod-http', '80'),
