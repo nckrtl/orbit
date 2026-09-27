@@ -7,10 +7,8 @@ covers:
   - apps/gateway/app/Infrastructure/Nodes/RemoteNodeStorageRootPreparer.php
   - apps/gateway/app/Data/Nodes/{NodeSettingsData,AppsSettingsData}.php
   - apps/gateway/app/Http/Requests/Nodes/UpdateNodeSettingsRequest.php
-  - apps/cli/app/Support/NodeSettingOptions.php
-  - apps/cli/app/Commands/Nodes/UpdateNodeSettingsCommand.php
-  - packages/php-sdk/src/Responses/Nodes/NodeSettings.php
-  - packages/php-sdk/src/Requests/Nodes/UpdateNodeSettingsRequest.php
+  - apps/cli/app/{Support/NodeSettingOptions,Commands/Nodes/UpdateNodeSettingsCommand}.php
+  - packages/php-sdk/src/{Responses/Nodes/NodeSettings,Requests/Nodes/UpdateNodeSettingsRequest}.php
 ---
 
 # Node settings

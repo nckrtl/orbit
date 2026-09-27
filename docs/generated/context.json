@@ -4907,7 +4907,9 @@
             "path": "docs/reference/database-role.md",
             "title": "Database role",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/gateway"
+            ],
             "concepts": [
                 "Doctor",
                 "Gateway",
@@ -4916,11 +4918,7 @@
                 "Role",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0069",
-                "0070",
-                "0077"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/deployments.md",
@@ -5378,23 +5376,15 @@
                 "Cluster",
                 "Doctor",
                 "Gateway",
-                "Instance",
                 "Node",
                 "Node agent",
                 "Process",
-                "Project",
                 "Role",
                 "Route",
+                "Schedule",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0072",
-                "0094",
-                "0100",
-                "0138",
-                "0144",
-                "0157"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/node-retarget.md",
@@ -5414,19 +5404,20 @@
             "path": "docs/reference/node-settings.md",
             "title": "Node settings",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
             "concepts": [
                 "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
+                "Project",
                 "Role"
             ],
-            "governing_adrs": [
-                "0008",
-                "0009",
-                "0068"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/php-runtime.md",

@@ -30,6 +30,8 @@ The role shares a Node with `app-dev`, `router`, `metrics`, `websocket`, and `an
 
 ## Remove
 
+Remove the role with the generic role command:
+
 ```bash
 orbit node:role:remove <node> database --force
 ```
