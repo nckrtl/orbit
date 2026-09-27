@@ -106,7 +106,7 @@ A Schedule definition has no host Node, so the Gateway does not run `systemd-ana
 | Process | `GET`, `POST /api/v1/projects/{project}/process-definitions` | `GET`, `PUT`, `DELETE /api/v1/projects/{project}/process-definitions/{name}` |
 | Schedule | `GET`, `POST /api/v1/projects/{project}/schedule-definitions` | `GET`, `PUT`, `DELETE /api/v1/projects/{project}/schedule-definitions/{name}` |
 
-`PUT` replaces the whole definition. The API refuses unknown or duplicate members. Lists omit `spec.command`. An item response returns the complete definition with its UUID.
+These routes need an access grant to one Node that runs an Instance of the Project, or to the Gateway Node when the Project has no Instance. `PUT` replaces the whole definition. The API refuses unknown or duplicate members. Lists omit `spec.command`. An item response returns the complete definition with its UUID.
 
 A definition change touches only the Project. It makes no remote call and does not change any existing copy. Removing an Instance keeps the definitions. Removing a Project deletes them.
 

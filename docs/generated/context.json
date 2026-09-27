@@ -4174,6 +4174,7 @@
             "kind": "reference",
             "components": [],
             "concepts": [
+                "Access grant",
                 "Activity",
                 "Doctor",
                 "Gateway",
