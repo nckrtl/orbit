@@ -4075,26 +4075,20 @@
             "path": "docs/reference/caddy-configuration.md",
             "title": "Caddy configuration",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/gateway"
+            ],
             "concepts": [
-                "Activity",
                 "Cluster",
                 "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
-                "Node agent",
                 "Process",
                 "Role",
                 "Route"
             ],
-            "governing_adrs": [
-                "0138",
-                "0139",
-                "0141",
-                "0157",
-                "0161"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/cli-binaries.md",
