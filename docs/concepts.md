@@ -23,14 +23,14 @@ These are the terms every part of Orbit shares. Each domain page defines the ter
 - **Route**: A domain that reaches an Instance or a Node-local service. See [Routes](/reference/routes).
 - **Process**: A long-running service that Orbit manages for an Instance or a Node, such as a queue worker. See [Processes and schedules](/reference/app-processes-and-schedules).
 - **Schedule**: A command that runs on a timer for an Instance or a Node. See [Schedules](/reference/schedules).
-- **Deployment**: One release that Orbit prepares and activates on a production Instance. See [Deployments](/reference/deployments).
+- **Deployment**: One release that Orbit prepares and activates on a production Instance. See [Production release layout](/reference/deployments).
 
 ## Operations
 
 - **Doctor**: The check that compares the state the Gateway expects with each Node's actual state. It reports every difference and changes nothing. See [Doctor](/cli/doctor).
-- **Activity**: The record the Gateway keeps of each request. It shows who asked, what changed, and the result. See [Activity](/cli/activity).
+- **Activity**: The Gateway's record of requests. It keeps every change and every failed request, plus a sample of successful reads. See [Activity](/cli/activity).
 - **Node agent**: The program on every Node that reports presence and Process state. It never changes a Node. See [Node agent](/reference/node-agent).
-- **Extension**: An optional feature that you enable explicitly, such as Tasks.
+- **Extension**: An optional Gateway feature that you enable explicitly. For example, `tasks:enable` turns on Tasks.
 
 ## Tasks
 

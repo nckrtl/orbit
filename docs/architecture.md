@@ -17,17 +17,17 @@ Orbit consists of these components. Each one lives in its own project in the rep
 | CLI | `apps/cli`, `packages/php-sdk` | A thin client for humans and agents. It calls the Gateway API and never connects to a Node. |
 | Web app | `apps/web`, `apps/desktop` | A static single-page app that reads the API and shows record changes live. The desktop app is a native shell around it. |
 | Node agent | `apps/agent` | A program on every Node that reports presence and Process state. It never changes a Node. |
-| pi-server | `apps/pi-server` | Runs coding-agent sessions for the Tasks extension on `app-dev` Nodes. |
+| pi-server | `apps/pi-server` | Runs coding-agent sessions for the Tasks `pi` driver on `app-dev` Nodes. The `t3` driver uses T3, which runs outside this repository. |
 
 ## Trust
 
-Every Node joins one private WireGuard network. The Gateway identifies each caller by the WireGuard address its request comes from. A directed access grant decides which Nodes that caller may act on. Humans, agents, and Nodes use the same API with the same rules.
+Every Node joins one private WireGuard network. The Gateway identifies each caller by the WireGuard address its request comes from. A directed access grant decides which Nodes that caller may act on. Humans and agents use the same API with the same rules. Node agents report through their own endpoints with a per-Node secret.
 
 The Gateway is private and reachable only over WireGuard. Public traffic enters only through Nodes with the `ingress` role, and the Gateway never shares a Node with `ingress`.
 
 ## Nodes and roles
 
-A Node is an Ubuntu 26.04 machine. Its roles decide its work, and Orbit installs and manages only what those roles need. Services run natively under systemd.
+A Node is an Ubuntu 26.04 machine. Its roles decide its work, and Orbit installs and manages only what those roles need. Services run natively under systemd. Container Processes and the `metrics` role's Prometheus and Grafana run in Docker.
 
 | Role | Work |
 | --- | --- |
