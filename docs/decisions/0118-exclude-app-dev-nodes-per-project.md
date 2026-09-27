@@ -12,7 +12,7 @@ A Project can exclude app-dev Nodes from its development placement. The Project 
 
 Proposed.
 
-This extends the task placement rule in [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension), the development transfer rule in [ADR 0066](/decisions/0066-transfer-development-appinstances-between-nodes), the association vocabulary in [ADR 0071](/reference/cli-command-vocabulary#why-it-works-this-way), and the generated MCP catalogue in [ADR 0086](/decisions/0086-offer-the-api-as-mcp-tools).
+This extends the task placement rule in [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension), the development transfer rule in [ADR 0066](/decisions/0066-transfer-development-appinstances-between-nodes), the association vocabulary in [ADR 0071](/reference/cli-command-vocabulary#why-it-works-this-way), and the generated MCP catalogue in [ADR 0086](/reference/mcp#why-it-works-this-way).
 
 ## Context
 
@@ -20,7 +20,7 @@ Task workspaces, development Instance creation, registration, and development tr
 
 The operator chooses Nodes. The active `app-dev` role is what makes a Node eligible. Most Projects can use every Node with that role. A Node that receives the role remains available to every Project until an exclusion names it.
 
-Agents create task groups through MCP. The exclusion commands have to be on that same surface. [ADR 0086](/decisions/0086-offer-the-api-as-mcp-tools) generates one tool per API operation and forbids a second hand-written tool layer.
+Agents create task groups through MCP. The exclusion commands have to be on that same surface. [ADR 0086](/reference/mcp#why-it-works-this-way) generates one tool per API operation and forbids a second hand-written tool layer.
 
 ## Decision
 
@@ -38,7 +38,7 @@ Agents create task groups through MCP. The exclusion commands have to be on that
 - An allowlist of Nodes: rejected because an empty list must keep today's placement, and a new app-dev Node must stay eligible until it is excluded.
 - A Node capability such as Incus: rejected because Orbit does not record that capability, and the operator's choice is a specific Node.
 - One command family with a flag for the starting side: rejected because each door is an association between records that already exist. Two families write one row.
-- Hand-written MCP tools: rejected because [ADR 0086](/decisions/0086-offer-the-api-as-mcp-tools) generates the catalogue from the API.
+- Hand-written MCP tools: rejected because [ADR 0086](/reference/mcp#why-it-works-this-way) generates the catalogue from the API.
 - Moving Instances that are already on an excluded Node: rejected because the list applies to new development placement. The operator moves an existing Instance with transfer.
 - Applying the list to production placement: rejected because production placement uses the `app-prod` role.
 - Keeping the row after the `app-dev` role is removed: rejected because the row leaves with the role. Putting the role back makes the Node eligible until it is excluded again.
@@ -55,6 +55,6 @@ Agents create task groups through MCP. The exclusion commands have to be on that
 ## Affects
 
 - Components: apps/cli, apps/docs, apps/gateway, packages/php-sdk
-- ADRs: extends [ADR 0066](/decisions/0066-transfer-development-appinstances-between-nodes), [ADR 0071](/reference/cli-command-vocabulary#why-it-works-this-way), [ADR 0086](/decisions/0086-offer-the-api-as-mcp-tools), and [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension)
+- ADRs: extends [ADR 0066](/decisions/0066-transfer-development-appinstances-between-nodes), [ADR 0071](/reference/cli-command-vocabulary#why-it-works-this-way), [ADR 0086](/reference/mcp#why-it-works-this-way), and [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension)
 - Detail: [Development node exclusions](/reference/development-node-exclusions)
 - Verify: `composer docs-lint`; Gateway, PHP SDK, and CLI tests for both families, for placement refusal, and for role removal clearing the rows; `bin/mcp-tools --check`
