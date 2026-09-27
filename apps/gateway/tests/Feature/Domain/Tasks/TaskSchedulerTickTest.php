@@ -9,6 +9,7 @@ use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentSpawner;
+use App\Domain\Tasks\ArchiveFinishedTaskThreads;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\NullAgentSpawner;
 use App\Domain\Tasks\NullCoderSettleNotifier;
@@ -224,6 +225,114 @@ function tick_dispatcher(): T3Dispatcher
 beforeEach(function (): void {
     app()->instance(TaskPlannerMcp::class, new AcceptingTaskPlannerMcp);
     tick_workspace();
+});
+
+it('archives the reviewer thread after a subtask completes', function (): void {
+    $group = tick_group();
+    test_link_agent_threads($group);
+    $task = $group->tasks->firstOrFail();
+    $reviewer = AgentThread::query()->create([
+        'task_group_id' => $group->id, 'task_id' => $task->id, 'driver' => 't3',
+        'runtime_key' => 'node:'.$group->taskable->node_id, 'external_id' => 'task-reviewer-thread',
+        'role' => 'reviewer', 'node_id' => $group->taskable->node_id,
+    ]);
+    $task->update(['status' => TaskStatus::Completed]);
+    app(TaskExtensionState::class)->enable();
+    $dispatcher = tick_dispatcher();
+    app()->instance(T3Dispatcher::class, $dispatcher);
+
+    app(TaskScheduler::class)->tick();
+
+    $archiveCommands = array_values(array_filter($dispatcher->commands, static fn (array $command): bool => $command['type'] === 'thread.archive'));
+    expect($archiveCommands)->toHaveCount(1)
+        ->and($archiveCommands[0]['threadId'])->toBe($reviewer->external_id)
+        ->and($archiveCommands[0]['threadId'])->not->toBe('reviewer-thread')
+        ->and($reviewer->fresh()?->archived_at)->not->toBeNull();
+});
+
+it('archives the planner and remaining T3 threads when a group completes', function (): void {
+    $group = tick_group();
+    test_link_agent_threads($group);
+    $task = $group->tasks->firstOrFail();
+    $task->update(['status' => TaskStatus::Completed]);
+    $group->update(['status' => TaskGroupStatus::Completed]);
+    app(TaskExtensionState::class)->enable();
+    $dispatcher = tick_dispatcher();
+    app()->instance(T3Dispatcher::class, $dispatcher);
+
+    app(TaskScheduler::class)->tick();
+
+    expect(collect($dispatcher->commands)->where('type', 'thread.archive')->pluck('threadId')->all())
+        ->toContain('reviewer-thread', 'implementer-thread')
+        ->and(AgentThread::query()->where('task_group_id', $group->id)->whereNull('archived_at')->count())->toBe(0);
+});
+
+it('retries failed archives on a later tick with the same command id without blocking', function (): void {
+    $group = tick_group();
+    test_link_agent_threads($group);
+    $group->update(['status' => TaskGroupStatus::Completed]);
+    app(TaskExtensionState::class)->enable();
+    $dispatcher = new class implements T3Dispatcher
+    {
+        public bool $fail = true;
+
+        /** @var list<array<string, mixed>> */
+        public array $commands = [];
+
+        public function dispatch(Node $node, array $command): array
+        {
+            $this->commands[] = $command;
+            if (($command['type'] ?? null) === 'thread.archive' && $this->fail) {
+                $this->fail = false;
+                throw new T3DispatchException;
+            }
+
+            return ['sequence' => count($this->commands), 'thread_id' => (string) ($command['threadId'] ?? '')];
+        }
+    };
+    app()->instance(T3Dispatcher::class, $dispatcher);
+
+    app(TaskScheduler::class)->tick();
+    $archiveId = collect($dispatcher->commands)->firstWhere('type', 'thread.archive')['commandId'];
+    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => TaskGroupStatus::Completed->value]);
+    app(TaskScheduler::class)->tick();
+
+    $commands = collect($dispatcher->commands)->where('type', 'thread.archive')->where('threadId', 'reviewer-thread');
+    expect($commands)->toHaveCount(2)
+        ->and($commands->pluck('commandId')->unique()->all())->toBe([$archiveId])
+        ->and(AgentThread::query()->where('task_group_id', $group->id)->whereNull('archived_at')->exists())->toBeFalse();
+});
+
+it('deletes stale pending thread rows for finished tasks', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->firstOrFail();
+    $task->update(['status' => TaskStatus::Completed]);
+    $pending = AgentThread::query()->create([
+        'task_group_id' => $group->id, 'task_id' => $task->id, 'driver' => 't3',
+        'runtime_key' => 'node:'.$group->taskable->node_id, 'external_id' => 'pending:stale',
+        'role' => 'reviewer', 'node_id' => $group->taskable->node_id,
+    ]);
+    app(TaskExtensionState::class)->enable();
+
+    app(TaskScheduler::class)->tick();
+
+    expect(AgentThread::query()->find($pending->id))->toBeNull();
+});
+
+it('retains pending reservations for active tasks so spawn retries can reuse them', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->firstOrFail();
+    $task->update(['status' => TaskStatus::Running]);
+    $pending = AgentThread::query()->create([
+        'task_group_id' => $group->id, 'task_id' => $task->id, 'driver' => 't3',
+        'runtime_key' => 'node:'.$group->taskable->node_id, 'external_id' => 'pending:active-reservation',
+        'role' => 'implementer', 'node_id' => $group->taskable->node_id,
+    ]);
+    $pending->forceFill(['created_at' => now()->subDays(10)])->save();
+
+    app(ArchiveFinishedTaskThreads::class)->run();
+
+    expect($pending->fresh())->not->toBeNull();
 });
 
 it('flags a prior settling group without a reviewed PR once and retains its workspace', function (): void {

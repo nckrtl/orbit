@@ -107,6 +107,7 @@ final readonly class TaskScheduler
         private TaskBroadcasts $broadcasts,
         private RemoveTaskWorkspaceAction $workspaces,
         private TaskBaseBranchFetcher $bases,
+        private ArchiveFinishedTaskThreads $archives,
     ) {}
 
     /**
@@ -255,6 +256,8 @@ final readonly class TaskScheduler
                 $decisions[] = $decision;
             }
         }
+
+        $this->archives->run();
 
         return $decisions;
     }

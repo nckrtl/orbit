@@ -48,6 +48,8 @@ it('creates task_groups and tasks with morph, metrics, and ordering columns', fu
             'output_tokens',
             'model_calls',
             'peak_context_tokens',
+            'archived_at',
+            'archive_command_id',
         ]))->toBeTrue();
 });
 

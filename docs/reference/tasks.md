@@ -394,9 +394,9 @@ An `AgentThread` is one persistent conversation. It records the driver, external
 
 It is forward-only; reverting to an older Gateway requires restoring a database backup or a reviewed forward migration. Ownership conflicts are checked before schema changes. Take a backup before migrating. If a database without transactional DDL stops partway through a schema change, restore that backup before retrying; do not rerun against the partial schema.
 
-Orbit reserves a row before it starts a conversation, so the opening prompt can name the Orbit thread id. That row's external id starts with `pending:` until the conversation starts. It is not a conversation yet. The agents list, the Agents section, token totals, and `agent_thread.updated` leave it out, and Orbit does not read it from the driver. If starting the conversation throws, Orbit deletes the row. The next attempt does not reuse it.
+Orbit reserves a row before it starts a conversation, so the opening prompt can name the Orbit thread id. That row's external id starts with `pending:` until the conversation starts. It is not a conversation yet. The agents list, the Agents section, token totals, and `agent_thread.updated` leave it out, and Orbit does not read it from the driver. When a spawn reports a failure, Orbit deletes the reservation, and a later attempt creates a new one.
 
-If a failed spawn leaves a `pending:` row behind, a tick deletes it when the row is older than the spawn attempt that created it. A later spawn does not reuse the row.
+If the process stops before it can clean up a failed spawn, the `pending:` row may remain. A tick deletes it only after its task or group is completed or cancelled. While the owner remains active, Orbit keeps the row and a later spawn reuses it; pending reservations do not expire based on age. See [Archive finished threads](#archive-finished-threads).
 
 | State | Meaning |
 | --- | --- |
@@ -416,7 +416,9 @@ The Gateway sends normalized conversation snapshots, entries, states, input requ
 
 Orbit archives T3 threads after their work ends. When a subtask reaches `completed` or `cancelled`, Orbit archives that subtask's reviewer thread, if it has one. It never archives the planner thread while the group is open. When a group reaches `completed` or `cancelled`, Orbit archives its planner thread and any remaining T3 threads for the group.
 
-If an archive command fails, the failure does not block the subtask or group from reaching its terminal status. A later tick retries the archive. Archiving does not delete the Orbit `agent_threads` row or its metrics. Pi sessions are files on the Node and are outside this cleanup.
+If an archive command fails, the failure does not block the subtask or group from reaching its terminal status. A later tick retries the archive with the same command id. Ticks delete leftover `pending:` reservations only when their task or group is completed or cancelled. While the owner remains active, Orbit keeps the reservation so `TaskAgentSpawner` can retry the spawn using that row; pending rows do not expire based on age.
+
+To process finished threads without waiting for a tick, run `php artisan tasks:archive-threads`; it uses the same idempotent path for all completed and cancelled subtasks and groups. Archiving does not delete the Orbit `agent_threads` row or its metrics. Pi sessions are files on the Node and are outside this cleanup.
 
 ### T3 driver
 
