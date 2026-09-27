@@ -43,7 +43,7 @@ The CLI calls `POST /api/v1/instances/{candidate}/clone`.
 | `branch` | Branch to deploy. It must exist in the repository. It defaults to the candidate's branch, or its deployment branch for a production candidate. |
 | `sqlite_source_path` | Absolute path to one SQLite database on the candidate. Optional. |
 
-The request accepts no Project, commit, Unix user, or path. The candidate decides the Project. The caller needs an [access grant](/cli/node) to both Nodes.
+The request accepts no Project, commit, Unix user, or path. The candidate decides the Project. Laravel-package Projects use their declared Project type for source classification; they do not need an `artisan` application to clone. The caller needs an [access grant](/cli/node) to both Nodes.
 
 The result names the new Instance, its branch, its preview domain, and its selected release, which is empty.
 

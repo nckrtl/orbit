@@ -11,7 +11,7 @@ covers:
 
 This page tells an operator or agent how to name a CLI command. It lists the verbs, how ownership selects a verb pair, the actions that only some families have, and the commands that end in a noun. The CLI lives in `apps/cli`. The [CLI design standard](/reference/cli-ux) covers input and output.
 
-Each command is one noun family and one last segment. The last segment is a verb from the pairs below, an action that its family lists, or a noun-ending command. The vocabulary also allows one hidden internal command, `internal:database-local`. `CommandVocabulary` in `apps/cli` holds these lists. `CommandSurfaceTest` fails when a registered command, or a Gateway route that serves one, breaks them. It also fails when this page and the lists differ.
+Each command is one noun family and one last segment. The last segment is a verb from the pairs below, an action that its family lists, or a noun-ending command. The vocabulary also allows one hidden internal command, `internal:database-local`. Command-specific safety options do not create a new family action: for example, `gateway:add --accept-ca-change` explicitly accepts a replacement pinned root CA; see [Gateway trust](/reference/gateway-trust). `CommandVocabulary` in `apps/cli` holds these lists. `CommandSurfaceTest` fails when a registered command, or a Gateway route that serves one, breaks them. It also fails when this page and the lists differ.
 
 ## Verb pairs
 
