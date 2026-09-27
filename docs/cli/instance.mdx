@@ -1,11 +1,15 @@
 ---
 title: "instance"
 description: "Create, register, set up, clone, deploy, roll back, and remove Instances, and attach Database connections to them."
+covers:
+  - apps/cli/app/Commands/Instances/**
+  - packages/php-sdk/src/Requests/AppInstances/{Create,Register,List,Show,Update,Destroy,Clone,Transfer}AppInstanceRequest.php
+  - packages/php-sdk/src/Responses/AppInstances/**
 ---
 
-An Instance is one placement of a Project on one Node. An Instance on an app-dev Node owns a checkout or worktree. An Instance on an app-prod Node owns a dedicated Unix user, a production home with retained releases, and a `current` link that selects the release Caddy serves. Laravel mode comes from the Instance `APP_ENV` value, not from the Node role. Active `laravel-app` Instances have exactly one Route. `monorepo`, `laravel-package`, and `node-package` Instances get no Route by default. Package Instances can inherit `.` as their root to use the repository root without a web-root layout.
+An Instance is one copy of a Project on one Node. On an `app-dev` Node it owns a checkout or worktree. On an `app-prod` Node it owns a Unix user and a production home with releases. The [Project type](/reference/apps#project-types) decides whether it gets a Route.
 
-The [Applications guide](/domains/applications) walks through creation and registration. The [production release layout](/reference/deployments), [Instance setup and teardown](/reference/instance-setup), [Instance cloning](/reference/appinstance-cloning), [Instance removal](/reference/appinstance-removal), and [Database connections](/reference/database-connections) references own the contracts behind the commands on this page.
+[Applications](/domains/applications) walks through the lifecycle. [Production release layout](/reference/deployments), [Instance setup and teardown](/reference/instance-setup), [Instance cloning](/reference/appinstance-cloning), [Instance transfer](/reference/appinstance-transfer), [Instance removal](/reference/appinstance-removal), and [Database connections](/reference/database-connections) own the contracts behind these commands.
 
 ## Commands
 
@@ -81,29 +85,20 @@ orbit instance:create <project> <node> <name> [options]
 | --- | --- | --- |
 | `--root=PATH` | the Project root | Relative web-root override for this Instance. |
 | `--domain=HOST` | generated | Explicit Route domain for the development source. Without it, Orbit generates a domain from the active Cluster TLD, then the Node TLD. |
-| `--branch=BRANCH` | see below | Explicit source branch. It must exist on the remote. |
-| `--recover-source-profile` | off | Adopt complete source evidence for a checkpoint that has no recorded source profile. |
-
-Development placement and branch selection follow the requested name.
-
-| Creation input | Managed placement | Selected branch |
-| --- | --- | --- |
-| `default` without `--branch` | `<node-apps-root>/<app-slug>/default` | The Project `default_branch`. |
-| Another name without `--branch` | `<node-apps-root>/<app-slug>/<name>` | The matching remote branch, or a new branch from the fetched `default_branch` commit. |
-| Any name with `--branch` | The placement for the requested name | The existing remote branch. |
+| `--branch=BRANCH` | see [branch selection](/domains/applications#create-a-development-instance) | Explicit source branch. |
 
 ```bash
 orbit instance:create 4 7 default
 orbit instance:create 4 7 feature-one --branch=release --domain=feature.example.test
 ```
 
-The Gateway records each provisioning boundary, so an identical retry resumes an incomplete creation. A retry that adds, removes, or changes `--branch` returns `instance.placement_conflict`. A missing remote branch that differs from the instance name returns `instance.branch_resolution_failed`. When `--branch` matches the instance name and the remote branch is missing, Orbit creates that branch from `default_branch`.
+An identical retry resumes an incomplete creation. A retry that changes the root or `--branch` returns `instance.placement_conflict`.
 
 <Note>
-Active describes prepared source, PHP runtime, Laravel configuration, and Route publication. A successful create response also confirms the Project setup steps; a retained setup failure blocks another create response until explicit setup succeeds. An empty setup list counts as success. The application can still fail for a reason outside those steps.
+Active means Orbit prepared the source, PHP runtime, Laravel URL, and Route, and the setup steps succeeded. The application can still fail for other reasons.
 </Note>
 
-A setup command that exits non-zero or times out removes the new Instance after the teardown list runs. The checkout from that attempt is deleted. [Instance setup and teardown](/reference/instance-setup) owns the failure codes and the retry boundary.
+A failed setup step removes the new Instance after the teardown steps run. See [Instance setup and teardown](/reference/instance-setup#run-setup).
 
 ## orbit instance:register
 
@@ -127,9 +122,9 @@ orbit instance:register [options]
 | `--yes` | off | Confirm transfer of the source into Orbit ownership without prompting. |
 | `--setup` | off | Run the Project setup steps after adoption. A failed step leaves the Instance and the checkout in place. |
 
-The CLI refuses a directory outside a Git checkout and refuses a credential-bearing origin before it sends a request. The Gateway resolves the Project by canonical repository identity, verifies the source on the caller Node, moves it into managed placement, and provisions the same Route and runtime that `instance:create` provisions.
+The CLI refuses a directory outside Git and an origin with credentials before it sends a request. The Gateway finds the Project by repository identity, checks the source on the caller's Node, moves it into its managed path, and provisions it as `instance:create` does. See [Register an existing checkout](/domains/applications#register-an-existing-checkout).
 
-In an interactive terminal the CLI shows the inferred values, asks only for unresolved ones, and asks for default-No ownership consent naming the source. JSON and noninteractive calls require `--yes` and refuse unresolved required values before mutation. Invalid prompted values can be corrected; cancellation or end of input leaves the source unchanged.
+In a terminal, the CLI shows the inferred values, asks only for missing ones, and asks for default-No consent that names the source. JSON and noninteractive calls need `--yes` and refuse missing values before any change. Cancellation leaves the source unchanged.
 
 ```bash
 cd ~/apps/acme
@@ -137,11 +132,9 @@ orbit instance:register
 orbit instance:register --path=/srv/orbit/apps/acme/main --include-worktrees --yes --json
 ```
 
-Registration also completes the manual migration of an Instance whose list and show output reports `migration_required: true`. The [Applications guide](/domains/applications#register-an-existing-development-source) describes inferred identity and placement.
-
 ## orbit instance:list
 
-List Instances with their Project, Node, status, Route domain, and nullable `removal` progress.
+List Instances with their Project, Node, status, Route domain, `vite_port`, and `removal` progress.
 
 ```bash
 orbit instance:list [--json]
@@ -185,7 +178,7 @@ orbit instance:logs 12 --follow
 
 ## orbit instance:destroy
 
-Remove an Instance. For a development Instance, the Gateway runs the Project teardown steps after source preflight accepts the checkout. A teardown command that exits non-zero stops removal and leaves the Instance in place. The Gateway then clears its Route target, removes every owned Process and Schedule, and deletes the record. Production removal does not run teardown steps.
+Remove an Instance with its Route, Processes, Schedules, and runtime. A development removal runs the teardown steps first and deletes the checkout. See [Instance removal](/reference/appinstance-removal).
 
 ```bash
 orbit instance:destroy <instance> [--yes] [--force] [--json]
@@ -202,7 +195,7 @@ orbit instance:destroy <instance> [--yes] [--force] [--json]
 
 Interactive removal defaults to No. `--force` does not supply consent.
 
-Normal removal refuses dirty source, a `HEAD` that no origin branch or tag contains, and a checkout with registered linked worktrees. Forced removal waives only those three refusals. It never waives the source path, ownership, layout, origin, branch, or worktree inventory checks, which return `instance.source_path_mismatch`, `instance.source_ownership_mismatch`, `instance.source_layout_mismatch`, `instance.source_origin_mismatch`, `instance.source_branch_mismatch`, or `instance.source_worktrees_mismatch`.
+Normal removal refuses dirty source, a `HEAD` that no origin branch or tag contains, and a checkout with registered linked worktrees. `--force` waives only those three refusals. The source identity checks apply in both modes.
 
 ```bash
 orbit instance:destroy 12
@@ -210,7 +203,7 @@ orbit instance:destroy 12 --force
 ```
 
 <Warning>
-Production removal retains `releases/`, `.env`, an existing `database.sqlite`, and local PHP-FPM tuning for recovery. Development removal deletes the checkout after the teardown steps succeed. Repeating the same command resumes an interrupted removal from its first unfinished step. A failed teardown step is not an unfinished removal step: the Instance stays, and the next `instance:destroy` runs the teardown list again.
+Production removal keeps `releases/`, `.env`, `database.sqlite`, and the local PHP-FPM tuning. Repeat the same command to resume an interrupted removal. A failed teardown step keeps the Instance, and the next `instance:destroy` runs the teardown list again.
 </Warning>
 
 ## orbit instance:setup
@@ -335,14 +328,14 @@ orbit instance:clone <candidate> <node> <name> --preview-name=NAME [options]
 | `--branch=BRANCH` | the candidate branch | Target branch that must exist in the Project repository. |
 | `--sqlite-source-path=PATH` | none | Absolute path to one SQLite database on the candidate to seed `database.sqlite`. |
 
-Provision the production Node with `node:add --tld` before cloning; `shop.com` on a Node whose TLD is `prod.orbit` becomes the private preview `shop.com.prod.orbit`. The candidate must have no staged, unstaged, untracked, or submodule change, and its commit must be reachable from the Project repository.
+Give the production Node a TLD with `node:add --tld` first: `shop.com` on a Node with TLD `prod.orbit` becomes the preview `shop.com.prod.orbit`. The candidate must be clean, and its commit must be in the Project repository.
 
 ```bash
 orbit node:add production production.example --role=app-prod --tld=prod.orbit
 orbit instance:clone 12 9 primary --preview-name=shop.com --sqlite-source-path=/srv/orbit/apps/acme/default/database/database.sqlite
 ```
 
-Cloning ends with an active Instance that has no selected release. Update and synchronize target environment values, configure deploy steps, then run `instance:deploy` to create and select the first release. An identical retry resumes an interrupted clone; a request that changes the candidate, destination, name, preview, branch, or SQLite selection is refused.
+Cloning ends with an active Instance and no release. Update its environment, record deploy steps, then run `instance:deploy`. See [Instance cloning](/reference/appinstance-cloning#next-steps).
 
 ## orbit instance:update
 
@@ -653,7 +646,7 @@ Plausible stops receiving visits for the Instance as soon as the hosts are gone.
 
 ## orbit instance:transfer
 
-Move an active development Instance to another app-dev Node in an active Cluster. Both Nodes must belong to active Clusters. The operation stops source processes, copies the source into an independent checkout, moves or replaces its Route, and deletes the old placement. See [Instance transfer](/reference/appinstance-transfer) for preflight, retained content, and recovery.
+Move an active development Instance to another `app-dev` Node. Both Nodes must belong to active Clusters. The transfer stops the source, copies it into an independent checkout, moves or replaces its Route, and deletes the old placement. See [Instance transfer](/reference/appinstance-transfer).
 
 ```bash
 orbit instance:transfer <instance> <node> [--name=NAME] [--sqlite-source-path=PATH] [--force] [--json]
@@ -669,8 +662,6 @@ Use these options to select the destination and confirm downtime.
 | `--json` | Return machine-readable output without prompts. Requires `--force` for consent. |
 
 Without `--force`, an interactive call asks for default-No consent naming the source, destination and effect. JSON and noninteractive calls without `--force` return `instance.confirmation_required` before mutation.
-
-Production, standalone, and same-Node transfers are refused.
 
 ## Related
 

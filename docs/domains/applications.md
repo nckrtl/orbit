@@ -143,7 +143,7 @@ These reasons explain the design. Check them before you propose a change.
 
 A registered source enters the same lifecycle as a created checkout: one managed path, one removal command, one set of safety checks. Registration that only observes an external worktree was rejected. It needed a separate unregister command, could not move or delete the source, and left Orbit serving paths it did not control. Adopting only linked worktrees was rejected too, because an independent checkout is equally useful source.
 
-### `default` is a stable name
+### The default Instance keeps its name
 
 The default development source keeps the name `default`, its path, and its Route when the Project's default branch changes. An Instance named after its branch would move and get a new domain on every branch rename. A second public name for the default branch, such as `main_branch`, was rejected because two names for one setting make the contract unclear.
 
