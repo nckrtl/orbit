@@ -496,12 +496,14 @@
             "path": "docs/cli/tool.mdx",
             "title": "tool",
             "kind": "product",
-            "components": [],
+            "components": [
+                "apps/cli",
+                "packages/php-sdk"
+            ],
             "concepts": [
                 "Doctor",
                 "Gateway",
                 "Node",
-                "Role",
                 "Tool"
             ],
             "governing_adrs": []
@@ -5690,21 +5692,17 @@
             "path": "docs/reference/tools.md",
             "title": "Tools",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/gateway"
+            ],
             "concepts": [
-                "Activity",
                 "Doctor",
                 "Gateway",
                 "Node",
-                "Process",
                 "Role",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0001",
-                "0042",
-                "0043"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/topology-snapshot.md",
