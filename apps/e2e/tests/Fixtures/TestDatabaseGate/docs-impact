@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+# The synthetic review-check repository has no product paths to inspect.
+exit 0
