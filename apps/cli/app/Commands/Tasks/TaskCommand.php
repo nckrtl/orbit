@@ -308,7 +308,6 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
             'Instance' => $group->taskableId,
             'Pull request' => $group->prUrl,
             'Notify Coder' => $group->notifyCoder,
-            'Plan' => $group->plan,
             'Implementer model' => $group->implementerModel,
             'Reviewer model' => $group->reviewerModel,
             'Tokens' => self::tokens($group->tokens),

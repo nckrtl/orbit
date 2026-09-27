@@ -22,7 +22,6 @@ final class ListProcessesCommand extends TargetedProcessCommand
         {--instance= : Positive Instance ID}
         {--node= : Node ID or registered name}
         {--project= : Numeric Project ID}
-        {--app= : Numeric Project ID (compatibility)}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -45,7 +44,7 @@ final class ListProcessesCommand extends TargetedProcessCommand
         }
 
         if ($selector === 'app') {
-            $appId = $this->appIdOption();
+            $appId = $this->projectIdOption();
 
             if ($appId === false || $appId === null) {
                 return self::FAILURE;

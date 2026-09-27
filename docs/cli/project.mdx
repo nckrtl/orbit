@@ -1,61 +1,52 @@
 ---
 title: "project"
-description: "Create, inspect, and remove Project records. A Project owns one repository, a type, and the source defaults that Instances inherit."
+description: "Create, inspect, update, and remove Projects. A Project owns one repository, a type, and the source defaults that Instances inherit."
+covers:
+  - apps/cli/app/Commands/Apps/**
+  - packages/php-sdk/src/Requests/Apps/{Create,List,Show,Update,Destroy}AppRequest.php
+  - packages/php-sdk/src/Responses/Apps/{AppResponse,AppsResponse,AppIdentityResponse}.php
 ---
 
-A Project is Orbit's stable record for one repository. It owns one repository identity, one type, one access URL, a default branch, and a normalized root path. For Laravel apps the root is a web root; package types can use `.` for the repository root. Instances, Routes, and process and Schedule definitions hang off the Project.
-
-The [Projects reference](/reference/apps) owns repository identity, type, default-branch resolution, and idempotent creation. The [Applications guide](/domains/applications) shows how a Project becomes a running Instance.
-
-Canonical HTTP is `/api/v1/projects`. `/api/v1/apps` remains a dual-read and dual-write compatibility path for the same records. This CLI family is `project:*`. Older binaries that still call `app:*` keep working against `/apps`.
+A Project records one Git repository and the defaults for running it. [Projects](/reference/apps) owns the fields, types, update lifecycle, and error codes. [Applications](/domains/applications) shows how a Project becomes an Instance.
 
 ## Commands
 
 | Command | Result |
 | --- | --- |
-| [`project:create`](#orbit-projectcreate) | Create a Project from a slug, a type, and a Git repository URL. |
+| [`project:create`](#orbit-projectcreate) | Create a Project from a slug, a type, and a repository URL. |
 | [`project:list`](#orbit-projectlist) | List Projects. |
-| [`project:show`](#orbit-projectshow) | Show one Project with its stored type, repository, default branch, and root. |
-| [`project:update`](#orbit-projectupdate) | Change type or source defaults and reconcile affected Instances. |
+| [`project:show`](#orbit-projectshow) | Show one Project. |
+| [`project:update`](#orbit-projectupdate) | Change a Project and reconcile its Instances. |
 | [`project:destroy`](#orbit-projectdestroy) | Remove a Project. |
 
-Every command accepts `--json`.
-
-Human lists use an uppercase-header table. Project details use a detail tree. Requests show progress while waiting, and results retain the Gateway request ID. Inputs remain explicit in every mode.
+Every command accepts `--json`. [`project:excluded-node`](/reference/development-node-exclusions) keeps a Project off selected `app-dev` Nodes.
 
 ## orbit project:create
-
-Create a Project. The Gateway resolves the remote default branch once when `--default-branch` is omitted and stores the result.
 
 ```bash
 orbit project:create <slug> <type> <repository> [options]
 ```
 
-| Argument | Required | Meaning |
-| --- | --- | --- |
-| `slug` | yes | Unique Project slug. It names the checkout directory under the Node apps root. |
-| `type` | yes | `monorepo`, `laravel-app`, `laravel-package`, or `node-package`. Type decides routing and PHP-FPM capability. |
-| `repository` | yes | HTTPS or SSH Git repository URL. |
+| Argument | Meaning |
+| --- | --- |
+| `slug` | Unique Project slug. |
+| `type` | `monorepo`, `laravel-app`, `laravel-package`, or `node-package`. |
+| `repository` | HTTPS or SSH Git URL. |
 
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--name=NAME` | the slug | Display name. |
-| `--default-branch=BRANCH` | the remote default | Stored default branch. The Gateway verifies that an explicit branch exists. |
-| `--root=PATH` | `.` for `laravel-package` and `node-package`; `public` otherwise | Normalized repository-relative root that Instances inherit. `.` means the repository root. |
-| `--task-check=COMMAND` | `composer check` for `laravel-app` and `laravel-package`; none otherwise | Command that task baselines and handoffs run in the workspace. See [Project check](/reference/tasks#project-check). |
+| `--default-branch=BRANCH` | the remote default | Default branch. It must exist on the remote. |
+| `--root=PATH` | `.` for package types, `public` otherwise | Repository-relative root that Instances inherit. |
+| `--task-check=COMMAND` | `composer check` for `laravel-app` and `laravel-package`, none otherwise | Command that task baselines and handoffs run. |
 
 ```bash
-orbit project:create acme laravel-app https://github.com/acme/site.git
-orbit project:create acme laravel-app git@github.com:acme/site.git --default-branch=stable --root=web/public
-orbit project:create support laravel-package git@github.com:acme/support.git --root=.
+orbit project:create acme laravel-app git@github.com:acme/site.git
+orbit project:create support laravel-package git@github.com:acme/support.git
 orbit project:create node-kit node-package git@github.com:acme/node-kit.git --task-check="vp run check"
 ```
 
-Creation is idempotent. Repeating the command with the same values returns the existing Project. A retry that changes any value fails with `app.identity_conflict`, and a second Project for the same repository fails with `app.repository_identity_conflict`.
-
-A repository access failure or an unavailable remote default returns `app.default_branch_unavailable` without repository diagnostics or credentials.
-
-Compatibility `POST /api/v1/apps` callers that omit `type` receive `laravel-app`.
+A retry with the same values returns the existing Project.
 
 ## orbit project:list
 
@@ -67,52 +58,42 @@ orbit project:list [--json]
 
 ## orbit project:show
 
-Show one Project with its source defaults and task check. Null `default_branch` or root values mean the source defaults are incomplete, and new Instance creation fails with `app.source_defaults_incomplete` until they exist. A null task check means tasks run no check command.
+Show one Project with its source defaults, task check, and excluded Nodes. A null task check means tasks run no check command. Human output also lists the Project's Instances with ID, name, environment, Node, domain, and status. In a terminal, selecting an Instance opens `instance:show`.
 
 ```bash
 orbit project:show <project> [--json]
 ```
 
-| Argument | Required | Meaning |
-| --- | --- | --- |
-| `project` | yes | Numeric Project ID. |
-
 ## orbit project:update
 
-Change a Project's type, source defaults, or task check. Omitted fields stay unchanged. The Gateway reconciles affected development sources, inherited web roots, and generated domains before publishing the change. It does not start a production deployment. See [Update a Project](/reference/apps#update-a-project) for validation, rollback, and retry behavior.
+Change the fields you pass. The Gateway reconciles affected checkouts, Routes, and runtimes. It never starts a deployment. See [Update a Project](/reference/apps#update-a-project).
 
 ```bash
 orbit project:update <project> [--type=TYPE] [--slug=SLUG] [--repository=URL] [--default-branch=BRANCH] [--root=PATH] [--task-check=COMMAND] [--clear-task-check]
 ```
 
-The command accepts these options.
-
 | Option | Meaning |
 | --- | --- |
-| `--type=TYPE` | New Project type. A change to `laravel-app` is refused while an active Instance has no Route. |
-| `--slug=SLUG` | New Project slug. Generated development domains follow it; recorded paths stay unchanged. |
-| `--repository=URL` | New Git access URL. The Gateway validates ownership before updating checkout origins. |
-| `--default-branch=BRANCH` | New default branch for development sources that inherit it. |
-| `--root=PATH` | New normalized repository-relative root for Instances without an override. Package types may use `.`. |
-| `--task-check=COMMAND` | New command that task baselines and handoffs run. A type change does not change it. |
-| `--clear-task-check` | Remove the task check so tasks run no check command. Combining it with `--task-check` fails with `app.task_check_conflict`. |
+| `--type=TYPE` | New type. |
+| `--slug=SLUG` | New slug. Generated domains follow it. Recorded paths stay. |
+| `--repository=URL` | New Git URL. |
+| `--default-branch=BRANCH` | New default branch for `default` Instances that inherit it. |
+| `--root=PATH` | New root for Instances without their own root. |
+| `--task-check=COMMAND` | New task check. |
+| `--clear-task-check` | Remove the task check. Combined with `--task-check`, it returns `app.task_check_conflict`. |
 
 ## orbit project:destroy
 
-Remove a Project. The Gateway refuses the request while the Project still owns a Route, so remove its Instances first. Removing a Project also deletes its process and Schedule definitions.
+Remove a Project that has no Instances and no Routes. Its definitions, setup steps, Node exclusions, and update records go with it. A Project with task groups cannot be removed: the request fails with `gateway.unhandled`. See [Remove a Project](/reference/apps#remove-a-project).
 
 ```bash
 orbit project:destroy <project> [--yes] [--json]
 ```
 
-| Argument | Required | Meaning |
-| --- | --- | --- |
-| `project` | yes | Numeric Project ID. |
-
-Removal asks for confirmation with No selected. Supply `--yes` for automation, including `--json`. The CLI resolves the Project before asking; declining, Ctrl-C or EOF returns `input.cancelled` without sending removal. A valid noninteractive call without `--yes` returns `input.confirmation_required`.
+The CLI shows the Project and asks for confirmation, with No selected. `--yes` confirms without a prompt and is required for JSON and noninteractive calls.
 
 ## Related
 
-- [`instance`](/cli/instance) creates a checkout or production release of a Project on a Node.
-- [`process`](/cli/process) and [`schedule`](/cli/schedule) record Project-owned definitions with `--project`. `--app` remains accepted as the same identifier.
-- [`route`](/cli/route) creates explicit domains owned by a Project.
+- [`instance`](/cli/instance) creates and manages the Instances of a Project.
+- [`process`](/cli/process) and [`schedule`](/cli/schedule) record Project definitions with `--project`.
+- [`route`](/cli/route) creates explicit domains for a Project.

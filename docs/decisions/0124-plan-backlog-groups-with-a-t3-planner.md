@@ -10,9 +10,9 @@ A task group can start in Backlog with a planner. The Gateway gives the group it
 
 ## Status
 
-Proposed.
+Proposed. Superseded by [ADR 0178](/decisions/0178-run-project-agnostic-tasks-without-a-planner).
 
-This extends [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready), where a Backlog group has no Instance and no agents. It amends the reviewer start of [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt) and uses the driver boundary of [ADR 0112](/decisions/0112-isolate-agent-threads-behind-drivers) and the MCP server of [ADR 0086](/decisions/0086-offer-the-api-as-mcp-tools).
+This extends [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready), where a Backlog group has no Instance and no agents. It amends the reviewer start of [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt) and uses the driver boundary of [ADR 0112](/decisions/0112-isolate-agent-threads-behind-drivers) and the MCP server of [ADR 0086](/reference/mcp#why-it-works-this-way).
 
 ## Context
 
@@ -88,6 +88,6 @@ A planner is an opt-in T3 thread that shapes a Backlog group through Orbit MCP a
 ## Affects
 
 - Components: apps/gateway, apps/docs
-- ADRs: extends [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready); amends [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt); uses [ADR 0112](/decisions/0112-isolate-agent-threads-behind-drivers) and [ADR 0086](/decisions/0086-offer-the-api-as-mcp-tools)
+- ADRs: extends [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready); amends [ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt); uses [ADR 0112](/decisions/0112-isolate-agent-threads-behind-drivers) and [ADR 0086](/reference/mcp#why-it-works-this-way)
 - Detail: [Tasks](/reference/tasks)
 - Verify: Gateway tests for create with `plan`, planning placement and its refusals, the move to Todo with its commit and Instance reuse, the first handoff to the planner thread, and cancellation; `bin/mcp-tools --check`; `composer docs-lint`

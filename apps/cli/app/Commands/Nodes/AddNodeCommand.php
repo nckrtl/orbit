@@ -26,7 +26,6 @@ final class AddNodeCommand extends NodeCommand
         {--host-key-fingerprint= : Approved SSH SHA256 host key fingerprint}
         {--cluster= : Optional numeric Cluster ID}
         {--wireguard-ip= : Stable WireGuard IP address}
-        {--wireguard-address= : Deprecated alias for --wireguard-ip}
         {--lan-ip= : Optional Cluster-local LAN IPv4 address}
         {--wireguard-endpoint= : Per-node WireGuard endpoint override}
         {--dns-server= : Per-node DNS server override}
@@ -97,33 +96,14 @@ final class AddNodeCommand extends NodeCommand
             $clusterId = (int) $cluster;
         }
 
-        $canonicalWireguardIp = $this->input->getOption('wireguard-ip');
-        $legacyWireguardIp = $this->input->getOption('wireguard-address');
+        $wireguardIp = $this->input->getOption('wireguard-ip');
 
-        if (
-            $canonicalWireguardIp !== null
-            && ! is_string($canonicalWireguardIp)
-            || $legacyWireguardIp !== null
-            && ! is_string($legacyWireguardIp)
-        ) {
+        if ($wireguardIp !== null && ! is_string($wireguardIp)) {
             return $this->renderGatewayFailure(
                 'node.wireguard_ip_invalid',
                 'WireGuard IP must be an IPv4 address.',
             );
         }
-
-        if (
-            is_string($canonicalWireguardIp)
-            && is_string($legacyWireguardIp)
-            && $canonicalWireguardIp !== $legacyWireguardIp
-        ) {
-            return $this->renderGatewayFailure(
-                'node.wireguard_ip_conflict',
-                'WireGuard options must match when both are supplied.',
-            );
-        }
-
-        $wireguardIp = is_string($canonicalWireguardIp) ? $canonicalWireguardIp : $legacyWireguardIp;
 
         if (is_string($wireguardIp) && filter_var($wireguardIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
             return $this->renderGatewayFailure(

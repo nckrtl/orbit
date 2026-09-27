@@ -5,8 +5,8 @@ Orbit connects application development, hosting, and machine maintenance. Use it
 Register a Git repository, create a development App instance, and get a private HTTPS URL:
 
 ```bash
-orbit app:create hello https://github.com/YOUR-ACCOUNT/hello.git --root=public
-orbit instance:create APP_ID NODE_ID default
+orbit project:create hello laravel-app https://github.com/YOUR-ACCOUNT/hello.git --root=public
+orbit instance:create PROJECT_ID NODE_ID default
 ```
 
 Replace the repository and IDs with your own values. The [Quickstart](https://orbit.nckrtl.com/docs/quickstart) sets up the Gateway and CLI, adds a machine, and serves a page. It is written for you and your coding agent together.

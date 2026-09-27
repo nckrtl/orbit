@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Doctor\DoctorFamily;
 use App\Models\Activity;
 use App\Models\AgentThread;
+use App\Models\AgentThreadSendLease;
 use App\Models\Annotation;
 use App\Models\App as AppModel;
 use App\Models\AppInstance;
@@ -25,6 +26,7 @@ use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseUser;
 use App\Models\DependencyPackage;
 use App\Models\FirewallRule;
+use App\Models\JevDecision;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRole;
@@ -87,10 +89,12 @@ it('partitions every persisted model across doctor dispositions', function (): v
         AppInstanceRemoval::class,
         AppInstanceRemovalMember::class,
         AppInstanceTransfer::class,
+        JevDecision::class,
         AppUpdate::class,
         DatabaseUser::class,
         Task::class,
         AgentThread::class,
+        AgentThreadSendLease::class,
         TaskGroup::class,
         TaskComment::class,
         TaskCheck::class,

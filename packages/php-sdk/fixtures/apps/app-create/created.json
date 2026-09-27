@@ -1,7 +1,7 @@
 {
     "schema": 1,
     "request": "Orbit\\Sdk\\Requests\\Apps\\CreateAppRequest",
-    "route": "POST /api/v1/apps",
+    "route": "POST /api/v1/projects",
     "status": 201,
     "body": {
         "data": {

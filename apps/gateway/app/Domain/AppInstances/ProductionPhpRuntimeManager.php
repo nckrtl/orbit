@@ -10,6 +10,8 @@ interface ProductionPhpRuntimeManager
 {
     public function converge(AppInstance $appInstance): void;
 
+    public function convergeMonitoring(AppInstance $appInstance, bool $enabled): void;
+
     public function refreshCache(AppInstance $appInstance): void;
 
     public function remove(AppInstance $appInstance): void;

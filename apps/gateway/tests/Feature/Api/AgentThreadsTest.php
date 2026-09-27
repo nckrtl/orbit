@@ -58,7 +58,7 @@ describe('task agent viewer', function (): void {
         $this->getJson("/api/v1/task-groups/{$group->id}/agents/{$session->id}/stream")->assertStatus(409)->assertJsonPath('error.code', 'tasks.agent_unavailable');
     });
 
-    it('relays scoped snapshots and events with resume IDs and redacts secrets', function (): void {
+    it('reconnects with a full snapshot and relays entries and state', function (): void {
         [$group, $session] = agent_viewer_fixture();
         $session->update(['state' => 'done', 'tokens' => 500, 'observation_version' => 7]);
         config()->set('orbit.t3.token', 'private-t3-bearer');
@@ -66,7 +66,7 @@ describe('task agent viewer', function (): void {
         {
             public ?int $cursor = null;
 
-            public function events(Node $node, string $threadId, ?int $afterSequence): iterable
+            public function events(Node $node, string $threadId, ?int $afterSequence, ?float $timeoutSeconds = null): iterable
             {
                 $this->cursor = $afterSequence;
                 yield ['kind' => 'snapshot', 'snapshot' => ['snapshotSequence' => 8, 'thread' => ['id' => $threadId, 'session' => ['status' => 'failed', 'lastError' => 'Turn failed.'], 'messages' => [['text' => 'TOKEN=hidden private-t3-bearer']]]]];
@@ -106,7 +106,90 @@ describe('task agent viewer', function (): void {
             ->and($session->fresh()->tokens)->toBe(500)
             ->and($session->fresh()->observation_version)->toBe(7)
             ->and($session->fresh()->error)->toBeNull()
+            ->and($session->fresh()->observed_at)->toBeNull()
             ->and($session->fresh()->observation_error)->toBeNull();
+    });
+
+    it('requests a full snapshot for a fresh viewer after collection has advanced', function (): void {
+        [$group, $session] = agent_viewer_fixture();
+        $session->update(['t3_metrics_initialized' => true, 't3_event_sequence' => 7]);
+        $fake = new class implements TaskAgentStream
+        {
+            public ?int $cursor = null;
+
+            public function events(Node $node, string $threadId, ?int $afterSequence, ?float $timeoutSeconds = null): iterable
+            {
+                $this->cursor = $afterSequence;
+                yield ['kind' => 'snapshot', 'snapshot' => [
+                    'snapshotSequence' => 8,
+                    'thread' => ['id' => $threadId, 'session' => ['status' => 'ready'], 'messages' => [['id' => 'm1', 'role' => 'assistant', 'text' => 'Existing transcript']]],
+                ]];
+            }
+        };
+        app()->instance(TaskAgentStream::class, $fake);
+
+        $output = $this->get("/api/v1/task-groups/{$group->id}/agents/{$session->id}/stream")->assertOk()->streamedContent();
+
+        expect($fake->cursor)->toBeNull()
+            ->and($output)->toContain('id: 8', 'Existing transcript');
+    });
+
+    it('accepts a viewer baseline at the durable sequence', function (): void {
+        [$group, $session] = agent_viewer_fixture();
+        $session->update(['t3_metrics_initialized' => true, 't3_event_sequence' => 8]);
+        $fake = new class implements TaskAgentStream
+        {
+            public function events(Node $node, string $threadId, ?int $afterSequence, ?float $timeoutSeconds = null): iterable
+            {
+                yield ['kind' => 'snapshot', 'snapshot' => [
+                    'snapshotSequence' => 8,
+                    'thread' => ['id' => $threadId, 'session' => ['status' => 'ready'], 'messages' => [['id' => 'm1', 'role' => 'assistant', 'text' => 'Stable transcript']]],
+                ]];
+            }
+        };
+        app()->instance(TaskAgentStream::class, $fake);
+
+        $output = $this->get("/api/v1/task-groups/{$group->id}/agents/{$session->id}/stream")->assertOk()->streamedContent();
+
+        expect($output)->toContain('id: 8', 'Stable transcript')->not->toContain('event: unavailable');
+    });
+
+    it('persists model calls from a snapshotless T3 replay', function (): void {
+        [$group, $session] = agent_viewer_fixture();
+        $session->update([
+            't3_metrics_initialized' => true,
+            't3_event_sequence' => 7,
+            't3_observed_total_processed_tokens' => 0,
+            't3_metrics_partial' => false,
+        ]);
+        $fake = new class implements TaskAgentStream
+        {
+            public ?int $cursor = null;
+
+            public function events(Node $node, string $threadId, ?int $afterSequence, ?float $timeoutSeconds = null): iterable
+            {
+                $this->cursor = $afterSequence;
+                foreach ([[8, 100, 90, 20, 10], [9, 250, 110, 30, 15]] as [$sequence, $total, $input, $cached, $output]) {
+                    yield ['kind' => 'event', 'event' => [
+                        'sequence' => $sequence, 'aggregateId' => $threadId, 'type' => 'thread.activity-appended',
+                        'payload' => ['activity' => ['kind' => 'context-window.updated', 'payload' => [
+                            'totalProcessedTokens' => $total, 'inputTokens' => $input, 'cachedInputTokens' => $cached, 'outputTokens' => $output,
+                        ]]],
+                    ]];
+                }
+            }
+        };
+        app()->instance(TaskAgentStream::class, $fake);
+
+        $this->withHeader('Last-Event-ID', '7')->get("/api/v1/task-groups/{$group->id}/agents/{$session->id}/stream")->assertOk()->streamedContent();
+        $stored = $session->fresh();
+
+        expect($fake->cursor)->toBeNull()
+            ->and($stored?->t3_event_sequence)->toBe(9)
+            ->and($stored?->model_calls)->toBe(2)
+            ->and($stored?->input_tokens)->toBe(150)
+            ->and($stored?->cached_input_tokens)->toBe(50)
+            ->and($stored?->output_tokens)->toBe(25);
     });
 
     it('shows per-thread token metrics', function (): void {

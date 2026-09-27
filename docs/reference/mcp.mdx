@@ -1,34 +1,39 @@
 ---
 title: "MCP server"
 description: "The Gateway's Model Context Protocol server: every API operation as a tool, identified by WireGuard address, with a search variant for small contexts."
+covers:
+  - apps/gateway/app/Http/Mcp/**
+  - apps/gateway/routes/ai.php
+  - apps/gateway/resources/mcp/tools.json
+  - bin/mcp-tools
 ---
 
 # MCP server
 
-The Gateway serves a Model Context Protocol (MCP) server so an agent can operate Orbit without the CLI. Every Gateway API operation is one tool. The tool runs the same request the matching CLI command sends, so validation, node access, redaction, and command activity behave the same on both paths.
+The Gateway serves a Model Context Protocol (MCP) server, so an agent can operate Orbit without the CLI. Every Gateway API operation is one tool. A tool call runs the same API request that the matching CLI command sends. Identity, access grants, validation, redaction, and [Activity](/cli/activity) therefore apply to it in the same way.
 
 ## Endpoints
 
-Both endpoints speak MCP over streamable HTTP with `POST`, and both offer the same catalogue.
+Both endpoints speak MCP over streamable HTTP and offer the same catalogue.
 
 | Endpoint | Tools it lists | Use it when |
 | --- | --- | --- |
-| `https://gateway.orbit/mcp` | One tool for every API operation. | The client loads tool definitions on demand, or the context has room for the full catalogue. |
-| `https://gateway.orbit/mcp/search` | `search_tools` and `execute_tools`. | The client loads every listed tool into its context. The agent searches the catalogue, then runs up to 25 calls in one request. |
+| `https://gateway.orbit/mcp` | One tool for every API operation, on one page. | The client loads tool definitions on demand, or its context has room for the full catalogue. |
+| `https://gateway.orbit/mcp/search` | `search_tools` and `execute_tools`. | The client loads every listed tool into its context. |
 
-`search_tools` returns exact tool names with their complete input schemas; an empty query browses the catalogue. `execute_tools` takes `{"calls": [{"name": "...", "arguments": {...}}]}`, runs the calls in order, and stops at the first error.
+`search_tools` returns exact tool names with their input schemas. An empty query browses the catalogue. `execute_tools` takes `{"calls": [{"name": "...", "arguments": {...}}]}`, runs up to 25 calls in order, and stops at the first error. `/mcp/search` limits the output of one call to 65,536 bytes. `execute_tools` stops when the combined results pass that limit, so a large list result can fail through `/mcp/search` and still work through `/mcp`.
 
 ## Identity and access
 
-The caller is the Node whose WireGuard address the connection comes from, the same identity the API uses. There is no token and no login.
+The caller is the Node whose WireGuard address the connection comes from. There is no token and no login.
 
-- A connection from an address that is not an active Node receives HTTP `403` with `peer.identity_unknown` before it can list tools.
-- Each tool call repeats that check and applies directed node access ([`node:access:add`](/cli/node#orbit-nodeaccessadd)) inside the API request it runs. A Node without an access edge to the serving Node receives the API's `403` as the tool error.
-- The Gateway certificate chains to the Orbit root certificate authority (CA). A Node that Orbit manages already trusts it. On another machine, run `orbit gateway:trust` first.
+- A connection from an address that is not an active Node receives HTTP `403` with `peer.identity_unknown`, before it can list tools.
+- Each tool call runs as an internal API request with the caller's address. The API checks the caller and its [access grants](/cli/node#orbit-nodeaccessadd) again. A missing grant returns the API's `403` with `node_access.required` as the tool error.
+- The Gateway certificate chains to the Orbit root certificate authority (CA). Orbit installs that root in the system trust store only on a Node where it converges an Instance, Route, router, ingress, or custom proxy certificate. On any other machine, run `orbit gateway:trust` first, or point the client at the root CA file.
 
 ## Tools
 
-A tool's name is the operation's identifier in the [API reference](/api/overview), `<family>-<verb>`: `node-list`, `instance-show`, `process-restart`, `route-create`. Its input is one object that holds the operation's path parameters, query parameters, and JSON body fields together; the server places each value where the operation expects it. A `DELETE` path parameter such as `route` on `route-destroy` therefore travels in the tool arguments and on the path. If the same id also appears in the JSON body, the API treats it as path identity. Its annotations mark a `GET` as read-only and a `DELETE` as destructive.
+A tool's name is the operation ID in the [API reference](/api/overview), `<family>-<verb>`, such as `node-list`, `instance-show`, or `process-restart`. Its input is one object with the operation's path parameters, query parameters, and JSON body fields. The server puts each value where the operation expects it. A `GET` tool is marked read-only, and a `DELETE` tool is marked destructive.
 
 A successful call returns the API's JSON document as text, usually `{"data": ..., "meta": {"request_id": ...}}`. A failed call returns a successful MCP transport response whose tool result has `isError: true`. Its `content` carries the API error envelope with the status added; the HTTP response itself is not the API's error status:
 
@@ -40,7 +45,7 @@ For a disabled extension, a direct `tools/call` returns `isError: true` and cont
 
 `instance-deploy` and `instance-rollback` stream progress over HTTP. As tools they run to completion and return every progress event in order under `events`; the last event carries the result.
 
-Four operations are machine callbacks and have no tool: the realtime channel signature, the Grafana access check, the Instance wake page, and the schedule completion report.
+Machine callbacks and browser pages have no tool: channel signatures, the Node agent endpoints, live log streams, the Grafana access check, the Instance wake page, the Schedule completion report, the annotation event stream, the task agent stream, and the two GitHub App registration pages. `bin/mcp-tools` lists them.
 
 The `tasks-*` tools belong to the Gateway-switched [tasks](/reference/tasks) extension, except `tasks-status`, which is a core assistance view that remains available while tasks is off. The `proxycli-*` tools belong to [proxycli](/reference/proxycli). A disabled extension is omitted from both `tools/list` and `/mcp/search`; a direct `tools/call` or stale `execute_tools` call returns an MCP tool error with `isError: true`, content carrying `status: 409` and `error.code: extension.disabled`, and does not execute the API route. `tasks-create` requires Gateway access. `tasks-update` and the `tasks-subtask-*` tools need access to the Node that holds the group's Instance, or to the Gateway for a group without one. `tasks-create`, `tasks-subtask-create`, and `tasks-subtask-update` take each subtask's typed [deliverables](/reference/tasks#deliverables) as a `deliverables` array, and `tasks-show` returns them.
 
@@ -52,13 +57,13 @@ Claude Code, from a Node or a WireGuard peer that trusts the Orbit CA:
 claude mcp add --transport http orbit https://gateway.orbit/mcp
 ```
 
-Any client that takes a JSON server entry:
+A client that takes a JSON server entry:
 
 ```json
 {"mcpServers": {"orbit": {"type": "http", "url": "https://gateway.orbit/mcp/search"}}}
 ```
 
-A client built on Node.js reads extra CAs from `NODE_EXTRA_CA_CERTS`; point it at the Orbit root CA file when the system store is not used.
+A Node.js client reads extra CAs from `NODE_EXTRA_CA_CERTS`. Point it at the Orbit root CA file when the client does not use the system trust store.
 
 ## Keep the catalogue current
 
@@ -69,4 +74,28 @@ bin/docs-openapi
 bin/mcp-tools
 ```
 
-`bin/docs-openapi --check` reports a stale API reference, and `bin/mcp-tools --check` and `composer mcp-tools` report a stale manifest. Continuous integration runs both checks. The Gateway test suite fails when an API route has no tool or a tool has no route, so the MCP catalogue cannot trail the API.
+Continuous integration runs `bin/docs-openapi --check` and `bin/mcp-tools --check`. A Gateway test fails when an API route has no tool or a tool has no route.
+
+## Why it works this way
+
+These reasons explain the design. Check them before you propose a change.
+
+### Tools generated from the API description
+
+More than a hundred hand-written tool classes would repeat the form requests' rules and drift from them with every API change. Generating the catalogue from the OpenAPI document keeps one source. A weak tool description is fixed in the form request or data class.
+
+### Tool calls go through the HTTP kernel
+
+Identity, access grants, validation, redaction, and Activity live at the HTTP boundary. A tool that called Actions directly would need a second copy of each. An internal request with the caller's address gets them all.
+
+### No token or OAuth
+
+The API identifies a caller by WireGuard address. A second credential would create a second authorization model for the same actions.
+
+### No MCP server in the CLI
+
+An MCP server that wraps CLI commands keeps the process start and the CLI install on the agent's machine, and parses output that the API already returns as JSON.
+
+### Typed tools, not one command tool
+
+One tool that takes a command string would discard the input schemas, which are the main benefit of MCP for an agent. A client with a small context uses `/mcp/search` instead.

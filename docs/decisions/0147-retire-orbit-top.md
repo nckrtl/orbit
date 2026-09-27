@@ -14,9 +14,9 @@ Proposed.
 
 ## Context
 
-[ADR 0085](/decisions/0085-build-orbit-top-as-a-thin-tui-client) built `orbit top` as a php-tui screen. [ADR 0123](/decisions/0123-serve-the-web-app-from-the-gateway-origin) then served the web app from the Gateway origin, as a second client of the same API and realtime channel. The web app now shows the same sections, record pages, metrics, and actions in a browser, and it adds live Node presence from [ADR 0129](/decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels).
+[ADR 0085](/reference/web-app) built `orbit top` as a php-tui screen. [ADR 0123](/reference/web-app#why-it-works-this-way) then served the web app from the Gateway origin, as a second client of the same API and realtime channel. The web app now shows the same sections, record pages, metrics, and actions in a browser, and it adds live Node presence from [ADR 0129](/reference/events#node-agent-channels).
 
-The maintainer uses only the web app. The terminal screen still costs maintenance: 22 support classes, a php-tui dependency in every CLI build, screen snapshot tests, and a CLI copy of the Prometheus query set and mapper that [ADR 0088](/decisions/0088-cli-reads-display-metrics-from-grafana) required to match the Gateway's copy.
+The maintainer uses only the web app. The terminal screen still costs maintenance: 22 support classes, a php-tui dependency in every CLI build, screen snapshot tests, and a CLI copy of the Prometheus query set and mapper that [ADR 0088](/reference/metrics#read-node-metrics) required to match the Gateway's copy.
 
 Every Gateway request `orbit top` sent also belongs to another CLI command or to the web app. No Gateway endpoint exists only for `orbit top`.
 
@@ -29,8 +29,8 @@ Every Gateway request `orbit top` sent also belongs to another CLI command or to
 
 This decision supersedes ADR 0085 and amends two others:
 
-- [ADR 0088](/decisions/0088-cli-reads-display-metrics-from-grafana): the CLI no longer reads display metrics from Grafana. The web app reads them through the Gateway's `/grafana` path. The Gateway's own `node:metrics` reader does not change.
-- [ADR 0123](/decisions/0123-serve-the-web-app-from-the-gateway-origin): the web app replaces `orbit top` as the live fleet view.
+- [ADR 0088](/reference/metrics#read-node-metrics): the CLI no longer reads display metrics from Grafana. The web app reads them through the Gateway's `/grafana` path. The Gateway's own `node:metrics` reader does not change.
+- [ADR 0123](/reference/web-app#why-it-works-this-way): the web app replaces `orbit top` as the live fleet view.
 
 ## Rejected alternatives
 
@@ -47,6 +47,6 @@ This decision supersedes ADR 0085 and amends two others:
 ## Affects
 
 - Components: apps/cli, apps/docs
-- ADRs: supersedes [ADR 0085](/decisions/0085-build-orbit-top-as-a-thin-tui-client); amends [ADR 0088](/decisions/0088-cli-reads-display-metrics-from-grafana) and [ADR 0123](/decisions/0123-serve-the-web-app-from-the-gateway-origin)
+- ADRs: supersedes [ADR 0085](/reference/web-app); amends [ADR 0088](/reference/metrics#read-node-metrics) and [ADR 0123](/reference/web-app#why-it-works-this-way)
 - Detail: [CLI overview](/cli/overview), [web app](/reference/web-app), [metrics](/reference/metrics)
 - Verify: `apps/cli` `tests/Feature/CommandSurfaceTest.php`; `php orbit list` shows no `top` command

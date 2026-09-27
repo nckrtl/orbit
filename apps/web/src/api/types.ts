@@ -7,9 +7,8 @@ type Schema<K extends keyof components["schemas"]> = Required<components["schema
 export type Node = Schema<"Node">;
 export type Project = Schema<"App">;
 export type ProjectIdentity = { id: number; name: string; slug: string };
-export type Instance = Omit<Schema<"AppInstance">, "app" | "project" | "node" | "deploy_steps"> & {
-    app: ProjectIdentity;
-    project?: ProjectIdentity;
+export type Instance = Omit<Schema<"AppInstance">, "project" | "node" | "deploy_steps"> & {
+    project: ProjectIdentity;
     node: { id: number; name: string };
     deploy_steps: DeployStep[];
 };

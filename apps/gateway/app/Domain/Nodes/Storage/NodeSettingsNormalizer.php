@@ -43,20 +43,6 @@ final readonly class NodeSettingsNormalizer
         return $this->normalize(new NodeSettingsData(apps: $this->nestedFromStored($value['apps'] ?? null)));
     }
 
-    public function legacyFromStored(mixed $value): ?LegacyNodeSettings
-    {
-        if (! is_array($value)) {
-            return null;
-        }
-
-        $settings = new LegacyNodeSettings(
-            instancePath: $this->pathFromStored($value['instance'] ?? null),
-            worktreePath: $this->pathFromStored($value['worktree'] ?? null),
-        );
-
-        return $settings->isEmpty() ? null : $settings;
-    }
-
     private function nested(?string $path): ?AppsSettingsData
     {
         return $path === null ? null : new AppsSettingsData($path);

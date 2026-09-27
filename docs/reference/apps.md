@@ -1,125 +1,190 @@
 ---
 title: "Projects"
-description: "How a Project records one repository, its type, its default branch, and the root path that Instances inherit."
+description: "How a Project records one repository, its type, and the source defaults that Instances inherit, and how create, update, and removal work."
+covers:
+  - apps/gateway/app/{Actions,Domain,Infrastructure}/Apps/**
+  - apps/gateway/app/Domain/Projects/{ProjectType,ProjectCode}.php
+  - apps/gateway/app/Domain/SourceControl/{GitRepositoryIdentity,GitRepositoryOrigin,ProjectRoot,RelativeWebRoot,RepositoryDefaultBranchResolver}.php
+  - apps/gateway/app/Infrastructure/SourceControl/NativeRepositoryDefaultBranchResolver.php
+  - apps/gateway/app/Http/{Controllers/Api/AppsController.php,Requests/Apps/**}
+  - apps/gateway/app/Data/Apps/**
+  - apps/gateway/app/Models/{App,AppUpdate}.php
+  - apps/cli/app/Commands/Apps/**
 ---
 
 # Projects
 
-A Project stores one repository, access URL, `type`, default branch, and normalized root path. New Instances inherit these source defaults. For Laravel apps the root is a web root; for package Projects it may be `.` to name the repository root. [ADR 0105](/decisions/0105-name-applications-as-project-and-instance) names the record. [ADR 0106](/decisions/0106-derive-instance-capabilities-from-project-type) owns type. [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity) defines default identity. [ADR 0026](/decisions/0026-identify-each-app-by-one-repository) defines repository ownership.
+A Project records one Git repository and the defaults for running it. New Instances inherit its default branch and root. Its type decides what those Instances can do. The API path is `/api/v1/projects`, and the CLI family is [`project`](/cli/project).
 
-The canonical HTTP surface is `/api/v1/projects` and the canonical CLI family is `project:*`. `/api/v1/apps` remains a dual-read and dual-write compatibility path for the same records so older CLI binaries and `app-*` MCP tools keep working.
+## Fields
 
-CLI JSON and SDK array output name the Project collection `projects` and the Instance collection `instances`. Instance registration also returns its collection as `instances`. These outputs do not emit the former `apps` or `app_instances` collection keys. Gateway list responses keep their standard `data` envelope. Stored table names and foreign keys are unchanged.
+A Project stores these fields. API responses, the SDK, and CLI JSON use the same names.
 
+| Field | Meaning |
+| --- | --- |
+| `slug` | Unique name, at most 63 characters. It names the directory of each new checkout and the generated domains. |
+| `name` | Display name. It defaults to the slug. |
+| `code` | Unique code of three uppercase letters. See [Project codes](#project-codes). |
+| `type` | `monorepo`, `laravel-app`, `laravel-package`, or `node-package`. See [Project types](#project-types). |
+| `repository_url` | HTTPS or SSH Git URL that Orbit uses to fetch. |
+| `default_branch` | Branch of the `default` Instance and the base for new branches. |
+| `root` | Repository-relative path that Instances inherit. |
+| `task_check` | Command that task baselines and handoffs run. See [Project check](/reference/tasks#project-check). |
 
-Project removal requires default-No interactive confirmation or explicit `--yes`. JSON and piped calls never imply consent. Inputs remain explicit; human requests show progress and preserve request IDs.
+## Project types
+
+The type belongs to the Project, so every Instance of one repository behaves the same way.
+
+| Type | Route | PHP-FPM | Root `.` allowed | Default `task_check` |
+| --- | --- | --- | --- | --- |
+| `laravel-app` | Exactly one per active Instance | Yes | No | `composer check` |
+| `monorepo` | Only an explicit Route | Only with a Route to a Laravel source | No | none |
+| `laravel-package` | Only an explicit Route | No | Yes | `composer check` |
+| `node-package` | Only an explicit Route | No | Yes | none |
+
+`.` means the repository root. A Route cannot target an Instance whose root is `.`. Set a relative web root first.
 
 ## Create a Project
 
-Use `project:create` with a slug, a type, and an HTTPS or SSH Git origin:
+Create a Project before you create or register its first Instance.
 
 ```bash
-orbit project:create acme laravel-app https://github.com/acme/site.git
+orbit project:create acme laravel-app git@github.com:acme/site.git
+orbit project:create acme laravel-app git@github.com:acme/site.git --default-branch=stable --root=web/public
 ```
 
-`type` is required on the canonical surface. Allowed values are `monorepo`, `laravel-app`, `laravel-package`, and `node-package`. Compatibility `POST /api/v1/apps` callers that omit `type` receive `laravel-app`.
+The CLI root defaults to `.` for package types and `public` for other types. The API and SDK require `root`. Without `--default-branch`, the Gateway reads the remote default branch once and stores it. A later change on the remote does not update the Project. An explicit branch must exist on the remote. A private `github.com` repository needs the [GitHub App](/reference/github-app) on its owner account.
 
-The command-line interface (CLI) uses `.` as the root for `laravel-package` and `node-package`, and `public` for other types, unless you set `--root`. Laravel apps use their relative web root. The API and SDK always require `root`. Without `--default-branch`, the Gateway reads and saves the repository's default branch once. A later remote change does not update the Project.
+Creation is idempotent. A retry with the same values returns the existing Project. A retry that omits the default branch does not read the remote again. A retry with any different value, including another URL for the same repository, returns `app.identity_conflict` and changes nothing.
 
-Both source defaults can be explicit:
+## Repository identity
 
-```bash
-orbit project:create acme laravel-app https://github.com/acme/site.git \
-  --default-branch=stable \
-  --root=web/public
-```
+The Gateway derives a repository identity from the host and path of the URL. Equivalent SSH and HTTPS URLs, with or without `.git`, have the same identity. A second Project for the same repository returns `app.repository_identity_conflict`. Registration uses this identity to find the Project of a checkout.
 
-The Gateway verifies that an explicit default branch exists in the repository. Repository access failures, missing explicit branches, and an unavailable or malformed remote default return `app.default_branch_unavailable` without including repository diagnostics or credentials. A private `github.com` repository needs the Gateway's [GitHub App](/reference/github-app) installed on the account that owns it.
+## Create a Project during registration
 
-The public Project contract uses these source fields.
+When [`instance:register`](/domains/applications#register-an-existing-checkout) finds no Project for the repository, the CLI infers these values and asks for the rest:
 
-| Field or option | Result |
+| Value | Source |
 | --- | --- |
-| `type` | Required on `project:create`. Closed enum `monorepo`, `laravel-app`, `laravel-package`, or `node-package`. |
-| `repository_url` | Required repository access URL in the Gateway API and PHP SDK. |
-| `default_branch` | Optional Gateway API and PHP SDK input; returned by every Project response. |
-| `--default-branch` | Optional CLI input for `project:create`. |
-| `root` and `--root` | Required API and SDK field. A normalized repository-relative path; `.` is allowed for package types and means the repository root. |
-| `task_check` and `--task-check` | Optional command that task baselines and handoffs run ([Project check](/reference/tasks#project-check)). When omitted, `laravel-app` and `laravel-package` get `composer check`, and `monorepo` and `node-package` get null, which runs no check command. An explicit null also stores no command. |
+| Slug | The repository name. |
+| `default_branch` | The checkout's `origin/HEAD`. |
+| Root | `public` when the checkout has `composer.json`, `artisan`, and a `public` directory. |
+| Name | The slug, unless you pass `--app-name`. |
+| Type | `monorepo` for the Orbit repository, or for slug `orbit` with a repository path that ends in `/orbit`. `laravel-app` when the root is `public` or ends in `/public`. `laravel-package` otherwise. |
 
-The type defaults apply to new Projects only. The upgrade gives every existing Project `composer check`, whatever its type. An operator clears it with `project:update --clear-task-check`, for example on an existing `node-package` Project without a Composer `check` script.
+Registration never picks `node-package` and has no type option. Change the type afterwards with `project:update --type`.
 
-SDK Project responses and the `project:list` and `project:show` commands expose the stored type, repository, default branch, root, and task check. The task check is an ordinary setting, like setup steps, so activity records it as sent. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` compatibility name.
+A value you pass fills an unresolved value only. It must match what the Gateway verifies:
 
-## Keep one repository owner
-
-The Git host and path identify a repository. Equivalent SSH and HTTPS URLs match, with or without a trailing `.git`. The Gateway stores this identity separately from the access URL. Creating a second Project for the same repository returns `app.repository_identity_conflict` and changes nothing.
-
-Repository validation and failure details do not expose embedded credentials or unredacted Git output. A checkout-origin lookup uses the canonical identity and therefore resolves no more than one Project across equivalent access forms.
-
-During an upgrade, the Gateway checks every existing Project before it makes repository identity unique. If it finds a duplicate identity, it reports the conflicting Project IDs, changes no Project, and refuses the migration until an operator resolves the conflict.
-
-## Resolve a Project during registration
-
-Registration finds the Project from the checkout's verified Git origin, the `remote.origin.url` value stored in the checkout without `insteadOf` rewrites. It matches the repository identity across URL formats. Conflicting Project or source details stop registration before any changes.
-
-When no Project owns the repository, the interactive CLI shows the safe repository origin and every inferred value, asks only for unresolved values and confirmation, and then asks the Gateway to create the Project before its Instance. The CLI refuses a credential-bearing or otherwise unsafe origin locally without displaying it or sending a request.
-
-Ownership transfer requires a default-No confirmation naming the source, or explicit `--yes`. Non-interactive registration, including every `--json` call, requires `--yes` and refuses when a required value remains unresolved. These refusals send no mutation request. If Project creation succeeds and later registration fails, the valid Project remains available for an identical retry.
-
-Registration can infer these Project values from unambiguous source evidence.
-
-| Project value | Verified source evidence |
+| Input | Code when it differs |
 | --- | --- |
-| Slug | Repository name |
-| `default_branch` | Remote symbolic default branch |
-| Root | `public` for an unambiguous Laravel checkout |
+| `--app-slug` for a new Project | `app.slug_conflict`. The slug is always the repository name. |
+| `--default-branch` for a new Project | `app.default_branch_conflict`, when the checkout has an `origin/HEAD`. |
+| `--root` for a new Project | `app.root_conflict`, when the root was inferred. |
+| `--app-slug`, `--app-name`, or `--default-branch` for an existing Project | `app.identity_conflict`. |
+| A root that the type does not allow | `app.root_invalid`. |
 
-Valid explicit values fill only unresolved or optional values. They do not override a conflicting repository identity or verified source fact.
-
-## Retry creation safely
-
-Repeating `project:create` with the same name, slug, type, repository access URL, default branch, root, defaults, and any sent task check returns the existing Project. A retry does not look up an omitted branch again.
-
-A retry that changes any creation value fails with `app.identity_conflict` and does not mutate the Project. A different repository access URL is a changed value even when it has the same canonical repository identity, so creation never switches the stored URL.
+When the Project is created but registration then fails, the Project stays for an identical retry.
 
 ## Project codes
 
-Each Project has a unique code of three uppercase letters. Existing Projects receive a code during migration; Orbit receives `ORB`. New Projects receive a code at creation, or accept an explicit `code` in `POST /api/v1/projects`. Codes stay unchanged when the Project name or slug changes.
+Each Project has a unique code of three uppercase letters. The Gateway derives it from the slug unless `POST /api/v1/projects` sends `code`. The code stays the same when the slug changes. Task cards use it as a label.
 
-Edit the code in the web Project properties, or send `PATCH /api/v1/projects/{project}` with `{"code":"ORB"}`. Send code changes separately from source settings. Invalid codes return 422; codes already in use return 409. Changing a code updates task card labels without changing task IDs or URLs.
+Change the code in the web app, or send `PATCH /api/v1/projects/{project}` with only `code`. A code sent with other fields returns `app.code_update_separate`. A code that is not three uppercase letters returns `app.invalid_code`. A code in use returns `app.code_conflict`. When every three-letter code is taken, creation returns `app.codes_exhausted`.
 
 ## Update a Project
 
-Use `project:update` when an existing Project must change its type, slug, repository access URL, default branch, relative web root, or task check. The Gateway API accepts `PATCH /api/v1/projects/{project}` and the compatibility path `PATCH /api/v1/apps/{app}` with those same fields. The PHP SDK sends `UpdateAppRequest` to either path. Omitted fields stay unchanged; send `task_check: null` to clear the task check. The MCP `project-update` tool accepts the same string-or-null field. [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates) owns the source reconciliation lifecycle. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
+Update a Project when its type, slug, repository, default branch, root, or task check changes.
 
 ```bash
 orbit project:update 3 --repository=https://github.com/acme/site.git --default-branch=stable
 ```
 
-| Field or option | Result |
+`project:update` and `PATCH /api/v1/projects/{project}` change the fields you send and leave the rest. Creation never updates a Project.
+
+| Field | Effect |
 | --- | --- |
-| `type` and `--type` | Change Project capabilities. A change to `laravel-app` is refused while an active Instance has no Route. A change away from `laravel-app` keeps existing Routes. |
-| `slug` and `--slug` | Reconcile generated development Route domains and Laravel application URLs before the new slug is published. Existing checkout paths, production users, and homes stay as recorded. |
-| `repository_url` and `--repository` | Store the selected HTTPS or SSH access URL. Equivalent forms keep the same canonical repository identity. |
-| `default_branch` and `--default-branch` | Store the new Project default and switch every development `default` Instance that inherits it. An explicit `branch_override` stays unchanged even when it matched the old default. |
-| `root` and `--root` | Change the inherited root of every Instance without its own override. Production resolves the new root inside the active release. |
-| `task_check` and `--task-check` | Store the command that task baselines and handoffs run. Send null or use `--clear-task-check` to run no check command. A type change keeps the stored value. |
+| `type` | Applies at once. A change to `laravel-app` is refused with `project.type_requires_route` while an active Instance has no Route. A change away from `laravel-app` keeps existing Routes. |
+| `slug` | Replaces each generated Route with one for the new slug. Explicit domains do not change. Checkout paths, production users, and homes keep their recorded values. |
+| `repository_url` | Runs `git remote set-url origin` in each development checkout. See [Repository changes](#repository-changes). |
+| `default_branch` | Must exist on the remote. Switches every development `default` Instance without a `branch_override`. Its name, path, and Route stay the same. |
+| `root` | Changes the effective root of every Instance without its own root. Orbit reprojects the runtime of each such Instance that has a Route. |
+| `task_check` | Applies at once. Send null or `--clear-task-check` to run no check. |
 
-A type change must keep a root that the new type allows. When the stored root is `.` and the new type is `laravel-app` or `monorepo`, validation fails on `root` and the message names the type. Send a web root with the type change. A type or root change that leaves a Route target inheriting an unsupported root, such as `.`, returns `route.target_web_root_unsupported`.
+A type change must keep a valid root. When the stored root is `.` and the new type does not allow it, validation fails on `root`. Send a web root with the type change. A type or root change that leaves a Route target with root `.` returns `route.target_web_root_unsupported`.
 
-The Gateway treats the supplied fields as one operation. It inventories affected Instances and Routes, preflights every Orbit-owned checkout and generated domain, prepares reversible mutations, then publishes. A confirmed failure before publication rolls back origins, prepared Routes, stored Laravel `APP_URL` values, and runtime projections. The previous Project record stays authoritative. An identical retry resumes the recorded state from its last verified evidence. A conflicting update while one update is incomplete returns `app.update_in_progress`.
+### Update lifecycle
 
-When the repository access URL changes, the Gateway updates `origin` once for each Orbit-owned development checkout. Linked worktrees use that common repository and are not mutated directly. The Gateway refuses the update before mutation when a worktree's common repository is not owned by an Orbit checkout, when the canonical identity belongs to another Project (`app.repository_identity_conflict`), or when any affected source fails preflight (`app.repository_preflight_failed` or `app.repository_unowned_common`). Production Git source, deployment branch, starting commit, and release layout do not change. Project updates never start a deployment.
+The Gateway applies `slug`, `repository_url`, `default_branch`, and `root` as one recorded operation:
 
-Preflight compares the `remote.origin.url` value stored in each checkout with the current repository URL. It ignores `insteadOf` rewrites from the Node's Git configuration.
+| Status | Work |
+| --- | --- |
+| `reserved` | Records the request and the previous values. |
+| `preflighted` | Checks every affected checkout, worktree, and generated domain. |
+| `prepared` | Switches branches, changes origins, and creates replacement Routes. The old values stay in effect. |
+| `publishing` | Stores the new Project values. Replaces generated Routes and updates each Instance's Laravel URL, environment, and runtime. Reprojects routed Instances that inherit a changed root. |
+| `cleaning_up` | Checks that no production Instance changed. |
+| `complete` | Done. |
 
-When `default_branch` cannot switch on an inheriting `default` source, the Gateway refuses before publication (`app.source_switch_failed`). The Instance name, managed path, and Route identity stay unchanged.
+A failure before `publishing` rolls back: Orbit restores origins, branches, and Routes and ends in `rolled_back`. A rollback that fails stays `rolling_back`, and an identical retry continues it. A failure after `publishing` starts stays in place, and an identical retry continues forward. A different update while one is incomplete returns `app.update_in_progress`.
 
-When the slug or web root changes, the Gateway reconciles generated Routes, runtime projections, and Laravel canonical URLs before publication. An application HTTP error does not block completion after Orbit-owned writes succeed. [Applications](/domains/applications#reconcile-an-app-update) describes source ownership and Laravel URL ownership during these updates.
+In the `publishing` step, a failure to update one Instance's Laravel URL, environment, or runtime does not fail the update. Run [Doctor](/cli/doctor) after a slug change to find an Instance that needs attention.
 
-## Incomplete source defaults
+### Repository changes
 
-A Project whose source defaults are incomplete can have a null default branch or root. API, SDK, and CLI JSON responses report those nulls unchanged. Reading or retrying creation does not infer missing values.
+A repository change touches only `origin`. Local branches, the checked-out commit, and the recorded starting commit stay the same. Orbit never pushes. Linked worktrees share the checkout's repository and need no change.
 
-Source-profile recovery for an existing production Instance accepts its recorded release checkout after deployment. It preserves the Instance identity and refuses paths outside that Instance’s releases directory.
+Every origin check reads the `remote.origin.url` stored in the checkout. It ignores `insteadOf` rewrites on the Node. The update never changes production source, the deployment branch, or releases, and it never starts a deployment.
+
+## Remove a Project
+
+`project:destroy` removes a Project that has no Instances and no Routes. It deletes the Project's process and Schedule definitions, setup and teardown steps, Node exclusions, and update records.
+
+A Project with task groups cannot be removed. The database refuses the delete, and the Gateway returns the generic `gateway.unhandled` error with HTTP 500, not an Orbit code.
+
+## Errors
+
+The Gateway returns these codes for Project requests. [Create a Project during registration](#create-a-project-during-registration) lists the registration codes.
+
+| Code | Cause |
+| --- | --- |
+| `app.identity_conflict` | A create retry differs from the stored Project. |
+| `app.repository_identity_conflict` | Another Project owns the repository. |
+| `app.default_branch_unavailable` | The Gateway cannot read the remote, or the branch is missing. The message holds no Git output or credentials. |
+| `app.slug_conflict` | Another Project has the slug. |
+| `app.update_required` | The update sends no field. |
+| `app.update_in_progress` | Another update of this Project is incomplete. |
+| `app.repository_preflight_failed` | A checkout is missing, has another origin, or cannot reach the new URL. |
+| `app.repository_origin_failed` | Orbit could not change or restore `origin` in a checkout. |
+| `route.domain_conflict` | A new generated domain for the slug belongs to another Route. |
+| `app.repository_unowned_common` | A worktree uses a repository that no Orbit checkout owns. |
+| `app.source_switch_failed` | A `default` checkout cannot switch to the new default branch. |
+| `app.production_ownership_changed` | A production Instance changed during the update. |
+| `app.update_failed` | The update failed for a reason without its own code, and Orbit rolled back. |
+| `app.has_app_instances` | Removal found Instances. |
+| `app.has_routes` | Removal found Routes. |
+
+## Why it works this way
+
+These reasons explain the design. Check them before you propose a change.
+
+### One repository, one Project
+
+Registration must find exactly one Project from a checkout's origin. Comparing URLs as strings was rejected, because an SSH and an HTTPS URL would allow two Projects for one repository. Letting Projects share a repository and taking the first match was rejected, because the result would depend on database order.
+
+### Updates are separate from creation
+
+Creation stays idempotent: a changed value is a conflict, never an update. A slug, URL, branch, or root change touches checkouts, Routes, and runtimes on several Nodes, so it runs as one recorded operation. A plain database update would leave checkouts, domains, and document roots out of step.
+
+### Recovery goes forward after publication
+
+Before `publishing`, the old values are still in effect, so a rollback is safe. After that point, clients can already see the new domain. Rolling back would change a public name twice. So a failure after publication is retried forward.
+
+### Type decides capabilities
+
+Instances of one repository share one serving contract. Per-Instance route or PHP-FPM flags were rejected. A Laravel package or a monorepo must not publish a domain or keep an idle PHP-FPM master, so only `laravel-app` gets a Route by default.
+
+### Project and Instance
+
+"App" also names Laravel applications, desktop builds, and Node roles such as `app-dev`. So the repository record is a Project, and one copy on a Node is an Instance. Stored table names keep `apps` and `app_instances`.

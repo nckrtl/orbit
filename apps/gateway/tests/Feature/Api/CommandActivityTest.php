@@ -407,6 +407,81 @@ it('records a metrics disable request as metrics:disable', function (): void {
     expect(Activity::query()->sole()->command)->toBe('metrics:disable');
 });
 
+it('records project update activity for project create and update targets', function (): void {
+    $this->fakeRepositoryBranches();
+    $operator = Node::query()->create([
+        'name' => 'project-activity-operator',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.20',
+        'wireguard_ip' => '10.44.0.20',
+    ]);
+    $this->markAsGateway($operator);
+    $this->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_ip]);
+
+    $createRequestId = (string) Str::uuid();
+    $this
+        ->withHeader('X-Orbit-Request-Id', $createRequestId)
+        ->postJson('/api/v1/projects', [
+            'slug' => 'activity-project',
+            'type' => 'laravel-app',
+            'repository_url' => 'https://example.test/activity-project.git',
+            'default_branch' => 'main',
+            'root' => 'public',
+        ])
+        ->assertCreated();
+
+    $project = OrbitApp::query()->where('slug', 'activity-project')->sole();
+    $createActivity = Activity::query()->where('request_id', $createRequestId)->sole();
+    expect($createActivity->command)
+        ->toBe('project:create')
+        ->and($createActivity->subject_type)
+        ->toBe(OrbitApp::class)
+        ->and($createActivity->subject_id)
+        ->toBe($project->id);
+
+    $updateRequestId = (string) Str::uuid();
+    $this
+        ->withHeader('X-Orbit-Request-Id', $updateRequestId)
+        ->patchJson("/api/v1/projects/{$project->id}", ['slug' => 'activity-project-updated'])
+        ->assertOk();
+
+    $updateActivity = Activity::query()->where('request_id', $updateRequestId)->sole();
+    expect($updateActivity->command)
+        ->toBe('project:update')
+        ->and($updateActivity->subject_type)
+        ->toBe(OrbitApp::class)
+        ->and($updateActivity->subject_id)
+        ->toBe($project->id)
+        ->and($updateActivity->properties?->get('input'))
+        ->toBe(['slug' => 'activity-project-updated']);
+});
+
+it('records project_id in register activity input', function (): void {
+    $operator = Node::query()->create([
+        'name' => 'register-activity-operator',
+        'status' => LifecycleStatus::Active,
+        'public_ssh_host' => '192.0.2.20',
+        'wireguard_ip' => '10.44.0.20',
+    ]);
+    $this->markAsGateway($operator);
+
+    $requestId = (string) Str::uuid();
+    $this
+        ->withServerVariables(['REMOTE_ADDR' => $operator->wireguard_ip])
+        ->withHeader('X-Orbit-Request-Id', $requestId)
+        ->postJson('/api/v1/instances/register', [
+            'source_path' => '/work/acme',
+            'project_id' => 73,
+        ])
+        ->assertUnprocessable();
+
+    $activity = Activity::query()->where('request_id', $requestId)->sole();
+    expect($activity->command)
+        ->toBe('instance:register')
+        ->and($activity->properties?->get('input'))
+        ->toBe(['project_id' => 73]);
+});
+
 it('records renamed App Cluster and Route lifecycle command names', function (): void {
     $this->fakeRepositoryBranches();
     app()->instance(RouteRemovalProjector::class, new FakeRouteRemovalProjector);
@@ -429,14 +504,15 @@ it('records renamed App Cluster and Route lifecycle command names', function ():
         return Activity::query()->where('request_id', $requestId)->sole()->command;
     };
 
-    expect($recorded('POST', '/api/v1/apps', [
+    expect($recorded('POST', '/api/v1/projects', [
         'slug' => 'lifecycle',
+        'type' => 'laravel-app',
         'repository_url' => 'https://example.test/lifecycle.git',
         'default_branch' => 'main',
         'root' => 'public',
-    ]))->toBe('app:create');
+    ]))->toBe('project:create');
     $app = OrbitApp::query()->where('slug', 'lifecycle')->sole();
-    expect($recorded('DELETE', "/api/v1/apps/{$app->id}"))->toBe('app:destroy');
+    expect($recorded('DELETE', "/api/v1/projects/{$app->id}"))->toBe('project:destroy');
 
     expect($recorded('POST', '/api/v1/clusters', ['name' => 'lifecycle']))->toBe('cluster:create');
     $cluster = Cluster::query()->where('name', 'lifecycle')->sole();
@@ -515,8 +591,9 @@ it('recursively redacts sensitive input and URL userinfo before persistence', fu
     $this
         ->withServerVariables(['REMOTE_ADDR' => '10.44.0.2'])
         ->withHeader('X-Orbit-Request-Id', $requestId)
-        ->postJson('/api/v1/apps', [
+        ->postJson('/api/v1/projects', [
             'slug' => 'secret-app',
+            'type' => 'laravel-app',
             'repository_url' => "https://alice:{$repositoryPassword}@example.com/acme/site.git",
             'defaults' => [
                 'services' => [
@@ -557,8 +634,9 @@ it('fails closed for new secret-named input fields on any command', function ():
     $this
         ->withServerVariables(['REMOTE_ADDR' => '10.44.0.2'])
         ->withHeader('X-Orbit-Request-Id', $requestId)
-        ->postJson('/api/v1/apps', [
+        ->postJson('/api/v1/projects', [
             'slug' => 'secret-app',
+            'type' => 'laravel-app',
             'deploy_signing_key' => $signingKey,
             'webhookSecret' => $webhookSecret,
             'public_key' => 'peer-public',
@@ -569,6 +647,7 @@ it('fails closed for new secret-named input fields on any command', function ():
 
     expect($input)->toBe([
         'slug' => 'secret-app',
+        'type' => 'laravel-app',
         'deploy_signing_key' => '[REDACTED]',
         'webhookSecret' => '[REDACTED]',
         'public_key' => 'peer-public',
@@ -590,8 +669,9 @@ it('redacts secret repository query parameters before persistence and activity s
     $failure = $this
         ->withServerVariables(['REMOTE_ADDR' => '10.44.0.2'])
         ->withHeader('X-Orbit-Request-Id', $requestId)
-        ->postJson('/api/v1/apps', [
+        ->postJson('/api/v1/projects', [
             'slug' => '../invalid',
+            'type' => 'laravel-app',
             'repository_url' => $repositoryUrl,
         ])
         ->assertUnprocessable()
@@ -628,7 +708,7 @@ it('records route model binding failures as http 404', function (): void {
     $this
         ->withServerVariables(['REMOTE_ADDR' => '10.44.0.2'])
         ->withHeader('X-Orbit-Request-Id', $requestId)
-        ->getJson('/api/v1/apps/999999')
+        ->getJson('/api/v1/projects/999999')
         ->assertNotFound()
         ->assertJsonPath('error.code', 'http.404');
 
@@ -653,8 +733,9 @@ it('correlates unhandled failures without exposing exception text', function ():
     $response = $this
         ->withServerVariables(['REMOTE_ADDR' => '10.44.0.2'])
         ->withHeader('X-Orbit-Request-Id', $requestId)
-        ->postJson('/api/v1/apps', [
+        ->postJson('/api/v1/projects', [
             'slug' => 'acme',
+            'type' => 'laravel-app',
             'repository_url' => 'https://github.com/acme/site.git',
             'default_branch' => 'main',
             'root' => 'public',
@@ -1583,7 +1664,7 @@ it('records definition commands against the App instead of a Process or Schedule
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
 
     $this
-        ->postJson("/api/v1/apps/{$orbitApp->id}/process-definitions", [
+        ->postJson("/api/v1/projects/{$orbitApp->id}/process-definitions", [
             'name' => 'worker',
             'environments' => ['development'],
             'spec' => [
@@ -1596,7 +1677,7 @@ it('records definition commands against the App instead of a Process or Schedule
     $activity = Activity::query()->sole();
 
     expect($activity->command)
-        ->toBe('process:create')
+        ->toBe('project:process-definition:create')
         ->and($activity->subject_type)
         ->toBe(OrbitApp::class)
         ->and($activity->subject_id)

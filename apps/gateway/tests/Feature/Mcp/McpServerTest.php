@@ -139,7 +139,7 @@ describe('POST /mcp', function (): void {
     });
 
     it('returns the API error envelope when validation fails', function (): void {
-        $response = mcp_call($this, 'tools/call', ['name' => 'app-create', 'arguments' => ['slug' => 'Not A Slug']]);
+        $response = mcp_call($this, 'tools/call', ['name' => 'project-create', 'arguments' => ['slug' => 'Not A Slug', 'type' => 'laravel-app']]);
 
         $error = json_decode($response->json('result.content.0.text'), true);
 

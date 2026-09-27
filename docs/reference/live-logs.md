@@ -1,13 +1,20 @@
 ---
 title: "Live logs"
 description: "How a viewer tails an Instance log or a Process log live: opening, renewing, and closing a log stream, the events it receives, the limits, redaction, and the fallback to one-shot reads."
+covers:
+  - apps/gateway/app/Domain/Logs/**
+  - apps/gateway/app/Actions/Logs/**
+  - apps/gateway/app/Http/Controllers/Api/{InstanceLogStreamsController,ProcessLogStreamsController,RespondsWithLogStreams}.php
+  - apps/gateway/app/Infrastructure/Logs/**
+  - apps/gateway/app/Infrastructure/AgentView/LogRelay.php
+  - apps/agent/src/logs/**
 ---
 
 # Live logs
 
-A live log stream shows new lines of one Instance log or one Process log as they are written. The Node agent reads the log, and the Gateway relays the lines to a private channel for one viewer. Opening a stream needs the same access as a one-shot read: an access edge to the Node that serves the Instance or Process. [ADR 0153](/decisions/0153-tail-instance-and-process-logs-live-through-the-node-agent) records the design and its threat model.
+A live log stream shows new lines of one Instance log or one Process log as they are written. The Node agent reads the log, and the Gateway relays the lines to a private channel for one viewer. Opening a stream needs the same access as a one-shot read: an access grant to the Node that serves the Instance or Process.
 
-The [web app](/reference/web-app#live-logs) log panes and `--follow` on [`orbit instance:logs`](/cli/instance#orbit-instancelogs) and [`orbit process:logs`](/cli/process#orbit-processlogs) use live streams. One-shot reads, `GET /api/v1/instances/{instance}/logs` and `GET /api/v1/processes/{process}/logs`, still read over SSH.
+The [web app](/reference/web-app#live-logs) log panes and `--follow` on [`orbit instance:logs`](/cli/instance#orbit-instancelogs) and [`orbit process:logs`](/cli/process#orbit-processlogs) use live streams. One-shot reads, `GET /api/v1/instances/{instance}/logs` and `GET /api/v1/processes/{process}/logs`, read over SSH.
 
 ## How a stream works
 
@@ -51,7 +58,7 @@ The response has status 201:
 }
 ```
 
-`auth` is valid only for the `socket_id` in the request. Subscribe with it as the Pusher `auth` value. The browser auth endpoint, `POST /api/v1/broadcasting/auth`, refuses every `private-log-stream.*` channel.
+The stream ID is a random 128-bit value, and the Gateway never lists it. `auth` is valid only for the `socket_id` in the request. Subscribe with it as the Pusher `auth` value. The browser auth endpoint, `POST /api/v1/broadcasting/auth`, refuses every `private-log-stream.*` channel.
 
 ## Renew and close
 
@@ -64,9 +71,9 @@ A stream lives for 60 seconds after it opens or after its last renewal.
 | `PUT /api/v1/processes/{process}/log-streams/{stream}` | `process:log-stream:renew` | Extends the lease to 60 seconds from now. The first renewal also starts the stream. Until the first line, each renewal prompts the agent again. |
 | `DELETE /api/v1/processes/{process}/log-streams/{stream}` | `process:log-stream:destroy` | Closes the stream at once. |
 
-Each call checks the access edge again. Only the Node that opened a stream can renew or close it, and only through the record it was opened for. A renewal returns `{ id, lease_seconds }`, and a close returns `{ id, closed: true }`. Renewals do not record Activity.
+Each call checks the access grant again. Only the Node that opened a stream can renew or close it, and only through the record it was opened for. A renewal returns `{ id, lease_seconds }`, and a close returns `{ id, closed: true }`. Renewals do not record Activity.
 
-Every 5 seconds the Gateway ends each stream whose lease ended, with `expired`, and each stream whose opening Node lost its access edge to the serving Node, with `revoked`.
+Every 5 seconds the Gateway ends each stream whose lease ended, with `expired`, and each stream whose opening Node lost its access grant to the serving Node, with `revoked`.
 
 ## Receive events
 
@@ -89,7 +96,7 @@ The Gateway publishes two server events on `private-log-stream.{stream}`, with t
 | --- | --- | --- |
 | `closed` | The client closed the stream. | None. |
 | `expired` | The lease ended without a renewal. | Open a new stream to keep watching. |
-| `revoked` | The opening Node lost its access edge to the serving Node. | Stop. |
+| `revoked` | The opening Node lost its access grant to the serving Node. | Stop. |
 | `agent_left` | The Node's agent left its log channel, for example because it stopped, or it had no stream list for 60 seconds. | Fall back to one-shot reads. |
 | `source_unavailable` | The agent could not open or keep reading the source. | Fall back to one-shot reads. |
 | `relay_behind` | The Gateway could not relay the lines fast enough, for example because Reverb was slow. It dropped the lines that waited. | Fall back to one-shot reads. |
@@ -137,7 +144,7 @@ The agent and the Gateway bound every stream, so a busy log cannot exhaust eithe
 
 The 8 KiB counts the line's UTF-8 bytes, so a line of accented letters, CJK characters, or emoji keeps its full length: the Gateway sends Reverb each character as UTF-8, not as an escape. A line of many quotes or backslashes can be cut shorter than 8 KiB, because Reverb's request carries each quote and backslash twice and one line must fit one event.
 
-Lines above a rate are dropped and counted in `dropped`. The agent never queues more than one burst for each stream. The Gateway queues lines only while a relay run is slow or failing, up to its limit for waiting lines; past it, the stream ends with `relay_behind`. A flood therefore cannot grow the agent's or the Gateway's memory.
+Lines above a rate are dropped and counted in `dropped`. The agent never queues more than one burst for each stream. The Gateway queues lines only while a relay run is slow or failing, up to its limit for waiting lines; past it, the stream ends with `relay_behind`. For the next 120 seconds the Gateway ignores every event for that stream. A flood therefore cannot grow the agent's or the Gateway's memory.
 
 ## Redaction
 
@@ -153,6 +160,8 @@ The setting keys are exactly `APP_ENV`, `APP_NAME`, `APP_DEBUG`, `APP_LOCALE`, `
 A PEM block that spans lines is redacted from its `BEGIN` line through its `END` line, for at most 200 lines. When no `END` line comes within 200 lines, the 200th line becomes `[orbit] 199 lines redacted after a PEM BEGIN line without END`, and the lines after it show again.
 
 Redaction is a safety net. It misses a secret with no recognizable shape or key name, and a secret split across lines or encoded. It keeps an environment value shorter than eight characters or stored under a setting key. It also misses personal data, such as email addresses and customer records in exception messages. Access to the serving Node decides who may read a log.
+
+The `websocket` role Node sees every log line in plain text, because TLS ends there. Orbit trusts that Node as part of the realtime layer, as it does for every other realtime message.
 
 The CLI redacts credential-shaped text again before it prints a line, and it writes `[redacted]` in lower case. A line in the terminal can therefore show both forms. `[REDACTED]` marks a value that the agent or the Gateway replaced. `[redacted]` marks one that the CLI replaced, for example in `API_KEY=[redacted]`, where the CLI matched the already redacted `API_KEY=[REDACTED]` again.
 
@@ -179,4 +188,44 @@ Six reasons pass on their own: `subscriber_down`, `agent_unavailable`, `agent_no
 | `logs.live_unavailable` | 409 | The live path is not available. See the reasons above. |
 | `logs.stream_limit` | 429 | The serving Node already has 16 open streams. |
 | `logs.stream_not_found` | 404 | The stream does not exist, has ended, belongs to another record, or was opened by another Node. |
-| `node_access.required` | 403 | The caller has no access edge to the serving Node. |
+| `node_access.required` | 403 | The caller has no access grant to the serving Node. |
+
+## Why it works this way
+
+These reasons explain the design. Check them before you propose a change.
+
+### The Gateway relays every line
+
+The agent sends lines only to the Gateway, on a channel that only the agent and the Gateway join. The Gateway checks each batch against its open streams, redacts it again with the stored environment values, and publishes it to one viewer. If the agent published to viewer channels itself, it would learn viewer channels and need the environment values on the Node, and revocation would depend on every agent. That alternative is rejected.
+
+### A private channel for each viewer
+
+Every browser with Gateway access joins `presence-node.{id}`, so log lines never go there. One shared log channel for each Node is also rejected, because a viewer of one Instance would receive the logs of every other Instance on that Node.
+
+### The agent reads only what the Gateway lists
+
+A `log-streams.changed` event carries no data. It only prompts the agent to fetch its list over HTTPS. So a forged or lost event cannot start a read, and the agent never acts on the content of a channel message.
+
+### The agent runs no program
+
+The agent is visibility-only. It reads the journal and log files with its own readers and never starts `journalctl` or `tail`. It is a static musl binary, so it cannot load `libsystemd`.
+
+### Production Instances stay on SSH
+
+A production Instance lives in its own home, and the agent's unit hides every home except the development Instance root. Widening that unit would expose every production `.env` file that its owner left readable. A tail runs only while someone watches, so SSH reads are enough for production.
+
+### One-shot reads stay on SSH
+
+A one-shot read happens only on request and does not repeat. Serving it from the agent would need a request and response path through Reverb for no gain. The live stream sends its own first lines, so opening a pane costs no SSH read.
+
+### Stream state in a cache, not SQLite
+
+Each viewer renews every 20 seconds. Writing those renewals to the central SQLite database would load it for no lasting value. So streams live in the agent view's file cache and rebuild when a viewer renews.
+
+### Relay outside the socket loop
+
+The subscriber's socket loop only records what arrives. A child process does every database read and broadcast, so a slow Reverb or database never stalls the agent view for other Nodes. Serving the tail as server-sent events from the Gateway is rejected too, because each stream would hold a PHP-FPM worker.
+
+### End a stream instead of dropping old lines
+
+When the relay falls behind, it ends the stream with `relay_behind`. The viewer then falls back to SSH reads, which show the current tail. Dropping the oldest lines silently is rejected, because the viewer would miss lines without knowing it.

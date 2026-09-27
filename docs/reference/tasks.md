@@ -1,16 +1,17 @@
 ---
 title: "Tasks"
-description: "How the Gateway tasks extension holds TaskGroup features in Backlog and runs Todo groups on a shared Instance. Agents end turns with run receipts. Orbit commits and pushes each approved subtask, opens the pull request, and removes the workspace clone when the group ends."
+description: "How the optional Gateway Tasks extension coordinates task groups, subtasks, typed deliverables, Project checks, and their lifecycle."
 ---
 
 # Tasks
 
-This page tells an operator how the optional Gateway `tasks` extension runs a Commander-style feature group. A group waits in Backlog while its branch, ADRs, documentation, and subtasks are prepared. Once the group is in Todo, the Gateway provisions its shared Instance, starts agents, and moves each task from turn to turn with run receipts and mechanical checks. It commits approved work and pushes that commit to `origin`, opens and watches the pull request, retains capacity through assistance and merge wait, and removes the workspace clone when the group is cancelled or completed.
+This page describes the optional Gateway `tasks` extension. It coordinates feature groups and ordered subtasks, validates typed deliverables, runs each Project's configured task check, and manages the group lifecycle. Backlog is a preparation state and has no Instance; the Gateway provisions an Instance only when a group is claimed for execution. An external ADE plans and steers the work. Orbit Tasks runs assigned subtasks and handles their receipts, review, publication, and cleanup.
 
 [ADR 0179](/decisions/0179-gate-all-extension-surfaces-with-one-gateway-switch) owns the shared Gateway switch and visibility contract. [ADR 0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) records the original tasks extension boundary. [ADR 0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) owns session routing. [ADR 0113](/decisions/0113-gate-task-completion-on-validation-and-review) owns completion gates. [ADR 0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) owns Backlog and Todo. [ADR 0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner) owns planning.
 
 [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) owns the push after each approval and deletion of the workspace clone. [ADR 0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask) owns the fixup that returns a settling group to running. [ADR 0171](/decisions/0171-reset-fixup-caps-after-operator-work) owns when its fixup caps reset. [ADR 0165](/decisions/0165-record-per-thread-token-metrics) owns the per-thread token split. [ADR 0167](/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart) owns recovery of a Pi turn that a server restart interrupted. [ADR 0169](/decisions/0169-start-each-subtask-review-in-a-fresh-thread) owns the fresh reviewer thread for each subtask, the review packet, and the MCP search endpoint for the planner and the reviewer.
 
+[ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) owns the push after each approval and deletion of the workspace clone. [ADR 0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask) owns the fixup that returns a settling group to running. [ADR 0171](/decisions/0171-reset-fixup-caps-after-operator-work) owns when its fixup caps reset. [ADR 0165](/decisions/0165-record-per-thread-token-metrics) owns the per-thread token split. [ADR 0172](/decisions/0172-count-every-t3-model-call-in-thread-metrics) owns complete T3 per-call collection and gap handling. [ADR 0167](/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart) owns recovery of a Pi turn that a server restart interrupted. [ADR 0169](/decisions/0169-start-each-subtask-review-in-a-fresh-thread) owns the fresh reviewer thread and review packet.
 [ADR 0170](/decisions/0170-edit-todo-subtasks-after-a-group-starts) changes the rule in ADR 0122 that limits subtask editing to Backlog. It defines edits and cancellation for Todo subtasks after a group starts. It preserves [ADR 0133](/decisions/0133-verify-typed-subtask-deliverables-at-handoff)'s deliverable contract.
 
 The `tasks` extension is controlled for every client through `orbit extension:enable tasks` and `orbit extension:disable tasks`. Its state in the Gateway controls the CLI family, MCP tools, API operations, and web navigation together. There is no web UI for create. Agents create groups through the [MCP server](/reference/mcp).
@@ -39,12 +40,12 @@ A **TaskGroup** is one parent feature. A **Task** is an ordered subtask. Each ro
 | `assistance_reason` | both | Why it is asking. Clearing the flag can keep the last reason |
 | `position` | Task | Order inside the group, starting at 1 |
 | `taskable_type` / `taskable_id` | TaskGroup | Morph. v1 is an Instance only. Null until the scheduler assigns one |
-| `reviewer_agent_thread_id` | TaskGroup | Reviewer for the subtask in review, or the planner thread until the first review replaces it |
+| `reviewer_agent_thread_id` | TaskGroup | Current reviewer thread pointer |
 | `implementer_agent_thread_id` | Task | Fresh implementer thread for that subtask |
 | `fixup_problem` | Task | Identity of a Gateway fixup. Null on every other subtask |
 | `pr_url` | TaskGroup | Pull request Orbit opened after the last approval |
 | `notify_coder` | TaskGroup | Opt-in Coder settle webhook. Create also accepts Commander's `notify_on_settle` |
-| `implementer_model` / `reviewer_model` | TaskGroup | `ORBIT_TASKS_IMPLEMENTER_MODEL` and `ORBIT_TASKS_REVIEWER_MODEL` set them for new groups. Unset, they default to `gpt-5.6-luna` (Codex instance `codex`) and `claude-opus-5` (Claude instance `claudeAgent`) |
+| `implementer_model` / `reviewer_model` | TaskGroup | Optional model overrides for implementer and reviewer threads |
 | `tokens`, `line_diff`, `duration_ms` | both | Filled on settle and refreshed when an active group is shown |
 
 Group statuses: `backlog`, `todo`, `reserved`, `running`, `reviewing`, `settling`, `completed`, `failed`, `cancelled`. Task statuses: `todo`, `reserved`, `running`, `reviewing`, `completed`, `failed`, `cancelled`.
@@ -72,7 +73,7 @@ Use these operations after the extension is enabled. List and show accept any au
 | `tasks:comment:create` | `POST /api/v1/task-groups/{group}/tasks/{task}/comments` | Gateway |
 | `tasks:comment:list` | `GET /api/v1/task-groups/{group}/tasks/{task}/comments` | Gateway |
 
-Create requires `app_id`, `title`, and `brief`. It may include an ordered `tasks` array of `{title, brief, deliverables}` objects, a `status` of `backlog` or `todo`, `plan: true` to start a [planner](#plan-a-group-with-a-planner), and either `notify_coder` or `notify_on_settle`. The status defaults to `backlog`. List accepts optional `app_id` and `status` query filters. Show returns the group and its tasks in position order. The group and each subtask include `assistance_requested` and `assistance_reason`, so a stalled group shows why it waits. Complete marks a `settling` group `completed` and removes its Instance.
+Create requires `app_id`, `title`, and `brief`. It may include an ordered `tasks` array of `{title, brief, deliverables}` objects, a `status` of `backlog` or `todo`, and either `notify_coder` or `notify_on_settle`. The status defaults to `backlog`. List accepts optional `app_id` and `status` query filters. Show returns the group and its tasks in position order. The group and each subtask include `assistance_requested` and `assistance_reason`, so a stalled group shows why it waits. Complete marks a `settling` group `completed` and removes its Instance.
 
 Update changes a group's `title`, `brief`, or `status`. Title and brief change only while the group is in `backlog`. The status moves between `backlog` and `todo` in either direction. Moving to `todo` asks the scheduler to claim, as create does.
 
@@ -112,11 +113,7 @@ Moving a group to `todo`, by create or update, needs at least one deliverable on
 | `tasks.not_in_backlog` | 409 | Group title or brief update outside `backlog`, or subtask update or destroy where the current group status and subtask status do not permit it |
 | `tasks.deliverables_locked` | 409 | Subtask deliverables update for a subtask that has started |
 | `tasks.already_claimed` | 409 | Status update on a group the scheduler has already claimed |
-| `tasks.plan_requires_backlog` | 422 | Create with `plan: true` and `status: todo` |
-| `tasks.planner_driver_unavailable` | 409 | Create with `plan: true` when the reviewer driver is not T3 |
-| `tasks.planner_node_unavailable` | 409 | Create with `plan: true` when no app-dev Node with access to itself fits |
-| `tasks.planner_unavailable` | 409 | Create with `plan: true` when the T3 driver refuses the planner thread |
-| `tasks.commit_failed` | 409 | Update to `todo` on a planning group when Orbit cannot commit its workspace |
+
 
 A status update and a scheduler claim cannot both succeed. When the claim wins, the update returns `tasks.already_claimed`.
 
@@ -124,14 +121,14 @@ MCP tool names follow the API operation identifiers: `tasks-create`, `tasks-upda
 
 ## Deliverables
 
-A deliverable is one item that a subtask must deliver, in a form Orbit can check. The planner or operator writes them next to the brief. The implementer confirms each one when it hands off. Orbit then verifies the mechanical ones before the reviewer starts. [ADR 0133](/decisions/0133-verify-typed-subtask-deliverables-at-handoff) records the decision. [ADR 0163](/decisions/0163-prove-a-failing-test-on-the-start-commit) records the repro-first test.
+A deliverable is one item that a subtask must deliver, in a form Orbit can check. The Project's external ADE or an authorized operator writes them next to the brief. The implementer confirms each one when it hands off. Orbit verifies the mechanical deliverables before the reviewer starts. [ADR 0133](/decisions/0133-verify-typed-subtask-deliverables-at-handoff) records the contract.
 
 Each deliverable is an object with an `id`, a `type`, a `description`, and the fields of its type:
 
 | Type | Fields | Orbit checks |
 | --- | --- | --- |
 | `file` | `path`: a path or glob from the workspace root. `change`: `created`, `modified`, or `any` | A matching path in the subtask's diff, added for `created`, modified for `modified`, either for `any` |
-| `test` | `project`: the project directory, such as `apps/gateway`, or `.` for the root. `file`: one exact Pest file in that project that ends in `.php` and has no glob. `name`: a substring of the test name | The test file is added or modified in the diff, and Orbit's run of that file has at least one test whose name contains `name`, all passing |
+| `test` | `project`: directory or `.`. `file`: test file in that project. `name`: test-name substring | The test file is added or modified in the diff, at least one test whose name contains `name` exists, and all matching tests pass |
 | `command` | `command`: the command to run. `directory`: where to run it, relative to the workspace root; default `.` | Orbit's run of the command exits with 0 |
 | `review` | none | The reviewer confirms it in its approval |
 
@@ -156,11 +153,10 @@ A `test` deliverable may set `fails_on_base` to `true`. [Reproduce a bug on the 
 | `name` | At most 200 characters |
 | `command` | At most 1000 characters |
 | `fails_on_base` | A JSON boolean on a `test` deliverable. Omitted means `false` |
-| Number | At least one and at most five per subtask. Split a subtask that needs more; the [creating-tasks](https://github.com/nckrtl/orbit/blob/main/.agents/skills/creating-tasks/SKILL.md) skill explains how. |
+| Number | At least one and at most five per subtask. Each Project sets its own task policy. |
 
 A field that belongs to another type is refused. Only a `file` deliverable's `path` accepts a glob. In that `path`, `*` matches within one directory, `**` matches across directories, and `?` matches one character.
 
-A `test` deliverable's `file` is one exact Pest test file, relative to its `project`. The path has no `*`, `?`, `[`, or `{`, has no `..`, and ends in `.php`.
 
 Group create, subtask create, and subtask update refuse any other `file` with HTTP 422 `validation.failed`. The error names that deliverable's `id`.
 
@@ -168,7 +164,7 @@ The subtask's diff runs from its start commit to the working tree that Orbit's c
 
 ### Reproduce a bug on the start commit
 
-A `test` deliverable may set `fails_on_base` to `true`. Omitted and `false` are the same: Orbit runs the file once, on the working tree. Show and the turn file include the boolean. An omitted input is stored as `false`.
+A `test` deliverable may set `fails_on_base` to `true`. Omitted and `false` are the same: Orbit runs the file once, on the working tree. Show and the turn file include the boolean. An omitted input is stored as `false`. Orbit runs the test directly with `vendor/bin/pest FILE --log-junit=...`, with test impact analysis off, as `resources/tasks/check` does.
 
 When the value is `true`, Orbit runs that file twice at handoff.
 
@@ -177,7 +173,7 @@ When the value is `true`, Orbit runs that file twice at handoff.
 | Base | The start commit, or its fallback when that commit was never recorded, plus only this test file from the working tree | At least one test whose name contains `name` fails |
 | Working tree | The implementer's tree | Every test whose name contains `name` passes, and at least one such test exists |
 
-The base run reads that test file from the working tree, including an uncommitted or untracked file. No other file from the diff is present. Dependencies already installed in the workspace stay available, so Pest can run. The base run does not change the workspace. When the recorded start commit is empty, this run uses the same fallback as the review diff: the previous subtask's approved commit, or the workspace starting commit for the first subtask.
+The base run reads that test file from the working tree, including an uncommitted or untracked file. No other file from the diff is present. The Project is responsible for making its test command available in the workspace. The base run does not change the workspace. When the recorded start commit is empty, this run uses the same fallback as the review diff: the previous subtask's approved commit, or the workspace starting commit for the first subtask.
 
 The base run builds the start commit in a directory under the clone's `.git/orbit/`. It archives that commit and extracts the archive there. It does not register a Git worktree, and the directory is not in the apps root. The check removes the directory when the base run finishes or the check is cancelled. A base run killed with SIGKILL can leave the directory. Nothing is registered, so removing the clone removes the leftover with it.
 
@@ -193,7 +189,7 @@ The diff check from the table above still applies. Orbit reports a miss in the d
 
 Group create, subtask create, and subtask update accept `fails_on_base` only on a `test` deliverable. The value is the JSON boolean `true` or `false`. Any other value, and the field on another type, is HTTP 422 `validation.failed`. The error names that deliverable's `id`.
 
-The [creating-tasks](https://github.com/nckrtl/orbit/blob/main/.agents/skills/creating-tasks/SKILL.md) skill tells a planner when to set the field. A bug group's first code subtask carries it. That subtask is the first one that changes code. When a bug cannot be reproduced automatically, the brief says so. For example, an iOS behavior that shows up only on a device has no Pest test. That subtask adds a `review` deliverable for the manual check.
+The Orbit Project's [task policy skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) requires repro-first bug work where the Project check can reproduce it. A bug group's first code subtask carries the reproduction. When a bug cannot be reproduced automatically, the brief says so and that subtask adds a `review` deliverable for the manual check.
 
 ### Confirm deliverables
 
@@ -220,9 +216,7 @@ The message names the deliverable id and the bad value. A project that is not a 
 
 The group asks for assistance with each message. The implementer gets no reminder, because the implementer cannot change deliverables.
 
-When every other item passes, Orbit runs its [Project check](#project-check) with the deliverables. After the Project's task check passes, or at once when the Project has none, the check script records the diff, runs each `test` file with `vendor/bin/pest FILE --log-junit=…` in its project, and runs each `command` in a login shell. A run that names a file turns off Pest's test impact analysis, so a cached result never counts. The check keeps the end of each command's output.
-
-A `test` with `fails_on_base` set to `true` runs twice, as [Reproduce a bug on the start commit](#reproduce-a-bug-on-the-start-commit) describes. The base run does not change the workspace. It stops after 600 seconds, and a timed-out base run counts as failing on the start commit. The review request includes the kind and the tail of each base failure message.
+When every other item passes, Orbit runs the Project's configured task check and verifies deliverables. When the configured command runs `composer check`, including as part of a compound command, the Gateway adds a `check_script` rubric item; the task workspace must define that Composer script. Before the baseline check, the scheduler runs the Project's setup steps, then may prepare dependencies based on the task-check command as described in [Project check](#project-check). Handoff checks do not install dependencies.
 
 The `deliverables` item fails when a confirmation is missing or a deliverable does not pass. The reminder names each failing deliverable and why, and the assistance reason repeats it. Like every item, it gets one reminder per completion attempt, then asks for assistance. An invalid `test` project or file does not use that reminder. The reviewer starts only when every deliverable passes.
 
@@ -230,53 +224,26 @@ A subtask with no deliverables skips these steps. Groups that left Backlog befor
 
 ## Prepare a group in Backlog
 
-A group in Backlog without a planner has an id but no Instance and no agents. Use that time to shape the feature before any agent runs. To shape it with an agent in T3 instead, [plan the group with a planner](#plan-a-group-with-a-planner).
+Use Backlog to prepare a group before any agent runs. Backlog groups have no Instance. An external ADE plans and steers, and Orbit runs the assigned subtasks.
 
 1. Create the group. It starts in `backlog`.
 2. In a worktree, create the branch `task-{group id}` from the Project default branch.
-3. Write the feature's ADRs and documentation on that branch, following the [contributor guide](/contributor-guide). Push the branch.
-4. Split the work into subtasks with the [creating-tasks](https://github.com/nckrtl/orbit/blob/main/.agents/skills/creating-tasks/SKILL.md) skill. Each subtask has one concise goal and at most five deliverables. Its brief cites the ADRs and documentation it implements.
-5. Give each subtask its [deliverables](#deliverables).
-6. Move the group to `todo` with `tasks:update`.
+3. Write the feature's ADRs and documentation on that branch, following the [contributor guide](/contributor-guide), then push the branch.
+4. Split the work into ordered subtasks using the Project's own task policy.
+5. Add typed deliverables that the Gateway can validate.
+6. Move the group to `todo` with `tasks:update` when the Project is ready to execute.
 
-The provisioner checks out the pushed `task-{group id}` branch for the shared Instance. The implementer and reviewer prompts name the ADRs and documentation that this branch changes as the feature's contract. The reviewer prompt also says that the implementer has no web access, asks the reviewer to confirm framework and library usage against documentation for the Project's versions, and tells the reviewer not to repeat checks the handoff already passed. [Review a subtask](#review-a-subtask) states that rule. The Gateway does not check the branch contents. A group without a pushed branch runs on a fresh branch from the default branch.
+For Orbit, the [Orbit Tasks skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) describes task policy. Each subtask has one concise goal and at most five deliverables. Its brief cites the ADRs and documentation it implements.
 
-## Plan a group with a planner
+The provisioner checks out the pushed `task-{group id}` branch for the shared Instance. The implementer and reviewer prompts name the ADRs and documentation that this branch changes as the feature's contract. [Review a subtask](#review-a-subtask) describes the review behavior. The Gateway does not check the branch contents. A group without a pushed branch runs on a fresh branch from the default branch.
 
-A planner is a T3 thread that shapes a Backlog group with you. It writes the feature's ADRs and documentation in the group's workspace and manages the group through Orbit MCP. When the plan is ready, the planner or you moves the group to Todo. The planner thread stays the planner. [ADR 0169](/decisions/0169-start-each-subtask-review-in-a-fresh-thread) records that a review does not use it.
+## Backlog and Project policy
 
-1. Create the group with `plan: true`. The Gateway provisions the shared Instance on `task-{group id}` and starts the planner. The thread `Orbit task #{group id} · Planner: {title}` appears in your T3 client.
-2. Shape the feature with the planner in that thread. It follows the repository's instructions for feature design. In Orbit's repository, that is the `grill-with-docs` skill.
-3. The planner keeps the title, brief, and subtasks current through the same operations you use.
-4. The planner gives each subtask at least one [deliverable](#deliverables). Each explicit item of the brief becomes one.
-5. When you agree the plan is ready, the planner moves the group to `todo`, or you do.
-6. Orbit commits every workspace change on `task-{group id}` as `orbit <tasks@orbit>` with the message `Plan: {group title}`. The scheduler then claims the group in the same Instance.
+Backlog is for preparing a task group before it is claimed. A Backlog group has no Instance. An authorized caller creates the group and its ordered subtasks; moving it to `todo` makes it eligible for the scheduler to claim. An external ADE plans and steers; Orbit runs the assigned subtasks. See [ADR 0178](/decisions/0178-run-project-agnostic-tasks-without-a-planner).
 
-The planner thread stays the planner for the life of the group. Its `task_id` stays null. Each subtask review starts a fresh reviewer thread on the group's reviewer driver, model, and effort. [Review a subtask](#review-a-subtask) describes the packet and the continued re-review.
+Each Project keeps its own task policy in an `orbit-tasks` skill under `.agents/skills/` and enforces that policy through its own task-check command. See the Orbit repository's [task policy skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) as an example. The Gateway runs the configured task check as provided, while applying the current Project-type defaults, Composer check rubric, and baseline dependency preparation described in [Project check](#project-check).
 
-| Rule | Behavior |
-| --- | --- |
-| Driver | The planner uses the reviewer's T3 driver, model, and effort |
-| Placement | App-dev Nodes with access to themselves or to the Gateway; the one with the fewest active groups wins |
-| MCP | Untracked `.mcp.json` points at this Gateway's `/mcp/search` and is excluded from Git |
-| Node ceiling | A Backlog group does not count, with or without an Instance |
-| Uncommitted work | The ADRs and documentation stay uncommitted until the move to `todo`; an empty workspace produces no commit |
-| Failed start | When no Node fits, or the planner thread cannot start, create removes any Instance and stores no group |
-| Failed commit | The group stays in Backlog and the update returns `tasks.commit_failed` |
-| Back to Backlog | The group keeps its Instance, planner, and commits |
-| Cancel | Removes the Instance and its checkout; the conversation stays in T3 |
-
-When the planner thread cannot start and removing the Instance also fails, create still stores no group and answers `tasks.planner_unavailable`. The Instance row stays. The same holds when Orbit cannot write the planner's `.mcp.json` and removal of that Instance fails.
-
-A Node holds planners once it has access to itself, for example after [`node:access:add`](/cli/node#orbit-nodeaccessadd) from the Node to itself. Every agent on that Node can then change the task groups whose workspace it holds.
-
-### Start planning from a conversation
-
-Agents implement work in their own session unless you ask for Orbit. Give a repository's agents that rule with a skill or an explicit instruction, such as:
-
-> Implement work inline in this session by default. When the operator asks to implement something in Orbit, call `tasks-create` through Orbit MCP with this Project's `app_id`, a short title, a brief that summarizes the conversation, and `plan: true`. Then tell the operator the group ID and the planner thread title, and stop working on the feature here.
-
-Orbit's repository carries this rule as the `implementing-in-orbit` skill.
+Prepare the group's contract and subtasks using the Project's own policy before setting the group to `todo`. The Tasks engine validates deliverables and lifecycle transitions, but does not decide how a Project should plan or split work.
 
 ## Web task board
 
@@ -296,21 +263,23 @@ The board is read-only. Move a group from Backlog to Todo with `tasks:update`. T
 
 ### Tokens and line diff
 
-When the parent task is open, Tokens is the total for the current implementer of each subtask plus every reviewer-role thread, including the planner when the group has one. Line diff is the whole feature branch against the Project default branch. A subtask shows its current implementer's metrics. Showing an active group refreshes these values through the selected drivers and shared checkout.
+When the parent task is open, Tokens is the total for the current implementer of each subtask plus every reviewer-role thread. Line diff is the whole feature branch against the Project default branch. A subtask shows its current implementer's metrics. Showing an active group refreshes these values through the selected drivers and shared checkout.
 
 The line diff comes from the Node agent's [task workspace](/reference/node-agent#task-workspaces) state while the Gateway's view of that Node is fresh, and from `git diff --shortstat` over SSH otherwise or when the agent's diff is truncated. When the agent reports a new commit or new counts, the Gateway stores the group's line counts when the diff is complete and broadcasts `task_group.updated` in either case. Missing runtime metrics remain unknown; failed reads preserve stored values.
 
 ### Thread token metrics
 
-Each agent thread records five fields beside `tokens`. Null means the driver did not report that field. A reported zero is stored as zero. A failed read keeps the last stored value. Task, TaskGroup, the web task board, and the Coder settle webhook keep the cumulative `tokens` total and do not store this split. `tasks:agents` and `GET /api/v1/task-groups/{group}/agents` show it. [ADR 0165](/decisions/0165-record-per-thread-token-metrics) records the decision.
+Each agent thread records five fields beside `tokens`. Null means the driver did not report that field or a T3 split is partial. A reported zero is stored as zero. A failed read keeps the last stored value. Task, TaskGroup, the web task board, and the Coder settle webhook keep the cumulative `tokens` total and do not store this split. `tasks:agents` and `GET /api/v1/task-groups/{group}/agents` show it. [ADR 0165](/decisions/0165-record-per-thread-token-metrics) records the field meanings, and [ADR 0172](/decisions/0172-count-every-t3-model-call-in-thread-metrics) records complete T3 collection and partial-gap handling.
 
 | Field | Meaning |
 | --- | --- |
 | `input_tokens` | Uncached input summed across model calls, including cache writes |
 | `cached_input_tokens` | Input read from cache, summed across model calls. Cache writes are not included |
 | `output_tokens` | Output, summed across model calls. Reasoning is already included and is not added again |
-| `model_calls` | Model calls that reported usage |
+| `model_calls` | Model calls counted from the driver's per-call updates |
 | `peak_context_tokens` | Largest single-call context. Context is that call's uncached input plus its cached input, so a Pi cache write is inside the peak, and output is excluded |
+
+A T3 split that is partial sets all five fields to null; the internal accumulator retains its known lower bounds. A complete split reports the five fields, including a zero when the driver reports zero.
 
 Average context per call is `(input_tokens + cached_input_tokens) / model_calls`. The cached share of input is `cached_input_tokens / (input_tokens + cached_input_tokens)`. Cache writes sit in that denominator with the other uncached input. The Gateway does not recompute `tokens` from the split.
 
@@ -318,7 +287,15 @@ For Pi, the server's `usage` object carries the sums `input`, `output`, `cacheRe
 
 For T3, the snapshot has no thread-level usage object. Figures sit on `context-window.updated` activities: `usedTokens`, and optionally `totalProcessedTokens`, `inputTokens`, `cachedInputTokens`, `outputTokens`, `reasoningOutputTokens`, and `lastInputTokens`, `lastCachedInputTokens`, `lastOutputTokens`, and `lastReasoningOutputTokens`. `tokens` still prefers the largest `totalProcessedTokens`, then `usedTokens`. The Gateway does not open Codex rollout files.
 
-The five fields are null when any `totalProcessedTokens` is lower than an earlier one, when a call that advances the total lacks integer `inputTokens`, `cachedInputTokens`, and `outputTokens`, when `cachedInputTokens` is greater than `inputTokens` on a counted call, or when no call is counted. A counted call has those three integers and either a `totalProcessedTokens` greater than every earlier one, or no earlier `totalProcessedTokens` and a triple different from the previous counted call. `last*` is the latest update, not a total. `reasoningOutputTokens` is not added. `input_tokens` sums `inputTokens - cachedInputTokens`. `cached_input_tokens` sums `cachedInputTokens`. `output_tokens` sums `outputTokens`. `model_calls` is the number of counted calls. `peak_context_tokens` is the maximum `inputTokens`, which already includes cached input.
+The five fields come from the T3 thread event stream, not the bounded snapshot activity list. The Gateway durably accumulates each valid call payload with running sums, the last counted `totalProcessedTokens`, a separate last observed `totalProcessedTokens`, the greatest event sequence, and a partiality state. It applies the sums and sequence checkpoint atomically, ignores replayed sequences, and considers a payload only when its integer `totalProcessedTokens` advances past the observed watermark.
+
+The observed watermark advances even for an invalid advancing payload. A replay at that same total is ignored, even when the replay contains valid split fields. A valid advancing payload counts once. Repeated updates at the same total do not count another call. `last*` is the latest update, not a total. `reasoningOutputTokens` is not added.
+
+`input_tokens` adds `inputTokens - cachedInputTokens`. `cached_input_tokens` adds `cachedInputTokens`. `output_tokens` adds `outputTokens`. `model_calls` increments once per counted call. `peak_context_tokens` is the maximum `inputTokens`, which already includes cached input.
+
+An initial or fresh stream baseline is not a call. When its cumulative total includes calls before the saved checkpoint, the Gateway advances the observed watermark, marks the split partial, and does not claim a complete split. If the Gateway misses events and cannot resume history, an observed cumulative `totalProcessedTokens` delta still updates `tokens`, but it cannot reconstruct a precise call count or token split. The Gateway retains known sums and the known call count, marks the split partial, and never reports fewer calls than it has already counted.
+
+It does not infer calls or split categories from a total-token delta. A decreasing or unavailable cumulative baseline also marks the split partial rather than subtracting or double counting. Partial sums and peak context are lower bounds for observed calls, not complete thread metrics. Invalid call payloads are not added to the split and make it partial.
 
 On Codex, `inputTokens` includes `cachedInputTokens`, `total_tokens` equals input plus output, and the counted calls match the rollout's `token_usage_record` rows and `thread_token_usage`. A Claude snapshot omits `cachedInputTokens`, so the five fields stay null.
 
@@ -374,16 +351,18 @@ One fresh Instance belongs to the group. Every subtask reuses it. The instance n
 
 | Intent | When | Result |
 | --- | --- | --- |
-| `visitable: false` | Orbit monorepo feature work (`app.slug` is `orbit`) | Isolated checkout on the feature branch. No Route and no public URL. The instance stays `source_resolved` |
-| `visitable: true` | A real Project | Usual development provisioner and inspect subdomain. The instance becomes `active` |
+| `visitable: false` | The Project slug is `orbit` | Isolated checkout on the feature branch. No Route and no public URL. The instance stays `source_resolved` |
+| `visitable: true` | The Project slug is not `orbit` | Usual development provisioner and inspect subdomain. The instance becomes `active` |
 
-The provisioner honors `visitable`. It does not invent a Route for a non-visitable workspace because an active Instance still requires exactly one Route.
+The Gateway currently derives visitability from the Project slug: `orbit` task workspaces are isolated, while other Projects receive visitable workspaces. The provisioner does not invent a Route for a non-visitable workspace because an active Instance still requires exactly one Route.
 
-Doctor expects the same final state. A non-visitable task workspace is healthy in `source_resolved`, and a visitable one is healthy in `active`. Doctor reports `instance.lifecycle_not_active` for any other state, such as a workspace stuck in `reserved` or `checkout_prepared`, or a visitable workspace stuck in `source_resolved`. The [Doctor instance family](/cli/doctor#what-each-family-checks) owns the check.
+Doctor expects the same final state. A non-visitable task workspace is healthy in `source_resolved`, and a visitable one is healthy in `active`. A non-null provisioning step is unfinished unless it is the terminal `active` or `clone-completed` step. Doctor also treats a lifecycle state before the settled state as provisioning. A non-null `failed_step` reports immediately; Doctor skips other unfinished provisioning for up to 20 minutes after the last update, and older provisioning reports only `instance.provisioning_stuck`. A state later than the settled state reports `instance.lifecycle_not_active`.
+
+The `instance` Doctor probe skips a workspace already in `removing`, except that removal lasting 10 minutes or more reports `instance.removal_stuck`; it drops findings if removal starts or the row is deleted during inspection. The `app` probe excludes removing workspaces when selecting eligible checkouts. The `process` probe skips Processes owned by a removing workspace and drops findings if removal starts or the workspace is deleted during inspection. The `database_connection` probe skips attachments whose workspace is removing, including on its post-inspection reread. Other Doctor probes do not generally skip removing Instances; see the [Doctor family rules](/cli/doctor#what-each-family-checks).
 
 ## Agent viewer
 
-The task group page shows an Agents section below Subtasks. Vertical tabs list every started thread: the planner, each subtask reviewer, and each implementer. A reserved row that has not started is left out. A subtask page shows only that subtask's implementer and that subtask's reviewer. The planner and every other reviewer stay on the group page. Finished conversations remain available. Activity and connection health have separate labels; a disconnected viewer retains the last known activity state.
+The task group page shows an Agents section below Subtasks. Vertical tabs list every started thread: each subtask reviewer and implementer. A reserved row that has not started is left out. A subtask page shows only that subtask's implementer and that subtask's reviewer. Other reviewers stay on the group page. Finished conversations remain available. Activity and connection health have separate labels; a disconnected viewer retains the last known activity state.
 
 `GET /api/v1/task-groups/{group}/agents` lists persisted threads, including driver, external ID, state, observation time, errors, and metrics. It leaves out a reserved row whose external id starts with `pending:`. Metrics include `tokens` and the [thread token metrics](#thread-token-metrics). Each split field is present and null when the driver did not report it. `GET /api/v1/task-groups/{group}/agents/{session}/stream` streams normalized conversation data for an Orbit thread ID. Both routes require Gateway access and an enabled tasks extension. Runtime credentials stay server-side. A missing original Node leaves the link visible but unavailable for streaming.
 
@@ -411,19 +390,19 @@ If the process stops before it can clean up a failed spawn, the `pending:` row m
 
 Completion and failure remain visible until a new turn starts. Task completion still requires the scheduler workflow and review. Failed observations preserve the last known state and metrics and mark them unavailable. Connection health does not change a thread to idle or failed. Unavailable observations use the outage grace period and cannot advance a task from cached state.
 
-A group records an implementer driver and a reviewer driver. `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` and `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` select them for new groups. Each defaults to `ORBIT_TASKS_AGENT_DRIVER`, which defaults to `t3`. Placement requires a Node that allows both drivers. Existing groups and threads keep their recorded drivers. The Gateway registers drivers; callers cannot supply arbitrary runtime URLs. Unsupported driver operations fail explicitly. An unknown configured driver rejects group creation with `tasks.agent_driver_unavailable` before any group is stored.
+A group records an implementer driver and a reviewer driver. `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` and `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` select them for new groups, and each defaults to `t3`. Placement requires a Node that allows both drivers. Existing groups and threads keep their recorded drivers. The Gateway registers drivers; callers cannot supply arbitrary runtime URLs. Unsupported driver operations fail explicitly. An unknown configured driver rejects group creation with `tasks.agent_driver_unavailable` before any group is stored.
 
-The Gateway sends normalized conversation snapshots, entries, states, input requests, and metrics to the web app. Reconnect cursors belong to the selected driver. The browser renders Orbit data without parsing runtime-specific events. Laravel AI continues to select scheduler actions through Jev.
+The Gateway sends normalized conversation snapshots, entries, states, input requests, and metrics to the web app. Reconnect cursors belong to the selected driver. The browser renders Orbit data without parsing runtime-specific events. Jev currently judges brief coverage before the final approved commit.
 
 ### Archive finished threads
 
-Orbit archives T3 threads after their work ends. When a subtask reaches `completed` or `cancelled`, Orbit archives that subtask's reviewer thread, if it has one. It never archives the planner thread while the group is open. When a group reaches `completed` or `cancelled`, Orbit archives its planner thread and any remaining T3 threads for the group.
+Orbit archives T3 threads after their work ends. When a subtask reaches `completed` or `cancelled`, Orbit archives that subtask's reviewer thread, if it has one. When a group reaches `completed` or `cancelled`, Orbit archives any remaining T3 threads for the group.
 
 Each archive run, including a scheduler tick or `tasks:archive-threads`, archives at most 10 eligible T3 threads, oldest Orbit thread id first. Later runs continue with the remaining threads. If an archive command fails, the failure does not block the subtask or group from reaching its terminal status. Orbit keeps the same command id and schedules retries after 1, 5, 30, then 120 minutes (and every 120 minutes thereafter). A successful retry clears that backoff. Orbit reports an archive failure at most once per thread per hour.
 
 Ticks delete leftover `pending:` reservations only when their task or group is completed or cancelled. While the owner remains active, Orbit keeps the reservation so `TaskAgentSpawner` can retry the spawn using that row; pending rows do not expire based on age.
 
-When the T3 metrics collector lands, the final metrics reading must happen before the thread is archived so it can still be observed. Until that collector is available, archive scheduling does not coordinate with a final T3 metrics reading.
+Orbit archives a T3 thread only after the collector completes a successful final metrics read and sets `t3_metrics_final_at`. If collection is incomplete or fails, the collector retries and archive scheduling leaves the thread available to read, even when a scheduler tick runs first.
 
 To process finished threads without waiting for a tick, run `php artisan tasks:archive-threads`; each invocation uses the same idempotent path and archives up to 10 eligible threads for completed and cancelled subtasks and groups. Archiving does not delete the Orbit `agent_threads` row or its metrics. Pi sessions are files on the Node and are outside this cleanup.
 
@@ -489,7 +468,7 @@ A restart error on this driver is resumed on the same thread. The resume key is 
 
 Transcripts become normalized entries. A bash result is one activity that ends with the command and `exit code N`. Other tools show their name and target, not file contents. The cumulative token total comes from Pi's session usage, and the [thread token metrics](#thread-token-metrics) record the split. Per-thread line counts are unavailable. Pi threads never report pending input, and `respond` fails as unsupported.
 
-A tool call appears as soon as it starts: an activity labeled `Running` with text such as `Running: $ composer test`. Its result replaces that entry, with the same ID and kind. When the turn settles and a call still has no result, such as after a Pi server restart, the entry shows the call with `(stopped without a result)`.
+A tool call appears as soon as it starts: an activity labeled `Running` with text such as `Running: $ ./check-feature`. Its result replaces that entry, with the same ID and kind. When the turn settles and a call still has no result, such as after a Pi server restart, the entry shows the call with `(stopped without a result)`.
 
 A Pi stream cursor is `{run}.{sequence}`. On reconnect, the Gateway passes it to the Pi server, which resumes when the cursor belongs to its current run of the session. The stream then starts with a `resumed` event and continues with the entries and state after the cursor. The server sends a full snapshot on a first connection, and when the cursor is unknown, ahead of the server, or from another run, such as before a restart.
 
@@ -499,15 +478,15 @@ When one Pi event becomes several entries, only the last carries the cursor, so 
 
 Each subtask review starts a fresh reviewer thread on the group's reviewer driver, model, and effort. The thread title is `Orbit task #{group id} · Review: {subtask title}`. Its role is `reviewer`, and its `task_id` is that subtask. The group's `reviewer_agent_thread_id` then points at this thread. A `changes_requested` re-review of the same subtask continues this thread. A `blocked` resolution continues it too, when that thread exists. The next subtask starts another thread. [ADR 0169](/decisions/0169-start-each-subtask-review-in-a-fresh-thread) records the decision.
 
-When that reviewer thread does not exist yet, the resolution is not sent to the planner, to an earlier subtask's reviewer, or to a reserved reviewer row that has not started. Assistance clears, the review stays unrequested, and the next tick starts the fresh reviewer with the resolution in its opening packet.
+When that reviewer thread does not exist yet, the resolution is not sent to an earlier subtask's reviewer or to a reserved reviewer row that has not started. Assistance clears, the review stays unrequested, and the next tick starts the fresh reviewer with the resolution in its opening packet.
 
-The planner thread is not a reviewer. A planning group keeps it for planning. Its `task_id` stays null, and its title stays `Orbit task #{group id} · Planner: {title}`. Before the first review, `reviewer_agent_thread_id` points at that planner thread, which is how the group remembers it. The first review replaces the pointer with the new reviewer. The scheduler sends a review only to the thread it started for that subtask, or continues that thread. It never sends a review to the planner.
+A reviewer thread is scoped to the subtask it reviews. The scheduler sends a review only to that subtask's reviewer thread.
 
 The opening turn is a review packet of at most 16,000 characters, about 4 thousand tokens at four characters per token. No part is exempt. A part under its cap leaves the spare characters for the diff body. The diff body also stops at 16,384 bytes. The two retrieval commands are reserved first, at most 1,000 characters, and are never cut. The thread id is written into the generated closing instructions before that cap. Diff text and brief text are not rewritten to add it.
 
 ### Render prompts for offline evaluation
 
-`php artisan tasks:render-prompt {role}` renders an agent prompt from one JSON object read from standard input, without starting an agent. The role is `implementer`, `reviewer` (the opening review packet), `reviewer-continue` (the continued review turn), or `planner`. The command writes one JSON object to standard output: `{"role":"…","prompt":"…","source_commit":"…"}`. `prompt` is the exact prompt text. `source_commit` is the Gateway version reported by its status endpoint: the configured `APP_VERSION`, which defaults to `dev` when unset. It does not fall back to a Git read, so a deployment without a configured commit version reports `dev`.
+`php artisan tasks:render-prompt {role}` renders an agent prompt from one JSON object read from standard input, without starting an agent. The role is `implementer`, `reviewer` (the opening review packet), or `reviewer-continue` (the continued review turn). The command writes one JSON object to standard output: `{"role":"…","prompt":"…","source_commit":"…"}`. `prompt` is the exact prompt text. `source_commit` is the Gateway version reported by its status endpoint: the configured `APP_VERSION`, which defaults to `dev` when unset. It does not fall back to a Git read, so a deployment without a configured commit version reports `dev`.
 
 The input is a single JSON object with only the following fields. Field names and types are part of the command contract; unknown fields are rejected.
 
@@ -519,7 +498,7 @@ The input is a single JSON object with only the following fields. Field names an
 | `group.project_slug` | string | Project slug. |
 | `group.project_id` | integer | Project id. |
 | `group.default_branch` | string or null | Project default branch. |
-| `group.task_check` | string or null | Project task check command. |
+| `group.task_check` | string or null | Project task-check command, or null when no check is configured. |
 | `subtask.id` | integer | Subtask id. |
 | `subtask.title` | string | Subtask title. |
 | `subtask.brief` | string | Subtask brief. |
@@ -583,21 +562,21 @@ The reviewer does not re-run the Project task check or the deliverable tests and
 
 The reviewer prompt states this rule on the opening packet and on a continued turn. Orbit does not parse the summary to enforce it. The same prompt says the turn is read-only, that the implementer has no web access, and that the reviewer confirms framework and library usage against documentation for the Project's versions. Those checks are evidence the handoff result does not give. The opening packet also names the feature contract: the ADRs and documentation this branch changes against the Project default branch, such as `origin/main`. A continued turn does not repeat that sentence.
 
-Orbit writes an untracked `.mcp.json` that points at `{gateway origin}/mcp/search` and excludes it from Git. That endpoint lists `search_tools` and `execute_tools`. The planner and the reviewer use this file, not the full catalogue at `/mcp`. Orbit writes the file before the planner starts, and before a reviewer starts when the workspace has no `.mcp.json`. A tracked `.mcp.json` stays unchanged. The [MCP server](/reference/mcp) describes both endpoints.
+Orbit writes an untracked `.mcp.json` that points at `{gateway origin}/mcp/search` and excludes it from Git. That endpoint lists `search_tools` and `execute_tools`. A reviewer uses this file, not the full catalogue at `/mcp`. Orbit writes the file before a reviewer starts when the workspace has no `.mcp.json`. A tracked `.mcp.json` stays unchanged. The [MCP server](/reference/mcp) describes both endpoints.
 
 The Gateway sends no turn to a `working` thread. On a continued reviewer, the task still moves to `reviewing` and the request waits until that thread stops. Until then, the task has no review request, so no reviewer receipt is read. If sending the request fails, the next tick tries again before it reads a reviewer receipt.
 
-While the reviewer's snapshot is still the turn from before this handoff, the Gateway waits. A fresh thread is new, so an operator talking to the planner or to an earlier reviewer does not delay it. The acting thread for a subtask in review is that subtask's reviewer. The planner thread does not defer the subtask.
+While the reviewer's snapshot is still the turn from before this handoff, the Gateway waits. A fresh thread is new, so an operator talking to an earlier reviewer does not delay it. The acting thread for a subtask in review is that subtask's reviewer.
 
 ## Session routing
 
-A scheduler tick checks every in-progress task in running and reviewing groups. In-progress tasks have status `running` or `reviewing`. The tick checks the normalized AgentThread state of each attached reviewer or implementer thread, including sessions recorded only in `agent_threads`. Tasks without attached sessions are skipped. `todo`, completed, failed, and cancelled tasks do not ask Jev for decisions. The tick also reads the planner thread of every Backlog, Todo, running, and reviewing group that has one, so its state and token count stay current. That read asks Jev nothing.
+A scheduler tick checks every in-progress task in running and reviewing groups. In-progress tasks have status `running` or `reviewing`. The tick checks the normalized AgentThread state of each attached reviewer or implementer thread, including sessions recorded only in `agent_threads`. Tasks without attached sessions are skipped. `todo`, completed, failed, and cancelled tasks do not ask Jev for decisions. The tick observes only the implementer and reviewer threads attached to in-progress subtasks.
 
 AgentThread state is authoritative. The thread that acts in the task's phase defers the task while it is `working`, including a starting T3 session. That thread is the task's implementer while the task is `running`, and that subtask's reviewer while the task is `reviewing`. The Gateway then does not inspect that task's messages or pending requests, check workspace commits, or call Jev. Other snapshot fields cannot override an active status. The tick still checks the remaining sessions and other in-progress tasks.
 
 Otherwise the tick checks for commits since the thread started. It reads the count from the Node agent's [task workspace](/reference/node-agent#task-workspaces) state while the Gateway's view of that Node is fresh, and runs `git` over SSH otherwise.
 
-The other thread's work does not defer the task. While the operator talks to the planner or to a reviewer that is not the acting thread, the tick still reads the implementer's receipt, asks for assistance on `blocked`, runs the handoff check, and sends reminders to the implementer. The Gateway sends no turn to the working thread until it stops. [ADR 0132](/decisions/0132-pause-only-for-the-acting-thread-and-a-real-question) records the decision.
+The other thread's work does not defer the task. While the operator talks to a reviewer that is not the acting thread, the tick still reads the implementer's receipt, asks for assistance on `blocked`, runs the handoff check, and sends reminders to the implementer. The Gateway sends no turn to the working thread until it stops. [ADR 0132](/decisions/0132-pause-only-for-the-acting-thread-and-a-real-question) records the decision.
 
 When the Project's task check runs the `composer check` command, not a longer command such as `composer check-platform-reqs`, the tick also reads `composer.json` at the workspace root over SSH. The `check_script` item then passes only when `scripts.check` is a non-empty command or list. For any other task check, or none, `check_script` passes. Composer resolves abbreviated command names, so without that script `composer check` runs the built-in `check-platform-reqs` command and exits 0. A missing file, invalid JSON, or a missing or empty `check` script fails `check_script`, and Orbit does not start the check.
 
@@ -626,7 +605,7 @@ The tick sends one message to that same thread and does not ask for assistance. 
 
 The resume uses a new key, stored before the send. It does not reuse the key of the interrupted turn. A repeated key starts no turn, including after a restart. The tick repeats the stored key only while that same send is still unresolved. The tick does not read a receipt, run the rubric, or send a reminder first. It does not install the run script again. The script from the interrupted turn stays at `.git/orbit/run`.
 
-The acting thread is the implementer while the subtask is `running`. It is the reviewer while the subtask is `reviewing`. That thread's driver is `pi` or `t3`. A planner thread is outside this rule.
+The acting thread is the implementer while the subtask is `running`. It is the reviewer while the subtask is `reviewing`. That thread's driver is `pi` or `t3`.
 
 T3 0.0.42 reports an equivalent failure when a provider session does not survive a server restart. Continue threads after restarts is off by default, so the usual error is `Provider session did not survive a server restart. Send a new message to continue.` When continuation is on and the continue fails, the error is `Could not continue this thread after the server restart. Send a new message to continue.` The tick resumes either error with the same message and the same limit of two. Any other T3 error asks for assistance, including the Pi restart text on a T3 thread.
 
@@ -666,11 +645,11 @@ Typed comments are the workflow record. They preserve the full body, author, tim
 
 Only `assistance_requested` and `resolution` comments come through the API. They do not create a separate validation-evidence record or API. `assistance_requested` flags the task and group, retains the active slot, and is notified once. A non-empty `resolution` is sent only when that subtask is already asking for assistance. The Gateway then clears the flag and the communication failures.
 
-While the subtask is `running`, the resolution continues the implementer and starts the next completion attempt. While it is `reviewing`, the resolution continues the reviewer thread whose `task_id` is this subtask, and that message counts as the next review request. A reserved reviewer row that has not started is not that thread. When no such reviewer thread exists, the Gateway does not send the resolution to the group's reviewer pointer. That pointer may still name the planner or an earlier subtask's reviewer.
+While the subtask is `running`, the resolution continues the implementer and starts the next completion attempt. While it is `reviewing`, the resolution continues the reviewer thread whose `task_id` is this subtask, and that message counts as the next review request. A reserved reviewer row that has not started is not that thread. When no such reviewer thread exists, the Gateway does not send the resolution to the group's reviewer pointer.
 
 In that case, assistance clears and the review stays unrequested. The next tick starts a fresh reviewer whose opening packet includes the resolution. A failed send to an existing thread leaves the task asking. A resolution posted before the flag is set is stored and not sent.
 
-Each observation includes normalized activity state, availability, errors, pending request IDs, and recent assistant and user text. It also reports new workspace commits, the pull request URL, and any available CI summary. The driver resolves pending requests from its runtime data. Missing or unavailable current conversations skip classification. The scheduler waits `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` (default `120`), then escalates once per continuous outage. Recovery resets the grace period and alert marker.
+Each observation includes normalized activity state, availability, errors, pending request IDs, and recent assistant and user text. It also reports new workspace commits, the pull request URL, and any available CI summary. The driver resolves pending requests from its runtime data. Missing or unavailable current conversations are skipped. The scheduler waits `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` (default `120`), then escalates once per continuous outage. Recovery resets the grace period and alert marker.
 
 Legacy scheduler actions:
 
@@ -682,10 +661,7 @@ Legacy scheduler actions:
 | `relay_review_to_implementer` | Driver follow-up on the implementer including the last reviewer excerpt |
 | `mark_subtask_done` | Existing settleImplementer, acceptReview, and next-subtask spawn paths |
 | `settle_group` | Existing settle path: use the verified PR, write metrics, and notify Coder when CLEAN-ready |
-| `escalate_coder` | HMAC Coder webhook with the observation and the low-confidence or failed Choice |
 | `noop` | No driver action and no Coder notification |
-
-Confidence below `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` (default `0.75`) becomes `escalate_coder`. A missing `TYPESAFE_API_KEY` fails closed with a clear error and never invents a next action.
 
 Gateway uses `laravel/ai` Classification with its official TypeSafe provider in `config/ai.php`. The package client posts to TypeSafe. Tests use the package fake and never call the network.
 
@@ -693,11 +669,15 @@ Run the tick with `php artisan tasks:tick` while the extension is enabled. One l
 
 A provisioning failure leaves the group in `todo` with its assistance reason visible, and the tick continues to the next eligible group. The tick tries each failing group once. A full fleet ends the claims for that tick without a reason on any group. Groups that are reserved, running, reviewing, settling, assisted, or awaiting merge count toward the limit of 10.
 
-The Gateway registers `tasks:tick` every ten seconds when the tasks extension is enabled. LIVE Ops must run Laravel's `php artisan schedule:work` process for this schedule to advance sessions; this feature does not provision that process or a fleet cron.
+The Gateway registers `tasks:tick` and `tasks:collect-t3-metrics` every ten seconds when the tasks extension is enabled. The T3 collector reads at most 20 due threads per run, least recently collected first. Failed or incomplete reads use an increasing retry delay so threads outside a failing batch remain eligible on the next run. A heartbeat-only timeout is incomplete; a final collection requires a valid snapshot or event.
+
+A new T3 turn makes its thread eligible again. A terminal thread state counts as settled only when an observation matches the current activity version; task and group terminal statuses are authoritative. T3 sends hold an owner-token lease for up to 60 seconds. The collector and thread observer ignore expired leases, and each collector run removes at most 100 expired lease rows. A late sender cleanup removes only its own lease. A settled thread is excluded only after one successful final read.
+
+LIVE Ops must run Laravel's `php artisan schedule:work` process for this schedule to advance sessions; this feature does not provision that process or a fleet cron.
 
 ### Project check
 
-Each Project stores a task check in `task_check`, such as `composer check`. Orbit runs it after each `ready_for_review` receipt whose items pass, and on the fresh workspace before the first implementer starts. The Gateway installs `.git/orbit/check` and starts it over SSH as a detached process group. The check records HEAD and the tree of the whole working tree, uncommitted and untracked files included, without touching the Git index. It runs the task check in a login shell in the workspace root, writes the output to `.git/orbit/check.log`, and writes `.git/orbit/check.json` when the command ends. [ADR 0125](/decisions/0125-run-the-project-check-when-the-implementer-hands-off) records the decision.
+Each Project stores one task check in `task_check`. Orbit runs that command after each `ready_for_review` receipt whose items pass, and on the fresh workspace before the first implementer starts. The Gateway installs `.git/orbit/check` and starts it over SSH as a detached process group. The check records HEAD and the tree of the whole working tree, uncommitted and untracked files included, without touching the Git index. It runs the task check in a login shell in the workspace root, writes the output to `.git/orbit/check.log`, and writes `.git/orbit/check.json` when the command ends. [ADR 0125](/decisions/0125-run-the-project-check-when-the-implementer-hands-off) records the decision.
 
 The task stays `running` during the check. On each tick the scheduler reads the check. It identifies the process by its ID and its start time, so a reused process ID does not count. There is no time limit.
 
@@ -712,15 +692,15 @@ The task stays `running` during the check. On each tick the scheduler reads the 
 
 The check never dies without a result. An unexpected error in the check script writes a failed result, and the output ends with the error. The task shows `failed` with the cause, not `lost`. `lost` means only that the check process was killed from outside.
 
-A new Project gets the task check of its type unless it sends one: `composer check` for `laravel-app` and `laravel-package`, and none for `monorepo` and `node-package`. The type defaults apply to new Projects only. The upgrade sets `composer check` on every existing Project, whatever its type, because every Project ran that check before. An existing Project without a Composer `check` script, such as a `node-package` Project, does not hand off until an operator changes or clears its task check. Change it with `PATCH /api/v1/projects/{project}` or `orbit project:update <project> --task-check=COMMAND`. Clear it with `task_check: null` in the API or `--clear-task-check` in the CLI. `project:show` shows it.
+A new Project gets the task check of its type unless the caller sends one: `composer check` for `laravel-app` and `laravel-package`, and none for `monorepo` and `node-package`. These type defaults apply to new Projects only. The upgrade sets `composer check` on every existing Project, whatever its type, because every Project ran that check before. An existing Project without a Composer `check` script, such as a `node-package` Project, does not hand off until an operator changes or clears its task check. Change it with `PATCH /api/v1/projects/{project}` or `orbit project:update <project> --task-check=COMMAND`. Clear it with `task_check: null` in the API or `--clear-task-check` in the CLI. `project:show` shows it.
 
 When a Project has no task check, the baseline runs the setup steps and passes, and a handoff runs no command. A handoff still records the tree and verifies the deliverables. The implementer's instructions and the pull request description name the configured check, or leave it out when there is none.
 
-Before the first implementer of a group starts, Orbit runs the setup steps and the task check on the fresh workspace. The setup steps keep the timeouts of the Project's setup list, so the [540-second step limit](/reference/instance-setup) applies to the baseline too. The baseline runs outside an API request, so no request deadline shortens the list further. Project setup runs before dependency preparation so it can configure credentials or install dependencies itself.
+Before the first implementer of a group starts, Orbit runs the Project's setup steps and the task check on the fresh workspace. The setup steps keep the timeouts of the Project's setup list, so the [540-second step limit](/reference/instance-setup) applies to the baseline too. The baseline runs outside an API request, so no request deadline shortens the list further. Project setup runs before dependency preparation so it can configure credentials or install dependencies itself.
 
-Orbit prepares Composer dependencies when the task check runs `composer` or references `vendor/`: it walks tracked `composer.json` files and runs `composer install --no-interaction --prefer-dist` where `vendor/autoload.php` is missing and either the file is at the repository root or a sibling lockfile exists. A root package without a lockfile, such as a Laravel package, is installed too. Orbit then removes the `composer.lock` that the install wrote, so it cannot reach the task commit. Nested manifests without a lockfile are skipped because test fixtures use them.
+Orbit prepares Composer dependencies when the task check runs `composer` or references `vendor/`: it walks tracked `composer.json` files and runs `composer install --no-interaction --prefer-dist` where `vendor/autoload.php` is missing and either the file is at the repository root or a sibling lockfile exists. A root package without a lockfile is installed too; Orbit removes the `composer.lock` that the install wrote, so it cannot reach the task commit. Nested manifests without a lockfile are skipped.
 
-Orbit prepares JavaScript dependencies when the task check references Bun, npm, pnpm, Yarn, Node, Vite+, or `node_modules`: it walks tracked `package.json` files and runs `vp install --frozen-lockfile` where a supported lockfile exists and `node_modules` is missing. Both guards skip projects whose dependencies are already installed. Other task checks receive no automatic install prep. Handoff checks do not prepare dependencies.
+Orbit prepares JavaScript dependencies when the task check references Bun, npm, pnpm, Yarn, Node, Vite+, or `node_modules`: it walks tracked `package.json` files and runs `vp install --frozen-lockfile` where a supported lockfile exists and `node_modules` is missing. Both guards skip projects whose dependencies are already installed. Other task checks receive no automatic install prep. Handoff checks do not prepare dependencies. Each implicit install step has a 600-second timeout.
 
 A failed setup or dependency install asks for assistance and names that step. A failed baseline command reports `The Project baseline check failed` with its exit code and output. If command output indicates missing `vendor/` or `node_modules` dependencies, assistance reports `Project dependencies appear to be missing` rather than calling the branch broken. Fix the cause, then cancel and create the group again. A task's `check` shows the latest run, with `kind` `baseline` or `handoff` and the `failed_step`.
 
@@ -731,6 +711,26 @@ Call `tasks-check-cancel` with `{ "group": 123, "task": 456 }` to stop a running
 Orbit opens the pull request after the approval of the last subtask. That approval describes it with `--pr-summary`, at least one `--pr-change`, and at least one `--pr-breaking`, or `--pr-breaking=none`. The script accepts these flags only for that approval and refuses the approval without them. There is no limit on the number of changes.
 
 Before Orbit commits the last subtask, Jev checks that the change list covers every subtask of the group except cancelled and failed subtasks. Jev reads the group and subtask briefs and the pull request fields. For each checked subtask, it answers whether a listed change delivers it. A subtask counts as covered when Jev gives "yes" a probability of at least one half. Jev cannot read code, so this checks coverage, not correctness. Each missing subtask fails `brief_coverage`, and the reviewer's reminder names it. A failed Jev request counts as a communication failure.
+
+On the last subtask, the reviewer owns the pull request change list, summary, and breaking-changes list in its approval. A missing or incomplete entry is never a reason to request changes; the reviewer writes the complete entries as part of its approval.
+
+### Jev decision records and report
+
+Every call to Jev is stored in the Gateway's `jev_decisions` table, including failed calls. Each record captures its purpose, group, subtask, and agent-thread identifiers when the call concerns them. It records each question's type, options, and criteria, along with the input state sent with secrets redacted. Each answer stores its value, probability distribution, provider confidence when returned, and selected-answer probability separately. The record also stores the provider model identifier when returned, latency, and a sanitized error code on failure. The Gateway stores no secrets or raw provider error bodies. Records are retained indefinitely as Orbit's training and evaluation dataset.
+
+The stored `questions`, `input_state`, and merge-time `merge_changes` snapshots are each capped at 64 KiB after redaction. An oversized `questions` or `input_state` snapshot carries truncation metadata; the Gateway preserves its structure where possible and uses a bounded marker when it cannot fit. The labeler leaves question labels unknown when either snapshot is truncated. Truncated merge-time change evidence is also incomplete for labeling.
+
+The live `brief_coverage` questions are Boolean. Laravel AI v1.0.0 returns `P(true)` for a Boolean answer and has no separate provider-confidence value for it. Store `P(false) = 1 - P(true)`; the selected-answer probability is `P(true)` for “covered” and `P(false)` for “missing.” Choice questions instead use the provider's probability for the selected option as selected-answer probability and keep nullable provider confidence separate. If the selected-answer probability is absent or invalid, keep the answer and record a null selected-answer probability.
+
+For `brief_coverage`, store the approved change-list snapshot from the final approval comment and the pull request's `## Changes` list at merge. The merge-time list is authoritative. Normalize text with Unicode NFKC, case-folding, punctuation-to-space replacement, and whitespace collapsing. A line names a subtask only when it contains the complete normalized title as a whole-token sequence, the title is unique in the group, and exactly one line matches. The line must appear in both the approved list and the merge-time list. Ambiguous titles or missing snapshots remain unlabeled.
+
+Only a Jev “missing” answer with exactly one named approved line at merge is labeled `false_negative`. All other question answers are unlabeled, including a missing answer without a named line and every covered answer. Failed or unanswered calls, unmerged or closed pull requests, and incomplete or ambiguous evidence also remain unlabeled. Labels record their approval snapshot, merge snapshot, merge SHA, matching line, and rule version as provenance.
+
+When all answers in a call said “covered” and the pull request merges, the call receives a separate call-level `correct` label. This records only the merged call outcome; it does not validate each answer against the change list. Mixed-answer calls do not receive this call-level label.
+
+The Gateway report command `orbit:tasks:jev-report` reports calls, failures, labeled share, false-negative count and share of missing answers, false-negative confidence buckets, call-level `correct` count, and p50/p95 latency for each purpose. Labeled share counts calls with at least one labeled question or a call-level label. The Gateway produces only the `false_negative` question label; its share uses all missing answers as the denominator.
+
+For each false negative, its selected-answer probability determines the confidence bucket. Latency percentiles include measured call durations, including failed calls; missing latency is excluded. A purpose with no missing answers has a null false-negative share, and a purpose with no measured latency has null percentiles. See [ADR 0173](/decisions/0173-record-and-label-jev-decisions) for the full contract.
 
 After every approved commit, including the last, the Gateway pushes that stored commit to `task-{group id}` on `origin` through the [Gateway GitHub App](/reference/github-app). The push uses that repository's installation token with `Contents: write` and `Pull requests: write`, passed on the SSH process standard input, and runs `git push --quiet origin <commit_sha>:refs/heads/task-{group id}`. `<commit_sha>` is the commit stored on the approval. The push never uses `HEAD`.
 
@@ -746,7 +746,7 @@ After the push succeeds, and after the open succeeds on the last subtask, the Ga
 
 On the last approval, after that push, the Gateway opens the pull request against the Project's default branch. When an open pull request already has that head, the Gateway uses it. The Gateway stores the URL as the group's `pr_url` and moves the group to `settling`. A failed open counts as a communication failure, uses the same backoff and the same assistance prefix, and is retried. The open pushes the stored commit again with the same token. A branch that already points at that commit stays as it is.
 
-The group title is the pull request title. The description holds the summary, a Changes list, a Breaking changes list or `None.`, and one line that says each delivered subtask passed the Project's task check and reviewer approval. Without a task check, the line names only reviewer approval. That line does not count cancelled or failed subtasks.
+The group title is the pull request title. The description holds the summary, a Changes list, a Breaking changes list or `None.`, and one line that says each delivered subtask passed the Project's task check and reviewer approval. That line does not count cancelled or failed subtasks.
 
 Settling watches the stored pull request through the GitHub App until it merges. A merged pull request completes the group, and a pull request that closes without merging requests assistance. A settling group without a URL and without a `todo` subtask requests assistance and remains incomplete until an operator cancels it. A `todo` subtask on that group returns it to `running` on the tick. [Fix a settling pull request](#fix-a-settling-pull-request) owns that return.
 
@@ -772,17 +772,17 @@ A conflict's identity is `conflict:` plus the base branch name. A failed check's
 
 Each cap counts only fixups created after the most recent completed subtask whose `fixup_problem` is null. With no such completed subtask since the group started, the counts include every fixup in the group, as before. Every fixup status counts, including `cancelled` and `failed`.
 
-The non-fixup subtask is appended by a person—the operator or planner—so each reset requires a human step between fixup loops. Show and the assistance reason name the counts that applied; an assistance reason identifies the reached per-problem or group cap. For example, an identity cap adds `Orbit reached the cap of 2 fixups for conflict:main in the current window (2 counted).`; the group cap remains `Orbit already appended 3 fixups to this group.` A non-fixup subtask that is not completed does not reset either cap.
+The non-fixup subtask is appended by a person, so each reset requires a human step between fixup loops. Show and the assistance reason name the counts that applied; an assistance reason identifies the reached per-problem or group cap. For example, an identity cap adds `Orbit reached the cap of 2 fixups for conflict:main in the current window (2 counted).`; the group cap remains `Orbit already appended 3 fixups to this group.` A non-fixup subtask that is not completed does not reset either cap.
 
 Each fixup records the pull request head it was created for. The Gateway appends no new fixup while the head is still that commit. After the head changes, it appends no check fixup until every check on the new head has completed or has been pending for more than 60 minutes. A conflict does not wait for checks.
 
 When the last fixup changed nothing, because it was never approved or its approved commit is that same head, the Gateway asks for assistance instead of a second fixup on the same result. The reason adds `Fixup subtask #{id} changed nothing, so Orbit does not try again on the same result.` When the last fixup did commit, the Gateway waits for GitHub to report the new head.
 
-When a problem has fewer than two fixups, one tick appends one fixup and returns the group to `running`. It picks the first such problem. A conflict comes first. Then a failed check that has a reproduction row, in the order GitHub returned. Then any other failed check, in that same order. A `todo` subtask that is already waiting stays first, and that tick appends no fixup.
+When a problem has fewer than two fixups, one tick appends one fixup and returns the group to `running`. It picks the first such problem. A conflict comes first, then failed checks for which the Gateway has an Orbit slug-keyed reproduction row, then the other failed checks; order within each check group follows GitHub's order. A `todo` subtask that is already waiting stays first, and that tick appends no fixup.
 
 A conflict fixup is titled `Merge origin/{base}`. Its brief is `Merge origin/{base} into the task branch and resolve the conflicts. Do not rebase and do not force-push.` A check fixup is titled `Fix {name}`, cut off at 160 characters. Its brief is `Check {name} failed: {url}. Do not rebase and do not force-push.` With no URL, the brief is `Check {name} failed. Do not rebase and do not force-push.`
 
-Every fixup has a `command` deliverable `composer-check`: command `composer check`, directory `.`, description `Run composer check`. When the Project slug is `orbit` and the table lists the check name, the fixup also has `reproduce-check` with that command and directory. The description is `Reproduce {name}`. The same command and directory are stored once.
+Every fixup has a `command` deliverable `composer-check`: command `composer check`, directory `.`, description `Run composer check`. When the Project slug is `orbit` and the table lists the check name, the fixup also has `reproduce-check` with that command and directory. Its description is `Reproduce {name}`. The same command and directory are stored once.
 
 | Check name | Command | Directory |
 | --- | --- | --- |
@@ -835,12 +835,12 @@ The Gateway then writes settle metrics. Active groups also refresh these fields 
 | `line_diff` | Task | Reported insertions plus deletions for the current implementer. Failed reads preserve stored values |
 | `lines_added`, `lines_deleted` | Task | Separate checkpoint insertion and deletion counts; null before observation |
 | `duration_ms` | Task | Elapsed milliseconds from `started_at` to `settled_at`, or to now while the subtask is still open |
-| `tokens` | TaskGroup | Sum of Task `tokens` plus reported tokens on every started reviewer thread, planner included, or `0` when none are stored. A reserved row is not included |
+| `tokens` | TaskGroup | Sum of Task `tokens` plus reported tokens on every started reviewer thread, or `0` when none are stored. A reserved row is not included |
 | `line_diff` | TaskGroup | Insertions plus deletions of `git diff --numstat {default_branch}...HEAD` in the shared checkout, or `0` when git cannot run. This is the whole feature branch, not the sum of subtask session diffs |
 | `lines_added`, `lines_deleted` | TaskGroup | Separate branch insertion and deletion counts; null before a successful observation |
 | `duration_ms` | TaskGroup | Elapsed milliseconds from `started_at` to settle, or to now while the group is still active, or `0` when `started_at` is empty |
 
-For T3, token totals use `totalProcessedTokens` when present and otherwise `usedTokens`. Per-thread line counts come from checkpoints. Other drivers supply metrics with the same meaning or leave them unavailable. The [thread token metrics](#thread-token-metrics) are the per-call split beside that total.
+For T3, token totals use `totalProcessedTokens` when present and otherwise `usedTokens`. Per-thread line counts come from checkpoints. Other drivers supply metrics with the same meaning or leave them unavailable. The [thread token metrics](#thread-token-metrics) are the per-call split beside that total. The scheduled T3 collector reads no more than 20 eligible threads each run. Failed or incomplete reads back off exponentially, allowing later threads to make progress; heartbeat-only timeouts do not count as a successful final read. A new T3 turn reopens metrics collection for that thread. Collector failures are reported at most once per thread and exception kind per hour.
 
 ## Coder settle webhook
 
@@ -852,17 +852,15 @@ When `notify_coder` is true, settle POSTs an HMAC-signed JSON body to Coder. Thi
 | `ORBIT_CODER_WEBHOOK_SECRET` | HMAC-SHA256 secret. The Gateway never returns it |
 | `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` | Seconds before one alert for an observation outage. Defaults to `120` |
 | `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` | Seconds a group may stay `reserved` before the tick returns it to `todo`. Defaults to `3600`, with a minimum of `60`. Keep it above the slowest workspace provision |
-| `ORBIT_TASKS_AGENT_DRIVER` | Default driver key for both roles of new groups. Defaults to `t3` |
-| `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` | Driver key for implementers of new groups. Defaults to `ORBIT_TASKS_AGENT_DRIVER` |
-| `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` | Driver key for the reviewer of new groups. Defaults to `ORBIT_TASKS_AGENT_DRIVER` |
+| `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` | Driver key for implementers of new groups. Defaults to `t3` |
+| `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` | Driver key for the reviewer of new groups. Defaults to `t3` |
 | `ORBIT_TASKS_IMPLEMENTER_MODEL` | Implementer model for new groups. Defaults to `gpt-5.6-luna` |
 | `ORBIT_TASKS_REVIEWER_MODEL` | Reviewer model for new groups. Defaults to `claude-opus-5` |
 | `ORBIT_T3_PORT` | T3 HTTP port. Defaults to `3773` |
 | `ORBIT_T3_TOKEN` | Optional bearer for that Node's T3 server |
 | `nodes.settings.t3.token` | Required bearer projected with each node when node-scoped T3 credentials are enabled. A projected node never falls back to `ORBIT_T3_TOKEN`; missing configuration fails closed. |
 | `nodes.settings.t3.url` | Optional full base URL for that node's T3 server. When absent, the node's WireGuard address and `ORBIT_T3_PORT` are used. |
-| `TYPESAFE_API_KEY` | TypeSafe Jev key for task-session Classification. Missing key fails closed |
-| `ORBIT_TASKS_JEV_CONFIDENCE_THRESHOLD` | Minimum Choice confidence before execute. Defaults to `0.75`, measured as the margin between the two choice probabilities. Below this, the tick escalates |
+| `TYPESAFE_API_KEY` | TypeSafe key used for Jev calls, including brief-coverage checks |
 
 The Gateway skips the webhook when the URL or secret is missing. A refused Coder response does not fail settle.
 
@@ -886,9 +884,11 @@ After Coder review and PR merge, an authorized Gateway caller runs `tasks:comple
 
 Cancel and complete remove the workspace clone on the Node. The forced Instance remover deletes the checkout directory recorded on the Instance and writes a removal record whose `source_finalization` step deleted that directory. This includes a non-visitable task workspace that stayed `source_resolved` because it has no Route. The Instance row is deleted only after that record is complete. A successful cancel or complete leaves no checkout at the recorded path. [ADR 0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) records the decision.
 
-The same removal deletes that group's Incus bridge worktree on the Node. The bridge is the linked worktree `<worktree root>/task-{id}-e2e` on branch `task-{id}-e2e` of the primary checkout registered for the repository. [ADR 0135](/decisions/0135-run-incus-topologies-for-task-workspace-clones-through-a-bridge-worktree) records it. Removal deletes that worktree only when the path and the branch both match the group, including when the clone is checked out on another branch. A user's worktree stays. A missing bridge is not a failure.
+The same removal deletes that group's Incus bridge worktree on the Node. The bridge is the linked worktree `<worktree root>/task-{id}-e2e` on branch `task-{id}-e2e` of the primary checkout registered for the repository. [ADR 0135](/reference/incus-topologies#task-workspace-clones) records it. `RemoveTaskWorkspaceAction` calls `RemoteTaskBridgeWorktreeRemover` before removing the task checkout. Removal deletes the bridge worktree only when its path and branch both match the group, including when the clone is checked out on another branch. A user's worktree stays. A missing bridge is not a failure.
 
 Branch `task-{id}-e2e` is deleted when no worktree has it checked out. A worktree on that branch at another path stays, and so does the branch. The `refs/orbit/e2e-bridge/task-{id}` ref is deleted either way. The sweep retries this with the checkout. Removal does not release an Incus topology the bridge still holds, so release that topology before the group ends.
+
+
 
 When `tasks:complete` cannot remove the workspace, it still marks the group `completed` and keeps the Instance attached. The group asks for assistance with `Workspace removal failed: `, and the response reports that removal failure on the completed group. A permanently lost Node does not stop the operator from completing the group. Merge cleanup that fails before the group is completed uses the reason prefix `Merged pull request cleanup failed: ` and leaves the group `settling`. Cancel, complete, and the tick's removal of a leftover workspace use `Workspace removal failed: ` once the group has ended. The checkout and the Instance row stay, so the clone is still named by a record.
 

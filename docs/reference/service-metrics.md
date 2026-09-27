@@ -1,81 +1,118 @@
 ---
 title: "Service metrics"
 description: "Caddy proxy traffic and dedicated production PHP-FPM capacity monitoring."
+covers:
+  - apps/gateway/app/Infrastructure/Metrics/ServiceMetrics*.php
+  - apps/gateway/app/Infrastructure/Metrics/NativeServiceMetrics*.php
+  - apps/gateway/app/Infrastructure/Metrics/PrometheusConfigRenderer.php
+  - apps/gateway/app/Infrastructure/Caddy/Build/Sources/ServiceMetricsCaddySiteSource.php
+  - apps/gateway/app/Infrastructure/AppInstances/ProductionPhpRuntimeConfigRenderer.php
+  - apps/gateway/resources/scripts/service-metrics*.py
 ---
 
 # Service metrics
 
-The [Metrics role](/reference/metrics) collects native Caddy metrics on selected ingress nodes and Cbox FPM Exporter metrics on selected app-prod nodes. [ADR 0099](/decisions/0099-collect-role-specific-service-metrics) records the design.
+The [Metrics role](/reference/metrics) also collects service metrics. It scrapes Caddy's own metrics on selected `ingress` Nodes. It runs Cbox FPM Exporter on selected `app-prod` Nodes.
 
 ## Selection
 
-The existing node exporter preference controls service monitoring too. No extra enable command is required. Monitoring requires an active Metrics role and an eligible selected node.
+The node exporter preference also controls service metrics. No other command enables them. They need an active Metrics role and a selected Node.
 
-| Selected node | Added monitoring |
+| Selected Node | Added monitoring |
 | --- | --- |
-| Ingress with a published public Route | Native Caddy metrics |
-| App-prod with dedicated PHP Instances | One Cbox FPM Exporter service with explicit pools |
-| Both roles | Both collectors |
-| Neither, or no eligible workloads yet | Existing node exporter and cAdvisor only |
+| `ingress` with an active public Route | Caddy metrics |
+| `app-prod` | One Cbox FPM Exporter service, with one pool for each production Instance that has its own PHP-FPM master |
+| Both roles | Both |
+| Neither role | Only the node exporter and cAdvisor |
 
-An empty ingress node needs no metrics listener until its first public Route is published. An app-prod node without eligible PHP instances has no FPM scrape target. Legacy shared pools are excluded; enabling metrics does not convert them. Their absence from the PHP dashboard does not establish their health.
+An `ingress` Node gets a metrics listener with its first active public Route. An `app-prod` Node without such Instances has no FPM scrape target.
 
 ## Caddy traffic
 
-The **Orbit Caddy Traffic** dashboard shows request rate, 5xx responses, request-duration p95, time-to-first-byte p95, and requests in flight. The underlying histograms also support other percentiles and payload measurements.
+The **Orbit Caddy Traffic** dashboard shows scrape health, request rate, 5xx responses, request-duration p95, time-to-first-byte p95, and requests in flight. The histograms also support other percentiles and payload sizes.
 
-The dashboard selects Caddy's outer `subroute` handler, as observed with Orbit's site configuration on Caddy 2.6.2 and 2.11.4. It includes direct and proxied responses without adding the nested handler observations. These are requests seen by the selected Caddy site, not deduplicated requests across the entire fleet. Private traffic to a shared site can also be included.
+The dashboard reads Caddy's outer `subroute` handler, which Orbit's site configuration produces. It counts direct and proxied responses once. It counts requests that the selected Caddy site saw, not unique requests across the fleet. Private traffic to a shared site can also count.
 
-Every Node that runs Caddy collects per-host metrics, because Orbit's [Caddy global options](/reference/caddy-configuration#published-layout) turn them on. Service metrics adds only the WireGuard scrape site on a selected Ingress Node. Prometheus retains published public host labels and metrics without a host label. Per-host collection applies to the shared Caddy process, so the Prometheus host filter bounds stored series, not Caddy's own in-memory series.
+Every Node that runs Caddy collects per-host metrics, because Orbit's [Caddy global options](/reference/caddy-configuration#published-layout) turn them on. Service metrics adds only a WireGuard scrape site on a selected `ingress` Node. Prometheus keeps `caddy_http_*` series for active public hosts and series without a host label. It also keeps `caddy_reverse_proxy_upstreams_healthy`. This filter limits stored series, not Caddy's own series in memory.
 
-Ingress normally proxies to the Router. Its upstream-health metrics do not establish the health of each Instance. Traffic that never reaches Caddy requires an external probe.
+An `ingress` Node normally proxies to the Router. So its upstream health does not show the health of each Instance. Traffic that never reaches Caddy needs an external probe.
 
 ## PHP capacity
 
-Cbox FPM Exporter **v3.1.1** is pinned by architecture and SHA-256. Orbit supplies recorded sockets, configuration paths, and matching PHP binaries. Filesystem discovery, CLI PHP monitoring, and Laravel collectors are disabled.
+Orbit pins Cbox FPM Exporter `v3.1.1` for each architecture and checks its SHA-256 checksum. Orbit gives Cbox the recorded sockets, configuration paths, and PHP binaries. Pool discovery, CLI PHP monitoring, and Laravel collectors are off.
 
-The **Orbit PHP Capacity** dashboard groups pool data by node and Instance. It shows observed pool health, active workers, effective worker capacity, waiting requests, worker-limit events, slow requests when a threshold exists, and OPcache memory, hit rate, and manual resets.
+The **Orbit PHP Capacity** dashboard groups pools by Node and Instance. It shows pool health, active workers, `pm.max_children`, waiting requests, worker-limit events, slow requests, and OPcache memory, hit rate, and manual resets. Prometheus drops the per-worker `phpfpm_process_*` series before storage.
 
-Other collected pool metrics include idle and total workers, accepted connections, queue capacity, effective timeout settings, and OPcache free memory, waste, misses, and restart causes. Detailed PID-labelled worker series are dropped before storage. Cbox's average worker memory metric describes last-request PHP memory; it is not resident process memory and must not be used as RSS for automatic sizing.
+Cbox's average worker memory metric is the PHP memory of the last request. It is not resident process memory. Do not use it as RSS to size workers.
 
 ### Runtime behavior
 
-Dedicated production defaults do not configure a slowlog threshold. A zero slow-request counter alone is not evidence that requests are fast. The dashboard only shows slow-request rates when the effective threshold is positive.
+Dedicated production pools have no slowlog threshold by default. So a zero slow-request counter does not prove that requests are fast. The dashboard shows slow-request rates only when the threshold is positive.
 
-Each production master already has its own OPcache. Deployment and rollback retain their existing verified cache reset through that master's application socket. Monitoring never resets the cache. Enabling or removing status instrumentation gracefully reloads only a changed, running master; that reload can warm its cache again. Stopped masters stay stopped and `local.conf` remains unchanged.
+Each production master has its own OPcache. Deployment and rollback reset that cache through the master's application socket. Monitoring never resets the cache.
 
-FPM status uses a separate local socket, so saturated application workers do not block status collection. Cbox's OPcache helpers run through that socket, outside the web root. Existing operator status directives that conflict with monitoring cause convergence to fail instead of being overwritten.
+Status monitoring uses a separate local socket, `<socket>.status`. So busy application workers do not block status collection. Cbox's OPcache helpers run through that socket, outside the web root.
 
-## Private access and missing data
+The Gateway renders the PHP-FPM status lines into each production Instance's `pool.conf` and sends that configuration to the Node. The Node-side metrics script does not edit `pool.conf`. When monitoring adds or removes its status lines, Orbit reloads only a changed master that runs. The reload can warm its cache again. A stopped master stays stopped. Orbit never changes `local.conf`. When an operator's own status directive conflicts with monitoring, convergence fails and keeps the directive.
 
-Caddy listens on WireGuard port **9103**, exposing its metrics handler rather than its administration API. Cbox listens on WireGuard port **9114**. Owned firewall allow/deny pairs precede broader member rules: only the current Metrics node may connect. Caddy also checks the scraper's source address.
+## Private access
 
-Service jobs use a 15-second interval, a 12-second Prometheus timeout, and a 20,000-sample limit. Cbox has a 10-second collection deadline and 3-second pool timeout. Existing node exporter and cAdvisor intervals stay unchanged.
+Caddy serves its metrics handler on WireGuard port 9103. It does not expose the administration API. Cbox listens on WireGuard port 9114. An owned allow and deny rule pair comes before the broader member rules, so only the current Metrics Node can connect. Caddy also checks the scraper's source address.
 
-Prometheus `up` describes the exporter endpoint. `phpfpm_up` describes pools Cbox observed. In v3.1.1, one unavailable pool can disappear while the other pools still report healthy; there is no reliable per-pool zero for that case. Check the expected Instance inventory when a series disappears. If every pool is unavailable, Cbox emits an aggregate failure series.
+Service jobs use a 15-second interval, a 12-second timeout, and a limit of 20,000 samples. Cbox has a 10-second collection deadline and a 3-second pool timeout. The node exporter and cAdvisor keep their 10-second interval.
 
-Cbox can emit zero OPcache fields after a failed helper probe. Dashboard cache panels require `phpfpm_opcache_enabled == 1`, so failed or disabled-cache observations leave gaps rather than showing an empty cache. This does not distinguish a disabled cache from a failed probe. No notification delivery is added.
+## Missing data
 
-## Lifecycle and recovery
+Prometheus `up` describes the exporter endpoint. `phpfpm_up` describes the pools that Cbox saw. In `v3.1.1`, one unavailable pool can vanish while the other pools still report healthy. So compare the series with the expected Instances when a series is missing. When every pool is unavailable, Cbox emits an aggregate failure series.
 
-Role and preference changes reconcile monitoring before publishing the new Prometheus configuration. Production clone completion, retained production creation, instance removal, and Route publication, update, or removal refresh the projection. Removing Metrics or disabling a node removes its owned listeners, rules, exporter unit, binary, and pool status directives, while retaining application runtimes and local tuning. The small owned recovery directory may remain.
+Cbox can emit zero OPcache fields after a failed probe. The cache panels require `phpfpm_opcache_enabled == 1`, so a failed probe or a disabled cache leaves a gap instead of an empty cache. The panels cannot tell these two cases apart. Orbit sends no alerts.
 
-Changing the Metrics node replaces its scrape access. When a node is unreachable, removal attempts cleanup and drops its targets even if cleanup fails. Orbit retains its existing reports of degraded nodes; this feature does not add per-service fields to `metrics status`.
+## Lifecycle
 
-### Recovery and inspection
+Role and preference changes converge the services first, and then publish the new Prometheus configuration. Service metrics also reconcile across the fleet whenever a public site appears or disappears. This includes:
 
-FPM updates validate a candidate and recover the prior pool file on reload failure. The scrape site renders from stored state in the [Node Caddy build](/reference/caddy-configuration#node-caddy-build), which owns validation and rollback. Service metrics does not read or restore Caddy files on the Node. It requests a build of each selected Ingress Node, and when its lifecycle fails, it restores its exporter and pool state and builds that Node again.
+- a Route is created, updated, or removed;
+- a Route target is set or cleared; and
+- a Route is published as public.
 
-Exporter and firewall updates retain a recovery journal; retry recovers an interrupted update. A failed fleet convergence restores touched service snapshots in reverse order, including when Prometheus publication fails. Ownership conflicts stop mutation, and recovery failures remain explicit errors.
+Production clone completion and production Instance creation or removal also reconcile service metrics.
 
-Doctor's firewall expectations include the service allow and deny rules. Production runtime inspection expects the generated status directives when monitoring is selected. These checks do not replace scrape-health checks.
+Removing Metrics, or disabling a Node's exporter, removes the owned listeners, firewall rules, exporter unit, binary, and pool status lines. It keeps the application runtimes and local tuning. The small recovery directory `/etc/orbit/service-metrics` stays.
 
-The exporter restarts when its pool configuration changes. Runtime configuration fingerprints also refresh Cbox's cached effective limits on the next reconciliation after local tuning changes. A manual tuning edit without reconciliation can leave those reported limits stale.
+When the Metrics Node changes, the scrape access moves to the new Node. When a Node is unreachable, removal tries to clean up and drops its targets even if cleanup fails. `metrics:status` has no per-service fields.
 
-## Later tuning
+### Recovery
 
-FPM Tune remains deferred. Begin with recommendations based on measured traffic and process memory. Each dedicated master needs its own memory allowance or cgroup budget, leaving room for OPcache and other services. Several independent tuners must not each allocate against the whole node.
+FPM updates validate a candidate file. When the reload fails, Orbit restores the earlier pool file. The scrape site renders from stored state in the [Node Caddy build](/reference/caddy-configuration#node-caddy-build), which owns validation and rollback. Service metrics never reads or writes Caddy files on a Node. It asks for a build of each `ingress` Node. When its own lifecycle fails, it restores the exporter and pool state and builds that Node again.
 
-Automatic changes require separate enablement and an integration for FPM Tune's drop-in files. Laravel metrics also remain a separate opt-in extension because their collectors execute application commands.
+Exporter and firewall updates keep a recovery journal, and a retry recovers an interrupted update. A failed fleet convergence restores the touched services in reverse order. This also happens when Prometheus publication fails. An ownership conflict stops all changes. A failed recovery returns `metrics.service_rollback_failed`.
 
-Upstream references: [Caddy metrics](https://caddyserver.com/docs/metrics), [Cbox FPM Exporter](https://github.com/cboxdk/fpm-exporter), and [FPM Tune multi-master operation](https://github.com/cboxdk/fpm-tune/blob/main/docs/cookbook/two-php-versions.md).
+### Doctor
+
+Doctor's firewall family expects the service allow and deny rules. Doctor's production Instance checks expect the status lines when monitoring is selected. These checks do not replace scrape health.
+
+The exporter restarts when its pool configuration changes. A fingerprint of the PHP configuration also refreshes Cbox's limits at the next reconcile after a tuning change. A manual tuning edit without a reconcile can leave those limits stale.
+
+## Why it works this way
+
+These reasons explain the design. Check them before you propose a change.
+
+### Caddy's own metrics
+
+Caddy already exports the metrics that Orbit needs. A separate Caddy exporter would add a service and no data.
+
+### One Cbox service per Node
+
+Cbox reads several named pools from one service. One exporter per Instance would multiply services and listeners.
+
+### Named pools instead of discovery
+
+Discovery cannot prove that Orbit owns a pool, or bind a pool to an Instance. So Orbit names each pool from its records.
+
+### One master per production Instance
+
+A shared master would reduce monitoring cost. It would also break independent deployment and cache reset for each Instance.
+
+### No automatic tuning
+
+Observing a service and changing its capacity have different effects. So Metrics enablement never tunes PHP-FPM, resets caches, or runs application commands. FPM Tune and Laravel metrics need their own opt-in.
