@@ -432,7 +432,7 @@ Each archive run, including a scheduler tick or `tasks:archive-threads`, archive
 
 Ticks delete leftover `pending:` reservations only when their task or group is completed or cancelled. While the owner remains active, Orbit keeps the reservation so `TaskAgentSpawner` can retry the spawn using that row; pending rows do not expire based on age.
 
-When the T3 metrics collector lands, the final metrics reading must happen before the thread is archived so it can still be observed. Until that collector is available, archive scheduling does not coordinate with a final T3 metrics reading.
+Orbit archives a T3 thread only after the collector completes a successful final metrics read and sets `t3_metrics_final_at`. If collection is incomplete or fails, the collector retries and archive scheduling leaves the thread available to read, even when a scheduler tick runs first.
 
 To process finished threads without waiting for a tick, run `php artisan tasks:archive-threads`; each invocation uses the same idempotent path and archives up to 10 eligible threads for completed and cancelled subtasks and groups. Archiving does not delete the Orbit `agent_threads` row or its metrics. Pi sessions are files on the Node and are outside this cleanup.
 

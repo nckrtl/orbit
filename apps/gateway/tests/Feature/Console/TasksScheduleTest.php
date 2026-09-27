@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Tasks\AgentDriver;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentMetricCollector;
+use App\Domain\Tasks\ArchiveFinishedTaskThreads;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskSchedule;
 use App\Models\AgentThread;
@@ -136,6 +137,46 @@ it('backs off incomplete heartbeat timeouts until a successful final collection'
     expect($thread->fresh()->t3_metrics_final_at)->not->toBeNull()
         ->and($thread->fresh()->t3_metrics_collected_at)->not->toBeNull()
         ->and($thread->fresh()->t3_metrics_retry_at)->toBeNull();
+});
+
+it('waits for the final T3 metrics read before archiving a terminal thread', function (): void {
+    app(TaskExtensionState::class)->enable();
+    $app = OrbitApp::query()->create(['name' => 'archive-after-metrics', 'slug' => 'archive-after-metrics', 'repository_url' => 'https://example.test/repo.git']);
+    $group = TaskGroup::query()->create([
+        'app_id' => $app->id,
+        'title' => 'Terminal before collector',
+        'brief' => 'Read final metrics before archiving',
+        'status' => 'completed',
+    ]);
+    $thread = AgentThread::query()->create([
+        'task_group_id' => $group->id,
+        'driver' => 't3',
+        'runtime_key' => 'node:1',
+        'external_id' => 'terminal-before-collector',
+        'role' => 'implementer',
+        'state' => 'done',
+    ]);
+    $driver = Mockery::mock(AgentDriver::class, AgentMetricCollector::class);
+    $driver->shouldReceive('key')->andReturn('t3');
+    $driver->shouldReceive('collectMetrics')->once()->andReturnUsing(static function (AgentThread $collected) use ($thread): bool {
+        expect($collected->id)->toBe($thread->id)
+            ->and($collected->archived_at)->toBeNull();
+
+        return true;
+    });
+    $driver->shouldReceive('archive')->once()->withArgs(static fn (AgentThread $archived): bool => $archived->id === $thread->id
+        && $archived->t3_metrics_final_at !== null);
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+
+    app(ArchiveFinishedTaskThreads::class)->run();
+
+    expect($thread->fresh()->archived_at)->toBeNull();
+    Artisan::call('tasks:collect-t3-metrics');
+
+    expect($thread->fresh()->t3_metrics_final_at)->not->toBeNull();
+    app(ArchiveFinishedTaskThreads::class)->run();
+
+    expect($thread->fresh()->archived_at)->not->toBeNull();
 });
 
 it('lets healthy threads through a persistently failing batch and throttles reports per thread and kind', function (): void {
