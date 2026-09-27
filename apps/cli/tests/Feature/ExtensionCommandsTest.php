@@ -51,7 +51,7 @@ it('follows the gateway switch through the public command kernel', function (): 
     ]);
     $enableOutput = Artisan::output();
     expect($enableExit)->toBe(0)
-        ->and(trim($enableOutput))->toBe('{"extension":"tasks","enabled":true}')
+        ->and(trim($enableOutput))->toBe('{"name":"tasks","enabled":true}')
         ->and($enableOutput)->not->toContain('Orbit extension');
 
     [$listExit, $listOutput] = extension_commands_run(['list', '--format=json']);

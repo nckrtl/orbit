@@ -3539,7 +3539,7 @@
             "description": "Extension slug: `tasks` or `proxycli`."
           }
         ],
-        "description": "Enables one Gateway-wide extension. Use `tasks` or `proxycli`; an unknown slug returns `validation.failed` (422). Returns the extension name and `enabled: true`.",
+        "description": "Enable a Gateway extension for every client. Use `tasks` or `proxycli`; an unknown slug returns `validation.failed` (422). Returns the extension name and `enabled: true`.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -21199,7 +21199,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, and reason. The list is present while the extension is off. Enable and disable return only `enabled`.",
+        "description": "Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, and reason. The list is present while the extension is off.",
         "responses": {
           "200": {
             "description": "The request succeeded.",

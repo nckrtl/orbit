@@ -58,7 +58,7 @@ Use `create` and `destroy` when the Gateway owns the resource lifecycle. Use `ad
 | `tasks:subtask` | `create` and `destroy` | A Task in a task group |
 | `tool` | `install` and `remove` | A Tool on a Node |
 
-`cluster:router` and `route:target` use `set` and `unset` because each holds one slot. `extension` uses `enable` and `disable` for the Gateway-owned switch. `metrics` and `metrics:exporter` use `enable` and `disable`; `proxycli` uses `setup` and `teardown` for its fleet resources, while `proxycli:status` remains a family-specific read. `tasks` uses `create` for task groups and `status` for assistance; its extension switch is `extension:enable tasks` or `extension:disable tasks`. `schedule:enable` turns a Schedule on. [Gateway trust](/reference/gateway-trust) owns profile registration and removal.
+`cluster:router` and `route:target` use `set` and `unset`, because each holds one slot. `extension` uses `enable` and `disable` for the Gateway-owned switch; `instance:analytics`, `metrics`, and `metrics:exporter` use `enable` and `disable`. `proxycli` uses `setup` and `teardown` for its fleet resources, while `proxycli:status` remains a family-specific read. `tasks` uses `create` for task groups and `status` for assistance; its extension switch is `extension:enable tasks` or `extension:disable tasks`. `schedule:enable` turns a Schedule on. A Project target selects a definition and never creates a Process or Schedule.
 
 ## Family-specific actions
 
@@ -75,7 +75,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `instance` | `clone`, `deploy`, `logs`, `register`, `rollback`, `scan`, `setup`, `transfer` | The CLI clones, deploys, registers, rolls back, or transfers an Instance, reads its application log, scans its dependencies, or runs its Project setup steps. |
 | `metrics` | `status` | The CLI reports Metrics role status. |
 | `proxycli` | `setup`, `teardown`, `status` | The CLI deploys or removes the fleet CLIProxyAPI quota collector, or reports its state. |
-| `node` | `relocate`, `rename` | The CLI moves a relocatable singleton role (`gateway`, `websocket`, or `metrics`) to another Node, or changes a Node's unique registry name. |
+| `node` | `relocate`, `rename` | The CLI moves a relocatable singleton role (`gateway`, `websocket`, or `metrics`) to another Node, or changes a Node's unique name. |
 | `process` | `logs`, `restart`, `start`, `stop` | The CLI reads Process logs or changes Process runtime state. |
 | `profile` | `profile` | The CLI profiles one HTTP request from the operator machine. |
 | `realtime` | `tail` | The CLI streams decoded realtime Gateway events as they arrive. |

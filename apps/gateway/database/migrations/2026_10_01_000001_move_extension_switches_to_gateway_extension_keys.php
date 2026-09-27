@@ -37,6 +37,17 @@ return new class extends Migration
 
     public function down(): void
     {
+        $tasksEnabled = DB::table('settings')->where('scope_type', 'gateway')->where('scope_id', 0)
+            ->where('key', 'extension.tasks.enabled')->exists();
+
+        if ($tasksEnabled) {
+            $now = now();
+            DB::table('settings')->updateOrInsert(
+                ['scope_type' => 'gateway', 'scope_id' => 0, 'key' => 'tasks.enabled'],
+                ['value' => '1', 'is_secret' => false, 'created_at' => $now, 'updated_at' => $now],
+            );
+        }
+
         foreach (['tasks', 'proxycli'] as $extension) {
             DB::table('settings')->where('scope_type', 'gateway')->where('scope_id', 0)
                 ->where('key', "extension.{$extension}.enabled")->delete();

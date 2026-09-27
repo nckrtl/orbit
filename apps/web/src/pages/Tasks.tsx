@@ -160,7 +160,7 @@ function taskProperties(
 }
 
 function TaskError({ error, retry }: { error: Error; retry: () => void }) {
-    const disabled = error instanceof GatewayError && error.code === "tasks.disabled";
+    const disabled = error instanceof GatewayError && error.code === "extension.disabled";
     return (
         <div role="alert" className="px-[1ch] py-[8px]">
             <p>

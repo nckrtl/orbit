@@ -19,7 +19,7 @@ final class EnableExtensionCommand extends GatewayCommand
     protected $signature = 'extension:enable {extension : Extension slug} {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Enable an optional Orbit CLI extension.';
+    protected $description = 'Enable a Gateway extension for every client.';
 
     public function handle(GatewayConfigRepository $profiles, GatewayConnectorFactory $connectors): int
     {
@@ -39,7 +39,7 @@ final class EnableExtensionCommand extends GatewayCommand
         }
         GatewayExtensionState::reset();
         if ($this->option('json') === true) {
-            $this->writeJson(['extension' => $extension, 'enabled' => $response->enabled]);
+            $this->writeJson(['name' => $extension, 'enabled' => $response->enabled]);
         } else {
             ConsoleWriter::write($this->output, "Orbit extension [{$extension}] is enabled.\n");
         }

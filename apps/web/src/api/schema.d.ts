@@ -520,6 +520,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/extensions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List extensions
+         * @description Returns the Gateway-wide extension switch state as an object keyed by extension slug. The initial slugs are `tasks` and `proxycli`.
+         */
+        get: operations["extension-list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/extensions/{extension}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Disable an extension
+         * @description Disables one Gateway-wide extension without removing its setup data. Use `tasks` or `proxycli`; an unknown slug returns `validation.failed` (422). Returns the extension name and `enabled: false`.
+         */
+        post: operations["extension-disable"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/extensions/{extension}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable an extension
+         * @description Enable a Gateway extension for every client. Use `tasks` or `proxycli`; an unknown slug returns `validation.failed` (422). Returns the extension name and `enabled: true`.
+         */
+        post: operations["extension-enable"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/firewall-rules": {
         parameters: {
             query?: never;
@@ -2266,15 +2326,15 @@ export interface paths {
         get: operations["proxycli-status"];
         put?: never;
         /**
-         * Enable proxycli
+         * Set up proxycli
          * @description Deploys one collector Process and publishes https://collector.cli-proxy-api.orbit after a Redis Database connection for shared Valkey is in place. Fails closed when that connection is missing, is not Redis, or names a Node without the database role. A custom proxy Route that already serves the collector hostname on that Node is withdrawn in the same Caddy reload and removed; any other Route on that name fails with proxycli.hostname_taken. The response never includes tokens or the management key.
          */
-        post: operations["proxycli-enable"];
+        post: operations["proxycli-setup"];
         /**
-         * Disable proxycli
-         * @description Stops the collector Process for the whole fleet, withdraws collector.cli-proxy-api.orbit and its certificate, deletes the stored CLIProxyAPI management key and the read and control tokens, and hides provider reads. Enabling again needs the management key. The Redis connection and Valkey data stay.
+         * Tear down proxycli
+         * @description Stops the collector Process for the whole fleet, withdraws collector.cli-proxy-api.orbit and its certificate, deletes the stored CLIProxyAPI management key and the read and control tokens, and hides provider reads. Setting up again needs the management key. The Redis connection and Valkey data stay.
          */
-        delete: operations["proxycli-disable"];
+        delete: operations["proxycli-teardown"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2593,13 +2653,13 @@ export interface paths {
         };
         /**
          * List Task groups
-         * @description Lists Task groups, newest first. Optional `app_id` and `status` filters. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `tasks.disabled` while the extension is off.
+         * @description Lists Task groups, newest first. Optional `app_id` and `status` filters. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.
          */
         get: operations["tasks-list"];
         put?: never;
         /**
          * Create a Task group
-         * @description Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `tasks.disabled` while the extension is off.
+         * @description Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. `plan: true` on a `backlog` group provisions its Instance on an app-dev Node with access to itself and starts a T3 planner thread that becomes the reviewer (`tasks.plan_requires_backlog`, `tasks.planner_driver_unavailable`, `tasks.planner_node_unavailable`, `tasks.planner_unavailable`). Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `extension.disabled` while the extension is off.
          */
         post: operations["tasks-create"];
         delete?: never;
@@ -2617,7 +2677,7 @@ export interface paths {
         };
         /**
          * Show a Task group
-         * @description Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `tasks.disabled` while the extension is off.
+         * @description Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.
          */
         get: operations["tasks-show"];
         put?: never;
@@ -2627,7 +2687,7 @@ export interface paths {
         head?: never;
         /**
          * Update a Task group
-         * @description Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.
+         * @description Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim; for a planning group Orbit first commits the workspace as `Plan: {title}` (`tasks.commit_failed`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.
          */
         patch: operations["tasks-update"];
         trace?: never;
@@ -2639,10 +2699,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * List task agent sessions
-         * @description List a task group's agent threads.
-         */
+        /** List task agent sessions */
         get: operations["tasks-agents"];
         put?: never;
         post?: never;
@@ -2680,7 +2737,7 @@ export interface paths {
         put?: never;
         /**
          * Cancel a Task group
-         * @description Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns tasks.disabled while the extension is off and tasks.not_cancellable for completed groups and settling groups with a pull request.
+         * @description Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns extension.disabled while the extension is off and tasks.not_cancellable for completed groups and settling groups with a pull request.
          */
         post: operations["tasks-cancel"];
         delete?: never;
@@ -2700,7 +2757,7 @@ export interface paths {
         put?: never;
         /**
          * Complete a Task group
-         * @description Marks a settling Task group completed and removes its shared Instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `tasks.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.
+         * @description Marks a settling Task group completed and removes its shared Instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.
          */
         post: operations["tasks-complete"];
         delete?: never;
@@ -2720,7 +2777,7 @@ export interface paths {
         put?: never;
         /**
          * Create a subtask
-         * @description Appends one subtask to a Task group at the next position with status `todo`. Works in any group status except `completed` and `cancelled` (`tasks.group_closed`). `deliverables` is a list of at most 20 typed items the subtask must deliver, each with a unique slug `id`, a `type`, and a `description`: `file` adds `path` (a path or glob) and `change` (`created`, `modified`, or `any`); `test` adds `project`, `file` (a Pest test file in that project), `name` (a substring of the test name), and an optional boolean `fails_on_base` (true means the named test must fail on the start commit before it passes; omitted is stored as false, and any other type refuses the field); `command` adds `command` and an optional `directory`; `review` adds nothing. Orbit verifies file, test, and command deliverables at handoff, and the reviewer confirms review deliverables. Outside `backlog`, a subtask needs at least one deliverable (`tasks.subtask_deliverables_missing`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.
+         * @description Appends one subtask to a Task group at the next position with status `todo`. Works in any group status except `completed` and `cancelled` (`tasks.group_closed`). `deliverables` is a list of at most 20 typed items the subtask must deliver, each with a unique slug `id`, a `type`, and a `description`: `file` adds `path` (a path or glob) and `change` (`created`, `modified`, or `any`); `test` adds `project`, `file` (a Pest test file in that project), `name` (a substring of the test name), and an optional boolean `fails_on_base` (true means the named test must fail on the start commit before it passes; omitted is stored as false, and any other type refuses the field); `command` adds `command` and an optional `directory`; `review` adds nothing. Orbit verifies file, test, and command deliverables at handoff, and the reviewer confirms review deliverables. Outside `backlog`, a subtask needs at least one deliverable (`tasks.subtask_deliverables_missing`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.
          */
         post: operations["tasks-subtask-create"];
         delete?: never;
@@ -2741,14 +2798,14 @@ export interface paths {
         post?: never;
         /**
          * Destroy a subtask
-         * @description Deletes a subtask while its group is in `backlog` (`tasks.not_in_backlog`) and closes the position gap. Returns the deleted subtask. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.
+         * @description Deletes a subtask while its group is in `backlog` (`tasks.not_in_backlog`) and closes the position gap. Returns the deleted subtask. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.
          */
         delete: operations["tasks-subtask-destroy"];
         options?: never;
         head?: never;
         /**
          * Update a subtask
-         * @description Updates a subtask `title`, `brief`, or `position` while its group is in `backlog` (`tasks.not_in_backlog`). In `todo`, `running`, `reviewing`, or `settling`, those fields change only while the subtask is `todo`; positions stay in the todo tail and cannot cross a started or finished subtask. `deliverables` replaces the whole list, in the form that subtask create takes. It changes in `backlog`, or in those four group statuses while the subtask is `todo` (`tasks.deliverables_locked`); outside `backlog` the list cannot become empty (`tasks.subtask_deliverables_missing`). Completed and cancelled groups are read-only. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.
+         * @description Updates a subtask `title`, `brief`, or `position` while its group is in `backlog` (`tasks.not_in_backlog`). In `todo`, `running`, `reviewing`, or `settling`, those fields change only while the subtask is `todo`; positions stay in the todo tail and cannot cross a started or finished subtask. `deliverables` replaces the whole list, in the form that subtask create takes. It changes in `backlog`, or in those four group statuses while the subtask is `todo` (`tasks.deliverables_locked`); outside `backlog` the list cannot become empty (`tasks.subtask_deliverables_missing`). Completed and cancelled groups are read-only. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.
          */
         patch: operations["tasks-subtask-update"];
         trace?: never;
@@ -2764,7 +2821,7 @@ export interface paths {
         put?: never;
         /**
          * Cancel a todo or running subtask
-         * @description Cancels a `todo` or `running` subtask. A `todo` subtask may be cancelled when its group is `todo`, `running`, `reviewing`, or `settling`; this marks it cancelled with `settled_at`, starts nothing, and requests no assistance. If no open subtask remains, including reserved, running, or reviewing siblings, the group moves to `settling`. Cancelling a `running` subtask stops its implementer and its running baseline or handoff check, keeps the group and its Instance, and starts the lowest-position `todo` subtask. That subtask runs the baseline check first when no implementer has started in the group. The group settles only when no open subtask remains. Requires Gateway access. Returns `tasks.disabled` while the extension is off, `tasks.subtask_not_running` (409) when the subtask is neither cancellable `todo` nor `running`, and `tasks.subtask_interrupt_failed` (502) when a running subtask implementer or check could not be stopped; the subtask then stays `running`.
+         * @description Cancels a `todo` or `running` subtask. A `todo` subtask may be cancelled when its group is `todo`, `running`, `reviewing`, or `settling`; this marks it cancelled with `settled_at`, starts nothing, and requests no assistance. If no open subtask remains, including reserved, running, or reviewing siblings, the group moves to `settling`. Cancelling a `running` subtask stops its implementer and its running baseline or handoff check, keeps the group and its Instance, and starts the lowest-position `todo` subtask. That subtask runs the baseline check first when no implementer has started in the group. The group settles only when no open subtask remains. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.subtask_not_running` (409) when the subtask is neither cancellable `todo` nor `running`, and `tasks.subtask_interrupt_failed` (502) when a running subtask implementer or check could not be stopped; the subtask then stays `running`.
          */
         post: operations["tasks-subtask-cancel"];
         delete?: never;
@@ -2797,57 +2854,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * tasks:comment:list
-         * @description List a subtask's comments, newest first.
-         */
+        /** tasks:comment:list */
         get: operations["tasks-comment-list"];
         put?: never;
-        /**
-         * tasks:comment:create
-         * @description Ask for assistance on a subtask or resolve a request.
-         */
+        /** tasks:comment:create */
         post: operations["tasks-comment-create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/tasks/disable": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Disable Tasks
-         * @description Turns the Gateway tasks extension off. Existing Task groups stay. Further group and subtask operations return `tasks.disabled`.
-         */
-        post: operations["tasks-disable"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/tasks/enable": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Enable Tasks
-         * @description Turns the Gateway tasks extension on. Idempotent. Requires Gateway access.
-         */
-        post: operations["tasks-enable"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2863,7 +2874,7 @@ export interface paths {
         };
         /**
          * Show Tasks status
-         * @description Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, and reason. The list is present while the extension is off. Enable and disable return only `enabled`.
+         * @description Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, and reason. The list is present while the extension is off.
          */
         get: operations["tasks-status"];
         put?: never;
@@ -5369,6 +5380,158 @@ export interface operations {
                 };
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "extension-list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Enabled state keyed by extension slug. */
+                        data: {
+                            tasks: boolean;
+                            proxycli: boolean;
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "extension-disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Extension slug: `tasks` or `proxycli`. */
+                extension: "tasks" | "proxycli";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @enum {string} */
+                            name: "tasks" | "proxycli";
+                            /** @constant */
+                            enabled: false;
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The extension slug is unknown (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "extension-enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Extension slug: `tasks` or `proxycli`. */
+                extension: "tasks" | "proxycli";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            /** @enum {string} */
+                            name: "tasks" | "proxycli";
+                            /** @constant */
+                            enabled: true;
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The extension slug is unknown (`validation.failed`). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -12550,9 +12713,18 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
-    "proxycli-enable": {
+    "proxycli-setup": {
         parameters: {
             query?: never;
             header?: never;
@@ -12563,12 +12735,8 @@ export interface operations {
             content: {
                 "application/json": {
                     node_id: string;
-                    /** @description Redis Database connection slug for shared Valkey */
                     cache_connection: string;
-                    /**
-                     * Format: uri
-                     * @description CLIProxyAPI Management API origin
-                     */
+                    /** Format: uri */
                     cliproxy_url: string;
                     cliproxy_management_key: string;
                 };
@@ -12608,7 +12776,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -12628,7 +12796,7 @@ export interface operations {
             };
         };
     };
-    "proxycli-disable": {
+    "proxycli-teardown": {
         parameters: {
             query?: never;
             header?: never;
@@ -12658,7 +12826,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -12681,7 +12849,6 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description Disable the account */
                     disabled: boolean;
                 };
             };
@@ -12717,7 +12884,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -12767,6 +12934,15 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     "proxycli-show": {
@@ -12803,6 +12979,15 @@ export interface operations {
             };
             /** @description No record matches the path parameters. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13805,7 +13990,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description The tasks extension is disabled (`tasks.disabled`). */
+            /** @description The tasks extension is disabled (`extension.disabled`). A disabled extension returns HTTP 409 (`extension.disabled`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -13827,16 +14012,10 @@ export interface operations {
             content: {
                 "application/json": {
                     app_id: number;
-                    /** @description Short name of the feature */
                     title: string;
-                    /** @description Goal and acceptance */
                     brief: string;
-                    /**
-                     * @description backlog (default) or todo
-                     * @enum {string}
-                     */
+                    /** @enum {string} */
                     status?: never;
-                    /** @description Post the Coder settle webhook when the group settles */
                     notify_coder?: boolean;
                     notify_on_settle?: boolean;
                     tasks?: {
@@ -13903,7 +14082,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -13965,7 +14144,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description The tasks extension is disabled (`tasks.disabled`). */
+            /** @description The tasks extension is disabled (`extension.disabled`). A disabled extension returns HTTP 409 (`extension.disabled`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -13989,14 +14168,9 @@ export interface operations {
         requestBody?: {
             content: {
                 "application/json": {
-                    /** @description New title */
                     title?: string;
-                    /** @description New brief */
                     brief?: string;
-                    /**
-                     * @description backlog or todo
-                     * @enum {string}
-                     */
+                    /** @enum {string} */
                     status?: never;
                 };
             };
@@ -14032,7 +14206,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14085,7 +14259,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description The tasks extension is disabled (`tasks.disabled`). */
+            /** @description The tasks extension is disabled (`extension.disabled`). A disabled extension returns HTTP 409 (`extension.disabled`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14130,7 +14304,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description The tasks extension is disabled (`tasks.disabled`). */
+            /** @description The tasks extension is disabled (`extension.disabled`). A disabled extension returns HTTP 409 (`extension.disabled`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14187,7 +14361,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description The tasks extension is disabled (`tasks.disabled`), or the Task group is completed or settling with a pull request (`tasks.not_cancellable`). */
+            /** @description The tasks extension is disabled (`extension.disabled`), or the Task group is completed or settling with a pull request (`tasks.not_cancellable`). A disabled extension returns HTTP 409 (`extension.disabled`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14262,7 +14436,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description The tasks extension is disabled (`tasks.disabled`) or the Task group is not settling (`tasks.not_settling`). */
+            /** @description The tasks extension is disabled (`extension.disabled`) or the Task group is not settling (`tasks.not_settling`). A disabled extension returns HTTP 409 (`extension.disabled`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14295,11 +14469,8 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description Short name of the step */
                     title: string;
-                    /** @description Goal and acceptance of the step */
                     brief: string;
-                    /** @description JSON file with an array of typed deliverables for the step */
                     deliverables?: {
                         id: string;
                         /** @enum {string} */
@@ -14369,7 +14540,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14436,7 +14607,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14470,13 +14641,9 @@ export interface operations {
         requestBody?: {
             content: {
                 "application/json": {
-                    /** @description New title */
                     title?: string;
-                    /** @description New brief */
                     brief?: string;
-                    /** @description New position, starting at 1 */
                     position?: number;
-                    /** @description JSON file with an array of typed deliverables that replaces the list */
                     deliverables?: {
                         id: string;
                         /** @enum {string} */
@@ -14534,7 +14701,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14601,7 +14768,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description The tasks extension is disabled (`tasks.disabled`) or the subtask is not running (`tasks.subtask_not_running`). */
+            /** @description The tasks extension is disabled (`extension.disabled`) or the subtask is not running (`tasks.subtask_not_running`). A disabled extension returns HTTP 409 (`extension.disabled`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14677,7 +14844,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -14740,6 +14907,15 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     "tasks-comment-create": {
@@ -14756,14 +14932,9 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /**
-                     * @description assistance_requested or resolution
-                     * @enum {string}
-                     */
+                    /** @enum {string} */
                     type: "assistance_requested" | "resolution";
-                    /** @description Comment text */
                     body: string;
-                    /** @description Who wrote the comment */
                     author: string;
                     agent_thread_id?: number | null;
                 };
@@ -14812,115 +14983,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "tasks-disable": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
-        responses: {
-            /** @description The request succeeded. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: Record<string, never>;
-                        meta: components["schemas"]["Meta"];
-                    };
-                };
-            };
-            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "tasks-enable": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
-        responses: {
-            /** @description The request succeeded. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: Record<string, never>;
-                        meta: components["schemas"]["Meta"];
-                    };
-                };
-            };
-            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). */
             409: {
                 headers: {
                     [name: string]: unknown;

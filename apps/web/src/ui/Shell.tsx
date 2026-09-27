@@ -119,7 +119,6 @@ function Navigation({
     const go = useGo();
     const fleet = useFleet();
     const nav = useNav();
-    const visibleNav = nav;
     const hovered = useUi((state) => state.hover === "nav" && state.focus === null);
     const totals = counts(fleet);
     const tasksEnabled = nav.includes("tasks");
@@ -139,7 +138,7 @@ function Navigation({
         >
             <div className="flex items-stretch gap-x-[2ch]">
                 <div className="flex min-w-0 flex-1 flex-wrap gap-x-[2ch] gap-y-[4px]">
-                    {visibleNav.map((key) => {
+                    {nav.map((key) => {
                         const [count, warn] = navCount(key, totals, taskCount);
 
                         return (
@@ -213,7 +212,6 @@ export function Shell() {
     const pollingReason = usePollingReason();
     const nav = useNav();
     const extensions = useQuery(extensionsQuery).data;
-    const visibleNav = nav;
     const { pathname } = useLocation();
     const [first, second] = pathname.split("/").filter(Boolean);
     const section = (SECTIONS as readonly string[]).includes(first ?? "")
@@ -344,7 +342,7 @@ export function Shell() {
                                     <div className="pb-[4px] text-xs font-bold tracking-wider text-dim uppercase">
                                         Main
                                     </div>
-                                    {visibleNav.map((key) => {
+                                    {nav.map((key) => {
                                         const [count, warn] = navCount(key, totals, taskCount);
                                         const isSelected = key === activeNav;
 
@@ -385,7 +383,7 @@ export function Shell() {
                                     {SECTIONS.filter(
                                         (sec) =>
                                             extensionSectionVisible(sec, extensions) &&
-                                            !visibleNav.includes(sec),
+                                            !nav.includes(sec),
                                     ).map((sec) => {
                                         const isSelected = sec === section;
 
@@ -437,7 +435,7 @@ export function Shell() {
                                 section,
                                 second === undefined,
                                 pathname === "/nodes/create",
-                                visibleNav.length,
+                                nav.length,
                             )}
                             {message !== "" && (
                                 <span className="selectable text-fg"> │ {message}</span>

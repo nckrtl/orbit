@@ -67,7 +67,7 @@ A Node.js client reads extra CAs from `NODE_EXTRA_CA_CERTS`. Point it at the Orb
 
 ## Keep the catalogue current
 
-`apps/gateway/resources/mcp/tools.json` is generated from `docs/openapi.json`. Each generated operation records its extension slug, or `core` when it is always available. The normal MCP server and `OrbitSearchServer` filter that metadata against the Gateway enabled set before building their catalogues. After a change to a route, form request, or data class, regenerate both:
+`bin/mcp-tools` generates `apps/gateway/resources/mcp/tools.json` from `docs/openapi.json`. Each generated operation records its extension slug, or `null` for an untagged (core) operation. The normal MCP server and `OrbitSearchServer` filter that metadata against the Gateway enabled set before building their catalogues. After a change to a route, form request, or data class, regenerate both:
 
 ```bash
 bin/docs-openapi

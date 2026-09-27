@@ -119,7 +119,10 @@ it("explains a disabled extension and can retry a failed request", async () => {
     let disabled = true;
     await openTasks(async () =>
         disabled
-            ? { status: 409, payload: { error: { code: "tasks.disabled", message: "Disabled" } } }
+            ? {
+                  status: 409,
+                  payload: { error: { code: "extension.disabled", message: "Disabled" } },
+              }
             : { status: 200, payload: { data: [group(1, "todo")] } },
     );
     await expect.element(page.getByRole("alert")).toHaveTextContent("Tasks are disabled");

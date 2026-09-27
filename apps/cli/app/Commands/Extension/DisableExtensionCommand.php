@@ -39,7 +39,7 @@ final class DisableExtensionCommand extends GatewayCommand
         }
         GatewayExtensionState::reset();
         if ($this->option('json') === true) {
-            $this->writeJson(['extension' => $extension, 'enabled' => $response->enabled]);
+            $this->writeJson(['name' => $extension, 'enabled' => $response->enabled]);
         } else {
             ConsoleWriter::write($this->output, "Orbit extension [{$extension}] is disabled.\n");
         }
