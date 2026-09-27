@@ -17,7 +17,6 @@ final class ResolveDependencyInstanceController extends Controller
 {
     public function __invoke(ResolveDependencyInstanceRequest $request, ResolveDependencyInstanceAction $action): JsonResponse
     {
-
         $consumer = $request->user();
         abort_unless($consumer instanceof Node, 401);
 

@@ -43,9 +43,7 @@ final class ProcessData extends Data
         ?float $cpu = null,
         ?int $memoryBytes = null,
     ): self {
-
         $failedStep = $process->getAttribute('failed_step');
-
         $errorCode = $process->getAttribute('error_code');
 
         return new self(

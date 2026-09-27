@@ -29,7 +29,6 @@ final class ImportAppInstanceEnvironmentRequest extends FormRequest
 
     public function shouldReplace(): bool
     {
-
         $validated = $this->validated();
 
         return ($validated['replace'] ?? false) === true;

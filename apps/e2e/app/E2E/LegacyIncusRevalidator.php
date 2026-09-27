@@ -66,7 +66,6 @@ final readonly class LegacyIncusRevalidator
         try {
             $results = Process::pool(function (Pool $pool) use ($commands): void {
                 foreach ($commands as $label => $command) {
-
                     $pool->as($label)->timeout(300)->command($command);
                 }
             })->run()->collect()->all();
@@ -116,7 +115,6 @@ final readonly class LegacyIncusRevalidator
         }
 
         $command = $this->queryCommand($kind, $expected);
-
         $result = $this->run($command);
         $live = $this->classifyResult($result);
         if ($live === null) {
@@ -274,7 +272,6 @@ final readonly class LegacyIncusRevalidator
         if (! is_array($liveMetadata) || $liveMetadata !== [] && array_is_list($liveMetadata)) {
             throw new RuntimeException('The live Incus resource metadata changed.');
         }
-
         if ($this->stableMetadata($expectedMetadata) !== $this->stableMetadata($liveMetadata)) {
             throw new RuntimeException('The live Incus resource metadata changed.');
         }

@@ -53,7 +53,6 @@ final readonly class LogRelay
      */
     public function relay(array $batch): int
     {
-
         $values = [];
 
         foreach ($batch['items'] as $item) {

@@ -27,7 +27,7 @@ final class NoInlineVarOverrideRule implements Rule
         }
 
         $docComment = $node->getDocComment();
-        if ($docComment === null || preg_match('/@var\b/', $docComment->getText()) !== 1) {
+        if ($docComment === null || preg_match('/@(var|phpstan-var|psalm-var)\b/', $docComment->getText()) !== 1) {
             return [];
         }
 

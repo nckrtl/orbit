@@ -32,9 +32,7 @@ final readonly class NativeToolInspector implements ToolInspector
      */
     public function inspectMany(array $tools): array
     {
-
         $outcomes = [];
-
         $groups = [];
 
         foreach ($tools as $index => $tool) {
@@ -81,9 +79,7 @@ final readonly class NativeToolInspector implements ToolInspector
      */
     private function resolvedManager(Tool $tool): array
     {
-
         $node = $tool->getRelationValue('node');
-
         $managerRecord = $tool->getRelationValue('manager');
 
         if (

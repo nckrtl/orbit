@@ -169,7 +169,6 @@ final readonly class ObservedPhpInputCollector
         foreach ($runtimes as $runtime) {
             $runtimeByRole[$runtime['role']] = $runtime;
         }
-
         $surfaces = [];
         foreach (PhpRuntimeInventory::ROLES as $role) {
             $result = $results[$role] ?? null;

@@ -37,7 +37,6 @@ final class StoreClusterRequest extends FormRequest
 
     public function payload(): CreateClusterData
     {
-
         $validated = $this->validated();
 
         return new CreateClusterData(

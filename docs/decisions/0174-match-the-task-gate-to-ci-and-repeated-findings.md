@@ -18,25 +18,25 @@ This amends [ADR 0125](/decisions/0125-run-the-project-check-when-the-implemente
 
 `bin/review-check` knows `apps/cli`, `apps/docs`, `apps/gateway`, `apps/e2e`, and `packages/php-sdk`. GitHub Actions also checks `apps/web`, `apps/pi-server`, `packages/agent-annotation`, and `apps/agent`. A change can therefore pass the local task gate while failing a required CI job that the gate did not run.
 
-A classification of the last 80 `changes_requested` reviews, with 131 findings on 2026-09-27, found that 8% were deterministic-checkable and another 8% were process findings that a gate would have prevented. Six comments (finding ids 157, 348, 512, 520, 522, and 526) repeated web checks that the gate did not run. Three other recurring findings are deterministic: `strtotime()` in PHP projects (464b), inline `/** @var */` overrides inside method bodies (422), and tests that call `Classification::fake(...)` without following it with `preventStrayClassifications()` (162).
+A classification of the last 80 `changes_requested` reviews, with 131 findings on 2026-09-27, found that 8% were deterministic-checkable and another 8% were process findings that a gate would have prevented. Six comments (finding ids 157, 348, 512, 520, 522, and 526) repeated web checks that the gate did not run. Three other recurring findings are deterministic: `strtotime()` in PHP projects (464b), inline `@var`, `@phpstan-var`, or `@psalm-var` overrides inside method bodies (422), and tests that call `Classification::fake(...)` without following it with `preventStrayClassifications()` (162).
 
 The gate must provide CI parity where it is useful at handoff without moving expensive cross-compilation into every task workspace. It must also make a changed test visible when test-impact analysis selects no tests, rather than allowing a new or edited test to go unexecuted.
 
 ## Decision
 
-The task gate selects checks by changed path, runs the required web and Pi server profiles, keeps Rust release builds in CI, and rejects the three deterministic review findings.
+The task gate always runs the PHP profile for all five Composer projects, adds the web and Pi server profiles when their paths change, keeps Rust release builds in CI, and rejects the three deterministic review findings.
 
 ### Project parity
 
-`bin/review-check` selects checks from the paths changed from the task base. It keeps the existing PHP project checks for touched PHP projects: `composer validate --strict`, `composer check`, and `composer test:affected`, which correspond to CI's Composer metadata, quality, and affected-test steps.
+`bin/review-check` always runs `composer validate --strict`, `composer check`, and `composer test:affected` in all five PHP projects (`apps/cli`, `apps/docs`, `apps/gateway`, `apps/e2e`, and `packages/php-sdk`) for every candidate, matching main's CI coverage. Changed paths add checks; they do not narrow this PHP baseline. A candidate with no runnable checks fails rather than passing vacuously.
 
-When a change touches `apps/web`, the gate runs the web checks from `.github/workflows/ci.yml`: `vp check` (CI invokes it through `bun run check`), the unit-test profile with `bun run test:unit` (CI invokes the broader `bun run test`), and the CI reference command `bun run types && git diff --exit-code src/api/schema.d.ts`. The generated type command runs from `apps/web`. Because a handoff may contain unstaged changes, its equivalent is `generated=$(mktemp) && trap 'rm -f "$generated"' EXIT && ./node_modules/.bin/openapi-typescript ../../docs/openapi.json -o "$generated" && cmp -- "$generated" src/api/schema.d.ts`. This compares temporary generator output with the submitted working-tree schema: matching uncommitted changes pass, stale output fails, and the handoff does not stage, commit, or change the submitted tree. The same handoff-safe type check runs when a change touches `docs/openapi.json`, because that file is the input to the generated web API types.
+When a change touches `apps/web`, the gate runs `bun run check` and `bun run build` from `.github/workflows/ci.yml`, plus a schema freshness check that compares temporary generator output with the submitted schema, matching CI's `bun run types && git diff --exit-code src/api/schema.d.ts` without changing the working tree. The generated type command runs from `apps/web`. Because a handoff may contain unstaged changes, its equivalent is `generated=$(mktemp) && trap 'rm -f "$generated"' EXIT && ./node_modules/.bin/openapi-typescript ../../docs/openapi.json -o "$generated" && cmp -- "$generated" src/api/schema.d.ts`. This compares temporary generator output with the submitted working-tree schema: matching uncommitted changes pass, stale output fails, and the handoff does not stage, commit, or change the submitted tree. The same handoff-safe type check runs when a change touches `docs/openapi.json`, because that file is the input to the generated web API types.
 
 When a change touches `apps/pi-server`, the gate runs that CI job's commands from the project directory: `bun install --frozen-lockfile`, `bun run check` (the package script runs `vp check`), `bun run test`, and `bun run build`.
 
 The Rust agent remains a CI check. Its job installs `cross` and runs `cargo fmt --all -- --check`, `cargo clippy --locked --all-targets -- -D warnings`, `cargo test --locked`, and two release `cross build --locked --release` commands for `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`. Cross-compilation is not cheap enough to add to every handoff gate. The CI job for agent annotation also remains covered by CI rather than this project gate.
 
-A required tool is a gate prerequisite, not an optional project. If a selected check cannot find a named tool, it fails with that tool's name; it never skips the check silently. This applies to tools such as `bun`, `vp`, `git`, `cargo`, and `cross`. Dependency installation failures are also gate failures and retain the command that failed.
+A required tool is a gate prerequisite, not an optional project. If a selected check cannot find a named tool, it fails with that tool's name; it never skips the check silently. This applies to tools such as `bun`, `git`, `cargo`, and `cross`. Dependency installation failures are also gate failures and retain the command that failed.
 
 ### Changed tests
 
@@ -44,12 +44,12 @@ After `test:affected`, the gate compares the changed PHP test files with the fil
 
 ### Finding checks
 
-The gate adds these checks to every touched PHP project:
+The gate adds these checks to every PHP project:
 
 | Finding | Check | Tool |
 | --- | --- | --- |
 | 464b: `strtotime()` in PHP project code | Reject calls to `strtotime()` and use Carbon parsing instead | `phpstan-disallowed-calls` |
-| 422: inline `/** @var */` override inside a method body | Reject the override; fix the declared or inferred type at its source | A PHPStan rule |
+| 422: inline `@var`, `@phpstan-var`, or `@psalm-var` override inside a method body | Reject the override; fix the declared or inferred type at its source | A PHPStan rule |
 | 162: `Classification::fake(...)` without `preventStrayClassifications()` | Reject a test unless the fake setup is followed by `preventStrayClassifications()` | A dedicated script in `bin/` |
 
 The static checks run as part of the gate's PHP quality checks, and the classification script runs against the changed tests. A finding fails the gate with its file and line so the implementer can fix it before review.

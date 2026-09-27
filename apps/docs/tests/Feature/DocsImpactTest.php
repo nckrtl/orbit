@@ -6,29 +6,38 @@ use App\Documentation\DocsImpact;
 
 $GLOBALS['docsImpactFixtureRoots'] = [];
 
+function removeDocsImpactFixturePath(string $path): void
+{
+    if (is_link($path) || is_file($path)) {
+        if (! @unlink($path) && file_exists($path)) {
+            throw new RuntimeException("Could not remove docs impact fixture file at {$path}.");
+        }
+
+        return;
+    }
+    if (! is_dir($path)) {
+        return;
+    }
+
+    $iterator = new FilesystemIterator($path, FilesystemIterator::SKIP_DOTS);
+    foreach ($iterator as $item) {
+        removeDocsImpactFixturePath($item->getPathname());
+    }
+    unset($iterator);
+
+    for ($attempt = 0; $attempt < 5; $attempt++) {
+        if (@rmdir($path) || ! is_dir($path)) {
+            return;
+        }
+        usleep(10_000);
+    }
+
+    throw new RuntimeException("Could not remove docs impact fixture directory at {$path}.");
+}
+
 afterEach(function (): void {
     foreach ($GLOBALS['docsImpactFixtureRoots'] as $root) {
-        if (! is_dir($root)) {
-            continue;
-        }
-        $iterator = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
-            RecursiveIteratorIterator::CHILD_FIRST,
-        );
-        foreach ($iterator as $item) {
-            if ($item->isDir()) {
-                @rmdir($item->getPathname());
-
-                continue;
-            }
-
-            @unlink($item->getPathname());
-        }
-        @rmdir($root);
-
-        if (is_dir($root)) {
-            throw new RuntimeException("Could not remove docs impact fixture at {$root}.");
-        }
+        removeDocsImpactFixturePath($root);
     }
     $GLOBALS['docsImpactFixtureRoots'] = [];
 });

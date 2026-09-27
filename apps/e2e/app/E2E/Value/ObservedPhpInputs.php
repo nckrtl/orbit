@@ -64,7 +64,6 @@ final readonly class ObservedPhpInputs
         }
 
         $runtimes = $value['runtimes'];
-
         $phases = $value['phases'];
 
         return new self($runtimes, $phases);

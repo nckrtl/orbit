@@ -70,7 +70,6 @@ final class UpdateInstanceDependenciesCommand extends GatewayCommand
                 : $selector->resolveDomain($connector, $app));
             $progress->complete('target', ProgressState::Success, "Instance #{$target->instanceId}");
             $progress->admit('update', 'Update dependencies', 'Updating dependencies', 'Updated dependencies');
-
             $result = $progress->during('update', fn () => $this->sendOrThrow(
                 $connector,
                 new UpdateInstanceDependenciesRequest($target->instanceId),

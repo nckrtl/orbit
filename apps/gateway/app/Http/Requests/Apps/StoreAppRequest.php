@@ -74,7 +74,6 @@ final class StoreAppRequest extends FormRequest
 
     public function payload(): CreateAppData
     {
-
         $validated = $this->validated();
         $slug = is_string($validated['slug'] ?? null) ? $validated['slug'] : '';
         $defaults = is_array($validated['defaults'] ?? null) ? $validated['defaults'] : null;

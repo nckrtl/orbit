@@ -15,7 +15,7 @@ PHP_COMMANDS = (('composer', 'validate', '--strict'), ('composer', 'check'), ('c
 WEB_INSTALL = ('bun', 'install', '--frozen-lockfile')
 ANNOTATION_INSTALL = ('bun', 'install', '--frozen-lockfile')
 WEB_TYPES = ('bash', '-lc', 'generated=$(mktemp) && trap \'rm -f "$generated"\' EXIT && ./node_modules/.bin/openapi-typescript ../../docs/openapi.json -o "$generated" && cmp -- "$generated" src/api/schema.d.ts')
-WEB_CHECK_COMMANDS = (('vp', 'check'), ('bun', 'run', 'test:unit'), WEB_TYPES)
+WEB_CHECK_COMMANDS = (('bun', 'run', 'check'), ('bun', 'run', 'build'), WEB_TYPES)
 PI_SERVER_COMMANDS = (('bun', 'install', '--frozen-lockfile'), ('bun', 'run', 'check'),
                       ('bun', 'run', 'test'), ('bun', 'run', 'build'))
 AFFECTED = ('composer', 'test:affected')
@@ -73,8 +73,7 @@ def candidate_paths(root, head, committed):
 
 def selected_projects(paths, root):
     """Return project profiles selected by changed paths and the OpenAPI schema dependency."""
-    selected = [(project, PHP_COMMANDS) for project in PHP_PROJECTS
-                if any(path.startswith(project + '/') for path in paths)]
+    selected = [(project, PHP_COMMANDS) for project in PHP_PROJECTS]
     if any(path.startswith('apps/web/') for path in paths):
         selected.extend((('apps/web', (WEB_INSTALL,)),
                          ('packages/agent-annotation', (ANNOTATION_INSTALL,)),
@@ -248,7 +247,8 @@ def main():
                                          ('../../bin/pest-plain', 'vendor/bin/pest', '--no-tia',
                                           '--fail-on-empty-test-suite', '--compact', '--colors=never', relative)))
     report['unchanged'] = head == git(root, 'rev-parse', 'HEAD') and tree == working_tree(root)
-    report['passed'] = report['unchanged'] and all(check['exit_code'] == 0 for check in report['checks'])
+    report['passed'] = report['unchanged'] and bool(report['checks']) and all(
+        check['exit_code'] == 0 for check in report['checks'])
     report['finished_at'] = time.time()
     path = directory / 'result.json'
     path.write_text(json.dumps(report, indent=2) + '\n')

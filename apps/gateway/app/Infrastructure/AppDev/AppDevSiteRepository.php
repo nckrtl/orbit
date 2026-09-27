@@ -50,7 +50,6 @@ final readonly class AppDevSiteRepository
     /** @return Collection<int, AppDevSite> */
     private function sites(?Node $node): Collection
     {
-
         $sites = collect();
         $secondRouters = $this->routerTransitions->secondRouters();
 
@@ -134,7 +133,6 @@ final readonly class AppDevSiteRepository
         });
 
         $routes = $routeQuery->orderBy('id')->get();
-
         foreach ($routes as $route) {
             if ($route->kind === RouteKind::CustomProxy) {
                 $site = $this->customProxySite($route);

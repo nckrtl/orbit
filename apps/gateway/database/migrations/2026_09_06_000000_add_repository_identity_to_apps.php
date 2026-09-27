@@ -12,9 +12,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-
         $identities = [];
-
         $owners = [];
 
         foreach (DB::table('apps')->orderBy('id')->get(['id', 'repository_url']) as $app) {

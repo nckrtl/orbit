@@ -50,7 +50,6 @@ final readonly class LogRedactor
 
         if ($record instanceof AppInstance) {
             foreach ($record->environmentValues as $value) {
-
                 $environment[] = [$value->env_key, $value->env_value];
             }
         } else {

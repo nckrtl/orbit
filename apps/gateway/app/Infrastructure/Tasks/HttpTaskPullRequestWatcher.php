@@ -144,7 +144,6 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestWatche
             return ['failed' => [], 'pending' => []];
         }
         $key = 'tasks:pull-request-checks:v3:'.$repository->owner.'/'.$repository->name.'#'.$number.'@'.$pullRequest->headSha;
-
         $cached = Cache::get($key);
         if (! is_array($cached)) {
             $token = $this->access->checksToken($repository);

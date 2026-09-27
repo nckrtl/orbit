@@ -29,7 +29,6 @@ final readonly class CancelTaskCheckAction
     public function execute(TaskGroup $group, Task $task): TaskCheck
     {
         $this->requireExtension->execute();
-
         $check = $task->checks()->where('status', TaskCheckStatus::Running->value)->latest('id')->first();
         $instance = $group->taskable;
         if (! $check instanceof TaskCheck || ! $instance instanceof AppInstance) {

@@ -10,6 +10,12 @@ function orb277_projects(): array
     return ['apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk'];
 }
 
+/** @return list<string> */
+function orb277_selected_projects(): array
+{
+    return ['repository', ...orb277_projects()];
+}
+
 /**
  * Print the TIA directory a project's guidance configuration resolves, without the parent run's Pest state.
  */
@@ -225,11 +231,11 @@ describe('Builder gate', function (): void {
         expect($receipt['passed'])->toBeTrue()
             ->and($receipt['changed_paths'])->toBe(['apps/web/src/App.tsx'])
             ->and(collect($receipt['checks'])->pluck('project')->unique()->values()->all())
-            ->toBe(['apps/web', 'packages/agent-annotation'])
+            ->toBe([...orb277_selected_projects(), 'apps/web', 'packages/agent-annotation'])
             ->and($web->pluck('command')->all())->toHaveCount(4)
             ->and($web[0]['command'])->toBe(['bun', 'install', '--frozen-lockfile'])
-            ->and($web[1]['command'])->toBe(['vp', 'check'])
-            ->and($web[2]['command'])->toBe(['bun', 'run', 'test:unit'])
+            ->and($web[1]['command'])->toBe(['bun', 'run', 'check'])
+            ->and($web[2]['command'])->toBe(['bun', 'run', 'build'])
             ->and($web->pluck('exit_code')->all())->toBe([0, 0, 0, 0]);
         expect($web[3]['command'][0])->toBe('bash')
             ->and($web[3]['command'][2])->toContain('./node_modules/.bin/openapi-typescript');
@@ -244,12 +250,25 @@ describe('Builder gate', function (): void {
 
         expect($receipt['passed'])->toBeTrue()
             ->and($receipt['changed_paths'])->toBe(['docs/openapi.json'])
-            ->and(collect($receipt['checks'])->pluck('project')->unique()->values()->all())->toBe(['apps/web'])
+            ->and(collect($receipt['checks'])->pluck('project')->unique()->values()->all())->toBe([...orb277_selected_projects(), 'apps/web'])
             ->and($web)->toHaveCount(2)
             ->and($web[0]['command'])->toBe(['bun', 'install', '--frozen-lockfile'])
             ->and($web[1]['command'][2])->toContain('./node_modules/.bin/openapi-typescript')
             ->and($web->pluck('exit_code')->all())->toBe([0, 0]);
     });
+
+    it('runs every PHP project for documentation-only and tools changes', function (string $path): void {
+        $fixture = orb277_gate_fixture($path);
+        $receipt = orb277_run_gate($fixture, '')['receipt'];
+
+        expect($receipt['passed'])->toBeTrue()
+            ->and($receipt['changed_paths'])->toBe([$path])
+            ->and(collect($receipt['checks'])->pluck('project')->unique()->values()->all())->toBe(orb277_selected_projects())
+            ->and(collect($receipt['checks'])->count())->toBe(16);
+    })->with([
+        'documentation-only change' => ['docs/reference/example.md'],
+        'tools change' => ['tools/phpstan/NoInlineVarOverrideRule.php'],
+    ]);
 
     it('selects the Pi server CI profile for Pi server changes', function (): void {
         $fixture = orb277_gate_fixture('apps/pi-server/src/index.ts');
@@ -258,7 +277,7 @@ describe('Builder gate', function (): void {
 
         expect($receipt['passed'])->toBeTrue()
             ->and($receipt['changed_paths'])->toBe(['apps/pi-server/src/index.ts'])
-            ->and(collect($receipt['checks'])->pluck('project')->unique()->values()->all())->toBe(['apps/pi-server'])
+            ->and(collect($receipt['checks'])->pluck('project')->unique()->values()->all())->toBe([...orb277_selected_projects(), 'apps/pi-server'])
             ->and($piServer->pluck('command')->all())->toBe([
                 ['bun', 'install', '--frozen-lockfile'],
                 ['bun', 'run', 'check'],
@@ -266,6 +285,21 @@ describe('Builder gate', function (): void {
                 ['bun', 'run', 'build'],
             ])
             ->and($piServer->pluck('exit_code')->all())->toBe([0, 0, 0, 0]);
+    });
+
+    it('fails with the required tool name when a selected check tool is missing', function (): void {
+        $fixture = orb277_gate_fixture('apps/web/src/App.tsx');
+        unlink($fixture['root'].'/tooling/bun');
+        $fixture['path'] = $fixture['root'].'/tooling:/usr/bin:/bin';
+        $run = orb277_run_gate($fixture, '', expectedExit: 1);
+        $install = collect($run['receipt']['checks'])->first(
+            static fn (array $check): bool => $check['project'] === 'apps/web'
+                && $check['command'] === ['bun', 'install', '--frozen-lockfile'],
+        );
+
+        expect($run['receipt']['passed'])->toBeFalse()
+            ->and($install)->toMatchArray(['exit_code' => 127])
+            ->and(file_get_contents($install['log']))->toContain('bun: required tool not found');
     });
 
     it('records web dependency installation failures in the receipt', function (): void {
@@ -340,7 +374,7 @@ describe('Builder gate', function (): void {
             ->and(file_exists($receipt['warnings'][0]['log']))->toBeTrue();
         expect(orb277_check($receipt, 'apps/gateway', 'test:affected'))
             ->toHaveKey('warning', $receipt['warnings'][0]['message']);
-        expect(collect($receipt['checks'])->pluck('project')->unique()->values()->all())->toBe(['apps/gateway']);
+        expect(collect($receipt['checks'])->pluck('project')->unique()->values()->all())->toBe(orb277_selected_projects());
         expect(collect($receipt['checks'])->pluck('command')->all())
             ->toContain(['vendor/bin/pest', '--list-tests', 'tests/ExampleTest.php'])
             ->toContain(['../../bin/pest-plain', 'vendor/bin/pest', '--no-tia', '--fail-on-empty-test-suite', '--compact', '--colors=never', 'tests/ExampleTest.php']);
@@ -479,7 +513,7 @@ PHP);
         $executed = orb277_run_gate($fixture, 'apps/cli')['receipt'];
 
         expect($executed['passed'])->toBeTrue();
-        expect(collect($executed['checks'])->pluck('project')->unique()->values()->all())->toBe(['apps/gateway']);
+        expect(collect($executed['checks'])->pluck('project')->unique()->values()->all())->toBe(orb277_selected_projects());
         expect($executed['warnings'])->toBe([]);
         expect(collect($executed['checks'])->pluck('warning')->filter()->all())->toBe([]);
         expect(orb277_check($executed, 'apps/gateway', 'test:affected'))
@@ -492,7 +526,9 @@ PHP);
 
         expect($main['receipt']['candidate'])->toBe($fixture['main']);
         expect($main['receipt']['changed_paths'])->toBe([]);
-        expect($main['receipt']['checks'])->toBe([]);
+        expect(collect($main['receipt']['checks'])->pluck('project')->unique()->values()->all())->toBe(orb277_selected_projects());
+        expect(collect($main['receipt']['checks'])->count())->toBe(16);
+        expect($main['receipt']['passed'])->toBeTrue();
         expect($main['receipt']['warnings'])->toBe([]);
         expect($main['process']->getOutput())->not->toContain('WARNING');
     });

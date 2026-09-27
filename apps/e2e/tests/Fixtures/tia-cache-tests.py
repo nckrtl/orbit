@@ -1215,6 +1215,9 @@ class ReviewGateTest(unittest.TestCase):
         runner = self.root / 'bin/review-check'
         runner.write_bytes(Path(cache.__file__).with_name('review-check').read_bytes())
         runner.chmod(0o755)
+        docs_impact = self.root / 'bin/docs-impact'
+        docs_impact.write_text('#!/bin/sh\nexit 0\n')
+        docs_impact.chmod(0o755)
         for name in ('tia-cache', 'worktree-cache'):
             seed = self.root / 'bin' / name
             seed.write_text(f'#!/bin/sh\nprintf "{name} %s\\n" "$*" >> "$GATE_TEST_SEEDS"\n')
@@ -1223,6 +1226,10 @@ class ReviewGateTest(unittest.TestCase):
             directory = self.root / project
             directory.mkdir(parents=True)
             (directory / '.gitkeep').write_text('')
+            pest = directory / 'vendor/bin/pest'
+            pest.parent.mkdir(parents=True)
+            pest.write_text('#!/bin/sh\nexit 0\n')
+            pest.chmod(0o755)
         (self.root / '.gitignore').write_text('.orbit-tia/\n')
         self.commit_change('gate fixture')
         fake_bin = Path(self.temporary.name) / 'fake-bin'
@@ -1264,10 +1271,25 @@ fi
         self.assertTrue(report['passed'])
         self.assertEqual('builder', report['role'])
         self.assertEqual(cache.git(self.root, 'rev-parse', 'HEAD'), report['candidate'])
-        self.assertEqual([(project, command) for project in cache.PROJECTS
-                          for command in [['composer', 'validate', '--strict'], ['composer', 'check'],
-                                          ['composer', 'test:affected']]],
-                         [(item['project'], item['command']) for item in report['checks']])
+        architecture_tests = {
+            'apps/cli': ['tests/Feature/CommandSurfaceTest.php'],
+            'apps/gateway': ['tests/Unit/Architecture',
+                             'tests/Feature/Infrastructure/AppInstances/ConfiguredOriginReadTest.php',
+                             'tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php'],
+            'apps/e2e': ['tests/Unit/E2E/ProofFixtureContractTest.php',
+                         'tests/Unit/E2E/ProofFixtureShellContractTest.php'],
+            'packages/php-sdk': ['tests/Unit/SuccessRequestIdBoundaryTest.php',
+                                 'tests/Unit/RepositoryGuidanceTest.php',
+                                 'tests/Unit/Requests/Workspaces/WorkspaceRequestsTest.php',
+                                 'tests/Unit/Requests/Deployments/DeploymentRequestsTest.php'],
+        }
+        expected = [('repository', ['bin/docs-impact', '--gate', '--base', report['base']])]
+        for project in cache.PROJECTS:
+            expected.extend((project, command) for command in [
+                ['composer', 'validate', '--strict'], ['composer', 'check'], ['composer', 'test:affected']])
+            expected.extend((project, ['vendor/bin/pest', path])
+                            for path in architecture_tests.get(project, []))
+        self.assertEqual(expected, [(item['project'], item['command']) for item in report['checks']])
         self.assertEqual(15, len((self.common / 'calls').read_text().splitlines()))
 
     def test_gate_rejects_failed_checks_and_candidate_mutation(self):

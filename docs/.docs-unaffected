@@ -1,0 +1,41 @@
+docs/cli/activity.mdx: This branch changes PHP typing and task-gate checks, not the documented CLI activity behavior.
+docs/cli/cluster.mdx: This branch changes PHP typing and task-gate checks, not the documented cluster commands.
+docs/cli/doctor.mdx: This branch changes PHP typing and task-gate checks, not the documented Doctor behavior.
+docs/cli/firewall.mdx: This branch changes PHP typing and task-gate checks, not the documented firewall behavior.
+docs/cli/instance.mdx: This branch changes PHP typing and task-gate checks, not the documented instance commands.
+docs/cli/metrics.mdx: This branch changes PHP typing and task-gate checks, not the documented metrics behavior.
+docs/cli/node.mdx: This branch changes PHP typing and task-gate checks, not the documented Node commands.
+docs/cli/process.mdx: This branch changes PHP typing and task-gate checks, not the documented process commands.
+docs/cli/realtime.mdx: This branch changes PHP typing and task-gate checks, not the documented real-time behavior.
+docs/cli/tool.mdx: This branch changes PHP typing and task-gate checks, not the documented tool commands.
+docs/reference/agent-annotation.md: This branch changes internal PHP typing and task-gate checks, not agent annotation behavior.
+docs/reference/analytics.md: This branch changes internal PHP typing and task-gate checks, not analytics behavior.
+docs/reference/app-processes-and-schedules.md: This branch changes internal PHP typing and task-gate checks, not process or schedule behavior.
+docs/reference/appinstance-cloning.md: This branch changes internal PHP typing and task-gate checks, not AppInstance cloning behavior.
+docs/reference/appinstance-removal.md: This branch changes internal PHP typing and task-gate checks, not AppInstance removal behavior.
+docs/reference/apps.md: This branch changes internal PHP typing and task-gate checks, not app behavior.
+docs/reference/caddy-configuration.md: This branch changes internal PHP typing and task-gate checks, not Caddy configuration behavior.
+docs/reference/database-connections.md: This branch changes internal PHP typing and task-gate checks, not database connection behavior.
+docs/reference/environment-variables.md: This branch changes internal PHP typing and task-gate checks, not environment variable behavior.
+docs/reference/events.mdx: This branch changes internal PHP typing and task-gate checks, not event behavior.
+docs/reference/gateway-trust.md: This branch changes internal PHP typing and task-gate checks, not Gateway trust behavior.
+docs/reference/incus-topologies.md: This branch changes internal PHP typing and task-gate checks, not Incus topology behavior.
+docs/reference/instance-dependencies.md: This branch changes internal PHP typing and task-gate checks, not instance dependency behavior.
+docs/reference/instance-logs.md: This branch changes internal PHP typing and task-gate checks, not instance log behavior.
+docs/reference/instance-queue.md: This branch changes internal PHP typing and task-gate checks, not instance queue behavior.
+docs/reference/live-logs.md: This branch changes internal PHP typing and task-gate checks, not live log behavior.
+docs/reference/mcp.mdx: This branch changes internal PHP typing and task-gate checks, not MCP behavior.
+docs/reference/metrics.md: This branch changes internal PHP typing and task-gate checks, not metrics behavior.
+docs/reference/node-agent.md: This branch changes internal PHP typing and task-gate checks, not Node agent behavior.
+docs/reference/node-provisioning.md: This branch changes internal PHP typing and task-gate checks, not Node provisioning behavior.
+docs/reference/php-runtime.md: This branch changes internal PHP typing and task-gate checks, not PHP runtime behavior.
+docs/reference/private-dns.md: This branch changes internal PHP typing and task-gate checks, not private DNS behavior.
+docs/reference/routes.md: This branch changes internal PHP typing and task-gate checks, not route behavior.
+docs/reference/schedules.md: This branch changes internal PHP typing and task-gate checks, not schedule behavior.
+docs/reference/service-metrics.md: This branch changes internal PHP typing and task-gate checks, not service metrics behavior.
+docs/reference/tools.md: This branch changes internal PHP typing and task-gate checks, not tool-manager behavior.
+docs/reference/topology-snapshot.md: This branch changes internal PHP typing and task-gate checks, not topology snapshot behavior.
+docs/reference/wireguard-endpoints.md: This branch changes internal PHP typing and task-gate checks, not WireGuard endpoint behavior.
+docs/solutions/doctor-incus-proof.md: This branch changes internal PHP typing and task-gate checks, not the documented Doctor proof solution.
+docs/solutions/relocate-gateway-role.mdx: This branch changes internal PHP typing and task-gate checks, not the documented role-relocation solution.
+docs/solutions/remote-file-writes-on-uutils-coreutils.md: This branch changes internal PHP typing and task-gate checks, not the documented remote-file solution.

@@ -377,10 +377,8 @@ final class IncusHost implements GuestTransport
         string $target,
         array $acquisitionMetadata = [],
     ): IncusInstance {
-
         $copy = $this->snapshotCopy($source, $snapshot, $target, $acquisitionMetadata);
         [$command, $instance] = $copy;
-
         $this->run($command, 300);
 
         return $instance;
@@ -397,7 +395,6 @@ final class IncusHost implements GuestTransport
         }
 
         $commands = [];
-
         $instances = [];
         $targets = [];
         foreach ($copies as $label => $copy) {
@@ -413,7 +410,6 @@ final class IncusHost implements GuestTransport
         }
         $this->validateSnapshotCopies($copies);
         foreach ($copies as $label => $copy) {
-
             $copyResult = $this->snapshotCopy(
                 $copy['source'],
                 $copy['snapshot'],
@@ -455,7 +451,6 @@ final class IncusHost implements GuestTransport
         }
 
         $commands = [];
-
         $instances = [];
         $targets = [];
         foreach ($copies as $label => $copy) {
@@ -464,7 +459,6 @@ final class IncusHost implements GuestTransport
                 throw new RuntimeException('Incus instance copy targets must be unique.');
             }
             $targets[$copy['target']] = true;
-
             $copyResult = $this->snapshotCopy(
                 $copy['source'],
                 null,
@@ -991,14 +985,12 @@ final class IncusHost implements GuestTransport
     public function waitForRestoredHostStates(array $instances): void
     {
         assert(array_is_list($instances));
-
         $this->validateUniqueInstances($instances, 'restored host-state readiness');
         $this->operationOwnedInstances($instances, 'restored host-state readiness');
 
         $states = array_fill_keys($instances, 'agent');
         $deadline = microtime(true) + $this->guestReadinessTimeoutSeconds;
         while ($states !== [] && microtime(true) < $deadline) {
-
             $commands = [];
             foreach ($states as $instance => $state) {
                 $commands[$instance] = match ($state) {

@@ -691,7 +691,6 @@ final readonly class ConvergeRouteAction
         ?RoutePublication $publication = null,
         ?RoutePlacement $placement = null,
     ): Route {
-
         $reserved = DB::transaction(function () use ($route, $domain, $publication, $placement): Route {
             $locked = Route::query()->with('targets')->lockForUpdate()->findOrFail($route->id);
 

@@ -107,7 +107,6 @@ final class StoreRouteRequest extends FormRequest
 
     public function payload(): CreateRouteData
     {
-
         $validated = $this->validated();
 
         if ($this->isCustomProxy()) {

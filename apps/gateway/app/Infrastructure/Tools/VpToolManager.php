@@ -248,7 +248,6 @@ final readonly class VpToolManager implements ToolManager
             }
 
             $name = $entry->name ?? null;
-
             $version = $entry->version ?? null;
 
             if (
@@ -372,7 +371,6 @@ final readonly class VpToolManager implements ToolManager
 
     private function decodeJsonString(CommandResult $result, string $step): string
     {
-
         $decoded = json_decode($result->stdout, associative: true);
 
         if (! is_string($decoded) || ! $this->isSafeString($decoded)) {

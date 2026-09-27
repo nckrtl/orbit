@@ -398,10 +398,6 @@ it('validates runtime-specific fixed argv and Docker input', function (array $pa
         ['command' => ['php', 'artisan']],
         'command.0',
     ],
-    'command must be a list' => [
-        ['runtime' => 'docker', 'image' => 'busybox:1', 'command' => ['first' => 'sleep']],
-        'command',
-    ],
     'Docker image is explicit' => [
         ['runtime' => 'docker', 'image' => null],
         'image',

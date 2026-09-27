@@ -35,7 +35,6 @@ final readonly class RemoveRouteAction
 
     public function execute(Route $route): Route
     {
-
         $expectedTargetIds = $route
             ->targets()
             ->orderBy('app_instance_id')
@@ -116,7 +115,6 @@ final readonly class RemoveRouteAction
     /** @param list<int> $expectedTargetIds */
     private function lockAndGuard(Route $route, array $expectedTargetIds): Route
     {
-
         $locked = DB::transaction(function () use ($route, $expectedTargetIds): Route {
             $locked = Route::query()->with('targets')->lockForUpdate()->findOrFail($route->id);
             $this->assertTargetsUnchanged($locked, $expectedTargetIds);
@@ -194,7 +192,6 @@ final readonly class RemoveRouteAction
     /** @param list<int> $expectedTargetIds */
     private function deleteRecord(Route $route, array $expectedTargetIds): Route
     {
-
         $removed = DB::transaction(function () use ($route, $expectedTargetIds): Route {
             $locked = Route::query()->with('targets')->lockForUpdate()->findOrFail($route->id);
             $this->assertTargetsUnchanged($locked, $expectedTargetIds);

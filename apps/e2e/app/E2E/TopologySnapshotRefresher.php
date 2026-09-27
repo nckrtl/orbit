@@ -241,7 +241,6 @@ final readonly class TopologySnapshotRefresher
         }
 
         $promoted = null;
-
         $promotedStructural = null;
         $mutated = false;
         $generationMutationLockHeld = false;

@@ -40,7 +40,6 @@ final readonly class AcquisitionRollback
             ) {
                 throw new RuntimeException('Rollback resource list is invalid.');
             }
-
             $instances = array_values(array_filter(
                 $resources,
                 static fn (mixed $resource): bool => $resource !== $target->network(),
@@ -115,7 +114,6 @@ final readonly class AcquisitionRollback
 
             return $results;
         }
-
         $preflight = [];
         try {
             $inventory = ($this->readBatch)($resources);

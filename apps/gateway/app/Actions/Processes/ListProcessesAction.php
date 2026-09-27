@@ -72,7 +72,6 @@ final readonly class ListProcessesAction
 
         foreach ($processes as $process) {
             $processUsage = $usage[(int) $process->id] ?? ['cpu' => null, 'memory_bytes' => null];
-
             $data = ProcessData::fromModel(
                 $process,
                 $statuses[(int) $process->id] ?? 'unknown',

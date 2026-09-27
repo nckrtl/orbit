@@ -523,7 +523,6 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
             inspectContent: $requested->source_layout !== AppInstanceSourceLayout::Checkout->value,
         );
         $this->assertMemberPathAvailable($requested);
-
         $members = collect([$requested]);
 
         if ($requested->source_layout === AppInstanceSourceLayout::Checkout->value) {
@@ -993,7 +992,6 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         Collection $members,
         AppInstanceRemovalMember $current,
     ): AppInstanceSourceRevalidationExpectation {
-
         $states = [];
 
         foreach ($members as $member) {

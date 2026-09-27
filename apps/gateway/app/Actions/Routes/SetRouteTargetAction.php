@@ -72,7 +72,6 @@ final readonly class SetRouteTargetAction
     private function executeOwned(Route $route, int $appInstanceId, array $expectedTargetIds): Route
     {
         try {
-
             $updated = DB::transaction(function () use ($route, $appInstanceId, $expectedTargetIds): Route {
                 $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
                 $target = AppInstance::query()->with(['app', 'node'])->lockForUpdate()->findOrFail($appInstanceId);

@@ -62,7 +62,6 @@ final readonly class ClearRouteTargetAction
     /** @param list<int> $expectedTargetIds */
     private function executeOwned(Route $route, array $expectedTargetIds): Route
     {
-
         $updated = DB::transaction(function () use ($route, $expectedTargetIds): Route {
             $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
             $currentTargetIds = $locked

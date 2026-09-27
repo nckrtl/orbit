@@ -455,7 +455,6 @@ final readonly class ServingNodeResolver
     private function clusterNodes(int $clusterId): array
     {
         $cluster = Cluster::query()->findOrFail($clusterId);
-
         $nodes = $cluster->nodes()->orderBy('id')->get()->all();
 
         return $nodes !== [] ? array_values($nodes) : $this->gateway();

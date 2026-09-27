@@ -43,7 +43,6 @@ final class StoreProjectLifecycleStepRequest extends FormRequest
 
     public function step(): LifecycleStep
     {
-
         $payload = $this->validated();
 
         try {

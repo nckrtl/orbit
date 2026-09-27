@@ -116,7 +116,6 @@ final readonly class EnableInstanceAnalyticsAction
     private function create(AppInstance $instance, Route $owner, string $host): Route
     {
         try {
-
             $route = DB::transaction(static function () use ($instance, $owner, $host): Route {
                 $route = Route::query()->create([
                     'kind' => RouteKind::AnalyticsTracking,

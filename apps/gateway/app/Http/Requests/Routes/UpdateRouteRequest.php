@@ -62,7 +62,6 @@ final class UpdateRouteRequest extends FormRequest
 
     public function payload(): UpdateRouteData
     {
-
         $validated = $this->validated();
 
         return new UpdateRouteData(

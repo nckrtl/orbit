@@ -20,7 +20,6 @@ final readonly class ComposerInstalledInventoryParser
     public function parse(CommandResult $result, Closure $validatePackage): ComposerInstalledInventory
     {
         try {
-
             $decoded = json_decode($result->stdout, flags: JSON_THROW_ON_ERROR);
         } catch (JsonException $exception) {
             throw new ToolManagerException(
@@ -51,7 +50,6 @@ final readonly class ComposerInstalledInventoryParser
             }
 
             $name = $entry->name ?? null;
-
             $version = $entry->version ?? null;
 
             if (

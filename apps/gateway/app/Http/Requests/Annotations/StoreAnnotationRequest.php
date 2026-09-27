@@ -44,7 +44,6 @@ final class StoreAnnotationRequest extends FormRequest
 
     public function payload(): AnnotationInput
     {
-
         $values = $this->validated();
 
         return new AnnotationInput($values);

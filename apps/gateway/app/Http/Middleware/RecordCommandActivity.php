@@ -99,7 +99,6 @@ final readonly class RecordCommandActivity
         $shutdown = $activity->exists ? ActivityShutdownFinalizer::arm($activity) : null;
 
         try {
-
             $response = $next($request);
 
             if ($response instanceof StreamedResponse) {
@@ -1127,7 +1126,6 @@ final readonly class RecordCommandActivity
         $storedEnvironment = $process instanceof Process
             ? $process->runtime_config['environment'] ?? null
             : null;
-
         $values = [];
 
         $submittedValue = $request->input('value');

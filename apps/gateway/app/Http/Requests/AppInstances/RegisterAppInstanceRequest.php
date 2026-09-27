@@ -85,7 +85,6 @@ final class RegisterAppInstanceRequest extends FormRequest
 
     public function payload(): RegisterAppInstanceData
     {
-
         $values = $this->validated();
 
         return new RegisterAppInstanceData(

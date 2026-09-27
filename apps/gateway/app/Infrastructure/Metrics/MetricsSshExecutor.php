@@ -228,7 +228,6 @@ final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, Met
 
     public function convergeContainers(Node $node, array $specs): void
     {
-
         $services = [];
 
         foreach ($specs as $spec) {
@@ -250,7 +249,6 @@ final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, Met
         }
 
         $createdVolumes = [];
-
         $replacements = [];
 
         try {
@@ -1116,7 +1114,6 @@ final readonly class MetricsSshExecutor implements MetricsCredentialRuntime, Met
     private function labels(string $json, string $resource): array
     {
         try {
-
             $decoded = json_decode(trim($json), true, flags: JSON_THROW_ON_ERROR);
         } catch (JsonException) {
             throw new ResourceOperationException(

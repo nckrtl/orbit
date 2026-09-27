@@ -2,13 +2,15 @@
 
 declare(strict_types=1);
 
+use Symfony\Component\Process\Process;
+
 it('reports the three PHP finding rules and accepts allowed declarations', function (): void {
     $directory = sys_get_temp_dir().'/orbit-finding-rules-'.bin2hex(random_bytes(8));
     mkdir($directory.'/tests', 0777, true);
 
     $analyse = static function (string $path): array {
         exec(
-            './vendor/bin/phpstan analyse --configuration=phpstan.neon --no-progress --error-format=json '
+            'PAO_DISABLE=1 ./vendor/bin/phpstan analyse --configuration=phpstan.neon --no-progress --error-format=json '
                 .escapeshellarg($path).' 2>&1',
             $output,
             $status,
@@ -85,6 +87,16 @@ final class Allowed
 PHP);
         [$status, , $output] = $analyse($allowed);
         expect($status)->toBe(0, $output);
+
+        foreach (['@phpstan-var', '@psalm-var'] as $annotation) {
+            $typedOverride = $directory.'/'.substr($annotation, 1).'.php';
+            file_put_contents($typedOverride, "<?php\nfinal class TypedOverride {\n    public function override(): void {\n        /** {$annotation} string \$value */\n        \$value = 'value';\n    }\n}\n");
+            [$status, $result, $output] = $analyse($typedOverride);
+            $messages = $result['files'][$typedOverride]['messages'] ?? [];
+            expect($status)->toBe(1, $output)
+                ->and($messages)->toHaveCount(1)
+                ->and($messages[0]['identifier'])->toBe('orbit.inlineVarOverride');
+        }
 
         $outsideMethod = $directory.'/outside-method.php';
         file_put_contents($outsideMethod, <<<'PHP'
@@ -206,6 +218,35 @@ PHP);
     }
 });
 
+it('recursively checks nested test files with the exact CI invocation', function (): void {
+    $project = dirname(__DIR__, 3);
+    $directory = $project.'/tests/.classification-fakes-'.bin2hex(random_bytes(6));
+    $nested = $directory.'/Deep';
+    mkdir($nested, 0777, true);
+    $fixture = $nested.'/NestedFakeTest.php';
+    $check = static function () use ($project): Process {
+        $process = new Process(['php', '../../bin/check-classification-fakes', 'tests'], $project);
+        $process->run();
+
+        return $process;
+    };
+
+    try {
+        file_put_contents($fixture, "<?php\nuse Laravel\\Ai\\Classification;\nClassification::fake();\n");
+        $unguarded = $check();
+        expect($unguarded->getExitCode())->toBe(1)
+            ->and($unguarded->getErrorOutput())->toContain('NestedFakeTest.php', 'preventStrayClassifications');
+
+        file_put_contents($fixture, "<?php\nuse Laravel\\Ai\\Classification;\nClassification::fake()->preventStrayClassifications();\n");
+        $guarded = $check();
+        expect($guarded->getExitCode())->toBe(0, $guarded->getErrorOutput());
+    } finally {
+        unlink($fixture);
+        rmdir($nested);
+        rmdir($directory);
+    }
+});
+
 it('reports method-body var overrides while allowing declaration docblocks', function (): void {
     $directory = sys_get_temp_dir().'/orbit-method-body-var-'.bin2hex(random_bytes(8));
     mkdir($directory, 0777, true);
@@ -237,7 +278,7 @@ PHP);
 
     try {
         exec(
-            './vendor/bin/phpstan analyse --configuration=phpstan.neon --no-progress --error-format=json '
+            'PAO_DISABLE=1 ./vendor/bin/phpstan analyse --configuration=phpstan.neon --no-progress --error-format=json '
                 .escapeshellarg($fixture).' 2>&1',
             $output,
             $status,
@@ -256,7 +297,7 @@ PHP);
 
         $existingSource = realpath(__DIR__.'/../../Support/LifecycleSshExecutor.php');
         exec(
-            './vendor/bin/phpstan analyse --configuration=phpstan.neon --no-progress --error-format=json '
+            'PAO_DISABLE=1 ./vendor/bin/phpstan analyse --configuration=phpstan.neon --no-progress --error-format=json '
                 .escapeshellarg($existingSource).' 2>&1',
             $sourceOutput,
         );

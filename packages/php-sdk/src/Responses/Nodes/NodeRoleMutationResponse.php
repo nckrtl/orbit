@@ -172,11 +172,9 @@ final readonly class NodeRoleMutationResponse
      */
     private static function stringKeyedArray(array $value): array
     {
-
         $result = [];
 
         foreach ($value as $key => $item) {
-
             if (! is_string($key)) {
                 continue;
             }

@@ -17,7 +17,6 @@ final class ResolveDirectoryInstanceController extends Controller
 {
     public function __invoke(ResolveDirectoryInstanceRequest $request, ResolveDirectoryInstanceAction $action): JsonResponse
     {
-
         $consumer = $request->user();
         abort_unless($consumer instanceof Node, 401);
 

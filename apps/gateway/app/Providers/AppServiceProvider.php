@@ -870,7 +870,6 @@ final class AppServiceProvider extends ServiceProvider
 
     public function boot(ActivityPropertiesObserver $activityPropertiesObserver): void
     {
-
         $cache = config('cache');
         if (! is_array($cache)) {
             throw new \UnexpectedValueException('The Gateway cache configuration is invalid.');

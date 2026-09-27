@@ -125,7 +125,6 @@ final class T3WebSocket
                     if (! is_array($payload)) {
                         throw new LogicException('Invalid WebSocket message.');
                     }
-
                     $this->messages[] = $payload;
                 }
 

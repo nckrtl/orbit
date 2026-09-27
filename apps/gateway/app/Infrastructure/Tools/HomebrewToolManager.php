@@ -366,7 +366,6 @@ final readonly class HomebrewToolManager implements ToolManager
         }
 
         try {
-
             $decoded = json_decode($result->stdout, flags: JSON_THROW_ON_ERROR);
         } catch (JsonException $exception) {
             throw new ToolManagerException(
@@ -394,13 +393,9 @@ final readonly class HomebrewToolManager implements ToolManager
         }
 
         $name = $formula->name ?? null;
-
         $fullName = $formula->full_name ?? null;
-
         $tap = $formula->tap ?? null;
-
         $versions = $formula->versions ?? null;
-
         $bottle = $formula->bottle ?? null;
 
         if (
@@ -415,9 +410,7 @@ final readonly class HomebrewToolManager implements ToolManager
         }
 
         $stableVersion = $versions->stable ?? null;
-
         $hasBottle = $versions->bottle ?? null;
-
         $stableBottle = $bottle->stable ?? null;
 
         if (! is_string($stableVersion) || ! $this->isSafeVersion($stableVersion) || $hasBottle !== true) {
@@ -437,7 +430,6 @@ final readonly class HomebrewToolManager implements ToolManager
         }
 
         $sha256 = $file->sha256 ?? null;
-
         $url = $file->url ?? null;
 
         if (

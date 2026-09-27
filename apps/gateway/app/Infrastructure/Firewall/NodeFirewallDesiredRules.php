@@ -41,7 +41,6 @@ final readonly class NodeFirewallDesiredRules
             ->get();
 
         foreach ($assignments as $assignment) {
-
             try {
                 foreach ($this->catalog->forRole($node, $assignment->role) as $rule) {
                     $rows[] = new DesiredFirewallRule(

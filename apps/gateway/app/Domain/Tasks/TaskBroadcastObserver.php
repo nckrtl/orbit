@@ -33,7 +33,6 @@ final readonly class TaskBroadcastObserver
 
     public function updated(Model $model): void
     {
-
         $columns = array_keys($model->getChanges());
 
         match (true) {

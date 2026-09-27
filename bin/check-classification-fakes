@@ -205,34 +205,54 @@ function classification_significant_tokens(array $tokens): array
     ));
 }
 
-$failed = false;
-foreach (array_slice($argv, 1) as $path) {
-    if (! is_file($path) || pathinfo($path, PATHINFO_EXTENSION) !== 'php') {
-        continue;
+/** @return list<string> */
+function classification_php_files(string $path): array
+{
+    if (is_file($path)) {
+        return pathinfo($path, PATHINFO_EXTENSION) === 'php' ? [$path] : [];
+    }
+    if (! is_dir($path)) {
+        return [];
     }
 
-    $source = file_get_contents($path);
-    if (! is_string($source)) {
-        fwrite(STDERR, "Cannot read {$path}.\n");
-        $failed = true;
-        continue;
-    }
-
-    $tokens = [];
-    foreach (token_get_all($source) as $token) {
-        if (is_array($token)) {
-            [$id, $text, $line] = $token;
-            $tokens[] = [$id, $text, $line];
-        } else {
-            $tokens[] = [null, $token, 1];
+    $files = [];
+    $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS));
+    foreach ($iterator as $file) {
+        if ($file->isFile() && $file->getExtension() === 'php') {
+            $files[] = $file->getPathname();
         }
     }
-    $tokens = classification_significant_tokens($tokens);
+    sort($files);
 
-    $violation = classification_fake_violation($path, $tokens);
-    if ($violation !== null) {
-        fwrite(STDERR, $violation."\n");
-        $failed = true;
+    return $files;
+}
+
+$failed = false;
+foreach (array_slice($argv, 1) as $input) {
+    foreach (classification_php_files($input) as $path) {
+        $source = file_get_contents($path);
+        if (! is_string($source)) {
+            fwrite(STDERR, "Cannot read {$path}.\n");
+            $failed = true;
+            continue;
+        }
+
+        $tokens = [];
+        foreach (token_get_all($source) as $token) {
+            if (is_array($token)) {
+                [$id, $text, $line] = $token;
+                $tokens[] = [$id, $text, $line];
+            } else {
+                $tokens[] = [null, $token, 1];
+            }
+        }
+        $tokens = classification_significant_tokens($tokens);
+
+        $violation = classification_fake_violation($path, $tokens);
+        if ($violation !== null) {
+            fwrite(STDERR, $violation."\n");
+            $failed = true;
+        }
     }
 }
 

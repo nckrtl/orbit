@@ -144,7 +144,6 @@ final readonly class LegacyRetirement
                 $inventory->preserved,
             );
         }
-
         $completedMap = $this->entryMap($completed);
 
         foreach ($this->quarantineMutationTargets($targets) as $target) {
@@ -207,11 +206,9 @@ final readonly class LegacyRetirement
 
         $orderedTargets = $this->orderedTargets($manifest->targets);
         $deleted = $resume === null ? [] : $this->resumeDeleteEntries($resume, $manifest);
-
         $deletedMap = $this->entryMap($deleted);
 
         foreach ($orderedTargets as $target) {
-
             $kind = $target['kind'];
             $resource = $target['observed'];
             if (! is_string($kind) || ! is_array($resource)) {
@@ -479,7 +476,6 @@ final readonly class LegacyRetirement
         if (! is_string($kind) || ! is_array($resource)) {
             throw new RuntimeException('The quarantine target is invalid.');
         }
-
         $requested = $preserved;
         $requested[$kind][] = $resource;
 
@@ -643,10 +639,8 @@ final readonly class LegacyRetirement
 
         $mutableTargets = $this->quarantineMutationTargets($journalManifest->targets);
         $allowed = $this->allowedEntryMap($mutableTargets);
-
         $completed = $this->validatedJournalEntries($resume['completed'] ?? null, $allowed);
         $pending = $this->validatedPendingEntry($resume['pending'] ?? null, $allowed, $completed);
-
         $pending = $pending;
         $completedMap = $this->entryMap($completed);
         $observed = $this->liveObservation($this->requestedResources(
@@ -729,10 +723,8 @@ final readonly class LegacyRetirement
 
         $manifestTargets = $manifest->targets;
         $allowed = $this->allowedEntryMap($manifestTargets);
-
         $completed = $this->validatedJournalEntries($resume['completed'] ?? null, $allowed);
         $pending = $this->validatedPendingEntry($resume['pending'] ?? null, $allowed, $completed);
-
         $pending = $pending;
         $completedMap = $this->entryMap($completed);
         $observed = $this->liveObservation($this->requestedResources($manifest->targets, $manifest->preserved));
@@ -791,7 +783,6 @@ final readonly class LegacyRetirement
      */
     private function requestedResources(array $targets, array $preserved): array
     {
-
         $requested = $preserved;
         foreach ($targets as $target) {
             $kind = $target['kind'] ?? null;
@@ -804,7 +795,6 @@ final readonly class LegacyRetirement
                     throw new RuntimeException('The recovery target is invalid.');
                 }
             }
-
             $resources = $requested[$kind] ?? [];
             $resources[] = $resource;
             $requested[$kind] = $resources;
@@ -964,13 +954,11 @@ final readonly class LegacyRetirement
             ) {
                 throw new RuntimeException('The recovery journal is invalid.');
             }
-
             $key = $entry['kind']."\0".$entry['identity'];
             if (! isset($allowed[$key]) || isset($seen[$key])) {
                 throw new RuntimeException('The recovery journal is invalid.');
             }
             $seen[$key] = true;
-
             $entries[] = $entry;
         }
 
@@ -996,9 +984,7 @@ final readonly class LegacyRetirement
         ) {
             throw new RuntimeException('The recovery journal is invalid.');
         }
-
         $key = $value['kind']."\0".$value['identity'];
-
         $completedMap = $this->entryMap($completed);
         if (! isset($allowed[$key]) || isset($completedMap[$key])) {
             throw new RuntimeException('The recovery journal is invalid.');

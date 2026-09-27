@@ -23,9 +23,7 @@ final class ClusterNodeData extends Data
 
     public static function fromModel(Node $node): self
     {
-
         $wireguardIp = $node->getAttribute('wireguard_ip');
-
         $lanIp = $node->getAttribute('lan_ip');
 
         return new self(

@@ -30,7 +30,7 @@ final class StoreProcessRequest extends FormRequest
             ],
             'preset' => ['sometimes', Rule::in(ProcessPresets::names())],
             'runtime' => [$this->has('preset') ? 'missing' : 'required', Rule::enum(ProcessRuntime::class)],
-            'command' => [$this->has('preset') ? 'missing' : 'required', 'array', 'list', 'min:1', 'max:64'],
+            'command' => [$this->has('preset') ? 'missing' : 'required', 'array', 'min:1', 'max:64'],
             'command.*' => ['string', 'max:4096', 'not_regex:/[\x00\r\n]/'],
             'image' => [
                 'required_if:runtime,docker',
@@ -108,7 +108,9 @@ final class StoreProcessRequest extends FormRequest
         $validated = $this->validated();
         $command = isset($validated['preset'])
             ? ProcessPresets::command($this->string('preset')->toString())
-            : ValidatedData::stringList($validated['command'] ?? null);
+            : ValidatedData::stringList(array_values(is_array($validated['command'] ?? null)
+                ? $validated['command']
+                : []));
         $environment = is_array($validated['environment'] ?? null)
             ? ValidatedData::stringMap($validated['environment'])
             : [];

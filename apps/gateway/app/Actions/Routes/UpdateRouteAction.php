@@ -163,7 +163,6 @@ final readonly class UpdateRouteAction
 
     private function replacePending(Route $route, string $domain): Route
     {
-
         $replacement = DB::transaction(function () use ($route, $domain): Route {
             $locked = Route::query()->with('targets')->lockForUpdate()->findOrFail($route->id);
 

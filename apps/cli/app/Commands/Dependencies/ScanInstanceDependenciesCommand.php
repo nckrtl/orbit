@@ -66,7 +66,6 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
                 : $selector->resolveDomain($connector, $app));
             $progress->complete('target', ProgressState::Success, "Instance #{$target->instanceId}");
             $progress->admit('scan', 'Scan dependencies', 'Scanning dependencies', 'Scanned dependencies');
-
             $result = $progress->during('scan', fn () => $this->sendOrThrow(
                 $connector, new ScanInstanceDependenciesRequest($target->instanceId), InstanceDependencyInventoryResponse::class,
             ));
@@ -112,7 +111,6 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
             $scan = $this->progressDisplay("Scan instance #{$instance->id}");
             $scan->admit('scan', 'Scan dependencies', 'Scanning dependencies', 'Scanned dependencies');
             try {
-
                 $result = $scan->during('scan', fn () => $this->sendOrThrow(
                     $connector, new ScanInstanceDependenciesRequest($instance->id), InstanceDependencyInventoryResponse::class,
                 ));

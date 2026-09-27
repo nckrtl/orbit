@@ -16,7 +16,6 @@ abstract class ProcessCommand extends GatewayCommand
      */
     protected function sanitizedProcessPayload(array $payload): array
     {
-
         $runtimeConfig = $payload['runtime_config'] ?? null;
 
         if (! is_array($runtimeConfig)) {

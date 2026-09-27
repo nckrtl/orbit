@@ -271,13 +271,7 @@ final readonly class PiDriver implements AgentDriver
             }
         });
 
-        $sanitized = new CommandActivityInputSanitizer()->sanitizeProperties($data);
-        $result = [];
-        foreach ($sanitized as $key => $value) {
-            $result[$key] = $value;
-        }
-
-        return $result;
+        return new CommandActivityInputSanitizer()->sanitizeProperties($data);
     }
 
     /** @param array<array-key, mixed> $data

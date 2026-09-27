@@ -122,7 +122,6 @@ final readonly class AppDefinitionJsonInspector
 
     private function hasDuplicateObjectKeys(#[\SensitiveParameter] string $json): bool
     {
-
         $stack = [];
         $length = strlen($json);
 

@@ -82,9 +82,7 @@ final readonly class OpenSslGatewayCertificateValidator
             '-noout',
             '-dates',
         ], timeout: 60.0));
-
         $notBefore = [];
-
         $notAfter = [];
 
         if (

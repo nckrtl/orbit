@@ -51,7 +51,6 @@ final readonly class PhpRuntimeInventory
     /** @param array<array-key, mixed> $runtimes */
     public static function pcovRequired(array $runtimes): self
     {
-
         return new self($runtimes, true);
     }
 

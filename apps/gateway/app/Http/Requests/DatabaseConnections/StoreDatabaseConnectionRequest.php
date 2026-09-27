@@ -34,7 +34,6 @@ final class StoreDatabaseConnectionRequest extends FormRequest
 
     public function payload(): AddDatabaseConnectionData
     {
-
         $validated = $this->validated();
 
         return new AddDatabaseConnectionData(

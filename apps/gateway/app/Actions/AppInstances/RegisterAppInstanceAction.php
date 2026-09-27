@@ -756,7 +756,6 @@ final readonly class RegisterAppInstanceAction
             ->where('registration_original_path', $primary->path)
             ->value('registration_request_id');
         $requestId = is_string($retainedRequestId) ? $retainedRequestId : (string) Str::uuid();
-
         $proposals = [];
         $names = [];
         $destinations = [];

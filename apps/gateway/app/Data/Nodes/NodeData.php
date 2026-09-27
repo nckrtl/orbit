@@ -41,27 +41,16 @@ final class NodeData extends Data
 
     public static function fromModel(Node $node): self
     {
-
         $platform = $node->getAttribute('platform');
-
         $architecture = $node->getAttribute('architecture');
-
         $tld = $node->getAttribute('tld');
-
         $wireguardIp = $node->getAttribute('wireguard_ip');
-
         $lanIp = $node->getAttribute('lan_ip');
-
         $wireguardPublicKey = $node->getAttribute('wireguard_public_key');
-
         $wireguardEndpointOverride = $node->getAttribute('wireguard_endpoint_override');
-
         $dnsServerOverride = $node->getAttribute('dns_server_override');
-
         $sshHostFingerprint = $node->getAttribute('ssh_host_fingerprint');
-
         $failedStep = $node->getAttribute('failed_step');
-
         $errorCode = $node->getAttribute('error_code');
 
         return new self(

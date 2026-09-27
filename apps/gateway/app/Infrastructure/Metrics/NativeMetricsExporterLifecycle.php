@@ -108,7 +108,6 @@ final readonly class NativeMetricsExporterLifecycle implements MetricsExporterLi
      */
     private function mutateFleet(Node $metricsNode, Closure $mutation): void
     {
-
         $snapshots = [];
 
         foreach ($this->projection->for($metricsNode) as $item) {

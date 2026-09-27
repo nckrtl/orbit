@@ -64,13 +64,9 @@ final readonly class DocsImpact
         $paths = $this->expandDirectories($paths);
         $paths = array_values(array_unique(array_map($this->normalize(...), $paths)));
         sort($paths);
-        /** @var array<string, array{reasons: list<string>}> $impacts */
         $impacts = [];
-        /** @var list<array{path: string, kind: string, owner: string, reason: string, generator_status: ?string}> $surfaces */
         $surfaces = [];
-        /** @var list<string> $errors */
         $errors = [];
-        /** @var array<string, array{paths: list<string>, names: list<string>}> $generators */
         $generators = [];
         $pages = $this->coveringPages();
         $operations = $this->apiOperations($base);
@@ -432,9 +428,7 @@ final readonly class DocsImpact
                 continue;
             }
             $children = $this->git(['ls-files', '--', $path]);
-            $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($absolute, \FilesystemIterator::SKIP_DOTS));
-            foreach ($iterator as $file) {
-                /** @var \SplFileInfo $file */
+            foreach ($this->filesUnder($absolute) as $file) {
                 if ($file->isFile()) {
                     $children[] = $path.'/'.substr($file->getPathname(), strlen($absolute) + 1);
                 }
@@ -1097,7 +1091,6 @@ final readonly class DocsImpact
             default => ['--check'],
         };
         $command = implode(' ', array_map(escapeshellarg(...), [$script, ...$arguments]));
-        /** @var list<string> $output */
         $output = [];
         exec('cd '.escapeshellarg($this->root).' && '.$command.' 2>&1', $output, $status);
 
@@ -1172,7 +1165,10 @@ final readonly class DocsImpact
                     if (! in_array($key, $navigationKeys, true) || isset($operations[$key])) {
                         continue;
                     }
-                    /** @var array<string, mixed> $operation */
+                    $operation = $this->stringKeyedArray($operation);
+                    if ($operation === null) {
+                        continue;
+                    }
                     $operations[$key] = ['key' => $key, 'path' => $uri, 'operations' => $operation];
                 }
             }
@@ -1223,7 +1219,6 @@ final readonly class DocsImpact
         }
 
         $basename = pathinfo($path, PATHINFO_FILENAME);
-        /** @var array<string, list<string>> $controllerActions */
         $controllerActions = [];
         if (str_contains($path, '/Controllers/Api/')) {
             $controllerActions[$basename] = [];
@@ -1240,7 +1235,6 @@ final readonly class DocsImpact
             }
         }
 
-        /** @var list<array{path: string, methods: list<string>, controller: ?string, action: ?string}> $routeTokens */
         $routeTokens = [];
         $sdkRequest = str_starts_with($path, 'packages/php-sdk/src/Requests/');
         if ($sdkRequest) {
@@ -1661,6 +1655,34 @@ final readonly class DocsImpact
         return array_values(array_unique($matches[1]));
     }
 
+    /** @return \Generator<int, \SplFileInfo> */
+    private function filesUnder(string $directory): \Generator
+    {
+        $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($directory, \FilesystemIterator::SKIP_DOTS));
+        foreach ($iterator as $file) {
+            if ($file instanceof \SplFileInfo) {
+                yield $file;
+            }
+        }
+    }
+
+    /** @return array<string, mixed>|null */
+    private function stringKeyedArray(mixed $value): ?array
+    {
+        if (! is_array($value)) {
+            return null;
+        }
+        $result = [];
+        foreach ($value as $key => $item) {
+            if (! is_string($key)) {
+                return null;
+            }
+            $result[$key] = $item;
+        }
+
+        return $result;
+    }
+
     /** @param list<string> $args */
     private function gitAllowMissing(array $args): ?string
     {
@@ -1677,7 +1699,6 @@ final readonly class DocsImpact
     private function git(array $args): array
     {
         $command = 'git -C '.escapeshellarg($this->root).' '.implode(' ', array_map(escapeshellarg(...), $args)).' 2>/dev/null';
-        /** @var list<string> $output */
         $output = [];
         exec($command, $output, $status);
         if ($status !== 0) {

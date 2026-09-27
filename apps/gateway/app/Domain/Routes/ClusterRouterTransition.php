@@ -34,7 +34,6 @@ final readonly class ClusterRouterTransition
             ->whereNotNull('cluster_id')
             ->orderBy('id')
             ->get();
-
         $active = $rows
             ->filter(static fn (NodeRole $row): bool => $row->status === LifecycleStatus::Active)
             ->keyBy('cluster_id');

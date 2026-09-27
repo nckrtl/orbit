@@ -44,7 +44,6 @@ final readonly class TopLevelJsonObjectInspector
         }
 
         try {
-
             $payload = json_decode($json, associative: true, flags: JSON_THROW_ON_ERROR);
         } catch (JsonException) {
             $this->fail('The request body must be a valid JSON object.');

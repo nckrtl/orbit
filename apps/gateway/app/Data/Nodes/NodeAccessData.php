@@ -23,13 +23,11 @@ final class NodeAccessData extends Data
 
     public static function fromModel(Node $node): self
     {
-
         $canAccess = $node
             ->accessibleNodes
             ->map(NodeAccessNodeData::fromModel(...))
             ->values()
             ->all();
-
         $accessibleBy = $node
             ->accessingNodes
             ->map(NodeAccessNodeData::fromModel(...))

@@ -102,11 +102,8 @@ final readonly class ProofInputManifest
         ) {
             throw new InvalidArgumentException('The proof-input manifest schema is invalid.');
         }
-
         $featureRuntimePaths = $value['feature_runtime_paths'];
-
         $staticInputs = $value['static_inputs'];
-
         $extraInputs = $value['proof_contract']['extra_inputs'];
 
         $completeness = SerializedArrays::proofCompleteness($value['completeness']);

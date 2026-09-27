@@ -223,7 +223,6 @@ final readonly class PrometheusNodeMetricsMapper
      */
     private static function groupDisks(array $response): array
     {
-
         $raw = [];
 
         foreach (self::vector($response) as $sample) {
