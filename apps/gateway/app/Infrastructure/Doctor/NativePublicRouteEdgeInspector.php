@@ -87,6 +87,29 @@ final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeIn
                         else
                             printf 'tls=0\n'
                         fi
+                        # Inspect the certificate actually served on the public listener. Caddy's storage
+                        # layout is deliberately not assumed; the listener is the source of truth. Use only
+                        # Ubuntu's packaged Mozilla roots, not the system trust bundle, which includes local roots.
+                        public_roots=$(mktemp)
+                        trap 'rm -f -- "$public_roots"' EXIT
+                        if [ -d /usr/share/ca-certificates/mozilla ]; then
+                            find /usr/share/ca-certificates/mozilla -type f -name '*.crt' -exec cat {} + > "$public_roots"
+                        fi
+                        served=$(timeout 10 openssl s_client -connect 127.0.0.1:443 -servername "$domain" \
+                            -verify_hostname "$domain" -verify_return_error -showcerts \
+                            -CAfile "$public_roots" -no-CApath -no-CAstore </dev/null 2>&1 || true)
+                        certificate=$(printf '%s\n' "$served" | awk '
+                            /-----BEGIN CERTIFICATE-----/ { cert = 1 }
+                            cert { print }
+                            /-----END CERTIFICATE-----/ && cert { exit }
+                        ')
+                        if [ -z "$certificate" ] || ! printf '%s\n' "$served" | grep -Fq 'Verify return code: 0 (ok)'; then
+                            printf 'certificate=missing\n'
+                        elif ! printf '%s\n' "$certificate" | openssl x509 -noout -checkend 2592000 >/dev/null 2>&1; then
+                            printf 'certificate=expiring\n'
+                        else
+                            printf 'certificate=ok\n'
+                        fi
                         # The Ingress must reach every private address the public site forwards to. A composed
                         # site that serves the Instance directly forwards nowhere and always matches.
                         forwarding=1
@@ -111,14 +134,16 @@ final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeIn
         foreach (explode("\n", trim($result->stdout)) as $line) {
             [$key, $value] = array_pad(explode('=', $line, 2), 2, null);
             if (is_string($key) && is_string($value)) {
-                $values[$key] = $value === '1';
+                $values[$key] = $value;
             }
         }
 
         return new PublicRouteEdgeObservation(
-            ingressProjectionMatches: $values['ingress'] ?? null,
-            privateForwardingMatches: $values['forwarding'] ?? null,
-            publicTlsMatches: $values['tls'] ?? null,
+            ingressProjectionMatches: isset($values['ingress']) ? $values['ingress'] === '1' : null,
+            privateForwardingMatches: isset($values['forwarding']) ? $values['forwarding'] === '1' : null,
+            publicTlsMatches: isset($values['tls'], $values['certificate'])
+                ? $values['tls'] === '1' && $values['certificate'] === 'ok'
+                : null,
             firewallMatches: $firewallMatches,
         );
     }
