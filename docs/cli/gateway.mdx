@@ -37,6 +37,7 @@ orbit gateway:add <gateway> [--name=NAME] [--ca=PATH] [--accept-ca-change] [--us
 | --- | --- | --- |
 | `--name=NAME` | `default` | Local profile name. If the name already exists, a changed CA is refused with `gateway.ca_changed` unless `--accept-ca-change` is passed. |
 | `--ca=PATH` | none | Absolute path to a root CA certificate that the fetched certificate must match. |
+| `--accept-ca-change` | off | Accept a changed CA for an existing profile name after checking the new fingerprint. Does not override a mismatched `--ca` file. |
 | `--use` | off | Make the profile active. |
 
 ```bash

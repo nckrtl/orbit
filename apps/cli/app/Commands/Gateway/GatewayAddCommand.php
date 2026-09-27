@@ -18,6 +18,7 @@ final class GatewayAddCommand extends GatewayCommand
         {gateway : Gateway IP or HTTPS origin}
         {--name=default : Local profile name}
         {--ca= : Path to the Orbit root CA certificate}
+        {--accept-ca-change : Explicitly accept replacement of a pinned gateway root CA}
         {--use : Make this profile active}
         {--json : Return machine-readable JSON}';
 
@@ -80,7 +81,10 @@ final class GatewayAddCommand extends GatewayCommand
         );
 
         try {
-            $result = $trust->trustForRegistration($profile);
+            $result = $trust->trustForRegistration(
+                $profile,
+                $this->option('accept-ca-change') === true,
+            );
 
             if ($this->option('use') === true) {
                 $repository->use($name);

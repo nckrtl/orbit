@@ -51,10 +51,23 @@ final readonly class GatewayRootCaTrustService
         return $result;
     }
 
-    public function trustForRegistration(GatewayProfile $profile): GatewayRootCaTrustResult
-    {
+    public function trustForRegistration(
+        GatewayProfile $profile,
+        bool $acceptCaChange = false,
+    ): GatewayRootCaTrustResult {
         $response = $this->fetchForBootstrap($profile->url);
         $certificate = $this->certificateFrom($response);
+
+        try {
+            $existingProfile = $this->repository->find($profile->name);
+        } catch (Throwable $exception) {
+            throw $this->profilePersistenceFailure($exception, $response->requestId);
+        }
+
+        if ($existingProfile !== null && ! $acceptCaChange) {
+            $this->assertReplacementUnchanged($existingProfile, $certificate, $response->requestId);
+        }
+
         $this->assertReplacementUnchanged($profile, $certificate, $response->requestId);
 
         $result = $this->finish($profile, $certificate, $response->requestId);
