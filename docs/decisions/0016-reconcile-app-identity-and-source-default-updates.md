@@ -11,9 +11,9 @@ description: "Accepted on 2026-09-02."
 Accepted on 2026-09-02.
 
 If accepted, this decision extends the App, AppInstance, and Route ownership
-model in [ADR 0009](/decisions/0009-clustered-app-instance-routing) and the app-prod
+model in [ADR 0009](/reference/routes#set-up-private-traffic) and the app-prod
 placement model in
-[ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement).
+[ADR 0011](/reference/routes#publish-a-public-route).
 Their source, placement, routing, and ownership boundaries otherwise remain in
 force.
 

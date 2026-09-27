@@ -203,6 +203,9 @@ final readonly class HttpGitHubApi implements GitHubApi
             mergeableState: $this->text($response->json('mergeable_state')),
             headSha: $this->text($response->json('head.sha')),
             baseRef: $this->text($response->json('base.ref')),
+            body: is_string($response->json('body')) ? $response->json('body') : null,
+            mergeCommitSha: $this->text($response->json('merge_commit_sha')),
+            mergedAt: $this->text($response->json('merged_at')),
         );
     }
 

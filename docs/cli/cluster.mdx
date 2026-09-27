@@ -1,6 +1,12 @@
 ---
 title: "cluster"
 description: "Group Nodes into a Cluster, give it a development TLD and one Router, and attach or detach member Nodes."
+covers:
+  - apps/cli/app/Commands/Clusters/**
+  - apps/gateway/app/Actions/Clusters/**
+  - apps/gateway/app/Infrastructure/Clusters/**
+  - packages/php-sdk/src/Requests/Clusters/**
+  - packages/php-sdk/src/Responses/Clusters/**
 ---
 
 A Cluster is an optional group of Nodes with one name, at most one development TLD, and one Router. A Node outside a Cluster is standalone. Active membership gives a Node's Project Routes and [analytics tracking hosts](/reference/analytics#publish-a-tracking-host) Cluster scope, so private traffic reaches them through the Router instead of the workload Node directly. [Custom proxy Routes](/reference/routes#custom-proxy-routes) stay on their Node.
@@ -21,9 +27,9 @@ The [Routes reference](/reference/routes) owns domain generation, routing scope,
 | [`cluster:router:unset`](#orbit-clusterrouterunset) | Clear the Router from an inactive Cluster. |
 | [`cluster:destroy`](#orbit-clusterdestroy) | Remove an empty Cluster. |
 
-Every command accepts `--json`. Cluster and Node arguments are explicit numeric IDs. Human lists use uppercase table headers, and one Cluster uses a detail tree. TLDs display with a leading dot; missing values display an em dash. Requests show progress while waiting and retain their Gateway request ID.
+Every command accepts `--json`. Cluster and Node arguments are numeric IDs. The CLI refuses another Cluster value with `cluster.id_invalid`. Human lists use uppercase table headers, and one Cluster uses a detail tree. TLDs display with a leading dot; missing values display an em dash. Requests show progress while waiting and retain their Gateway request ID.
 
-Destructive Cluster commands keep `--force` as their existing consent option. The confirmation names the resolved Cluster and the affected Node when detaching a member. Interactive confirmation starts at No. Declining, Ctrl-C or EOF stops before mutation. A pipe or `--json` never supplies consent and requires `--force`.
+Destructive Cluster commands take `--force` as consent. The confirmation names the resolved Cluster and the affected Node when detaching a member. Interactive confirmation starts at No. Declining, Ctrl-C or EOF stops before mutation. A pipe or `--json` never supplies consent and requires `--force`.
 
 A new Cluster is `inactive`. Membership, name, and TLD can be prepared while it is inactive without changing any traffic. Activating a Cluster that has a TLD, or giving an active Cluster a TLD, is the routing cutover: it requires exactly one active Router and reconciles every affected Route before the change becomes authoritative.
 
@@ -169,7 +175,7 @@ orbit cluster:router:set <cluster> <node>
 orbit cluster:router:set 3 7
 ```
 
-Replacement keeps the current Router active until its replacement is ready, promotes the candidate, and then cleans up the old assignment. Each Cluster has one Router operation owner; a concurrent Router change on the same Cluster waits up to 30 seconds and then receives `cluster.router_busy`. A Node that is not an active member returns `cluster.router_node_invalid`.
+Replacement keeps the current Router active until its replacement is ready, promotes the candidate, and then cleans up the old assignment. Each Cluster has one Router operation owner. A concurrent Router change on the same Cluster waits up to 30 seconds and then fails with `cluster.router_busy`. A replacement that another Router change left unfinished fails with `cluster.router_transition_conflict`. A Node that is not an active member fails with `cluster.router_node_invalid`.
 
 ## orbit cluster:router:unset
 

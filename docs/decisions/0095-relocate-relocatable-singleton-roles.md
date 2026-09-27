@@ -12,11 +12,11 @@ description: "Proposed. node:role:relocate moves relocatable singleton roles, st
 
 Proposed.
 
-This amends [ADR 0090](/decisions/0090-relocate-the-gateway-role-independently-of-vpn)'s "only gateway is accepted" rule and [ADR 0087](/decisions/0087-run-reverb-through-a-websocket-role)'s add-then-remove move. It keeps the verb `relocate` from [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk). It does not change [ADR 0061](/decisions/0061-use-vpn-dns-by-default-on-managed-peers) or make `vpn` relocatable.
+This amends [ADR 0090](/cli/node#a-dedicated-relocate-for-gateway)'s "only gateway is accepted" rule and [ADR 0087](/decisions/0087-run-reverb-through-a-websocket-role)'s add-then-remove move. It keeps the verb `relocate` from [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk). It does not change [ADR 0061](/reference/private-dns#resolver-selection) or make `vpn` relocatable.
 
 ## Context
 
-[ADR 0090](/decisions/0090-relocate-the-gateway-role-independently-of-vpn) added `POST /api/v1/nodes/{node}/roles/{role}/relocate` because remove-then-add is not a safe gateway cutover: the last gateway assignment owns implicit authority and `gateway.orbit`. The action and CLI still hardcoded `gateway`. `websocket` and `metrics` are also mutable singletons. Their node-scoped credentials, publication, and runtime live on the holder. Operators were told to add the role on the new Node and remove it from the old one. Those two commands cannot run as a pair while the singleton assignment still exists, and a remove-first path drops the generated Reverb or Grafana identity.
+[ADR 0090](/cli/node#a-dedicated-relocate-for-gateway) added `POST /api/v1/nodes/{node}/roles/{role}/relocate` because remove-then-add is not a safe gateway cutover: the last gateway assignment owns implicit authority and `gateway.orbit`. The action and CLI still hardcoded `gateway`. `websocket` and `metrics` are also mutable singletons. Their node-scoped credentials, publication, and runtime live on the holder. Operators were told to add the role on the new Node and remove it from the old one. Those two commands cannot run as a pair while the singleton assignment still exists, and a remove-first path drops the generated Reverb or Grafana identity.
 
 The Gateway process is special: relocate must not rsync the serving checkout or stop leftover Caddy and PHP-FPM. Websocket and metrics can converge the destination baseline and retract the source host projection in the same request. Credentials are stored on the Node, so a row transfer without a settings move would generate a new identity on the destination and break clients.
 
@@ -56,6 +56,6 @@ Ops also hits leftover state: the destination already holds the assignment after
 ## Affects
 
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/docs
-- ADRs: amends [ADR 0090](/decisions/0090-relocate-the-gateway-role-independently-of-vpn) and [ADR 0087](/decisions/0087-run-reverb-through-a-websocket-role); keeps the [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk) verb
+- ADRs: amends [ADR 0090](/cli/node#a-dedicated-relocate-for-gateway) and [ADR 0087](/decisions/0087-run-reverb-through-a-websocket-role); keeps the [ADR 0071](/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk) verb
 - Detail: [`node`](/cli/node), [Realtime events with Reverb](/solutions/realtime-reverb), [Metrics](/reference/metrics), [CLI command vocabulary](/reference/cli-command-vocabulary), [Relocate the gateway role](/solutions/relocate-gateway-role)
 - Verify: Gateway RoleRegistry, RelocateNodeRoleAction, node-role API, MCP catalogue, CLI `node:role:relocate`, and PHP SDK transport tests

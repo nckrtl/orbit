@@ -37,7 +37,6 @@ use App\Domain\Tasks\TaskConcurrencyGuard;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupMetricsRefresher;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskPlannerMcp;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestHealth;
 use App\Domain\Tasks\TaskPullRequestPublisher;
@@ -60,6 +59,7 @@ use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadObservation;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
+use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Infrastructure\Tasks\T3\NullT3ThreadReader;
@@ -75,7 +75,7 @@ use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskGroup;
 use Illuminate\Support\Facades\Exceptions;
-use Tests\Support\AcceptingTaskPlannerMcp;
+use Tests\Support\AcceptingTaskWorkspaceMcp;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskRunReceipts;
@@ -83,7 +83,7 @@ use Tests\Support\FakeTaskRunReceipts;
 use function Pest\Laravel\mock;
 
 beforeEach(function (): void {
-    app()->instance(TaskPlannerMcp::class, new AcceptingTaskPlannerMcp);
+    app()->instance(TaskWorkspaceMcp::class, new AcceptingTaskWorkspaceMcp);
 });
 
 function scheduler_app(string $slug): OrbitApp
@@ -533,34 +533,6 @@ it('returns a provisioned group to todo on its Instance when the Node is already
         ->and($queued->fresh()?->status)->toBe(TaskGroupStatus::Todo)
         ->and($queued->fresh()?->taskable_id)->toBe($instance->id)
         ->and($queued->fresh()?->reviewer_agent_thread_id)->toBeNull();
-});
-
-it('keeps a planning group on its workspace while its Node is at the ceiling', function (): void {
-    $app = scheduler_app('planned-app');
-    $node = scheduler_node('planned-full-node', '10.44.0.93');
-    $instance = scheduler_instance($app, $node, 'planned');
-
-    foreach (range(1, TaskCeilings::PerNode) as $index) {
-        $owner = scheduler_app("planned-fill-{$index}");
-        $placed = scheduler_instance($owner, $node, "planned-fill-{$index}");
-        $group = TaskGroup::query()->create([
-            'app_id' => $owner->id,
-            'title' => "Fill {$index}",
-            'brief' => 'Fills the node',
-            'status' => TaskGroupStatus::Reviewing,
-        ]);
-        $group->taskable()->associate($placed);
-        $group->save();
-    }
-
-    $planned = queued_group($app, 'Planned');
-    $planned->update(['plan' => true]);
-    $planned->taskable()->associate($instance);
-    $planned->save();
-
-    expect(app(TaskScheduler::class)->claimNext())->toBeNull()
-        ->and($planned->fresh()?->status)->toBe(TaskGroupStatus::Todo)
-        ->and($planned->fresh()?->taskable_id)->toBe($instance->id);
 });
 
 it('advances a claimed Orbit group to running when the real provisioner and T3 spawner succeed', function (): void {
@@ -1243,7 +1215,7 @@ function scheduler_missing_start_review(?string $approvedCommit, string $startin
     app()->instance(AgentSpawner::class, new TaskAgentSpawner(
         app(AgentDriverRegistry::class),
         new TaskReviewPacketBuilder(app(TaskReviewDiff::class)),
-        app(TaskPlannerMcp::class),
+        app(TaskWorkspaceMcp::class),
     ));
 
     return [$task, $driver];
@@ -1259,12 +1231,9 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
         'title' => 'Fresh reviewers',
         'brief' => 'Each subtask gets its own reviewer.',
         'status' => TaskGroupStatus::Running,
-        'plan' => true,
     ]);
     $group->taskable()->associate($instance);
     $group->save();
-    $planner = test_agent_thread($group, 'planner-thread');
-    $group->update(['reviewer_agent_thread_id' => $planner->id]);
     $approved = Task::query()->create([
         'task_group_id' => $group->id,
         'position' => 1,
@@ -1327,7 +1296,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
     app()->instance(AgentSpawner::class, new TaskAgentSpawner(
         app(AgentDriverRegistry::class),
         new TaskReviewPacketBuilder(app(TaskReviewDiff::class)),
-        app(TaskPlannerMcp::class),
+        app(TaskWorkspaceMcp::class),
     ));
 
     $reviewing = app(TaskScheduler::class)->settleImplementer($first);
@@ -1335,8 +1304,6 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
     $opening = $driver->calls[0]['prompt'];
 
     expect($reviewing->fresh()?->reviewer_agent_thread_id)->toBe($thread->id)
-        ->and($thread->id)->not->toBe($planner->id)
-        ->and($planner->fresh()?->task_id)->toBeNull()
         ->and($driver->calls[0]['title'])->toBe('Orbit task #'.$group->id.' · Review: First review')
         ->and($driver->calls[0]['operation'])->toBe('create')
         ->and($opening)->toContain('Review subtask #'.$first->id.': First review')
@@ -1352,8 +1319,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
         ->and($opening)->toContain('+fresh reviewer')
         ->and($opening)->toContain('git diff '.$start)
         ->and($opening)->toContain('git diff --no-index -- /dev/null "$path" || true')
-        ->and(mb_strlen($opening))->toBeLessThanOrEqual(TaskReviewPacket::Limit)
-        ->and(array_column($driver->calls, 'thread'))->not->toContain('planner-thread');
+        ->and(mb_strlen($opening))->toBeLessThanOrEqual(TaskReviewPacket::Limit);
 
     $first->update(['status' => TaskStatus::Running, 'review_attempt' => $first->fresh()->review_attempt + 1]);
     TaskGroup::query()->whereKey($group->id)->update(['status' => TaskGroupStatus::Running]);
@@ -1429,11 +1395,10 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
     $agents = app(ShowAgentThreadsAction::class)->execute($group->fresh());
     $reviewers = $agents->where('role', 'reviewer')->pluck('id')->all();
 
-    expect($reviewers)->toContain($planner->id)
-        ->and($reviewers)->toContain($thread->id)
+    expect($reviewers)->toContain($thread->id)
         ->and($reviewers)->toContain($replacement?->id)
         ->and($reviewers)->toContain($next->id)
-        ->and($agents->where('role', 'reviewer'))->toHaveCount(4);
+        ->and($agents->where('role', 'reviewer'))->toHaveCount(3);
 });
 
 it('keeps the reviewed pull request, writes settle metrics, and notifies Coder after the last sign-off', function (): void {
@@ -1733,7 +1698,7 @@ function scheduler_approved_subtask(string $slug, bool $last = false, ?string $r
     app()->instance(TaskPullRequestPublisher::class, $publisher);
     app()->instance(TaskBriefCoverage::class, new class implements TaskBriefCoverage
     {
-        public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest): array
+        public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array
         {
             return [];
         }
@@ -1874,7 +1839,7 @@ it('pushes an approved fixup to the existing branch, keeps the pull request, and
     {
         public int $calls = 0;
 
-        public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest): array
+        public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array
         {
             $this->calls++;
 

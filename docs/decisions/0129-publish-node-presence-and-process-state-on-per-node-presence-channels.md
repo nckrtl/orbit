@@ -12,9 +12,9 @@ Each Node agent keeps one WebSocket connection to the existing Reverb server and
 
 Proposed.
 
-Amended by [ADR 0148](/decisions/0148-keep-a-gateway-view-of-node-agent-state), [ADR 0151](/decisions/0151-push-task-and-process-usage-changes-over-realtime), [ADR 0154](/decisions/0154-recover-the-gateway-agent-view-without-a-membership-change), and [ADR 0155](/decisions/0155-authenticate-the-node-agent-with-a-per-node-secret).
+Amended by [ADR 0148](/reference/node-agent#gateway-view), [ADR 0151](/decisions/0151-push-task-and-process-usage-changes-over-realtime), [ADR 0154](/reference/node-agent#rejoin-to-ask-for-a-snapshot), and [ADR 0155](/reference/node-agent#agent-secret).
 
-This extends [ADR 0084](/decisions/0084-broadcast-record-changes-through-reverb). Its rules for the channel, the envelope, and queues stay unchanged for Gateway broadcasts. It adds a second kind of realtime traffic: client events that a Node agent from [ADR 0128](/decisions/0128-run-a-visibility-only-agent-on-managed-nodes) publishes. Reverb stays a plain, unmodified Laravel app, as ADR 0084 and [ADR 0087](/decisions/0087-run-reverb-through-a-websocket-role) require.
+This extends [ADR 0084](/decisions/0084-broadcast-record-changes-through-reverb). Its rules for the channel, the envelope, and queues stay unchanged for Gateway broadcasts. It adds a second kind of realtime traffic: client events that a Node agent from [ADR 0128](/reference/node-agent#the-agent-only-observes) publishes. Reverb stays a plain, unmodified Laravel app, as ADR 0084 and [ADR 0087](/decisions/0087-run-reverb-through-a-websocket-role) require.
 
 ## Context
 
@@ -66,6 +66,6 @@ Reverb facts shape the design:
 ## Affects
 
 - Components: apps/gateway, apps/docs
-- ADRs: extends [ADR 0084](/decisions/0084-broadcast-record-changes-through-reverb) with agent client events; keeps [ADR 0087](/decisions/0087-run-reverb-through-a-websocket-role)'s unmodified Reverb app; transport for [ADR 0128](/decisions/0128-run-a-visibility-only-agent-on-managed-nodes)
+- ADRs: extends [ADR 0084](/decisions/0084-broadcast-record-changes-through-reverb) with agent client events; keeps [ADR 0087](/decisions/0087-run-reverb-through-a-websocket-role)'s unmodified Reverb app; transport for [ADR 0128](/reference/node-agent#the-agent-only-observes)
 - Detail: [Realtime events](/reference/events#node-agent-channels), [Node agent](/reference/node-agent), [Web app](/reference/web-app#live-node-and-process-state)
 - Verify: Gateway tests for the agent endpoints and viewer and agent membership signing; agent protocol tests against a Pusher test server; web app tests for event acceptance, heartbeat timeout, and Prometheus fallback; the agent Incus proof

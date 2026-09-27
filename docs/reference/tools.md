@@ -1,118 +1,121 @@
 ---
 title: "Tools"
-description: "Tool Manager availability, first-use provisioning, installs, Homebrew formulae, removal, and Doctor results for packages on a Node."
+description: "Where Tools run, the four Tool Managers, how Orbit installs, updates, and removes one package, and why the contract stays closed."
+covers:
+  - apps/gateway/app/Actions/Tools/**
+  - apps/gateway/app/Domain/Tools/**
+  - apps/gateway/app/Infrastructure/Tools/**
+  - apps/gateway/app/Models/{Tool,ToolManagerRecord}.php
+  - apps/gateway/app/Data/Tools/**
+  - apps/gateway/app/Http/Controllers/Api/{ToolsController,ToolManagersController}.php
+  - apps/gateway/app/Http/Requests/Tools/**
+  - apps/gateway/app/Actions/Doctor/ToolDoctorProbe.php
 ---
 
 # Tools
 
-This reference is for operators who manage packages on Nodes and need to understand Tool Manager availability, first-use provisioning, retries, removal, and Doctor results.
+A Tool is one package that Orbit manages on one Node through one Tool Manager. The Node, the manager, and the package name identify it. Orbit records only the Tools it installed. It never scans a Node for packages and never adopts one. [`tool`](/cli/tool) lists the commands.
 
-## Choose a Tool Manager
+## Where Tools run
 
-Orbit exposes its code-owned Tool Managers on active Ubuntu 26.04 Nodes that the Gateway manages over Secure Shell (SSH). A Node role can require a manager during role convergence, but the role does not own the manager or its Tools. [ADR 0042](/decisions/0042-provision-tool-managers-on-demand) defines the management boundary.
+The Gateway manages Tools only on an active Node that it manages over SSH. That Node runs Linux, has a WireGuard address, and has a stored SSH host fingerprint. Any other Node gets `tool.node_inactive` or `tool.node_unmanaged` (HTTP 409) before the Gateway changes anything.
 
-List every manager supported for a Node before choosing one.
+Tool Managers do not belong to roles. A Node with no role can use every manager.
 
-```bash
-orbit tool:manager:list --node=<node-id>
-```
+## Tool Managers
 
-The command reports a nullable manager ID and one of these lifecycle states.
+The Gateway has four managers, fixed in code.
 
-| Status | Meaning |
+| Manager | Package | Scope on the Node | Installed |
+| --- | --- | --- | --- |
+| `apt` | An Ubuntu package name | The Node's package database | When `node:add` converges the Node |
+| `vp` | An npm package name, such as `@openai/codex` | Orbit's shared Vite+ global scope | On first use, or when `app-dev` or `app-prod` converges |
+| `composer` | A `vendor/package` name | Orbit's shared Composer global scope | On first use, or when `app-dev` or `app-prod` converges |
+| `brew` | One Homebrew Core formula name | The Homebrew prefix `/home/linuxbrew/.linuxbrew` | On first use |
+
+`orbit tool:manager:list --node=<id>` shows each manager with one of these states.
+
+| State | Meaning |
 | --- | --- |
-| `uninstalled` | Orbit supports the manager on the Node, but the manager has no persisted state and its software is not available yet. |
-| `provisioning` | Orbit is installing or verifying the manager and its protected prerequisites. |
-| `active` | The manager is available for Tool operations. |
-| `failed` | Manager provisioning or verification failed and the next install can retry it. |
+| `uninstalled` | The Node supports the manager, but Orbit has not installed it yet. It has no ID. |
+| `provisioning` | Orbit installs or checks the manager. |
+| `active` | The manager is ready. |
+| `failed` | Installing or checking the manager failed. The record keeps the failed step and error code. The next install tries again. |
 
-An `uninstalled` manager has no database ID. Persisted manager rows use their database ID and retain bounded failure fields when provisioning fails.
-
-The supported managers have these scopes.
-
-| Manager | Package scope | Availability |
-| --- | --- | --- |
-| `apt` | The Node's Advanced Package Tool package database | Materialized with the managed Node baseline |
-| `vp` | Orbit's shared Vite+ global package scope on the Node | Materialized on first use or when a role requires it |
-| `composer` | Orbit's shared Composer global package scope on the Node | Materialized on first use or when a role requires it |
-| `brew` | Orbit's shared Homebrew prefix at `/home/linuxbrew/.linuxbrew` | Materialized or recognized on first use |
-
-[ADR 0001](/decisions/0001-tool-management) defines Tool ownership and caller input. [ADR 0042](/decisions/0042-provision-tool-managers-on-demand) defines manager availability and role independence.
+Before each install, the Gateway converges the manager: it installs the manager when it is missing and checks its version. A failure returns `tool.manager_provision_failed` (HTTP 502), keeps the manager `failed`, and creates no Tool. A manager stays installed after its last Tool is removed. No command removes a manager.
 
 ## Install a Tool
 
-Install one manager-native package by naming its manager and target Node.
+A caller sends only the Node, the manager, the package name, and an optional version constraint. Each manager checks the package name against its own grammar and builds a fixed command with the name in one argument position. A caller cannot send commands, options, repositories, or environment values.
 
-```bash
-orbit tool:install <package> --manager=<manager> --node=<node-id>
-```
+The Gateway refuses a package that is already on the Node without a Tool record, with `tool.already_installed_unmanaged` (HTTP 409). It never takes over a package that someone else installed.
 
-When the selected manager is `uninstalled` or `failed`, the Gateway first provisions or retries that manager in its protected scope. A successful provisioning records the manager as `active` before the Gateway changes Tool intent. A failed provisioning returns `tool.manager_provision_failed`, keeps the bounded failure on the manager, and does not create a Tool row. Repeating the same install command retries the manager from live Node state.
+A new install creates the Tool as `installing`, installs the package, and reads the installed version. A success marks the Tool `installed` and reports `applied`. A failure after the Tool exists marks it `failed` and returns its ID in the error, so you can retry or remove it. Running the same install again retries a Tool whose install failed. An install of a Tool that is already `installed`, with the same constraint, checks the package again. When the package is present, the result is `unchanged`.
 
-When an install creates a Tool row and then fails, including `tool.version_probe_failed`, the Gateway and CLI include that Tool ID in the error. Activity for the command identifies the Tool and its target Node.
+The optional constraint is a SemVer range, such as `^0.150`. It only stops an unsafe version. Before an install, the Gateway reads the manager's candidate version. A candidate outside the range fails with `tool.version_constraint_blocked`, and the Gateway installs nothing. The Gateway never searches for another matching version and never downgrades. When a manager's version cannot be read as SemVer, a constrained install fails. A Tool keeps its constraint: installing it again with another constraint fails with `tool.constraint_conflict`.
 
-The Gateway rejects Tool mutations with `tool.node_unmanaged` when the Node is outside Gateway-owned SSH management. Manager installation is independent of the Node's assigned infrastructure roles.
+## Update a Tool
 
-Orbit does not install every registered manager during Node provisioning. A materialized manager remains active after its final Tool is removed, and Orbit exposes no manager-removal command.
+`tool:update` asks the manager for its current candidate and installs it. The result is `applied` when the version changed and `unchanged` when it did not. When the candidate falls outside the stored constraint, the update changes nothing and reports `blocked_by_constraint`. The Tool stays installed.
 
-## Manage a Homebrew formula
+## Homebrew formulae
 
-The `brew` manager accepts one unqualified lowercase formula name from Homebrew Core. Before an install or update, the Gateway resolves the canonical Core formula and requires a stable version with a Linux bottle for the Node architecture and published SHA-256 metadata. Homebrew verifies that bottle while installing it with source builds disabled.
+The `brew` manager accepts one lowercase formula name from Homebrew Core, without a tap prefix. Before an install or update, the Gateway reads the formula's metadata. It requires the `homebrew/core` tap, a stable version, and a bottle for the Node's architecture with a SHA-256 checksum. Homebrew verifies that bottle when it installs it with `--force-bottle`. Orbit never builds a formula from source.
 
-The Gateway provisions Homebrew in `/home/linuxbrew/.linuxbrew` on first use. When that prefix already exists with Orbit ownership, the official Homebrew origin, and a clean working tree, the Gateway fetches the pinned revision and checks it out detached before the same verification a fresh install uses. The Gateway leaves a foreign, conflicted, or unverifiable installation unchanged and keeps the manager in retryable `failed` state. Orbit does not adopt formulae that were already installed without matching Tool intent.
-
-Homebrew input has these limits.
-
-| Input or operation | Result |
+| Input | Result |
 | --- | --- |
-| Unqualified Homebrew Core formula with a compatible Linux bottle | Accepted |
-| Tap-qualified formula, cask, URL, local definition, Git reference, or caller option | Rejected before package mutation |
-| Formula without a compatible bottle | Rejected before package mutation |
-| Source build | Never used |
-| Service or process lifecycle | Outside Tool operations |
+| A Homebrew Core formula with a Linux bottle for the Node | Accepted |
+| A tap-qualified name, a cask, a URL, a local file, or a Git reference | Refused before any change |
+| A formula without a matching bottle | Refused before any change |
 
-An update uses the verified bottle and keeps the installed Tool callable when no newer bottle is available. Removal targets only the recorded formula, does not run dependency autoremove, and retains the active Homebrew manager after the Tool row is deleted. [ADR 0043](/decisions/0043-manage-homebrew-core-formulae) defines the Homebrew source and bottle boundary.
+The Gateway installs Homebrew at a pinned revision. When the prefix already exists, the Gateway accepts it only when the managed user owns it, its origin is the official Homebrew repository, and its working tree is clean. It then checks out the pinned revision. Otherwise it leaves the prefix unchanged and marks the manager `failed`. Tool operations never start or stop a Homebrew service.
 
 ## Remove a Tool
 
-Run the removal command with the Tool ID from a successful install or from a failed install that retained the Tool.
+`tool:remove` removes an `installed` or `failed` Tool.
 
-```bash
-orbit tool:remove <tool-id> [--yes]
-```
+The Gateway first reads the installed version. For `apt`, it then plans the removal with `apt-get --simulate remove` and refuses a plan that removes any other package, with `tool.removal_plan_unsafe`. It removes only the recorded package and never runs an autoremove. After the removal, it reads the version again. A Tool whose package is gone is deleted.
 
-An interactive call prompts for confirmation (defaulting to No); a non-interactive or `--json` call without `--yes` fails with `input.confirmation_required`. Interactive decline, Ctrl-C, or EOF before the removal exits with `input.cancelled` and makes no mutation.
+`apt` removes a package without purging its configuration files. The Gateway treats a package that dpkg lists as removed with only its configuration left as absent.
 
-After consent, the Gateway probes the package before removal unless the Tool is a failed row that never recorded a version, including `tool.version_probe_failed` after install, update, or remove. In that case the Gateway deletes the Tool row without probing a never-proven package. When the package is installed, removal proceeds when accepted under [ADR 0001](/decisions/0001-tool-management)'s Tool-removal contract, and the Gateway probes the package again after manager removal. A successful removal deletes the Tool row.
-
-APT removes the package without purging its configuration files. Dpkg can therefore retain the package record, configuration files, and last package version after the executable files are gone. The Gateway treats that removed package state as absence and deletes the Tool row. [ADR 0001](/decisions/0001-tool-management) defines the package-ownership and exact-removal boundary.
-
-The Gateway returns bounded outcomes for each removal result.
-
-| Condition | Result | Tool row |
+| Condition | Result | Tool record |
 | --- | --- | --- |
-| The package is already absent, including an APT package with retained configuration files | Removal succeeds without another manager removal | Deleted |
-| A failed Tool never recorded a version, including `tool.version_probe_failed` after install, update, or remove | Removal succeeds without probing the package | Deleted |
-| The accepted Tool removal succeeds and the second probe reports absence | Removal succeeds | Deleted |
-| The installed-version probe fails or returns unsafe output on an installed or otherwise proven Tool | `tool.version_probe_failed` | Retained as a retryable failure |
-| The manager removal fails or the package remains installed | `tool.remove_failed` | Retained as a retryable failure |
+| The package is already absent | Success, with no manager command | Deleted |
+| The Tool failed with `tool.version_probe_failed` and never recorded a version | Success, with no probe | Deleted |
+| The removal succeeds and the package is gone | Success | Deleted |
+| The version probe fails on a Tool with a known package | `tool.version_probe_failed` | Kept as `failed` |
+| The removal fails or the package stays | `tool.remove_failed` | Kept as `failed` |
 
-[ADR 0001](/decisions/0001-tool-management) governs removal-plan eligibility and package-set limits.
+Retry the same command with the Tool ID. The Gateway reads the live package state before it acts again.
 
-## Retry a failed removal
+## Errors
 
-Retry the same `tool:remove` command with the retained Tool ID. The Gateway probes live package state before it plans another mutation unless the failed Tool never recorded a version. When the earlier removal already removed the package but dpkg retained its configuration, the retry deletes the Tool row without requiring a manual command on the Node.
+A Tool error carries a stable `code`, a message, and `details` with the `step`, the `outcome`, and the Tool `id` when a Tool exists. The Gateway never stores or returns the raw output of a package manager.
+
+## Locks
+
+Each operation locks its Tool and its manager's scope on the Node. A busy lock fails at once with `tool.operation_locked`. [Per-Node locks](/reference/node-provisioning#per-node-locks) lists every lock and its term.
 
 ## Check removal with Doctor
 
-Run Doctor for the Tool family when you need to verify the Node after removal.
+The `tool` family of [Doctor](/cli/doctor) compares each Tool record with the Node. A record whose package is absent reports `tool.not_installed`. A version that differs from the record reports `tool.version_mismatch`. The report never contains raw dpkg output.
 
-```bash
-orbit doctor --node=<node-id> --family=tool
-```
+## Why it works this way
 
-A retained Tool row for an absent package produces bounded `tool.not_installed` drift. After successful removal deletes that row, Doctor reports the Tool family as healthy when no other Tool finding exists. Doctor never includes the raw dpkg status or retained package version in its report. [Doctor](/cli/doctor#why-it-works-this-way) defines the verify-only and bounded-report boundary.
+These reasons explain the design. Check them before you propose a change.
 
-## Limits
+### A closed manager registry
 
-[ADR 0001](/decisions/0001-tool-management) governs Tool ownership and removal limits. [Doctor](/cli/doctor#why-it-works-this-way) states the Doctor inspection and reporting limits.
+Each manager is code with its own grammar, fixed commands, and tests. So the Tool API cannot run an arbitrary command. Package plugins, per-Tool definitions, generic scripts, and caller-supplied options are rejected alternatives. A new manager needs a new adapter in code.
+
+### Only Tools that Orbit installed
+
+A package on a Node does not prove that Orbit owns it. Adopting a package would let Orbit update or remove software that another actor installed. So Orbit refuses such a package and removes only the exact package it recorded, without autoremove.
+
+### Managers on demand, independent of roles
+
+A manager serves any Node that the Gateway manages. Tying `vp` and `composer` to application roles would make Tools depend on where applications run, and role removal would have to handle unrelated Tools. Installing every manager on every Node is also rejected, because most Nodes need few of them and would carry needless software.
+
+### Bottled Homebrew Core only
+
+Taps, casks, and source builds let a caller choose code that runs on the Node. A bottle from Homebrew Core with a verified checksum keeps the software source fixed. The cost is a smaller package set than Homebrew offers.

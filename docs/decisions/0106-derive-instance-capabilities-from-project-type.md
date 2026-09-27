@@ -10,11 +10,11 @@ description: "Proposed. Project.type is a closed enum that decides whether an In
 
 ## Status
 
-Proposed. Amends [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance) so the one-Route rule applies to web-serving Project types. Amends [ADR 0045](/decisions/0045-isolate-production-php-fpm-by-unix-user) so a dedicated FPM master exists only when the Instance serves PHP. Extends [ADR 0105](/decisions/0105-name-applications-as-project-and-instance).
+Proposed. Amends [ADR 0028](/reference/routes#one-route-per-active-instance) so the one-Route rule applies to web-serving Project types. Amends [ADR 0045](/decisions/0045-isolate-production-php-fpm-by-unix-user) so a dedicated FPM master exists only when the Instance serves PHP. Extends [ADR 0105](/decisions/0105-name-applications-as-project-and-instance).
 
 ## Context
 
-Every active Instance needs exactly one Route ([ADR 0028](/decisions/0028-require-one-route-per-active-appinstance)). That matches a Laravel application that serves HTTP. It does not match the Orbit monorepo or a Laravel package, which must not publish a hostname or keep an idle FPM master.
+Every active Instance needs exactly one Route ([ADR 0028](/reference/routes#one-route-per-active-instance)). That matches a Laravel application that serves HTTP. It does not match the Orbit monorepo or a Laravel package, which must not publish a hostname or keep an idle FPM master.
 
 Type belongs on the Project. Instances of one repository share the same routing and serving contract. A desktop or Vite type is added only when that type needs different behavior.
 
@@ -29,7 +29,7 @@ Existing Projects have no type. The upgrade must assign a value to every row. Ex
 - `laravel-app` is the only web-serving type in this decision. An active `laravel-app` Instance must have exactly one Route. Orbit creates that Route during provisioning and cloning onto app-prod, using the current preview-hostname rule for clones.
 - `monorepo`, `laravel-package`, and `node-package` Instances get no Route by default. An operator may attach a Route only with an explicit domain and a supported serving target (a web root Orbit can publish). Those types may stay active without a Route.
 - A Project root is a normalized path relative to its repository. Package types may use `.` to mean the repository root; web-serving Projects must use a valid relative web root. A package Instance rooted at `.` is not a supported Route target; it needs an explicit relative web root first.
-- Every PHP Instance on an app-prod Node still receives a dedicated Unix user ([ADR 0045](/decisions/0045-isolate-production-php-fpm-by-unix-user) and [ADR 0107](/decisions/0107-key-isolation-and-releases-to-node-role)).
+- Every PHP Instance on an app-prod Node still receives a dedicated Unix user ([ADR 0045](/decisions/0045-isolate-production-php-fpm-by-unix-user) and [ADR 0107](/reference/environment-variables#laravel-mode)).
 - Orbit starts a dedicated FPM master only when that Instance serves PHP. `laravel-app` serves PHP. `laravel-package` and `node-package` do not start idle FPM. A `monorepo` Instance starts FPM only after an explicit supported serving target is attached.
 - The upgrade classifies existing Projects with no nulls:
   - Repository identity `github.com/nckrtl/orbit`, or slug `orbit` with that identity, becomes `monorepo`.
@@ -42,7 +42,7 @@ Existing Projects have no type. The upgrade must assign a value to every row. Ex
 - Keep one Route for every active Instance: rejected because packages and the Orbit monorepo would keep publishing hostnames they do not serve.
 - Store routing and FPM flags on each Instance: rejected because those capabilities belong to the repository kind, not a placement.
 - Add a generic desktop type: rejected because no distinct behavior is defined. `node-package` is included as a type label for a Node package with no web root. It behaves like `laravel-package`. Baseline and handoff behavior that differs for Node packages can key on it. Dependency refresh does not depend on type.
-- Infer type only from current Routes: rejected because [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance) already forced Routes onto non-serving placements.
+- Infer type only from current Routes: rejected because [ADR 0028](/reference/routes#one-route-per-active-instance) already forced Routes onto non-serving placements.
 
 ## Consequences
 
@@ -54,6 +54,6 @@ Existing Projects have no type. The upgrade must assign a value to every row. Ex
 ## Affects
 
 - Components: apps/cli, apps/docs, apps/e2e, apps/gateway, packages/php-sdk
-- ADRs: amends [ADR 0028](/decisions/0028-require-one-route-per-active-appinstance) and [ADR 0045](/decisions/0045-isolate-production-php-fpm-by-unix-user); extends [ADR 0105](/decisions/0105-name-applications-as-project-and-instance)
+- ADRs: amends [ADR 0028](/reference/routes#one-route-per-active-instance) and [ADR 0045](/decisions/0045-isolate-production-php-fpm-by-unix-user); extends [ADR 0105](/decisions/0105-name-applications-as-project-and-instance)
 - Detail: [Projects](/reference/apps), [Routes](/reference/routes), [PHP runtimes](/reference/php-runtime)
 - Verify: `composer docs-lint`; Gateway type, route-constraint, and clone FPM tests

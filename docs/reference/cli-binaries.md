@@ -1,74 +1,62 @@
 ---
 title: "CLI binaries"
-description: "Artifact names, dest paths, builders, and download steps for the Orbit CLI toolbox binary."
+description: "When the standalone orbit binary is built, the artifact names and paths, the builders, and how to download or rebuild one."
+covers:
+  - .github/workflows/orbit-cli-binary.yml
+  - bin/orbit-build-cli-binary
+  - bin/orbit-version
+  - apps/cli/box.json
+  - apps/cli/phpacker/**
 ---
 
 # CLI binaries
 
-Orbit Ops downloads a standalone `orbit` binary and copies it onto Nodes. This page is the artifact contract. It does not describe fleet rollout, node inventory, or upgrade orchestration.
-
-The operator path for the source alpha remains a monorepo checkout. See the [Quickstart](/quickstart). A binary does not replace Gateway source installation. [ADR 0079](/decisions/0079-publish-orbit-cli-binaries-from-github-actions) owns this split.
+The standalone `orbit` binary runs the CLI on a machine without PHP or Composer. It is a client: it calls the Gateway over HTTPS, and it never opens a local SQLite database or queries a database on a Node. The Gateway itself installs from a monorepo checkout, as the [Quickstart](/quickstart) shows. This page describes the artifacts. It does not describe how a binary reaches a Node.
 
 ## When a binary is built
 
-The `Orbit CLI Binary` workflow in `.github/workflows/orbit-cli-binary.yml` runs on every push and pull request that targets `main`, and on `workflow_dispatch`.
+The `Orbit CLI Binary` workflow, `.github/workflows/orbit-cli-binary.yml`, runs on every push and pull request to `main`, and on `workflow_dispatch`.
 
-| Target | Host | Builder invocation | Artifact name | Upload path |
+| Target | Host | Builder | Artifact | File |
 | --- | --- | --- | --- | --- |
 | Linux x86_64 | Hosted `ubuntu-latest` | `bin/orbit-build-cli-binary linux x64 <version>` | `orbit-linux-x64` | `apps/cli/builds/dist/linux/linux-x64` |
 | macOS Apple silicon | mini | `bin/orbit-build-cli-binary mac arm <version>` | `orbit-macos-arm64` | `apps/cli/builds/dist/mac/mac-arm` |
 
-Each upload path is a single executable file, not a directory. The version string comes from `bin/orbit-version` and is `git describe --tags --always --dirty` for that checkout.
+Each artifact is one executable file. The version comes from `bin/orbit-version`, which runs `git describe --tags --always --dirty`. A pull-request run uses the same artifact names. Treat those binaries as packaging checks.
 
-linux-x64 always builds on hosted GitHub Actions. macos-arm64 builds on mini only. Hosted `macos-*` runners do not build this target.
+## mini, the macOS builder
 
-## mini, the macos-arm64 builder
+mini is the Mac ARM Node on the Orbit network: Node name `mini`, WireGuard address `10.44.0.9`, SSH user `nckrtl`. Hosted `macos-*` runners never build this target.
 
-mini is the Mac ARM node on the Orbit mesh.
+The macOS job uses `runs-on: [self-hosted, macOS, ARM64, mini]` and runs only when the repository variable `ORBIT_MINI_RUNNER` is `true`. To enable it, install a GitHub Actions runner on mini with those labels and set the variable. mini must already have PHP 8.5, Composer 2, rsync, and zlib.
 
-| Field | Value |
-| --- | --- |
-| Node name | `mini` |
-| WireGuard address | `10.44.0.9` |
-| SSH user | `nckrtl` |
-
-The GitHub Actions job that builds macos-arm64 uses `runs-on: [self-hosted, macOS, ARM64, mini]`. That job runs only when the repository variable `ORBIT_MINI_RUNNER` equals `true`. This repository does not register that runner or change the fleet.
-
-To enable the job, install a GitHub Actions runner on mini, add the labels `self-hosted`, `macOS`, `ARM64`, and `mini`, and set `ORBIT_MINI_RUNNER` to `true`. Host PHP 8.5, Composer 2, rsync, and zlib must already be on that machine. The job does not install them.
-
-Until the runner is online and the variable is set, GitHub Actions skips the macos-arm64 job. Build on mini over SSH from a host that can reach the mesh.
+Until then, GitHub Actions skips the job. Build on mini over SSH instead, in a checkout of the commit you want:
 
 ```bash
 ssh nckrtl@10.44.0.9
-```
-
-On mini, in a checkout of the commit you want:
-
-```bash
 composer install --working-dir=apps/cli --no-interaction --prefer-dist
 composer install --working-dir=apps/cli/phpacker --no-interaction --prefer-dist
 bin/orbit-build-cli-binary mac arm
 ```
 
-The dest file is `apps/cli/builds/dist/mac/mac-arm`. Orbit Ops owns how that file reaches a Node.
+The result is `apps/cli/builds/dist/mac/mac-arm`.
 
 ## Download an artifact
 
-Open the `Orbit CLI Binary` workflow run for the `main` commit you want. Download the artifact that matches the Node operating system.
+Open the `Orbit CLI Binary` run for the `main` commit you want, and download the artifact for the machine's operating system.
 
 ```bash
+gh run list --repo nckrtl/orbit --workflow "Orbit CLI Binary" --branch main
 gh run download <run-id> --repo nckrtl/orbit --name orbit-linux-x64 --dir /tmp/orbit-cli
 install -m 0755 /tmp/orbit-cli/linux-x64 /usr/local/bin/orbit
 orbit --version
 ```
 
-Replace `orbit-linux-x64` and `linux-x64` with `orbit-macos-arm64` and `mac-arm` when that artifact exists on the run. `gh run list --repo nckrtl/orbit --workflow "Orbit CLI Binary" --branch main` lists recent runs.
+For macOS, use `orbit-macos-arm64` and `mac-arm`, when the run has that artifact.
 
-A pull-request run uses the same artifact names. Treat those binaries as packaging checks, not fleet releases.
+## Build locally
 
-## Local rebuild
-
-From the monorepo root, install the CLI and the isolated PHPacker project, then build one target.
+From the repository root, install the CLI and the separate PHPacker project, then build one target.
 
 ```bash
 composer install --working-dir=apps/cli --no-interaction --prefer-dist
@@ -76,16 +64,33 @@ composer install --working-dir=apps/cli/phpacker --no-interaction --prefer-dist
 bin/orbit-build-cli-binary linux x64
 ```
 
-The builder stages `apps/cli` and `packages/php-sdk`, installs production Composer dependencies, writes `apps/cli/builds/orbit.phar`, and asks PHPacker for PHP 8.5. Host PHP must provide the zlib extension. The command requires Composer, PHP, rsync, and `apps/cli/phpacker/vendor/bin/phpacker`. PHPacker stays in that isolated project because it requires Symfony 7. The GitHub Actions job sets `GITHUB_TOKEN` so PHPacker can read the `php-bin` release list. The builder retries that fetch when GitHub does not answer.
+The builder needs PHP with zlib, Composer, rsync, and `apps/cli/phpacker/vendor/bin/phpacker`. It copies `apps/cli` and `packages/php-sdk` to a temporary directory and installs the production dependencies with `--no-dev`. It builds `apps/cli/builds/orbit.phar` with GZ compression from `apps/cli/box.json`, and then asks PHPacker for a PHP 8.5 binary. PHPacker reads the `php-bin` release list from GitHub. The builder passes `GITHUB_TOKEN` or `GH_TOKEN` to it and tries the build up to four times.
 
-That production install uses `--no-dev`. Laravel Zero keeps `illuminate/http` as a framework require-dev, so a packed binary does not receive Laravel's HTTP client unless the CLI requires the package itself. `realtime:tail` authorizes the Reverb channel with `Http` after the WebSocket connects (`POST /api/v1/broadcasting/auth`). The CLI therefore requires `illuminate/http` as a production dependency and binds `Illuminate\Http\Client\Factory` so that call works on every packed platform. A binary built without that package connects `realtime:tail`, then exits with `Target class [Illuminate\Http\Client\Factory] does not exist`.
-
-Build macos-arm64 on mini. Do not treat a Mach-O file produced on Linux as the contract binary.
+The CLI requires `illuminate/http` as a production dependency and binds `Illuminate\Http\Client\Factory` itself. `realtime:tail` uses Laravel's HTTP client to authorize the Reverb channel after the WebSocket connects. A binary without that package fails there with `Target class [Illuminate\Http\Client\Factory] does not exist`.
 
 ## Limits
 
-Orbit Ops owns how a downloaded file reaches a Node. This repository does not install the binary onto the fleet.
+The binary contract has these limits.
 
-The binary talks to the Gateway over HTTPS. It does not open a local SQLite database or run on-node PDO queries.
+- Only Linux x86_64 and macOS Apple silicon are built. Windows and Linux ARM are not.
+- Orbit does not install the binary on Nodes, track which Node runs which version, or roll out upgrades.
 
-Windows and linux-arm64 are outside this contract.
+## Why it works this way
+
+These reasons explain the design. Check them before you propose a change.
+
+### A separate workflow
+
+Packaging time and artifacts stay out of the quality checks in `ci.yml`, so a packaging failure never hides a test failure, and the reverse.
+
+### Every push, not only tags
+
+A merge to `main` gives a fresh Linux binary right away, without waiting for a release.
+
+### PHPacker in its own project
+
+PHPacker requires Symfony 7, and the CLI uses Symfony 8. As a dev dependency of the CLI, it would force a downgrade. A PHAR alone would still need PHP on the machine.
+
+### A native macOS build on mini
+
+PHPacker can write a Mach-O file on Linux, but only a build on Apple silicon is the native binary. The runner variable keeps the job from waiting forever for a runner that is not there. A hosted job never connects into the Orbit network.

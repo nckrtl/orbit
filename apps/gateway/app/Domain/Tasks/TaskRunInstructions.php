@@ -29,7 +29,7 @@ final readonly class TaskRunInstructions
     public static function reviewer(bool $final = false, array $deliverables = [], ?int $threadId = null): string
     {
         $approve = $final
-            ? 'This is the last subtask. When it meets its brief, end your turn with '.self::command($threadId, '--outcome=approved --summary="What you checked" --pr-summary="One or two sentences about the whole feature" --pr-change="A new feature or behavior change" --pr-breaking="A breaking change"').'. Repeat --pr-change for each change in the feature, and --pr-breaking for each breaking change, or pass --pr-breaking=none.'
+            ? 'This is the last subtask. When it meets its brief, end your turn with '.self::command($threadId, '--outcome=approved --summary="What you checked" --pr-summary="One or two sentences about the whole feature" --pr-change="A new feature or behavior change" --pr-breaking="A breaking change"').'. Repeat --pr-change for each change in the feature, and --pr-breaking for each breaking change, or pass --pr-breaking=none. The change list, summary and breaking list are yours to write: add a missing entry yourself instead of requesting changes.'
             : 'When the subtask meets its brief, end your turn with '.self::command($threadId, '--outcome=approved --summary="What you checked"').'.';
         $reviews = array_values(array_filter($deliverables, static fn (TaskDeliverable $deliverable): bool => $deliverable->type === TaskDeliverableType::Review));
         if ($reviews !== []) {

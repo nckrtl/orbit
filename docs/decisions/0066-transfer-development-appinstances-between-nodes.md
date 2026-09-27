@@ -10,7 +10,7 @@ In the context of development AppInstances that need another Node placement, fac
 
 ## Status
 
-Accepted on 2026-09-13. Extends [ADR 0027](/decisions/0027-adopt-local-git-sources-into-appinstance-ownership), [ADR 0038](/decisions/0038-cascade-appinstance-removal-through-processes-and-schedules), [ADR 0044](/decisions/0044-own-appinstance-environment-configuration-in-orbit), [ADR 0063](/decisions/0063-prefer-active-cluster-tlds-for-generated-routes), and [ADR 0065](/decisions/0065-replace-routes-when-domains-change). Amended by [ADR 0107](/decisions/0107-key-isolation-and-releases-to-node-role): transfer remains an app-dev to app-dev move and preserves configured `APP_ENV` and `APP_DEBUG`.
+Accepted on 2026-09-13. Extends [ADR 0027](/decisions/0027-adopt-local-git-sources-into-appinstance-ownership), [ADR 0038](/decisions/0038-cascade-appinstance-removal-through-processes-and-schedules), [ADR 0044](/reference/environment-variables), [ADR 0063](/reference/routes#select-a-domain-and-scope), and [ADR 0065](/reference/routes#change-an-explicit-domain). Amended by [ADR 0107](/reference/environment-variables#laravel-mode): transfer remains an app-dev to app-dev move and preserves configured `APP_ENV` and `APP_DEBUG`.
 
 ## Context
 
@@ -60,6 +60,6 @@ Orbit can create, register, and remove an AppInstance but cannot move its manage
 ## Affects
 
 - Components: apps/gateway
-- ADRs: extends [ADR 0027](/decisions/0027-adopt-local-git-sources-into-appinstance-ownership), [ADR 0038](/decisions/0038-cascade-appinstance-removal-through-processes-and-schedules), [ADR 0044](/decisions/0044-own-appinstance-environment-configuration-in-orbit), [ADR 0063](/decisions/0063-prefer-active-cluster-tlds-for-generated-routes), and [ADR 0065](/decisions/0065-replace-routes-when-domains-change)
+- ADRs: extends [ADR 0027](/decisions/0027-adopt-local-git-sources-into-appinstance-ownership), [ADR 0038](/decisions/0038-cascade-appinstance-removal-through-processes-and-schedules), [ADR 0044](/reference/environment-variables), [ADR 0063](/reference/routes#select-a-domain-and-scope), and [ADR 0065](/reference/routes#change-an-explicit-domain)
 - Detail: [Applications](/domains/applications)
 - Verify: `composer docs-lint`; CommandSurfaceTest omits instance:transfer; Gateway routes omit an AppInstance transfer endpoint

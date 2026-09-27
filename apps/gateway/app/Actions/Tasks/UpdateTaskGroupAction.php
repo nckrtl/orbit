@@ -8,8 +8,6 @@ use App\Data\Tasks\UpdateTaskGroupData;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
-use App\Domain\Tasks\TaskWorkspaceSigner;
-use App\Models\AppInstance;
 use App\Models\Task;
 use App\Models\TaskGroup;
 use Illuminate\Support\Collection;
@@ -20,7 +18,6 @@ final readonly class UpdateTaskGroupAction
     public function __construct(
         private RequireTasksExtensionAction $requireExtension,
         private TaskScheduler $scheduler,
-        private TaskWorkspaceSigner $signer,
     ) {}
 
     public function execute(TaskGroup $group, UpdateTaskGroupData $data): TaskGroup
@@ -30,8 +27,6 @@ final readonly class UpdateTaskGroupAction
         if ($data->status === TaskGroupStatus::Todo && $group->status === TaskGroupStatus::Backlog) {
             self::requireDeliverables($group->tasks()->get());
         }
-        $this->commitPlan($group, $data);
-
         // The row lock makes a status move and a scheduler claim exclusive: whichever commits second sees the other's status.
         $updated = DB::transaction(static function () use ($group, $data): TaskGroup {
             $locked = TaskGroup::query()->with('tasks')->lockForUpdate()->findOrFail($group->id);
@@ -83,25 +78,6 @@ final readonly class UpdateTaskGroupAction
         $missing = $tasks->sortBy('position')->filter(static fn (Task $task): bool => $task->deliverableList() === []);
         if ($missing->isNotEmpty()) {
             throw TaskGroupGuard::deliverablesMissing(array_values($missing->map(static fn (Task $task): string => '#'.$task->id.' "'.$task->title.'"')->all()));
-        }
-    }
-
-    /**
-     * ADR 0124: a planning group moving to Todo commits the planner's ADRs and documentation first. A failed
-     * commit leaves the group in Backlog.
-     */
-    private function commitPlan(TaskGroup $group, UpdateTaskGroupData $data): void
-    {
-        $group->refresh()->load(['tasks', 'taskable']);
-        $instance = $group->taskable;
-
-        if (! $group->plan || $data->status !== TaskGroupStatus::Todo || $group->status !== TaskGroupStatus::Backlog
-            || $group->tasks->isEmpty() || ! $instance instanceof AppInstance) {
-            return;
-        }
-
-        if ($this->signer->commit($instance, 'Plan: '.($data->title ?? $group->title)) === null) {
-            throw TaskGroupGuard::planCommitFailed();
         }
     }
 }
