@@ -220,7 +220,7 @@ final readonly class RemoveToolAction
     ): ToolOperationException {
         $record = ToolManagerRecord::query()->find($tool->tool_manager_id);
         $manager = $record instanceof ToolManagerRecord
-            ? (string) $record->getRawOriginal('name')
+            ? $record->name
             : 'unknown';
 
         return new ToolOperationException(

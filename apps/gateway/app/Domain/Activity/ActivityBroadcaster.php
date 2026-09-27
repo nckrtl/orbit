@@ -64,7 +64,7 @@ final readonly class ActivityBroadcaster
             return;
         }
 
-        $id = (int) $activity->getKey();
+        $id = $activity->id;
         $notice = self::notice($activity);
         $dispatch = function () use ($type, $id, $notice): void {
             $this->broadcaster->broadcast($type, $id, $notice);
@@ -97,7 +97,7 @@ final readonly class ActivityBroadcaster
         $createdAt = $activity->created_at;
 
         return [
-            'id' => (int) $activity->getKey(),
+            'id' => $activity->id,
             'request_id' => $activity->request_id,
             'command' => $activity->command,
             'status' => $activity->status,

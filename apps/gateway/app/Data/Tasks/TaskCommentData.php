@@ -47,7 +47,8 @@ final class TaskCommentData extends Data
 
     private static function typeValue(TaskComment $comment): string
     {
-        $type = TaskCommentType::tryFrom((string) $comment->getRawOriginal('type'));
+        $rawType = $comment->getRawOriginal('type');
+        $type = TaskCommentType::tryFrom(is_string($rawType) ? $rawType : '');
         if (! $type instanceof TaskCommentType) {
             throw new InvalidArgumentException('Task comment type is invalid.');
         }

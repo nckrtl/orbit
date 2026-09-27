@@ -20,7 +20,7 @@ final readonly class ScheduleAppInstanceRuntimeWakeAction
 
     public function afterResponse(#[SensitiveParameter] AppInstance $instance): void
     {
-        $instanceId = (int) $instance->getKey();
+        $instanceId = $instance->id;
 
         defer(callback: function () use ($instance, $instanceId): void {
             try {

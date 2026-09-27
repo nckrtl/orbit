@@ -17,6 +17,7 @@ use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetWebRoot;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Shared\StoredInteger;
 use App\Models\AppInstance;
 use App\Models\Route;
 use Illuminate\Database\QueryException;
@@ -46,7 +47,7 @@ final readonly class SetRouteTargetAction
             ->targets()
             ->orderBy('app_instance_id')
             ->pluck('app_instance_id')
-            ->map(static fn (mixed $id): int => (int) $id)
+            ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->values()
             ->all();
 
@@ -76,7 +77,7 @@ final readonly class SetRouteTargetAction
                     ->targets()
                     ->orderBy('app_instance_id')
                     ->pluck('app_instance_id')
-                    ->map(static fn (mixed $id): int => (int) $id)
+                    ->map(static fn (mixed $id): int => StoredInteger::from($id))
                     ->values()
                     ->all();
 

@@ -16,6 +16,7 @@ use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Routes\RouteRemovalStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Shared\StoredInteger;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -39,7 +40,7 @@ final readonly class RemoveRouteAction
             ->targets()
             ->orderBy('app_instance_id')
             ->pluck('app_instance_id')
-            ->map(static fn (mixed $id): int => (int) $id)
+            ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->values()
             ->all();
 
@@ -212,7 +213,7 @@ final readonly class RemoveRouteAction
         $currentTargetIds = $route
             ->targets
             ->pluck('app_instance_id')
-            ->map(static fn (mixed $id): int => (int) $id)
+            ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->sort()
             ->values()
             ->all();

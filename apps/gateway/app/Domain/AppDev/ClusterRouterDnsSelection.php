@@ -11,6 +11,7 @@ use App\Domain\Routes\RouteCertificateStaging;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\StoredInteger;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -220,6 +221,7 @@ final readonly class ClusterRouterDnsSelection
             ->where('cluster_id', $clusterId)
             ->orderBy('id')
             ->pluck('id')
+            ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->all();
 
         foreach ($nodeOverrides as $id => $override) {

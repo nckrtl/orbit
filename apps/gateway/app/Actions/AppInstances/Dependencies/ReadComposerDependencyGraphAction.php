@@ -55,6 +55,9 @@ final readonly class ReadComposerDependencyGraphAction
                 array_pop($objects);
             } elseif (preg_match('/\G\s*:/', $contents, offset: $offset + strlen($token)) === 1) {
                 $key = json_decode($token, flags: JSON_THROW_ON_ERROR);
+                if (! is_string($key)) {
+                    throw new DependencyParseException;
+                }
                 $index = count($objects) - 1;
 
                 if (isset($objects[$index][$key])) {
@@ -160,7 +163,8 @@ final readonly class ReadComposerDependencyGraphAction
                 throw new DependencyParseException;
             }
 
-            $links[$canonical] = $this->safeText($constraint);
+            $constraint = $this->safeText($constraint);
+            $links[$canonical] = $constraint;
 
             if ($constraint !== 'self.version' || ! in_array($field, ['provide', 'replace'], true)) {
                 (new VersionParser)->parseConstraints($constraint);

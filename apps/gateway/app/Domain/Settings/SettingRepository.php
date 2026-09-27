@@ -52,10 +52,11 @@ final readonly class SettingRepository
 
     public function delete(SettingScope $scope, string $key): bool
     {
-        $deleted = (int) Setting::query()
+        $deleted = Setting::query()
             ->where('scope_type', $scope->type->value)
             ->where('scope_id', $scope->id)
             ->where('key', $key)
+            ->toBase()
             ->delete();
 
         return $deleted > 0;

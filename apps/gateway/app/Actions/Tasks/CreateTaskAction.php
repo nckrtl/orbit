@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Tasks;
 
 use App\Data\Tasks\CreateTaskData;
+use App\Domain\Shared\StoredInteger;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
@@ -24,7 +25,7 @@ final readonly class CreateTaskAction
             throw TaskGroupGuard::deliverablesRequired();
         }
 
-        $position = ((int) $group->tasks()->max('position')) + 1;
+        $position = StoredInteger::fromOrZero($group->tasks()->max('position')) + 1;
 
         return Task::query()->create([
             'task_group_id' => $group->id,

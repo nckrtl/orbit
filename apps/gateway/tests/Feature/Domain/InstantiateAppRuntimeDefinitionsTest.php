@@ -108,7 +108,7 @@ it('creates independent stopped copies for both Process backends and a disabled 
         'command' => ['redis-server'],
         'environment' => ['ZEBRA' => 'last', 'ALPHA' => 'first'],
         'ports' => ['127.0.0.1:6380:6379/tcp'],
-        'volumes' => [['source' => 'redis-data', 'target' => '/data', 'read_only' => false]],
+        'volumes' => [['source' => 'redis-data', 'target' => '/data']],
         'restart_policy' => 'unless-stopped',
     ]);
     $definition = orb225_schedule_definition($this->orbitApp, 'report');

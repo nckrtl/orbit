@@ -43,7 +43,7 @@ final readonly class ActivityData
         $createdAt = $activity->getAttribute('created_at');
 
         return new self(
-            id: (int) $activity->getKey(),
+            id: $activity->id,
             requestId: $activity->request_id,
             command: $activity->command,
             callerNodeId: is_int($callerNodeId) ? $callerNodeId : null,
