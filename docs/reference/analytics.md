@@ -26,7 +26,7 @@ The role keeps its data in two Docker Processes. Create them first on an active 
 
 A Process needs a command. For PostgreSQL, use `postgres`. The ClickHouse image passes its own configuration file, so give it a server argument after two dashes, such as `-- --logger.level=warning`.
 
-Publish each port on the Node's WireGuard address. Plausible connects with the credentials in each Process's environment: `POSTGRES_USER` (default `postgres`) and `POSTGRES_PASSWORD`, and `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, and `CLICKHOUSE_DB`. The ClickHouse container creates that database and user. Plausible connects to PostgreSQL as that Process's own user, so give analytics its own PostgreSQL Process. Plan about 2 GB of memory for the three services, and disk that grows with traffic.
+Publish PostgreSQL's container port 5432 and ClickHouse's HTTP port 8123 on the Node's WireGuard address. Plausible connects with the credentials in each Process's environment: `POSTGRES_USER` (default `postgres`) and `POSTGRES_PASSWORD`, and `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, and `CLICKHOUSE_DB`. The ClickHouse container creates that database and user. Plausible connects to PostgreSQL as that Process's own user, so give analytics its own PostgreSQL Process. Plan about 2 GB of memory for the three services, and disk that grows with traffic.
 
 ## Assign the role
 
@@ -41,6 +41,9 @@ Assignment refuses a storage Process that does not fit:
 | `analytics.process_not_node` | The Process does not belong to a Node. |
 | `analytics.process_not_database_node` | The Process's Node is not an active `database` Node. |
 | `analytics.postgres_unsupported`, `analytics.clickhouse_unsupported` | The image is not the supported engine. |
+| `analytics.storage_credentials_missing` | A required credential variable is missing from the Process environment. |
+| `analytics.storage_port_missing` | The Process does not publish port 5432 or 8123. |
+| `process.wireguard_ip_missing` | The Process's Node has no WireGuard address. |
 
 The role then converges in this order.
 
@@ -51,11 +54,11 @@ The role then converges in this order.
 | Run Plausible | The `plausible` Docker Process at the pinned version, published on the Node's WireGuard address. Its environment holds the two connection URLs and a stored `SECRET_KEY_BASE`. |
 | Publish the dashboard | After Plausible answers `/api/health`: an Orbit CA certificate, a Caddy site on the role's Node, and a private DNS record for `analytics.orbit`. |
 
-Plausible creates and migrates its PostgreSQL database each time it starts. The `plausible` container reaches a storage Process on its own Node through the Docker bridge, not through WireGuard. That is why the local rule exists.
+Plausible creates and migrates its PostgreSQL database each time it starts. The storage passwords, the two connection URLs, and `SECRET_KEY_BASE` reach Plausible through the Process environment. The API hides and log reads redact that environment, but the Gateway database stores it unencrypted. The `plausible` container reaches a storage Process on its own Node through the Docker bridge, not through WireGuard. That is why the local rule exists.
 
 You can read the logs of `plausible` and restart it like any other Process. You cannot remove it, or either storage Process, while the role is assigned (`process.required_by_analytics`).
 
-The first person to open `https://analytics.orbit` registers the Plausible owner account. Orbit does not create Plausible accounts, sites, or API tokens. To show visits on an Instance page, create a Stats API key in Plausible and store it with `orbit analytics:credentials --set`.
+`https://analytics.orbit` has no Gateway check in front of Plausible. Every WireGuard peer can reach it, because WireGuard membership is the security boundary. The first person to open it registers the Plausible owner account and owns the dashboard. Open it yourself right after you assign the role. Orbit does not create Plausible accounts, sites, or API tokens. To show visits on an Instance page, create a Stats API key in Plausible and store it with `orbit analytics:credentials --set`.
 
 ## ClickHouse configuration
 
@@ -70,7 +73,7 @@ The role writes each file on the Node that runs the ClickHouse Process, owned by
 | `/etc/orbit/analytics/clickhouse/config.d/low-resources.xml` | `/etc/clickhouse-server/config.d/low-resources.xml` |
 | `/etc/orbit/analytics/clickhouse/users.d/default-profile-low-resources-overrides.xml` | `/etc/clickhouse-server/users.d/default-profile-low-resources-overrides.xml` |
 
-`logs.xml` keeps only `query_log`, for 30 days, and turns off ClickHouse's other system log tables. Tables that ClickHouse wrote earlier keep their data. Orbit does not drop them.
+`logs.xml` keeps only `query_log`, for 30 days, and turns off ClickHouse's other system log tables. To diagnose ClickHouse itself, use its console log and `query_log`. Tables that ClickHouse wrote earlier keep their data. Orbit does not drop them.
 
 The role adds only the mounts that the Process lacks. It keeps the Process's ID, name, image, command, environment, ports, and other volumes. When another volume uses one of the four container paths, convergence fails with `analytics.clickhouse_mount_conflict` before it changes anything. Remove that volume first.
 
@@ -79,6 +82,8 @@ The role adds only the mounts that the Process lacks. It keeps the Process's ID,
 | A mount was added | The Process runtime replaces the container, which reads the files as it starts. |
 | Only a file changed | The Process runtime restarts the container. A stopped Process stays stopped and reads the files at its next start. |
 | Nothing | ClickHouse keeps running. |
+
+Each ClickHouse restart drops Plausible's ClickHouse connection until ClickHouse is back.
 
 To apply the configuration to an existing install, converge the role again with the same two Processes:
 
@@ -92,7 +97,7 @@ A failure stops convergence at the `clickhouse-config` step, before Plausible ru
 
 `orbit analytics:update VERSION` changes the pinned Plausible version and replaces the `plausible` Process.
 
-`orbit node:role:remove NODE analytics` removes the `plausible` Process, the Caddy site, the certificate, the DNS record, and the role's firewall rules. It deletes the stored `SECRET_KEY_BASE` and the role settings. It never touches the two databases or their Processes. Remove those Processes yourself to remove the data. Removal fails with `analytics.tracking_hosts_exist` while any Instance has a tracking host.
+`orbit node:role:remove NODE analytics` removes the `plausible` Process, the Caddy site, the certificate, the DNS record, and the role's firewall rules. It deletes the stored `SECRET_KEY_BASE` and the role settings. It never touches the two databases or their Processes. Remove those Processes yourself to remove the data. Orbit does not back up or prune Plausible's event data. Removal fails with `analytics.tracking_hosts_exist` while any Instance has a tracking host.
 
 ## Publish a tracking host
 
