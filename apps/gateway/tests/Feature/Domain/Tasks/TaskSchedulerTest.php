@@ -35,6 +35,7 @@ use App\Domain\Tasks\TaskConcurrencyGuard;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupMetricsRefresher;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskPlannerMcp;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestHealth;
 use App\Domain\Tasks\TaskPullRequestPublisher;
@@ -70,11 +71,16 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskGroup;
+use Tests\Support\AcceptingTaskPlannerMcp;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskRunReceipts;
 
 use function Pest\Laravel\mock;
+
+beforeEach(function (): void {
+    app()->instance(TaskPlannerMcp::class, new AcceptingTaskPlannerMcp);
+});
 
 function scheduler_app(string $slug): OrbitApp
 {
@@ -913,6 +919,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
     app()->instance(AgentSpawner::class, new TaskAgentSpawner(
         app(AgentDriverRegistry::class),
         new TaskReviewPacketBuilder(app(TaskReviewDiff::class)),
+        app(TaskPlannerMcp::class),
     ));
 
     $reviewing = app(TaskScheduler::class)->settleImplementer($first);

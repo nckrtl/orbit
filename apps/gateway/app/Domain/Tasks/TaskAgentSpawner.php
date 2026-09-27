@@ -12,7 +12,11 @@ use Illuminate\Support\Facades\Log;
 
 final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawner
 {
-    public function __construct(private AgentDriverRegistry $drivers, private TaskReviewPacketBuilder $packets) {}
+    public function __construct(
+        private AgentDriverRegistry $drivers,
+        private TaskReviewPacketBuilder $packets,
+        private TaskPlannerMcp $mcp,
+    ) {}
 
     public function spawnReviewer(Task $task): ?int
     {
@@ -115,6 +119,17 @@ final readonly class TaskAgentSpawner implements AgentSpawner, TaskPlannerSpawne
     private function openReviewer(Task $task): ?int
     {
         $group = $task->taskGroup;
+        $instance = $group->taskable;
+
+        // ADR 0169: a fresh reviewer gets `/mcp/search` when the workspace has no `.mcp.json`.
+        if ($instance instanceof AppInstance && ! $this->mcp->installWhenMissing($instance)) {
+            Log::error('The reviewer MCP file could not be written.', [
+                'task_group_id' => $group->id,
+                'app_instance_id' => $instance->id,
+            ]);
+
+            return null;
+        }
 
         return $this->spawn($group, $task->id, TaskThreadRole::Reviewer, 'Orbit task #'.$group->id.' · Review: '.$task->title, $this->reviewPacket($task, false));
     }

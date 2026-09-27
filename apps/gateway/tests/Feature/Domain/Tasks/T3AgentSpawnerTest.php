@@ -10,6 +10,7 @@ use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskPlannerMcp;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskReviewDiffException;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
@@ -33,7 +34,12 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Tests\Support\AcceptingTaskPlannerMcp;
 use Tests\Support\FakeAgentDriver;
+
+beforeEach(function (): void {
+    app()->instance(TaskPlannerMcp::class, new AcceptingTaskPlannerMcp);
+});
 
 function t3_spawner_group(): TaskGroup
 {
@@ -80,7 +86,7 @@ function t3_spawner_group(): TaskGroup
 /**
  * @return array{TaskAgentSpawner, object, object}
  */
-function t3_spawner_stack(): array
+function t3_spawner_stack(?TaskPlannerMcp $mcp = null): array
 {
     $dispatcher = new class implements T3Dispatcher
     {
@@ -122,7 +128,7 @@ function t3_spawner_stack(): array
         }
     };
 
-    return [new TaskAgentSpawner(test_t3_registry($dispatcher), app(TaskReviewPacketBuilder::class)), $dispatcher];
+    return [new TaskAgentSpawner(test_t3_registry($dispatcher), app(TaskReviewPacketBuilder::class), $mcp ?? app(TaskPlannerMcp::class)), $dispatcher];
 }
 
 it('spawns the group reviewer with its first review and a fresh implementer on the instance Node', function (): void {
@@ -187,7 +193,7 @@ it('posts T3 model options as id and value JSON objects', function (): void {
         'http://10.44.0.110:3773/api/orchestration/dispatch' => Http::response(['sequence' => 1]),
     ]);
     $group = t3_spawner_group();
-    $threadId = (new TaskAgentSpawner(test_t3_registry(app(HttpT3Dispatcher::class)), app(TaskReviewPacketBuilder::class)))->spawnReviewer($group->tasks->first());
+    $threadId = (new TaskAgentSpawner(test_t3_registry(app(HttpT3Dispatcher::class)), app(TaskReviewPacketBuilder::class), app(TaskPlannerMcp::class)))->spawnReviewer($group->tasks->first());
 
     expect($threadId)->not->toBeNull();
 
@@ -453,6 +459,52 @@ it('stores no thread id when turn start fails after thread create', function (?s
     'fresh project' => [null],
     'adopted project' => ['550e8400-e29b-41d4-a716-446655440000'],
 ]);
+
+it('writes the search endpoint file before it starts a reviewer', function (): void {
+    $group = t3_spawner_group();
+    $mcp = new class implements TaskPlannerMcp
+    {
+        public int $missing = 0;
+
+        public function install(AppInstance $instance): bool
+        {
+            return true;
+        }
+
+        public function installWhenMissing(AppInstance $instance): bool
+        {
+            $this->missing++;
+
+            return true;
+        }
+    };
+    [$spawner, $dispatcher] = t3_spawner_stack($mcp);
+
+    expect($spawner->spawnReviewer($group->tasks->first()))->not->toBeNull()
+        ->and($mcp->missing)->toBe(1)
+        ->and($dispatcher->commands)->not->toBe([]);
+});
+
+it('does not start a reviewer when the search endpoint file cannot be written', function (): void {
+    $group = t3_spawner_group();
+    $mcp = new class implements TaskPlannerMcp
+    {
+        public function install(AppInstance $instance): bool
+        {
+            return true;
+        }
+
+        public function installWhenMissing(AppInstance $instance): bool
+        {
+            return false;
+        }
+    };
+    [$spawner, $dispatcher] = t3_spawner_stack($mcp);
+
+    expect($spawner->spawnReviewer($group->tasks->first()))->toBeNull()
+        ->and($dispatcher->commands)->toBe([])
+        ->and(AgentThread::query()->where('task_group_id', $group->id)->count())->toBe(0);
+});
 
 it('returns null when T3 refuses the spawn', function (): void {
     $group = t3_spawner_group();

@@ -118,6 +118,11 @@ beforeEach(function (): void {
 
             return ! $this->refuse;
         }
+
+        public function installWhenMissing(AppInstance $instance): bool
+        {
+            return ! $this->refuse;
+        }
     };
     app()->instance(TaskPlannerMcp::class, $this->mcp);
     app()->instance(InstanceProvisioning::class, $this->provisioning);

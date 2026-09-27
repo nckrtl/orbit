@@ -14,6 +14,7 @@ use App\Domain\Tasks\NullCoderSettleNotifier;
 use App\Domain\Tasks\NullTaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskPlannerMcp;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskSessionActor;
 use App\Domain\Tasks\TaskSessionDecision;
@@ -28,7 +29,12 @@ use App\Models\Task;
 use App\Models\TaskGroup;
 use Illuminate\Database\QueryException;
 use Laravel\Ai\Classification;
+use Tests\Support\AcceptingTaskPlannerMcp;
 use Tests\Support\FakeAgentDriver;
+
+beforeEach(function (): void {
+    app()->instance(TaskPlannerMcp::class, new AcceptingTaskPlannerMcp);
+});
 
 /** @return array{TaskGroup, Task, FakeAgentDriver, AgentDriverRegistry} */
 function driver_group(): array

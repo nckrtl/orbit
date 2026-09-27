@@ -21,6 +21,7 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskJevDecision;
 use App\Domain\Tasks\TaskJevOutcome;
+use App\Domain\Tasks\TaskPlannerMcp;
 use App\Domain\Tasks\TaskPullRequestDescription;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
@@ -56,6 +57,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Classification;
 use Tests\Feature\GitHub\GitHubTestSupport;
+use Tests\Support\AcceptingTaskPlannerMcp;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskRunReceipts;
 
@@ -162,6 +164,7 @@ function tick_dispatcher(): T3Dispatcher
 }
 
 beforeEach(function (): void {
+    app()->instance(TaskPlannerMcp::class, new AcceptingTaskPlannerMcp);
     tick_workspace();
 });
 

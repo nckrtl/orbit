@@ -6,6 +6,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskPlannerMcp;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskReviewDiffException;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
@@ -28,9 +29,14 @@ use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskGroup;
 use Symfony\Component\Process\Process;
+use Tests\Support\AcceptingTaskPlannerMcp;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\TestOrbitHome;
+
+beforeEach(function (): void {
+    app()->instance(TaskPlannerMcp::class, new AcceptingTaskPlannerMcp);
+});
 
 afterEach(function (): void {
     TestOrbitHome::clearScratch();
