@@ -119,7 +119,16 @@ The web directory is `/home/orbit/web`. `ORBIT_GATEWAY_WEB` can name another dir
 | `releases/<commit>` | One built release, named after the first 12 characters of its commit. |
 | `current` | A link to the release that the Gateway serves. |
 
-`orbit:bootstrap` creates the directory and publishes the site. After a Gateway deploy that changes the site, run `php artisan orbit:gateway-web` in the Gateway checkout. It installs Caddy from the [pinned source](/reference/node-provisioning#package-sources), creates the directory, publishes the Gateway certificate with the public root certificate, and publishes the site. It changes no role, VPN setting, or Node. A Gateway deploy never changes the releases or `current`.
+`orbit:bootstrap` creates the directory and publishes the site. After a Gateway deploy that changes the site, run `php artisan orbit:gateway-web` in the Gateway checkout. It runs these steps:
+
+1. It installs Caddy from the [pinned source](/reference/node-provisioning#package-sources).
+2. It grants Caddy access to the checkout's `public` directory and creates the web directory.
+3. It publishes the Gateway certificate with the public root certificate.
+4. It writes the Gateway PHP-FPM pool and runs `systemctl reload-or-restart php8.5-fpm`, which can restart the workers that serve the API.
+5. It publishes the site.
+6. It converges the runtime hibernator and the [agent view subscriber](/reference/node-agent#subscriber).
+
+It changes no role, VPN setting, or Node. A Gateway deploy never changes the releases or `current`.
 
 ## Release a build
 
@@ -143,10 +152,10 @@ The command refuses uncommitted changes. It checks the commit out into a tempora
 Switch `current` to a retained release without a build.
 
 ```bash
-bin/web-deploy --switch <commit>
+bin/web-deploy --switch <release>
 ```
 
-The command refuses a commit without a retained release. The Gateway serves the older release on the next request.
+`<release>` is the first 12 characters of the commit, as in `releases/`. The command exits with status 2 for any other value and refuses a release that is not retained. The Gateway serves the older release on the next request.
 
 ## Browser tests
 

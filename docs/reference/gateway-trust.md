@@ -16,7 +16,7 @@ The CLI reaches the Gateway over HTTPS. The Gateway certificate chains to the Or
 
 ## Profiles
 
-The CLI keeps its profiles in `$ORBIT_HOME/config.json`. `ORBIT_HOME` defaults to `$HOME/.orbit`. The file holds the active profile name and one entry per profile with its `url` and `ca_path`. The CLI writes the file with mode `0600` under a lock.
+The CLI keeps its profiles in `$ORBIT_HOME/config.json`. `ORBIT_HOME` defaults to `$HOME/.orbit`. The file holds the active profile name and one entry per profile with its `url` and `ca_path`. The CLI writes the file with mode `0600` under a lock. It refuses a `config.json` that is a symlink, belongs to another user, or has group or other permission bits, with `gateway.config_not_private`.
 
 A profile name has 1 to 63 characters: lowercase letters, digits, `.`, `_`, and `-`, starting with a letter or digit. A profile URL is an HTTPS origin without a user, password, path, query, or fragment.
 
@@ -36,7 +36,7 @@ The pinned certificate lives in `$ORBIT_HOME/gateways/<slug>-<hash>/ca/`, where 
 
 On macOS, the install runs `sudo security add-trusted-cert` into the System keychain. On Linux, it runs `sudo install` and `sudo update-ca-certificates`.
 
-JSON output returns the certificate fingerprint, the trust status (`trusted` or `already_trusted`), and the Gateway request ID. `gateway:trust` also returns the certificate path. No output holds certificate material.
+JSON output of both commands returns the certificate fingerprint, the certificate path, the trust status (`trusted` or `already_trusted`), and the Gateway request ID. No output holds certificate material.
 
 ## Profile guard
 
@@ -58,7 +58,7 @@ A new operator machine has no Orbit root certificate, so the first request canno
 
 ### A changed certificate needs an explicit flag
 
-A new root certificate on a known Gateway can mean a rebuilt Gateway or an attacker on the path. The CLI refuses it until the operator checks the fingerprint and passes `--accept-ca-change`.
+A new root certificate on a known Gateway can mean a rebuilt Gateway or an attacker on the path. `gateway:trust` refuses it until the operator checks the fingerprint and passes `--accept-ca-change`. `gateway:add` does not apply this rule to a profile it replaces: without `--ca`, it replaces the profile and its pin with no comparison.
 
 ### Removal leaves the trust store alone
 

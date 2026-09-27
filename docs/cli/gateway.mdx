@@ -26,7 +26,7 @@ Every command accepts `--json`. `gateway:use` and `gateway:remove` work locally.
 Add a Gateway profile. The CLI trusts the Gateway root CA first and saves the profile after that. The first profile becomes the active profile.
 
 ```bash
-orbit gateway:add <gateway> [--name=NAME] [--ca=PATH] [--use]
+orbit gateway:add <gateway> [--name=NAME] [--ca=PATH] [--use] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -35,7 +35,7 @@ orbit gateway:add <gateway> [--name=NAME] [--ca=PATH] [--use]
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--name=NAME` | `default` | Local profile name. Adding a profile with an existing name replaces it. |
+| `--name=NAME` | `default` | Local profile name. Adding a profile with an existing name replaces it, including its pin. |
 | `--ca=PATH` | none | Absolute path to a root CA certificate that the fetched certificate must match. |
 | `--use` | off | Make the profile active. |
 
@@ -44,12 +44,14 @@ orbit gateway:add 10.70.0.1 --use
 orbit gateway:add https://gateway.example.com --name=production --ca=/etc/orbit/production-root.pem
 ```
 
-JSON output returns the profile, whether it is active, `trust_status` (`trusted` or `already_trusted`), the certificate `sha256` fingerprint, and the Gateway `request_id`.
+`gateway:add` compares the fetched certificate only with `--ca`. It does not compare it with the pin of a profile it replaces, so adding an existing name without `--ca` replaces a trusted pin with no check.
+
+JSON output returns the profile with its `url` and `ca_path`, whether it is active, `trust_status` (`trusted` or `already_trusted`), the certificate `sha256` fingerprint, and the Gateway `request_id`.
 
 | Error code | Meaning |
 | --- | --- |
 | `gateway.profile_invalid` | The name, URL, or CA path is not valid. |
-| `gateway.ca_unavailable`, `gateway.ca_fetch_failed` | The CLI could not reach or safely fetch the root CA endpoint. |
+| `gateway.ca_unavailable`, `gateway.ca_fetch_failed` | The CLI could not reach or safely fetch the root CA endpoint. An error code from the Gateway's answer, such as `ca.unavailable`, passes through. |
 | `gateway.ca_invalid` | The Gateway returned invalid certificate material, or a fingerprint that does not match. |
 | `gateway.ca_pin_invalid` | The `--ca` file is not a readable certificate. |
 | `gateway.ca_changed` | The fetched certificate differs from the `--ca` file. |
@@ -57,13 +59,15 @@ JSON output returns the profile, whether it is active, `trust_status` (`trusted`
 | `gateway.ca_store_failed` | The CLI could not store the certificate under `ORBIT_HOME`. |
 | `gateway.ca_install_failed` | The CLI could not check or update the operating-system trust store. |
 | `gateway.ca_profile_update_failed` | The certificate is trusted, but the CLI could not save the profile. |
+| `gateway.config_invalid` | `config.json` is not valid. |
+| `gateway.config_not_private` | `config.json` is a symlink, belongs to another user, or has group or other permission bits. |
 
 ## orbit gateway:use
 
 Select an existing profile as the active Gateway. The command changes no pin and no trust store.
 
 ```bash
-orbit gateway:use <name>
+orbit gateway:use <name> [--json]
 ```
 
 ```bash
@@ -89,7 +93,7 @@ The command fails with `gateway.profile_missing` when no profile is active and w
 Trust the root CA of the active Gateway in the operating-system trust store, or confirm that it is already trusted.
 
 ```bash
-orbit gateway:trust [--accept-ca-change]
+orbit gateway:trust [--accept-ca-change] [--json]
 ```
 
 | Option | Meaning |
@@ -101,7 +105,7 @@ orbit gateway:trust
 orbit gateway:trust --accept-ca-change
 ```
 
-JSON output returns `gateway`, `status`, `sha256`, `ca_path`, and `request_id`. The command uses the error codes of `gateway:add`. Without `--accept-ca-change`, a Gateway that presents another certificate fails with `gateway.ca_changed` before anything is installed.
+JSON output returns `gateway`, `status`, `sha256`, `ca_path`, and `request_id`. The command uses the error codes of `gateway:add`, and fails with `gateway.profile_missing` when no profile is active. Without `--accept-ca-change`, a Gateway that presents another certificate fails with `gateway.ca_changed` before anything is installed.
 
 <Note>
 `gateway.ca_profile_update_failed` means that the certificate is already in the trust store but the profile changed during the command. Check which profile is active and run `gateway:trust` again.

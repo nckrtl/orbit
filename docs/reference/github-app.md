@@ -20,7 +20,7 @@ The App has no `Workflows` permission. A push that changes `.github/workflows/` 
 
 The App is public on GitHub, so any GitHub account can install it. An installation gives your Gateway access to that account's repositories. It gives the installing account nothing.
 
-The Gateway stores the App ID, slug, and private key as encrypted Gateway settings. No API response, Activity, or Doctor result contains the key or a token.
+The Gateway stores the App ID, slug, name, owner, and URL as one plain Gateway setting, and the private key as an encrypted one. No API response, Activity, or Doctor result contains the key or a token.
 
 ## Register and install
 

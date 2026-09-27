@@ -38,7 +38,9 @@ The `websocket` role is a singleton. It conflicts with no other role, so it can 
 6. It issues an Orbit CA certificate for `reverb.orbit` and adds a Caddy site on the Node that proxies to Reverb. Caddy admits the WebSocket upgrade.
 7. It publishes `reverb.orbit` in private DNS with the Node's WireGuard address.
 
-When a step after the runtime fails, the converge stops the runtime again. `ORBIT_WEBSOCKET_REPOSITORY`, `ORBIT_WEBSOCKET_REF`, `ORBIT_WEBSOCKET_INSTALL_PATH`, and `ORBIT_WEBSOCKET_PORT` in the Gateway `.env` change the defaults.
+Before any change, the converge refuses a Node that lacks an address its Caddy sites bind, so a refused converge leaves a running Reverb alone. When a step after the runtime fails, the converge stops the runtime again. A failed rollback reports `websocket.rollback_failed`.
+
+`ORBIT_WEBSOCKET_REPOSITORY`, `ORBIT_WEBSOCKET_REF`, `ORBIT_WEBSOCKET_INSTALL_PATH`, and `ORBIT_WEBSOCKET_PORT` in the Gateway `.env` change the defaults. Another Reverb app must accept client events from channel members (`accept_client_events_from` set to `members`), as `orbit-reverb` does. Without it, the [Node agent channels](/reference/events#node-agent-channels) carry no agent events.
 
 The Gateway reads the connection from the active role assignment. It needs no broadcast setting in its `.env`.
 
@@ -48,7 +50,7 @@ The Gateway reads the connection from the active role assignment. It needs no br
 orbit node:role:relocate <node> websocket --force
 ```
 
-Relocate copies the Reverb identity to the target when the target has none, and never overwrites one. It converges the target, points `reverb.orbit` at it, and removes the runtime and publication from the source. Clients keep the same key. Removing the role and adding it again would generate a new identity, and every client would need the new key. [`node:role:relocate`](/cli/node#orbit-noderolerelocate) describes `--from` for a target that already holds the role.
+Relocate copies the Reverb identity to the target when the target has none, and never overwrites one. It converges the target and points `reverb.orbit` at it. It then waits 31 seconds, the private DNS answer TTL plus one second, so clients that resolved the old address resolve again. Then it removes the runtime and publication from the source. The Reverb checkout stays on the source. Clients keep the same key. Removing the role and adding it again would generate a new identity, and every client would need the new key. [`node:role:relocate`](/cli/node#orbit-noderolerelocate) describes `--from` for a target that already holds the role.
 
 ### Remove the role
 

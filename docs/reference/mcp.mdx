@@ -21,7 +21,7 @@ Both endpoints speak MCP over streamable HTTP and offer the same catalogue.
 | `https://gateway.orbit/mcp` | One tool for every API operation, on one page. | The client loads tool definitions on demand, or its context has room for the full catalogue. |
 | `https://gateway.orbit/mcp/search` | `search_tools` and `execute_tools`. | The client loads every listed tool into its context. |
 
-`search_tools` returns exact tool names with their input schemas. An empty query browses the catalogue. `execute_tools` takes `{"calls": [{"name": "...", "arguments": {...}}]}`, runs up to 25 calls in order, and stops at the first error.
+`search_tools` returns exact tool names with their input schemas. An empty query browses the catalogue. `execute_tools` takes `{"calls": [{"name": "...", "arguments": {...}}]}`, runs up to 25 calls in order, and stops at the first error. `/mcp/search` limits the output of one call to 65,536 bytes. `execute_tools` stops when the combined results pass that limit, so a large list result can fail through `/mcp/search` and still work through `/mcp`.
 
 ## Identity and access
 
@@ -29,7 +29,7 @@ The caller is the Node whose WireGuard address the connection comes from. There 
 
 - A connection from an address that is not an active Node receives HTTP `403` with `peer.identity_unknown`, before it can list tools.
 - Each tool call runs as an internal API request with the caller's address. The API checks the caller and its [access grants](/cli/node#orbit-nodeaccessadd) again. A missing grant returns the API's `403` with `node_access.required` as the tool error.
-- The Gateway certificate chains to the Orbit root certificate authority (CA). A Node that Orbit manages already trusts it. On another machine, run `orbit gateway:trust` first.
+- The Gateway certificate chains to the Orbit root certificate authority (CA). Orbit installs that root in the system trust store only on a Node where it converges an Instance, Route, router, ingress, or custom proxy certificate. On any other machine, run `orbit gateway:trust` first, or point the client at the root CA file.
 
 ## Tools
 
