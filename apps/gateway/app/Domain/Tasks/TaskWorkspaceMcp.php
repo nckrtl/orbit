@@ -9,7 +9,7 @@ use App\Models\AppInstance;
 /**
  * ADR 0124 and ADR 0169: gives a task workspace Orbit MCP at `/mcp/search`, whatever MCP the Node's agent is configured with.
  */
-interface TaskPlannerMcp
+interface TaskWorkspaceMcp
 {
     /** False when the workspace could not be prepared. A repository that tracks its own `.mcp.json` is left as it is. */
     public function install(AppInstance $instance): bool;

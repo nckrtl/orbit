@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
-use App\Domain\Tasks\TaskPlannerMcp;
+use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Models\AppInstance;
 
 /** Lets a reviewer start in tests without writing `.mcp.json` over SSH. */
-final class AcceptingTaskPlannerMcp implements TaskPlannerMcp
+final class AcceptingTaskWorkspaceMcp implements TaskWorkspaceMcp
 {
     public function install(AppInstance $instance): bool
     {

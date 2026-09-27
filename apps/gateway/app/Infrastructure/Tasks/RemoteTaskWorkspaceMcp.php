@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Tasks;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\Tasks\TaskPlannerMcp;
+use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\Shared\StoredValue;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -14,10 +14,10 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Writes an untracked `.mcp.json` that points at this Gateway's `/mcp/search` endpoint and lists it in the checkout's
- * Git exclude file, so no commit ever includes it. The planner and the reviewer read that file from their working
+ * Git exclude file, so no commit ever includes it. The task agents read that file from their working
  * directory. `/mcp` still serves the full catalogue for other clients.
  */
-final readonly class RemoteTaskPlannerMcp implements TaskPlannerMcp
+final readonly class RemoteTaskWorkspaceMcp implements TaskWorkspaceMcp
 {
     public function __construct(private AppDevSshExecutor $ssh) {}
 
@@ -70,7 +70,7 @@ final readonly class RemoteTaskPlannerMcp implements TaskPlannerMcp
                     grep -qxF '/.mcp.json' "$exclude" 2>/dev/null || printf '/.mcp.json\n' >> "$exclude"
                     printf 'installed\n'
                     BASH,
-            ), 'task-planner-mcp', 'tasks.planner_mcp_failed');
+            ), 'task-workspace-mcp', 'tasks.workspace_mcp_failed');
         } catch (RuntimeConvergenceException) {
             return false;
         }
