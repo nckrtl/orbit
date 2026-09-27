@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Apps;
 
-use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
+use App\Actions\Routes\ConvergeRouteAction;
 use App\Domain\AppInstances\DevelopmentRouteProjector;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRouteDomain;
 use App\Domain\AppInstances\Environment\AppInstanceRouteEnvironmentSynchronizer;
@@ -22,16 +22,17 @@ use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
 use App\Models\Node;
 use App\Models\Route;
+use Illuminate\Support\Facades\DB;
 use Throwable;
 
 final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjectionMutator
 {
     public function __construct(
         private RouteStateResolver $domains,
-        private DevelopmentAppInstanceConfigurator $laravel,
         private AppInstanceRouteEnvironmentSynchronizer $environment,
         private DevelopmentRouteProjector $developmentRuntime,
         private ProductionPhpRuntimeManager $productionRuntime,
+        private ConvergeRouteAction $routes,
     ) {}
 
     public function preflightSlug(OrbitApp $app, string $newSlug): array
@@ -114,45 +115,104 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
         foreach ($this->rows($prepared['routes'] ?? null) as $row) {
             $replacement = Route::query()->with('targets.appInstance')->find(StoredValue::integer($row['replacement_id'] ?? null));
             $current = Route::query()->find(StoredValue::integer($row['route_id'] ?? null));
-
-            if ($current instanceof Route) {
-                $current->update(['status' => RouteStatus::Retiring]);
-            }
-
-            if ($replacement instanceof Route) {
-                $replacement->update([
-                    'status' => RouteStatus::Activating,
-                    'replacement_step' => RouteReplacementStep::DatabaseCutover,
-                ]);
-            }
-
-            if ($current instanceof Route) {
-                $current->targets()->delete();
-                $current->delete();
-            }
-
-            if ($replacement instanceof Route) {
-                $replacement->update([
-                    'status' => RouteStatus::Active,
-                    'replaces_route_id' => null,
-                    'replacement_step' => null,
-                ]);
-            }
-
             $instance = AppInstance::query()->find(StoredValue::integer($row['instance_id'] ?? null));
 
-            if (! $instance instanceof AppInstance || ! $replacement instanceof Route) {
+            if (! $instance instanceof AppInstance) {
+                $this->publishTargetlessSlugRoute($current, $replacement);
+
                 continue;
+            }
+
+            $domain = is_string($row['proposed_domain'] ?? null)
+                ? $row['proposed_domain']
+                : $replacement?->domain;
+            $authoritative = $current ?? $instance->authoritativeRoute();
+
+            if (! is_string($domain) || ! $authoritative instanceof Route) {
+                throw new ResourceOperationException(
+                    errorCode: 'app.slug_projection_failed',
+                    message: "Project slug projection could not resolve a Route for Instance [{$instance->id}].",
+                    status: 409,
+                );
             }
 
             try {
-                $this->laravel->configureLaravelUrl($instance, 'https://'.$replacement->domain);
-                $this->environment->synchronizeRouteDomain($instance, AppInstanceEnvironmentRouteDomain::Authoritative);
-                $this->projectRuntime($instance, $replacement);
-            } catch (Throwable) {
-                continue;
+                if ($instance->environment === 'development' && $replacement instanceof Route) {
+                    $this->environment->synchronizeRouteDomain($instance, AppInstanceEnvironmentRouteDomain::Candidate);
+                }
+
+                $this->routes->execute(
+                    $authoritative,
+                    $domain,
+                    allowGenerated: true,
+                );
+
+                if ($instance->environment === 'development' && ! $replacement instanceof Route) {
+                    $this->environment->synchronizeRouteDomain($instance, AppInstanceEnvironmentRouteDomain::Authoritative);
+                }
+            } catch (Throwable $exception) {
+                throw new ResourceOperationException(
+                    errorCode: 'app.slug_projection_failed',
+                    message: "Project slug projection failed for Instance [{$instance->id}].",
+                    status: 409,
+                    previous: $exception,
+                );
             }
         }
+    }
+
+    /**
+     * Targetless generated Routes have no Instance runtime to project. Preserve their replacement
+     * as an ordinary pending Route, keeping its generation-basis Node but clearing replacement state.
+     */
+    private function publishTargetlessSlugRoute(?Route $current, ?Route $replacement): void
+    {
+        if (
+            ! $current instanceof Route
+            && $replacement instanceof Route
+            && $replacement->status === RouteStatus::Pending
+            && $replacement->replaces_route_id === null
+            && $replacement->replacement_step === null
+        ) {
+            return;
+        }
+
+        if (! $current instanceof Route || ! $replacement instanceof Route) {
+            throw new ResourceOperationException(
+                errorCode: 'app.slug_projection_failed',
+                message: 'A targetless generated Route replacement could not be resolved.',
+                status: 409,
+            );
+        }
+
+        DB::transaction(function () use ($current, $replacement): void {
+            $lockedCurrent = Route::query()->lockForUpdate()->find($current->id);
+            $lockedReplacement = Route::query()->lockForUpdate()->find($replacement->id);
+
+            if (
+                ! $lockedCurrent instanceof Route
+                || ! $lockedReplacement instanceof Route
+                || $lockedCurrent->replaced_by_route_id !== $lockedReplacement->id
+                || $lockedReplacement->replaces_route_id !== $lockedCurrent->id
+                || $lockedCurrent->targets()->exists()
+                || $lockedReplacement->targets()->exists()
+            ) {
+                throw new ResourceOperationException(
+                    errorCode: 'app.slug_projection_failed',
+                    message: 'A targetless generated Route replacement changed before publication.',
+                    status: 409,
+                );
+            }
+
+            $lockedReplacement->update([
+                'status' => RouteStatus::Pending,
+                'replaces_route_id' => null,
+                'replacement_step' => null,
+                'failed_step' => null,
+                'error_code' => null,
+            ]);
+            $lockedCurrent->delete();
+        });
     }
 
     public function rollbackSlug(OrbitApp $app, array $prepared): void

@@ -349,7 +349,7 @@ it('restores Laravel URL environment on a failed slug update and ignores applica
     $fixture->projections->failSlugPrepare = false;
     $fixture->projections->applicationErrorOnUrl = true;
 
-    app(UpdateAppAction::class)->execute(
+    expect(fn () => app(UpdateAppAction::class)->execute(
         $fixture->app->refresh(),
         new UpdateAppData(
             typeProvided: false,
@@ -363,9 +363,9 @@ it('restores Laravel URL environment on a failed slug update and ignores applica
             rootProvided: false,
             root: null,
         ),
-    );
+    ))->toThrow(ResourceOperationException::class);
 
-    expect($fixture->app->refresh()->slug)->toBe('shop');
+    expect($fixture->app->refresh()->slug)->toBe('acme');
 });
 
 /** @return array{RemoteDevelopmentAppInstanceConfigurator, AppDevFakeSshExecutor, AppInstance} */
