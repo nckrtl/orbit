@@ -39,6 +39,7 @@ use App\Models\Schedule;
 use Closure;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Route;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
@@ -127,6 +128,10 @@ final readonly class RecordCommandActivity
 
         $response->setCallback(function () use ($activity, $request, $response, $startedAt, $callback, $shutdown): void {
             try {
+                if (! $callback instanceof Closure) {
+                    throw new \LogicException('The Response callback must be set.');
+                }
+
                 $callback();
                 $this->complete($activity, $request, $response, $startedAt);
                 $shutdown?->disarm();
@@ -146,7 +151,11 @@ final readonly class RecordCommandActivity
     private function start(Request $request): Activity
     {
         $requestId = $request->attributes->get('orbit.request_id');
-        $command = $request->route()->getName();
+        $route = $request->route();
+        if (! $route instanceof Route) {
+            throw new \LogicException('Command activity requires a matched route.');
+        }
+        $command = $route->getName();
         $callerIp = $this->callerIp($request);
 
         $toolCommand = str_starts_with((string) $command, 'tool:');

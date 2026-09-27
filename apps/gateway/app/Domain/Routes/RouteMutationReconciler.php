@@ -441,7 +441,7 @@ final readonly class RouteMutationReconciler
         if ($route->provenance === RouteProvenance::Generated) {
             if ($firstTarget instanceof AppInstance && ! $firstTarget->migration_required) {
                 $domain = $this->state->generatedDomain(
-                    $route->app->slug,
+                    $firstTarget->app->slug,
                     $firstTarget->name,
                     $placement->effectiveTld,
                 );

@@ -40,8 +40,17 @@ final readonly class UpdateProxyCliAccountAction
             );
         }
 
+        $wireguardIp = $node->wireguard_ip;
+        if (! is_string($wireguardIp) || $wireguardIp === '') {
+            throw new ResourceOperationException(
+                'proxycli.node_invalid',
+                'proxycli enable requires an active Linux Node with a WireGuard address.',
+                422,
+            );
+        }
+
         $this->client->setDisabled(
-            $node->wireguard_ip,
+            $wireguardIp,
             443,
             (string) $this->state->controlToken(),
             $account,

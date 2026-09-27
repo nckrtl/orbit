@@ -323,7 +323,7 @@ final readonly class UpdateAppAction
         $evidence = $update->evidence ?? [];
 
         if (is_string($update->requested_default_branch)) {
-            $evidence['branches'] = $this->prepareDefaultBranches($app, $update, $evidence['branches'] ?? []);
+            $evidence['branches'] = $this->prepareDefaultBranches($app, $update->requested_default_branch, $evidence['branches'] ?? []);
         }
 
         if (is_string($update->requested_repository_url)) {
@@ -357,7 +357,7 @@ final readonly class UpdateAppAction
      * @param  list<array{instance_id: int, previous_branch: ?string, current_branch: string, switched: bool}>  $evidence
      * @return list<array{instance_id: int, previous_branch: ?string, current_branch: string, switched: bool}>
      */
-    private function prepareDefaultBranches(OrbitApp $app, AppUpdate $update, array $evidence): array
+    private function prepareDefaultBranches(OrbitApp $app, string $branch, array $evidence): array
     {
         $byId = [];
 
@@ -377,12 +377,12 @@ final readonly class UpdateAppAction
             }
 
             $previous = $instance->branch;
-            $this->sources->switchDefaultBranch($instance, (string) $update->requested_default_branch);
-            $instance->update(['branch' => $update->requested_default_branch]);
+            $this->sources->switchDefaultBranch($instance, $branch);
+            $instance->update(['branch' => $branch]);
             $byId[$instance->id] = [
                 'instance_id' => $instance->id,
                 'previous_branch' => $previous,
-                'current_branch' => $update->requested_default_branch,
+                'current_branch' => $branch,
                 'switched' => true,
             ];
         }

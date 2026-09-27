@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Data\AppInstances;
 
 use App\Models\AppInstanceTransfer;
+use InvalidArgumentException;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
@@ -35,9 +36,14 @@ final class AppInstanceTransferData extends Data
 
     public static function fromModel(AppInstanceTransfer $transfer): self
     {
+        $instanceId = $transfer->app_instance_id;
+        if (! is_int($instanceId)) {
+            throw new InvalidArgumentException('An Instance transfer has no Instance.');
+        }
+
         return new self(
             operationId: $transfer->id,
-            id: $transfer->app_instance_id,
+            id: $instanceId,
             sourceNodeId: $transfer->source_node_id,
             destinationNodeId: $transfer->destination_node_id,
             destinationName: $transfer->destination_name,

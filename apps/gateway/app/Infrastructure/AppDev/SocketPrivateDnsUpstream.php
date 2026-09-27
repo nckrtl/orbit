@@ -65,7 +65,7 @@ final readonly class SocketPrivateDnsUpstream implements PrivateDnsUpstream
             $this->timeoutSeconds,
         );
         if (! is_resource($socket)) {
-            throw new RuntimeException($errorMessage !== '' ? $errorMessage : 'Could not reach the private DNS upstream.');
+            throw new RuntimeException(is_string($errorMessage) && $errorMessage !== '' ? $errorMessage : 'Could not reach the private DNS upstream.');
         }
 
         try {
