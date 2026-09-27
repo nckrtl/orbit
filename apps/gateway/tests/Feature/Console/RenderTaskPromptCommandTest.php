@@ -254,7 +254,8 @@ it('renders the same prompt for the opening reviewer', function (): void {
     $production = production_review_prompt(continued: false);
     $payload = $production['payload'];
 
-    expect(render_task_prompt('reviewer', $payload)['prompt'])->toBe($production['prompt']);
+    expect(render_task_prompt('reviewer', $payload)['prompt'])->toBe($production['prompt'])
+        ->and($production['prompt'])->toContain('Treat guarantees against injected failures, such as a lost response or a crash between two writes, as follow-ups named in your summary, not as findings, unless the brief, an ADR, or a deliverable requires them.');
 });
 
 it('renders the same prompt for a continued reviewer', function (): void {
