@@ -8,7 +8,6 @@ use Symfony\Component\Yaml\Yaml;
 describe('Composer configuration', function (): void {
     it('enables TIA for every repository-owned Pest command', function (): void {
         foreach ([
-            '.github/workflows/ci.yml',
             'bin/test',
             'apps/cli/composer.json',
             'apps/docs/composer.json',
@@ -61,9 +60,7 @@ describe('Composer configuration', function (): void {
                         ->not->toContain('--no-progress');
                 }
 
-                if ($path !== '.github/workflows/ci.yml') {
-                    expect($contents)->not->toContain('tests/');
-                }
+                expect($contents)->not->toContain('tests/');
             }
         }
 
@@ -214,8 +211,37 @@ describe('Composer configuration', function (): void {
             ->toMatchArray(['run' => 'composer check'])
             ->not->toHaveKey('if');
         expect($steps['Run affected tests'])
-            ->toMatchArray(['run' => 'vendor/bin/pest --parallel --processes=4 --tia --compact'])
-            ->not->toHaveKey('if');
+            ->toMatchArray([
+                'if' => "github.event_name == 'pull_request'",
+                'run' => 'vendor/bin/pest --parallel --processes=4 --tia --compact',
+            ]);
+        expect($steps['Run full test suite'])
+            ->toMatchArray([
+                'if' => "github.event_name == 'push' || github.event_name == 'workflow_dispatch'",
+                'run' => 'vendor/bin/pest --parallel --processes=4 --no-tia --compact',
+            ]);
+        expect($steps['Refresh Pest TIA graph'])
+            ->toMatchArray([
+                'if' => "github.event_name == 'push'",
+                'run' => 'vendor/bin/pest --parallel --processes=4 --tia --fresh --compact',
+            ]);
+        expect($steps['Run architecture tests'])
+            ->toMatchArray([
+                'if' => "always() && github.event_name == 'pull_request'",
+            ])
+            ->and($steps['Run architecture tests']['run'])
+            ->toContain('tests/Feature/CommandSurfaceTest.php')
+            ->toContain('tests/Unit/Architecture')
+            ->toContain('tests/Feature/Infrastructure/AppInstances/ConfiguredOriginReadTest.php')
+            ->toContain('tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php')
+            ->toContain('tests/Unit/E2E/ProofFixtureContractTest.php')
+            ->toContain('tests/Unit/E2E/ProofFixtureShellContractTest.php')
+            ->toContain('tests/Unit/SuccessRequestIdBoundaryTest.php')
+            ->toContain('tests/Unit/RepositoryGuidanceTest.php')
+            ->toContain('tests/Unit/Requests/Workspaces/WorkspaceRequestsTest.php')
+            ->toContain('tests/Unit/Requests/Deployments/DeploymentRequestsTest.php')
+            ->toContain('vendor/bin/pest --parallel --processes=4 --compact "$architecture_test"');
+        expect($steps['Run architecture tests']['run'])->not->toContain('--tia');
     });
 
     it('persists per-project Pest TIA graphs on a named checkout', function (): void {
@@ -241,10 +267,15 @@ describe('Composer configuration', function (): void {
             ->toContain('if: success()')
             ->toContain('coverage: pcov')
             ->toContain('vendor/bin/pest --parallel --processes=4 --tia --compact')
+            ->toContain("github.event_name == 'push' || github.event_name == 'workflow_dispatch'")
+            ->toContain('vendor/bin/pest --parallel --processes=4 --no-tia --compact')
+            ->toContain('vendor/bin/pest --parallel --processes=4 --tia --fresh --compact')
+            ->toContain('tests/Unit/Architecture')
+            ->toContain("github.event_name == 'pull_request'")
+            ->toContain("github.event_name == 'workflow_dispatch'")
             ->not->toContain('bin/tia-cache')
             ->not->toContain('tia-baseline.yml')
-            ->not->toContain('vendor/.orbit-guidance-tia')
-            ->not->toMatch('/vendor\/bin\/pest[^\n]*tests\//');
+            ->not->toContain('vendor/.orbit-guidance-tia');
 
         expect(strpos($workflow, 'Restore Pest TIA graph'))
             ->toBeLessThan(strpos($workflow, 'Run affected tests'));
