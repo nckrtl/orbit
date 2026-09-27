@@ -430,17 +430,18 @@ final readonly class TransferAppInstanceAction
         if ($transfer->current_step === AppInstanceTransferStep::Reserved) {
             app(VitePortAllocator::class)->assign($instance);
             app(VitePortAllocator::class)->assign($instance, $destination);
+            $this->runtime->pause($instance);
             $capture = $this->sources->capture($instance);
             $this->checkpoint($transfer, AppInstanceTransferStep::SourceCaptured, [
                 'common_repository_path' => $capture->commonRepositoryPath ?? $transfer->common_repository_path,
             ]);
             $this->materializeDestination($capture, $destination, $path, $transfer);
         } elseif ($transfer->current_step === AppInstanceTransferStep::SourceCaptured) {
+            $this->runtime->pause($instance);
             $this->materializeDestination($this->sources->capture($instance), $destination, $path, $transfer);
         }
 
         if ($transfer->current_step === AppInstanceTransferStep::DestinationCheckoutCreated) {
-            $this->runtime->pause($instance);
             $this->checkpoint($transfer, AppInstanceTransferStep::SourcePaused);
         }
 

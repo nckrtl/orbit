@@ -97,6 +97,8 @@ final class Orb245TransferSource implements AppInstanceTransferSource
 
     public bool $failMaterialize = false;
 
+    public ?Closure $onCall = null;
+
     public bool $cleanupIncomplete = false;
 
     public bool $mutatedSource = false;
@@ -112,6 +114,7 @@ final class Orb245TransferSource implements AppInstanceTransferSource
     public function capture(AppInstance $instance): TransferSourceCapture
     {
         $this->calls[] = 'capture';
+        ($this->onCall ?? static fn () => null)('capture');
         $capture = new TransferSourceCapture(
             appInstanceId: $instance->id,
             nodeId: $instance->node_id,
@@ -176,9 +179,26 @@ final class Orb245TransferRuntime implements AppInstanceTransferRuntime
     /** @var list<string> */
     public array $calls = [];
 
+    public ?Closure $onCall = null;
+
+    public bool $processArtifactsRemoved = false;
+
+    /** @var list<string> */
+    public array $pauseOutcomes = [];
+
     public function pause(AppInstance $instance): void
     {
         $this->calls[] = 'pause';
+        ($this->onCall ?? static fn () => null)('pause');
+
+        if ($this->processArtifactsRemoved) {
+            $this->pauseOutcomes[] = 'already-removed';
+
+            return;
+        }
+
+        $this->processArtifactsRemoved = true;
+        $this->pauseOutcomes[] = 'removed';
     }
 
     public function restore(AppInstance $instance): void

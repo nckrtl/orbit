@@ -20,14 +20,18 @@ use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Processes\DesiredProcessState;
+use App\Domain\Processes\ProcessRuntime;
+use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Schedules\DesiredTimerState;
+use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AppInstances\NativeAppInstanceTransferRuntime;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceTransfer;
@@ -417,6 +421,105 @@ it('rejects a colliding rename identity and leaves the original name unchanged',
         ->and($this->sources->calls)->toBeEmpty();
 });
 
+it('resumes a SourceCaptured transfer after source process artifacts were removed', function (): void {
+    $transfer = AppInstanceTransfer::query()->create([
+        'app_instance_id' => $this->instance->id,
+        'source_node_id' => $this->sourceNode->id,
+        'source_router_node_id' => $this->sourceCluster->routerAssignment->node_id,
+        'destination_node_id' => $this->destinationNode->id,
+        'requested_name' => null,
+        'destination_name' => 'web',
+        'destination_path' => '/srv/orbit/apps/shop/web',
+        'destination_domain' => 'web.shop.other.orbit',
+        'sqlite_source_path' => null,
+        'source_layout' => AppInstanceSourceLayout::Checkout,
+        'source_path' => $this->instance->checkout_path,
+        'common_repository_path' => null,
+        'source_route_id' => $this->route->id,
+        'status' => AppInstanceTransferStatus::InProgress,
+        'current_step' => AppInstanceTransferStep::SourceCaptured,
+    ]);
+    $this->runtime->processArtifactsRemoved = true;
+
+    $result = $this->action->execute($this->instance, $this->data);
+
+    expect($result['created'])->toBeFalse()
+        ->and($result['transfer']->id)->toBe($transfer->id)
+        ->and($result['transfer']->status)->toBe(AppInstanceTransferStatus::Completed)
+        ->and($this->runtime->processArtifactsRemoved)->toBeTrue()
+        ->and($this->runtime->pauseOutcomes)->toBe(['already-removed'])
+        ->and($this->sources->calls)->toBe(['capture', 'materialize', 'cleanup']);
+});
+
+it('pauses before capture', function (): void {
+    $events = [];
+    $this->runtime->onCall = function (string $call) use (&$events): void {
+        $events[] = $call;
+    };
+    $this->sources->onCall = function (string $call) use (&$events): void {
+        $events[] = $call;
+    };
+
+    $this->action->execute($this->instance, $this->data);
+
+    expect(array_search('pause', $events, true))
+        ->toBeLessThan(array_search('capture', $events, true));
+});
+
+it('gracefully stops an owned Docker Process before removing it and capturing the checkout', function (): void {
+    $this->process->update(['runtime' => ProcessRuntime::Docker]);
+    $events = [];
+    $processes = Mockery::mock(ProcessRuntimeManager::class);
+    $processes->shouldReceive('status')->once()->with(Mockery::on(
+        fn (Process $process): bool => $process->is($this->process),
+    ))->andReturnUsing(function () use (&$events): string {
+        $events[] = 'status';
+
+        return 'running';
+    });
+    $processes->shouldReceive('stop')->once()->with(Mockery::on(
+        fn (Process $process): bool => $process->is($this->process),
+    ))->andReturnUsing(function () use (&$events): void {
+        $events[] = 'stop';
+    });
+    $processes->shouldReceive('remove')->once()->with(Mockery::on(
+        fn (Process $process): bool => $process->is($this->process),
+    ))->andReturnUsing(function () use (&$events): void {
+        $events[] = 'remove';
+    });
+
+    $schedules = Mockery::mock(ScheduleRuntimeManager::class);
+    $schedules->shouldReceive('remove')->once()->with(Mockery::on(
+        fn (Schedule $schedule): bool => $schedule->is($this->schedule),
+    ), true)->andReturnTrue();
+
+    $this->sources->onCall = function (string $call) use (&$events): void {
+        $events[] = $call;
+    };
+    (new NativeAppInstanceTransferRuntime($processes, $schedules))->pause($this->instance);
+    $this->sources->capture($this->instance);
+
+    expect($events)->toBe(['status', 'stop', 'remove', 'capture']);
+});
+
+it('repeats native transfer pause after process artifacts are removed', function (): void {
+    $processes = Mockery::mock(ProcessRuntimeManager::class);
+    $processes->shouldReceive('status')->twice()->andReturn('absent');
+    $processes->shouldNotReceive('stop');
+    $processes->shouldReceive('remove')->twice()->with(Mockery::on(
+        fn (Process $process): bool => $process->is($this->process),
+    ));
+
+    $schedules = Mockery::mock(ScheduleRuntimeManager::class);
+    $schedules->shouldReceive('remove')->twice()->with(Mockery::on(
+        fn (Schedule $schedule): bool => $schedule->is($this->schedule),
+    ), true)->andReturnTrue();
+
+    $runtime = new NativeAppInstanceTransferRuntime($processes, $schedules);
+    $runtime->pause($this->instance);
+    $runtime->pause($this->instance);
+});
+
 it('captures source as an independent destination checkout without mutating source Git', function (): void {
     $this->action->execute($this->instance, $this->data);
 
@@ -483,7 +586,7 @@ it('restores the source and discards destination state when transfer fails befor
 
     expect($this->instance->refresh()->node_id)->toBe($this->sourceNode->id)
         ->and($this->instance->name)->toBe('web')
-        ->and($this->runtime->calls)->toBe(['restore'])
+        ->and($this->runtime->calls)->toBe(['pause', 'restore'])
         ->and($this->sources->discarded)->toBe(['/srv/orbit/apps/shop/web'])
         ->and($transfer->cutover_at)->toBeNull()
         ->and($transfer->current_step)->toBe(AppInstanceTransferStep::Reserved)
