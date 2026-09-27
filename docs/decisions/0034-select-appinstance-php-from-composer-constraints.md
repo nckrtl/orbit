@@ -10,7 +10,7 @@ In the context of development AppInstances whose source may declare a PHP platfo
 
 ## Status
 
-Accepted on 2026-09-05. Extends [ADR 0021](/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role). Supersedes [ADR 0009](/decisions/0009-clustered-app-instance-routing) only where it prevents Orbit from selecting an AppInstance runtime from its source.
+Accepted on 2026-09-05. Extends [ADR 0021](/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role). Supersedes [ADR 0009](/reference/routes#set-up-private-traffic) only where it prevents Orbit from selecting an AppInstance runtime from its source.
 
 ## Context
 
@@ -40,6 +40,6 @@ ADR 0009 puts application-runtime prerequisites on the Node role and prevents an
 ## Affects
 
 - Components: apps/cli, apps/docs, apps/gateway, packages/php-sdk
-- ADRs: extends [ADR 0021](/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role); supersedes [ADR 0009](/decisions/0009-clustered-app-instance-routing) where Orbit selects an AppInstance runtime from its source
+- ADRs: extends [ADR 0021](/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role); supersedes [ADR 0009](/reference/routes#set-up-private-traffic) where Orbit selects an AppInstance runtime from its source
 - Detail: docs/reference/php-runtime.md
 - Verify: `bin/test` and the development AppInstance provisioning Incus proof actions

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Doctor\ProcessDoctorProbe;
 use App\Data\Doctor\DoctorFamilyReportData;
+use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
@@ -20,6 +21,7 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
+use Illuminate\Support\Facades\DB;
 
 it('returns a healthy empty report without runtime inspection when the node has no processes', function (): void {
     $node = doctor_process_node();
@@ -125,6 +127,80 @@ it('compares selected process runtimes in process id order', function (): void {
         ->toHaveCount(2)
         ->and(collect($report->issues)->pluck('resourceId')->all())
         ->toBe([$first->id, $second->id]);
+});
+
+it('skips Process inspection for an Instance already removing', function (): void {
+    $node = doctor_process_node();
+    $process = doctor_process($node, ProcessRuntime::Systemd, DesiredProcessState::Running);
+    $instance = AppInstance::query()->findOrFail($process->owner_id);
+    doctor_process_mark_removing($instance);
+
+    $runtime = Mockery::mock(ProcessStateInspector::class);
+    $runtime->shouldNotReceive('inspect');
+
+    $report = new ProcessDoctorProbe($runtime)->inspect(doctor_process_context($node));
+
+    expect($report->checked)->toBe(0)->and($report->issues)->toBeEmpty();
+});
+
+it('drops removing Instance Process issues after inspection and retains Node-owned issues', function (): void {
+    $node = doctor_process_node();
+    $owned = doctor_process($node, ProcessRuntime::Systemd, DesiredProcessState::Running, name: 'owned');
+    $instance = AppInstance::query()->findOrFail($owned->owner_id);
+    $nodeOwned = $node->processes()->create([
+        'name' => 'node-owned',
+        'runtime' => ProcessRuntime::Systemd,
+        'working_directory' => '/tmp',
+        'runtime_config' => [],
+        'restart_policy' => 'always',
+        'desired_state' => DesiredProcessState::Running,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $runtime = new class($instance) implements ProcessStateInspector
+    {
+        public function __construct(private AppInstance $instance) {}
+
+        public function inspect(Process $process): ProcessInspectionData
+        {
+            if ($process->owner_type === AppInstance::class) {
+                doctor_process_mark_removing($this->instance);
+
+                throw new DoctorInspectionException;
+            }
+
+            return new ProcessInspectionData(false, null);
+        }
+    };
+
+    $report = new ProcessDoctorProbe($runtime)->inspect(doctor_process_context($node));
+
+    expect($report->issues)
+        ->toHaveCount(1)
+        ->and($report->issues[0]->resourceId)
+        ->toBe($nodeOwned->id)
+        ->and($report->issues[0]->code)
+        ->toBe('process.runtime_missing');
+});
+
+it('drops an Instance Process issue when its owner row is deleted during inspection', function (): void {
+    $node = doctor_process_node();
+    $process = doctor_process($node, ProcessRuntime::Systemd, DesiredProcessState::Running);
+    $instanceId = $process->owner_id;
+    $runtime = new class($instanceId) implements ProcessStateInspector
+    {
+        public function __construct(private int $instanceId) {}
+
+        public function inspect(Process $process): ProcessInspectionData
+        {
+            DB::table('app_instances')->where('id', $this->instanceId)->delete();
+
+            return new ProcessInspectionData(false, null);
+        }
+    };
+
+    $report = new ProcessDoctorProbe($runtime)->inspect(doctor_process_context($node));
+
+    expect($report->issues)->toBeEmpty();
 });
 
 it('does not inspect runtimes when the node is unreachable', function (): void {
@@ -332,6 +408,22 @@ function doctor_process_node(): Node
         'user' => 'orbit',
         'wireguard_ip' => "10.44.0.{$address}",
     ]);
+}
+
+function doctor_process_mark_removing(AppInstance $instance): void
+{
+    $trigger = DB::table('sqlite_master')
+        ->where('type', 'trigger')
+        ->where('name', 'app_instances_removal_status_update')
+        ->value('sql');
+    expect($trigger)->toBeString();
+    DB::statement('DROP TRIGGER app_instances_removal_status_update');
+
+    try {
+        $instance->update(['status' => AppInstanceState::Removing]);
+    } finally {
+        DB::statement($trigger);
+    }
 }
 
 function doctor_process_context(Node $node): DoctorNodeContext

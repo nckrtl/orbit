@@ -17,7 +17,6 @@
             "reviewer_agent_thread_id": null,
             "pr_url": null,
             "notify_coder": false,
-            "plan": false,
             "assistance_requested": false,
             "assistance_reason": null,
             "implementer_model": "gpt-5.6-luna",
