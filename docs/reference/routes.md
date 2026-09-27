@@ -398,6 +398,8 @@ When an operation needs several owners, it takes them in this order: Node lifecy
 
 The `instance` family checks every active Route of an Instance on every Node that serves it. The checks change nothing and use only Nodes that the caller may address. An unselected related Node gives `instance.related_node_unverifiable`. A valid serving configuration stays healthy when the application returns HTTP 500.
 
+Doctor skips an Instance in `removing`. A removal that lasts 10 minutes or more reports `instance.removal_stuck`. When a removal starts during an inspection, Doctor drops that Instance's findings. See the [Doctor family rules](/cli/doctor#what-each-family-checks).
+
 | Doctor issue code | Difference |
 | --- | --- |
 | `instance.private_routing_scope_mismatch` | The Route's Node or Cluster scope differs from the target's placement. |

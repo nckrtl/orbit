@@ -10,7 +10,7 @@ In the context of production AppInstances that share a PHP-FPM master, facing ca
 
 ## Status
 
-Accepted on 2026-09-10. Extends [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement) for production runtime ownership. Supersedes [ADR 0021](/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role) for production service scope, tuning ownership, and deployment cache refresh. Amended by [ADR 0106](/decisions/0106-derive-instance-capabilities-from-project-type) and [ADR 0107](/reference/environment-variables#laravel-mode): isolation by Unix user follows the app-prod Node role for PHP Instances, and a dedicated FPM master starts only when the Instance serves PHP.
+Accepted on 2026-09-10. Extends [ADR 0011](/reference/routes#publish-a-public-route) for production runtime ownership. Supersedes [ADR 0021](/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role) for production service scope, tuning ownership, and deployment cache refresh. Amended by [ADR 0106](/decisions/0106-derive-instance-capabilities-from-project-type) and [ADR 0107](/reference/environment-variables#laravel-mode): isolation by Unix user follows the app-prod Node role for PHP Instances, and a dedicated FPM master starts only when the Instance serves PHP.
 
 ## Context
 
@@ -51,6 +51,6 @@ PHP-FPM pools under one Linux master share an OPcache instance. Selecting a pool
 ## Affects
 
 - Components: apps/gateway
-- ADRs: extends [ADR 0011](/decisions/0011-clustered-production-ingress-and-app-prod-placement) for production runtime ownership; supersedes [ADR 0021](/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role) for production service scope, tuning ownership, and deployment cache refresh
+- ADRs: extends [ADR 0011](/reference/routes#publish-a-public-route) for production runtime ownership; supersedes [ADR 0021](/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role) for production service scope, tuning ownership, and deployment cache refresh
 - Detail: [PHP runtimes](/reference/php-runtime)
 - Verify: `composer docs-lint`; implementation conformance through Gateway runtime tests and issue-specific Incus proof

@@ -643,26 +643,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0009-clustered-app-instance-routing.md",
-            "title": "ADR 0009: Adopt clustered AppInstance routing",
-            "kind": "decision",
-            "components": [],
-            "concepts": [
-                "Cluster",
-                "Extension",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Role",
-                "Route",
-                "Schedule"
-            ],
-            "governing_adrs": [
-                "0009"
-            ]
-        },
-        {
             "path": "docs/decisions/0010-record-decisions-before-implementation-issues.md",
             "title": "ADR 0010: Record decisions before implementation issues",
             "kind": "decision",
@@ -670,25 +650,6 @@
             "concepts": [],
             "governing_adrs": [
                 "0010"
-            ]
-        },
-        {
-            "path": "docs/decisions/0011-clustered-production-ingress-and-app-prod-placement.md",
-            "title": "ADR 0011: Define clustered production ingress and app-prod placement",
-            "kind": "decision",
-            "components": [],
-            "concepts": [
-                "Cluster",
-                "Deployment",
-                "Instance",
-                "Node",
-                "Process",
-                "Role",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0009",
-                "0011"
             ]
         },
         {
@@ -745,8 +706,6 @@
                 "Route"
             ],
             "governing_adrs": [
-                "0009",
-                "0011",
                 "0016"
             ]
         },
@@ -765,8 +724,6 @@
                 "Route"
             ],
             "governing_adrs": [
-                "0009",
-                "0011",
                 "0016",
                 "0017"
             ]
@@ -788,7 +745,6 @@
                 "Tool"
             ],
             "governing_adrs": [
-                "0009",
                 "0016",
                 "0017",
                 "0018"
@@ -843,52 +799,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0023-separate-hostname-selection-from-cluster-routing.md",
-            "title": "ADR 0023: Separate hostname selection from Cluster routing",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Cluster",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Project",
-                "Role",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0009",
-                "0011",
-                "0016",
-                "0017",
-                "0023"
-            ]
-        },
-        {
-            "path": "docs/decisions/0024-follow-generated-route-targets.md",
-            "title": "ADR 0024: Make generated Route identity follow its target",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Cluster",
-                "Gateway",
-                "Node",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0023",
-                "0024"
-            ]
-        },
-        {
             "path": "docs/decisions/0025-stabilize-the-default-appinstance-identity.md",
             "title": "ADR 0025: Stabilize the default AppInstance identity",
             "kind": "decision",
@@ -905,9 +815,7 @@
                 "Route"
             ],
             "governing_adrs": [
-                "0009",
                 "0016",
-                "0024",
                 "0025",
                 "0105"
             ]
@@ -922,11 +830,9 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Gateway",
-                "Instance"
+                "Gateway"
             ],
             "governing_adrs": [
-                "0009",
                 "0016",
                 "0026"
             ]
@@ -947,36 +853,11 @@
                 "Route"
             ],
             "governing_adrs": [
-                "0009",
                 "0016",
                 "0018",
                 "0025",
                 "0026",
                 "0027"
-            ]
-        },
-        {
-            "path": "docs/decisions/0028-require-one-route-per-active-appinstance.md",
-            "title": "ADR 0028: Require one Route per active AppInstance",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Cluster",
-                "Gateway",
-                "Instance",
-                "Project",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0009",
-                "0023",
-                "0024",
-                "0028",
-                "0106"
             ]
         },
         {
@@ -992,13 +873,11 @@
                 "Cluster",
                 "Deployment",
                 "Gateway",
+                "Instance",
                 "Route",
                 "Tool"
             ],
             "governing_adrs": [
-                "0011",
-                "0023",
-                "0028",
                 "0029"
             ]
         },
@@ -1019,9 +898,6 @@
                 "Route"
             ],
             "governing_adrs": [
-                "0009",
-                "0011",
-                "0028",
                 "0029",
                 "0030"
             ]
@@ -1042,7 +918,6 @@
                 "Route"
             ],
             "governing_adrs": [
-                "0011",
                 "0030",
                 "0031",
                 "0032"
@@ -1069,29 +944,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0033-trust-wireguard-members-for-private-node-traffic.md",
-            "title": "ADR 0033: Trust WireGuard members for private Node traffic",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Cluster",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0009",
-                "0011",
-                "0023",
-                "0033"
-            ]
-        },
-        {
             "path": "docs/decisions/0034-select-appinstance-php-from-composer-constraints.md",
             "title": "ADR 0034: Select AppInstance PHP from Composer constraints",
             "kind": "decision",
@@ -1103,13 +955,11 @@
             ],
             "concepts": [
                 "Gateway",
-                "Instance",
                 "Node",
                 "Project",
                 "Role"
             ],
             "governing_adrs": [
-                "0009",
                 "0021",
                 "0034"
             ]
@@ -1147,7 +997,6 @@
                 "Route"
             ],
             "governing_adrs": [
-                "0009",
                 "0036"
             ]
         },
@@ -1194,27 +1043,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0039-use-round-robin-for-production-route-pools.md",
-            "title": "ADR 0039: Use round-robin for production Route pools",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Cluster",
-                "Gateway",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0011",
-                "0028",
-                "0030",
-                "0039"
-            ]
-        },
-        {
             "path": "docs/decisions/0040-extend-issue-proof-with-one-app-prod-node.md",
             "title": "ADR 0040: Extend issue proof with one app-prod Node",
             "kind": "decision",
@@ -1234,26 +1062,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0041-delete-an-empty-route-during-appinstance-removal.md",
-            "title": "ADR 0041: Delete an empty Route during AppInstance removal",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Gateway",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0024",
-                "0028",
-                "0039",
-                "0041"
-            ]
-        },
-        {
             "path": "docs/decisions/0045-isolate-production-php-fpm-by-unix-user.md",
             "title": "ADR 0045: Isolate production PHP-FPM by Unix user",
             "kind": "decision",
@@ -1266,10 +1074,10 @@
                 "Instance",
                 "Node",
                 "Project",
-                "Role"
+                "Role",
+                "Route"
             ],
             "governing_adrs": [
-                "0011",
                 "0021",
                 "0045",
                 "0106"
@@ -1297,7 +1105,6 @@
                 "Schedule"
             ],
             "governing_adrs": [
-                "0028",
                 "0030",
                 "0031",
                 "0032",
@@ -1465,106 +1272,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0061-use-vpn-dns-by-default-on-managed-peers.md",
-            "title": "ADR 0061: Use VPN DNS by default on managed peers",
-            "kind": "decision",
-            "components": [
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Cluster",
-                "Gateway",
-                "Node",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0023",
-                "0061"
-            ]
-        },
-        {
-            "path": "docs/decisions/0062-select-cluster-router-dns-addresses-from-lan-intent.md",
-            "title": "ADR 0062: Select Cluster Router DNS addresses from LAN intent",
-            "kind": "decision",
-            "components": [
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Cluster",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0009",
-                "0023",
-                "0033",
-                "0062"
-            ]
-        },
-        {
-            "path": "docs/decisions/0063-prefer-active-cluster-tlds-for-generated-routes.md",
-            "title": "ADR 0063: Prefer active Cluster TLDs for generated Routes",
-            "kind": "decision",
-            "components": [
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Cluster",
-                "Gateway",
-                "Node",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0023",
-                "0063"
-            ]
-        },
-        {
-            "path": "docs/decisions/0064-name-application-endpoints-as-domains.md",
-            "title": "ADR 0064: Name application endpoints as domains",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Cluster",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0023",
-                "0063",
-                "0064"
-            ]
-        },
-        {
-            "path": "docs/decisions/0065-replace-routes-when-domains-change.md",
-            "title": "ADR 0065: Replace Routes when domains change",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Gateway",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0016",
-                "0024",
-                "0028",
-                "0064",
-                "0065"
-            ]
-        },
-        {
             "path": "docs/decisions/0066-transfer-development-appinstances-between-nodes.md",
             "title": "ADR 0066: Transfer development AppInstances between Nodes",
             "kind": "decision",
@@ -1583,32 +1290,7 @@
             "governing_adrs": [
                 "0027",
                 "0038",
-                "0063",
-                "0065",
                 "0066"
-            ]
-        },
-        {
-            "path": "docs/decisions/0067-serve-development-servers-on-the-route-origin.md",
-            "title": "ADR 0067: Serve development servers on the Route origin",
-            "kind": "decision",
-            "components": [
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Cluster",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0009",
-                "0023",
-                "0028",
-                "0033",
-                "0067"
             ]
         },
         {
@@ -1732,34 +1414,8 @@
             ],
             "governing_adrs": [
                 "0066",
-                "0067",
                 "0074",
                 "0078"
-            ]
-        },
-        {
-            "path": "docs/decisions/0080-add-node-owned-custom-proxy-routes.md",
-            "title": "ADR 0080: Add node-owned custom proxy Routes",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Cluster",
-                "Doctor",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0009",
-                "0064",
-                "0080"
             ]
         },
         {
@@ -1782,10 +1438,8 @@
                 "Route"
             ],
             "governing_adrs": [
-                "0067",
                 "0074",
                 "0078",
-                "0080",
                 "0082"
             ]
         },
@@ -1828,7 +1482,6 @@
                 "Schedule"
             ],
             "governing_adrs": [
-                "0080",
                 "0084",
                 "0085",
                 "0087"
@@ -1902,7 +1555,6 @@
                 "Route"
             ],
             "governing_adrs": [
-                "0080",
                 "0084",
                 "0087",
                 "0095"
@@ -1951,26 +1603,7 @@
                 "Role"
             ],
             "governing_adrs": [
-                "0061",
                 "0092"
-            ]
-        },
-        {
-            "path": "docs/decisions/0093-show-live-ufw-and-desired-rules-that-match-converge.md",
-            "title": "ADR 0093: Show live UFW and desired rules that match converge",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Doctor",
-                "Gateway",
-                "Node",
-                "Role"
-            ],
-            "governing_adrs": [
-                "0093"
             ]
         },
         {
@@ -1990,7 +1623,6 @@
                 "Role"
             ],
             "governing_adrs": [
-                "0061",
                 "0071",
                 "0087",
                 "0092",
@@ -2016,10 +1648,6 @@
                 "Route"
             ],
             "governing_adrs": [
-                "0011",
-                "0023",
-                "0067",
-                "0080",
                 "0082",
                 "0097"
             ]
@@ -2049,52 +1677,6 @@
                 "0026",
                 "0031",
                 "0098"
-            ]
-        },
-        {
-            "path": "docs/decisions/0100-install-caddy-from-the-pinned-caddy-apt-source.md",
-            "title": "ADR 0100: Install Caddy from the pinned Caddy apt source",
-            "kind": "decision",
-            "components": [
-                "apps/e2e",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Doctor",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Project",
-                "Role",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0021",
-                "0074",
-                "0100"
-            ]
-        },
-        {
-            "path": "docs/decisions/0101-simplify-route-publication-and-use-lets-encrypt-on-public-ingress.md",
-            "title": "ADR 0101: Keep one Route publication field and terminate public Ingress with Let's Encrypt",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Cluster",
-                "Doctor",
-                "Gateway",
-                "Instance",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0011",
-                "0097",
-                "0101"
             ]
         },
         {
@@ -2147,7 +1729,6 @@
                 "Route"
             ],
             "governing_adrs": [
-                "0080",
                 "0104",
                 "0109",
                 "0150"
@@ -2202,7 +1783,6 @@
                 "Route"
             ],
             "governing_adrs": [
-                "0028",
                 "0045",
                 "0103",
                 "0105",
@@ -2641,25 +2221,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0126-limit-browser-api-calls-to-orbit-origins.md",
-            "title": "ADR 0126: Limit browser API calls to Orbit origins",
-            "kind": "decision",
-            "components": [
-                "apps/gateway",
-                "apps/web"
-            ],
-            "concepts": [
-                "Deployment",
-                "Gateway",
-                "Node",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0123",
-                "0126"
-            ]
-        },
-        {
             "path": "docs/decisions/0127-share-one-ssh-connection-per-node.md",
             "title": "ADR 0127: Share one SSH connection per Node",
             "kind": "decision",
@@ -2676,7 +2237,6 @@
                 "Task"
             ],
             "governing_adrs": [
-                "0033",
                 "0127"
             ]
         },
@@ -2835,67 +2395,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0137-refuse-carried-caddy-global-options.md",
-            "title": "ADR 0137: Refuse carried Caddy global options",
-            "kind": "decision",
-            "components": [
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Activity",
-                "Gateway",
-                "Node",
-                "Role"
-            ],
-            "governing_adrs": [
-                "0137",
-                "0141"
-            ]
-        },
-        {
-            "path": "docs/decisions/0138-opt-public-ingress-sites-into-caddy-certificate-automation.md",
-            "title": "ADR 0138: Opt public Ingress sites into Caddy certificate automation",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Doctor",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Role",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0100",
-                "0101",
-                "0137",
-                "0138"
-            ]
-        },
-        {
-            "path": "docs/decisions/0139-collect-caddy-http-metrics-on-every-node.md",
-            "title": "ADR 0139: Collect Caddy HTTP metrics on every Node",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Gateway",
-                "Instance",
-                "Node",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0137",
-                "0138",
-                "0139"
-            ]
-        },
-        {
             "path": "docs/decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks.md",
             "title": "ADR 0140: Watch settling pull requests for conflicts and failed checks",
             "kind": "decision",
@@ -2913,40 +2412,6 @@
                 "0121",
                 "0140",
                 "0164"
-            ]
-        },
-        {
-            "path": "docs/decisions/0141-build-each-node-caddyfile-on-the-gateway.md",
-            "title": "ADR 0141: Build each Node's Caddyfile on the Gateway",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Activity",
-                "Cluster",
-                "Doctor",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Project",
-                "Role",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0009",
-                "0011",
-                "0080",
-                "0100",
-                "0137",
-                "0138",
-                "0139",
-                "0141",
-                "0157",
-                "0161"
             ]
         },
         {
@@ -2991,7 +2456,6 @@
             "governing_adrs": [
                 "0104",
                 "0109",
-                "0141",
                 "0145"
             ]
         },
@@ -3014,24 +2478,6 @@
                 "0123",
                 "0129",
                 "0147"
-            ]
-        },
-        {
-            "path": "docs/decisions/0149-install-the-private-dns-listener-from-the-gateway.md",
-            "title": "ADR 0149: Install the private DNS listener from the Gateway",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Gateway",
-                "Node",
-                "Process"
-            ],
-            "governing_adrs": [
-                "0092",
-                "0149"
             ]
         },
         {
@@ -3110,48 +2556,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0156-route-the-private-domain-on-the-gateway-machine-to-vpn-dns.md",
-            "title": "ADR 0156: Route the private domain on the Gateway machine to VPN DNS",
-            "kind": "decision",
-            "components": [
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Cluster",
-                "Doctor",
-                "Gateway",
-                "Node",
-                "Role",
-                "Route",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0061",
-                "0156"
-            ]
-        },
-        {
-            "path": "docs/decisions/0157-keep-private-caddy-sites-off-the-public-listener.md",
-            "title": "ADR 0157: Keep private Caddy sites off the public listener",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Cluster",
-                "Doctor",
-                "Gateway",
-                "Node",
-                "Role",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0141",
-                "0157"
-            ]
-        },
-        {
             "path": "docs/decisions/0158-end-interrupted-activity.md",
             "title": "ADR 0158: End interrupted Activity",
             "kind": "decision",
@@ -3225,25 +2629,6 @@
                 "0103",
                 "0121",
                 "0160"
-            ]
-        },
-        {
-            "path": "docs/decisions/0161-set-a-stale-caddyfile-aside-when-caddy-is-absent.md",
-            "title": "ADR 0161: Set a stale Caddyfile aside when Caddy is absent",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Doctor",
-                "Gateway",
-                "Node",
-                "Role"
-            ],
-            "governing_adrs": [
-                "0141",
-                "0161"
             ]
         },
         {
@@ -3610,9 +2995,7 @@
                 "0002",
                 "0005",
                 "0006",
-                "0009",
                 "0010",
-                "0011",
                 "0014",
                 "0015",
                 "0016",
@@ -3621,25 +3004,19 @@
                 "0019",
                 "0021",
                 "0022",
-                "0023",
-                "0024",
                 "0025",
                 "0026",
                 "0027",
-                "0028",
                 "0029",
                 "0030",
                 "0031",
                 "0032",
-                "0033",
                 "0034",
                 "0035",
                 "0036",
                 "0037",
                 "0038",
-                "0039",
                 "0040",
-                "0041",
                 "0045",
                 "0047",
                 "0049",
@@ -3651,19 +3028,12 @@
                 "0056",
                 "0058",
                 "0059",
-                "0061",
-                "0062",
-                "0063",
-                "0064",
-                "0065",
                 "0066",
-                "0067",
                 "0071",
                 "0074",
                 "0075",
                 "0076",
                 "0078",
-                "0080",
                 "0082",
                 "0083",
                 "0084",
@@ -3672,12 +3042,9 @@
                 "0087",
                 "0089",
                 "0092",
-                "0093",
                 "0095",
                 "0097",
                 "0098",
-                "0100",
-                "0101",
                 "0103",
                 "0104",
                 "0105",
@@ -3695,7 +3062,6 @@
                 "0123",
                 "0124",
                 "0125",
-                "0126",
                 "0127",
                 "0129",
                 "0131",
@@ -3704,24 +3070,16 @@
                 "0134",
                 "0135",
                 "0136",
-                "0137",
-                "0138",
-                "0139",
                 "0140",
-                "0141",
                 "0143",
                 "0145",
                 "0147",
-                "0149",
                 "0150",
                 "0151",
                 "0152",
-                "0156",
-                "0157",
                 "0158",
                 "0159",
                 "0160",
-                "0161",
                 "0162",
                 "0163",
                 "0164",
@@ -3765,8 +3123,6 @@
                 "Route"
             ],
             "governing_adrs": [
-                "0009",
-                "0011",
                 "0025",
                 "0027",
                 "0032",
@@ -3961,7 +3317,6 @@
                 "Schedule"
             ],
             "governing_adrs": [
-                "0023",
                 "0047",
                 "0106"
             ]
@@ -3987,10 +3342,8 @@
             ],
             "governing_adrs": [
                 "0027",
-                "0028",
                 "0031",
                 "0038",
-                "0041",
                 "0045",
                 "0106",
                 "0111"
@@ -4013,7 +3366,6 @@
                 "Schedule"
             ],
             "governing_adrs": [
-                "0065",
                 "0066"
             ]
         },
@@ -4954,7 +4306,6 @@
             ],
             "governing_adrs": [
                 "0005",
-                "0028",
                 "0035",
                 "0036",
                 "0037",
@@ -5123,8 +4474,7 @@
             ],
             "governing_adrs": [
                 "0092",
-                "0095",
-                "0149"
+                "0095"
             ]
         },
         {

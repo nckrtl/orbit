@@ -10,7 +10,7 @@ In the context of operators who already have usable Git checkouts and worktrees 
 
 ## Status
 
-Accepted on 2026-09-05. Extends [ADR 0008](/reference/node-settings), [ADR 0009](/decisions/0009-clustered-app-instance-routing), [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates), [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity), and [ADR 0026](/decisions/0026-identify-each-app-by-one-repository). Supersedes [ADR 0018](/decisions/0018-register-caller-local-development-worktrees) in full.
+Accepted on 2026-09-05. Extends [ADR 0008](/reference/node-settings), [ADR 0009](/reference/routes#set-up-private-traffic), [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates), [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity), and [ADR 0026](/decisions/0026-identify-each-app-by-one-repository). Supersedes [ADR 0018](/decisions/0018-register-caller-local-development-worktrees) in full.
 
 ## Context
 
@@ -60,6 +60,6 @@ ADR 0018 limits registration to a linked worktree, keeps that source externally 
 ## Affects
 
 - Components: apps/cli, apps/gateway, packages/php-sdk
-- ADRs: extends [ADR 0008](/reference/node-settings), [ADR 0009](/decisions/0009-clustered-app-instance-routing), [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates), [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity), and [ADR 0026](/decisions/0026-identify-each-app-by-one-repository); supersedes [ADR 0018](/decisions/0018-register-caller-local-development-worktrees) in full
+- ADRs: extends [ADR 0008](/reference/node-settings), [ADR 0009](/reference/routes#set-up-private-traffic), [ADR 0016](/decisions/0016-reconcile-app-identity-and-source-default-updates), [ADR 0025](/decisions/0025-stabilize-the-default-appinstance-identity), and [ADR 0026](/decisions/0026-identify-each-app-by-one-repository); supersedes [ADR 0018](/decisions/0018-register-caller-local-development-worktrees) in full
 - Detail: docs/domains/applications.md
 - Verify: `bin/test`
