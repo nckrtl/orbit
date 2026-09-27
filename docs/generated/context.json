@@ -245,16 +245,17 @@
             "path": "docs/cli/firewall.mdx",
             "title": "firewall",
             "kind": "product",
-            "components": [],
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
             "concepts": [
                 "Doctor",
                 "Gateway",
                 "Node",
                 "Role"
             ],
-            "governing_adrs": [
-                "0093"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/cli/gateway.mdx",
