@@ -2340,12 +2340,16 @@ final readonly class TaskScheduler
 
         $plan = $this->nextFixup($group, $health, $health->checksYoungPending);
         if (! $plan instanceof TaskSettlingFixup) {
-            $this->reportPullRequestHealth($group, $health);
+            $this->reportPullRequestHealth(
+                $group,
+                $health,
+                $this->reachedFixupIdentityCaps($group, $health, $health->checksYoungPending),
+            );
 
             return;
         }
 
-        if ($fixups->count() >= TaskSettlingFixup::GroupLimit) {
+        if ($this->fixupsSinceOperatorWork($this->orderedTasks($group->tasks))->count() >= TaskSettlingFixup::GroupLimit) {
             $this->reportPullRequestHealth($group, $health, 'Orbit already appended '.TaskSettlingFixup::GroupLimit.' fixups to this group.');
 
             return;
@@ -2414,12 +2418,7 @@ final readonly class TaskScheduler
 
     private function nextFixup(TaskGroup $group, TaskPullRequestHealth $health, bool $conflictOnly = false): ?TaskSettlingFixup
     {
-        $counts = [];
-        foreach ($group->tasks as $task) {
-            if (is_string($task->fixup_problem) && $task->fixup_problem !== '') {
-                $counts[$task->fixup_problem] = ($counts[$task->fixup_problem] ?? 0) + 1;
-            }
-        }
+        $counts = $this->fixupCountsSinceOperatorWork($group);
 
         foreach (TaskSettlingFixup::plans((string) $group->app->slug, $health->conflicts, $health->baseRef, $health->failedChecks) as $plan) {
             if ($conflictOnly && $plan->conflictBase() === null) {
@@ -2431,6 +2430,59 @@ final readonly class TaskScheduler
         }
 
         return null;
+    }
+
+    /** Explain each current problem whose per-identity cap has been reached in the active window. */
+    private function reachedFixupIdentityCaps(TaskGroup $group, TaskPullRequestHealth $health, bool $conflictOnly): ?string
+    {
+        $counts = $this->fixupCountsSinceOperatorWork($group);
+        $reasons = [];
+
+        foreach (TaskSettlingFixup::plans((string) $group->app->slug, $health->conflicts, $health->baseRef, $health->failedChecks) as $plan) {
+            if ($conflictOnly && $plan->conflictBase() === null) {
+                continue;
+            }
+            $count = $counts[$plan->identity] ?? 0;
+            if ($count >= TaskSettlingFixup::Limit) {
+                $reasons[] = 'Orbit reached the cap of '.TaskSettlingFixup::Limit.' fixups for '.$plan->identity.' in the current window ('.$count.' counted).';
+            }
+        }
+
+        return $reasons === [] ? null : implode(' ', $reasons);
+    }
+
+    /** @return array<string, int> */
+    private function fixupCountsSinceOperatorWork(TaskGroup $group): array
+    {
+        $counts = [];
+        foreach ($this->fixupsSinceOperatorWork($this->orderedTasks($group->tasks)) as $task) {
+            if (is_string($task->fixup_problem) && $task->fixup_problem !== '') {
+                $counts[$task->fixup_problem] = ($counts[$task->fixup_problem] ?? 0) + 1;
+            }
+        }
+
+        return $counts;
+    }
+
+    /**
+     * Fixup caps include only entries positioned after the latest completed non-fixup task.
+     * Task order is defined by position (with id as a tie-breaker), so position defines this reset boundary.
+     * Every fixup status counts; unfinished non-fixup tasks do not reset the window.
+     *
+     * @param  Collection<int, Task>  $tasks
+     * @return Collection<int, Task>
+     */
+    private function fixupsSinceOperatorWork(Collection $tasks): Collection
+    {
+        $lastCompletedOperatorPosition = $tasks
+            ->filter(static fn (Task $task): bool => $task->fixup_problem === null && $task->status === TaskStatus::Completed)
+            ->max('position');
+
+        return $tasks
+            ->filter(static fn (Task $task): bool => is_string($task->fixup_problem)
+                && $task->fixup_problem !== ''
+                && ($lastCompletedOperatorPosition === null || $task->position > $lastCompletedOperatorPosition))
+            ->values();
     }
 
     private function appendFixup(TaskGroup $group, TaskSettlingFixup $plan, ?string $headSha): ?Task
@@ -2447,8 +2499,9 @@ final readonly class TaskScheduler
             if ($this->hasBusyTask($tasks) || $this->lowestTodo($tasks) instanceof Task) {
                 return null;
             }
-            $count = $tasks->filter(static fn (Task $task): bool => $task->fixup_problem === $plan->identity)->count();
-            $total = $tasks->filter(static fn (Task $task): bool => is_string($task->fixup_problem) && $task->fixup_problem !== '')->count();
+            $fixups = $this->fixupsSinceOperatorWork($tasks);
+            $count = $fixups->filter(static fn (Task $task): bool => $task->fixup_problem === $plan->identity)->count();
+            $total = $fixups->count();
             if ($count >= TaskSettlingFixup::Limit || $total >= TaskSettlingFixup::GroupLimit) {
                 return null;
             }
