@@ -32,9 +32,7 @@ final readonly class NativeToolInspector implements ToolInspector
      */
     public function inspectMany(array $tools): array
     {
-        /** @var array<int, ToolInspectionOutcome> $outcomes */
         $outcomes = [];
-        /** @var array<string, array{node: Node, manager: ToolManager, indexes: list<int>, tools: list<Tool>}> $groups */
         $groups = [];
 
         foreach ($tools as $index => $tool) {
@@ -81,9 +79,7 @@ final readonly class NativeToolInspector implements ToolInspector
      */
     private function resolvedManager(Tool $tool): array
     {
-        /** @var mixed $node */
         $node = $tool->getRelationValue('node');
-        /** @var mixed $managerRecord */
         $managerRecord = $tool->getRelationValue('manager');
 
         if (

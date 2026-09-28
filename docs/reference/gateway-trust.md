@@ -29,7 +29,7 @@ The pinned certificate lives in `$ORBIT_HOME/gateways/<slug>-<hash>/ca/`, where 
 `gateway:add` and `gateway:trust` run the same steps.
 
 1. **Bootstrap fetch.** The CLI calls `GET /api/v1/ca/root` without certificate verification and without following redirects. The Gateway answers this endpoint for any caller. The CLI checks that the certificate matches the SHA-256 fingerprint in the response.
-2. **Pin check.** `gateway:add --ca` compares the certificate with the given file. `gateway:trust` compares it with the profile's pin. A different certificate fails with `gateway.ca_changed`. `gateway:trust --accept-ca-change` skips this check.
+2. **Pin check.** `gateway:add --ca` compares the certificate with the given file. For an existing profile name, `gateway:add` checks the profile pin as `gateway:trust` does. A mismatched pin fails with `gateway.ca_changed`. Pass `--accept-ca-change` to accept the changed certificate.
 3. **Pinned verification.** The CLI stores the certificate privately. It repeats the request with that certificate as the only trust root. A different certificate fails with `gateway.ca_verification_failed`.
 4. **Operating-system trust.** The CLI checks the trust store. It installs a missing certificate and checks the trust store again.
 5. **Profile save.** `gateway:add` saves the profile. `gateway:trust` saves the pin under the [profile guard](#profile-guard).
@@ -58,7 +58,7 @@ A new operator machine has no Orbit root certificate, so the first request canno
 
 ### A changed certificate needs an explicit flag
 
-A new root certificate on a known Gateway can mean a rebuilt Gateway or an attacker on the path. `gateway:trust` refuses it until the operator checks the fingerprint and passes `--accept-ca-change`. `gateway:add` does not apply this rule to a profile it replaces: without `--ca`, it replaces the profile and its pin with no comparison.
+A new root certificate on a known Gateway can mean a rebuilt Gateway or an attacker on the path. Both `gateway:trust` and `gateway:add` with an existing profile name refuse it with `gateway.ca_changed` until the operator checks the fingerprint and passes `--accept-ca-change`.
 
 ### Removal leaves the trust store alone
 

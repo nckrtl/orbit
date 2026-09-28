@@ -82,7 +82,6 @@ final readonly class RunDoctorAction
             throw new AuthorizationException;
         }
 
-        /** @var Collection<int, Node> $nodes */
         $nodes = new Collection([$node]);
 
         return $nodes;

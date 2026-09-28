@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Tasks\T3;
 
 use App\Models\Node;
+use App\Support\ValidatedData;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -48,8 +49,7 @@ final readonly class T3TaskAgentStream implements T3Stream
                 }
                 foreach ($frame['values'] as $item) {
                     if (is_array($item)) {
-                        /** @var array<string, mixed> $item */
-                        yield $item;
+                        yield ValidatedData::object($item);
                     }
                 }
             }

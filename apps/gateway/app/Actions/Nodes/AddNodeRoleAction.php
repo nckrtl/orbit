@@ -121,7 +121,6 @@ final readonly class AddNodeRoleAction
     private function convergeManagedDnsTransition(Node $node, RoleName $role, ?AnalyticsRoleSettings $analytics, bool $retryExisting): array
     {
         $identity = new NodeProvisioningIdentity($node->user, $node->user);
-        /** @var ?array{assignment: NodeRole, created: bool, follow_up: ?string} $result */
         $result = null;
         $completion = function (NodeObservation $observation) use ($node, $role, $analytics, $retryExisting, &$result): void {
             $claim = $retryExisting ? $this->claimExisting($node, $role) : $this->claimNew($node, $role);
@@ -192,9 +191,7 @@ final readonly class AddNodeRoleAction
     /** @return array{assignment: NodeRole, created: bool} */
     private function claimNew(Node $node, RoleName $role): array
     {
-        /**
-         * @var array{assignment: NodeRole, created: bool} $claim
-         */
+
         $claim = DB::transaction(function () use ($node, $role): array {
             $assignment = $this->assignRole->execute($node, $role);
 
@@ -217,9 +214,7 @@ final readonly class AddNodeRoleAction
     /** @return array{assignment: NodeRole, created: bool} */
     private function claimExisting(Node $node, RoleName $role): array
     {
-        /**
-         * @var array{assignment: NodeRole, created: bool} $claim
-         */
+
         $claim = DB::transaction(function () use ($node, $role): array {
             $assignment = $this->assignRole->execute($node, $role);
 

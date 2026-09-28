@@ -91,7 +91,6 @@ final readonly class LogStreamEvent
             }
         }
 
-        /** @var list<string> $lines */
         return new self(self::LINES, $streamId, $sequence, $lines, $dropped, $skipped);
     }
 }

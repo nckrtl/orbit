@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\ProxyCli;
 
+use Illuminate\Support\Carbon;
+
 final readonly class ProxyCliPoolCompiler
 {
     public function __construct(
@@ -108,6 +110,6 @@ final readonly class ProxyCliPoolCompiler
             return $left;
         }
 
-        return strtotime($left) <= strtotime($right) ? $left : $right;
+        return Carbon::parse($left)->lessThanOrEqualTo(Carbon::parse($right)) ? $left : $right;
     }
 }

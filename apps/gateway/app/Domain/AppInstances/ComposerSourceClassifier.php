@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\AppInstances;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Projects\ProjectType;
 use JsonException;
 
 final readonly class ComposerSourceClassifier
@@ -13,7 +14,7 @@ final readonly class ComposerSourceClassifier
         private AppInstancePhpVersionCatalog $php,
     ) {}
 
-    public function classify(string $json, string $artisanKind): DevelopmentSourceProfile
+    public function classify(string $json, ProjectType $projectType, string $artisanKind): DevelopmentSourceProfile
     {
         try {
             $composer = json_decode($json, true, flags: JSON_THROW_ON_ERROR);
@@ -47,15 +48,20 @@ final readonly class ComposerSourceClassifier
             static fn (mixed $value): bool => $value !== null,
         ));
 
-        if ($artisanKind === 'unsafe' || ($artisanKind === 'regular') !== (count($laravelDeclarations) === 1)) {
-            throw $this->invalid('app-dev.laravel_source_invalid');
+        if ($projectType !== ProjectType::LaravelPackage) {
+            if ($artisanKind === 'unsafe' || ($artisanKind === 'regular') !== (count($laravelDeclarations) === 1)) {
+                throw $this->invalid('app-dev.laravel_source_invalid');
+            }
         }
 
         if ($laravelDeclarations !== [] && ! is_string($laravelDeclarations[0])) {
             throw $this->invalid('app-dev.laravel_source_invalid');
         }
 
-        return new DevelopmentSourceProfile($version, $artisanKind === 'regular');
+        return new DevelopmentSourceProfile(
+            $version,
+            $projectType !== ProjectType::LaravelPackage && $artisanKind === 'regular',
+        );
     }
 
     private function invalid(string $errorCode, ?\Throwable $previous = null): RuntimeConvergenceException

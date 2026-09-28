@@ -38,6 +38,7 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Route;
+use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
@@ -476,21 +477,27 @@ final readonly class RegisterAppInstanceAction
             ->orderBy('id')
             ->get();
 
-        $expectedPaths = $data->includeWorktrees
+        $expectedPathValues = $data->includeWorktrees
             ? $primary->registration_worktree_paths
             : [$primary->registration_original_path];
 
-        if (
-            ! is_array($expectedPaths)
-            || array_filter($expectedPaths, static fn (mixed $path): bool => ! is_string($path)) !== []
-        ) {
+        if (! is_array($expectedPathValues)) {
             throw $this->conflict(
                 'instance.registration_evidence_invalid',
                 'Retained registration evidence does not contain the complete requested source set.',
             );
         }
+        $expectedPaths = [];
+        foreach ($expectedPathValues as $path) {
+            if (! is_string($path)) {
+                throw $this->conflict(
+                    'instance.registration_evidence_invalid',
+                    'Retained registration evidence does not contain the complete requested source set.',
+                );
+            }
+            $expectedPaths[] = $path;
+        }
 
-        /** @var list<string> $expectedPaths */
         $retainedPaths = [];
 
         foreach ($instances as $instance) {
@@ -749,7 +756,6 @@ final readonly class RegisterAppInstanceAction
             ->where('registration_original_path', $primary->path)
             ->value('registration_request_id');
         $requestId = is_string($retainedRequestId) ? $retainedRequestId : (string) Str::uuid();
-        /** @var list<array{facts: RegistrationSourceFacts, name: string, destination: StoragePath, instance: AppInstance|null, primary: bool, routeDomain: string|null, routeProvenance: string, backfillRouteIntent: bool}> $proposals */
         $proposals = [];
         $names = [];
         $destinations = [];
@@ -845,7 +851,6 @@ final readonly class RegisterAppInstanceAction
             ];
         }
 
-        /** @var list<array{appInstance: AppInstance, facts: RegistrationSourceFacts, routeDomain: string|null}> $reserved */
         $reserved = DB::transaction(function () use ($proposals, $app, $node, $rootOverride, $requestId, $data): array {
             $reserved = [];
 
@@ -1569,9 +1574,11 @@ final readonly class RegisterAppInstanceAction
         if (
             ! is_array($original)
             || ! is_array($routeIntent)
+            || ! is_int($routeIntent['id'] ?? null)
             || ! is_string($routeIntent['domain'] ?? null)
+            || ! is_string($routeIntent['provenance'] ?? null)
             || ! in_array(
-                $routeIntent['provenance'] ?? null,
+                $routeIntent['provenance'],
                 [RouteProvenance::Explicit->value, RouteProvenance::Generated->value],
                 strict: true,
             )
@@ -1603,8 +1610,22 @@ final readonly class RegisterAppInstanceAction
             );
         }
 
-        /** @var array{app_instance: array<string, mixed>, route: array{id: int, domain: string, provenance: string}, planned?: array{name: string, checkout_path: string}} $recovery */
-        return $recovery;
+        $result = [
+            'app_instance' => ValidatedData::object($original),
+            'route' => [
+                'id' => $routeIntent['id'],
+                'domain' => $routeIntent['domain'],
+                'provenance' => $routeIntent['provenance'],
+            ],
+        ];
+        if (is_array($planned)) {
+            $result['planned'] = [
+                'name' => $planned['name'],
+                'checkout_path' => $planned['checkout_path'],
+            ];
+        }
+
+        return $result;
     }
 
     private function assertPlacement(Node $node): void

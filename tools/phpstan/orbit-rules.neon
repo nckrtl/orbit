@@ -1,0 +1,11 @@
+parameters:
+    disallowedFunctionCalls:
+        -
+            function: 'strtotime()'
+            message: 'Use Carbon parsing instead of strtotime().'
+
+services:
+    -
+        class: Orbit\PHPStan\NoInlineVarOverrideRule
+        tags:
+            - phpstan.rules.rule

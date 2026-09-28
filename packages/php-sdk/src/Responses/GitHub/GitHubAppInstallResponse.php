@@ -48,7 +48,6 @@ final readonly class GitHubAppInstallResponse
             $names[] = $account;
         }
 
-        /** @var string $url */
         return new self($step, $url, $names, $requestId);
     }
 

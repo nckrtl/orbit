@@ -4,9 +4,9 @@ sidebarTitle: "Overview"
 description: "Every architecture decision record behind Orbit, with its status and the records it extends or amends."
 ---
 
-An architecture decision record (ADR) explains why Orbit chose a significant product or technical direction: a cross-component contract, a durable architecture boundary, a security or ownership model, or a costly-to-reverse operational choice. A substantive change becomes a new record that names the decision it extends, amends, or supersedes. Proposed decisions can ship with their feature; see the [ADR guide](https://github.com/nckrtl/orbit/blob/main/docs/decisions/README.md) for acceptance through maintainer-approved merge.
+The documentation is the single source of truth for Orbit's current architecture, components, behavior, and boundaries. An architecture decision record (ADR) holds a decision only while the decision is being built. The pull request that completes the decision writes it into the owning documentation page and retires the record. The [ADR guide](https://github.com/nckrtl/orbit/blob/main/docs/decisions/README.md) describes the steps.
 
-A record is not an implementation task, an issue lifecycle rule, or an agent instruction. Reference pages state current behavior and link the record that owns each decision; the record itself holds the context, the decision, and the consequences.
+Records lists the decisions in progress. Retired decisions lists every retired number and the page that now holds the decision.
 
 ## Records
 
@@ -49,14 +49,16 @@ A record is not an implementation task, an issue lifecycle rule, or an agent ins
 | [0167](/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart) | Resume a Pi turn interrupted by a server restart | Proposed |
 | [0168](/decisions/0168-offload-large-pi-tool-output) | Offload large Pi tool output | Proposed |
 | [0169](/decisions/0169-start-each-subtask-review-in-a-fresh-thread) | Start each subtask review in a fresh thread | Proposed |
+| [0174](/decisions/0174-match-the-task-gate-to-ci-and-repeated-findings) | Match the task gate to CI and repeated findings | Proposed |
 | [0170](/decisions/0170-edit-todo-subtasks-after-a-group-starts) | Edit Todo subtasks after a group starts | Proposed; amends 0122 |
 | [0171](/decisions/0171-reset-fixup-caps-after-operator-work) | Reset fixup caps after operator work | Proposed; amends 0164 |
 | [0175](/decisions/0175-docs-impact-check-in-orbit-repo) | Keep the docs-impact check in Orbit's repository | Proposed |
 | [0178](/decisions/0178-run-project-agnostic-tasks-without-a-planner) | Run project-agnostic Tasks without a planner | Proposed; supersedes 0124 and amends 0122, 0125, 0133, 0135, 0163, and 0164 |
+| [0180](/decisions/0180-absorb-built-decisions-into-the-docs) | Absorb built decisions into the documentation | In progress |
 
 ## Retired decisions
 
-These decisions are built and absorbed into the documentation. The link goes to the page that now holds each one.
+These decisions are built, superseded, or withdrawn, and the documentation holds what still applies. The link goes to the page that holds each one.
 
 | Record | Decision | Now in |
 | --- | --- | --- |

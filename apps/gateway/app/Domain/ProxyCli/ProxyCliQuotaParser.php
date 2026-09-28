@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\ProxyCli;
 
+use Carbon\Exceptions\InvalidFormatException;
+use Illuminate\Support\Carbon;
+
 final readonly class ProxyCliQuotaParser
 {
     public function __construct(
@@ -159,7 +162,7 @@ final readonly class ProxyCliQuotaParser
             return 'limit';
         }
 
-        $hours = (strtotime($resetsAt) - time()) / 3_600;
+        $hours = Carbon::now()->diffInSeconds(Carbon::parse($resetsAt), absolute: false) / 3_600;
 
         return $hours <= 24 ? '5h' : '7d';
     }
@@ -229,9 +232,11 @@ final readonly class ProxyCliQuotaParser
     private function timestamp(mixed $value): ?string
     {
         if (is_string($value) && $value !== '') {
-            $parsed = strtotime($value);
-
-            return $parsed === false ? null : date(DATE_ATOM, $parsed);
+            try {
+                return Carbon::parse($value)->toAtomString();
+            } catch (InvalidFormatException) {
+                return null;
+            }
         }
 
         $number = $this->number($value);

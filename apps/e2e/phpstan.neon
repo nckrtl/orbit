@@ -1,10 +1,13 @@
 includes:
     - vendor/larastan/larastan/extension.neon
+    - vendor/spaze/phpstan-disallowed-calls/extension.neon
+    - ../../tools/phpstan/orbit-rules.neon
 
 parameters:
     level: 9
     paths:
         - app
+        - ../../tools/phpstan
     tmpDir: vendor/phpstan/cache
     parallel:
         maximumNumberOfProcesses: 2

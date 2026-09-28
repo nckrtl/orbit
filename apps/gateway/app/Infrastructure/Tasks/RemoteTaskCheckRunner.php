@@ -13,6 +13,7 @@ use App\Domain\Tasks\TaskWorkspaceSnapshot;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\AppInstance;
+use App\Support\ValidatedData;
 use JsonException;
 
 /**
@@ -170,7 +171,10 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
             throw new TaskCheckException($invalid);
         }
 
-        /** @var array<string, mixed> $data */
-        return $data;
+        try {
+            return ValidatedData::object($data);
+        } catch (\InvalidArgumentException $exception) {
+            throw new TaskCheckException($invalid, previous: $exception);
+        }
     }
 }

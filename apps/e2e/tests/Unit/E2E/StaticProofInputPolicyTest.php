@@ -28,6 +28,8 @@ describe('StaticProofInputPolicy', function (): void {
         'CLI runtime' => ['apps/cli/app/Commands/DoctorCommand.php', 'runtime'],
         'Gateway migration' => ['apps/gateway/database/migrations/example.php', 'runtime'],
         'E2E entrypoint' => ['bin/e2e-topology', 'runtime'],
+        'PHP analysis tooling' => ['tools/phpstan/NoInlineVarOverrideRule.php', 'non-runtime'],
+        'PHP analysis configuration' => ['tools/phpstan/orbit-rules.neon', 'non-runtime'],
         'SDK source' => ['packages/php-sdk/src/Client.php', 'runtime'],
         'maintained documentation' => ['docs/reference/incus-topologies.md', 'non-runtime'],
         'contributor guide' => ['CONTRIBUTING.md', 'non-runtime'],

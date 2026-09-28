@@ -128,8 +128,15 @@ final readonly class TaskGroupResponse
                 throw TaskFields::invalid('task group', $requestId);
             }
 
-            /** @var array<string, mixed> $task */
-            $tasks[] = SubtaskResponse::fromGatewayData($task, $requestId);
+            $data = [];
+            foreach ($task as $key => $item) {
+                if (! is_string($key)) {
+                    throw TaskFields::invalid('task group', $requestId);
+                }
+                $data[$key] = $item;
+            }
+
+            $tasks[] = SubtaskResponse::fromGatewayData($data, $requestId);
         }
 
         return $tasks;

@@ -42,7 +42,7 @@ The type belongs to the Project, so every Instance of one repository behaves the
 | `laravel-package` | Only an explicit Route | No | Yes | `composer check` |
 | `node-package` | Only an explicit Route | No | Yes | none |
 
-`.` means the repository root. A Route cannot target an Instance whose root is `.`. Set a relative web root first.
+`.` means the repository root. A Route cannot target an Instance whose root is `.`. Set a relative web root first. A `laravel-package` Project does not need an `artisan` file.
 
 ## Create a Project
 
@@ -117,12 +117,12 @@ orbit project:update 3 --repository=https://github.com/acme/site.git --default-b
 
 | Field | Effect |
 | --- | --- |
-| `type` and `--type` | Change capabilities. A `laravel-app` needs a Route; changing away keeps existing Routes. |
-| `slug` and `--slug` | Reconcile generated development domains and Laravel URLs. Recorded checkout paths and homes stay unchanged. |
-| `repository_url` and `--repository` | Store the URL and update development checkout origins. Equivalent HTTPS and SSH URLs share an identity. |
-| `default_branch` and `--default-branch` | Change the Project default and switch inheriting development Instances. Explicit overrides stay unchanged. |
-| `root` and `--root` | Change the inherited root. Production resolves it inside the active release. |
-| `task_check` and `--task-check` | Set the command task baselines and handoffs run. Null clears it. |
+| `type` and `--type` | Applies at once. A `laravel-app` needs a Route; changing away keeps existing Routes. |
+| `slug` and `--slug` | Projects every Instance before publication, with no partial projection. Checkout paths, production users, and homes stay unchanged. Generated Routes use the new slug; explicit domains do not. |
+| `repository_url` and `--repository` | Runs `git remote set-url origin` in each development checkout. Equivalent HTTPS and SSH URLs share an identity. See [Repository changes](#repository-changes). |
+| `default_branch` and `--default-branch` | Must exist on the remote. Switches every development `default` Instance without a `branch_override`. Explicit overrides stay unchanged. |
+| `root` and `--root` | Changes the effective root of every Instance without its own root. Orbit reprojects the runtime of each such Instance that has a Route. |
+| `task_check` and `--task-check` | Sets the command task baseline and handoffs run. Send null or `--clear-task-check` to run no check. |
 
 A type change must keep a valid root. When the stored root is `.` and the new type does not allow it, validation fails on `root`. Send a web root with the type change. A type or root change that leaves a Route target with root `.` returns `route.target_web_root_unsupported`.
 
@@ -135,13 +135,13 @@ The Gateway applies `slug`, `repository_url`, `default_branch`, and `root` as on
 | `reserved` | Records the request and the previous values. |
 | `preflighted` | Checks every affected checkout, worktree, and generated domain. |
 | `prepared` | Switches branches, changes origins, and creates replacement Routes. The old values stay in effect. |
-| `publishing` | Stores the new Project values. Replaces generated Routes and updates each Instance's Laravel URL, environment, and runtime. Reprojects routed Instances that inherit a changed root. |
+| `publishing` | Publishes the new Project values after projection succeeds. Replaces generated Routes and updates Instance URLs, environments, and runtimes. |
 | `cleaning_up` | Checks that no production Instance changed. |
 | `complete` | Done. |
 
 A failure before `publishing` rolls back: Orbit restores origins, branches, and Routes and ends in `rolled_back`. A rollback that fails stays `rolling_back`, and an identical retry continues it. A failure after `publishing` starts stays in place, and an identical retry continues forward. A different update while one is incomplete returns `app.update_in_progress`.
 
-In the `publishing` step, a failure to update one Instance's Laravel URL, environment, or runtime does not fail the update. Run [Doctor](/cli/doctor) after a slug change to find an Instance that needs attention.
+Run [Doctor](/cli/doctor) to inspect any projection that needs attention.
 
 ### Repository changes
 
@@ -153,7 +153,7 @@ Every origin check reads the `remote.origin.url` stored in the checkout. It igno
 
 `project:destroy` removes a Project that has no Instances and no Routes. It deletes the Project's process and Schedule definitions, setup and teardown steps, Node exclusions, and update records.
 
-A Project with task groups cannot be removed. The database refuses the delete, and the Gateway returns the generic `gateway.unhandled` error with HTTP 500, not an Orbit code.
+A Project with task groups cannot be removed. The Gateway refuses the request with HTTP 409 and `project.has_task_groups`.
 
 ## Errors
 

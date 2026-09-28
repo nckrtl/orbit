@@ -84,7 +84,7 @@ orbit project:update <project> [--type=TYPE] [--slug=SLUG] [--repository=URL] [-
 
 ## orbit project:destroy
 
-Remove a Project that has no Instances and no Routes. Its definitions, setup steps, Node exclusions, and update records go with it. A Project with task groups cannot be removed: the request fails with `gateway.unhandled`. See [Remove a Project](/reference/apps#remove-a-project).
+Remove a Project that has no Instances and no Routes. Its definitions, setup steps, Node exclusions, and update records go with it. A Project with task groups cannot be removed: the request fails with HTTP 409 and `project.has_task_groups`. See [Remove a Project](/reference/apps#remove-a-project).
 
 ```bash
 orbit project:destroy <project> [--yes] [--json]

@@ -94,16 +94,12 @@ final readonly class LegacyTopologySnapshotInventory
             throw new \InvalidArgumentException('The legacy topology snapshot inventory is invalid.');
         }
 
-        /** @var array{remote:string,project:string,pool:string}|array{remote:string,project:string,pool:string,topology_snapshot_namespace:string} $scope */
-        $scope = $value['scope'];
-        /** @var array<string, mixed> $promotedManifest */
-        $promotedManifest = $value['promoted_manifest'];
-        /** @var list<array<string, mixed>> $recordedManifests */
-        $recordedManifests = $value['recorded_manifests'];
-        /** @var array<string, array<string, mixed>> $instances */
-        $instances = $value['instances'];
-        /** @var array<string, list<array{name:string,created_at:string}>> $snapshots */
-        $snapshots = $value['snapshots'];
+        $schema = $value['schema'];
+        $scope = SerializedArrays::legacyScope($value['scope'], $schema);
+        $promotedManifest = SerializedArrays::stringKeyed($value['promoted_manifest']);
+        $recordedManifests = SerializedArrays::recordList($value['recorded_manifests']);
+        $instances = SerializedArrays::maps($value['instances']);
+        $snapshots = SerializedArrays::snapshotGroups($value['snapshots']);
         $networkValue = $value['network'];
         $network = null;
         if ($networkValue !== null) {
@@ -120,7 +116,7 @@ final readonly class LegacyTopologySnapshotInventory
             $instances,
             $snapshots,
             $network,
-            $value['schema'],
+            $schema,
         );
     }
 

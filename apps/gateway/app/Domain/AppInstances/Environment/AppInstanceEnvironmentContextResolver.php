@@ -7,7 +7,6 @@ namespace App\Domain\AppInstances\Environment;
 use App\Domain\AppInstances\AppInstanceSourceProfileGuard;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Routes\PublicRouteEligibility;
-use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -174,7 +173,7 @@ final readonly class AppInstanceEnvironmentContextResolver
 
         if (
             $instance->status !== AppInstanceState::Active
-            || $instance->environment !== 'production'
+            || ! in_array($instance->environment, ['development', 'production'], true)
             || $instance->migration_required
             || $instance->provisioning_step !== 'active'
             || ! is_bool($sourceIsLaravel)
@@ -221,7 +220,7 @@ final readonly class AppInstanceEnvironmentContextResolver
         $routeDomain = $route->domain;
 
         if (
-            $authoritative->provenance !== RouteProvenance::Explicit
+            $route->provenance !== $authoritative->provenance
             || $routeDomain === ''
         ) {
             $this->conflict();

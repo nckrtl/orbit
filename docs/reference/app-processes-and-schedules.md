@@ -85,7 +85,7 @@ Removing a systemd Process disables and stops the unit, deletes the unit file, r
 
 The Gateway holds one runtime lock for each Process while it reads the record, changes the runtime, and writes the result. A competing request gets `process.runtime_lock_failed` and changes nothing.
 
-Create, start, and restart of an Instance Process first take the Instance's operation lock. A competing request waits up to 30 seconds, or the rest of its command deadline, and then gets `process.operation_busy`. Node Processes skip that lock.
+Create, start, and restart of an Instance Process first take the Instance's operation lock. A competing request waits up to 30 seconds, or the rest of its command deadline, and then gets `process.operation_busy`. Node Processes skip that lock. Lifecycle commands that contend for the Instance lifecycle lock return `instance.lifecycle_busy` (409, with `details.outcome` set to `busy`); retry after the other lifecycle operation finishes.
 
 Systemd replacement installs a checked candidate unit and restores the earlier unit when activation fails. Docker replacement keeps or restores the earlier container.
 

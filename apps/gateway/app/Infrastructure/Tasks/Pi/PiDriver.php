@@ -15,6 +15,7 @@ use App\Domain\Tasks\AgentThreadState;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Models\AgentThread;
 use App\Models\Node;
+use App\Support\ValidatedData;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -128,14 +129,14 @@ final readonly class PiDriver implements AgentDriver
                 }
                 yield new AgentThreadEvent($thread->id, 'resumed');
             } elseif ($started && $kind === 'entry' && is_array($event['entry'] ?? null)) {
-                yield from $this->entryEvents($thread, $this->redact($transcript->entries($event['entry']), $node), $next);
+                yield from $this->entryEvents($thread, $this->redactEntries($transcript->entries($event['entry']), $node), $next);
             } elseif ($started && $kind === 'state') {
                 $state = $this->observation($event, [])->toArray();
                 unset($state['entries']);
                 if ($this->settled($state['state'])) {
-                    yield from $this->entryEvents($thread, $this->redact($transcript->settle(), $node), null);
+                    yield from $this->entryEvents($thread, $this->redactEntries($transcript->settle(), $node), null);
                 }
-                yield new AgentThreadEvent($thread->id, 'state', $this->redact($state, $node), $next);
+                yield new AgentThreadEvent($thread->id, 'state', $this->redactObject($state, $node), $next);
             }
         }
     }
@@ -215,7 +216,7 @@ final readonly class PiDriver implements AgentDriver
             }
         }
 
-        return $this->observation($snapshot, $this->redact(array_values($entries), $node));
+        return $this->observation($snapshot, $this->redactEntries(array_values($entries), $node));
     }
 
     /**
@@ -258,11 +259,8 @@ final readonly class PiDriver implements AgentDriver
         return is_int($value) ? $value : null;
     }
 
-    /**
-     * @template T of array
-     *
-     * @param  T  $data
-     * @return T
+    /** @param array<array-key, mixed> $data
+     * @return array<array-key, mixed>
      */
     private function redact(array $data, Node $node): array
     {
@@ -273,8 +271,49 @@ final readonly class PiDriver implements AgentDriver
             }
         });
 
-        /** @var T */
         return new CommandActivityInputSanitizer()->sanitizeProperties($data);
+    }
+
+    /** @param array<array-key, mixed> $data
+     * @return array<string, mixed>
+     */
+    private function redactObject(array $data, Node $node): array
+    {
+        return ValidatedData::object($this->redact($data, $node));
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $entries
+     * @return list<array{id: string, kind: string, label: string, text: string, at: string}>
+     */
+    private function redactEntries(array $entries, Node $node): array
+    {
+        $redacted = $this->redact($entries, $node);
+        $result = [];
+        foreach ($redacted as $entry) {
+            if (! is_array($entry)) {
+                continue;
+            }
+            $entry = ValidatedData::object($entry);
+            if (
+                ! is_string($entry['id'] ?? null)
+                || ! is_string($entry['kind'] ?? null)
+                || ! is_string($entry['label'] ?? null)
+                || ! is_string($entry['text'] ?? null)
+                || ! is_string($entry['at'] ?? null)
+            ) {
+                continue;
+            }
+            $result[] = [
+                'id' => $entry['id'],
+                'kind' => $entry['kind'],
+                'label' => $entry['label'],
+                'text' => $entry['text'],
+                'at' => $entry['at'],
+            ];
+        }
+
+        return $result;
     }
 
     private function configuredProvider(): ?string

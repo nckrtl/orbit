@@ -24,7 +24,11 @@ final readonly class NativeAppInstanceTransferRuntime implements AppInstanceTran
         $instance->loadMissing(['processes', 'schedules']);
 
         foreach ($instance->processes as $process) {
-            $this->processes->stop($process);
+            // status() verifies ownership and makes a retry skip stop when the artifact is already absent.
+            if ($this->processes->status($process) !== 'absent') {
+                $this->processes->stop($process);
+            }
+
             $this->processes->remove($process);
         }
 

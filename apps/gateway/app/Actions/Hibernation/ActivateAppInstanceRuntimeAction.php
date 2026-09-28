@@ -56,7 +56,7 @@ final readonly class ActivateAppInstanceRuntimeAction
                 $running = $this->desiredRunning($instance);
 
                 foreach ($running as $process) {
-                    $this->runtime->start($process);
+                    $this->runtime->start($process, explicit: false);
                 }
 
                 $this->readiness->waitUntilReady($instance, $running);

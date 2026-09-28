@@ -29,6 +29,14 @@ final readonly class RemoveAppAction
 
         ($this->routes ?? app(RouteRemovalGuard::class))->assertAppRemovable($app);
 
+        if ($app->taskGroups()->exists()) {
+            throw new ResourceOperationException(
+                errorCode: 'project.has_task_groups',
+                message: "Project [{$app->slug}] still has task groups.",
+                status: 409,
+            );
+        }
+
         $app->delete();
 
         ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(

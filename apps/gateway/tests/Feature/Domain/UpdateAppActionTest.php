@@ -4,13 +4,27 @@ declare(strict_types=1);
 
 use App\Actions\Apps\UpdateAppAction;
 use App\Data\Apps\UpdateAppData;
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
+use App\Domain\AppInstances\DevelopmentRouteProjector;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentContext;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter;
+use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriteResult;
+use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
+use App\Domain\Apps\AppUpdateProjectionMutator;
 use App\Domain\Apps\AppUpdateStatus;
+use App\Domain\Routes\RouteDomainProjector;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AppDev\AppDevSiteRepository;
+use App\Infrastructure\Apps\NativeAppUpdateProjectionMutator;
 use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
 use App\Models\AppUpdate;
+use App\Models\Node;
 use App\Models\Route;
 use Tests\Support\Orb101AppUpdateFixture;
 
@@ -167,20 +181,157 @@ describe('UpdateAppAction', function (): void {
             ->toBe(AppUpdateStatus::RolledBack);
     });
 
-    it('completes a slug update when Laravel application configuration errors', function (): void {
-        $this->fixture->projections->applicationErrorOnUrl = true;
+    it('projects generated routes and retries a native slug projection failure per Instance', function (): void {
+        $docs = AppInstance::query()->create([
+            'app_id' => $this->fixture->app->id,
+            'node_id' => $this->fixture->node->id,
+            'name' => 'docs',
+            'environment' => 'development',
+            'source_layout' => AppInstanceSourceLayout::Checkout->value,
+            'checkout_path' => '/srv/orbit/apps/acme/docs',
+            'branch' => 'main',
+            'starting_commit' => str_repeat('b', 40),
+            'source_is_laravel' => true,
+            'provisioning_step' => 'active',
+            'status' => AppInstanceState::Active,
+        ]);
+        $this->fixture->defaultInstance->update([
+            'source_is_laravel' => true,
+            'provisioning_step' => 'active',
+        ]);
+        $this->fixture->defaultInstance->environmentValues()->create([
+            'env_key' => 'APP_URL',
+            'env_value' => 'https://acme.test',
+        ]);
+        $docs->environmentValues()->create([
+            'env_key' => 'APP_URL',
+            'env_value' => 'https://docs.acme.test',
+        ]);
+        $docsRoute = Route::query()->create([
+            'app_id' => $this->fixture->app->id,
+            'node_id' => $this->fixture->node->id,
+            'generation_basis_node_id' => $this->fixture->node->id,
+            'domain' => 'docs.acme.test',
+            'provenance' => 'generated',
+            'publication' => 'private',
+        ]);
+        $docsRoute->targets()->create(['app_instance_id' => $docs->id, 'position' => 0]);
+        $docsRoute->update(['status' => 'active']);
+        $basisNode = Node::query()->create([
+            'name' => 'slug-targetless-basis',
+            'status' => 'active',
+            'public_ssh_host' => '192.0.2.81',
+            'wireguard_ip' => '10.44.0.81',
+            'tld' => 'preview',
+        ]);
+        $targetlessRoute = Route::query()->create([
+            'app_id' => $this->fixture->app->id,
+            'node_id' => $basisNode->id,
+            'generation_basis_node_id' => $basisNode->id,
+            'domain' => 'acme.preview',
+            'provenance' => 'generated',
+            'publication' => 'private',
+        ]);
+        $targetlessRouteId = $targetlessRoute->id;
 
-        $app = app(UpdateAppAction::class)->execute(
+        $routeProjection = Mockery::mock(RouteDomainProjector::class)->shouldIgnoreMissing();
+        $renderedDomains = [];
+        $routeProjection->shouldReceive('prepareWorkloadCaddy')->andReturnUsing(
+            function (AppInstance $instance, Route $current, Route $candidate) use (&$renderedDomains): void {
+                $sites = (new AppDevSiteRepository)->forNode($instance->node);
+                expect($sites->pluck('domain'))->toContain($candidate->domain);
+                $renderedDomains[] = $candidate->domain;
+            },
+        );
+        app()->instance(RouteDomainProjector::class, $routeProjection);
+        app()->instance(DevelopmentRouteProjector::class, Mockery::mock(DevelopmentRouteProjector::class)->shouldIgnoreMissing());
+        app()->instance(DevelopmentProjectionOperationLock::class, Mockery::mock(DevelopmentProjectionOperationLock::class)
+            ->shouldReceive('run')->andReturnUsing(fn (Closure $operation): mixed => $operation())->getMock());
+        app()->instance(AppInstanceEnvironmentOperationLock::class, Mockery::mock(AppInstanceEnvironmentOperationLock::class)
+            ->shouldReceive('run')->andReturnUsing(fn (array $ids, Closure $operation): mixed => $operation())->getMock());
+        app()->instance(AppInstanceOperationPreflight::class, Mockery::mock(AppInstanceOperationPreflight::class)->shouldIgnoreMissing());
+        app()->instance(AppInstanceEnvironmentWriter::class, Mockery::mock(AppInstanceEnvironmentWriter::class)
+            ->shouldReceive('write')->andReturnUsing(
+                function (AppInstanceEnvironmentContext $context, string $contents): AppInstanceEnvironmentWriteResult {
+                    expect($context->routeDomain)
+                        ->toBe(Route::query()->findOrFail($context->routeId)->domain)
+                        ->toBeIn(['shop.test', 'docs.shop.test']);
+
+                    return AppInstanceEnvironmentWriteResult::changed();
+                },
+            )->getMock());
+
+        $failed = false;
+        $configurator = Mockery::mock(DevelopmentAppInstanceConfigurator::class)->shouldIgnoreMissing();
+        $configurator->shouldReceive('configureLaravelUrl')->andReturnUsing(
+            function (AppInstance $instance, string $url) use ($docs, &$failed): void {
+                if ($instance->is($docs) && ! $failed) {
+                    $failed = true;
+                    throw new RuntimeException('Laravel URL configuration failed.');
+                }
+            },
+        );
+        app()->instance(DevelopmentAppInstanceConfigurator::class, $configurator);
+        app()->instance(AppUpdateProjectionMutator::class, app(NativeAppUpdateProjectionMutator::class));
+
+        $data = orb101_update_data(slug: 'shop');
+        expect(fn () => app(UpdateAppAction::class)->execute($this->fixture->app, $data))
+            ->toThrow(function (ResourceOperationException $exception) use ($docs): void {
+                expect($exception->errorCode)->toBe('app.slug_projection_failed')
+                    ->and($exception->getMessage())->toContain((string) $docs->id);
+            });
+
+        expect($this->fixture->app->refresh()->slug)
+            ->toBe('acme')
+            ->and(AppUpdate::query()->latest('id')->value('status'))
+            ->toBe(AppUpdateStatus::Publishing)
+            ->and($renderedDomains)
+            ->toContain('shop.test');
+
+        app(UpdateAppAction::class)->execute($this->fixture->app->refresh(), $data);
+
+        expect($this->fixture->app->refresh()->slug)
+            ->toBe('shop')
+            ->and(Route::query()->where('app_id', $this->fixture->app->id)->where('status', 'active')->pluck('domain')->all())
+            ->toBe(['shop.test', 'docs.shop.test'])
+            ->and(Route::query()->whereKey($targetlessRouteId)->exists())
+            ->toBeFalse()
+            ->and(Route::query()->where('app_id', $this->fixture->app->id)->where('domain', 'shop.preview')->value('status'))
+            ->toBe(RouteStatus::Pending)
+            ->and(Route::query()->where('app_id', $this->fixture->app->id)->where('domain', 'shop.preview')->value('generation_basis_node_id'))
+            ->toBe($basisNode->id)
+            ->and(Route::query()->where('app_id', $this->fixture->app->id)->where('domain', 'shop.preview')->value('replacement_step'))
+            ->toBeNull()
+            ->and(Route::query()->where('app_id', $this->fixture->app->id)->where('domain', 'shop.preview')->firstOrFail()->targets()->exists())
+            ->toBeFalse()
+            ->and(Route::query()->where('app_id', $this->fixture->app->id)->whereNotNull('replaces_route_id')->count())
+            ->toBe(0)
+            ->and(Route::query()->where('app_id', $this->fixture->app->id)->where('status', 'pending')->count())
+            ->toBe(1)
+            ->and($renderedDomains)
+            ->toContain('docs.shop.test');
+    });
+
+    it('reports slug projection failure without publishing a partial slug', function (): void {
+        $this->fixture->projections->applicationErrorOnUrl = true;
+        $oldRouteId = $this->fixture->defaultRoute->id;
+
+        expect(fn () => app(UpdateAppAction::class)->execute(
             $this->fixture->app,
             orb101_update_data(slug: 'shop'),
-        );
+        ))->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('app.slug_projection_failed')
+                ->and($exception->getMessage())->toContain((string) $this->fixture->defaultInstance->id);
+        });
 
-        expect($app->slug)
-            ->toBe('shop')
-            ->and(Route::query()->where('app_id', $app->id)->value('domain'))
-            ->toBe('shop.test')
+        expect($this->fixture->app->refresh()->slug)
+            ->toBe('acme')
+            ->and($this->fixture->defaultRoute->refresh()->id)
+            ->toBe($oldRouteId)
+            ->and(Route::query()->where('app_id', $this->fixture->app->id)->value('domain'))
+            ->toBe('acme.test')
             ->and(AppUpdate::query()->latest('id')->first()?->status)
-            ->toBe(AppUpdateStatus::Complete);
+            ->not->toBe(AppUpdateStatus::Complete);
     });
 
     it('reconciles inherited web roots without deploying production', function (): void {

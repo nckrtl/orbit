@@ -54,7 +54,6 @@ final readonly class RemoveRouteAction
 
     private function remove(Route $route, bool $allowTracking): Route
     {
-        /** @var list<int> $expectedTargetIds */
         $expectedTargetIds = $route
             ->targets()
             ->orderBy('app_instance_id')
@@ -62,7 +61,7 @@ final readonly class RemoveRouteAction
             ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->values()
             ->all();
-
+        $expectedTargetIds = array_values($expectedTargetIds);
         $result = $this->environmentOperations->run(
             $expectedTargetIds,
             fn (): Route => $this->owner->run(
@@ -135,7 +134,6 @@ final readonly class RemoveRouteAction
     /** @param list<int> $expectedTargetIds */
     private function lockAndGuard(Route $route, array $expectedTargetIds): Route
     {
-        /** @var Route $locked */
         $locked = DB::transaction(function () use ($route, $expectedTargetIds): Route {
             $locked = Route::query()->with('targets')->lockForUpdate()->findOrFail($route->id);
             $this->assertTargetsUnchanged($locked, $expectedTargetIds);
@@ -221,7 +219,6 @@ final readonly class RemoveRouteAction
     /** @param list<int> $expectedTargetIds */
     private function deleteRecord(Route $route, array $expectedTargetIds, bool $allowTracking): Route
     {
-        /** @var Route $removed */
         $removed = DB::transaction(function () use ($route, $expectedTargetIds, $allowTracking): Route {
             $locked = Route::query()->with('targets')->lockForUpdate()->findOrFail($route->id);
             $this->assertTargetsUnchanged($locked, $expectedTargetIds);

@@ -12,11 +12,14 @@ use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\PreparedFingerprint;
 use App\E2E\Value\RefreshResult;
+use App\E2E\Value\SerializedArrays;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\Value\VerificationMode;
+use Carbon\Exceptions\InvalidFormatException;
+use Illuminate\Support\Carbon;
 use RuntimeException;
 use Throwable;
 
@@ -238,7 +241,6 @@ final readonly class TopologySnapshotRefresher
         }
 
         $promoted = null;
-        /** @var ?PreparedFingerprint $promotedStructural */
         $promotedStructural = null;
         $mutated = false;
         $generationMutationLockHeld = false;
@@ -569,22 +571,13 @@ final readonly class TopologySnapshotRefresher
             || ! is_array($manifest['topology']['roles'])
             || ! is_array($manifest['topology']['checkout_roles'])
             || ! is_array($manifest['topology']['assignments'])
-            || ! array_all($manifest['topology']['roles'], static fn (mixed $value, string|int $key): bool => is_string(
-                $value,
-            ))
-            || ! array_all($manifest['topology']['checkout_roles'], static fn (
-                mixed $value,
-                string|int $key,
-            ): bool => is_string($value))
         ) {
             throw new RuntimeException('The prepared fingerprint manifest has an invalid topology shape.');
         }
-        /** @var list<string> $topologyRoles */
-        $topologyRoles = array_values($manifest['topology']['roles']);
-        /** @var list<string> $checkoutRoles */
-        $checkoutRoles = array_values($manifest['topology']['checkout_roles']);
-        /** @var array<string, list<string>> $assignments */
-        $assignments = $manifest['topology']['assignments'];
+
+        $topologyRoles = SerializedArrays::stringList($manifest['topology']['roles']);
+        $checkoutRoles = SerializedArrays::stringList($manifest['topology']['checkout_roles']);
+        $assignments = SerializedArrays::stringLists($manifest['topology']['assignments']);
 
         return new TopologySnapshotGeneration(
             $id,
@@ -704,11 +697,12 @@ final readonly class TopologySnapshotRefresher
         }
         $ordered = [];
         foreach ($deletions as $name => $candidate) {
-            $times = array_map(
-                strtotime(...),
-                array_values($candidate['created_at']),
-            );
-            if (in_array(false, $times, true)) {
+            try {
+                $times = array_map(
+                    static fn (mixed $createdAt): int => (int) Carbon::parse((string) $createdAt)->timestamp,
+                    array_values($candidate['created_at']),
+                );
+            } catch (InvalidFormatException) {
                 throw new RuntimeException('Incus snapshot creation metadata is missing or invalid.');
             }
             $ordered[$name] = max($times);

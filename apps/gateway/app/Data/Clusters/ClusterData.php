@@ -37,7 +37,6 @@ final class ClusterData extends Data
         ]);
         $router = $cluster->routerAssignment?->node;
 
-        /** @var list<ClusterNodeData> $nodes */
         $nodes = $cluster
             ->nodes
             ->map(static fn (Node $node): ClusterNodeData => ClusterNodeData::fromModel($node))
@@ -49,7 +48,7 @@ final class ClusterData extends Data
             name: $cluster->name,
             tld: $cluster->tld,
             state: $cluster->state->value,
-            nodes: $nodes,
+            nodes: array_values($nodes),
             router: $router instanceof Node ? ClusterNodeData::fromModel($router) : null,
         );
     }

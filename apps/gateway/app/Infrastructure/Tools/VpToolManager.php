@@ -222,7 +222,6 @@ final readonly class VpToolManager implements ToolManager
             message: 'The VP installed version probe failed.',
         );
 
-        /** @var mixed $decoded */
         $decoded = json_decode($result->stdout);
 
         if (! is_array($decoded)) {
@@ -239,7 +238,6 @@ final readonly class VpToolManager implements ToolManager
 
         $matchedVersion = null;
 
-        /** @var mixed $entry */
         foreach ($decoded as $entry) {
             if (! is_object($entry)) {
                 throw new ToolManagerException(
@@ -249,9 +247,7 @@ final readonly class VpToolManager implements ToolManager
                 );
             }
 
-            /** @var mixed $name */
             $name = $entry->name ?? null;
-            /** @var mixed $version */
             $version = $entry->version ?? null;
 
             if (
@@ -375,7 +371,6 @@ final readonly class VpToolManager implements ToolManager
 
     private function decodeJsonString(CommandResult $result, string $step): string
     {
-        /** @var mixed $decoded */
         $decoded = json_decode($result->stdout, associative: true);
 
         if (! is_string($decoded) || ! $this->isSafeString($decoded)) {

@@ -199,7 +199,6 @@ final readonly class PrometheusNodeMetricsMapper
      */
     private static function groupDisks(array $response): array
     {
-        /** @var array<string, array<string, array{size?: float, avail?: float}>> $raw */
         $raw = [];
 
         foreach (self::vector($response) as $sample) {

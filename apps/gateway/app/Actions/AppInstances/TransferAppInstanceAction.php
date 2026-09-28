@@ -439,17 +439,18 @@ final readonly class TransferAppInstanceAction
         if ($transfer->current_step === AppInstanceTransferStep::Reserved) {
             app(VitePortAllocator::class)->assign($instance);
             app(VitePortAllocator::class)->assign($instance, $destination);
+            $this->runtime->pause($instance);
             $capture = $this->sources->capture($instance);
             $this->checkpoint($transfer, AppInstanceTransferStep::SourceCaptured, [
                 'common_repository_path' => $capture->commonRepositoryPath ?? $transfer->common_repository_path,
             ]);
             $this->materializeDestination($capture, $destination, $path, $transfer);
         } elseif ($transfer->current_step === AppInstanceTransferStep::SourceCaptured) {
+            $this->runtime->pause($instance);
             $this->materializeDestination($this->sources->capture($instance), $destination, $path, $transfer);
         }
 
         if ($transfer->current_step === AppInstanceTransferStep::DestinationCheckoutCreated) {
-            $this->runtime->pause($instance);
             $this->checkpoint($transfer, AppInstanceTransferStep::SourcePaused);
         }
 
@@ -459,7 +460,7 @@ final readonly class TransferAppInstanceAction
         }
 
         if ($transfer->current_step === AppInstanceTransferStep::SqliteTransferred) {
-            $this->importEnvironment($instance);
+            $this->importEnvironment($instance, $transfer);
             $this->checkpoint($transfer, AppInstanceTransferStep::EnvironmentImported);
         }
 
@@ -551,14 +552,18 @@ final readonly class TransferAppInstanceAction
         }
     }
 
-    private function importEnvironment(AppInstance $instance): void
+    private function importEnvironment(AppInstance $instance, AppInstanceTransfer $transfer): void
     {
         $context = $this->contexts->resolve($instance->refresh(), requireActiveNode: true);
         $imported = [];
 
         try {
             $imported = $this->environmentImporter->parse($this->environmentReader->read($context));
-        } catch (ResourceOperationException) {
+        } catch (ResourceOperationException $exception) {
+            if ($exception->errorCode !== 'env.import_source_missing') {
+                throw $exception;
+            }
+
             $imported = [];
         }
 
@@ -574,6 +579,13 @@ final readonly class TransferAppInstanceAction
         $toImport = array_diff_key($imported, $stored);
 
         if ($toImport !== []) {
+            $previouslyImportedKeys = $transfer->imported_environment_keys ?? [];
+            $transfer->update([
+                'imported_environment_keys' => array_values(array_unique([
+                    ...$previouslyImportedKeys,
+                    ...array_keys($toImport),
+                ])),
+            ]);
             $this->environmentStore->import($context, $toImport, replace: false);
         }
     }
@@ -927,6 +939,20 @@ final readonly class TransferAppInstanceAction
                 } catch (Throwable) {
                     $incomplete[] = 'destination-route';
                 }
+            }
+        }
+
+        $importedKeys = $transfer->imported_environment_keys ?? [];
+
+        if ($importedKeys !== []) {
+            try {
+                AppInstanceEnvironmentValue::query()
+                    ->where('app_instance_id', $instance->id)
+                    ->whereIn('env_key', $importedKeys)
+                    ->delete();
+                $transfer->update(['imported_environment_keys' => []]);
+            } catch (Throwable) {
+                $incomplete[] = 'imported-environment';
             }
         }
 

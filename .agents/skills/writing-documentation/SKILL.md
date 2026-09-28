@@ -22,15 +22,15 @@ Answer the reader's question early. Use common words, short sentences, clear act
 | `solutions/` | Reusable lessons and their verification |
 | `decisions/` | Architectural choices, alternatives, and consequences |
 
-Link to the page that owns an explanation. Use tables for command options, fields, and error codes. Keep change history in ADRs and Git, and contributor workflow in contributor guidance.
+Link to the page that owns an explanation. Use tables for command options, fields, and error codes. Keep change history in Git, and contributor workflow in contributor guidance.
 
 Write each Markdown paragraph on one line for the prose linter. Use root-relative Mintlify links without `.md` or `.mdx`, such as `/reference/apps`. Use GitHub URLs for repository files outside `docs/`.
 
 ## Architectural decisions
 
-Follow the [ADR guide](../../../docs/decisions/README.md) and [template](templates/adr.md). Explain the choice, alternatives, consequences, and affected behavior. New decisions start as `Proposed.` and ship with the feature PR.
+The documentation is the single source of truth. Follow the [ADR guide](../../../docs/decisions/README.md) and [template](templates/adr.md). A new ADR says `In progress.`, names the mission principle it serves, and states any exception to a principle on its Principle line in Status.
 
-Write a superseding ADR for a substantive change to an accepted decision. Keep its earlier rationale and acceptance history. Wording corrections can update the existing record.
+The pull request that completes a decision absorbs it. Write the behavior into the owning page and the lasting reasons and rejected alternatives into that page's "Why it works this way" section. Then delete the ADR, add a redirect from its path to the absorbing section in `docs/docs.json`, add a row to "Retired decisions" in `docs/decisions/overview.mdx`, and point every inbound link at the absorbing section. Never reuse a number.
 
 ## Check
 
