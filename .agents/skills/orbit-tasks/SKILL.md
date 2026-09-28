@@ -21,7 +21,7 @@ The start commit is the merge base with `origin/main`. Repeat `--paths` for ever
 
 Use the docs subtask to write or update the relevant maintained documentation when the report requires it. Record a significant decision in an ADR with the status `In progress.`, following `docs/decisions/README.md`. The ADRs and documentation changed against the group's base commit are the feature contract for later subtasks.
 
-The last subtask that completes a decision also absorbs its ADR: it writes the behavior and lasting reasons into the owning page, deletes the ADR, and adds its redirect and "Retired decisions" row. Give that subtask a `file` deliverable for the absorbing page. A decision that spans several groups keeps its ADR until the group that completes it.
+Plan the absorption into the last subtask that completes a decision, with a `file` deliverable for the absorbing page. That subtask writes the behavior and lasting reasons into the owning page, deletes the ADR, and adds its redirect and "Retired decisions" row. An implementer absorbs an ADR only when its deliverables name that page. A decision that spans several groups keeps its ADR until the group that completes it.
 
 Keep the branch's documentation, ADRs, implementation, tests, and task briefs consistent. Focus the group on one feature and order subtasks by dependency.
 
