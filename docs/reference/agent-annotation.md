@@ -163,7 +163,7 @@ The Orbit web app shares its own realtime connection through `realtime.subscribe
 
 ### Instance removal
 
-The Gateway refuses new annotations for an Instance that is being removed, with `annotation.instance_removing`. [Instance removal](/reference/appinstance-removal#removal-steps) cancels the Instance's open annotation Tasks and marks their annotations `cancelled`. Completed Tasks keep their history. Cancellation does not undo changes or recall a message that T3 already has.
+The Gateway refuses new annotations for an Instance that is being removed, with `annotation.instance_removing`. [Instance removal](/reference/instance-removal#removal-steps) cancels the Instance's open annotation Tasks and marks their annotations `cancelled`. Completed Tasks keep their history. Cancellation does not undo changes or recall a message that T3 already has.
 
 ## Orbit web configuration
 

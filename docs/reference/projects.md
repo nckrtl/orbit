@@ -55,11 +55,11 @@ orbit project:create acme laravel-app git@github.com:acme/site.git --default-bra
 
 The CLI root defaults to `.` for package types and `public` for other types. The API and SDK require `root`. Without `--default-branch`, the Gateway reads the remote default branch once and stores it. A later change on the remote does not update the Project. An explicit branch must exist on the remote. A private `github.com` repository needs the [GitHub App](/reference/github-app) on its owner account.
 
-Creation is idempotent. A retry with the same values returns the existing Project. A retry that omits the default branch does not read the remote again. A retry with any different value, including another URL for the same repository, returns `app.identity_conflict` and changes nothing.
+Creation is idempotent. A retry with the same values returns the existing Project. A retry that omits the default branch does not read the remote again. A retry with any different value, including another URL for the same repository, returns `project.identity_conflict` and changes nothing.
 
 ## Repository identity
 
-The Gateway derives a repository identity from the host and path of the URL. Equivalent SSH and HTTPS URLs, with or without `.git`, have the same identity. A second Project for the same repository returns `app.repository_identity_conflict`. Registration uses this identity to find the Project of a checkout.
+The Gateway derives a repository identity from the host and path of the URL. Equivalent SSH and HTTPS URLs, with or without `.git`, have the same identity. A second Project for the same repository returns `project.repository_identity_conflict`. Registration uses this identity to find the Project of a checkout.
 
 ## Create a Project during registration
 
@@ -85,11 +85,11 @@ A value you pass fills an unresolved value only. It must match what the Gateway 
 
 | Input | Code when it differs |
 | --- | --- |
-| `--project-slug` for a new Project | `app.slug_conflict`. The slug is always the repository name. |
-| `--default-branch` for a new Project | `app.default_branch_conflict`, when the checkout has an `origin/HEAD`. |
-| `--root` for a new Project | `app.root_conflict`, when the root was inferred. |
-| `--project-slug`, `--project-name`, or `--default-branch` for an existing Project | `app.identity_conflict`. |
-| A root that the type does not allow | `app.root_invalid`. |
+| `--project-slug` for a new Project | `project.slug_conflict`. The slug is always the repository name. |
+| `--default-branch` for a new Project | `project.default_branch_conflict`, when the checkout has an `origin/HEAD`. |
+| `--root` for a new Project | `project.root_conflict`, when the root was inferred. |
+| `--project-slug`, `--project-name`, or `--default-branch` for an existing Project | `project.identity_conflict`. |
+| A root that the type does not allow | `project.root_invalid`. |
 
 Valid explicit values fill only unresolved or optional values. They do not override a conflicting repository identity or verified source fact. When the Project is created but registration then fails, the Project stays for an identical retry.
 
@@ -97,13 +97,13 @@ Valid explicit values fill only unresolved or optional values. They do not overr
 
 Repeating `project:create` with the same name, slug, type, repository access URL, default branch, root, and any sent task check returns the existing Project. A retry does not look up an omitted branch again.
 
-A retry that changes any creation value fails with `app.identity_conflict` and does not mutate the Project. A different repository access URL is a changed value even when it has the same canonical repository identity, so creation never switches the stored URL.
+A retry that changes any creation value fails with `project.identity_conflict` and does not mutate the Project. A different repository access URL is a changed value even when it has the same canonical repository identity, so creation never switches the stored URL.
 
 ## Project codes
 
 Each Project has a unique code of three uppercase letters. The Gateway derives it from the slug unless `POST /api/v1/projects` sends `code`. The code stays the same when the slug changes. Task cards use it as a label.
 
-Change the code in the web app, or send `PATCH /api/v1/projects/{project}` with only `code`. A code sent with other fields returns `app.code_update_separate`. A code that is not three uppercase letters returns `app.invalid_code`. A code in use returns `app.code_conflict`. When every three-letter code is taken, creation returns `app.codes_exhausted`.
+Change the code in the web app, or send `PATCH /api/v1/projects/{project}` with only `code`. A code sent with other fields returns `project.code_update_separate`. A code that is not three uppercase letters returns `project.invalid_code`. A code in use returns `project.code_conflict`. When every three-letter code is taken, creation returns `project.codes_exhausted`.
 
 ## Update a Project
 
@@ -139,7 +139,7 @@ The Gateway applies `slug`, `repository_url`, `default_branch`, and `root` as on
 | `cleaning_up` | Checks that no production Instance changed. |
 | `complete` | Done. |
 
-A failure before `publishing` rolls back: Orbit restores origins, branches, and Routes and ends in `rolled_back`. A rollback that fails stays `rolling_back`, and an identical retry continues it. A failure after `publishing` starts stays in place, and an identical retry continues forward. A different update while one is incomplete returns `app.update_in_progress`.
+A failure before `publishing` rolls back: Orbit restores origins, branches, and Routes and ends in `rolled_back`. A rollback that fails stays `rolling_back`, and an identical retry continues it. A failure after `publishing` starts stays in place, and an identical retry continues forward. A different update while one is incomplete returns `project.update_in_progress`.
 
 Run [Doctor](/cli/doctor) to inspect any projection that needs attention.
 
@@ -161,21 +161,21 @@ The Gateway returns these codes for Project requests. [Create a Project during r
 
 | Code | Cause |
 | --- | --- |
-| `app.identity_conflict` | A create retry differs from the stored Project. |
-| `app.repository_identity_conflict` | Another Project owns the repository. |
-| `app.default_branch_unavailable` | The Gateway cannot read the remote, or the branch is missing. The message holds no Git output or credentials. |
-| `app.slug_conflict` | Another Project has the slug. |
-| `app.update_required` | The update sends no field. |
-| `app.update_in_progress` | Another update of this Project is incomplete. |
-| `app.repository_preflight_failed` | A checkout is missing, has another origin, or cannot reach the new URL. |
-| `app.repository_origin_failed` | Orbit could not change or restore `origin` in a checkout. |
+| `project.identity_conflict` | A create retry differs from the stored Project. |
+| `project.repository_identity_conflict` | Another Project owns the repository. |
+| `project.default_branch_unavailable` | The Gateway cannot read the remote, or the branch is missing. The message holds no Git output or credentials. |
+| `project.slug_conflict` | Another Project has the slug. |
+| `project.update_required` | The update sends no field. |
+| `project.update_in_progress` | Another update of this Project is incomplete. |
+| `project.repository_preflight_failed` | A checkout is missing, has another origin, or cannot reach the new URL. |
+| `project.repository_origin_failed` | Orbit could not change or restore `origin` in a checkout. |
 | `route.domain_conflict` | A new generated domain for the slug belongs to another Route. |
-| `app.repository_unowned_common` | A worktree uses a repository that no Orbit checkout owns. |
-| `app.source_switch_failed` | A `default` checkout cannot switch to the new default branch. |
-| `app.production_ownership_changed` | A production Instance changed during the update. |
-| `app.update_failed` | The update failed for a reason without its own code, and Orbit rolled back. |
-| `app.has_app_instances` | Removal found Instances. |
-| `app.has_routes` | Removal found Routes. |
+| `project.repository_unowned_common` | A worktree uses a repository that no Orbit checkout owns. |
+| `project.source_switch_failed` | A `default` checkout cannot switch to the new default branch. |
+| `project.production_ownership_changed` | A production Instance changed during the update. |
+| `project.update_failed` | The update failed for a reason without its own code, and Orbit rolled back. |
+| `project.has_instances` | Removal found Instances. |
+| `project.has_routes` | Removal found Routes. |
 
 ## Why it works this way
 
@@ -199,4 +199,6 @@ Instances of one repository share one serving contract. Per-Instance route or PH
 
 ### Project and Instance
 
-"App" also names Laravel applications, desktop builds, and Node roles such as `app-dev`. So the repository record is a Project, and one copy on a Node is an Instance. Stored table names keep `apps` and `app_instances`.
+The repository record is a Project, and one copy on a Node is an Instance. The model, the table, the foreign key, the class, and these docs use those names. `projects` stores the repository record. `instances` stores the running copy. Related Instance rows use `instance_*`, and Project update rows use `project_updates`. The foreign keys are `project_id` and `instance_id`.
+
+Monorepo folders such as `apps/cli` and `apps/gateway`, the Laravel root namespace `App\`, `app/` source folders, `config/app.php`, `APP_*` variables, Node roles `app-dev` and `app-prod`, the GitHub App, the type `laravel-app`, the Route kind `app`, and the node storage setting `apps` are not this domain. An alias or a second name was rejected. [ADR 0181](/decisions/0181-name-the-domain-project-and-instance-everywhere) records the choice.

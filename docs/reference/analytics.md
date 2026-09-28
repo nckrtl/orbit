@@ -151,7 +151,7 @@ Plausible creates and migrates its own PostgreSQL database. The ClickHouse image
 
 ### Plausible as a Process
 
-The Process runtime already converges a Docker container on a Node, with logs, restarts, and Doctor checks. A second container runtime, Compose, or an App Instance would duplicate that work.
+The Process runtime already converges a Docker container on a Node, with logs, restarts, and Doctor checks. A second container runtime, Compose, or an Instance would duplicate that work.
 
 ### Plausible's own ClickHouse files
 
@@ -159,11 +159,11 @@ Without them, ClickHouse ran a merge loop on a small Node. Orbit uses Plausible'
 
 ### A dedicated Route kind with two paths
 
-A fixed pair of paths is small to verify and to keep private. General path proxying on any Route is a rejected alternative. A reserved prefix on the App's own site is also rejected, because it collides with App paths. `analytics.orbit` stays private, because it serves the whole fleet's dashboard and login.
+A fixed pair of paths is small to verify and to keep private. General path proxying on any Route is a rejected alternative. A reserved prefix on the Instance's own site is also rejected, because it collides with the Project's paths. `analytics.orbit` stays private, because it serves the whole fleet's dashboard and login.
 
 ### A tracking host that mirrors the Instance's Route
 
-The fleet does not have to own its public edge. A tracking host that always went public would demand an Ingress and a Cluster that the fleet does not otherwise need. A host on the App's own domain also stays first-party, so content blockers do not drop it.
+The fleet does not have to own its public edge. A tracking host that always went public would demand an Ingress and a Cluster that the fleet does not otherwise need. A host on the Instance's own domain also stays first-party, so content blockers do not drop it.
 
 ### Stats read on the Gateway
 

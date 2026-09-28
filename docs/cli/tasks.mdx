@@ -50,7 +50,7 @@ Show whether the tasks extension is on, then list every group currently asking f
 orbit tasks:status [--json]
 ```
 
-JSON returns `enabled` as `true` or `false`, and `assistance` as a list in ascending group id order. Each entry has the group's `id`, `app_id`, `app`, `project_code`, `title`, `status`, and `assistance_reason`. The list is empty when no group is asking, and it is present while the extension is off. The human table shows the group reference, title, status, and reason. An empty table says `No groups are asking for assistance.`
+JSON returns `enabled` as `true` or `false`, and `assistance` as a list in ascending group id order. Each entry has the group's `id`, `project_id`, `project`, `project_code`, `title`, `status`, and `assistance_reason`. The list is empty when no group is asking, and it is present while the extension is off. The human table shows the group reference, title, status, and reason. An empty table says `No groups are asking for assistance.`
 
 ## orbit tasks:list
 

@@ -35,7 +35,7 @@ Use `create` and `destroy` when the Gateway owns the resource lifecycle. Use `ad
 
 | Family | Pair | What the command changes |
 | --- | --- | --- |
-| `project` | `create`, `update`, and `destroy` | A [Project](/reference/apps) record |
+| `project` | `create`, `update`, and `destroy` | A [Project](/reference/projects) record |
 | `cluster` | `create` and `destroy` | A Cluster record |
 | `cluster:node` | `add` and `remove` | A [Node](/reference/node-provisioning) in a Cluster |
 | `database` | `create` and `destroy` | A [Database connection](/reference/database-connections) record |
@@ -52,7 +52,7 @@ Use `create` and `destroy` when the Gateway owns the resource lifecycle. Use `ad
 | `node:excluded-project` | `add` and `remove` | A [development exclusion](/reference/development-node-exclusions) of one Project on a Node |
 | `node:role` | `add` and `remove` | A role on a Node |
 | `project:excluded-node` | `add` and `remove` | A [development exclusion](/reference/development-node-exclusions) of one app-dev Node for a Project |
-| `process` | `create` and `destroy` | A [Process](/reference/app-processes-and-schedules), or a Project Process definition with `--project` |
+| `process` | `create` and `destroy` | A [Process](/reference/processes-and-schedules), or a Project Process definition with `--project` |
 | `route` | `create` and `destroy` | A [Route](/reference/routes) |
 | `schedule` | `create` and `destroy` | A [Schedule](/reference/schedules), or a Project Schedule definition with `--project` |
 | `tasks` | `create` | A [task group](/reference/tasks). `tasks:cancel` and `tasks:complete` end it. |

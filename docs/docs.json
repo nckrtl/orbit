@@ -69,18 +69,18 @@
             "group": "Applications",
             "pages": [
               "domains/applications",
-              "reference/apps",
+              "reference/projects",
               "reference/routes",
               "reference/environment-variables",
               "reference/database-connections",
-              "reference/app-processes-and-schedules",
+              "reference/processes-and-schedules",
               "reference/schedules",
               "reference/app-dev-runtime-hibernation",
               "reference/assigned-vite-ports",
               "reference/agentation",
               "reference/agent-annotation",
               "reference/php-runtime",
-              "reference/appinstance-cloning",
+              "reference/instance-cloning",
               "reference/deployments",
               "reference/instance-setup",
               "reference/development-node-exclusions",
@@ -90,8 +90,8 @@
               "reference/instance-analytics-stats",
               "reference/instance-dependencies",
               "reference/instance-dependency-contracts",
-              "reference/appinstance-removal",
-              "reference/appinstance-transfer"
+              "reference/instance-removal",
+              "reference/instance-transfer"
             ]
           },
           {
@@ -563,7 +563,8 @@
               "decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit",
               "decisions/0174-match-the-task-gate-to-ci-and-repeated-findings",
               "decisions/0175-docs-impact-check-in-orbit-repo",
-              "decisions/0178-run-project-agnostic-tasks-without-a-planner"
+              "decisions/0178-run-project-agnostic-tasks-without-a-planner",
+              "decisions/0181-name-the-domain-project-and-instance-everywhere"
             ]
           }
         ]
@@ -736,7 +737,7 @@
     },
     {
       "source": "/decisions/0048-copy-app-process-and-schedule-definitions-into-appinstances",
-      "destination": "/reference/app-processes-and-schedules#production-copies"
+      "destination": "/reference/processes-and-schedules#production-copies"
     },
     {
       "source": "/decisions/0060-record-latest-schedule-run-status",
@@ -744,7 +745,7 @@
     },
     {
       "source": "/decisions/0069-allow-node-process-targets",
-      "destination": "/reference/app-processes-and-schedules#owners"
+      "destination": "/reference/processes-and-schedules#owners"
     },
     {
       "source": "/decisions/0073-store-deploy-steps-as-named-appinstance-records",
@@ -760,7 +761,7 @@
     },
     {
       "source": "/decisions/0108-persist-managed-environment-on-systemd-processes",
-      "destination": "/reference/app-processes-and-schedules#environment-of-a-systemd-process"
+      "destination": "/reference/processes-and-schedules#environment-of-a-systemd-process"
     },
     {
       "source": "/decisions/0153-tail-instance-and-process-logs-live-through-the-node-agent",
@@ -1028,7 +1029,7 @@
     },
     {
       "source": "/decisions/0016-reconcile-app-identity-and-source-default-updates",
-      "destination": "/reference/apps#update-a-project"
+      "destination": "/reference/projects#update-a-project"
     },
     {
       "source": "/decisions/0018-register-caller-local-development-worktrees",
@@ -1044,7 +1045,7 @@
     },
     {
       "source": "/decisions/0026-identify-each-app-by-one-repository",
-      "destination": "/reference/apps#repository-identity"
+      "destination": "/reference/projects#repository-identity"
     },
     {
       "source": "/decisions/0027-adopt-local-git-sources-into-appinstance-ownership",
@@ -1060,7 +1061,7 @@
     },
     {
       "source": "/decisions/0031-clone-initial-production-source-during-provisioning",
-      "destination": "/reference/appinstance-cloning"
+      "destination": "/reference/instance-cloning"
     },
     {
       "source": "/decisions/0032-preserve-explicit-appinstance-branch-selection",
@@ -1076,7 +1077,7 @@
     },
     {
       "source": "/decisions/0038-cascade-appinstance-removal-through-processes-and-schedules",
-      "destination": "/reference/appinstance-removal#processes-and-schedules"
+      "destination": "/reference/instance-removal#processes-and-schedules"
     },
     {
       "source": "/decisions/0045-isolate-production-php-fpm-by-unix-user",
@@ -1084,11 +1085,11 @@
     },
     {
       "source": "/decisions/0047-create-production-appinstances-from-candidates",
-      "destination": "/reference/appinstance-cloning"
+      "destination": "/reference/instance-cloning"
     },
     {
       "source": "/decisions/0066-transfer-development-appinstances-between-nodes",
-      "destination": "/reference/appinstance-transfer"
+      "destination": "/reference/instance-transfer"
     },
     {
       "source": "/decisions/0074-hibernate-idle-app-dev-appinstance-processes",
@@ -1108,15 +1109,15 @@
     },
     {
       "source": "/decisions/0105-name-applications-as-project-and-instance",
-      "destination": "/reference/apps#project-and-instance"
+      "destination": "/reference/projects#project-and-instance"
     },
     {
       "source": "/decisions/0106-derive-instance-capabilities-from-project-type",
-      "destination": "/reference/apps#project-types"
+      "destination": "/reference/projects#project-types"
     },
     {
       "source": "/decisions/0111-retain-transfer-history-through-instance-removal",
-      "destination": "/reference/appinstance-removal#keep-unfinished-transfer-history"
+      "destination": "/reference/instance-removal#keep-unfinished-transfer-history"
     },
     {
       "source": "/decisions/0115-run-project-setup-commands-on-development-instances",
@@ -1305,6 +1306,26 @@
     {
       "source": "/decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop",
       "destination": "/cli/extension#why-it-works-this-way"
+    },
+    {
+      "source": "/reference/apps",
+      "destination": "/reference/projects"
+    },
+    {
+      "source": "/reference/appinstance-cloning",
+      "destination": "/reference/instance-cloning"
+    },
+    {
+      "source": "/reference/appinstance-removal",
+      "destination": "/reference/instance-removal"
+    },
+    {
+      "source": "/reference/appinstance-transfer",
+      "destination": "/reference/instance-transfer"
+    },
+    {
+      "source": "/reference/app-processes-and-schedules",
+      "destination": "/reference/processes-and-schedules"
     }
   ]
 }

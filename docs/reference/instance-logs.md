@@ -10,7 +10,7 @@ covers:
 
 # Instance logs
 
-The Gateway returns the end of an Instance's application log. The application writes this file itself, so it shows errors that a Process log does not. [Processes and schedules](/reference/app-processes-and-schedules) and [Schedules](/reference/schedules) describe the other logs.
+The Gateway returns the end of an Instance's application log. The application writes this file itself, so it shows errors that a Process log does not. [Processes and schedules](/reference/processes-and-schedules) and [Schedules](/reference/schedules) describe the other logs.
 
 ## Read the log
 

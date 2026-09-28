@@ -7,9 +7,9 @@ covers:
   - packages/php-sdk/src/Responses/AppInstances/**
 ---
 
-An Instance is one copy of a Project on one Node. On an `app-dev` Node it owns a checkout or worktree. On an `app-prod` Node it owns a Unix user and a production home with releases. The [Project type](/reference/apps#project-types) decides whether it gets a Route.
+An Instance is one copy of a Project on one Node. On an `app-dev` Node it owns a checkout or worktree. On an `app-prod` Node it owns a Unix user and a production home with releases. The [Project type](/reference/projects#project-types) decides whether it gets a Route.
 
-[Applications](/domains/applications) walks through the lifecycle. [Production release layout](/reference/deployments), [Instance setup and teardown](/reference/instance-setup), [Instance cloning](/reference/appinstance-cloning), [Instance transfer](/reference/appinstance-transfer), [Instance removal](/reference/appinstance-removal), and [Database connections](/reference/database-connections) own the contracts behind these commands.
+[Applications](/domains/applications) walks through the lifecycle. [Production release layout](/reference/deployments), [Instance setup and teardown](/reference/instance-setup), [Instance cloning](/reference/instance-cloning), [Instance transfer](/reference/instance-transfer), [Instance removal](/reference/instance-removal), and [Database connections](/reference/database-connections) own the contracts behind these commands.
 
 ## Commands
 
@@ -186,7 +186,7 @@ orbit instance:logs 12 --follow
 
 ## orbit instance:destroy
 
-Remove an Instance with its Route, Processes, Schedules, and runtime. A development removal runs the teardown steps first and deletes the checkout. See [Instance removal](/reference/appinstance-removal).
+Remove an Instance with its Route, Processes, Schedules, and runtime. A development removal runs the teardown steps first and deletes the checkout. See [Instance removal](/reference/instance-removal).
 
 ```bash
 orbit instance:destroy <instance> [--yes] [--force] [--json]
@@ -343,7 +343,7 @@ orbit node:add production production.example --role=app-prod --tld=prod.orbit
 orbit instance:clone 12 9 primary --preview-name=shop.com --sqlite-source-path=/srv/orbit/apps/acme/default/database/database.sqlite
 ```
 
-Cloning ends with an active Instance and no release. Update its environment, record deploy steps, then run `instance:deploy`. See [Instance cloning](/reference/appinstance-cloning#next-steps).
+Cloning ends with an active Instance and no release. Update its environment, record deploy steps, then run `instance:deploy`. See [Instance cloning](/reference/instance-cloning#next-steps).
 
 ## orbit instance:update
 
@@ -654,7 +654,7 @@ Plausible stops receiving visits for the Instance as soon as the hosts are gone.
 
 ## orbit instance:transfer
 
-Move an active development Instance to another `app-dev` Node. Both Nodes must belong to active Clusters. The transfer stops the source, copies it into an independent checkout, moves or replaces its Route, and deletes the old placement. See [Instance transfer](/reference/appinstance-transfer).
+Move an active development Instance to another `app-dev` Node. Both Nodes must belong to active Clusters. The transfer stops the source, copies it into an independent checkout, moves or replaces its Route, and deletes the old placement. See [Instance transfer](/reference/instance-transfer).
 
 ```bash
 orbit instance:transfer <instance> <node> [--name=NAME] [--sqlite-source-path=PATH] [--force] [--json]

@@ -61,11 +61,11 @@ The new Instance gets its own copy of each part below.
 | --- | --- |
 | Source | A new checkout of the branch from the Project repository, inside the production home. Orbit copies no files from the candidate's working directory. |
 | Environment | Every stored candidate value, encrypted again for the new Instance. Then Orbit sets `APP_ENV=production` and `APP_DEBUG=false`. You can change them later. |
-| Processes and Schedules | Copies of the Project's production [definitions](/reference/app-processes-and-schedules#production-copies), installed stopped. Candidate-specific Processes and Schedules do not copy. |
+| Processes and Schedules | Copies of the Project's production [definitions](/reference/processes-and-schedules#production-copies), installed stopped. Candidate-specific Processes and Schedules do not copy. |
 | PHP | A [dedicated PHP-FPM service](/reference/php-runtime#production-runtime) with Orbit defaults, when the source uses PHP. |
 | Route | For `laravel-app`, one private preview Route. Other types get no Route. |
 
-Before the clone completes, Orbit renders the new Instance's stored values and writes its `.env` in the production home. It copies no `.env` file from the candidate, and no cached configuration, dependencies, logs, caches, or PHP-FPM tuning. Stored values such as `APP_KEY` copy as they are. References such as `{{app_instance.domain}}` resolve against the new Instance.
+Before the clone completes, Orbit renders the new Instance's stored values and writes its `.env` in the production home. It copies no `.env` file from the candidate, and no cached configuration, dependencies, logs, caches, or PHP-FPM tuning. Stored values such as `APP_KEY` copy as they are. References such as `{{instance.domain}}` resolve against the new Instance.
 
 ## Preview domain
 

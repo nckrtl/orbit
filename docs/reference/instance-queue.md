@@ -10,7 +10,7 @@ covers:
 
 # Instance queue
 
-The Gateway reports the queue of an Instance that runs Laravel Horizon. The report shows the state of Horizon, the load of each queue, and the newest pending, completed, or failed jobs. [Processes and schedules](/reference/app-processes-and-schedules) describes the Process that runs Horizon.
+The Gateway reports the queue of an Instance that runs Laravel Horizon. The report shows the state of Horizon, the load of each queue, and the newest pending, completed, or failed jobs. [Processes and schedules](/reference/processes-and-schedules) describes the Process that runs Horizon.
 
 ## Read the queue
 

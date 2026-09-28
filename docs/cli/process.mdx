@@ -9,7 +9,7 @@ covers:
 
 A Process is one systemd service or Docker container that the Gateway manages for an Instance or a managed Node. The `process` family installs it, changes its desired state, reads its log, and removes it. It also records Project process definitions.
 
-[Processes and schedules](/reference/app-processes-and-schedules) describes owners, runtimes, environment, presets, locks, and definitions. [Hibernation](/reference/app-dev-runtime-hibernation) describes idle stop and wake for development Processes.
+[Processes and schedules](/reference/processes-and-schedules) describes owners, runtimes, environment, presets, locks, and definitions. [Hibernation](/reference/app-dev-runtime-hibernation) describes idle stop and wake for development Processes.
 
 ## Choose the owner
 
@@ -61,7 +61,7 @@ orbit process:create <name> (--instance=ID-or-domain | --node=ID-or-name | --pro
 | `--runtime=RUNTIME` | `systemd` | `systemd` or `docker`. |
 | `--command=ARG` | none | One argument. Repeat it for each argument, at most 64 of 4,096 bytes each. A systemd command starts with an absolute executable. |
 | `--image=IMAGE` | none | Docker image. |
-| `--working-directory=PATH` | see [runtimes](/reference/app-processes-and-schedules#runtimes) | Working directory. |
+| `--working-directory=PATH` | see [runtimes](/reference/processes-and-schedules#runtimes) | Working directory. |
 | `--environment=NAME=VALUE` | none | Docker environment variable. Repeat as needed. |
 | `--port=HOST:CONTAINER[/tcp\|udp]` | none | Docker published port. Repeat as needed. |
 | `--volume=SOURCE:TARGET[:ro]` | none | Docker volume. Repeat as needed. |

@@ -77,7 +77,7 @@ foreach ($nodes->nodes as $node) {
 }
 ```
 
-Requests that select an owner take a small target object, for example `new AppInstanceProcessTarget(12)` or `new NodeProcessTarget(7)` for `CreateProcessRequest` and `ListProcessesRequest`, and `NodeScheduleTarget` or `AppInstanceScheduleTarget` for `CreateScheduleRequest`.
+Requests that select an owner take a small target object, for example `new InstanceProcessTarget(12)` or `new NodeProcessTarget(7)` for `CreateProcessRequest` and `ListProcessesRequest`, and `NodeScheduleTarget` or `InstanceScheduleTarget` for `CreateScheduleRequest`.
 
 ## Read a response
 
@@ -86,7 +86,7 @@ Response classes are `final readonly` objects with public camel-case properties 
 | Response | Returned by |
 | --- | --- |
 | `NodeResponse`, `NodesResponse` | Node operations. |
-| `AppResponse`, `AppRuntimeDefinitionResponse` | Projects and their process and Schedule definitions. |
+| `ProjectResponse`, `ProjectRuntimeDefinitionResponse` | Projects and their process and Schedule definitions. |
 | `InstanceResponse`, `InstanceRegistrationResponse`, `InstanceRemovalResponse` | Instance placement, registration, and removal. |
 | `DeploymentConfigResponse`, `DeploymentStepResponse`, `DeploymentReleasesResponse` | Deploy steps, configuration documents, and retained releases. |
 | `EnvironmentOperationResponse` | Environment import, update, and sync. |
@@ -106,7 +106,7 @@ use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Requests\Routes\SetRouteTargetRequest;
 
 try {
-    $connector->send(new SetRouteTargetRequest(routeId: 9, appInstanceId: 12))->dto();
+    $connector->send(new SetRouteTargetRequest(routeId: 9, instanceId: 12))->dto();
 } catch (GatewayApiException $exception) {
     echo $exception->errorCode();   // route.target_conflict
     echo $exception->getMessage();  // safe message
@@ -127,7 +127,7 @@ use Orbit\Sdk\Responses\Deployments\DeploymentOutputEvent;
 use Orbit\Sdk\Responses\Deployments\DeploymentPhaseEvent;
 use Orbit\Sdk\Responses\Deployments\DeploymentResultEvent;
 
-$stream = $connector->send(new DeployInstanceRequest(appInstanceId: 15))->dto();
+$stream = $connector->send(new DeployInstanceRequest(instanceId: 15))->dto();
 
 foreach ($stream as $event) {
     match (true) {

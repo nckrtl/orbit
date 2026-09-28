@@ -18,7 +18,7 @@ A Process is one long-running systemd service or Docker container that Orbit man
 
 ## Owners
 
-An Instance Process serves one Instance. The Gateway derives its Node, user, and default working directory from the Instance. [Instance removal](/reference/appinstance-removal) removes it.
+An Instance Process serves one Instance. The Gateway derives its Node, user, and default working directory from the Instance. [Instance removal](/reference/instance-removal) removes it.
 
 A Node Process serves the Node itself, for example a shared Docker database. It runs as the Node's managed user, with `/home/{user}` as its default working directory. It reads no Instance environment file. The Node must be an active Linux Node with a WireGuard address. A Node Process stays when an Instance is removed. The Gateway refuses to remove a Node that still owns a Process with `node.has_processes`. [Offline removal](/reference/node-provisioning#remove-a-node) of an unreachable Node deletes its Process records without remote cleanup.
 
@@ -112,7 +112,7 @@ A definition change touches only the Project. It makes no remote call and does n
 
 ## Production copies
 
-[Cloning](/reference/appinstance-cloning) a production Instance copies the Project's definitions into that Instance. The Gateway captures every definition whose `environments` include `production`, once for each target. It ignores every other definition and the candidate's own Processes and Schedules.
+[Cloning](/reference/instance-cloning) a production Instance copies the Project's definitions into that Instance. The Gateway captures every definition whose `environments` include `production`, once for each target. It ignores every other definition and the candidate's own Processes and Schedules.
 
 Each Process definition becomes a new Instance Process with its own ID, installed stopped. Each Schedule definition becomes a new Instance Schedule with its own UUID, installed with its timer disabled. The copies do not need a selected release, and preparation runs no application code. Start them with [`process:start`](/cli/process#orbit-processstart) and [`schedule:enable`](/cli/schedule#orbit-scheduleenable) when the Instance is ready.
 

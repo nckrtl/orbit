@@ -46,8 +46,8 @@ The Gateway also refuses these Instances:
 
 | Code | Cause |
 | --- | --- |
-| `instance.transfer_incomplete` | A [transfer](/reference/appinstance-transfer) of the Instance is not complete. Recover it first. |
-| `instance.clone_in_progress` | The Instance is the candidate of an incomplete [clone](/reference/appinstance-cloning). |
+| `instance.transfer_incomplete` | A [transfer](/reference/instance-transfer) of the Instance is not complete. Recover it first. |
+| `instance.clone_in_progress` | The Instance is the candidate of an incomplete [clone](/reference/instance-cloning). |
 | `analytics.tracking_hosts_exist` | The Instance still has [tracking hosts](/cli/instance#orbit-instanceanalyticsdisable). |
 | `instance.remove_refused` | The Instance is in another state, its Route is not removable, or normal mode found dirty or unpublished source. The message names the rule. |
 

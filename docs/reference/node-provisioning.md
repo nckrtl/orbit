@@ -102,7 +102,7 @@ Doctor checks a Node without roles like any other Node when the Gateway has a pi
 
 ## Converge an existing Node
 
-`node:add` for a recorded Node converges the machine again. It refuses a Node that owns Instances with `node.has_app_instances`. One exception: it changes only the TLD of a Node with an active `app-dev` role.
+`node:add` for a recorded Node converges the machine again. It refuses a Node that owns Instances with `node.has_instances`. One exception: it changes only the TLD of a Node with an active `app-dev` role.
 
 What a failure leaves depends on the step.
 
@@ -251,7 +251,7 @@ The Gateway refuses the removal until the Node is empty. Remove its Instances, R
 
 | Code | Condition |
 | --- | --- |
-| `node.has_app_instances`, `node.has_routes`, `schedule.target_in_use`, `node.has_roles`, `node.has_processes`, `node.has_firewall_rules` | The Node still owns that state. |
+| `node.has_instances`, `node.has_routes`, `schedule.target_in_use`, `node.has_roles`, `node.has_processes`, `node.has_firewall_rules` | The Node still owns that state. |
 | `route.reconciliation_required` | An active Route depends on the Node. |
 | `node.self_removal_forbidden`, `node.gateway_removal_forbidden`, `node.vpn_removal_forbidden` | The Node is protected. |
 | `node.provisioning_busy` | Another lifecycle operation holds the Node name. |

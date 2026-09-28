@@ -24,7 +24,7 @@ When this Instance already has a recorded port on the Node, the search starts th
 
 Two Nodes can use the same port. The database keeps each port unique per Node. The search runs under the Node's operation lock and fails when no port is left.
 
-`instance:list`, `instance:show`, the API, and the SDK return `vite_port`. The assignment is a stored preference, not an open socket. It survives hibernation, dependency pruning, Process replacement, and reboots. Removal releases it after runtime cleanup. A [transfer](/reference/appinstance-transfer) assigns a port on the destination and releases the source port after cleanup.
+`instance:list`, `instance:show`, the API, and the SDK return `vite_port`. The assignment is a stored preference, not an open socket. It survives hibernation, dependency pruning, Process replacement, and reboots. Removal releases it after runtime cleanup. A [transfer](/reference/instance-transfer) assigns a port on the destination and releases the source port after cleanup.
 
 ## The vp-dev preset
 
@@ -34,7 +34,7 @@ Create the preset Process on a development Instance. `--instance` accepts an Ins
 orbit process:create vite --instance=commander.test --preset=vp-dev --start
 ```
 
-The preset needs `/usr/local/bin/vp`, a readable `package.json`, and an installed `node_modules`. It installs no dependencies and edits no application code. It sets the command, the working directory, and restart on failure. A custom command, runtime, or Docker option conflicts with the preset and is refused. An Instance has at most one preset Process. Naming a plain Process `vp-dev` has no effect. The [Processes](/reference/app-processes-and-schedules#presets) page lists every preset.
+The preset needs `/usr/local/bin/vp`, a readable `package.json`, and an installed `node_modules`. It installs no dependencies and edits no application code. It sets the command, the working directory, and restart on failure. A custom command, runtime, or Docker option conflicts with the preset and is refused. An Instance has at most one preset Process. Naming a plain Process `vp-dev` has no effect. The [Processes](/reference/processes-and-schedules#presets) page lists every preset.
 
 The preset runs Vite on loopback with strict binding:
 
