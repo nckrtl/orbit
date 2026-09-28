@@ -132,7 +132,8 @@ it('adr lifecycle accepts independent allowlist removals merged from sibling bra
     exec('git -C '.escapeshellarg($root).' add .');
     exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm remove-0052');
     exec('git -C '.escapeshellarg($root).' checkout -q main');
-    exec('git -C '.escapeshellarg($root).' merge -q --no-commit --no-ff -s ours other > /dev/null');
+    exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test merge -q --no-commit --no-ff -s ours other > /dev/null', result_code: $mergeStatus);
+    expect($mergeStatus)->toBe(0);
     file_put_contents($root.'/apps/docs/config/adr-legacy-allowlist.php', "<?php return ['0114'];\n");
     exec('git -C '.escapeshellarg($root).' add .');
     exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm merge-removals');
