@@ -68,6 +68,7 @@ final readonly class TaskReviewPacket
         private ?array $diffCounts = null,
         private string $resolution = '',
         private ?int $threadId = null,
+        private string $groupStartCommit = '',
     ) {}
 
     public function render(): string
@@ -526,7 +527,10 @@ final readonly class TaskReviewPacket
 
     private function retrieval(): string
     {
-        return "Retrieval\n".$this->statCommand()."\n".$this->diffCommand();
+        $commands = $this->statCommand()."\n".$this->diffCommand();
+        $group = TaskRunInstructions::groupStart($this->groupStartCommit);
+
+        return "Retrieval\n".$commands.($group === '' ? '' : "\n".$group);
     }
 
     private function statCommand(): string

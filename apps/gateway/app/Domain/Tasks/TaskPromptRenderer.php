@@ -21,6 +21,7 @@ final readonly class TaskPromptRenderer
             'Subtask: '.$task->title,
             $task->brief,
             TaskRunInstructions::deliverables($deliverables),
+            TaskRunInstructions::groupStart($group->startCommit ?? ''),
             'Follow this repository\'s task instructions.',
         ], static fn (string $part): bool => $part !== ''));
     }

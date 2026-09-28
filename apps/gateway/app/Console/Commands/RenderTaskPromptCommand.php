@@ -95,7 +95,7 @@ final class RenderTaskPromptCommand extends Command
     private function group(array $data): TaskPromptGroup
     {
         $group = $this->object($data, 'group');
-        $this->knownFields($group, ['id', 'title', 'brief', 'project_slug', 'project_id', 'default_branch', 'task_check'], 'group');
+        $this->knownFields($group, ['id', 'title', 'brief', 'project_slug', 'project_id', 'default_branch', 'task_check', 'start_commit'], 'group');
 
         return new TaskPromptGroup(
             id: $this->integer($group, 'id', 'group'),
@@ -105,6 +105,7 @@ final class RenderTaskPromptCommand extends Command
             projectId: $this->integer($group, 'project_id', 'group'),
             defaultBranch: $this->nullableString($group, 'default_branch', 'group'),
             taskCheck: $this->nullableString($group, 'task_check', 'group'),
+            startCommit: $this->nullableString($group, 'start_commit', 'group'),
         );
     }
 
@@ -229,6 +230,7 @@ final class RenderTaskPromptCommand extends Command
             diffCounts: $diffSummary,
             resolution: $continued ? '' : ($heldResolution ?? ''),
             threadId: $this->threadId($data),
+            groupStartCommit: $group->startCommit ?? '',
         )->render();
     }
 

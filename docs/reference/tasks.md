@@ -241,6 +241,8 @@ For Orbit, the [Orbit Tasks skill](https://github.com/nckrtl/orbit/blob/main/.ag
 
 The provisioner checks out the pushed `task-{group id}` branch for the shared Instance. The implementer and reviewer prompts are project-neutral: they do not add an ADR contract sentence or Orbit-specific policy such as Incus or lease instructions. Project policy reaches agents through the repository's own `orbit-tasks` skill and instructions. The prompt includes the Project's task-check command only when one is configured; it omits the check when none is set. [Review a subtask](#review-a-subtask) describes the review behavior. The Gateway does not check the branch contents. A group without a pushed branch runs on a fresh branch from the default branch.
 
+When the workspace starting commit is recorded, both prompts name it as `The group started at <sha>.` and give `git diff --stat <sha>..HEAD`. The review packet places those lines after its stat and diff commands. Neither line names a Project, a branch, or a policy.
+
 ## Backlog and Project policy
 
 Backlog is for preparing a task group before it is claimed. A Backlog group has no Instance. An authorized caller creates the group and its ordered subtasks; moving it to `todo` makes it eligible for the scheduler to claim. An external ADE plans and steers; Orbit runs the assigned subtasks. See [ADR 0178](/decisions/0178-run-project-agnostic-tasks-without-a-planner).
@@ -430,7 +432,7 @@ The tick applies that receipt only when `thread` is the acting thread. The actin
 
 A receipt from another reviewer, or a receipt with no thread id, is not applied when the acting thread is known. An implementer turn is bound the same way. A legacy turn file with no thread id is rewritten for that thread, and Orbit sends the bound run command instead of applying the unidentified receipt. If the turn file cannot be written for a replacement reviewer, that replacement does not start and the group pointer stays. [ADR 0169](/decisions/0169-start-each-subtask-review-in-a-fresh-thread) records the thread binding.
 
-Implementers receive standing instructions to complete their work autonomously and resolve routine prerequisites. These shared instructions do not add Orbit-specific environment or Project policy; the repository supplies its own policy through its instructions and `orbit-tasks` skill.
+Implementers receive standing instructions to complete their work autonomously and resolve routine prerequisites. These shared instructions do not add Orbit-specific environment or Project policy; the repository supplies its own policy through its instructions and `orbit-tasks` skill. When the workspace starting commit is known, the implementer prompt also names that commit and gives `git diff --stat <sha>..HEAD`.
 
 A reviewer turn is read-only. The reviewer prompt says so. The reviewer does not create, edit, reset, or delete workspace files, including disposable fixtures.
 
@@ -486,7 +488,9 @@ When that reviewer thread does not exist yet, the resolution is not sent to an e
 
 A reviewer thread is scoped to the subtask it reviews. The scheduler sends a review only to that subtask's reviewer thread.
 
-The opening turn is a review packet of at most 16,000 characters, about 4 thousand tokens at four characters per token. No part is exempt. A part under its cap leaves the spare characters for the diff body. The diff body also stops at 16,384 bytes. The two retrieval commands are reserved first, at most 1,000 characters, and are never cut. The thread id is written into the generated closing instructions before that cap. Diff text and brief text are not rewritten to add it.
+The opening turn is a review packet of at most 16,000 characters, about 4 thousand tokens at four characters per token. No part is exempt. A part under its cap leaves the spare characters for the diff body. The diff body also stops at 16,384 bytes. The retrieval block is reserved first, at most 1,000 characters, and is never cut. The thread id is written into the generated closing instructions before that cap. Diff text and brief text are not rewritten to add it.
+
+The retrieval block holds the stat command, the diff command, and, when the workspace starting commit is known, the group-start fact and its stat command.
 
 ### Render prompts for offline evaluation
 
@@ -503,6 +507,7 @@ The input is a single JSON object with only the following fields. Field names an
 | `group.project_id` | integer | Project id. |
 | `group.default_branch` | string or null | Project default branch. |
 | `group.task_check` | string or null | Project task-check command, or null when no check is configured. |
+| `group.start_commit` | string or null | Workspace starting commit, or null when it was not recorded. The prompts name it only when it is 40 or 64 hexadecimal characters. |
 | `subtask.id` | integer | Subtask id. |
 | `subtask.title` | string | Subtask title. |
 | `subtask.brief` | string | Subtask brief. |
@@ -560,7 +565,9 @@ git diff --stat START; git ls-files --others --exclude-standard -z | while IFS= 
 git diff START; git ls-files --others --exclude-standard -z | while IFS= read -r -d '' path; do git diff --no-index -- /dev/null "$path" || true; done
 ```
 
-A continued re-review does not repeat the group brief, the deliverables, the earlier approval lines, or a resolution carried on the opening packet. That turn carries the new diff stat, the capped diff, both retrieval commands, and the new handoff result. The spared caps go to the diff body. When that thread cannot take a turn, Orbit starts a fresh thread and sends the full packet.
+When the workspace starting commit is known, the retrieval block adds two lines after those commands: `The group started at <sha>.` and `git diff --stat <sha>..HEAD`. `<sha>` is that commit. The lines are left out when it is missing or not 40 or 64 hexadecimal characters. They name no Project, branch, or policy. A continued turn includes them with the other retrieval commands.
+
+A continued re-review does not repeat the group brief, the deliverables, the earlier approval lines, or a resolution carried on the opening packet. That turn carries the new diff stat, the capped diff, the retrieval block, and the new handoff result. The spared caps go to the diff body. When that thread cannot take a turn, Orbit starts a fresh thread and sends the full packet.
 
 The reviewer does not re-run the Project task check or the deliverable tests and commands the handoff already passed. The reviewer runs another command only to get evidence the handoff result does not give, and the review summary says why.
 

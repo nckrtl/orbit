@@ -52,6 +52,7 @@ final readonly class TaskReviewPacketBuilder
             diffCounts: $diff['summary'],
             resolution: $continued ? '' : $this->pendingResolution($task),
             threadId: $threadId,
+            groupStartCommit: TaskReviewBase::groupStartCommit($group),
         )->render();
     }
 

@@ -53,6 +53,19 @@ final readonly class TaskRunInstructions
         return "Deliverables. Orbit checks each one before the review:\n".implode("\n", array_map(static fn (TaskDeliverable $deliverable): string => $deliverable->line(), $deliverables));
     }
 
+    /**
+     * The workspace commit the group started at, and the stat from there to HEAD.
+     * Empty unless the commit is the 40 or 64 hexadecimal characters Orbit records.
+     */
+    public static function groupStart(string $commit): string
+    {
+        if (preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) !== 1) {
+            return '';
+        }
+
+        return 'The group started at '.$commit.".\n".'git diff --stat '.$commit.'..HEAD';
+    }
+
     private static function autonomy(): string
     {
         return 'Complete your assigned work autonomously. You may create, modify, reset, and delete disposable fixtures within your task\'s allocated environment without asking for permission. This authority does not extend to live or shared resources or another task\'s fixtures. Resolve routine test prerequisites yourself.';
