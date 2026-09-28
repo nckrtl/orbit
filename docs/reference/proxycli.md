@@ -5,7 +5,7 @@ description: "The optional Orbit extension that collects CLIProxyAPI quota into 
 
 # proxycli
 
-This page tells an operator how the optional `proxycli` extension collects CLIProxyAPI account quota, stores one snapshot in shared Valkey, and exposes provider pools to the Orbit web app and CodexBar. [ADR 0179](/decisions/0179-gate-all-extension-surfaces-with-one-gateway-switch) owns the one Gateway switch and visibility boundary. [ADR 0104](/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension) records the collector architecture. [ADR 0109](/decisions/0109-publish-the-proxycli-collector-on-a-subdomain) and [ADR 0145](/decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit) own the collector hostname. [Cut over proxy-quota collectors](/solutions/cutover-proxycli) owns the migration from hand-rolled Processes.
+This page tells an operator how the optional `proxycli` extension collects CLIProxyAPI account quota, stores one snapshot in shared Valkey, and exposes provider pools to the Orbit web app and CodexBar. [ADR 0179](/cli/extension#why-it-works-this-way) owns the one Gateway switch and visibility boundary. [ADR 0104](/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension) records the collector architecture. [ADR 0109](/decisions/0109-publish-the-proxycli-collector-on-a-subdomain) and [ADR 0145](/decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit) own the collector hostname. [Cut over proxy-quota collectors](/solutions/cutover-proxycli) owns the migration from hand-rolled Processes.
 
 ## What the extension owns
 
@@ -108,7 +108,7 @@ orbit proxycli:teardown
 
 `proxycli:teardown` asks a default-No question that names the fleet effect. Noninteractive and JSON calls need `--yes`. It stops and removes the Process and withdraws the Caddy site, certificate, and DNS record. It also deletes the stored management key and the read and control tokens, so setup again needs the key file and gives CodexBar a new read token. Valkey data and the Redis connection stay until the operator removes them. Teardown does not change the `proxycli` extension switch or web navigation.
 
-`extension:disable proxycli` changes the Gateway switch only. It hides the family, MCP tools, API operations, and web navigation for every client, and disabled calls return HTTP 409 `extension.disabled`. It does not tear down the collector. [ADR 0179](/decisions/0179-gate-all-extension-surfaces-with-one-gateway-switch) records this contract.
+`extension:disable proxycli` changes the Gateway switch only. It hides the family, MCP tools, API operations, and web navigation for every client, and disabled calls return HTTP 409 `extension.disabled`. It does not tear down the collector. [ADR 0179](/cli/extension#why-it-works-this-way) records this contract.
 
 ## Clients
 

@@ -1,9 +1,12 @@
 ---
 title: "extension"
 description: "Enable or disable optional Gateway extensions consistently across Orbit clients."
+covers:
+  - "apps/gateway/app/Http/Middleware/RequireEnabledExtension.php"
+  - "apps/gateway/database/migrations/*move_extension_switches_to_gateway_extension_keys.php"
 ---
 
-An extension is an optional Gateway-owned product surface. Its one switch controls which CLI commands, MCP tools, API routes, and web navigation are available to every client. The Gateway stores the enabled set; the CLI does not keep a local copy. [ADR 0179](/decisions/0179-gate-all-extension-surfaces-with-one-gateway-switch) defines this model.
+An extension is an optional Gateway-owned product surface. Its one switch controls which CLI commands, MCP tools, API routes, and web navigation are available to every client. The Gateway stores the enabled set; the CLI does not keep a local copy. [Why it works this way](#why-it-works-this-way) explains this model.
 
 ## Commands
 
@@ -74,6 +77,14 @@ orbit extension:disable tasks
 ```
 
 A stale CLI invocation or API request for a disabled extension fails with `extension.disabled`; the API response uses HTTP 409. MCP reports the same code in its tool-error envelope rather than as an HTTP 409; see [MCP errors](/reference/mcp#tools). Disabling `proxycli` hides access but does not tear down its configured collector; use [`proxycli:teardown`](/cli/proxycli#orbit-proxycliteardown) to remove that fleet setup before disabling it when desired.
+
+## Why it works this way
+
+Each extension has one switch, and the Gateway owns it. A switch kept on each operator's machine could not hide Gateway routes, MCP tools, or web navigation, so two operators could see different products. The CLI asks the Gateway for the enabled set once per process instead of caching it in `$ORBIT_HOME`, because a cache would become a second source of truth.
+
+`extension:enable` only flips the switch. Setting up an extension such as proxycli needs a Node, a cache connection, an upstream URL, and a key, so that stays in the extension's own setup command, and the switch keeps one small contract for every extension. The old `tasks:enable` and `tasks:disable` commands are gone rather than kept as aliases: one extension has one switch name.
+
+API routes stay registered while an extension is off and refuse with HTTP 409 `extension.disabled`. Removing routes at runtime would make the OpenAPI document, the SDK, and the generated MCP tools change with runtime state. MCP tools are filtered before listing, search, and execution alike, so a disabled tool cannot be found or run through any path.
 
 ## Related
 

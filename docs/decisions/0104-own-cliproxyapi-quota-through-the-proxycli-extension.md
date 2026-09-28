@@ -12,7 +12,7 @@ Orbit treats CLIProxyAPI quota collection as an optional extension named `proxyc
 
 Proposed.
 
-This decision extends [Processes and schedules](/reference/app-processes-and-schedules#owners) for the collector Process, [Database role](/reference/database-role) for Valkey placement, and [Routes](/reference/routes#custom-proxy-routes) for the reserved private hostname shape. It does not add a Node role. [ADR 0109](/decisions/0109-publish-the-proxycli-collector-on-a-subdomain) amends the reserved hostname to `collector.proxycli.orbit` and leaves apex `proxycli.orbit` free for a management Route. [ADR 0179](/decisions/0179-gate-all-extension-surfaces-with-one-gateway-switch) supersedes [ADR 0150](/decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop): the Gateway owns the `proxycli` switch, `proxycli:setup` and `proxycli:teardown` own fleet setup and teardown, and disabling the extension does not tear down an existing collector.
+This decision extends [Processes and schedules](/reference/app-processes-and-schedules#owners) for the collector Process, [Database role](/reference/database-role) for Valkey placement, and [Routes](/reference/routes#custom-proxy-routes) for the reserved private hostname shape. It does not add a Node role. [ADR 0109](/decisions/0109-publish-the-proxycli-collector-on-a-subdomain) amends the reserved hostname to `collector.proxycli.orbit` and leaves apex `proxycli.orbit` free for a management Route. [ADR 0179](/cli/extension#why-it-works-this-way) supersedes [ADR 0150](/cli/extension#why-it-works-this-way): the Gateway owns the `proxycli` switch, `proxycli:setup` and `proxycli:teardown` own fleet setup and teardown, and disabling the extension does not tear down an existing collector.
 
 ## Context
 

@@ -10,8 +10,6 @@ covers:
   - "apps/gateway/app/Console/Commands/{TickTaskSessionsCommand,CollectT3MetricsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand}.php"
   - "apps/gateway/app/Models/{TaskGroup,Task,TaskComment,TaskCheck,AgentThread,JevDecision}.php"
   - "apps/gateway/resources/tasks/**"
-  - "apps/gateway/database/migrations/*move_extension_switches_to_gateway_extension_keys.php"
-  - "apps/gateway/app/Http/Middleware/RequireEnabledExtension.php"
 ---
 
 # Tasks
