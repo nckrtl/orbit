@@ -22,7 +22,7 @@ final class TaskData extends Data
         public int $position,
         public string $title,
         public string $brief,
-        /** @var list<array<string, string|bool>> */
+        /** @var list<array<string, string|bool|list<string>>> */
         public array $deliverables,
         public TaskStatus $status,
         public ?int $implementerAgentThreadId,

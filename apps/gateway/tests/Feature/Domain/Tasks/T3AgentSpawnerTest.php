@@ -175,7 +175,7 @@ it('spawns the group reviewer with its first review and a fresh implementer on t
             'role' => 'user',
             'attachments' => [],
         ])
-        ->and($dispatcher->commands[2]['message']['text'])->toContain('Do not re-run the Project task check or the deliverable tests and commands the handoff already passed.')
+        ->and($dispatcher->commands[2]['message']['text'])->toContain('Do not re-run the Project task check or deliverable commands the handoff already passed.')
         ->and($dispatcher->commands[2]['message']['text'])->toContain('use your web and documentation tools to confirm that framework and library usage matches current documentation')
         ->and($dispatcher->commands[2]['message']['text'])->toContain('Review subtask #'.$task->id.': '.$task->title)
         ->and($dispatcher->commands[2]['message']['text'])->toContain('Group brief')
@@ -240,12 +240,12 @@ it('shows the base failure kind and message to the reviewer', function (): void 
     $task = $group->tasks->first();
     $task->update(['deliverables' => [[
         'id' => 'layout-repro',
-        'type' => 'test',
+        'type' => 'command',
         'description' => 'The layout fails before the fix',
-        'project' => 'apps/gateway',
-        'file' => 'tests/Feature/HomeScreenTest.php',
-        'name' => 'home screen layout',
+        'command' => 'vendor/bin/pest tests/Feature/HomeScreenTest.php',
+        'directory' => 'apps/gateway',
         'fails_on_base' => true,
+        'paths' => ['apps/gateway/tests/Feature/HomeScreenTest.php'],
     ]]]);
     TaskCheck::query()->create([
         'task_id' => $task->id,
@@ -257,21 +257,15 @@ it('shows the base failure kind and message to the reviewer', function (): void 
         'tree_before' => str_repeat('b', 40),
         'deliverable_evidence' => [
             'diff' => [],
-            'tests' => [
+            'commands' => [
                 'layout-repro' => [
                     'exit_code' => 0,
-                    'cases' => [['name' => 'it keeps the home screen layout', 'status' => 'passed']],
-                    'base_placed' => true,
+                    'output' => '',
+                    'base_started' => true,
                     'base_exit_code' => 2,
-                    'base_cases' => [[
-                        'name' => 'it breaks the home screen layout',
-                        'status' => 'failed',
-                        'kind' => 'error',
-                        'message' => 'Class "HomeScreen" not found',
-                    ]],
+                    'base_output' => 'Class "HomeScreen" not found',
                 ],
             ],
-            'commands' => [],
         ],
         'started_at' => now(),
     ]);
@@ -283,8 +277,8 @@ it('shows the base failure kind and message to the reviewer', function (): void 
 
     $spawner->requestReview($task->fresh());
 
-    expect($dispatcher->commands[0]['message']['text'])->toContain('`vendor/bin/pest tests/Feature/HomeScreenTest.php` in apps/gateway exited 2 on the start commit with an error: Class "HomeScreen" not found')
-        ->and($dispatcher->commands[0]['message']['text'])->toContain('Do not re-run the Project task check or the deliverable tests and commands the handoff already passed.')
+    expect($dispatcher->commands[0]['message']['text'])->toContain('`vendor/bin/pest tests/Feature/HomeScreenTest.php` in apps/gateway exited 2 on the start commit: Class "HomeScreen" not found')
+        ->and($dispatcher->commands[0]['message']['text'])->toContain('Do not re-run the Project task check or deliverable commands the handoff already passed.')
         ->and($dispatcher->commands[0]['message']['text'])->not->toContain('Group brief');
 });
 
@@ -765,7 +759,7 @@ it('lists the deliverables for the implementer and names the review deliverables
     $task = $group->tasks->first();
     $task->update(['deliverables' => [
         ['id' => 'reference-page', 'type' => 'file', 'description' => 'Document the export', 'path' => 'docs/reference/tasks.md', 'change' => 'modified'],
-        ['id' => 'export-test', 'type' => 'test', 'description' => 'Test the export', 'project' => 'apps/gateway', 'file' => 'tests/Feature/ExportTest.php', 'name' => 'exports every subtask'],
+        ['id' => 'export-test', 'type' => 'command', 'description' => 'Test the export', 'command' => 'vendor/bin/pest tests/Feature/ExportTest.php', 'directory' => 'apps/gateway'],
         ['id' => 'web-tests', 'type' => 'command', 'description' => 'The web tests pass', 'command' => 'bun test', 'directory' => 'apps/web'],
         ['id' => 'error-copy', 'type' => 'review', 'description' => 'Errors name the subtask'],
     ]]);
@@ -777,15 +771,15 @@ it('lists the deliverables for the implementer and names the review deliverables
     $implement = $dispatcher->commands[5]['message']['text'];
     $list = "Deliverables. Orbit checks each one before the review:\n"
         ."- reference-page (file: docs/reference/tasks.md, modified): Document the export\n"
-        ."- export-test (test: Pest test \"exports every subtask\" in apps/gateway/tests/Feature/ExportTest.php): Test the export\n"
+        ."- export-test (command: `vendor/bin/pest tests/Feature/ExportTest.php` in apps/gateway): Test the export\n"
         ."- web-tests (command: `bun test` in apps/web): The web tests pass\n"
         .'- error-copy (review: confirmed by the reviewer): Errors name the subtask';
 
     expect($implement)->toContain($list)
         ->and($implement)->toContain('Add --deliverable=ID=evidence for each deliverable of this subtask (reference-page, export-test, web-tests, error-copy)')
-        ->and($review)->toContain('- reference-page (file): Document the export')
-        ->and($review)->toContain('- export-test (test): Test the export')
-        ->and($review)->toContain('- web-tests (command): The web tests pass')
-        ->and($review)->toContain('- error-copy (review): Errors name the subtask')
+        ->and($review)->toContain('- reference-page (file: docs/reference/tasks.md, modified): Document the export')
+        ->and($review)->toContain('- export-test (command: `vendor/bin/pest tests/Feature/ExportTest.php` in apps/gateway): Test the export')
+        ->and($review)->toContain('- web-tests (command: `bun test` in apps/web): The web tests pass')
+        ->and($review)->toContain('- error-copy (review: confirmed by the reviewer): Errors name the subtask')
         ->and($review)->toContain('The approval must confirm each review deliverable (error-copy) with --deliverable=ID=evidence');
 });

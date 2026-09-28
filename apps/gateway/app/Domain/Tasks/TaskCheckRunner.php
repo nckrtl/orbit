@@ -15,10 +15,10 @@ interface TaskCheckRunner
     /**
      * Starts the check. Setup steps run first, in order, as they do for a baseline check. With deliverables,
      * a passing check also records their evidence ([ADR 0133](/decisions/0133-verify-typed-subtask-deliverables-at-handoff)).
-     * A test with fails_on_base also runs on the start commit ([ADR 0163](/decisions/0163-prove-a-failing-test-on-the-start-commit)).
+     * A command with fails_on_base also runs on the start commit with its paths overlaid (ADR 0163).
      *
      * @param  list<array{name: string, command: string, timeout_seconds: int}>  $setup
-     * @param  array{start: string|null, tests: list<array{id: string, project: string, file: string, fails_on_base?: bool}>, commands: list<array{id: string, command: string, directory: string}>}|null  $deliverables
+     * @param  array{start: string|null, commands: list<array{id: string, command: string, directory: string, fails_on_base?: bool, paths?: list<string>}>}|null  $deliverables
      * @param  string|null  $command  the Project task check command, or null to run no command
      *
      * @throws TaskCheckException

@@ -985,6 +985,64 @@ it('records a missing start commit on a later tick', function (): void {
     expect($task->fresh()?->subtask_start_commit)->toBe($head);
 });
 
+it('keeps a migrated continuation on its source subtask start after the source commits', function (): void {
+    $app = scheduler_app('continuation-start');
+    $instance = scheduler_instance($app, scheduler_node('continuation-start-node', '10.44.0.74'), 'continuation');
+    $group = TaskGroup::query()->create([
+        'app_id' => $app->id,
+        'title' => 'Continuation start',
+        'brief' => 'Overflow deliverables preserve the source boundary.',
+        'status' => TaskGroupStatus::Running,
+        'assistance_requested' => true,
+        'assistance_reason' => 'Waiting.',
+    ]);
+    $group->taskable()->associate($instance);
+    $group->save();
+    $start = str_repeat('a', 40);
+    $source = Task::query()->create([
+        'task_group_id' => $group->id,
+        'position' => 1,
+        'title' => 'Original task',
+        'brief' => 'Implement tests and fix.',
+        'status' => TaskStatus::Completed,
+        'subtask_start_commit' => $start,
+    ]);
+    $continuation = Task::query()->create([
+        'task_group_id' => $group->id,
+        'position' => 2,
+        'title' => 'Original task (continued 1)',
+        'brief' => 'Implement tests and fix.',
+        'status' => TaskStatus::Running,
+        'continuation_of_task_id' => $source->id,
+        'assistance_requested' => true,
+    ]);
+    $laterHead = str_repeat('b', 40);
+    app()->instance(TaskWorkspaceStateReader::class, new class($laterHead) implements TaskWorkspaceStateReader
+    {
+        public function __construct(private string $head) {}
+
+        public function headCommit(AppInstance $instance): ?string
+        {
+            return $this->head;
+        }
+
+        public function currentBranch(AppInstance $instance): ?string
+        {
+            return 'task-continuation';
+        }
+
+        public function definesComposerCheckScript(AppInstance $instance): bool
+        {
+            return true;
+        }
+    });
+    app(TaskExtensionState::class)->enable();
+
+    app(TaskScheduler::class)->tick();
+
+    expect($continuation->fresh()?->subtask_start_commit)->toBe($start);
+});
+
 it('does not record a later head after the implementer starts and commits', function (): void {
     $app = scheduler_app('late-start');
     $instance = scheduler_instance($app, scheduler_node('late-start-node', '10.44.0.72'), 'late');
@@ -1307,12 +1365,12 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
         ->and($driver->calls[0]['title'])->toBe('Orbit task #'.$group->id.' · Review: First review')
         ->and($driver->calls[0]['operation'])->toBe('create')
         ->and($opening)->toContain('Review subtask #'.$first->id.': First review')
-        ->and($opening)->toContain('Do not re-run the Project task check or the deliverable tests and commands the handoff already passed.')
+        ->and($opening)->toContain('Do not re-run the Project task check or deliverable commands the handoff already passed.')
         ->and($opening)->toContain('The Project task check is `composer check`.')
         ->and($opening)->toContain('Group brief')
         ->and($opening)->toContain($group->brief)
         ->and($opening)->toContain('Review the scheduler.')
-        ->and($opening)->toContain('- scheduler-test (review): Fresh reviewer per subtask')
+        ->and($opening)->toContain('- scheduler-test (review: confirmed by the reviewer): Fresh reviewer per subtask')
         ->and($opening)->toContain('- Packet: The packet matches ADR 0169.')
         ->and($opening)->toContain('1 file changed, 4 insertions(+), 1 deletion(-)')
         ->and($opening)->toContain('`composer check` in . exited 0')
@@ -1346,7 +1404,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
     $continued = $driver->calls[1]['message'];
 
     expect($driver->calls[1])->toMatchArray(['operation' => 'send', 'thread' => 'conversation-1'])
-        ->and($continued)->toContain('Do not re-run the Project task check or the deliverable tests and commands the handoff already passed.')
+        ->and($continued)->toContain('Do not re-run the Project task check or deliverable commands the handoff already passed.')
         ->and($continued)->toContain('+fresh reviewer')
         ->and($continued)->toContain('git diff '.$start)
         ->and($continued)->not->toContain('Group brief')
@@ -1366,7 +1424,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
         ->and($group->fresh()?->reviewer_agent_thread_id)->toBe($replacement?->id)
         ->and($driver->calls[3]['operation'])->toBe('create')
         ->and($replaced)->toContain('Group brief')
-        ->and($replaced)->toContain('Do not re-run the Project task check or the deliverable tests and commands the handoff already passed.')
+        ->and($replaced)->toContain('Do not re-run the Project task check or deliverable commands the handoff already passed.')
         ->and(AgentThread::query()->whereKey($thread->id)->exists())->toBeTrue();
 
     $second->update(['status' => TaskStatus::Running]);

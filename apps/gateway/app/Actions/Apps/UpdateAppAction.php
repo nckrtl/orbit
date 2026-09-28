@@ -91,7 +91,7 @@ final readonly class UpdateAppAction
             if ($data->taskCheckProvided) {
                 $app = $this->operations->run(
                     $instanceIds,
-                    fn (): OrbitApp => $this->applyTaskCheck($app->fresh() ?? $app, $data),
+                    fn (): OrbitApp => $this->applyProjectCommands($app->fresh() ?? $app, $data),
                 );
             }
             ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
@@ -105,7 +105,7 @@ final readonly class UpdateAppAction
 
         $result = $this->operations->run(
             $instanceIds,
-            fn (): OrbitApp => $this->applyTaskCheck($this->executeOwned($app->fresh() ?? $app, $data), $data),
+            fn (): OrbitApp => $this->applyProjectCommands($this->executeOwned($app->fresh() ?? $app, $data), $data),
         );
 
         ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
@@ -118,15 +118,19 @@ final readonly class UpdateAppAction
     }
 
     /**
-     * Stores the Project task check while the caller holds the update's operation lock.
+     * Stores Project task command configuration while the caller holds the update's operation lock.
      */
-    private function applyTaskCheck(OrbitApp $app, UpdateAppData $data): OrbitApp
+    private function applyProjectCommands(OrbitApp $app, UpdateAppData $data): OrbitApp
     {
-        if (! $data->taskCheckProvided) {
+        $changes = [];
+        if ($data->taskCheckProvided) {
+            $changes['task_check'] = $data->taskCheck;
+        }
+        if ($changes === []) {
             return $app;
         }
 
-        $app->update(['task_check' => $data->taskCheck]);
+        $app->update($changes);
 
         return $app->fresh() ?? $app;
     }

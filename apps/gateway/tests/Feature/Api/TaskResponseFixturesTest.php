@@ -242,7 +242,7 @@ function task_fixture_sdk_deliverables(): array
 {
     return [
         ['id' => 'sdk-requests', 'type' => 'file', 'description' => 'One request class per tasks route', 'path' => 'packages/php-sdk/src/Requests/Tasks/*.php', 'change' => 'created'],
-        ['id' => 'sdk-test', 'type' => 'test', 'description' => 'Every tasks route has a request', 'project' => 'packages/php-sdk', 'file' => 'tests/Unit/Requests/Tasks/TaskRequestsTest.php', 'name' => 'addresses every tasks route'],
+        ['id' => 'sdk-test', 'type' => 'command', 'description' => 'Every tasks route has a request', 'command' => 'vendor/bin/pest tests/Unit/Requests/Tasks/TaskRequestsTest.php --filter=\'addresses every tasks route\'', 'directory' => 'packages/php-sdk'],
     ];
 }
 

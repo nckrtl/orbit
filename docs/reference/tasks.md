@@ -2,14 +2,14 @@
 title: "Tasks"
 description: "How the optional Gateway Tasks extension runs task groups: the model, the lifecycle, typed deliverables, the task check, agent threads, review, the pull request, fixups, metrics, and cleanup."
 covers:
-  - "apps/gateway/app/Domain/Tasks/**"
-  - "apps/gateway/app/Infrastructure/Tasks/**"
+  - "apps/gateway/app/{Domain,Infrastructure}/Tasks/**"
   - "apps/gateway/app/Actions/Tasks/**"
   - "apps/gateway/app/Http/Requests/Tasks/**"
   - "apps/gateway/app/Http/Controllers/Api/{TasksController,TaskGroupsController,AgentThreadsController}.php"
   - "apps/gateway/app/Console/Commands/{TickTaskSessionsCommand,CollectT3MetricsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand}.php"
   - "apps/gateway/app/Models/{TaskGroup,Task,TaskComment,TaskCheck,AgentThread,JevDecision}.php"
   - "apps/gateway/resources/tasks/**"
+  - "apps/gateway/database/migrations/*_{convert_test_deliverables_to_commands,add_continuation_source_to_tasks}.php"
 ---
 
 # Tasks
@@ -164,15 +164,14 @@ Each deliverable has an `id`, a `type`, a `description`, and the fields of its t
 | Type | Fields | Orbit checks |
 | --- | --- | --- |
 | `file` | `path`: a path or glob from the workspace root. `change`: `created`, `modified`, or `any` | A matching path in the Task's diff, added for `created`, modified for `modified`, either for `any` |
-| `test` | `project`: a directory, or `.`. `file`: one Pest test file in that project. `name`: a test-name substring | The file is added or modified in the diff, and every test whose name contains `name` passes. At least one such test exists |
-| `command` | `command`. `directory`, relative to the workspace root, default `.` | Orbit's run of the command exits with 0 |
+| `command` | `command`. `directory`, relative to the workspace root, default `.`. Optional `fails_on_base` and `paths` | The command exits 0 on the working tree. With `fails_on_base`, it also exits nonzero on the start commit |
 | `review` | none | The reviewer confirms it in its approval |
 
 ```json
 [
   {"id": "reference-page", "type": "file", "description": "Document the export", "path": "docs/reference/export.md", "change": "modified"},
-  {"id": "export-test", "type": "test", "description": "A feature test for the export", "project": "apps/gateway", "file": "tests/Feature/ExportTest.php", "name": "exports every subtask"},
-  {"id": "layout-repro", "type": "test", "description": "The layout test fails before the fix", "project": "apps/gateway", "file": "tests/Feature/HomeScreenTest.php", "name": "home screen layout", "fails_on_base": true},
+  {"id": "export-tests", "type": "command", "description": "The export tests pass", "command": "vendor/bin/pest tests/Feature/ExportTest.php", "directory": "apps/gateway"},
+  {"id": "layout-repro", "type": "command", "description": "The home-screen regression fails before the fix", "command": "vendor/bin/pest tests/Feature/HomeScreenTest.php", "directory": "apps/gateway", "fails_on_base": true, "paths": ["apps/gateway/tests/Feature/HomeScreenTest.php"]},
   {"id": "web-tests", "type": "command", "description": "The web app tests pass", "command": "bun test", "directory": "apps/web"},
   {"id": "error-copy", "type": "review", "description": "Error messages name the failing subtask"}
 ]
@@ -181,32 +180,37 @@ Each deliverable has an `id`, a `type`, a `description`, and the fields of its t
 | Rule | Limit |
 | --- | --- |
 | Number | At most five per Task. At least one outside `backlog` and for a move to `todo` |
-| `id` | A lowercase slug such as `export-test`, at most 64 characters, unique in the Task |
+| `id` | A lowercase slug such as `export-tests`, at most 64 characters, unique in the Task |
 | `description` | At most 500 characters |
-| `path`, `file`, `project`, `directory` | Relative paths without `..`, at most 500 characters |
-| `test` `file` | One exact path that ends in `.php`, with no `*`, `?`, `[`, `{`, or `..` |
-| `name` | At most 200 characters |
+| `path`, `directory` | Relative paths without `..`, at most 500 characters |
 | `command` | At most 1,000 characters |
-| `fails_on_base` | The JSON boolean `true` or `false`, on a `test` deliverable only. Omitted means `false` |
+| `fails_on_base` | The JSON boolean `true` or `false`, on a `command` deliverable only. Omitted means `false`. `true` needs at least one path |
+| `paths` | A list of at most 100 relative file paths on a `command` deliverable. Each path is at most 500 characters and contains no `..` |
 
-A field of another type is refused with HTTP 422 `validation.failed`. The error names the field path, such as `deliverables.0.path`. The `fails_on_base` and `test` `file` errors also name the deliverable's `id`. Only a `file` deliverable's `path` accepts a glob: `*` matches in one directory, `**` matches across directories, and `?` matches one character.
+A field of another type is refused with HTTP 422 `validation.failed`. The error names the field path, such as `deliverables.0.path`. The `fails_on_base` and `paths` errors also name the deliverable's `id`. Only a `file` deliverable's `path` accepts a glob: `*` matches in one directory, `**` matches across directories, and `?` matches one character. `paths` is not a glob.
+
+There is no `test` deliverable type. A migration converts stored `test` deliverables in groups that are not completed, failed, or cancelled, and it leaves `task_check` unchanged. Each stored `test` deliverable names a Pest file and a test-name substring, so the migration runs `vendor/bin/pest` from that project directory with the file, a case-sensitive filter for the name, and `--colors=never`.
+
+It carries over `fails_on_base`. When the base run is on, `paths` lists the workspace-relative test file. The migration also adds a `file` deliverable with `change: any` for that file. The command and the file stay together, and each id stays unique and at most 64 characters. When the converted list would exceed five deliverables, the extra pairs go on continuation Tasks placed directly after the source Task. A continuation uses the source Task's start commit for its diff and its base run, including when the source Task has committed its fixes.
 
 A Task's diff runs from its start commit to the working tree that the check sees, uncommitted and untracked files included. Deleted and ignored files never match. Orbit records the start commit when the Task starts, before the implementer's first turn. When that read fails, the next tick tries again until the first turn starts. After that, the start commit stays empty, and the diff uses a fallback base: the previous Task's approved commit, or the workspace starting commit for the first Task.
 
-### Reproduce a bug on the start commit
+### Prove a command fails on the start commit
 
-A `test` deliverable with `fails_on_base: true` proves that the test reproduces a bug. Orbit then runs the test file twice at handoff.
+A `command` deliverable with `fails_on_base: true` proves that the command fails before the fix. Omitted and `false` are the same: Orbit runs the command once, on the working tree. With `true`, Orbit runs it twice at handoff. The deliverable passes only when the base command exits nonzero and the working-tree command exits 0. A failing base command is the expected evidence.
 
 | Run | Code under test | Passes when |
 | --- | --- | --- |
-| Base | The start commit, or its fallback base, plus only this test file from the working tree | At least one test whose name contains `name` fails |
-| Working tree | The implementer's tree | Every test whose name contains `name` passes, and at least one exists |
+| Base | The start commit, or its fallback base, plus the files in `paths` from the working tree | The command exits nonzero |
+| Working tree | The implementer's tree | The command exits 0 |
 
-The base run extracts an archive of the start commit into a directory under the workspace's `.git/orbit/`. It copies the test file there, shares the installed `vendor/` as a copy, and runs `vendor/bin/pest FILE --log-junit=...`. It does not change the workspace and registers no Git worktree. The check removes the directory when the run ends, and the next check removes a directory that a killed run left behind.
+The base run extracts an archive of the start commit into a directory under the workspace's `.git/orbit/bases/`. It copies installed `vendor` and `node_modules` directories from the workspace, then copies each file in `paths`, including an uncommitted or untracked file. It runs the command there with `bash -lc`. It does not change the workspace and registers no Git worktree. The check removes the directory when the run ends, and the next check removes a directory that a killed run left behind.
 
-A JUnit `error`, such as a missing class, counts as a failure. The base run stops after 600 seconds, and a timed-out run counts as failing. When no matching test fails on the base, the deliverable fails. The reminder names the cause: the test passed, the test was skipped, no test name contains `name`, or the file could not be placed on the start commit. Orbit reports misses in the diff, on the base, and on the working tree together.
+The base run stops after 600 seconds, and a timed-out run counts as failing on the start commit. Exit 126 or 127 means the command did not run, so the deliverable fails. When the base command exits 0, the deliverable fails because the command does not reproduce the failure. The check stores the exit code and the tail of the output, at most 4,096 characters. It records `base_started`, `base_exit_code`, and `base_output`. A timed-out run also records `base_timed_out` and `base_timeout_seconds`. The engine does not read test names or runner output. The Project's command does that. Show and the turn file include `fails_on_base`. An omitted input is stored as `false`.
 
-The check stores each failed base case with its kind and the tail of its message, at most 4,096 characters. The review request shows one line for the base run. The line names the kinds, such as a failure and an error, and says when the run timed out. The joined message tails follow while they fit in the handoff cap.
+Group create, subtask create, and subtask update accept `fails_on_base` and `paths` only on a `command` deliverable. `fails_on_base` is the JSON boolean `true` or `false`, and `paths` is a list of strings. Any other value is HTTP 422 `validation.failed`. The error names that deliverable's `id`.
+
+The Orbit Project's [task policy skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) requires repro-first bug work where a command can reproduce it. A bug group's first code Task carries that command. When a bug cannot be reproduced by a command, the brief says so and that Task adds a `review` deliverable for the manual check.
 
 ### Confirm deliverables
 
@@ -221,9 +225,9 @@ The run script refuses a missing confirmation, an unknown ID, an ID given twice,
 
 ### Verify deliverables
 
-The [handoff check](#project-check) first validates every `test` deliverable. The `project` must be a directory in the checkout, and the `file` must exist in it. An invalid deliverable fails the check at once, before the task check runs, with a message such as `Deliverable sweep-test names file tests/Feature/SweepTest.php, which does not exist in apps/gateway.` The group then asks for assistance with that message. The implementer gets no reminder, because it cannot change deliverables.
+The [handoff check](#project-check) first rejects a command whose directory is outside the checkout, and a base run whose `paths` are missing or are not files in the workspace. An invalid deliverable fails the check at once, before the task check runs, with a message such as `Deliverable layout-repro names invalid overlay path apps/gateway/tests/Feature/HomeScreenTest.php.` The group then asks for assistance with that message. The implementer gets no reminder, because it cannot change deliverables.
 
-When the task check passes, the check records the diff, runs each `test` file with Pest by its path, and runs each `command` in a login shell in its directory. The check runs each file by its path without test impact analysis, so a replayed result never counts. The `deliverables` rubric item fails when a confirmation is missing or a deliverable does not pass. Its reminder names each failing deliverable and why. The reviewer starts only when every deliverable passes.
+When the task check passes, the check records the diff and runs each command in a login shell in its directory. A base run, when `fails_on_base` is set, runs on the start commit before the working-tree command. The Gateway checks each `file` deliverable against that diff. The `deliverables` rubric item fails when a confirmation is missing or a deliverable does not pass. Its reminder names each failing deliverable and why. The reviewer starts only when every deliverable passes.
 
 ## Prepare a group in Backlog
 
@@ -348,7 +352,7 @@ An agent ends each turn with one command:
 .git/orbit/run --thread=ID --outcome=OUTCOME --summary="What was done, or what stops the work"
 ```
 
-Before each turn, the Gateway installs the run script at `.git/orbit/run`, writes `.git/orbit/turn.json` with the role, the deliverables, and the acting thread's Orbit id, and removes any earlier receipt. `ID` is that Orbit thread id. Git never tracks `.git/orbit/`. The run script needs `php` on the Node, and the [task check](#project-check) needs `python3`.
+Before each turn, the Gateway installs the run script at `.git/orbit/run`, writes `.git/orbit/turn.json` with the role, the deliverables, and the acting thread's Orbit id, and removes any earlier receipt. `ID` is that Orbit thread id. Git never tracks `.git/orbit/`. The run script and the [task check](#project-check) both need `python3` on the Node.
 
 | Role | Outcomes |
 | --- | --- |
@@ -478,7 +482,7 @@ git diff START; git ls-files --others --exclude-standard -z | while IFS= read -r
 
 When the workspace starting commit is 40 or 64 hexadecimal characters, the retrieval block adds `The group started at <sha>.` and `git diff --stat <sha>..HEAD` after those commands. A continued turn includes them too. The lines name no Project, branch, or policy.
 
-The reviewer prompt says the turn is read-only. It says not to re-run the Project task check or the deliverable tests and commands the handoff already passed. When a task check is configured, it names that command, and it cuts a command past 160 characters. It says to run another command only for evidence the handoff result does not give, and to say why in the summary. It says to confirm framework and library usage against the documentation for the Project's versions. A continued turn repeats these rules. The shared prompt adds no Project policy.
+The reviewer prompt says the turn is read-only. It says not to re-run the Project task check or deliverable commands the handoff already passed. When a task check is configured, it names that command, and it cuts a command past 160 characters. It says to run another command only for evidence the handoff result does not give, and to say why in the summary. It says to confirm framework and library usage against the documentation for the Project's versions. A continued turn repeats these rules. The shared prompt adds no Project policy.
 
 `php artisan tasks:render-prompt {role}` renders the implementer prompt, the opening review packet (`reviewer`), or a continued review turn (`reviewer-continue`) from one JSON object on standard input. It prints `{"role", "prompt", "source_commit"}`, where `source_commit` is the Gateway's `APP_VERSION`, or `dev`. It uses the production prompt code and reads no database, workspace, or network, so an offline evaluation can render frozen cases. It rejects unknown input fields. `group.start_commit` is the workspace starting commit, or null when none was recorded. The prompts name it only when it is 40 or 64 hexadecimal characters.
 
@@ -687,8 +691,6 @@ The engine still holds these Project-specific rules. They are current engine beh
 - The baseline check installs Composer and JavaScript dependencies for a task check command that names them.
 - Every fixup gets a `composer check` command deliverable, whatever the Project's task check.
 - For the Project with slug `orbit`, a fixup gets a `reproduce-check` deliverable from a table of Orbit CI check names. Those checks get fixups first.
-- A `test` deliverable runs only Pest, as `vendor/bin/pest`.
-- The run script is a PHP script, so every workspace Node needs `php`.
 - Workspace removal also deletes the Orbit Incus bridge worktree.
 
 ## Why it works this way
@@ -723,11 +725,11 @@ One check decides for every driver, because it does not depend on tool output. I
 
 ### Deliverables are checked, not read
 
-Orbit cannot check prose, so a Task names typed items. The check script runs the named test file itself, because a test that impact analysis replays looks the same as one that ran. The Gateway verifies against its own run, because the agent controls the workspace and could change a script that verified itself. A `test` file is one exact path, because a glob could match a file made to satisfy it.
+Orbit cannot check prose, so a Task names typed items. The check script runs each command itself. The Gateway verifies against its own run, because the agent controls the workspace and could change a script that verified itself. A `file` path accepts a glob. A command's `paths` list is exact files, because a glob could match a file made to satisfy the base run.
 
-### A bug test must fail first
+### A command must fail on the start commit
 
-A test that only passes on the fixed code does not prove it covers the bug. So a bug test runs on the start commit with only the test file added. The base tree is an extracted archive inside `.git/orbit/`, not a registered worktree, because a killed run would leave a registered worktree that blocks removal of the clone.
+A command that only passes on the fixed code does not prove it covers the bug. So a base run uses the start commit and adds only the files named in `paths`. The base tree is an extracted archive inside `.git/orbit/bases/`, not a registered worktree, because a killed run would leave a registered worktree that blocks removal of the clone. Exit 126 or 127 is not that proof: the command did not run.
 
 ### One reminder, then a person
 

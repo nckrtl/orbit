@@ -68,12 +68,18 @@ When [`instance:register`](/domains/applications#register-an-existing-checkout) 
 | Value | Source |
 | --- | --- |
 | Slug | The repository name. |
-| `default_branch` | The checkout's `origin/HEAD`. |
+| `default_branch` | The checkout's `origin/HEAD`; optional API and SDK input, returned by every Project response. |
 | Root | `public` when the checkout has `composer.json`, `artisan`, and a `public` directory. |
 | Name | The slug, unless you pass `--app-name`. |
 | Type | `monorepo` for the Orbit repository, or for slug `orbit` with a repository path that ends in `/orbit`. `laravel-app` when the root is `public` or ends in `/public`. `laravel-package` otherwise. |
-
+| `type` | Required on `project:create`. Closed enum `monorepo`, `laravel-app`, `laravel-package`, or `node-package`. |
+| `repository_url` | Required repository access URL in the Gateway API and PHP SDK. |
+| `--default-branch` | Optional CLI input for `project:create`. |
+| `root` and `--root` | Required API and SDK field. A normalized repository-relative path; `.` is allowed for package types and means the repository root. |
+| `task_check` and `--task-check` | Optional command that task baselines and handoffs run ([Project check](/reference/tasks#project-check)). When omitted, `laravel-app` and `laravel-package` get `composer check`, and `monorepo` and `node-package` get null, which runs no check command. An explicit null also stores no command. |
 Registration never picks `node-package` and has no type option. Change the type afterwards with `project:update --type`.
+
+SDK Project responses and the `project:list` and `project:show` commands expose the stored type, repository, default branch, root, and task check. The task check is an ordinary setting, like setup steps, so activity records it as sent. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` compatibility name.
 
 A value you pass fills an unresolved value only. It must match what the Gateway verifies:
 
@@ -85,7 +91,13 @@ A value you pass fills an unresolved value only. It must match what the Gateway 
 | `--app-slug`, `--app-name`, or `--default-branch` for an existing Project | `app.identity_conflict`. |
 | A root that the type does not allow | `app.root_invalid`. |
 
-When the Project is created but registration then fails, the Project stays for an identical retry.
+Valid explicit values fill only unresolved or optional values. They do not override a conflicting repository identity or verified source fact. When the Project is created but registration then fails, the Project stays for an identical retry.
+
+## Retry creation safely
+
+Repeating `project:create` with the same name, slug, type, repository access URL, default branch, root, defaults, and any sent task check returns the existing Project. A retry does not look up an omitted branch again.
+
+A retry that changes any creation value fails with `app.identity_conflict` and does not mutate the Project. A different repository access URL is a changed value even when it has the same canonical repository identity, so creation never switches the stored URL.
 
 ## Project codes
 
@@ -95,7 +107,7 @@ Change the code in the web app, or send `PATCH /api/v1/projects/{project}` with 
 
 ## Update a Project
 
-Update a Project when its type, slug, repository, default branch, root, or task check changes.
+Use `project:update` when an existing Project must change its type, slug, repository access URL, default branch, relative web root, or task check. The Gateway API accepts `PATCH /api/v1/projects/{project}` with those same fields. The PHP SDK sends `UpdateAppRequest` to that path. Omitted fields stay unchanged; send `task_check: null` to clear the task check. The MCP `project-update` tool accepts the same fields. The [Update lifecycle](#update-lifecycle) defines source reconciliation. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
 
 ```bash
 orbit project:update 3 --repository=https://github.com/acme/site.git --default-branch=stable
@@ -105,12 +117,12 @@ orbit project:update 3 --repository=https://github.com/acme/site.git --default-b
 
 | Field | Effect |
 | --- | --- |
-| `type` | Applies at once. A change to `laravel-app` is refused with `project.type_requires_route` while an active Instance has no Route. A change away from `laravel-app` keeps existing Routes. |
-| `slug` | Projects every Instance before publication, with no partial projection. Checkout paths, production users, and homes stay unchanged. Generated Routes use the new slug; explicit domains do not. |
-| `repository_url` | Runs `git remote set-url origin` in each development checkout. See [Repository changes](#repository-changes). |
-| `default_branch` | Must exist on the remote. Switches every development `default` Instance without a `branch_override`. Its name, path, and Route stay the same. |
-| `root` | Changes the effective root of every Instance without its own root. Orbit reprojects the runtime of each such Instance that has a Route. |
-| `task_check` | Applies at once. Send null or `--clear-task-check` to run no check. |
+| `type` and `--type` | Applies at once. A `laravel-app` needs a Route; changing away keeps existing Routes. |
+| `slug` and `--slug` | Projects every Instance before publication, with no partial projection. Checkout paths, production users, and homes stay unchanged. Generated Routes use the new slug; explicit domains do not. |
+| `repository_url` and `--repository` | Runs `git remote set-url origin` in each development checkout. Equivalent HTTPS and SSH URLs share an identity. See [Repository changes](#repository-changes). |
+| `default_branch` and `--default-branch` | Must exist on the remote. Switches every development `default` Instance without a `branch_override`. Explicit overrides stay unchanged. |
+| `root` and `--root` | Changes the effective root of every Instance without its own root. Orbit reprojects the runtime of each such Instance that has a Route. |
+| `task_check` and `--task-check` | Sets the command task baseline and handoffs run. Send null or `--clear-task-check` to run no check. |
 
 A type change must keep a valid root. When the stored root is `.` and the new type does not allow it, validation fails on `root`. Send a web root with the type change. A type or root change that leaves a Route target with root `.` returns `route.target_web_root_unsupported`.
 

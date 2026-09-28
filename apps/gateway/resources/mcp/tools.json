@@ -5913,7 +5913,6 @@
                         "type": "string",
                         "enum": [
                           "file",
-                          "test",
                           "command",
                           "review"
                         ]
@@ -5936,21 +5935,6 @@
                         ],
                         "description": "Conditionally required."
                       },
-                      "project": {
-                        "type": "string",
-                        "maxLength": 500,
-                        "description": "Conditionally required."
-                      },
-                      "file": {
-                        "type": "string",
-                        "maxLength": 500,
-                        "description": "Conditionally required."
-                      },
-                      "name": {
-                        "type": "string",
-                        "maxLength": 200,
-                        "description": "Conditionally required."
-                      },
                       "fails_on_base": {
                         "type": "boolean"
                       },
@@ -5962,6 +5946,14 @@
                       "directory": {
                         "type": "string",
                         "maxLength": 500
+                      },
+                      "paths": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {
+                          "type": "string",
+                          "maxLength": 500
+                        }
                       }
                     },
                     "required": [
@@ -6143,7 +6135,6 @@
                   "type": "string",
                   "enum": [
                     "file",
-                    "test",
                     "command",
                     "review"
                   ]
@@ -6166,21 +6157,6 @@
                   ],
                   "description": "Conditionally required."
                 },
-                "project": {
-                  "type": "string",
-                  "maxLength": 500,
-                  "description": "Conditionally required."
-                },
-                "file": {
-                  "type": "string",
-                  "maxLength": 500,
-                  "description": "Conditionally required."
-                },
-                "name": {
-                  "type": "string",
-                  "maxLength": 200,
-                  "description": "Conditionally required."
-                },
                 "fails_on_base": {
                   "type": "boolean"
                 },
@@ -6192,6 +6168,14 @@
                 "directory": {
                   "type": "string",
                   "maxLength": 500
+                },
+                "paths": {
+                  "type": "array",
+                  "maxItems": 100,
+                  "items": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
                 }
               },
               "required": [
@@ -6293,7 +6277,6 @@
                   "type": "string",
                   "enum": [
                     "file",
-                    "test",
                     "command",
                     "review"
                   ]
@@ -6316,21 +6299,6 @@
                   ],
                   "description": "Conditionally required."
                 },
-                "project": {
-                  "type": "string",
-                  "maxLength": 500,
-                  "description": "Conditionally required."
-                },
-                "file": {
-                  "type": "string",
-                  "maxLength": 500,
-                  "description": "Conditionally required."
-                },
-                "name": {
-                  "type": "string",
-                  "maxLength": 200,
-                  "description": "Conditionally required."
-                },
                 "fails_on_base": {
                   "type": "boolean"
                 },
@@ -6342,6 +6310,14 @@
                 "directory": {
                   "type": "string",
                   "maxLength": 500
+                },
+                "paths": {
+                  "type": "array",
+                  "maxItems": 100,
+                  "items": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
                 }
               },
               "required": [

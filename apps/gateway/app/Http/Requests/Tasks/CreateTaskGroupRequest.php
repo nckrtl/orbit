@@ -10,8 +10,8 @@ use App\Domain\Tasks\TaskDeliverableType;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\App;
+use App\Rules\CommandPaths;
 use App\Rules\DistinctDeliverableIds;
-use App\Rules\ExactPestTestFile;
 use App\Rules\FailsOnBase;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -23,7 +23,7 @@ use UnexpectedValueException;
 
 final class CreateTaskGroupRequest extends FormRequest
 {
-    /** @return array<string, list<string|Exists|In|Enum|DistinctDeliverableIds|ExactPestTestFile|FailsOnBase>> */
+    /** @return array<string, list<string|Exists|In|Enum|DistinctDeliverableIds|FailsOnBase|CommandPaths>> */
     public function rules(): array
     {
         return [
@@ -37,18 +37,17 @@ final class CreateTaskGroupRequest extends FormRequest
             'tasks.*.title' => ['required', 'string', 'max:160'],
             'tasks.*.brief' => ['required', 'string', 'max:8000'],
             'tasks.*.deliverables' => ['sometimes', 'array', 'list', 'max:5', new DistinctDeliverableIds],
-            'tasks.*.deliverables.*' => ['required', 'array:id,type,description,path,change,project,file,name,command,directory,fails_on_base'],
+            'tasks.*.deliverables.*' => ['required', 'array:id,type,description,path,change,command,directory,fails_on_base,paths'],
             'tasks.*.deliverables.*.id' => ['required', 'string', 'max:64', 'regex:/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/'],
             'tasks.*.deliverables.*.type' => ['required', 'string', Rule::enum(TaskDeliverableType::class)],
             'tasks.*.deliverables.*.description' => ['required', 'string', 'max:500'],
             'tasks.*.deliverables.*.path' => ['required_if:tasks.*.deliverables.*.type,file', 'prohibited_unless:tasks.*.deliverables.*.type,file', 'string', 'max:500', 'not_regex:#(?:\A/|(?:\A|/)\.\.(?:/|\z))#'],
             'tasks.*.deliverables.*.change' => ['required_if:tasks.*.deliverables.*.type,file', 'prohibited_unless:tasks.*.deliverables.*.type,file', 'string', Rule::in(['created', 'modified', 'any'])],
-            'tasks.*.deliverables.*.project' => ['required_if:tasks.*.deliverables.*.type,test', 'prohibited_unless:tasks.*.deliverables.*.type,test', 'string', 'max:500', 'not_regex:#(?:\A/|(?:\A|/)\.\.(?:/|\z))#'],
-            'tasks.*.deliverables.*.file' => ['required_if:tasks.*.deliverables.*.type,test', 'prohibited_unless:tasks.*.deliverables.*.type,test', 'string', 'max:500', new ExactPestTestFile],
-            'tasks.*.deliverables.*.name' => ['required_if:tasks.*.deliverables.*.type,test', 'prohibited_unless:tasks.*.deliverables.*.type,test', 'string', 'max:200'],
             'tasks.*.deliverables.*.fails_on_base' => ['sometimes', new FailsOnBase, 'boolean:strict'],
             'tasks.*.deliverables.*.command' => ['required_if:tasks.*.deliverables.*.type,command', 'prohibited_unless:tasks.*.deliverables.*.type,command', 'string', 'max:1000'],
             'tasks.*.deliverables.*.directory' => ['sometimes', 'prohibited_unless:tasks.*.deliverables.*.type,command', 'string', 'max:500', 'not_regex:#(?:\A/|(?:\A|/)\.\.(?:/|\z))#'],
+            'tasks.*.deliverables.*.paths' => [new CommandPaths, 'prohibited_unless:tasks.*.deliverables.*.type,command', 'array', 'list', 'max:100'],
+            'tasks.*.deliverables.*.paths.*' => ['required', 'string', 'max:500', 'not_regex:#(?:\A/|(?:\A|/)\.\.(?:/|\z))#'],
         ];
     }
 

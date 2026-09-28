@@ -11,7 +11,7 @@ use App\Models\TaskGroup;
 
 /**
  * The commit a subtask review and its base run both diff from.
- * A recorded start commit wins. Otherwise the previous approved commit, then the workspace starting commit.
+ * A recorded start commit wins. Continuations inherit their source subtask's base; other tasks use the previous approved commit, then the workspace starting commit.
  */
 final class TaskReviewBase
 {
@@ -20,6 +20,15 @@ final class TaskReviewBase
         $recorded = $task->subtask_start_commit;
         if (self::isCommit($recorded)) {
             return $recorded;
+        }
+        if ($task->continuation_of_task_id !== null) {
+            $source = Task::query()->find($task->continuation_of_task_id);
+            if ($source instanceof Task) {
+                $sourceStart = self::commit($source);
+                if ($sourceStart !== '') {
+                    return $sourceStart;
+                }
+            }
         }
         $task->loadMissing('taskGroup.taskable');
         $group = $task->taskGroup;

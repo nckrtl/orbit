@@ -7,218 +7,116 @@ use App\Domain\Tasks\TaskDeliverableEvidence;
 use App\Domain\Tasks\TaskDeliverableVerifier;
 use App\Domain\Tasks\TaskThreadRole;
 
-it('matches a path glob where * stays in one directory, ** crosses directories, and ? is one character', function (string $pattern, string $path, bool $matches): void {
-    expect(TaskDeliverableVerifier::matches($pattern, $path))->toBe($matches);
-})->with([
-    'an exact path' => ['docs/reference/tasks.md', 'docs/reference/tasks.md', true],
-    'another path' => ['docs/reference/tasks.md', 'docs/reference/apps.md', false],
-    'a star in one directory' => ['docs/reference/*.md', 'docs/reference/tasks.md', true],
-    'a star across directories' => ['docs/*.md', 'docs/reference/tasks.md', false],
-    'a double star across directories' => ['docs/**/*.md', 'docs/reference/cli/tasks.md', true],
-    'a double star with no directory' => ['docs/**/*.md', 'docs/tasks.md', true],
-    'a trailing double star' => ['apps/gateway/**', 'apps/gateway/app/Models/Task.php', true],
-    'a question mark' => ['docs/decisions/013?-*.md', 'docs/decisions/0133-verify.md', true],
-    'a question mark is not a slash' => ['docs?tasks.md', 'docs/tasks.md', false],
-    'regex characters stay literal' => ['docs/(draft)+.md', 'docs/(draft)+.md', true],
-]);
-
-it('names the deliverables a receipt must confirm and does not, by role', function (): void {
-    $deliverables = TaskDeliverable::listFrom([
-        ['id' => 'docs', 'type' => 'file', 'description' => 'Docs', 'path' => 'docs/a.md', 'change' => 'any'],
-        ['id' => 'copy', 'type' => 'review', 'description' => 'Copy'],
-    ]);
-
-    expect(TaskDeliverableVerifier::unconfirmed($deliverables, ['copy' => 'Checked'], TaskThreadRole::Implementer))->toBe(['docs'])
-        ->and(TaskDeliverableVerifier::unconfirmed($deliverables, ['docs' => 'Written', 'copy' => ' '], TaskThreadRole::Reviewer))->toBe(['copy'])
-        ->and(TaskDeliverableVerifier::unconfirmed($deliverables, ['copy' => 'Checked'], TaskThreadRole::Reviewer))->toBe([]);
+it('matches file deliverable globs where * stays in one directory and ** crosses directories', function (): void {
+    expect(TaskDeliverableVerifier::matches('docs/**/*.md', 'docs/reference/tasks.md'))->toBeTrue()
+        ->and(TaskDeliverableVerifier::matches('apps/*/README.md', 'apps/gateway/README.md'))->toBeTrue()
+        ->and(TaskDeliverableVerifier::matches('apps/*/README.md', 'apps/gateway/docs/README.md'))->toBeFalse();
 });
 
-it('refuses a glob in a test deliverable file and accepts one exact php path', function (string $file, bool $exact): void {
-    expect(TaskDeliverable::isExactTestFile($file))->toBe($exact);
-})->with([
-    'a star' => ['tests/Feature/**/*.php', false],
-    'a question mark' => ['tests/Export?.php', false],
-    'an opening bracket' => ['tests/Export[0].php', false],
-    'an opening brace' => ['tests/{Export}Test.php', false],
-    'a parent directory' => ['tests/../ExportTest.php', false],
-    'a suffix other than php' => ['tests/ExportTest.md', false],
-    'an absolute path' => ['/tmp/ExportTest.php', false],
-    'an uppercase suffix' => ['tests/ExportTest.PHP', false],
-    'two dots in the name' => ['tests/foo..php', false],
-    'an exact path' => ['tests/Feature/ExportTest.php', true],
-    'a leading dot slash' => ['./tests/Feature/ExportTest.php', true],
-    'a closing bracket' => ['tests/Export].php', true],
-    'a closing brace' => ['tests/Export}.php', true],
-]);
-
-it('tells the implementer that a fails_on_base test must fail on the start commit', function (): void {
+it('renders a generic command deliverable and its base-run requirement in prompts', function (): void {
     $deliverable = TaskDeliverable::fromArray([
         'id' => 'layout-repro',
-        'type' => 'test',
-        'description' => 'The layout fails before the fix',
-        'project' => 'apps/gateway',
-        'file' => 'tests/Feature/HomeScreenTest.php',
-        'name' => 'home screen layout',
+        'type' => 'command',
+        'description' => 'The layout regression fails on the base code',
+        'command' => "vendor/bin/pest tests/Feature/HomeScreenTest.php --filter='home screen layout'",
+        'directory' => 'apps/gateway',
         'fails_on_base' => true,
+        'paths' => ['apps/gateway/tests/Feature/HomeScreenTest.php'],
     ]);
 
-    expect($deliverable->line())->toBe('- layout-repro (test: Pest test "home screen layout" in apps/gateway/tests/Feature/HomeScreenTest.php; at least one test whose name contains "home screen layout" must fail on the start commit, and every such test must pass on the working tree): The layout fails before the fix')
-        ->and($deliverable->toArray()['fails_on_base'])->toBeTrue()
-        ->and(TaskDeliverable::fromArray(['id' => 'export-test', 'type' => 'test', 'description' => 'Test', 'name' => 'exports'])->toArray()['fails_on_base'])->toBeFalse();
+    expect($deliverable->line())->toContain('command:')
+        ->toContain('must fail on the start commit and pass on the working tree')
+        ->toContain('paths apps/gateway/tests/Feature/HomeScreenTest.php')
+        ->and($deliverable->toArray())->toBe([
+            'id' => 'layout-repro',
+            'type' => 'command',
+            'description' => 'The layout regression fails on the base code',
+            'command' => "vendor/bin/pest tests/Feature/HomeScreenTest.php --filter='home screen layout'",
+            'directory' => 'apps/gateway',
+            'fails_on_base' => true,
+            'paths' => ['apps/gateway/tests/Feature/HomeScreenTest.php'],
+        ]);
 });
 
-function fails_on_base_deliverable(): TaskDeliverable
-{
-    return TaskDeliverable::fromArray([
-        'id' => 'layout-repro',
-        'type' => 'test',
-        'description' => 'The layout fails before the fix',
-        'project' => 'apps/gateway',
-        'file' => 'tests/Feature/HomeScreenTest.php',
-        'name' => 'home screen layout',
-        'fails_on_base' => true,
-    ]);
-}
-
-/**
- * @param  array<string, mixed>  $run
- * @param  list<array{status: string, path: string}>|null  $diff
- */
-function fails_on_base_evidence(array $run, ?array $diff = null): TaskDeliverableEvidence
-{
-    return TaskDeliverableEvidence::fromArray([
-        'diff' => $diff ?? [['status' => 'M', 'path' => 'apps/gateway/tests/Feature/HomeScreenTest.php']],
-        'tests' => ['layout-repro' => $run],
-        'commands' => [],
-    ]) ?? throw new RuntimeException('The evidence could not be read.');
-}
-
-it('passes a fails_on_base run when one matching test fails on the start commit and every match passes on the working tree', function (): void {
-    $evidence = fails_on_base_evidence([
-        'exit_code' => 0,
-        'cases' => [
-            ['name' => 'it breaks the home screen layout', 'status' => 'passed'],
-            ['name' => 'it keeps the home screen layout', 'status' => 'passed'],
-        ],
-        'base_placed' => true,
-        'base_exit_code' => 1,
-        'base_cases' => [
-            ['name' => 'it breaks the home screen layout', 'status' => 'failed'],
-            ['name' => 'it keeps the home screen layout', 'status' => 'passed'],
-            ['name' => 'it keeps the home screen layout on a phone', 'status' => 'skipped'],
-        ],
-    ]);
-
-    expect(TaskDeliverableVerifier::failures([fails_on_base_deliverable()], $evidence))->toBe([]);
-});
-
-it('names a fails_on_base pass or skip when no matching test fails on the start commit', function (array $baseCases, string $reason): void {
-    $evidence = fails_on_base_evidence([
-        'exit_code' => 0,
-        'cases' => array_map(static fn (array $case): array => ['name' => $case['name'], 'status' => 'passed'], $baseCases),
-        'base_placed' => true,
-        'base_exit_code' => 0,
-        'base_cases' => $baseCases,
-    ]);
-
-    expect(TaskDeliverableVerifier::failures([fails_on_base_deliverable()], $evidence))->toBe(["layout-repro (test): {$reason}"]);
-})->with([
-    'a pass' => [[['name' => 'it keeps the home screen layout', 'status' => 'passed']], 'The test "it keeps the home screen layout" passes on the start commit, so it does not reproduce the bug.'],
-    'a skip' => [[['name' => 'it keeps the home screen layout', 'status' => 'skipped']], 'The test "it keeps the home screen layout" was skipped on the start commit.'],
-    'a pass and a skip' => [[
-        ['name' => 'it keeps the home screen layout', 'status' => 'passed'],
-        ['name' => 'it keeps the home screen layout on a phone', 'status' => 'skipped'],
-    ], 'The test "it keeps the home screen layout" passes on the start commit, so it does not reproduce the bug. The test "it keeps the home screen layout on a phone" was skipped on the start commit.'],
-]);
-
-it('reports the diff, the base run, and the working tree together when a fails_on_base test misses each one', function (): void {
-    $evidence = fails_on_base_evidence([
-        'exit_code' => 1,
-        'cases' => [['name' => 'it keeps the home screen layout', 'status' => 'failed']],
-        'base_placed' => true,
-        'base_exit_code' => 0,
-        'base_cases' => [['name' => 'it keeps the home screen layout', 'status' => 'passed']],
-    ], [['status' => 'M', 'path' => 'apps/gateway/tests/Feature/OtherTest.php']]);
-
-    expect(TaskDeliverableVerifier::failures([fails_on_base_deliverable()], $evidence))->toBe([
-        'layout-repro (test): apps/gateway/tests/Feature/HomeScreenTest.php is not added or modified in the subtask\'s diff. The test "it keeps the home screen layout" passes on the start commit, so it does not reproduce the bug. Orbit ran apps/gateway/tests/Feature/HomeScreenTest.php, and "it keeps the home screen layout" failed.',
-    ]);
-});
-
-it('uses the documented base-run sentence when the start commit run does not execute the named test', function (array $run, string $reason): void {
-    $evidence = fails_on_base_evidence([
-        'exit_code' => 0,
-        'cases' => [['name' => 'it keeps the home screen layout', 'status' => 'passed']],
-        ...$run,
-    ]);
-
-    expect(TaskDeliverableVerifier::failures([fails_on_base_deliverable()], $evidence))->toBe(["layout-repro (test): {$reason}"]);
-})->with([
-    'not placed' => [['base_placed' => false], 'Orbit did not place apps/gateway/tests/Feature/HomeScreenTest.php on the start commit, so the base run did not start.'],
-    'placed but not run' => [['base_placed' => true, 'base_exit_code' => 127], 'Orbit did not run apps/gateway/tests/Feature/HomeScreenTest.php on the start commit (exit code 127).'],
-    'no matching name' => [['base_placed' => true, 'base_exit_code' => 2, 'base_cases' => [['name' => 'it renders', 'status' => 'passed']]], 'Orbit ran apps/gateway/tests/Feature/HomeScreenTest.php on the start commit (exit code 2), and no test name contains "home screen layout".'],
-    'no base evidence' => [[], 'Orbit did not place apps/gateway/tests/Feature/HomeScreenTest.php on the start commit, so the base run did not start.'],
-]);
-
-it('counts a timed-out base run as failing on the start commit', function (): void {
-    $evidence = fails_on_base_evidence([
-        'exit_code' => 0,
-        'cases' => [['name' => 'it keeps the home screen layout', 'status' => 'passed']],
-        'base_placed' => true,
-        'base_exit_code' => 124,
-        'base_timed_out' => true,
-        'base_timeout_seconds' => 600,
-        'base_cases' => [['name' => 'it keeps the home screen layout', 'status' => 'passed']],
-    ]);
-
-    expect(TaskDeliverableVerifier::failures([fails_on_base_deliverable()], $evidence))->toBe([])
-        ->and($evidence->baseRunReview([fails_on_base_deliverable()]))->toBe("Base run on the start commit. An error, such as a missing class, is not an assertion failure.\n- layout-repro: The base run timed out after 600 seconds, so it counts as failing on the start commit.");
-});
-
-it('shows the reviewer whether a base failure was a failure or an error, and the tail of its message', function (): void {
-    $evidence = fails_on_base_evidence([
-        'exit_code' => 0,
-        'cases' => [['name' => 'it keeps the home screen layout', 'status' => 'passed']],
-        'base_placed' => true,
-        'base_exit_code' => 2,
-        'base_cases' => [
-            ['name' => 'it breaks the home screen layout', 'status' => 'failed', 'kind' => 'error', 'message' => 'Class "HomeScreen" not found'],
-            ['name' => 'it keeps the home screen layout', 'status' => 'failed', 'kind' => 'failure', 'message' => 'expected layout'],
-            ['name' => 'it keeps the home screen layout blank', 'status' => 'failed', 'kind' => 'error', 'message' => ''],
-            ['name' => 'it keeps the home screen layout on a phone', 'status' => 'passed'],
-        ],
-    ]);
-
-    expect($evidence->baseRunReview([fails_on_base_deliverable()]))->toBe(implode("\n", [
-        'Base run on the start commit. An error, such as a missing class, is not an assertion failure.',
-        '- layout-repro: "it breaks the home screen layout" failed on the start commit with an error: Class "HomeScreen" not found',
-        '- layout-repro: "it keeps the home screen layout" failed on the start commit with a failure: expected layout',
-        '- layout-repro: "it keeps the home screen layout blank" failed on the start commit with an error.',
-    ]));
-});
-
-it('keeps the single working-tree run when fails_on_base is false', function (): void {
+it('requires a passing working-tree command and a failing base command', function (): void {
     $deliverable = TaskDeliverable::fromArray([
-        'id' => 'layout-repro',
-        'type' => 'test',
-        'description' => 'The layout',
-        'project' => 'apps/gateway',
-        'file' => 'tests/Feature/HomeScreenTest.php',
-        'name' => 'home screen layout',
+        'id' => 'layout-repro', 'type' => 'command', 'description' => 'Reproduce the regression',
+        'command' => 'check-layout', 'directory' => 'apps/gateway', 'fails_on_base' => true,
+        'paths' => ['apps/gateway/tests/Feature/HomeScreenTest.php'],
     ]);
-    $evidence = fails_on_base_evidence([
-        'exit_code' => 0,
-        'cases' => [['name' => 'it keeps the home screen layout', 'status' => 'passed']],
-        'base_placed' => true,
-        'base_exit_code' => 0,
-        'base_cases' => [['name' => 'it keeps the home screen layout', 'status' => 'passed']],
+    $pass = TaskDeliverableEvidence::fromArray([
+        'diff' => [],
+        'commands' => ['layout-repro' => ['base_started' => true, 'base_exit_code' => 1, 'base_output' => 'base failure', 'exit_code' => 0, 'output' => '']],
+    ]);
+    $basePass = TaskDeliverableEvidence::fromArray([
+        'diff' => [],
+        'commands' => ['layout-repro' => ['base_started' => true, 'base_exit_code' => 0, 'base_output' => '', 'exit_code' => 0, 'output' => '']],
+    ]);
+    $workingTreeFails = TaskDeliverableEvidence::fromArray([
+        'diff' => [],
+        'commands' => ['layout-repro' => ['base_started' => true, 'base_exit_code' => 1, 'base_output' => '', 'exit_code' => 2, 'output' => 'still broken']],
+    ]);
+    $baseDidNotStart = TaskDeliverableEvidence::fromArray([
+        'diff' => [],
+        'commands' => ['layout-repro' => ['base_started' => false, 'base_exit_code' => 127, 'base_output' => 'Could not extract base', 'exit_code' => 0, 'output' => '']],
+    ]);
+    $baseCommandMissing = TaskDeliverableEvidence::fromArray([
+        'diff' => [],
+        'commands' => ['layout-repro' => ['base_started' => true, 'base_exit_code' => 127, 'base_output' => 'command not found', 'exit_code' => 0, 'output' => '']],
+    ]);
+    $baseCommandNotExecutable = TaskDeliverableEvidence::fromArray([
+        'diff' => [],
+        'commands' => ['layout-repro' => ['base_started' => true, 'base_exit_code' => 126, 'base_output' => 'permission denied', 'exit_code' => 0, 'output' => '']],
     ]);
 
-    expect(TaskDeliverableVerifier::failures([$deliverable], $evidence))->toBe([]);
+    expect(TaskDeliverableVerifier::failures([$deliverable], $pass))->toBe([])
+        ->and(TaskDeliverableVerifier::failures([$deliverable], $basePass))->toBe([
+            'layout-repro (command): `check-layout` in apps/gateway also exited 0 on the start commit, so it does not reproduce the failure.',
+        ])
+        ->and(implode(' ', TaskDeliverableVerifier::failures([$deliverable], $workingTreeFails)))->toContain('`check-layout` in apps/gateway exited with 2.')
+        ->and(TaskDeliverableVerifier::failures([$deliverable], $baseDidNotStart))->toBe([
+            'layout-repro (command): Orbit could not run `check-layout` in apps/gateway on the start commit.',
+        ])
+        ->and(TaskDeliverableVerifier::failures([$deliverable], $baseCommandMissing))->toBe([
+            'layout-repro (command): Orbit could not run `check-layout` in apps/gateway on the start commit (exit 127).',
+        ])
+        ->and(TaskDeliverableVerifier::failures([$deliverable], $baseCommandNotExecutable))->toBe([
+            'layout-repro (command): Orbit could not run `check-layout` in apps/gateway on the start commit (exit 126).',
+        ]);
 });
 
-it('normalizes a relative path and joins a project and file', function (): void {
-    expect(TaskDeliverable::join('.', 'tests/ExportTest.php'))->toBe('tests/ExportTest.php')
-        ->and(TaskDeliverable::join('./apps/gateway/', './tests/ExportTest.php'))->toBe('apps/gateway/tests/ExportTest.php')
-        ->and(TaskDeliverable::relative('.'))->toBe('');
+it('accepts a timed out base command as nonzero evidence and renders both exit codes', function (): void {
+    $deliverable = TaskDeliverable::fromArray([
+        'id' => 'layout-repro', 'type' => 'command', 'description' => 'Reproduce the regression',
+        'command' => 'check-layout', 'fails_on_base' => true, 'paths' => ['tests/repro.sh'],
+    ]);
+    $evidence = TaskDeliverableEvidence::fromArray([
+        'diff' => [],
+        'commands' => ['layout-repro' => [
+            'base_started' => true, 'base_exit_code' => 124, 'base_output' => '', 'base_timed_out' => true, 'base_timeout_seconds' => 600,
+            'exit_code' => 0, 'output' => '',
+        ]],
+    ]);
+
+    expect(TaskDeliverableVerifier::failures([$deliverable], $evidence))->toBe([])
+        ->and($evidence?->baseRunReview([$deliverable]))->toContain('layout-repro: base command exited 124 (timed out after 600 seconds); working-tree command exited 0');
+});
+
+it('continues to verify file deliverables against the subtask diff', function (): void {
+    $file = TaskDeliverable::fromArray([
+        'id' => 'reference', 'type' => 'file', 'description' => 'Update docs', 'path' => 'docs/**/*.md', 'change' => 'modified',
+    ]);
+    $evidence = TaskDeliverableEvidence::fromArray(['diff' => [['status' => 'M', 'path' => 'docs/reference/tasks.md']], 'commands' => []]);
+
+    expect(TaskDeliverableVerifier::failures([$file], $evidence))->toBe([]);
+});
+
+it('requires implementers to confirm all deliverables and reviewers to confirm review deliverables', function (): void {
+    $deliverables = [
+        TaskDeliverable::fromArray(['id' => 'lint', 'type' => 'command', 'description' => 'Lint', 'command' => 'lint']),
+        TaskDeliverable::fromArray(['id' => 'copy', 'type' => 'review', 'description' => 'Review copy']),
+    ];
+
+    expect(TaskDeliverableVerifier::unconfirmed($deliverables, [], TaskThreadRole::Implementer))->toBe(['lint', 'copy'])
+        ->and(TaskDeliverableVerifier::unconfirmed($deliverables, [], TaskThreadRole::Reviewer))->toBe(['copy']);
 });

@@ -356,7 +356,7 @@ function run_receipt_deliverables(): array
 {
     return [
         TaskDeliverable::fromArray(['id' => 'reference-page', 'type' => 'file', 'description' => 'Document the export', 'path' => 'docs/reference/tasks.md', 'change' => 'modified']),
-        TaskDeliverable::fromArray(['id' => 'export-test', 'type' => 'test', 'description' => 'Test the export', 'project' => 'apps/gateway', 'file' => 'tests/Feature/ExportTest.php', 'name' => 'exports']),
+        TaskDeliverable::fromArray(['id' => 'export-test', 'type' => 'command', 'description' => 'Test the export', 'command' => 'vendor/bin/pest tests/Feature/ExportTest.php', 'directory' => 'apps/gateway']),
         TaskDeliverable::fromArray(['id' => 'error-copy', 'type' => 'review', 'description' => 'Errors name the subtask']),
     ];
 }
@@ -370,7 +370,7 @@ describe('deliverable confirmations', function (): void {
 
         expect(json_decode((string) file_get_contents($checkout.'/.git/orbit/turn.json'), true)['deliverables'])->toBe([
             ['id' => 'reference-page', 'type' => 'file', 'description' => 'Document the export'],
-            ['id' => 'export-test', 'type' => 'test', 'description' => 'Test the export', 'fails_on_base' => false],
+            ['id' => 'export-test', 'type' => 'command', 'description' => 'Test the export'],
             ['id' => 'error-copy', 'type' => 'review', 'description' => 'Errors name the subtask'],
         ]);
     });

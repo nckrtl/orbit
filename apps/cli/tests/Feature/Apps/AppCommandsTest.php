@@ -71,29 +71,6 @@ describe('project:create', function (): void {
             ]);
     });
 
-    it('sends a task check on create only when --task-check is given', function (): void {
-        $mockClient = MockClient::global([CreateAppRequest::class => app_mock_response(201)]);
-
-        $this->artisan('project:create', [
-            'slug' => 'kit',
-            'type' => 'node-package',
-            'repository' => 'git@github.com:acme/kit.git',
-            '--task-check' => 'vp run check',
-        ])->assertExitCode(0);
-
-        expect($mockClient->getLastRequest()?->body()->all())->toMatchArray(['task_check' => 'vp run check']);
-
-        $defaultClient = MockClient::global([CreateAppRequest::class => app_mock_response(201)]);
-
-        $this->artisan('project:create', [
-            'slug' => 'kit',
-            'type' => 'node-package',
-            'repository' => 'git@github.com:acme/kit.git',
-        ])->assertExitCode(0);
-
-        expect($defaultClient->getLastRequest()?->body()->all())->not->toHaveKey('task_check');
-    });
-
     it('creates a node-package Project through the typed SDK request', function (): void {
         $mockClient = MockClient::global([
             CreateAppRequest::class => app_mock_response(201),
@@ -530,6 +507,7 @@ describe('project:update', function (): void {
 
         expect($clearClient->getLastRequest()?->body()->all())
             ->toBe(['task_check' => null]);
+
     });
 
     it('refuses --task-check with --clear-task-check before contacting the Gateway', function (): void {

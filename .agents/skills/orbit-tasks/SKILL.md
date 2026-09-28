@@ -41,13 +41,13 @@ A subtask that changes the web UI must include a screenshot `review` deliverable
 
 ## Bugs
 
-The first code-changing subtask in a bug group reproduces the failure before the fix. Add a `test` deliverable with `fails_on_base` set to the JSON boolean `true`. At least one test whose name contains the specified `name` must fail on the subtask's start commit, and every such test must pass on the working tree. A docs-only subtask does not count as the first code-changing subtask. The [tasks reference](../../../docs/reference/tasks.md#reproduce-a-bug-on-the-start-commit) defines the two runs.
+The first code-changing subtask in a bug group reproduces the failure before the fix. Add a `command` deliverable with `fails_on_base` set to the JSON boolean `true` and `paths` listing the working-tree files needed for the base run. The command must exit nonzero on the subtask's start commit and zero on the working tree. The command itself applies Project-specific matching, such as selecting a test by name; the engine checks only the exit status. A docs-only subtask does not count as the first code-changing subtask. The [tasks reference](../../../docs/reference/tasks.md#prove-a-command-fails-on-the-start-commit) defines the two runs.
 
-Use a deliverable like this in that subtask's `deliverables` array. Only a `test` deliverable may set `fails_on_base`:
+Use a deliverable like this in that subtask's `deliverables` array:
 
 ```json
 [
-  {"id": "layout-repro", "type": "test", "description": "The home-screen test fails before the fix", "project": "apps/gateway", "file": "tests/Feature/HomeScreenTest.php", "name": "home screen layout", "fails_on_base": true}
+  {"id": "layout-repro", "type": "command", "description": "The home-screen regression fails before the fix", "command": "vendor/bin/pest tests/Feature/HomeScreenTest.php --filter='home screen layout'", "directory": "apps/gateway", "fails_on_base": true, "paths": ["apps/gateway/tests/Feature/HomeScreenTest.php"]}
 ]
 ```
 
@@ -81,7 +81,7 @@ Name file paths only where the contract fixes them, such as an install path or d
 
 ## Deliverables and handoff
 
-Use typed deliverables to describe observable results. The current engine supports `file`, `test`, `command`, and `review`; follow the [Tasks reference](../../../docs/reference/tasks.md#deliverables) for fields and verification. Prefer one deliverable for each explicit result promised in the brief. Measurement and investigation claims must be `command` deliverables, so Orbit's handoff check records the command output. Evidence at handoff says where or how each deliverable is met.
+Use typed deliverables to describe observable results. The current engine supports `file`, `command`, and `review`; follow the [Tasks reference](../../../docs/reference/tasks.md#deliverables) for fields and verification. Prefer one deliverable for each explicit result promised in the brief. Measurement and investigation claims must be `command` deliverables, so Orbit's handoff check records the command output. Evidence at handoff says where or how each deliverable is met.
 
 Do not assume that every Project uses Composer, Pest, PHP, or any particular test runner. Use the task check configured for the Orbit Project and the deliverable type supported by the current engine.
 

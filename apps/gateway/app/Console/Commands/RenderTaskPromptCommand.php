@@ -261,9 +261,9 @@ final class RenderTaskPromptCommand extends Command
     /** @param array<string, mixed> $evidence */
     private function validateEvidence(array $evidence): void
     {
-        $this->knownFields($evidence, ['diff', 'tests', 'commands'], 'review_packet.handoff_check.evidence');
-        if (! array_key_exists('diff', $evidence) || ! array_key_exists('tests', $evidence) || ! array_key_exists('commands', $evidence)) {
-            throw new InvalidArgumentException('review_packet.handoff_check.evidence must contain diff, tests, and commands.');
+        $this->knownFields($evidence, ['diff', 'commands'], 'review_packet.handoff_check.evidence');
+        if (! array_key_exists('diff', $evidence) || ! array_key_exists('commands', $evidence)) {
+            throw new InvalidArgumentException('review_packet.handoff_check.evidence must contain diff and commands.');
         }
         if ($evidence['diff'] !== null) {
             foreach ($this->listValue($evidence['diff'], 'review_packet.handoff_check.evidence.diff') as $index => $value) {
@@ -273,50 +273,27 @@ final class RenderTaskPromptCommand extends Command
                 $this->string($diff, 'path', 'evidence.diff');
             }
         }
-        $tests = $this->object($evidence, 'tests', 'evidence');
-        foreach ($tests as $id => $run) {
-            $test = $this->objectValue($run, 'evidence.tests.'.$id);
-            $this->knownFields($test, ['exit_code', 'cases', 'base_placed', 'base_exit_code', 'base_timed_out', 'base_timeout_seconds', 'base_cases'], 'evidence.tests.'.$id);
-            $this->integer($test, 'exit_code', 'evidence.tests.'.$id);
-            $this->cases($test, 'cases', 'evidence.tests.'.$id);
-            if (array_key_exists('base_placed', $test) && ! is_bool($test['base_placed'])) {
-                throw new InvalidArgumentException('evidence.tests.'.$id.'.base_placed must be a boolean.');
-            }
-            if (array_key_exists('base_exit_code', $test) && ! is_int($test['base_exit_code'])) {
-                throw new InvalidArgumentException('evidence.tests.'.$id.'.base_exit_code must be an integer.');
-            }
-            if (array_key_exists('base_timed_out', $test) && ! is_bool($test['base_timed_out'])) {
-                throw new InvalidArgumentException('evidence.tests.'.$id.'.base_timed_out must be a boolean.');
-            }
-            if (array_key_exists('base_timeout_seconds', $test) && ! is_int($test['base_timeout_seconds'])) {
-                throw new InvalidArgumentException('evidence.tests.'.$id.'.base_timeout_seconds must be an integer.');
-            }
-            if (array_key_exists('base_cases', $test)) {
-                $this->cases($test, 'base_cases', 'evidence.tests.'.$id);
-            }
-        }
         $commands = $this->object($evidence, 'commands', 'evidence');
         foreach ($commands as $id => $run) {
             $command = $this->objectValue($run, 'evidence.commands.'.$id);
-            $this->knownFields($command, ['exit_code', 'output'], 'evidence.commands.'.$id);
+            $this->knownFields($command, ['exit_code', 'output', 'base_started', 'base_exit_code', 'base_output', 'base_timed_out', 'base_timeout_seconds'], 'evidence.commands.'.$id);
             $this->integer($command, 'exit_code', 'evidence.commands.'.$id);
             $this->string($command, 'output', 'evidence.commands.'.$id);
-        }
-    }
-
-    /** @param array<string, mixed> $data */
-    private function cases(array $data, string $field, string $path): void
-    {
-        foreach ($this->list($data, $field, $path) as $index => $value) {
-            $case = $this->objectValue($value, $path.'.'.$field.'['.$index.']');
-            $this->knownFields($case, ['name', 'status', 'kind', 'message'], $path.'.'.$field.'['.$index.']');
-            $this->string($case, 'name', $path.'.'.$field.'['.$index.']');
-            $this->string($case, 'status', $path.'.'.$field.'['.$index.']');
-            if (array_key_exists('kind', $case)) {
-                $this->string($case, 'kind', $path.'.'.$field.'['.$index.']');
+            if (array_key_exists('base_started', $command) && ! is_bool($command['base_started'])) {
+                throw new InvalidArgumentException('evidence.commands.'.$id.'.base_started must be a boolean.');
             }
-            if (array_key_exists('message', $case)) {
-                $this->string($case, 'message', $path.'.'.$field.'['.$index.']');
+            foreach (['base_exit_code', 'base_timeout_seconds'] as $field) {
+                if (array_key_exists($field, $command) && ! is_int($command[$field])) {
+                    throw new InvalidArgumentException('evidence.commands.'.$id.'.'.$field.' must be an integer.');
+                }
+            }
+            foreach (['base_output'] as $field) {
+                if (array_key_exists($field, $command) && ! is_string($command[$field])) {
+                    throw new InvalidArgumentException('evidence.commands.'.$id.'.'.$field.' must be a string.');
+                }
+            }
+            if (array_key_exists('base_timed_out', $command) && ! is_bool($command['base_timed_out'])) {
+                throw new InvalidArgumentException('evidence.commands.'.$id.'.base_timed_out must be a boolean.');
             }
         }
     }
@@ -324,30 +301,41 @@ final class RenderTaskPromptCommand extends Command
     private function deliverable(mixed $value, string $path): TaskDeliverable
     {
         $deliverable = $this->objectValue($value, $path);
-        $this->knownFields($deliverable, ['id', 'type', 'description', 'path', 'change', 'project', 'file', 'name', 'fails_on_base', 'command', 'directory'], $path);
+        $this->knownFields($deliverable, ['id', 'type', 'description', 'path', 'change', 'fails_on_base', 'command', 'directory', 'paths'], $path);
         foreach (['id', 'type', 'description'] as $field) {
             $this->string($deliverable, $field, $path);
         }
         $type = $deliverable['type'];
-        $fields = match ($type) {
+        $allowedFields = match ($type) {
             'file' => ['path', 'change'],
-            'test' => ['project', 'file', 'name', 'fails_on_base'],
+            'command' => ['command', 'directory', 'fails_on_base', 'paths'],
+            'review' => [],
+            default => throw new InvalidArgumentException($path.'.type must be file, command, or review.'),
+        };
+        $requiredFields = match ($type) {
+            'file' => ['path', 'change'],
             'command' => ['command', 'directory'],
             'review' => [],
-            default => throw new InvalidArgumentException($path.'.type must be file, test, command, or review.'),
         };
-        $this->knownFields($deliverable, array_values(array_unique(array_merge(['id', 'type', 'description'], $fields))), $path);
-        foreach ($fields as $field) {
+        $this->knownFields($deliverable, array_values(array_unique(array_merge(['id', 'type', 'description'], $allowedFields))), $path);
+        foreach ($requiredFields as $field) {
             if (! array_key_exists($field, $deliverable)) {
                 throw new InvalidArgumentException($path.'.'.$field.' is required.');
             }
-            if ($field === 'fails_on_base') {
-                if (! is_bool($deliverable[$field])) {
-                    throw new InvalidArgumentException($path.'.fails_on_base must be a boolean.');
+            $this->string($deliverable, $field, $path);
+        }
+        if (array_key_exists('fails_on_base', $deliverable) && ! is_bool($deliverable['fails_on_base'])) {
+            throw new InvalidArgumentException($path.'.fails_on_base must be a boolean.');
+        }
+        if (array_key_exists('paths', $deliverable)) {
+            foreach ($this->listValue($deliverable['paths'], $path.'.paths') as $index => $overlay) {
+                if (! is_string($overlay)) {
+                    throw new InvalidArgumentException($path.'.paths['.$index.'] must be a string.');
                 }
-            } else {
-                $this->string($deliverable, $field, $path);
             }
+        }
+        if (($deliverable['fails_on_base'] ?? false) === true && ($deliverable['paths'] ?? []) === []) {
+            throw new InvalidArgumentException($path.'.paths is required for fails_on_base.');
         }
 
         return TaskDeliverable::fromArray($deliverable);

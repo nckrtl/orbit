@@ -8,7 +8,6 @@ use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskDeliverable;
-use App\Domain\Tasks\TaskDeliverableType;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskWorkspaceMcp;
@@ -55,13 +54,15 @@ function production_task_prompt_models(): array
         'title' => 'Render JSON',
         'brief' => 'Read and validate the prompt input.',
         'status' => 'running',
-        'deliverables' => [(new TaskDeliverable(
-            id: 'command',
-            type: TaskDeliverableType::Command,
-            description: 'The command renders a prompt.',
-            command: 'composer test',
-            directory: 'apps/gateway',
-        ))->toArray()],
+        'deliverables' => [TaskDeliverable::fromArray([
+            'id' => 'command',
+            'type' => 'command',
+            'description' => 'The command renders a prompt.',
+            'command' => 'composer test',
+            'directory' => 'apps/gateway',
+            'fails_on_base' => false,
+            'paths' => ['apps/gateway/tests/PromptTest.php'],
+        ])->toArray()],
         'subtask_start_commit' => 'abc1234',
     ]);
     $instance = new AppInstance;
@@ -129,13 +130,15 @@ function render_task_prompt_subtask(): array
         'brief' => 'Read and validate the prompt input.',
         'position' => 1,
         'deliverables' => [
-            (new TaskDeliverable(
-                id: 'command',
-                type: TaskDeliverableType::Command,
-                description: 'The command renders a prompt.',
-                command: 'composer test',
-                directory: 'apps/gateway',
-            ))->toArray(),
+            TaskDeliverable::fromArray([
+                'id' => 'command',
+                'type' => 'command',
+                'description' => 'The command renders a prompt.',
+                'command' => 'composer test',
+                'directory' => 'apps/gateway',
+                'fails_on_base' => false,
+                'paths' => ['apps/gateway/tests/PromptTest.php'],
+            ])->toArray(),
         ],
     ];
 }
@@ -144,7 +147,6 @@ function render_task_prompt_review_packet(bool $continued = false): array
 {
     $evidence = [
         'diff' => [['status' => 'modified', 'path' => 'app/Prompt.php']],
-        'tests' => (object) [],
         'commands' => (object) ['command' => ['exit_code' => 0, 'output' => '']],
     ];
 
@@ -186,7 +188,6 @@ function production_review_prompt(bool $continued): array
         'exit_code' => 0,
         'deliverable_evidence' => [
             'diff' => [['status' => 'modified', 'path' => 'app/Prompt.php']],
-            'tests' => [],
             'commands' => ['command' => ['exit_code' => 0, 'output' => '']],
         ],
         'started_at' => now(),
@@ -239,8 +240,9 @@ function production_review_prompt(bool $continued): array
     ];
 }
 
-it('renders the same prompt for the implementer', function (): void {
+it('renders the same prompt for the implementer with optional command fields, including explicit false', function (): void {
     $production = production_spawner_prompt('implementerPrompt');
+    $deliverable = $production['subtask']['deliverables'][0];
     $payload = [
         'group' => $production['group'],
         'subtask' => $production['subtask'],
@@ -250,11 +252,13 @@ it('renders the same prompt for the implementer', function (): void {
 
     $groupStart = str_repeat('b', 40);
 
-    expect($prompt)->toBe($production['prompt'])
-        ->toContain("The group started at {$groupStart}.\ngit diff --stat {$groupStart}..HEAD")
-        ->toContain('Follow this repository\'s task instructions.')
-        ->not->toContain('feature\'s contract')
-        ->not->toContain('Build to them.');
+    expect($deliverable['fails_on_base'])->toBeFalse()
+        ->and($deliverable['paths'])->toBe(['apps/gateway/tests/PromptTest.php'])
+        ->and($prompt)->toBe($production['prompt'])
+        ->and($prompt)->toContain("The group started at {$groupStart}.\ngit diff --stat {$groupStart}..HEAD")
+        ->and($prompt)->toContain('Follow this repository\'s task instructions.')
+        ->and($prompt)->not->toContain('feature\'s contract')
+        ->and($prompt)->not->toContain('Build to them.');
 });
 
 it('renders only the configured or absent Project check in implementer prompts', function (): void {

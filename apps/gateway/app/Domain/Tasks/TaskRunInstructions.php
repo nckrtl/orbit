@@ -16,7 +16,7 @@ final readonly class TaskRunInstructions
     public static function implementer(array $deliverables = [], ?string $check = null, ?int $threadId = null): string
     {
         $passes = $check === null ? '' : ' and '.$check.' passes';
-        $confirm = $deliverables === [] ? '' : ' Add --deliverable=ID=evidence for each deliverable of this subtask ('.self::ids($deliverables).'), where the evidence says where or how it is met. Orbit refuses the handoff without them, then checks file, test, and command deliverables against your diff and its own run.';
+        $confirm = $deliverables === [] ? '' : ' Add --deliverable=ID=evidence for each deliverable of this subtask ('.self::ids($deliverables).'), where the evidence says where or how it is met. Orbit refuses the handoff without them, then checks file and command deliverables against your diff and its own run.';
 
         return self::autonomy().' When the brief is complete'.$passes.', end your turn with '.self::command($threadId, '--outcome=ready_for_review --summary="What you changed"').'.'.$confirm.' '.self::blocked($threadId);
     }

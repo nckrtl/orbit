@@ -3505,9 +3505,7 @@ export interface components {
             position?: number;
             title?: string;
             brief?: string;
-            deliverables?: {
-                [key: string]: string | boolean;
-            }[];
+            deliverables?: Record<string, never>[];
             /** @enum {string} */
             status?: "todo" | "reserved" | "running" | "reviewing" | "completed" | "failed" | "cancelled";
             implementer_agent_thread_id?: number | null;
@@ -14021,7 +14019,7 @@ export interface operations {
                         deliverables?: {
                             id: string;
                             /** @enum {string} */
-                            type: "file" | "test" | "command" | "review";
+                            type: "file" | "command" | "review";
                             description: string;
                             /** @description Conditionally required. */
                             path?: string;
@@ -14030,16 +14028,11 @@ export interface operations {
                              * @enum {string}
                              */
                             change?: "created" | "modified" | "any";
-                            /** @description Conditionally required. */
-                            project?: string;
-                            /** @description Conditionally required. */
-                            file?: string;
-                            /** @description Conditionally required. */
-                            name?: string;
                             fails_on_base?: boolean;
                             /** @description Conditionally required. */
                             command?: string;
                             directory?: string;
+                            paths?: string[];
                         }[];
                     }[];
                 };
@@ -14471,7 +14464,7 @@ export interface operations {
                     deliverables?: {
                         id: string;
                         /** @enum {string} */
-                        type: "file" | "test" | "command" | "review";
+                        type: "file" | "command" | "review";
                         description: string;
                         /** @description Conditionally required. */
                         path?: string;
@@ -14480,16 +14473,11 @@ export interface operations {
                          * @enum {string}
                          */
                         change?: "created" | "modified" | "any";
-                        /** @description Conditionally required. */
-                        project?: string;
-                        /** @description Conditionally required. */
-                        file?: string;
-                        /** @description Conditionally required. */
-                        name?: string;
                         fails_on_base?: boolean;
                         /** @description Conditionally required. */
                         command?: string;
                         directory?: string;
+                        paths?: string[];
                     }[];
                 };
             };
@@ -14644,7 +14632,7 @@ export interface operations {
                     deliverables?: {
                         id: string;
                         /** @enum {string} */
-                        type: "file" | "test" | "command" | "review";
+                        type: "file" | "command" | "review";
                         description: string;
                         /** @description Conditionally required. */
                         path?: string;
@@ -14653,16 +14641,11 @@ export interface operations {
                          * @enum {string}
                          */
                         change?: "created" | "modified" | "any";
-                        /** @description Conditionally required. */
-                        project?: string;
-                        /** @description Conditionally required. */
-                        file?: string;
-                        /** @description Conditionally required. */
-                        name?: string;
                         fails_on_base?: boolean;
                         /** @description Conditionally required. */
                         command?: string;
                         directory?: string;
+                        paths?: string[];
                     }[];
                 };
             };

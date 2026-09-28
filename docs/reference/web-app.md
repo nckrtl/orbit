@@ -12,7 +12,7 @@ covers:
 
 # Web app
 
-The web app is Orbit's live view of the fleet. It is a static single-page app that reads the Gateway API and follows [realtime events](/reference/events). Its TypeScript API schema is generated from the Gateway OpenAPI document (`docs/openapi.json`) with `bun run types` in `apps/web` and checked in with the app. The Gateway serves it from its own origin.
+The web app is Orbit's live view of the fleet. It is a static single-page app that reads the Gateway API and follows [realtime events](/reference/events). Its TypeScript API schema is generated from the Gateway OpenAPI document (`docs/openapi.json`) with `bun run types` in `apps/web`. Regenerate that schema after an OpenAPI change and commit it with the app. The Gateway serves it from its own origin.
 
 Extension navigation follows the Gateway's enabled set: Tasks and ProxyCLI links and routes are absent while their extension is disabled. The Gateway API remains authoritative, so a stale direct request still receives `extension.disabled` rather than granting access. The Route create request type distinguishes an app Route with `app_instance_id` from a custom proxy Route with `node_id` and an upstream or Process; it has no app Route creation form with `app_id` or a targetless scope.
 

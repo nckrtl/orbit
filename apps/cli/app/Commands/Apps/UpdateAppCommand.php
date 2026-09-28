@@ -73,7 +73,6 @@ final class UpdateAppCommand extends GatewayCommand
         if ($taskCheck !== null && (trim($taskCheck) === '' || strlen($taskCheck) > 4096)) {
             return $this->renderGatewayFailure('app.task_check_invalid', 'Task check command is invalid.');
         }
-
         if ($type === null && $slug === null && $repositoryUrl === null && $defaultBranch === null && $root === null && $taskCheck === null && ! $clearTaskCheck) {
             return $this->renderGatewayFailure(
                 'app.update_required',

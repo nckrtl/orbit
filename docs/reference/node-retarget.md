@@ -24,7 +24,7 @@ Retarget picks its path from the Node's role assignments. Any assignment counts,
 | No role | Public SSH |
 | Any role | WireGuard |
 
-On the public SSH path, the Gateway scans the host key at the new address and requires the pinned fingerprint. It publishes the WireGuard peer over public SSH, probes SSH over WireGuard, and pins the key for both addresses.
+On the public SSH path, the Gateway scans the host key at the new address and requires the pinned fingerprint. It publishes the WireGuard peer over public SSH, using operator DNS mode for a Node with no role, probes SSH over WireGuard, and pins the key for both addresses.
 
 On the WireGuard path, the Gateway scans the host key over the WireGuard address and requires the pinned fingerprint. It stores the new target, probes SSH over WireGuard, and pins the key for the new address.
 

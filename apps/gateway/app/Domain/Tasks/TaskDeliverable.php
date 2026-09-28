@@ -15,12 +15,13 @@ final readonly class TaskDeliverable
         public string $description,
         public string $path = '',
         public string $change = 'any',
-        public string $project = '.',
-        public string $file = '',
-        public string $name = '',
         public string $command = '',
         public string $directory = '.',
         public bool $fails_on_base = false,
+        /** @var list<string> */
+        public array $paths = [],
+        private bool $has_fails_on_base = false,
+        private bool $has_paths = false,
     ) {}
 
     /** @param array<array-key, mixed> $data */
@@ -34,12 +35,12 @@ final readonly class TaskDeliverable
             description: $text('description'),
             path: $text('path'),
             change: $text('change', 'any'),
-            project: $text('project', '.'),
-            file: $text('file'),
-            name: $text('name'),
             command: $text('command'),
             directory: $text('directory', '.'),
             fails_on_base: ($data['fails_on_base'] ?? null) === true,
+            paths: is_array($data['paths'] ?? null) ? array_values(array_filter($data['paths'], is_string(...))) : [],
+            has_fails_on_base: array_key_exists('fails_on_base', $data),
+            has_paths: array_key_exists('paths', $data),
         );
     }
 
@@ -56,34 +57,23 @@ final readonly class TaskDeliverable
         return array_values(array_map(self::fromArray(...), array_filter($stored, is_array(...))));
     }
 
-    /** @return array<string, string|bool> the id, type, description, and the fields of the type */
+    /** @return array<string, string|bool|list<string>> the id, type, description, and the fields of the type */
     public function toArray(): array
     {
         $fields = ['id' => $this->id, 'type' => $this->type->value, 'description' => $this->description];
         foreach ($this->type->fields() as $field) {
             $fields[$field] = $this->{$field};
         }
-
-        return $fields;
-    }
-
-    /** The path of a test file from the workspace root. */
-    public function testPath(): string
-    {
-        return self::join($this->project, $this->file);
-    }
-
-    /** ADR 0133: one exact Pest file. No `*`, `?`, `[`, `{`, or `..`, and a `.php` suffix. */
-    public static function isExactTestFile(string $file): bool
-    {
-        if (! str_ends_with($file, '.php') || str_starts_with($file, '/')) {
-            return false;
+        if ($this->type === TaskDeliverableType::Command) {
+            if ($this->has_fails_on_base || $this->fails_on_base) {
+                $fields['fails_on_base'] = $this->fails_on_base;
+            }
+            if ($this->has_paths || $this->paths !== []) {
+                $fields['paths'] = $this->paths;
+            }
         }
 
-        return array_all(
-            ['*', '?', '[', '{', '..'],
-            static fn (string $forbidden): bool => ! str_contains($file, $forbidden),
-        );
+        return $fields;
     }
 
     /** One line that names the deliverable and what it asks for, for agent prompts. */
@@ -91,24 +81,22 @@ final readonly class TaskDeliverable
     {
         $detail = match ($this->type) {
             TaskDeliverableType::File => "{$this->path}, {$this->change}",
-            TaskDeliverableType::Test => $this->testLine(),
-            TaskDeliverableType::Command => "`{$this->command}` in {$this->directory}",
+            TaskDeliverableType::Command => $this->commandLine(),
             TaskDeliverableType::Review => 'confirmed by the reviewer',
         };
 
         return "- {$this->id} ({$this->type->value}: {$detail}): {$this->description}";
     }
 
-    /** The test detail, including the base-run sentence when fails_on_base is true (ADR 0163). */
-    private function testLine(): string
+    /** Render command and base-run behavior in implementer and reviewer prompts. */
+    private function commandLine(): string
     {
-        $detail = "Pest test \"{$this->name}\" in {$this->testPath()}";
-
-        if (! $this->fails_on_base) {
-            return $detail;
+        $detail = '';
+        if ($this->fails_on_base) {
+            $detail = 'must fail on the start commit and pass on the working tree; paths '.implode(', ', $this->paths).'; ';
         }
 
-        return $detail."; at least one test whose name contains \"{$this->name}\" must fail on the start commit, and every such test must pass on the working tree";
+        return $detail."`{$this->command}` in ".(self::relative($this->directory) ?: '.');
     }
 
     /** Joins a directory and a path from it into one path from the workspace root. */

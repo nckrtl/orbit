@@ -12,8 +12,6 @@ namespace App\Domain\Tasks;
  */
 final readonly class TaskDeliverableVerifier
 {
-    private const int CasesNamed = 10;
-
     /**
      * The deliverables a receipt must confirm and does not: every deliverable for the implementer, and every
      * `review` deliverable for the reviewer.
@@ -49,7 +47,6 @@ final readonly class TaskDeliverableVerifier
         foreach ($checked as $deliverable) {
             $reason = match ($deliverable->type) {
                 TaskDeliverableType::File => self::file($deliverable, $evidence),
-                TaskDeliverableType::Test => self::test($deliverable, $evidence),
                 default => self::command($deliverable, $evidence),
             };
             if ($reason !== null) {
@@ -84,105 +81,6 @@ final readonly class TaskDeliverableVerifier
         return 'the diff '.self::describe($matches[0]).", but the deliverable needs {$pattern} ".($deliverable->change === 'created' ? 'created' : 'modified').'.';
     }
 
-    private static function test(TaskDeliverable $deliverable, TaskDeliverableEvidence $evidence): ?string
-    {
-        $path = $deliverable->testPath();
-        $run = $evidence->tests[$deliverable->id] ?? null;
-        if (! $deliverable->fails_on_base) {
-            return self::testDiff($evidence, $path) ?? self::testRun($deliverable, $run, $path);
-        }
-
-        $parts = [];
-        foreach ([self::testDiff($evidence, $path), self::baseRun($deliverable, $run, $path), self::testRun($deliverable, $run, $path)] as $part) {
-            if ($part !== null) {
-                $parts[] = $part;
-            }
-        }
-
-        return $parts === [] ? null : implode(' ', $parts);
-    }
-
-    private static function testDiff(TaskDeliverableEvidence $evidence, string $path): ?string
-    {
-        if ($evidence->diff === null) {
-            return "Orbit could not read the subtask's diff.";
-        }
-        $inDiff = array_filter($evidence->diff, static fn (array $entry): bool => $entry['path'] === $path && in_array($entry['status'], ['A', 'M'], true));
-        if ($inDiff === []) {
-            return "{$path} is not added or modified in the subtask's diff.";
-        }
-
-        return null;
-    }
-
-    /**
-     * @param  array{exit_code: int, cases: list<array{name: string, status: string, kind?: string, message?: string}>, base_placed?: bool, base_exit_code?: int, base_timed_out?: bool, base_timeout_seconds?: int, base_cases?: list<array{name: string, status: string, kind?: string, message?: string}>}|null  $run
-     */
-    private static function testRun(TaskDeliverable $deliverable, ?array $run, string $path): ?string
-    {
-        if ($run === null) {
-            return "Orbit's check did not run {$path}, so the test has no executed result. A replayed or cached result does not count.";
-        }
-        $cases = self::named($run['cases'], $deliverable->name);
-        if ($cases === []) {
-            $names = array_map(static fn (array $case): string => '"'.$case['name'].'"', array_slice($run['cases'], 0, self::CasesNamed));
-
-            return "Orbit ran {$path} (exit code {$run['exit_code']}), and no test name contains \"{$deliverable->name}\"."
-                .($names === [] ? ' The run reported no tests.' : ' The run reported '.implode(', ', $names).'.');
-        }
-        $failed = array_values(array_filter($cases, static fn (array $case): bool => $case['status'] !== 'passed'));
-        if ($failed !== []) {
-            return 'Orbit ran '.$path.', and '.implode(', ', array_map(static fn (array $case): string => '"'.$case['name'].'" '.$case['status'], $failed)).'.';
-        }
-
-        return null;
-    }
-
-    /**
-     * ADR 0163: at least one test whose name contains the deliverable name must fail on the start commit.
-     *
-     * @param  array{exit_code: int, cases: list<array{name: string, status: string, kind?: string, message?: string}>, base_placed?: bool, base_exit_code?: int, base_timed_out?: bool, base_timeout_seconds?: int, base_cases?: list<array{name: string, status: string, kind?: string, message?: string}>}|null  $run
-     */
-    private static function baseRun(TaskDeliverable $deliverable, ?array $run, string $path): ?string
-    {
-        if ($run === null || ($run['base_placed'] ?? false) !== true) {
-            return "Orbit did not place {$path} on the start commit, so the base run did not start.";
-        }
-        // A run that never finishes did not pass on the broken code. It counts as failing on the start commit.
-        if (($run['base_timed_out'] ?? false) === true) {
-            return null;
-        }
-        if (! isset($run['base_cases'], $run['base_exit_code'])) {
-            return "Orbit did not run {$path} on the start commit (exit code ".($run['base_exit_code'] ?? 1).').';
-        }
-        $cases = self::named($run['base_cases'], $deliverable->name);
-        if (array_any($cases, static fn (array $case): bool => $case['status'] === 'failed')) {
-            return null;
-        }
-        $sentences = [];
-        foreach ($cases as $case) {
-            if ($case['status'] === 'passed') {
-                $sentences[] = 'The test "'.$case['name'].'" passes on the start commit, so it does not reproduce the bug.';
-            } elseif ($case['status'] === 'skipped') {
-                $sentences[] = 'The test "'.$case['name'].'" was skipped on the start commit.';
-            }
-        }
-        if ($sentences !== []) {
-            return implode(' ', $sentences);
-        }
-
-        return "Orbit ran {$path} on the start commit (exit code {$run['base_exit_code']}), and no test name contains \"{$deliverable->name}\".";
-    }
-
-    /**
-     * @param  list<array{name: string, status: string, kind?: string, message?: string}>  $cases
-     * @return list<array{name: string, status: string, kind?: string, message?: string}>
-     */
-    private static function named(array $cases, string $needle): array
-    {
-        return array_values(array_filter($cases, static fn (array $case): bool => str_contains($case['name'], $needle)));
-    }
-
     private static function command(TaskDeliverable $deliverable, TaskDeliverableEvidence $evidence): ?string
     {
         $run = $evidence->commands[$deliverable->id] ?? null;
@@ -190,11 +88,25 @@ final readonly class TaskDeliverableVerifier
         if ($run === null) {
             return "Orbit's check did not run {$where}.";
         }
-        if ($run['exit_code'] === 0) {
-            return null;
+        if ($run['exit_code'] !== 0) {
+            return "{$where} exited with {$run['exit_code']}. The end of its output:\n\n```\n".rtrim($run['output'])."\n```\n";
+        }
+        if ($deliverable->fails_on_base) {
+            if (($run['base_started'] ?? false) !== true) {
+                return "Orbit could not run {$where} on the start commit.";
+            }
+            if (! isset($run['base_exit_code'])) {
+                return "Orbit did not run {$where} on the start commit.";
+            }
+            if (in_array($run['base_exit_code'], [126, 127], true)) {
+                return "Orbit could not run {$where} on the start commit (exit {$run['base_exit_code']}).";
+            }
+            if (($run['base_timed_out'] ?? false) !== true && $run['base_exit_code'] === 0) {
+                return "{$where} also exited 0 on the start commit, so it does not reproduce the failure.";
+            }
         }
 
-        return "{$where} exited with {$run['exit_code']}. The end of its output:\n\n```\n".rtrim($run['output'])."\n```\n";
+        return null;
     }
 
     /** @param array{status: string, path: string} $entry */

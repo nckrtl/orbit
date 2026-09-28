@@ -109,9 +109,11 @@
                 "Node",
                 "Node agent",
                 "Process",
+                "Project",
                 "Route",
                 "Schedule",
                 "Task",
+                "Task check",
                 "Tool"
             ],
             "governing_adrs": []
@@ -787,9 +789,11 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Deliverable",
                 "Extension",
                 "Gateway",
                 "Instance",
+                "Node",
                 "Process",
                 "Project",
                 "Role",
@@ -1117,6 +1121,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Activity",
                 "Deployment",
                 "Doctor",
                 "Gateway",
@@ -1127,7 +1132,8 @@
                 "Route",
                 "Schedule",
                 "Task",
-                "Task check"
+                "Task check",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -1411,7 +1417,9 @@
                 "Extension",
                 "Gateway",
                 "Node",
-                "Route"
+                "Project",
+                "Route",
+                "Task"
             ],
             "governing_adrs": []
         },

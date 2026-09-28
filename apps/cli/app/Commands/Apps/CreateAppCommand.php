@@ -81,7 +81,6 @@ final class CreateAppCommand extends GatewayCommand
         if ($taskCheck !== null && (trim($taskCheck) === '' || strlen($taskCheck) > 4096)) {
             return $this->renderGatewayFailure('app.task_check_invalid', 'Task check command is invalid.');
         }
-
         $app = $this->sendWithProgress(
             $connector,
             new CreateAppRequest(

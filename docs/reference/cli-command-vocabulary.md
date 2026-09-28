@@ -35,7 +35,7 @@ Use `create` and `destroy` when the Gateway owns the resource lifecycle. Use `ad
 
 | Family | Pair | What the command changes |
 | --- | --- | --- |
-| `project` | `create` and `destroy` | A [Project](/reference/apps) record |
+| `project` | `create`, `update`, and `destroy` | A [Project](/reference/apps) record |
 | `cluster` | `create` and `destroy` | A Cluster record |
 | `cluster:node` | `add` and `remove` | A [Node](/reference/node-provisioning) in a Cluster |
 | `database` | `create` and `destroy` | A [Database connection](/reference/database-connections) record |
@@ -86,7 +86,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `schedule` | `logs`, `run` | The CLI reads Schedule logs or runs a Schedule once. |
 | `tasks` | `cancel`, `complete`, `status` | The CLI cancels or completes a task group, cancels a running subtask with `tasks:subtask:cancel`, or reports task assistance and state. |
 
-`doctor` and `profile` are one-segment commands. Each family name is the command.
+`doctor` and `profile` are one-segment commands. Each family name is the command. Project source defaults and task settings use `project:update`; create and destroy remain the lifecycle commands.
 
 ## Noun-ending commands
 
