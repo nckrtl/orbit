@@ -77,6 +77,17 @@ it('docs impact gate fails and names an impacted page that was not changed', fun
         ->and($gate['missing_pages'])->toContain('docs/reference/tasks.md');
 });
 
+it('base waivers do not prevent a branch-added page reason from waiving the page', function (): void {
+    [$root, $base] = docsImpactGateFixture('docs/reference/tasks.md: An older branch changed internal behavior.');
+    file_put_contents($root.'/docs/.docs-unaffected', "docs/reference/tasks.md: An older branch changed internal behavior.\ndocs/reference/tasks.md: This branch changes only the internal refactor.\n");
+    changeDocsImpactGateSource($root);
+
+    $gate = new DocsImpact($root)->gate($base);
+
+    expect($gate['passed'])->toBeTrue()
+        ->and($gate['exceptions']['docs/reference/tasks.md'])->toBe('This branch changes only the internal refactor.');
+});
+
 it('docs impact gate accepts a newly committed page reason exception', function (): void {
     [$root, $base] = docsImpactGateFixture();
     file_put_contents($root.'/docs/.docs-unaffected', "docs/reference/tasks.md: Existing instructions remain accurate for this internal refactor.\n");
@@ -91,7 +102,7 @@ it('docs impact gate accepts a newly committed page reason exception', function 
         ->and($gate['exceptions']['docs/reference/tasks.md'])->toBe('Existing instructions remain accurate for this internal refactor.');
 });
 
-it('docs impact gate does not reuse an exception present at the base', function (): void {
+it('base waivers do not waive a page changed again on the branch', function (): void {
     [$root, $base] = docsImpactGateFixture('docs/reference/tasks.md: Old reviewer-approved exception.');
     changeDocsImpactGateSource($root);
 
@@ -100,6 +111,24 @@ it('docs impact gate does not reuse an exception present at the base', function 
     expect($gate['passed'])->toBeFalse()
         ->and($gate['missing_pages'])->toContain('docs/reference/tasks.md')
         ->and($gate['exceptions'])->toBe([]);
+});
+
+it('base waivers require additions in the diff, not an untracked waiver file', function (): void {
+    [$root, $base] = docsImpactGateFixture();
+    changeDocsImpactGateSource($root);
+    file_put_contents($root.'/docs/.docs-unaffected', "docs/reference/tasks.md: This branch changes only internal behavior.\n");
+
+    $gate = new DocsImpact($root)->gate($base);
+
+    expect($gate['passed'])->toBeFalse()
+        ->and($gate['missing_pages'])->toContain('docs/reference/tasks.md')
+        ->and($gate['exceptions'])->toBe([]);
+
+    exec('git -C '.escapeshellarg($root).' add docs/.docs-unaffected');
+    $gate = new DocsImpact($root)->gate($base);
+
+    expect($gate['passed'])->toBeTrue()
+        ->and($gate['exceptions']['docs/reference/tasks.md'])->toBe('This branch changes only internal behavior.');
 });
 
 it('docs impact gate rejects unowned migration errors', function (): void {

@@ -14,6 +14,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  main-waivers:
+    name: Main has no docs-impact waivers
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Reject waivers carried onto main
+        run: |
+          if [ -s docs/.docs-unaffected ]; then
+            echo 'docs/.docs-unaffected must be empty on main; waivers belong to feature branches.' >&2
+            exit 1
+          fi
+
   project:
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
