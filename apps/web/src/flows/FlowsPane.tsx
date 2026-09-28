@@ -6,6 +6,11 @@ import { describeCron } from "./cron";
 import { modelsOf, type TaskTemplate } from "./model";
 import { templatesQuery } from "./queries";
 
+/** The distinct models a template's tasks call. */
+const modelNames = (template: TaskTemplate): string[] => [
+    ...new Set(template.tasks.flatMap(modelsOf)),
+];
+
 /**
  * The task templates as a table. With `projectSlug`, only that Project's templates, and no Project
  * column.
@@ -39,8 +44,11 @@ export function FlowsPane({
         { header: "Tasks", width: 1, fit: true, align: "right", value: (row) => String(row.tasks.length) },
         {
             header: "Models",
-            width: 3,
-            value: (row) => [...new Set(row.tasks.flatMap(modelsOf))].join(", ") || "none",
+            width: 1,
+            fit: true,
+            align: "right",
+            value: (row) => String(modelNames(row).length),
+            cell: (row) => <span title={modelNames(row).join(", ")}>{modelNames(row).length}</span>,
             hideOnMobile: true,
         },
         { header: "Starts in", width: 1, fit: true, value: (row) => row.status, hideOnMobile: true },
