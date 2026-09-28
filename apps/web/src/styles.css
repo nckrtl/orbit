@@ -605,16 +605,36 @@ body {
     border-bottom: 0;
 }
 
-/* Flow viewer: task cards in a vertical line, routes between and beside them. */
+/* Flow viewer: task cards on a canvas, routes between them. */
+.flow-frame-body {
+    padding: 0;
+    overflow: hidden;
+}
+
+.flow-canvas .react-flow {
+    --xy-background-color: transparent;
+    --xy-background-pattern-color: color-mix(in srgb, var(--line) 60%, transparent);
+    --xy-edge-stroke: var(--line);
+    --xy-edge-label-background-color: var(--bg);
+    --xy-edge-label-color: var(--dim);
+    --xy-controls-button-background-color: var(--bg);
+    --xy-controls-button-background-color-hover: color-mix(in srgb, var(--bg) 88%, var(--fg));
+    --xy-controls-button-color: var(--fg);
+    --xy-controls-button-border-color: var(--line);
+    font-family: inherit;
+}
+
 .flow-card {
-    display: block;
-    width: 100%;
-    max-width: 52ch;
-    text-align: left;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
     padding: 6px var(--panel-padding);
     border-radius: 2px;
+    border: 1px solid var(--line);
     border-left: 2px solid var(--line);
     background: color-mix(in srgb, var(--bg) 95%, var(--fg));
+    cursor: pointer;
+    font-size: 13px;
 }
 
 .flow-card:hover {
@@ -622,8 +642,7 @@ body {
 }
 
 .flow-card[data-selected] {
-    outline: 1px solid var(--selected-line);
-    outline-offset: -1px;
+    border-color: var(--selected-line);
 }
 
 .flow-card[data-state="done"] {
@@ -647,6 +666,11 @@ body {
     opacity: 0.45;
 }
 
+.flow-handle {
+    opacity: 0;
+    pointer-events: none;
+}
+
 .flow-kind {
     font-size: 11px;
     font-weight: 500;
@@ -668,69 +692,48 @@ body {
     text-overflow: ellipsis;
 }
 
-.flow-end {
+.flow-end-node {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--bg);
     font-size: 11px;
-    color: var(--dim);
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--green);
 }
 
-.flow-end[data-to="fail"] {
-    color: color-mix(in srgb, var(--red) 70%, var(--dim));
+.flow-end-node[data-end="fail"] {
+    color: var(--red);
 }
 
-.flow-end[data-taken] {
-    color: var(--fg);
+.flow-end-node[data-state="idle"] {
+    opacity: 0.45;
 }
 
-.flow-connector {
-    position: relative;
-    height: 22px;
-    max-width: 52ch;
-}
-
-.flow-connector-line {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 3ch;
-    border-left: 1px solid var(--line);
-}
-
-.flow-connector[data-state="taken"] .flow-connector-line {
-    border-left-color: var(--fg);
-}
-
-.flow-connector[data-state="idle"] .flow-connector-line {
-    border-left-style: dashed;
-}
-
-.flow-connector-label {
-    position: absolute;
-    left: 4ch;
-    top: 3px;
-    font-size: 11px;
-    color: var(--dim);
-}
-
-.flow-edge path {
-    stroke: var(--line);
-    stroke-width: 1;
-}
-
-.flow-edge text {
-    fill: var(--dim);
-    font-size: 11px;
-}
-
-.flow-edge[data-state="taken"] path {
+.flow-edge-taken .react-flow__edge-path {
     stroke: var(--fg);
+    stroke-width: 1.5;
 }
 
-.flow-edge[data-state="taken"] text {
+.flow-edge-taken .react-flow__edge-text {
     fill: var(--fg);
 }
 
-.flow-edge[data-state="idle"] path {
-    stroke-dasharray: 3 3;
+.flow-edge-idle .react-flow__edge-path {
+    stroke-dasharray: 4 4;
+}
+
+.flow-edge .react-flow__edge-text {
+    font-size: 11px;
+    fill: var(--dim);
+}
+
+.flow-edge .react-flow__edge-textbg {
+    fill: var(--bg);
 }
 
 .flow-run {

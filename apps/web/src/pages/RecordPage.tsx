@@ -1,3 +1,4 @@
+import { FlowsPane } from "../flows/FlowsPane";
 import { taskGroupsQuery, tasksForInstance } from "../api/tasks";
 import { useTaskPoll } from "../realtime/polling";
 import { TasksBoard } from "./Tasks";
@@ -334,7 +335,7 @@ function ProjectPage({ fleet, project }: { fleet: Fleet; project: Project }) {
 
     return (
         <div
-            className={`w-full min-w-0 max-w-full flex flex-col md:grid md:h-full md:grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)] ${GAPS}`}
+            className={`w-full min-w-0 max-w-full flex flex-col md:grid md:h-full md:grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] ${GAPS}`}
         >
             <Properties
                 testId="record-properties"
@@ -369,6 +370,11 @@ function ProjectPage({ fleet, project }: { fleet: Fleet; project: Project }) {
                 rowId={(s) => String(s.id)}
                 warn={(s) => !scheduleHealthy(s)}
                 target={(row) => ({ kind: "schedules", row })}
+            />
+            <FlowsPane
+                projectSlug={project.slug}
+                order={3}
+                className="w-full min-h-[160px] max-h-[40vh] md:max-h-none"
             />
         </div>
     );

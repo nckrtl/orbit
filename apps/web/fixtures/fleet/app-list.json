@@ -30,6 +30,24 @@
                 "default_branch": "release",
                 "root": "web/public",
                 "defaults": null
+            },
+            {
+                "id": 4,
+                "name": "Orbit",
+                "slug": "orbit",
+                "repository_url": "https://github.com/nckrtl/orbit.git",
+                "default_branch": "main",
+                "root": "public",
+                "defaults": null
+            },
+            {
+                "id": 5,
+                "name": "Orbit Website",
+                "slug": "orbit-website",
+                "repository_url": "https://github.com/nckrtl/orbit-website.git",
+                "default_branch": "main",
+                "root": "public",
+                "defaults": null
             }
         ],
         "meta": {

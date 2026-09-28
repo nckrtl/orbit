@@ -1,61 +1,30 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
+import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { formatCompactCount, formatDurationMs } from "../api/tasks";
-import { FlowDiagram } from "../flows/FlowDiagram";
+import { lists } from "../api/queries";
+import { describeCron } from "../flows/cron";
+import { FlowCanvas } from "../flows/FlowCanvas";
+import { FlowsPane } from "../flows/FlowsPane";
 import {
-    MODEL_KINDS,
     edges,
     findings,
     type TaskTemplate,
     type TemplateRun,
     type TemplateTask,
 } from "../flows/model";
-import { templateQuery, templateRunsQuery, templatesQuery } from "../flows/queries";
+import { templateQuery, templateRunsQuery } from "../flows/queries";
 import { Frame } from "../ui/Frame";
 import { PageHeader } from "../ui/PageHeader";
 import { Properties, type Property } from "../ui/Properties";
 import { useGo } from "../ui/go";
 
 export function FlowsList() {
-    const templates = useQuery(templatesQuery);
     return (
-        <div className="flex min-w-0 flex-col gap-[var(--panel-gap)]">
+        <div className="flex min-w-0 flex-col gap-[var(--panel-gap)] md:h-full">
             <PageHeader trail={[{ label: "Flows" }]} />
-            <Frame title="Templates" topRight={templates.data?.length} className="w-full">
-                {templates.isPending && <p role="status">Loading templates…</p>}
-                {templates.error && <p role="alert">{templates.error.message}</p>}
-                <div className="flex flex-col gap-[var(--panel-padding)]">
-                    {templates.data?.map((template) => (
-                        <Link
-                            key={template.name}
-                            to="/flows/$name"
-                            params={{ name: template.name }}
-                            className="kanban-card block"
-                            data-testid="flow-template"
-                        >
-                            <span className="flex justify-between gap-[1ch]">
-                                <span>{template.title}</span>
-                                <span className="text-dim">
-                                    {template.project_code} · {template.name}
-                                </span>
-                            </span>
-                            <span className="flow-meta">{templateSummary(template)}</span>
-                        </Link>
-                    ))}
-                </div>
-            </Frame>
+            <FlowsPane order={1} className="w-full md:min-h-0 md:flex-1" />
         </div>
     );
-}
-
-function templateSummary(template: TaskTemplate): string {
-    const model = template.tasks.filter((task) => MODEL_KINDS.includes(task.kind)).length;
-    return [
-        `${template.tasks.length} tasks`,
-        `${model} with a model`,
-        template.cron === null ? "on demand" : `cron ${template.cron}`,
-        `starts in ${template.status}`,
-    ].join(" · ");
 }
 
 type FlowSearch = { run?: number; task?: string };
@@ -66,12 +35,14 @@ export const validateFlowSearch = (search: Record<string, unknown>): FlowSearch 
 });
 
 export function FlowPage() {
-    const { name } = useParams({ from: "/flows/$name" });
-    const search = useSearch({ from: "/flows/$name" });
-    const navigate = useNavigate({ from: "/flows/$name" });
+    const { project: projectSlug, name } = useParams({ from: "/flows/$project/$name" });
+    const search = useSearch({ from: "/flows/$project/$name" });
+    const navigate = useNavigate({ from: "/flows/$project/$name" });
     const go = useGo();
-    const template = useQuery(templateQuery(name));
-    const runs = useQuery(templateRunsQuery(name));
+    const template = useQuery(templateQuery(projectSlug, name));
+    const runs = useQuery(templateRunsQuery(projectSlug, name));
+    const projects = useQuery(lists.projects);
+    const project = projects.data?.find((candidate) => candidate.slug === projectSlug);
     const run = runs.data?.find((candidate) => candidate.id === search.run);
     const flow = template.data;
     const selected = flow?.tasks.find((task) => task.key === search.task) ?? flow?.tasks[0];
@@ -85,6 +56,10 @@ export function FlowPage() {
             <PageHeader
                 trail={[
                     { label: "Flows", open: () => go.section("flows") },
+                    {
+                        label: project?.name ?? projectSlug,
+                        open: project === undefined ? undefined : () => go.record("projects", project),
+                    },
                     { label: flow?.title ?? name },
                 ]}
             />
@@ -94,11 +69,12 @@ export function FlowPage() {
                 <div className="grid min-w-0 grid-cols-1 gap-[var(--panel-gap)] lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_minmax(40ch,56ch)] lg:grid-rows-[minmax(0,1fr)]">
                     <Frame
                         title={run === undefined ? "Flow" : `Run #${run.id}`}
-                        topRight={run === undefined ? "design" : run.status}
+                        topRight={run === undefined ? describeCron(flow.cron) : run.status}
                         className="min-h-0"
+                        bodyClassName="flow-frame-body"
                         bottomLeft={legend}
                     >
-                        <FlowDiagram
+                        <FlowCanvas
                             template={flow}
                             run={run}
                             selected={selected?.key}
@@ -152,7 +128,7 @@ export function FlowPage() {
     );
 }
 
-const legend = "◆ model · unlisted: failed → fail, skipped → complete";
+const legend = "◆ model · hidden defaults: failed → fail, skipped → complete";
 
 function RunRow({
     label,

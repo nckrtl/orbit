@@ -5,8 +5,7 @@ export const templates: TaskTemplate[] = [
     {
         name: "maintenance",
         title: "Weekly maintenance",
-        project: "Orbit Website",
-        project_code: "WEB",
+        project_slug: "orbit-website",
         status: "todo",
         cron: "0 3 * * 1",
         app: "orbit-website",
@@ -118,9 +117,8 @@ export const templates: TaskTemplate[] = [
     },
     {
         name: "feature",
-        title: "Feature",
-        project: "Orbit",
-        project_code: "ORB",
+        title: "Orbit feature",
+        project_slug: "orbit",
         status: "backlog",
         cron: null,
         app: null,
@@ -143,8 +141,7 @@ export const templates: TaskTemplate[] = [
     {
         name: "content",
         title: "Website article",
-        project: "Orbit Website",
-        project_code: "WEB",
+        project_slug: "orbit-website",
         status: "backlog",
         cron: null,
         app: "orbit-website",
@@ -178,7 +175,7 @@ const minutes = (count: number) => count * 60_000;
 export const runs: TemplateRun[] = [
     {
         id: 412,
-        template: "maintenance",
+        template: "orbit-website/maintenance",
         title: "Weekly maintenance · 28 Sep",
         status: "running",
         started_at: "2026-09-28T03:00:00Z",
@@ -202,7 +199,7 @@ export const runs: TemplateRun[] = [
     },
     {
         id: 398,
-        template: "maintenance",
+        template: "orbit-website/maintenance",
         title: "Weekly maintenance · 21 Sep",
         status: "failed",
         started_at: "2026-09-21T03:00:00Z",
@@ -226,7 +223,7 @@ export const runs: TemplateRun[] = [
     },
     {
         id: 377,
-        template: "maintenance",
+        template: "orbit-website/maintenance",
         title: "Weekly maintenance · 14 Sep",
         status: "completed",
         started_at: "2026-09-14T03:00:00Z",

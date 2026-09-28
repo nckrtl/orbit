@@ -298,17 +298,20 @@ export function createDemoGateway() {
             ["GET", /^\/api\/v1\/task-templates$/, () => ok(flowTemplates)],
             [
                 "GET",
-                /^\/api\/v1\/task-templates\/([a-z0-9-]+)$/,
-                ([name = ""]) => {
-                    const found = flowTemplates.find((candidate) => candidate.name === name);
+                /^\/api\/v1\/task-templates\/([a-z0-9-]+)\/([a-z0-9-]+)$/,
+                ([project = "", name = ""]) => {
+                    const found = flowTemplates.find(
+                        (candidate) => candidate.project_slug === project && candidate.name === name,
+                    );
 
                     return found === undefined ? notFound("Task template") : ok(found);
                 },
             ],
             [
                 "GET",
-                /^\/api\/v1\/task-templates\/([a-z0-9-]+)\/runs$/,
-                ([name = ""]) => ok(flowRuns.filter((run) => run.template === name)),
+                /^\/api\/v1\/task-templates\/([a-z0-9-]+)\/([a-z0-9-]+)\/runs$/,
+                ([project = "", name = ""]) =>
+                    ok(flowRuns.filter((run) => run.template === `${project}/${name}`)),
             ],
             [
                 "GET",

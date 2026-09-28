@@ -42,10 +42,10 @@ export type TaskStats = {
 };
 
 export type TaskTemplate = {
+    /** Unique within its Project. */
     name: string;
     title: string;
-    project: string;
-    project_code: string;
+    project_slug: string;
     status: "backlog" | "todo";
     cron: string | null;
     app: string | null;
@@ -66,6 +66,7 @@ export type RunTask = {
 
 export type TemplateRun = {
     id: number;
+    /** `{project slug}/{template name}`. */
     template: string;
     title: string;
     status: "todo" | "running" | "settling" | "completed" | "failed" | "cancelled";

@@ -28,7 +28,7 @@ const routeTree = rootRoute.addChildren([
     createRoute({ getParentRoute: () => rootRoute, path: "/flows", component: FlowsList }),
     createRoute({
         getParentRoute: () => rootRoute,
-        path: "/flows/$name",
+        path: "/flows/$project/$name",
         component: FlowPage,
         validateSearch: validateFlowSearch,
     }),
