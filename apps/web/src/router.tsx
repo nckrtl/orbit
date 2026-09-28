@@ -8,6 +8,7 @@ import { readActivitySearch } from "./api/activities";
 import { ActivityDetail, ActivityPage } from "./pages/Activity";
 import { TasksBoard, TaskDetail, SubtaskDetail } from "./pages/Tasks";
 import { Dashboard } from "./pages/Dashboard";
+import { FlowPage, FlowsList, validateFlowSearch } from "./pages/Flows";
 import { NodeCreate } from "./pages/NodeCreate";
 import { DeploymentPage, RecordPage } from "./pages/RecordPage";
 import { SectionList } from "./pages/SectionList";
@@ -24,6 +25,13 @@ const routeTree = rootRoute.addChildren([
     createRoute({ getParentRoute: () => rootRoute, path: "/", component: Dashboard }),
     createRoute({ getParentRoute: () => rootRoute, path: "/tasks", component: TasksBoard }),
     createRoute({ getParentRoute: () => rootRoute, path: "/tasks/$id", component: TaskDetail }),
+    createRoute({ getParentRoute: () => rootRoute, path: "/flows", component: FlowsList }),
+    createRoute({
+        getParentRoute: () => rootRoute,
+        path: "/flows/$name",
+        component: FlowPage,
+        validateSearch: validateFlowSearch,
+    }),
     createRoute({
         getParentRoute: () => rootRoute,
         path: "/tasks/$id/subtasks/$subtaskId",

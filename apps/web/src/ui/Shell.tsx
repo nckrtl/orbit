@@ -41,6 +41,7 @@ const NAV_TEST_ID = {
     firewall: "nav-firewall",
     quota: "nav-quota",
     tasks: "nav-tasks",
+    flows: "nav-flows",
     activity: "nav-activity",
 } as const satisfies Record<Section, string>;
 
@@ -89,7 +90,7 @@ function navCount(
     totals: ReturnType<typeof counts>,
     taskCount: number | null,
 ): [number | null, number] {
-    if (key === "dashboard" || key === "quota" || key === "activity") {
+    if (key === "dashboard" || key === "quota" || key === "activity" || key === "flows") {
         return [null, 0];
     }
 

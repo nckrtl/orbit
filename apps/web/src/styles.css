@@ -604,3 +604,145 @@ body {
 .annotations-table tbody tr:last-child td {
     border-bottom: 0;
 }
+
+/* Flow viewer: task cards in a vertical line, routes between and beside them. */
+.flow-card {
+    display: block;
+    width: 100%;
+    max-width: 52ch;
+    text-align: left;
+    padding: 6px var(--panel-padding);
+    border-radius: 2px;
+    border-left: 2px solid var(--line);
+    background: color-mix(in srgb, var(--bg) 95%, var(--fg));
+}
+
+.flow-card:hover {
+    background: color-mix(in srgb, var(--bg) 91%, var(--fg));
+}
+
+.flow-card[data-selected] {
+    outline: 1px solid var(--selected-line);
+    outline-offset: -1px;
+}
+
+.flow-card[data-state="done"] {
+    border-left-color: var(--green);
+}
+
+.flow-card[data-state="failed"] {
+    border-left-color: var(--red);
+}
+
+.flow-card[data-state="running"] {
+    border-left-color: var(--yellow);
+}
+
+.flow-card[data-state="skipped"] {
+    border-left-color: var(--dim);
+}
+
+.flow-card[data-state="passed-over"],
+.flow-card[data-state="todo"] {
+    opacity: 0.45;
+}
+
+.flow-kind {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--dim);
+}
+
+.flow-kind[data-kind="agent"],
+.flow-kind[data-kind="decide"] {
+    color: var(--cyan);
+}
+
+.flow-meta {
+    display: block;
+    overflow: hidden;
+    color: var(--dim);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.flow-end {
+    font-size: 11px;
+    color: var(--dim);
+}
+
+.flow-end[data-to="fail"] {
+    color: color-mix(in srgb, var(--red) 70%, var(--dim));
+}
+
+.flow-end[data-taken] {
+    color: var(--fg);
+}
+
+.flow-connector {
+    position: relative;
+    height: 22px;
+    max-width: 52ch;
+}
+
+.flow-connector-line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 3ch;
+    border-left: 1px solid var(--line);
+}
+
+.flow-connector[data-state="taken"] .flow-connector-line {
+    border-left-color: var(--fg);
+}
+
+.flow-connector[data-state="idle"] .flow-connector-line {
+    border-left-style: dashed;
+}
+
+.flow-connector-label {
+    position: absolute;
+    left: 4ch;
+    top: 3px;
+    font-size: 11px;
+    color: var(--dim);
+}
+
+.flow-edge path {
+    stroke: var(--line);
+    stroke-width: 1;
+}
+
+.flow-edge text {
+    fill: var(--dim);
+    font-size: 11px;
+}
+
+.flow-edge[data-state="taken"] path {
+    stroke: var(--fg);
+}
+
+.flow-edge[data-state="taken"] text {
+    fill: var(--fg);
+}
+
+.flow-edge[data-state="idle"] path {
+    stroke-dasharray: 3 3;
+}
+
+.flow-run {
+    padding: 2px var(--inset);
+    margin: 0 calc(var(--inset) * -1);
+    border-radius: 2px;
+}
+
+.flow-run:hover {
+    background: color-mix(in srgb, var(--bg) 93%, var(--fg));
+}
+
+.flow-run[data-active] {
+    background: color-mix(in srgb, var(--bg) 88%, var(--fg));
+}

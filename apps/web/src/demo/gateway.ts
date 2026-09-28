@@ -12,6 +12,7 @@ import type {
 } from "../api/types";
 import type { Activity } from "../api/activities";
 import type { TaskGroup } from "../api/tasks";
+import { runs as flowRuns, templates as flowTemplates } from "./flows";
 
 type Fixture = { route: string; status: number; body: { data: unknown } };
 type Answer = { status: number; payload: unknown };
@@ -294,6 +295,21 @@ export function createDemoGateway() {
             ["GET", /^\/api\/v1\/schedules$/, () => ok(schedules)],
             ["GET", /^\/api\/v1\/database-connections$/, () => ok(databases)],
             ["GET", /^\/api\/v1\/task-groups$/, () => ok(taskGroups)],
+            ["GET", /^\/api\/v1\/task-templates$/, () => ok(flowTemplates)],
+            [
+                "GET",
+                /^\/api\/v1\/task-templates\/([a-z0-9-]+)$/,
+                ([name = ""]) => {
+                    const found = flowTemplates.find((candidate) => candidate.name === name);
+
+                    return found === undefined ? notFound("Task template") : ok(found);
+                },
+            ],
+            [
+                "GET",
+                /^\/api\/v1\/task-templates\/([a-z0-9-]+)\/runs$/,
+                ([name = ""]) => ok(flowRuns.filter((run) => run.template === name)),
+            ],
             [
                 "GET",
                 /^\/api\/v1\/task-groups\/(\d+)$/,

@@ -16,6 +16,7 @@ export const SECTIONS = [
     "firewall",
     "quota",
     "tasks",
+    "flows",
     "activity",
 ] as const;
 export type Section = (typeof SECTIONS)[number];
@@ -27,6 +28,7 @@ export const NAV = [
     "projects",
     "databases",
     "tasks",
+    "flows",
     "activity",
 ] as const satisfies readonly Section[];
 
@@ -74,6 +76,7 @@ export const SECTION_TITLES: Record<Section, string> = {
     firewall: "Firewall",
     quota: "Quota",
     tasks: "Tasks",
+    flows: "Flows",
     activity: "Activity",
 };
 
