@@ -551,36 +551,10 @@
             "group": "Records",
             "pages": [
               "decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
-              "decisions/0103-absorb-commander-tasks-as-a-gateway-extension",
               "decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension",
               "decisions/0109-publish-the-proxycli-collector-on-a-subdomain",
-              "decisions/0110-route-task-sessions-with-laravel-ai-jev",
-              "decisions/0112-isolate-agent-threads-behind-drivers",
-              "decisions/0113-gate-task-completion-on-validation-and-review",
-              "decisions/0114-judge-task-completion-as-separate-checks",
-              "decisions/0116-run-task-implementers-on-pi",
-              "decisions/0117-judge-the-blocked-question-on-role-evidence",
-              "decisions/0121-end-agent-turns-with-a-run-receipt",
-              "decisions/0122-hold-task-groups-in-backlog-until-ready",
-              "decisions/0124-plan-backlog-groups-with-a-t3-planner",
-              "decisions/0125-run-the-project-check-when-the-implementer-hands-off",
-              "decisions/0131-seed-task-workspace-clones-from-the-registered-main-cache-store",
-              "decisions/0132-pause-only-for-the-acting-thread-and-a-real-question",
-              "decisions/0133-verify-typed-subtask-deliverables-at-handoff",
-              "decisions/0134-resume-pi-agent-streams-from-a-cursor",
-              "decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks",
               "decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit",
               "decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop",
-              "decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone",
-              "decisions/0163-prove-a-failing-test-on-the-start-commit",
-              "decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask",
-              "decisions/0165-record-per-thread-token-metrics",
-              "decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart",
-              "decisions/0168-offload-large-pi-tool-output",
-              "decisions/0169-start-each-subtask-review-in-a-fresh-thread",
-              "decisions/0170-edit-todo-subtasks-after-a-group-starts",
-              "decisions/0171-reset-fixup-caps-after-operator-work",
-              "decisions/0173-record-and-label-jev-decisions",
               "decisions/0174-match-the-task-gate-to-ci-and-repeated-findings",
               "decisions/0175-docs-impact-check-in-orbit-repo",
               "decisions/0178-run-project-agnostic-tasks-without-a-planner"
@@ -1209,6 +1183,114 @@
     {
       "source": "/decisions/0166-raise-phpstan-one-level-at-a-time",
       "destination": "/reference/implementation-loop#findings-are-fixed-not-silenced"
+    },
+    {
+      "source": "/decisions/0103-absorb-commander-tasks-as-a-gateway-extension",
+      "destination": "/reference/tasks#an-optional-generic-extension"
+    },
+    {
+      "source": "/decisions/0110-route-task-sessions-with-laravel-ai-jev",
+      "destination": "/reference/tasks#session-routing"
+    },
+    {
+      "source": "/decisions/0112-isolate-agent-threads-behind-drivers",
+      "destination": "/reference/tasks#agent-threads"
+    },
+    {
+      "source": "/decisions/0113-gate-task-completion-on-validation-and-review",
+      "destination": "/reference/tasks#rubric-and-reminders"
+    },
+    {
+      "source": "/decisions/0114-judge-task-completion-as-separate-checks",
+      "destination": "/reference/tasks#rubric-and-reminders"
+    },
+    {
+      "source": "/decisions/0116-run-task-implementers-on-pi",
+      "destination": "/reference/tasks#drivers"
+    },
+    {
+      "source": "/decisions/0117-judge-the-blocked-question-on-role-evidence",
+      "destination": "/reference/tasks#rubric-and-reminders"
+    },
+    {
+      "source": "/decisions/0121-end-agent-turns-with-a-run-receipt",
+      "destination": "/reference/tasks#run-receipt"
+    },
+    {
+      "source": "/decisions/0122-hold-task-groups-in-backlog-until-ready",
+      "destination": "/reference/tasks#prepare-a-group-in-backlog"
+    },
+    {
+      "source": "/decisions/0124-plan-backlog-groups-with-a-t3-planner",
+      "destination": "/reference/tasks#prepare-a-group-in-backlog"
+    },
+    {
+      "source": "/decisions/0125-run-the-project-check-when-the-implementer-hands-off",
+      "destination": "/reference/tasks#project-check"
+    },
+    {
+      "source": "/decisions/0131-seed-task-workspace-clones-from-the-registered-main-cache-store",
+      "destination": "/reference/implementation-loop#seed-a-checkout"
+    },
+    {
+      "source": "/decisions/0132-pause-only-for-the-acting-thread-and-a-real-question",
+      "destination": "/reference/tasks#session-routing"
+    },
+    {
+      "source": "/decisions/0133-verify-typed-subtask-deliverables-at-handoff",
+      "destination": "/reference/tasks#deliverables"
+    },
+    {
+      "source": "/decisions/0134-resume-pi-agent-streams-from-a-cursor",
+      "destination": "/reference/tasks#agent-viewer"
+    },
+    {
+      "source": "/decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks",
+      "destination": "/reference/tasks#fix-a-settling-pull-request"
+    },
+    {
+      "source": "/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone",
+      "destination": "/reference/tasks#pull-request-and-settle-metrics"
+    },
+    {
+      "source": "/decisions/0163-prove-a-failing-test-on-the-start-commit",
+      "destination": "/reference/tasks#prove-a-command-fails-on-the-start-commit"
+    },
+    {
+      "source": "/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask",
+      "destination": "/reference/tasks#fix-a-settling-pull-request"
+    },
+    {
+      "source": "/decisions/0165-record-per-thread-token-metrics",
+      "destination": "/reference/tasks#thread-token-metrics"
+    },
+    {
+      "source": "/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart",
+      "destination": "/reference/tasks#recover-a-pi-server-restart"
+    },
+    {
+      "source": "/decisions/0168-offload-large-pi-tool-output",
+      "destination": "/reference/pi-server#large-tool-output"
+    },
+    {
+      "source": "/decisions/0169-start-each-subtask-review-in-a-fresh-thread",
+      "destination": "/reference/tasks#review-a-subtask"
+    },
+    {
+      "source": "/decisions/0170-edit-todo-subtasks-after-a-group-starts",
+      "destination": "/reference/tasks#change-subtasks"
+    },
+    {
+      "source": "/decisions/0171-reset-fixup-caps-after-operator-work",
+      "destination": "/reference/tasks#fix-a-settling-pull-request"
+    },
+    {
+      "source": "/decisions/0172-count-every-t3-model-call-in-thread-metrics",
+      "destination": "/reference/tasks#thread-token-metrics"
+    },
+    {
+      "source": "/decisions/0173-record-and-label-jev-decisions",
+      "destination": "/reference/tasks#jev-decision-records"
     }
   ]
 }

@@ -509,7 +509,9 @@
             "path": "docs/cli/tasks.mdx",
             "title": "tasks",
             "kind": "product",
-            "components": [],
+            "components": [
+                "apps/cli"
+            ],
             "concepts": [
                 "Access grant",
                 "Deliverable",
@@ -521,6 +523,7 @@
                 "Role",
                 "Route",
                 "Task",
+                "Task check",
                 "Task group",
                 "Tool"
             ],
@@ -594,6 +597,7 @@
                 "Tool"
             ],
             "governing_adrs": [
+                "0174",
                 "0175"
             ]
         },
@@ -617,34 +621,6 @@
             ],
             "governing_adrs": [
                 "0097"
-            ]
-        },
-        {
-            "path": "docs/decisions/0103-absorb-commander-tasks-as-a-gateway-extension.md",
-            "title": "ADR 0103: Absorb Commander tasks as a Gateway extension",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Extension",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Project",
-                "Role",
-                "Route",
-                "Task"
-            ],
-            "governing_adrs": [
-                "0103",
-                "0112",
-                "0113",
-                "0122",
-                "0160",
-                "0165"
             ]
         },
         {
@@ -695,365 +671,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0110-route-task-sessions-with-laravel-ai-jev.md",
-            "title": "ADR 0110: Route task sessions with Laravel AI Jev",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Activity",
-                "Extension",
-                "Gateway",
-                "Instance",
-                "Role",
-                "Route",
-                "Task"
-            ],
-            "governing_adrs": [
-                "0103",
-                "0110",
-                "0112",
-                "0132"
-            ]
-        },
-        {
-            "path": "docs/decisions/0112-isolate-agent-threads-behind-drivers.md",
-            "title": "ADR 0112: Isolate agent threads behind drivers",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway",
-                "apps/web"
-            ],
-            "concepts": [
-                "Activity",
-                "Extension",
-                "Gateway",
-                "Node",
-                "Role",
-                "Route",
-                "Task",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0103",
-                "0110",
-                "0112",
-                "0165",
-                "0177"
-            ]
-        },
-        {
-            "path": "docs/decisions/0113-gate-task-completion-on-validation-and-review.md",
-            "title": "ADR 0113: Gate task completion on validation and review",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Activity",
-                "Extension",
-                "Gateway",
-                "Node",
-                "Project",
-                "Route",
-                "Task",
-                "Task group",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0103",
-                "0110",
-                "0112",
-                "0113",
-                "0114"
-            ]
-        },
-        {
-            "path": "docs/decisions/0114-judge-task-completion-as-separate-checks.md",
-            "title": "ADR 0114: Judge task completion as separate checks",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Activity",
-                "Gateway",
-                "Role",
-                "Route",
-                "Task",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0110",
-                "0113",
-                "0114",
-                "0117",
-                "0132",
-                "0173"
-            ]
-        },
-        {
-            "path": "docs/decisions/0116-run-task-implementers-on-pi.md",
-            "title": "ADR 0116: Run task implementers on Pi",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway",
-                "apps/web"
-            ],
-            "concepts": [
-                "Gateway",
-                "Node",
-                "Process",
-                "Project",
-                "Role",
-                "Task",
-                "Task group",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0112",
-                "0114",
-                "0116",
-                "0165",
-                "0167",
-                "0168"
-            ]
-        },
-        {
-            "path": "docs/decisions/0117-judge-the-blocked-question-on-role-evidence.md",
-            "title": "ADR 0117: Judge the blocked question on the role's own evidence",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Gateway",
-                "Role",
-                "Task",
-                "Task group",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0114",
-                "0117"
-            ]
-        },
-        {
-            "path": "docs/decisions/0121-end-agent-turns-with-a-run-receipt.md",
-            "title": "ADR 0121: End agent turns with a run receipt",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Extension",
-                "Gateway",
-                "Project",
-                "Role",
-                "Task",
-                "Task group"
-            ],
-            "governing_adrs": [
-                "0113",
-                "0114",
-                "0117",
-                "0121",
-                "0132",
-                "0160"
-            ]
-        },
-        {
-            "path": "docs/decisions/0122-hold-task-groups-in-backlog-until-ready.md",
-            "title": "ADR 0122: Hold task groups in Backlog until they are ready",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway",
-                "apps/web"
-            ],
-            "concepts": [
-                "Extension",
-                "Gateway",
-                "Instance",
-                "Task",
-                "Task group"
-            ],
-            "governing_adrs": [
-                "0103",
-                "0122"
-            ]
-        },
-        {
-            "path": "docs/decisions/0124-plan-backlog-groups-with-a-t3-planner.md",
-            "title": "ADR 0124: Plan Backlog groups with a T3 planner",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Gateway",
-                "Instance",
-                "Node",
-                "Project",
-                "Role",
-                "Task",
-                "Task group"
-            ],
-            "governing_adrs": [
-                "0112",
-                "0121",
-                "0122",
-                "0124",
-                "0178"
-            ]
-        },
-        {
-            "path": "docs/decisions/0125-run-the-project-check-when-the-implementer-hands-off.md",
-            "title": "ADR 0125: Run the Project check when the implementer hands off",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Activity",
-                "Gateway",
-                "Node",
-                "Process",
-                "Project",
-                "Task",
-                "Task check",
-                "Task workspace",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0114",
-                "0121",
-                "0125"
-            ]
-        },
-        {
-            "path": "docs/decisions/0131-seed-task-workspace-clones-from-the-registered-main-cache-store.md",
-            "title": "ADR 0131: Seed task workspace clones from the registered main cache store",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/e2e"
-            ],
-            "concepts": [
-                "Gateway",
-                "Project",
-                "Task",
-                "Task group",
-                "Task workspace"
-            ],
-            "governing_adrs": [
-                "0131"
-            ]
-        },
-        {
-            "path": "docs/decisions/0132-pause-only-for-the-acting-thread-and-a-real-question.md",
-            "title": "ADR 0132: Pause a task only for its acting thread or a real question",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Gateway",
-                "Project",
-                "Route",
-                "Task",
-                "Task group"
-            ],
-            "governing_adrs": [
-                "0110",
-                "0114",
-                "0121",
-                "0124",
-                "0132"
-            ]
-        },
-        {
-            "path": "docs/decisions/0133-verify-typed-subtask-deliverables-at-handoff.md",
-            "title": "ADR 0133: Verify typed subtask deliverables at handoff",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Deliverable",
-                "Gateway",
-                "Project",
-                "Task",
-                "Task group"
-            ],
-            "governing_adrs": [
-                "0114",
-                "0121",
-                "0124",
-                "0125",
-                "0133",
-                "0163",
-                "0178"
-            ]
-        },
-        {
-            "path": "docs/decisions/0134-resume-pi-agent-streams-from-a-cursor.md",
-            "title": "ADR 0134: Resume Pi agent streams from a cursor",
-            "kind": "decision",
-            "components": [
-                "apps/gateway",
-                "apps/web"
-            ],
-            "concepts": [
-                "Gateway",
-                "Task",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0116",
-                "0134"
-            ]
-        },
-        {
-            "path": "docs/decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks.md",
-            "title": "ADR 0140: Watch settling pull requests for conflicts and failed checks",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Gateway",
-                "Task"
-            ],
-            "governing_adrs": [
-                "0113",
-                "0121",
-                "0140",
-                "0164"
-            ]
-        },
-        {
             "path": "docs/decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit.md",
             "title": "ADR 0145: Publish the proxycli collector on collector.cli-proxy-api.orbit",
             "kind": "decision",
@@ -1096,258 +713,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone.md",
-            "title": "ADR 0160: Push each approved subtask and remove the finished workspace clone",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Doctor",
-                "Extension",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Project",
-                "Route",
-                "Task",
-                "Task workspace"
-            ],
-            "governing_adrs": [
-                "0103",
-                "0121",
-                "0160"
-            ]
-        },
-        {
-            "path": "docs/decisions/0163-prove-a-failing-test-on-the-start-commit.md",
-            "title": "ADR 0163: Prove a failing test on the start commit",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Deliverable",
-                "Gateway",
-                "Node",
-                "Project",
-                "Task",
-                "Task workspace"
-            ],
-            "governing_adrs": [
-                "0133",
-                "0163"
-            ]
-        },
-        {
-            "path": "docs/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask.md",
-            "title": "ADR 0164: Heal a settling pull request with a fixup subtask",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway",
-                "apps/web",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Deliverable",
-                "Gateway",
-                "Project",
-                "Task"
-            ],
-            "governing_adrs": [
-                "0113",
-                "0121",
-                "0140",
-                "0160",
-                "0164",
-                "0171"
-            ]
-        },
-        {
-            "path": "docs/decisions/0165-record-per-thread-token-metrics.md",
-            "title": "ADR 0165: Record per-thread token metrics",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Activity",
-                "Extension",
-                "Gateway",
-                "Task"
-            ],
-            "governing_adrs": [
-                "0103",
-                "0112",
-                "0116",
-                "0165"
-            ]
-        },
-        {
-            "path": "docs/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart.md",
-            "title": "ADR 0167: Resume a Pi turn interrupted by a server restart",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Gateway",
-                "Node",
-                "Process",
-                "Role",
-                "Schedule",
-                "Task"
-            ],
-            "governing_adrs": [
-                "0116",
-                "0167"
-            ]
-        },
-        {
-            "path": "docs/decisions/0168-offload-large-pi-tool-output.md",
-            "title": "ADR 0168: Offload large Pi tool output",
-            "kind": "decision",
-            "components": [
-                "apps/docs"
-            ],
-            "concepts": [
-                "Gateway",
-                "Node",
-                "Process",
-                "Task",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0116",
-                "0133",
-                "0160",
-                "0165",
-                "0168"
-            ]
-        },
-        {
-            "path": "docs/decisions/0169-start-each-subtask-review-in-a-fresh-thread.md",
-            "title": "ADR 0169: Start each subtask review in a fresh thread",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/gateway",
-                "apps/web"
-            ],
-            "concepts": [
-                "Deliverable",
-                "Extension",
-                "Gateway",
-                "Node",
-                "Project",
-                "Role",
-                "Task",
-                "Task check",
-                "Task workspace",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0103",
-                "0112",
-                "0121",
-                "0124",
-                "0125",
-                "0132",
-                "0133",
-                "0163",
-                "0164",
-                "0165",
-                "0169"
-            ]
-        },
-        {
-            "path": "docs/decisions/0170-edit-todo-subtasks-after-a-group-starts.md",
-            "title": "ADR 0170: Edit Todo subtasks after a group starts",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Deliverable",
-                "Gateway",
-                "Task",
-                "Task group"
-            ],
-            "governing_adrs": [
-                "0122",
-                "0133",
-                "0170"
-            ]
-        },
-        {
-            "path": "docs/decisions/0171-reset-fixup-caps-after-operator-work.md",
-            "title": "ADR 0171: Reset fixup caps after operator work",
-            "kind": "decision",
-            "components": [
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Gateway",
-                "Task"
-            ],
-            "governing_adrs": [
-                "0164",
-                "0171"
-            ]
-        },
-        {
-            "path": "docs/decisions/0172-count-every-t3-model-call-in-thread-metrics.md",
-            "title": "ADR 0172: Count every T3 model call in thread metrics",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Activity",
-                "Gateway",
-                "Process",
-                "Task"
-            ],
-            "governing_adrs": [
-                "0165",
-                "0172"
-            ]
-        },
-        {
-            "path": "docs/decisions/0173-record-and-label-jev-decisions.md",
-            "title": "ADR 0173: Record and label every Jev decision",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Gateway",
-                "Role",
-                "Task"
-            ],
-            "governing_adrs": [
-                "0117",
-                "0173"
-            ]
-        },
-        {
             "path": "docs/decisions/0174-match-the-task-gate-to-ci-and-repeated-findings.md",
             "title": "ADR 0174: Match the task gate to CI and repeated findings",
             "kind": "decision",
@@ -1369,7 +734,6 @@
                 "Tool"
             ],
             "governing_adrs": [
-                "0125",
                 "0174"
             ]
         },
@@ -1424,7 +788,6 @@
                 "Task"
             ],
             "governing_adrs": [
-                "0112",
                 "0177"
             ]
         },
@@ -1451,12 +814,6 @@
                 "Task check"
             ],
             "governing_adrs": [
-                "0122",
-                "0124",
-                "0125",
-                "0133",
-                "0163",
-                "0164",
                 "0178"
             ]
         },
@@ -1501,36 +858,10 @@
             ],
             "governing_adrs": [
                 "0097",
-                "0103",
                 "0104",
                 "0109",
-                "0110",
-                "0112",
-                "0113",
-                "0114",
-                "0116",
-                "0117",
-                "0121",
-                "0122",
-                "0124",
-                "0125",
-                "0131",
-                "0132",
-                "0133",
-                "0134",
-                "0140",
                 "0145",
                 "0150",
-                "0160",
-                "0163",
-                "0164",
-                "0165",
-                "0167",
-                "0168",
-                "0169",
-                "0170",
-                "0171",
-                "0173",
                 "0174",
                 "0175",
                 "0178"
@@ -2480,12 +1811,7 @@
                 "Task",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0116",
-                "0165",
-                "0167",
-                "0168"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/private-dns.md",
@@ -2596,17 +1922,12 @@
             "title": "Tasks",
             "kind": "reference",
             "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/e2e",
                 "apps/gateway",
-                "apps/web",
-                "packages/php-sdk"
+                "apps/web"
             ],
             "concepts": [
                 "Activity",
                 "Deliverable",
-                "Deployment",
                 "Doctor",
                 "Extension",
                 "Gateway",
@@ -2624,34 +1945,7 @@
                 "Task workspace",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0103",
-                "0110",
-                "0112",
-                "0113",
-                "0114",
-                "0116",
-                "0121",
-                "0122",
-                "0125",
-                "0132",
-                "0133",
-                "0134",
-                "0140",
-                "0160",
-                "0163",
-                "0164",
-                "0165",
-                "0167",
-                "0169",
-                "0170",
-                "0171",
-                "0172",
-                "0173",
-                "0174",
-                "0175",
-                "0178"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/tools.md",
