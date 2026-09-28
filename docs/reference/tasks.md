@@ -516,7 +516,7 @@ A `settling` group without `pr_url` and without a `todo` Task asks for assistanc
 
 While the pull request is open, the Gateway repairs it with a fixup: a Task that it appends itself.
 
-A pull request **conflicts** when GitHub reports it as not mergeable. A null result is not a conflict. The Gateway reads the check runs of the head commit at most once a minute, with a token that holds only `checks: read`. Without that permission, it sees conflicts only.
+A pull request **conflicts** when GitHub reports it as not mergeable, or its mergeable state is `dirty`. A null result is not a conflict. The Gateway reads the check runs of the head commit at most once a minute, with a token that holds only `checks: read`. Without that permission, it sees conflicts only.
 
 | Check conclusion | Kind |
 | --- | --- |
@@ -585,7 +585,9 @@ Null means the driver did not report the field, or the split is partial. A repor
 
 **Pi.** The server's `usage` object holds `input`, `output`, `cacheRead`, `cacheWrite`, `total`, `calls`, and `peakContext`. `input_tokens` is `input + cacheWrite`, `cached_input_tokens` is `cacheRead`, `output_tokens` is `output`, `model_calls` is `calls`, and `peak_context_tokens` is `peakContext`.
 
-**T3.** The Gateway counts each `context-window.updated` payload from the thread's event stream once. It keeps running sums, the event sequence, and the highest counted `totalProcessedTokens` in a durable checkpoint, so replays and restarts never count a call twice. A payload counts only when its `totalProcessedTokens` advances. `input_tokens` adds `inputTokens - cachedInputTokens`, `cached_input_tokens` adds `cachedInputTokens`, `output_tokens` adds `outputTokens`, and `peak_context_tokens` is the largest `inputTokens`. When the Gateway misses events, cannot resume the stream, or reads an invalid payload, the split is partial, and all five fields read null. `tokens` still follows the cumulative total. A Claude thread reports no cached input, so its split stays null.
+**T3.** The Gateway counts each `context-window.updated` payload from the thread's event stream once. It keeps running sums, the event sequence, and the highest counted `totalProcessedTokens` in a durable checkpoint, so replays and restarts never count a call twice. A payload counts only when its `totalProcessedTokens` advances.
+
+`input_tokens` adds `inputTokens - cachedInputTokens`, `cached_input_tokens` adds `cachedInputTokens`, `output_tokens` adds `outputTokens`, and `peak_context_tokens` is the largest `inputTokens`. The fields stay null until the first call is counted. When the Gateway misses events, cannot resume the stream, or reads an invalid payload, the split is partial, and all five fields read null. `tokens` still follows the cumulative total. A Claude thread reports no cached input, so its split stays null.
 
 `tasks:collect-t3-metrics` reads at most 20 due T3 threads per run, least recently collected first. A failed or incomplete read waits longer before each retry. A new turn makes a thread due again. A thread whose work has ended gets one successful final read.
 
