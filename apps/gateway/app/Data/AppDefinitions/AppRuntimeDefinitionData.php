@@ -39,7 +39,7 @@ final class AppRuntimeDefinitionData extends Data
 
         return new self(
             id: $definition->id,
-            appId: $definition->app_id,
+            appId: $definition->project_id,
             name: $definition->name,
             environments: $definition->environments,
             spec: $spec,

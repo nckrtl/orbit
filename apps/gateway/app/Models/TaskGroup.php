@@ -25,7 +25,7 @@ use Illuminate\Support\Carbon;
  * @property string $implementer_agent_driver
  * @property string $reviewer_agent_driver
  * @property int $id
- * @property int $app_id
+ * @property int $project_id
  * @property string|null $taskable_type
  * @property int|null $taskable_id
  * @property string $title
@@ -46,8 +46,8 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $reserved_at
  * @property Carbon|null $started_at
  * @property Carbon|null $settled_at
- * @property-read App $app
- * @property-read AppInstance|Model|null $taskable
+ * @property-read Project $app
+ * @property-read Instance|Model|null $taskable
  * @property-read Collection<int, Task> $tasks
  */
 #[ObservedBy([TaskBroadcastObserver::class])]
@@ -74,7 +74,7 @@ final class TaskGroup extends Model
         'reviewer_agent_driver',
         'agent_unavailable_since',
         'agent_unavailable_notified_at',
-        'app_id',
+        'project_id',
         'taskable_type',
         'taskable_id',
         'title',
@@ -103,10 +103,10 @@ final class TaskGroup extends Model
         }
     }
 
-    /** @return BelongsTo<App, $this> */
+    /** @return BelongsTo<Project, $this> */
     public function app(): BelongsTo
     {
-        return $this->belongsTo(App::class);
+        return $this->belongsTo(Project::class, 'project_id');
     }
 
     /** @return MorphTo<Model, $this> */

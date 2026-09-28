@@ -7,8 +7,8 @@ namespace App\Domain\Routes;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Database\Eloquent\Builder;
@@ -444,7 +444,7 @@ final readonly class RouteMutationReconciler
         $domain = $route->domain;
 
         if ($route->provenance === RouteProvenance::Generated) {
-            if ($firstTarget instanceof AppInstance) {
+            if ($firstTarget instanceof Instance) {
                 $domain = $this->state->generatedDomain(
                     $firstTarget->app->slug,
                     $firstTarget->name,
@@ -479,7 +479,7 @@ final readonly class RouteMutationReconciler
     {
         $instance = $route->analyticsTracking?->appInstance;
 
-        if (! $instance instanceof AppInstance || $instance->status !== AppInstanceState::Active) {
+        if (! $instance instanceof Instance || $instance->status !== AppInstanceState::Active) {
             throw new ResourceOperationException(
                 errorCode: 'route.target_invalid',
                 message: "Tracking host [{$route->domain}] has no active Instance.",
@@ -537,7 +537,7 @@ final readonly class RouteMutationReconciler
     private function replacePendingGenerated(Route $route, array $proposal): void
     {
         $replacement = Route::query()->create([
-            'app_id' => $route->app_id,
+            'project_id' => $route->project_id,
             'node_id' => $proposal['node_id'],
             'cluster_id' => $proposal['cluster_id'],
             'generation_basis_node_id' => $proposal['generation_basis_node_id'],
@@ -551,7 +551,7 @@ final readonly class RouteMutationReconciler
 
         foreach ($route->targets as $target) {
             $replacement->targets()->create([
-                'app_instance_id' => $target->app_instance_id,
+                'instance_id' => $target->instance_id,
                 'position' => $target->position,
             ]);
         }
@@ -564,9 +564,9 @@ final readonly class RouteMutationReconciler
         ]);
     }
 
-    private function assertTarget(Route $route, AppInstance $target): void
+    private function assertTarget(Route $route, Instance $target): void
     {
-        if ($target->app_id !== $route->app_id || $target->status !== AppInstanceState::Active) {
+        if ($target->project_id !== $route->project_id || $target->status !== AppInstanceState::Active) {
             throw new ResourceOperationException(
                 errorCode: 'route.target_invalid',
                 message: "Route [{$route->domain}] has an invalid target.",

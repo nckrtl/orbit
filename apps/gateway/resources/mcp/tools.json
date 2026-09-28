@@ -5142,7 +5142,7 @@
               "public"
             ]
           },
-          "app_instance_id": {
+          "instance_id": {
             "type": "integer"
           },
           "node_id": {
@@ -5172,13 +5172,13 @@
                   "public"
                 ]
               },
-              "app_instance_id": {
+              "instance_id": {
                 "type": "integer"
               }
             },
             "required": [
               "domain",
-              "app_instance_id"
+              "instance_id"
             ],
             "additionalProperties": false
           },
@@ -5317,13 +5317,13 @@
             "minimum": 1,
             "description": "Numeric Route ID."
           },
-          "app_instance_id": {
+          "instance_id": {
             "type": "integer",
             "description": "Required when `targets` is absent."
           },
           "targets": {
             "type": "array",
-            "description": "Required when `app_instance_id` is absent.",
+            "description": "Required when `instance_id` is absent.",
             "items": {
               "type": "integer"
             }
@@ -5333,7 +5333,7 @@
             "items": {
               "type": "object",
               "properties": {
-                "app_instance_id": {
+                "instance_id": {
                   "type": "integer"
                 },
                 "route_id": {
@@ -5344,7 +5344,7 @@
                 }
               },
               "required": [
-                "app_instance_id"
+                "instance_id"
               ]
             }
           }
@@ -5854,7 +5854,7 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "app_id": {
+          "project_id": {
             "type": "integer",
             "minimum": 1
           },
@@ -5965,7 +5965,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "app_id",
+          "project_id",
           "title",
           "brief"
         ]
@@ -5980,14 +5980,14 @@
       "path": "/api/v1/task-groups",
       "path_inputs": [],
       "query_inputs": [
-        "app_id",
+        "project_id",
         "status"
       ],
       "streams": false,
       "input_schema": {
         "type": "object",
         "properties": {
-          "app_id": {
+          "project_id": {
             "type": "integer",
             "minimum": 1
           },

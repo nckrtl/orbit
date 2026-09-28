@@ -9,7 +9,7 @@ use App\Data\AppInstances\DeploymentReleaseStateData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -18,7 +18,7 @@ final class AppInstanceReleasesController extends Controller
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]
     public function index(
         Request $request,
-        AppInstance $instance,
+        Instance $instance,
         ListAppInstanceReleasesAction $action,
     ): JsonResponse {
         return response()->json([

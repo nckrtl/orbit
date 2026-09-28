@@ -19,7 +19,7 @@ use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 use Throwable;
@@ -36,7 +36,7 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
         private NodeFirewallRuleCatalog $firewall = new NodeFirewallRuleCatalog,
     ) {}
 
-    public function inspect(AppInstance $instance, Route $route): PrivateRouteProjectionObservation
+    public function inspect(Instance $instance, Route $route): PrivateRouteProjectionObservation
     {
         $instance->loadMissing(['node.cluster', 'node.roles', 'app']);
         $route->loadMissing(['cluster.routerAssignment.node', 'targets.appInstance.node']);
@@ -110,21 +110,21 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
         return $expected === $observed;
     }
 
-    private function associationMatches(AppInstance $instance, Route $route): bool
+    private function associationMatches(Instance $instance, Route $route): bool
     {
         $count = $instance->routeTargets()->count();
 
         return $count === 1 && $instance->routeTargets()->where('route_id', $route->id)->exists();
     }
 
-    private function routingScopeMatches(AppInstance $instance, Route $route): bool
+    private function routingScopeMatches(Instance $instance, Route $route): bool
     {
         $placement = $this->placements->forNode($instance->node);
 
         return $route->node_id === $placement->nodeId && $route->cluster_id === $placement->clusterId;
     }
 
-    private function routerNode(AppInstance $instance, Route $route): ?Node
+    private function routerNode(Instance $instance, Route $route): ?Node
     {
         $cluster = $route->cluster;
         if ($cluster === null || $cluster->state !== ClusterState::Active) {
@@ -136,7 +136,7 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
         return $router instanceof Node && ! $router->is($instance->node) ? $router : null;
     }
 
-    private function workloadSite(AppInstance $instance, Route $route): AppDevSite
+    private function workloadSite(Instance $instance, Route $route): AppDevSite
     {
         $site = $this->sites->forNode($instance->node)->first(
             static fn (AppDevSite $candidate): bool => $candidate->domain === $route->domain
@@ -194,7 +194,7 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
         return $values;
     }
 
-    private function workloadCommand(AppInstance $instance, Route $route, AppDevSite $site): RemoteCommand
+    private function workloadCommand(Instance $instance, Route $route, AppDevSite $site): RemoteCommand
     {
         $laravel = match ($instance->source_is_laravel) {
             true => '1',
@@ -339,7 +339,7 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
         );
     }
 
-    private function expectedLaravelUrl(AppInstance $instance, Route $route): string
+    private function expectedLaravelUrl(Instance $instance, Route $route): string
     {
         $stored = $instance->environmentValues()
             ->where('env_key', 'APP_URL')
@@ -350,13 +350,13 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
         }
 
         return str_replace(
-            ['{{app_instance.domain}}', '{{app_instance.environment}}'],
+            ['{{instance.domain}}', '{{instance.environment}}'],
             [$route->domain, $instance->defaultAppEnv()],
             $stored,
         );
     }
 
-    private function expectedDnsAddress(AppInstance $instance, Route $route): ?string
+    private function expectedDnsAddress(Instance $instance, Route $route): ?string
     {
         $node = $instance->node;
         if ($route->cluster_id === null) {

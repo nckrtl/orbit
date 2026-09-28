@@ -32,11 +32,11 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
 use App\Models\AppInstanceRemovalMember;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
@@ -119,7 +119,7 @@ beforeEach(function (): void {
         'wireguard_ip' => '10.44.0.3',
         'user' => $user,
     ]);
-    $this->orbitApp = OrbitApp::query()->create([
+    $this->orbitApp = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => $this->remoteOrigin,
@@ -350,7 +350,7 @@ it('names the refused identity check without waiving it in normal or forced remo
                 expect($exception->errorCode)
                     ->toBe($code)
                     ->and($exception->getMessage())
-                    ->toStartWith("AppInstance [{$instance->name}] source ")
+                    ->toStartWith("Instance [{$instance->name}] source ")
                     ->not->toContain($instance->checkout_path, 'example.test');
             },
         );
@@ -848,7 +848,7 @@ it('finalizes one recorded checkout with durable matching evidence', function ()
     $member = orb180_record_source($this->removal, $instance, false);
     $receipt = hash(
         'sha256',
-        "{$member->app_instance_removal_id}\0{$member->id}\0{$member->source_digest}\0finalized",
+        "{$member->instance_removal_id}\0{$member->id}\0{$member->source_digest}\0finalized",
     );
 
     expect($this->removal->finalize($member))
@@ -1057,9 +1057,9 @@ it('finalizes one recorded worktree while preserving shared Git state', function
     $siblingPath = $this->appsRoot.'/acme/sibling';
     orb76_run(['git', '-C', $checkout->checkout_path, 'worktree', 'add', '-b', 'feature', $worktreePath, 'HEAD']);
     orb76_run(['git', '-C', $checkout->checkout_path, 'worktree', 'add', '-b', 'sibling', $siblingPath, 'HEAD']);
-    $worktree = AppInstance::query()
+    $worktree = Instance::query()
         ->create([
-            'app_id' => $this->orbitApp->id,
+            'project_id' => $this->orbitApp->id,
             'node_id' => $this->node->id,
             'name' => 'feature',
             'source_layout' => 'worktree',
@@ -1356,7 +1356,7 @@ it('resumes matching quarantine before and after receipt creation', function (bo
     expect(rename($instance->checkout_path, $quarantine))->toBeTrue();
     $receipt = hash(
         'sha256',
-        "{$member->app_instance_removal_id}\0{$member->id}\0{$member->source_digest}\0finalized",
+        "{$member->instance_removal_id}\0{$member->id}\0{$member->source_digest}\0finalized",
     );
 
     if ($withReceipt) {
@@ -1509,7 +1509,7 @@ it('refuses missing, ambiguous, or mismatched recovery evidence', function (stri
             mkdir($instance->checkout_path);
         })(),
         'journal' => file_put_contents(
-            dirname(orb180_receipt_path($member))."/{$member->app_instance_removal_id}.{$member->id}.journal",
+            dirname(orb180_receipt_path($member))."/{$member->instance_removal_id}.{$member->id}.journal",
             "mismatched\n",
         ),
     };
@@ -1689,14 +1689,14 @@ it('reports foreign App ownership drift as a removal conflict before path valida
         'foreign-app',
     );
     $member = orb180_record_source($this->removal, $instance, true);
-    $foreign = OrbitApp::query()->create([
+    $foreign = Project::query()->create([
         'name' => 'Foreign',
         'slug' => 'foreign',
         'repository_url' => 'https://example.test/foreign/site.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    $instance->update(['app_id' => $foreign->id]);
+    $instance->update(['project_id' => $foreign->id]);
     $exception = null;
 
     try {
@@ -1837,11 +1837,11 @@ it('fails closed before removal when stored source identity is incomplete', func
 
 function orb180_resolved_source(
     RemoteDevelopmentAppInstanceSourceLifecycle $source,
-    OrbitApp $app,
+    Project $app,
     Node $node,
     string $appsRoot,
     string $name,
-): AppInstance {
+): Instance {
     $instance = orb76_source_instance($app, $node, $appsRoot, $name);
     $source->prepare($instance, false);
     $resolution = $source->resolve($instance);
@@ -1856,12 +1856,12 @@ function orb180_resolved_source(
 
 function orb180_record_source(
     RemoteDevelopmentAppInstanceSourceRemoval $removal,
-    AppInstance $instance,
+    Instance $instance,
     bool $force,
 ): AppInstanceRemovalMember {
     $inventory = $removal->inspect($instance, $force);
     $route = Route::query()->create([
-        'app_id' => $instance->app_id,
+        'project_id' => $instance->project_id,
         'node_id' => $instance->node_id,
         'generation_basis_node_id' => $instance->node_id,
         'domain' => "source-finalization-{$instance->id}.test",
@@ -1869,12 +1869,12 @@ function orb180_record_source(
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
     $instance->update(['status' => AppInstanceState::Active]);
     $operation = AppInstanceRemoval::query()->create([
         'id' => (string) Str::uuid(),
-        'requested_app_instance_id' => $instance->id,
+        'requested_instance_id' => $instance->id,
         'requested_name' => $instance->name,
         'force' => $force,
         'inventory_digest' => $inventory->digest,
@@ -1886,8 +1886,8 @@ function orb180_record_source(
         ->members()
         ->create([
             'position' => 0,
-            'app_instance_id' => $instance->id,
-            'app_id' => $instance->app_id,
+            'instance_id' => $instance->id,
+            'project_id' => $instance->project_id,
             'node_id' => $instance->node_id,
             'route_id' => $route->id,
             'name' => $instance->name,
@@ -1912,11 +1912,11 @@ function orb180_record_source(
 }
 
 /**
- * @return array{AppInstance, AppInstance, AppInstance}
+ * @return array{Instance, Instance, Instance}
  */
 function orb182_real_source_graph(
     RemoteDevelopmentAppInstanceSourceLifecycle $source,
-    OrbitApp $app,
+    Project $app,
     Node $node,
     string $appsRoot,
     string $name,
@@ -1937,9 +1937,9 @@ function orb182_real_source_graph(
             $worktreePath,
             'HEAD',
         ]);
-        $worktrees[] = AppInstance::query()
+        $worktrees[] = Instance::query()
             ->create([
-                'app_id' => $app->id,
+                'project_id' => $app->id,
                 'node_id' => $node->id,
                 'name' => $worktreeName,
                 'source_layout' => 'worktree',
@@ -1955,7 +1955,7 @@ function orb182_real_source_graph(
 }
 
 /**
- * @param  list<AppInstance>  $instances
+ * @param  list<Instance>  $instances
  * @return list<AppInstanceRemovalMember>
  */
 function orb182_record_sources(
@@ -1973,7 +1973,7 @@ function orb182_record_sources(
 
     foreach ($instances as $instance) {
         $route = Route::query()->create([
-            'app_id' => $instance->app_id,
+            'project_id' => $instance->project_id,
             'node_id' => $instance->node_id,
             'generation_basis_node_id' => $instance->node_id,
             'domain' => "cascade-source-{$instance->id}.test",
@@ -1981,7 +1981,7 @@ function orb182_record_sources(
             'publication' => RoutePublication::Private,
             'status' => RouteStatus::Pending,
         ]);
-        $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+        $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
         $route->update(['status' => RouteStatus::Active]);
         $instance->update(['status' => AppInstanceState::Active]);
         $routes[$instance->id] = $route;
@@ -1989,7 +1989,7 @@ function orb182_record_sources(
 
     $operation = AppInstanceRemoval::query()->create([
         'id' => (string) Str::uuid(),
-        'requested_app_instance_id' => $instances[array_key_last($instances)]->id,
+        'requested_instance_id' => $instances[array_key_last($instances)]->id,
         'requested_name' => $instances[array_key_last($instances)]->name,
         'force' => $force,
         'inventory_digest' => hash('sha256', implode('', array_map(
@@ -2009,8 +2009,8 @@ function orb182_record_sources(
             ->members()
             ->create([
                 'position' => $position,
-                'app_instance_id' => $instance->id,
-                'app_id' => $instance->app_id,
+                'instance_id' => $instance->id,
+                'project_id' => $instance->project_id,
                 'node_id' => $instance->node_id,
                 'route_id' => $route->id,
                 'name' => $instance->name,
@@ -2029,8 +2029,8 @@ function orb182_record_sources(
             ]);
     }
 
-    AppInstance::query()
-        ->whereKey(array_map(static fn (AppInstance $instance): int => $instance->id, $instances))
+    Instance::query()
+        ->whereKey(array_map(static fn (Instance $instance): int => $instance->id, $instances))
         ->update(['status' => AppInstanceState::Removing->value]);
 
     return array_map(
@@ -2047,11 +2047,11 @@ function orb182_clear_test_route(AppInstanceRemovalMember $member): void
 }
 
 /**
- * @return array{0: AppInstance, 1: AppInstance, 2: string}
+ * @return array{0: Instance, 1: Instance, 2: string}
  */
 function orb180_worktree_source(
     RemoteDevelopmentAppInstanceSourceLifecycle $source,
-    OrbitApp $app,
+    Project $app,
     Node $node,
     string $appsRoot,
     string $name,
@@ -2071,9 +2071,9 @@ function orb180_worktree_source(
         $siblingPath,
         'HEAD',
     ]);
-    $worktree = AppInstance::query()
+    $worktree = Instance::query()
         ->create([
-            'app_id' => $app->id,
+            'project_id' => $app->id,
             'node_id' => $node->id,
             'name' => $name,
             'source_layout' => 'worktree',
@@ -2102,7 +2102,7 @@ function orb180_stage_worktree_receipt(AppInstanceRemovalMember $member): array
     ]);
     $admin = trim(orb76_run(['git', '-C', $quarantine, 'rev-parse', '--absolute-git-dir'])->stdout);
     $worktrees = dirname($admin);
-    $recovery = dirname(orb180_receipt_path($member))."/{$member->app_instance_removal_id}.{$member->id}.recovery";
+    $recovery = dirname(orb180_receipt_path($member))."/{$member->instance_removal_id}.{$member->id}.recovery";
     file_put_contents(
         $recovery,
         base64_encode($admin)
@@ -2123,7 +2123,7 @@ function orb180_write_receipt(AppInstanceRemovalMember $member): string
 {
     $receipt = hash(
         'sha256',
-        "{$member->app_instance_removal_id}\0{$member->id}\0{$member->source_digest}\0finalized",
+        "{$member->instance_removal_id}\0{$member->id}\0{$member->source_digest}\0finalized",
     );
     file_put_contents(orb180_receipt_path($member), "{$receipt}\n");
     chmod(orb180_receipt_path($member), 0o600);
@@ -2141,17 +2141,17 @@ function orb180_file_identity(string $path): string
 
 function orb180_quarantine_path(AppInstanceRemovalMember $member): string
 {
-    return dirname(orb180_receipt_path($member))."/{$member->app_instance_removal_id}.{$member->id}.quarantine";
+    return dirname(orb180_receipt_path($member))."/{$member->instance_removal_id}.{$member->id}.quarantine";
 }
 
 function orb180_receipt_path(AppInstanceRemovalMember $member): string
 {
     $sourceRoot = dirname(dirname((string) $member->checkout_path));
 
-    return "{$sourceRoot}/.orbit-removals/{$member->app_instance_removal_id}.{$member->id}.receipt";
+    return "{$sourceRoot}/.orbit-removals/{$member->instance_removal_id}.{$member->id}.receipt";
 }
 
-function orb180_replace_ancestry(AppInstance $instance): void
+function orb180_replace_ancestry(Instance $instance): void
 {
     orb76_run(['git', '-C', $instance->checkout_path, 'config', 'user.name', 'Orbit Test']);
     orb76_run(['git', '-C', $instance->checkout_path, 'config', 'user.email', 'orbit@example.test']);
@@ -2168,7 +2168,7 @@ function orb180_replace_ancestry(AppInstance $instance): void
     orb76_run(['git', '-C', $instance->checkout_path, 'reset', '--hard', $commit]);
 }
 
-function orb285_rewind_head(AppInstance $instance, bool $published): void
+function orb285_rewind_head(Instance $instance, bool $published): void
 {
     if ($published) {
         orb76_run(['git', '-C', $instance->checkout_path, 'reset', '--hard', 'HEAD~1']);
@@ -2190,7 +2190,7 @@ function orb285_rewind_head(AppInstance $instance, bool $published): void
         ->toBe('');
 }
 
-function orb180_share_git_directory(AppInstance $instance, string $sandbox): void
+function orb180_share_git_directory(Instance $instance, string $sandbox): void
 {
     $shared = $sandbox.'/shared.git';
     expect(new Filesystem()->copyDirectory($instance->checkout_path.'/.git', $shared))->toBeTrue();
@@ -2209,7 +2209,7 @@ function orb76_insteadof_rule(string $checkout, string $sandbox): void
 
 function orb178_remove_source(
     RemoteDevelopmentAppInstanceSourceRemoval $removal,
-    AppInstance $instance,
+    Instance $instance,
     bool $force,
 ): AppInstanceSourceInventory {
     $inventory = $removal->inspect($instance, $force);
@@ -2219,19 +2219,19 @@ function orb178_remove_source(
 }
 
 function orb76_source_instance(
-    OrbitApp $app,
+    Project $app,
     Node $node,
     string $appsRoot,
     string $name,
     ?string $branchOverride = null,
-): AppInstance {
+): Instance {
     if (! $node->roles()->where('role', 'app-dev')->exists()) {
         $node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
     }
 
-    return AppInstance::query()
+    return Instance::query()
         ->create([
-            'app_id' => $app->id,
+            'project_id' => $app->id,
             'node_id' => $node->id,
             'name' => $name,
             'source_layout' => 'checkout',

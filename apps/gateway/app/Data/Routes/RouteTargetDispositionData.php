@@ -17,10 +17,10 @@ final class RouteTargetDispositionData extends Data
         public bool $remove = false,
     ) {}
 
-    /** @return array{app_instance_id: int, route_id?: int, remove?: true} */
+    /** @return array{instance_id: int, route_id?: int, remove?: true} */
     public function toIntent(): array
     {
-        $intent = ['app_instance_id' => $this->appInstanceId];
+        $intent = ['instance_id' => $this->appInstanceId];
 
         if ($this->routeId !== null) {
             $intent['route_id'] = $this->routeId;

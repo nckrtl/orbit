@@ -20,13 +20,13 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
@@ -39,7 +39,7 @@ it('reports a missing registry connection for an attachment without a loaded rec
     $connection = database_connection_doctor_mysql($node, 'app');
     $attachment = DatabaseConnectionTarget::query()->create([
         'database_connection_id' => $connection->id,
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'prefix' => 'CACHE',
     ]);
     $attachment->database_connection_id = 999_999;
@@ -65,7 +65,7 @@ it('reports distinct unhealthy and env-mismatch codes without exposing the passw
     $healthy = database_connection_doctor_mysql($node, 'healthy');
     DatabaseConnectionTarget::query()->create([
         'database_connection_id' => $healthy->id,
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'prefix' => 'DB',
     ]);
     $instance->environmentValues()->create([
@@ -111,7 +111,7 @@ it('skips attachments for Instances already removing', function (): void {
     $connection->update(['node_id' => null]);
     DatabaseConnectionTarget::query()->create([
         'database_connection_id' => $connection->id,
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'prefix' => 'DB',
     ]);
     database_connection_doctor_mark_removing($instance);
@@ -128,7 +128,7 @@ it('drops attachment issues when removal starts during inspection but keeps stan
     $connection->update(['node_id' => null]);
     DatabaseConnectionTarget::query()->create([
         'database_connection_id' => $connection->id,
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'prefix' => 'DB',
     ]);
     $standalone = DatabaseConnection::query()->create([
@@ -138,7 +138,7 @@ it('drops attachment issues when removal starts during inspection but keeps stan
     ]);
     $changed = false;
     DB::listen(static function (QueryExecuted $query) use ($instance, &$changed): void {
-        if (! $changed && str_contains($query->sql, 'app_instance_environment_values')) {
+        if (! $changed && str_contains($query->sql, 'instance_environment_values')) {
             $changed = true;
             database_connection_doctor_mark_removing($instance);
         }
@@ -161,14 +161,14 @@ it('drops attachment issues when its Instance row is deleted during inspection',
     $connection->update(['node_id' => null]);
     DatabaseConnectionTarget::query()->create([
         'database_connection_id' => $connection->id,
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'prefix' => 'DB',
     ]);
     $deleted = false;
     DB::listen(static function (QueryExecuted $query) use ($instance, &$deleted): void {
-        if (! $deleted && str_contains($query->sql, 'app_instance_environment_values')) {
+        if (! $deleted && str_contains($query->sql, 'instance_environment_values')) {
             $deleted = true;
-            DB::table('app_instances')->where('id', $instance->id)->delete();
+            DB::table('instances')->where('id', $instance->id)->delete();
         }
     });
 
@@ -308,14 +308,14 @@ it('keeps a healthy attachment silent and omits the password from doctor activit
         ->toBe('doctor');
 });
 
-function database_connection_doctor_mark_removing(AppInstance $instance): void
+function database_connection_doctor_mark_removing(Instance $instance): void
 {
     $trigger = DB::table('sqlite_master')
         ->where('type', 'trigger')
-        ->where('name', 'app_instances_removal_status_update')
+        ->where('name', 'instances_removal_status_update')
         ->value('sql');
     expect($trigger)->toBeString();
-    DB::statement('DROP TRIGGER app_instances_removal_status_update');
+    DB::statement('DROP TRIGGER instances_removal_status_update');
 
     try {
         $instance->update(['status' => AppInstanceState::Removing]);
@@ -356,12 +356,12 @@ function database_connection_doctor_node(string $name = 'database-doctor'): Node
     ]);
 }
 
-function database_connection_doctor_instance(Node $node): AppInstance
+function database_connection_doctor_instance(Node $node): Instance
 {
     static $number = 0;
     $number++;
 
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => "Database Doctor {$number}",
         'slug' => "database-doctor-{$number}",
         'repository_url' => "https://example.test/database-doctor-{$number}.git",
@@ -369,8 +369,8 @@ function database_connection_doctor_instance(Node $node): AppInstance
         'root' => 'public',
     ]);
     $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'default',
         'environment' => 'development',
@@ -379,14 +379,14 @@ function database_connection_doctor_instance(Node $node): AppInstance
         'provisioning_step' => 'active',
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'domain' => "database-doctor-{$number}.test",
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
     $instance->update(['status' => 'active']);
 
@@ -408,10 +408,10 @@ function database_connection_doctor_mysql(Node $node, string $slug): DatabaseCon
 }
 
 /** @return array<string, string> */
-function database_connection_doctor_stored(AppInstance $instance): array
+function database_connection_doctor_stored(Instance $instance): array
 {
     return AppInstanceEnvironmentValue::query()
-        ->where('app_instance_id', $instance->id)
+        ->where('instance_id', $instance->id)
         ->orderBy('env_key')
         ->get()
         ->mapWithKeys(static fn (AppInstanceEnvironmentValue $row): array => [$row->env_key => $row->env_value])

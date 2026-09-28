@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 use App\Domain\Projects\ProjectType;
 use App\Domain\Projects\ProjectTypeClassifier;
-use App\Models\AppInstanceEnvironmentValue;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -118,12 +118,28 @@ return new class extends Migration
             ->orderBy('app_instances.id')
             ->pluck('app_instances.id');
 
+        $table = Schema::hasTable('instance_environment_values')
+            ? 'instance_environment_values'
+            : 'app_instance_environment_values';
+        $instanceKey = Schema::hasColumn($table, 'instance_id') ? 'instance_id' : 'app_instance_id';
+        $now = now();
+
         foreach ($instanceIds as $instanceId) {
             foreach (['APP_ENV' => 'production', 'APP_DEBUG' => 'false'] as $key => $value) {
-                AppInstanceEnvironmentValue::query()->updateOrCreate(
-                    ['app_instance_id' => $instanceId, 'env_key' => $key],
-                    ['env_value' => $value],
-                );
+                $stored = ['env_value' => Crypt::encrypt($value, false), 'updated_at' => $now];
+                $updated = DB::table($table)
+                    ->where($instanceKey, $instanceId)
+                    ->where('env_key', $key)
+                    ->update($stored);
+
+                if ($updated === 0) {
+                    DB::table($table)->insert([
+                        $instanceKey => $instanceId,
+                        'env_key' => $key,
+                        ...$stored,
+                        'created_at' => $now,
+                    ]);
+                }
             }
         }
     }

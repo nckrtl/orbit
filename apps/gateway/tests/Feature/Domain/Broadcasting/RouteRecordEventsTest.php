@@ -13,9 +13,9 @@ use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\Event;
 use Tests\Support\FakeRouteRemovalProjector;
@@ -31,7 +31,7 @@ beforeEach(function (): void {
         'wireguard_ip' => '10.44.0.3',
         'tld' => 'dev.orbit',
     ]);
-    $this->orbitApp = OrbitApp::query()->create([
+    $this->orbitApp = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
@@ -42,7 +42,7 @@ beforeEach(function (): void {
 function route_record_pending(int $appId, int $nodeId): Route
 {
     return Route::query()->create([
-        'app_id' => $appId,
+        'project_id' => $appId,
         'node_id' => $nodeId,
         'domain' => 'docs.orbit',
         'provenance' => 'explicit',
@@ -59,8 +59,8 @@ describe('Route record events', function (): void {
             domain: 'docs.orbit',
             publication: RoutePublication::Private,
             appId: $this->orbitApp->id,
-            appInstanceId: AppInstance::query()->create([
-                'app_id' => $this->orbitApp->id,
+            appInstanceId: Instance::query()->create([
+                'project_id' => $this->orbitApp->id,
                 'node_id' => $this->node->id,
                 'name' => 'docs',
                 'checkout_path' => '/srv/docs',

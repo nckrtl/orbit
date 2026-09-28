@@ -39,10 +39,10 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
-use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
 use App\Models\AppInstanceRemovalMember;
 use App\Models\AppInstanceTransfer;
+use App\Models\Instance;
 use App\Models\Route;
 use App\Models\RouteAnalyticsTracking;
 use App\Models\RouteTarget;
@@ -69,14 +69,14 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         private ?ProjectLifecycleRunner $lifecycle = null,
     ) {}
 
-    public function execute(AppInstance $appInstance, bool $force, bool $runTeardown = true, bool $allowCascade = true): AppInstanceRemoval
+    public function execute(Instance $appInstance, bool $force, bool $runTeardown = true, bool $allowCascade = true): AppInstanceRemoval
     {
         $instanceId = $appInstance->id;
         $instanceName = $appInstance->name;
         $removal = $this->performRemoval($appInstance, $force, $runTeardown, $allowCascade);
         $broadcaster = $this->broadcaster ?? app(RecordEventBroadcaster::class);
 
-        if (AppInstance::query()->whereKey($instanceId)->exists()) {
+        if (Instance::query()->whereKey($instanceId)->exists()) {
             $broadcaster->broadcast(
                 RecordEventType::InstanceUpdated,
                 $instanceId,
@@ -93,7 +93,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         return $removal;
     }
 
-    private function performRemoval(AppInstance $appInstance, bool $force, bool $runTeardown, bool $allowCascade): AppInstanceRemoval
+    private function performRemoval(Instance $appInstance, bool $force, bool $runTeardown, bool $allowCascade): AppInstanceRemoval
     {
         if ($appInstance->placedOnAppProd()) {
             return $this->environmentOperations->run(
@@ -114,7 +114,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
                     if ($currentOwnerIds !== $ownerIds) {
                         throw new ResourceOperationException(
                             errorCode: 'instance.removal_conflict',
-                            message: 'The AppInstance removal owner set changed. Retry the request.',
+                            message: 'The Instance removal owner set changed. Retry the request.',
                             status: 409,
                         );
                     }
@@ -125,7 +125,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         );
     }
 
-    private function executeOwned(AppInstance $appInstance, bool $force, bool $runTeardown, bool $allowCascade): AppInstanceRemoval
+    private function executeOwned(Instance $appInstance, bool $force, bool $runTeardown, bool $allowCascade): AppInstanceRemoval
     {
         $snapshot = $appInstance->refresh()->load($this->removalRelations());
 
@@ -137,14 +137,14 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
     }
 
     /** @return list<int> */
-    private function removalEnvironmentOwnerIds(AppInstance $requested, bool $force): array
+    private function removalEnvironmentOwnerIds(Instance $requested, bool $force): array
     {
         if (! $force || $requested->source_layout !== AppInstanceSourceLayout::Checkout->value) {
             return [$requested->id];
         }
 
-        $query = AppInstance::query()
-            ->where('app_id', $requested->app_id)
+        $query = Instance::query()
+            ->where('project_id', $requested->project_id)
             ->where('node_id', $requested->node_id);
         $paths = $requested->registration_worktree_paths;
 
@@ -169,10 +169,10 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         return $ids;
     }
 
-    private function resume(AppInstance $appInstance, bool $force): AppInstanceRemoval
+    private function resume(Instance $appInstance, bool $force): AppInstanceRemoval
     {
         $member = AppInstanceRemovalMember::query()
-            ->where('app_instance_id', $appInstance->id)
+            ->where('instance_id', $appInstance->id)
             ->whereNull('row_deleted_at')
             ->with('removal.members')
             ->first();
@@ -183,7 +183,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
 
         $removal = $member->removal;
 
-        if ($removal->requested_app_instance_id !== $appInstance->id || $removal->force !== $force) {
+        if ($removal->requested_instance_id !== $appInstance->id || $removal->force !== $force) {
             $this->conflict($appInstance);
         }
 
@@ -202,7 +202,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         return $this->advance($removal->refresh());
     }
 
-    private function accept(AppInstance $appInstance, bool $force, bool $runTeardown, bool $allowCascade): AppInstanceRemoval
+    private function accept(Instance $appInstance, bool $force, bool $runTeardown, bool $allowCascade): AppInstanceRemoval
     {
         $this->assertSupported($appInstance);
 
@@ -216,7 +216,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         );
     }
 
-    private function acceptLocked(AppInstance $appInstance, bool $force, bool $runTeardown, bool $allowCascade): AppInstanceRemoval
+    private function acceptLocked(Instance $appInstance, bool $force, bool $runTeardown, bool $allowCascade): AppInstanceRemoval
     {
         $snapshot = $appInstance->refresh()->load($this->removalRelations());
         $this->assertSupported($snapshot);
@@ -263,14 +263,14 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
                 $inventories,
                 $digest,
             ): AppInstanceRemoval {
-                $lockedMembers = AppInstance::query()
+                $lockedMembers = Instance::query()
                     ->whereKey($members->pluck('id'))
                     ->lockForUpdate()
                     ->orderBy('id')
                     ->get()
                     ->keyBy('id');
                 $routeIds = $members
-                    ->map(static fn (AppInstance $member): ?int => $member->routes->first()?->id)
+                    ->map(static fn (Instance $member): ?int => $member->routes->first()?->id)
                     ->filter();
                 $lockedRoutes = Route::query()
                     ->with('targets')
@@ -287,9 +287,9 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
                     $lockedMember = $lockedMembers->get($member->id);
 
                     if (
-                        ! $lockedMember instanceof AppInstance
+                        ! $lockedMember instanceof Instance
                         || ! $this->removableState($lockedMember)
-                        || $lockedMember->app_id !== $member->app_id
+                        || $lockedMember->project_id !== $member->project_id
                         || $lockedMember->node_id !== $member->node_id
                         || $lockedMember->checkout_path !== $member->checkout_path
                         || $lockedMember->source_layout !== $member->source_layout
@@ -300,7 +300,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
                     $route = $member->routes->first();
 
                     if (! $route instanceof Route) {
-                        if (RouteTarget::query()->where('app_instance_id', $member->id)->exists()) {
+                        if (RouteTarget::query()->where('instance_id', $member->id)->exists()) {
                             $this->conflict($snapshot);
                         }
 
@@ -313,7 +313,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
                         ! $lockedRoute instanceof Route
                         || $lockedRoute->status !== RouteStatus::Active
                         || $lockedRoute->targets->count() !== 1
-                        || $lockedRoute->targets->sole()->app_instance_id !== $lockedMember->id
+                        || $lockedRoute->targets->sole()->instance_id !== $lockedMember->id
                     ) {
                         $this->conflict($snapshot);
                     }
@@ -321,7 +321,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
 
                 $operation = AppInstanceRemoval::query()->create([
                     'id' => (string) Str::uuid(),
-                    'requested_app_instance_id' => $snapshot->id,
+                    'requested_instance_id' => $snapshot->id,
                     'requested_name' => $snapshot->name,
                     'force' => $force,
                     'inventory_digest' => $digest,
@@ -336,8 +336,8 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
                         ->members()
                         ->create([
                             'position' => $position,
-                            'app_instance_id' => $member->id,
-                            'app_id' => $member->app_id,
+                            'instance_id' => $member->id,
+                            'project_id' => $member->project_id,
                             'node_id' => $member->node_id,
                             'route_id' => $member->routes->first()?->id,
                             'name' => $member->name,
@@ -357,7 +357,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
                         ]);
                 }
 
-                AppInstance::query()
+                Instance::query()
                     ->whereKey($members->pluck('id'))
                     ->update(['status' => AppInstanceState::Removing->value]);
                 foreach ($members as $member) {
@@ -371,7 +371,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         return $operation;
     }
 
-    private function acceptProduction(AppInstance $appInstance, bool $force): AppInstanceRemoval
+    private function acceptProduction(Instance $appInstance, bool $force): AppInstanceRemoval
     {
         $snapshot = $appInstance->refresh()->load($this->removalRelations());
         $this->assertSupported($snapshot);
@@ -379,7 +379,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         $inventory = $this->productionContent->inventory($snapshot);
 
         $operation = $this->processAdmissions->run([$snapshot->id], fn (): AppInstanceRemoval => DB::transaction(function () use ($snapshot, $route, $inventory, $force): AppInstanceRemoval {
-            $locked = AppInstance::query()->lockForUpdate()->findOrFail($snapshot->id);
+            $locked = Instance::query()->lockForUpdate()->findOrFail($snapshot->id);
             $lockedRoute = $route === null ? null : Route::query()
                 ->with($this->productionRouteRelations())
                 ->lockForUpdate()
@@ -389,7 +389,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
             if (
                 $locked->status !== AppInstanceState::Active
                 || ($lockedRoute === null
-                    ? RouteTarget::query()->where('app_instance_id', $locked->id)->exists()
+                    ? RouteTarget::query()->where('instance_id', $locked->id)->exists()
                     : ! $this->productionRouteIsSafe($lockedRoute, $locked))
             ) {
                 $this->conflict($snapshot);
@@ -397,7 +397,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
 
             $operation = AppInstanceRemoval::query()->create([
                 'id' => (string) Str::uuid(),
-                'requested_app_instance_id' => $snapshot->id,
+                'requested_instance_id' => $snapshot->id,
                 'requested_name' => $snapshot->name,
                 'force' => $force,
                 'inventory_digest' => $this->inventoryDigest($snapshot->id, $force, [
@@ -411,8 +411,8 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
                 ->members()
                 ->create([
                     'position' => 0,
-                    'app_instance_id' => $snapshot->id,
-                    'app_id' => $snapshot->app_id,
+                    'instance_id' => $snapshot->id,
+                    'project_id' => $snapshot->project_id,
                     'node_id' => $snapshot->node_id,
                     'route_id' => $route?->id,
                     'name' => $snapshot->name,
@@ -437,34 +437,34 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         return $operation;
     }
 
-    private function assertSupported(AppInstance $appInstance): void
+    private function assertSupported(Instance $appInstance): void
     {
         if (AppInstanceTransfer::query()
-            ->where('app_instance_id', $appInstance->id)
+            ->where('instance_id', $appInstance->id)
             ->where('status', '!=', 'completed')
             ->exists()) {
             throw new ResourceOperationException(
                 errorCode: 'instance.transfer_incomplete',
-                message: "AppInstance [{$appInstance->name}] has an incomplete or failed transfer that must be recovered before removal.",
+                message: "Instance [{$appInstance->name}] has an incomplete or failed transfer that must be recovered before removal.",
                 status: 409,
             );
         }
 
-        if (AppInstance::query()
+        if (Instance::query()
             ->where('clone_candidate_id', $appInstance->id)
             ->whereNull('clone_completed_at')
             ->exists()) {
             throw new ResourceOperationException(
                 errorCode: 'instance.clone_in_progress',
-                message: "AppInstance [{$appInstance->name}] is the candidate for an incomplete clone.",
+                message: "Instance [{$appInstance->name}] is the candidate for an incomplete clone.",
                 status: 409,
             );
         }
 
-        if (RouteAnalyticsTracking::query()->where('app_instance_id', $appInstance->id)->exists()) {
+        if (RouteAnalyticsTracking::query()->where('instance_id', $appInstance->id)->exists()) {
             throw new ResourceOperationException(
                 errorCode: 'analytics.tracking_hosts_exist',
-                message: "AppInstance [{$appInstance->name}] still publishes a tracking host. Disable its analytics first.",
+                message: "Instance [{$appInstance->name}] still publishes a tracking host. Disable its analytics first.",
                 status: 409,
             );
         }
@@ -472,7 +472,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         if (! $this->removableState($appInstance)) {
             throw new ResourceOperationException(
                 errorCode: 'instance.remove_refused',
-                message: "AppInstance [{$appInstance->name}] is not active.",
+                message: "Instance [{$appInstance->name}] is not active.",
                 status: 409,
             );
         }
@@ -480,7 +480,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         if (! $appInstance->placedOnAppDev() && ! $appInstance->placedOnAppProd()) {
             throw new ResourceOperationException(
                 errorCode: 'instance.remove_refused',
-                message: 'The AppInstance environment cannot be removed.',
+                message: 'The Instance environment cannot be removed.',
                 status: 409,
             );
         }
@@ -495,16 +495,16 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         ) {
             throw new ResourceOperationException(
                 errorCode: 'instance.remove_refused',
-                message: 'AppInstance source layout is not removable.',
+                message: 'Instance source layout is not removable.',
                 status: 409,
             );
         }
     }
 
     /**
-     * @return array{Collection<int, AppInstance>, array<int, AppInstanceSourceInventory>}
+     * @return array{Collection<int, Instance>, array<int, AppInstanceSourceInventory>}
      */
-    private function deletionSet(AppInstance $requested, bool $force): array
+    private function deletionSet(Instance $requested, bool $force): array
     {
         $this->assertMemberPathAvailable($requested);
         $requestedInventory = $this->inspect(
@@ -516,7 +516,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         $members = collect([$requested]);
 
         if ($requested->source_layout === AppInstanceSourceLayout::Checkout->value) {
-            $registered = AppInstance::query()
+            $registered = Instance::query()
                 ->with(['app', 'node', 'routes.targets'])
                 ->where('node_id', $requested->node_id)
                 ->whereIn('checkout_path', $requestedInventory->linkedWorktreePaths)
@@ -525,7 +525,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
             if ($registered->count() !== count($requestedInventory->linkedWorktreePaths)) {
                 throw new ResourceOperationException(
                     errorCode: 'instance.remove_refused',
-                    message: 'Every linked worktree must be a registered AppInstance before removal.',
+                    message: 'Every linked worktree must be a registered Instance before removal.',
                     status: 409,
                 );
             }
@@ -559,7 +559,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
             if ($force) {
                 $members = collect(
                     $registered
-                        ->sortBy(static fn (AppInstance $member): string => sprintf(
+                        ->sortBy(static fn (Instance $member): string => sprintf(
                             '%d:%s',
                             $member->source_layout === AppInstanceSourceLayout::Checkout->value ? 1 : 0,
                             $member->checkout_path,
@@ -578,13 +578,13 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
 
             if (
                 $member->node_id !== $requested->node_id
-                || $member->app_id !== $requested->app_id
+                || $member->project_id !== $requested->project_id
                 || $member->defaultAppEnv() !== $requested->defaultAppEnv()
                 || $member->app->repository_identity !== $requested->app->repository_identity
             ) {
                 throw new ResourceOperationException(
                     errorCode: 'instance.remove_refused',
-                    message: "AppInstance [{$member->name}] is not owned by the requested source set.",
+                    message: "Instance [{$member->name}] is not owned by the requested source set.",
                     status: 409,
                 );
             }
@@ -625,14 +625,14 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         return [$members, $inventories];
     }
 
-    private function assertMemberPathAvailable(AppInstance $member): void
+    private function assertMemberPathAvailable(Instance $member): void
     {
         $path = StoragePath::tryParse($member->checkout_path);
 
         if (! $path instanceof StoragePath) {
             throw new ResourceOperationException(
                 errorCode: 'instance.checkout_path_unsafe',
-                message: "AppInstance [{$member->name}] has an unsafe checkout path.",
+                message: "Instance [{$member->name}] has an unsafe checkout path.",
                 status: 409,
             );
         }
@@ -645,7 +645,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         );
     }
 
-    private function route(AppInstance $appInstance): ?Route
+    private function route(Instance $appInstance): ?Route
     {
         if ($this->withoutRoute($appInstance)) {
             return null;
@@ -654,7 +654,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         if ($appInstance->routes->count() !== 1) {
             throw new ResourceOperationException(
                 errorCode: 'instance.remove_refused',
-                message: "AppInstance [{$appInstance->name}] does not have one removable Route.",
+                message: "Instance [{$appInstance->name}] does not have one removable Route.",
                 status: 409,
             );
         }
@@ -664,11 +664,11 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         if (
             $route->status !== RouteStatus::Active
             || $route->targets->count() !== 1
-            || $route->targets->sole()->app_instance_id !== $appInstance->id
+            || $route->targets->sole()->instance_id !== $appInstance->id
         ) {
             throw new ResourceOperationException(
                 errorCode: 'instance.remove_refused',
-                message: "AppInstance [{$appInstance->name}] Route is not safe to remove.",
+                message: "Instance [{$appInstance->name}] Route is not safe to remove.",
                 status: 409,
             );
         }
@@ -676,7 +676,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         return $route;
     }
 
-    private function productionRoute(AppInstance $appInstance): ?Route
+    private function productionRoute(Instance $appInstance): ?Route
     {
         if ($this->withoutRoute($appInstance)) {
             return null;
@@ -685,7 +685,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         if ($appInstance->routes->count() !== 1) {
             throw new ResourceOperationException(
                 errorCode: 'instance.remove_refused',
-                message: "Production AppInstance [{$appInstance->name}] does not have one removable Route.",
+                message: "Production Instance [{$appInstance->name}] does not have one removable Route.",
                 status: 409,
             );
         }
@@ -695,7 +695,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         if (! $this->productionRouteIsSafe($route, $appInstance)) {
             throw new ResourceOperationException(
                 errorCode: 'instance.remove_refused',
-                message: "Production AppInstance [{$appInstance->name}] Route is not safe to remove.",
+                message: "Production Instance [{$appInstance->name}] Route is not safe to remove.",
                 status: 409,
             );
         }
@@ -703,16 +703,16 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         return $route;
     }
 
-    private function withoutRoute(AppInstance $appInstance): bool
+    private function withoutRoute(Instance $appInstance): bool
     {
         return $appInstance->routes->isEmpty()
             && (! $appInstance->requiresRoute() || $appInstance->status === AppInstanceState::SourceResolved);
     }
 
     /**
-     * An active AppInstance is removable. So is a source-resolved checkout that never received a route, such as a task workspace.
+     * An active Instance is removable. So is a source-resolved checkout that never received a route, such as a task workspace.
      */
-    private function removableState(AppInstance $appInstance): bool
+    private function removableState(Instance $appInstance): bool
     {
         if ($appInstance->status === AppInstanceState::Active) {
             return true;
@@ -720,15 +720,15 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
 
         return $appInstance->status === AppInstanceState::SourceResolved
             && ! $appInstance->routes()->exists()
-            && ! RouteTarget::query()->where('app_instance_id', $appInstance->id)->exists();
+            && ! RouteTarget::query()->where('instance_id', $appInstance->id)->exists();
     }
 
-    private function productionRouteIsSafe(Route $route, AppInstance $requested): bool
+    private function productionRouteIsSafe(Route $route, Instance $requested): bool
     {
         if (
             $route->status !== RouteStatus::Active
             || $route->targets->isEmpty()
-            || ! $route->targets->contains('app_instance_id', $requested->id)
+            || ! $route->targets->contains('instance_id', $requested->id)
         ) {
             return false;
         }
@@ -741,7 +741,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
                 $route->node_id === $requested->node_id
                 && $route->publication === RoutePublication::Private
                 && $route->targets->count() === 1
-                && $route->targets->sole()->app_instance_id === $requested->id
+                && $route->targets->sole()->instance_id === $requested->id
                 && $requested->placedOnAppProd()
                 && $requested->status === AppInstanceState::Active
                 && $node->status === LifecycleStatus::Active
@@ -767,7 +767,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
 
             if (
                 $target->position !== $position
-                || $instance->app_id !== $route->app_id
+                || $instance->project_id !== $route->project_id
                 || ! $instance->placedOnAppProd()
                 || $instance->status !== AppInstanceState::Active
                 || $node->status !== LifecycleStatus::Active
@@ -788,7 +788,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
     }
 
     private function inspect(
-        AppInstance $appInstance,
+        Instance $appInstance,
         bool $force,
         bool $inspectContent = true,
     ): AppInstanceSourceInventory {
@@ -893,8 +893,8 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
 
     private function cleanupRuntime(AppInstanceRemovalMember $member): void
     {
-        ($this->schedules ?? app(CascadeAppInstanceSchedulesAction::class))->execute($member->app_instance_id);
-        $this->processes->execute($member->app_instance_id);
+        ($this->schedules ?? app(CascadeAppInstanceSchedulesAction::class))->execute($member->instance_id);
+        $this->processes->execute($member->instance_id);
 
         // A checkout that never became active, such as a task workspace, has no pool, site, or certificate to withdraw.
         if ($member->runtime_published) {
@@ -909,11 +909,11 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
             $lockedOperation = AppInstanceRemoval::query()->lockForUpdate()->findOrFail($operation->id);
             $lockedMember = $lockedOperation->members()->lockForUpdate()->findOrFail($member->id);
             AppInstanceTransfer::query()
-                ->where('app_instance_id', $member->app_instance_id)
+                ->where('instance_id', $member->instance_id)
                 ->where('status', 'completed')
-                ->update(['app_instance_id' => null]);
-            app(CancelInstanceAnnotationTasksAction::class)->execute($member->app_instance_id);
-            AppInstance::query()->lockForUpdate()->findOrFail($member->app_instance_id)->delete();
+                ->update(['instance_id' => null]);
+            app(CancelInstanceAnnotationTasksAction::class)->execute($member->instance_id);
+            Instance::query()->lockForUpdate()->findOrFail($member->instance_id)->delete();
             $lockedMember->update(['row_deleted_at' => now()]);
 
             if ($lockedOperation->members()->whereNull('row_deleted_at')->exists()) {
@@ -1116,11 +1116,11 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         return 'instance.removal_incomplete';
     }
 
-    private function conflict(AppInstance $appInstance): never
+    private function conflict(Instance $appInstance): never
     {
         throw new ResourceOperationException(
             errorCode: 'instance.removal_conflict',
-            message: "AppInstance [{$appInstance->name}] belongs to a different removal request.",
+            message: "Instance [{$appInstance->name}] belongs to a different removal request.",
             status: 409,
         );
     }

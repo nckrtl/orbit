@@ -9,21 +9,21 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * @property int $id
- * @property int $app_id
+ * @property int $project_id
  * @property int $node_id
- * @property-read App $app
+ * @property-read Project $app
  * @property-read Node $node
  */
 final class ProjectNodeExclusion extends Model
 {
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['app_id', 'node_id'];
+    protected $fillable = ['project_id', 'node_id'];
 
-    /** @return BelongsTo<App, $this> */
+    /** @return BelongsTo<Project, $this> */
     public function app(): BelongsTo
     {
-        return $this->belongsTo(App::class);
+        return $this->belongsTo(Project::class, 'project_id');
     }
 
     /** @return BelongsTo<Node, $this> */
@@ -34,12 +34,12 @@ final class ProjectNodeExclusion extends Model
 
     public function developmentInstanceCount(): int
     {
-        return AppInstance::query()
-            ->where('app_id', $this->app_id)
+        return Instance::query()
+            ->where('project_id', $this->project_id)
             ->where('node_id', $this->node_id)
             ->with('node.roles')
             ->get()
-            ->reject(static fn (AppInstance $instance): bool => $instance->placedOnAppProd())
+            ->reject(static fn (Instance $instance): bool => $instance->placedOnAppProd())
             ->count();
     }
 }

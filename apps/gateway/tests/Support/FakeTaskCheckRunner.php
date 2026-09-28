@@ -9,7 +9,7 @@ use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskWorkspaceSnapshot;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use Illuminate\Support\Facades\DB;
 
 final class FakeTaskCheckRunner implements TaskCheckRunner
@@ -57,7 +57,7 @@ final class FakeTaskCheckRunner implements TaskCheckRunner
     /** @var list<string|null> configured commands for each started check */
     public array $commands = [];
 
-    public function start(AppInstance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess
+    public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess
     {
         $this->starts++;
         $this->setups[] = $setup;
@@ -67,7 +67,7 @@ final class FakeTaskCheckRunner implements TaskCheckRunner
         return new TaskCheckProcess(4000 + $this->starts, 'Wed Sep 23 12:00:0'.$this->starts.' 2026', str_repeat('a', 40), str_repeat('b', 40));
     }
 
-    public function read(AppInstance $instance, TaskCheckProcess $process): TaskCheckReading
+    public function read(Instance $instance, TaskCheckProcess $process): TaskCheckReading
     {
         if ($this->readings === null) {
             return self::passed();
@@ -76,7 +76,7 @@ final class FakeTaskCheckRunner implements TaskCheckRunner
         return array_shift($this->readings) ?? self::passed();
     }
 
-    public function cancel(AppInstance $instance, TaskCheckProcess $process): void
+    public function cancel(Instance $instance, TaskCheckProcess $process): void
     {
         $this->cancels++;
         $this->cancelTransactionLevels[] = DB::transactionLevel();
@@ -87,7 +87,7 @@ final class FakeTaskCheckRunner implements TaskCheckRunner
         }
     }
 
-    public function snapshot(AppInstance $instance): TaskWorkspaceSnapshot
+    public function snapshot(Instance $instance): TaskWorkspaceSnapshot
     {
         if ($this->failSnapshot) {
             throw new TaskCheckException('The workspace tree could not be read.');

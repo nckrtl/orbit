@@ -17,10 +17,10 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetWebRoot;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Shared\StoredValue;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -35,7 +35,7 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
         private ConvergeRouteAction $routes,
     ) {}
 
-    public function preflightSlug(OrbitApp $app, string $newSlug): array
+    public function preflightSlug(Project $app, string $newSlug): array
     {
         $routes = [];
 
@@ -67,7 +67,7 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
         return ['routes' => $routes];
     }
 
-    public function prepareSlug(OrbitApp $app, string $newSlug, array $inventory): array
+    public function prepareSlug(Project $app, string $newSlug, array $inventory): array
     {
         $prepared = [];
 
@@ -79,7 +79,7 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
             }
 
             $replacement = Route::query()->create([
-                'app_id' => $current->app_id,
+                'project_id' => $current->project_id,
                 'node_id' => $current->node_id,
                 'cluster_id' => $current->cluster_id,
                 'generation_basis_node_id' => $current->generation_basis_node_id,
@@ -95,7 +95,7 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
 
             foreach ($current->targets as $target) {
                 $replacement->targets()->create([
-                    'app_instance_id' => $target->app_instance_id,
+                    'instance_id' => $target->instance_id,
                     'position' => $target->position,
                 ]);
             }
@@ -110,14 +110,14 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
         return ['routes' => $prepared];
     }
 
-    public function publishSlug(OrbitApp $app, string $newSlug, array $prepared): void
+    public function publishSlug(Project $app, string $newSlug, array $prepared): void
     {
         foreach ($this->rows($prepared['routes'] ?? null) as $row) {
             $replacement = Route::query()->with('targets.appInstance')->find(StoredValue::integer($row['replacement_id'] ?? null));
             $current = Route::query()->find(StoredValue::integer($row['route_id'] ?? null));
-            $instance = AppInstance::query()->find(StoredValue::integer($row['instance_id'] ?? null));
+            $instance = Instance::query()->find(StoredValue::integer($row['instance_id'] ?? null));
 
-            if (! $instance instanceof AppInstance) {
+            if (! $instance instanceof Instance) {
                 $this->publishTargetlessSlugRoute($current, $replacement);
 
                 continue;
@@ -215,7 +215,7 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
         });
     }
 
-    public function rollbackSlug(OrbitApp $app, array $prepared): void
+    public function rollbackSlug(Project $app, array $prepared): void
     {
         foreach ($this->rows($prepared['routes'] ?? null) as $row) {
             $replacement = Route::query()->find(StoredValue::integer($row['replacement_id'] ?? null));
@@ -230,16 +230,16 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
                 $replacement->delete();
             }
 
-            $instance = AppInstance::query()->find(StoredValue::integer($row['instance_id'] ?? null));
+            $instance = Instance::query()->find(StoredValue::integer($row['instance_id'] ?? null));
             $previous = $row['previous_env'] ?? null;
 
-            if ($instance instanceof AppInstance && is_string($previous)) {
+            if ($instance instanceof Instance && is_string($previous)) {
                 $this->writeStoredUrl($instance->id, $previous);
             }
         }
     }
 
-    public function preflightRoot(OrbitApp $app, string $newRoot): array
+    public function preflightRoot(Project $app, string $newRoot): array
     {
         $instances = [];
 
@@ -262,17 +262,17 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
         return ['instances' => $instances];
     }
 
-    public function prepareRoot(OrbitApp $app, string $newRoot, array $inventory): array
+    public function prepareRoot(Project $app, string $newRoot, array $inventory): array
     {
         return $inventory;
     }
 
-    public function publishRoot(OrbitApp $app, string $newRoot, array $prepared): void
+    public function publishRoot(Project $app, string $newRoot, array $prepared): void
     {
         foreach ($this->rows($prepared['instances'] ?? null) as $row) {
-            $instance = AppInstance::query()->find(StoredValue::integer($row['instance_id'] ?? null));
+            $instance = Instance::query()->find(StoredValue::integer($row['instance_id'] ?? null));
 
-            if (! $instance instanceof AppInstance) {
+            if (! $instance instanceof Instance) {
                 continue;
             }
 
@@ -284,7 +284,7 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
         }
     }
 
-    public function rollbackRoot(OrbitApp $app, array $prepared): void
+    public function rollbackRoot(Project $app, array $prepared): void
     {
         $this->publishRoot($app, (string) $app->root, $prepared);
     }
@@ -306,12 +306,12 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
         return $rows;
     }
 
-    private function proposedDomain(OrbitApp $app, Route $route, ?AppInstance $instance, string $newSlug): string
+    private function proposedDomain(Project $app, Route $route, ?Instance $instance, string $newSlug): string
     {
-        $node = $instance instanceof AppInstance ? $instance->node : $route->generationBasisNode;
+        $node = $instance instanceof Instance ? $instance->node : $route->generationBasisNode;
 
         if ($node instanceof Node) {
-            $name = $instance instanceof AppInstance ? $instance->name : 'default';
+            $name = $instance instanceof Instance ? $instance->name : 'default';
 
             return $this->domains->generatedDomain($newSlug, $name, $this->domains->forNode($node)->effectiveTld);
         }
@@ -330,7 +330,7 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
         }
 
         $value = AppInstanceEnvironmentValue::query()
-            ->where('app_instance_id', $instanceId)
+            ->where('instance_id', $instanceId)
             ->where('env_key', 'APP_URL')
             ->first();
 
@@ -340,7 +340,7 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
     private function writeStoredUrl(int $instanceId, string $url): void
     {
         $value = AppInstanceEnvironmentValue::query()
-            ->where('app_instance_id', $instanceId)
+            ->where('instance_id', $instanceId)
             ->where('env_key', 'APP_URL')
             ->first();
 
@@ -351,13 +351,13 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
         }
 
         AppInstanceEnvironmentValue::query()->create([
-            'app_instance_id' => $instanceId,
+            'instance_id' => $instanceId,
             'env_key' => 'APP_URL',
             'env_value' => $url,
         ]);
     }
 
-    private function projectRuntime(AppInstance $instance, Route $route): void
+    private function projectRuntime(Instance $instance, Route $route): void
     {
         if ($instance->placedOnAppProd()) {
             $this->productionRuntime->converge($instance);
@@ -368,7 +368,7 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
         $this->developmentRuntime->converge($instance, $route);
     }
 
-    private function effectiveRoot(AppInstance $instance, ?string $appRoot): ?string
+    private function effectiveRoot(Instance $instance, ?string $appRoot): ?string
     {
         $previous = $instance->root;
         $instance->root ??= $appRoot;

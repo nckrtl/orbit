@@ -22,10 +22,10 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Tests\Support\Orb245Accounts;
 use Tests\Support\Orb245DestinationGuard;
@@ -53,14 +53,14 @@ beforeEach(function (): void {
     ]);
     $this->sourceNode = transfer_api_app_dev('transfer-api-source', $sourceCluster, '10.44.46.10');
     $this->destinationNode = transfer_api_app_dev('transfer-api-destination', $destinationCluster, '10.44.46.11');
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Transfer API',
         'slug' => 'transfer-api',
         'repository_url' => 'https://example.test/transfer-api.git',
         'default_branch' => 'main',
     ]);
-    $this->instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $this->instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $this->sourceNode->id,
         'name' => 'web',
         'environment' => 'development',
@@ -71,7 +71,7 @@ beforeEach(function (): void {
         'status' => AppInstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'cluster_id' => $sourceCluster->id,
         'generation_basis_node_id' => $this->sourceNode->id,
         'domain' => 'web.transfer-api.dev.orbit',
@@ -80,7 +80,7 @@ beforeEach(function (): void {
         'status' => RouteStatus::Pending,
     ]);
     $route->targets()->create([
-        'app_instance_id' => $this->instance->id,
+        'instance_id' => $this->instance->id,
         'position' => 0,
     ]);
     $route->update(['status' => RouteStatus::Active]);
@@ -155,7 +155,7 @@ it('returns 403 before transfer when the caller lacks destination Node access', 
         ->not->toContain($sqliteSourcePath, 'sqlite_source_path');
 });
 
-it('transfers the AppInstance and records sanitized activity', function (): void {
+it('transfers the Instance and records sanitized activity', function (): void {
     transfer_api_bind_fakes();
 
     $response = $this

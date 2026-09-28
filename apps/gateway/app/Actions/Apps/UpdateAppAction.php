@@ -25,9 +25,9 @@ use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\SourceControl\ProjectRoot;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppUpdate;
+use App\Models\Instance;
+use App\Models\Project;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -44,7 +44,7 @@ final readonly class UpdateAppAction
         private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
-    public function execute(OrbitApp $app, UpdateAppData $data): OrbitApp
+    public function execute(Project $app, UpdateAppData $data): Project
     {
         if (! $data->hasChanges()) {
             throw new ResourceOperationException(
@@ -91,7 +91,7 @@ final readonly class UpdateAppAction
             if ($data->taskCheckProvided) {
                 $app = $this->operations->run(
                     $instanceIds,
-                    fn (): OrbitApp => $this->applyProjectCommands($app->fresh() ?? $app, $data),
+                    fn (): Project => $this->applyProjectCommands($app->fresh() ?? $app, $data),
                 );
             }
             ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
@@ -105,7 +105,7 @@ final readonly class UpdateAppAction
 
         $result = $this->operations->run(
             $instanceIds,
-            fn (): OrbitApp => $this->applyProjectCommands($this->executeOwned($app->fresh() ?? $app, $data), $data),
+            fn (): Project => $this->applyProjectCommands($this->executeOwned($app->fresh() ?? $app, $data), $data),
         );
 
         ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
@@ -120,7 +120,7 @@ final readonly class UpdateAppAction
     /**
      * Stores Project task command configuration while the caller holds the update's operation lock.
      */
-    private function applyProjectCommands(OrbitApp $app, UpdateAppData $data): OrbitApp
+    private function applyProjectCommands(Project $app, UpdateAppData $data): Project
     {
         $changes = [];
         if ($data->taskCheckProvided) {
@@ -135,7 +135,7 @@ final readonly class UpdateAppAction
         return $app->fresh() ?? $app;
     }
 
-    private function executeOwned(OrbitApp $app, UpdateAppData $data): OrbitApp
+    private function executeOwned(Project $app, UpdateAppData $data): Project
     {
         $update = $this->reserve($app, $data);
 
@@ -158,13 +158,13 @@ final readonly class UpdateAppAction
         }
     }
 
-    private function reserve(OrbitApp $app, UpdateAppData $data): AppUpdate
+    private function reserve(Project $app, UpdateAppData $data): AppUpdate
     {
         return DB::transaction(function () use ($app, $data): AppUpdate {
-            $locked = OrbitApp::query()->lockForUpdate()->findOrFail($app->id);
+            $locked = Project::query()->lockForUpdate()->findOrFail($app->id);
             $fingerprint = $data->fingerprint();
             $incomplete = AppUpdate::query()
-                ->where('app_id', $locked->id)
+                ->where('project_id', $locked->id)
                 ->whereNotIn('status', [
                     AppUpdateStatus::Complete->value,
                     AppUpdateStatus::RolledBack->value,
@@ -188,7 +188,7 @@ final readonly class UpdateAppAction
 
             if (! $this->changesState($locked, $normalized)) {
                 $complete = AppUpdate::query()->create([
-                    'app_id' => $locked->id,
+                    'project_id' => $locked->id,
                     'status' => AppUpdateStatus::Complete,
                     'fingerprint' => $fingerprint,
                     'requested_slug' => $normalized['slug'],
@@ -207,7 +207,7 @@ final readonly class UpdateAppAction
             }
 
             return AppUpdate::query()->create([
-                'app_id' => $locked->id,
+                'project_id' => $locked->id,
                 'status' => AppUpdateStatus::Reserved,
                 'fingerprint' => $fingerprint,
                 'requested_slug' => $data->slugProvided ? $normalized['slug'] : null,
@@ -264,9 +264,9 @@ final readonly class UpdateAppAction
             'inherited_defaults' => [],
             'explicit_defaults' => [],
             'repository' => [
-                'checkout_ids' => array_map(static fn (AppInstance $instance): int => $instance->id, $plan['checkouts']),
-                'worktree_ids' => array_map(static fn (AppInstance $instance): int => $instance->id, $plan['worktrees']),
-                'production_ids' => array_map(static fn (AppInstance $instance): int => $instance->id, $plan['production']),
+                'checkout_ids' => array_map(static fn (Instance $instance): int => $instance->id, $plan['checkouts']),
+                'worktree_ids' => array_map(static fn (Instance $instance): int => $instance->id, $plan['worktrees']),
+                'production_ids' => array_map(static fn (Instance $instance): int => $instance->id, $plan['production']),
             ],
             'slug' => null,
             'root' => null,
@@ -371,7 +371,7 @@ final readonly class UpdateAppAction
      * @param  list<array{instance_id: int, previous_branch: ?string, current_branch: string, switched: bool}>  $evidence
      * @return list<array{instance_id: int, previous_branch: ?string, current_branch: string, switched: bool}>
      */
-    private function prepareDefaultBranches(OrbitApp $app, string $branch, array $evidence): array
+    private function prepareDefaultBranches(Project $app, string $branch, array $evidence): array
     {
         $byId = [];
 
@@ -407,7 +407,7 @@ final readonly class UpdateAppAction
     private function publish(AppUpdate $update): void
     {
         $update->update(['status' => AppUpdateStatus::Publishing]);
-        $app = OrbitApp::query()->lockForUpdate()->findOrFail($update->app_id);
+        $app = Project::query()->lockForUpdate()->findOrFail($update->project_id);
         $attributes = [];
 
         if (is_string($update->requested_slug)) {
@@ -531,7 +531,7 @@ final readonly class UpdateAppAction
 
             $instance = $app->appInstances->firstWhere('id', $row['instance_id']);
 
-            if (! $instance instanceof AppInstance) {
+            if (! $instance instanceof Instance) {
                 continue;
             }
 
@@ -559,7 +559,7 @@ final readonly class UpdateAppAction
     /**
      * @return array{slug: ?string, repository_url: ?string, default_branch: ?string, root: ?string}
      */
-    private function normalized(OrbitApp $app, UpdateAppData $data): array
+    private function normalized(Project $app, UpdateAppData $data): array
     {
         $type = $data->typeProvided ? $data->type ?? $app->type : $app->type;
         $root = $data->rootProvided ? (string) $data->root : $app->root;
@@ -582,7 +582,7 @@ final readonly class UpdateAppAction
     /**
      * @param  array{slug: ?string, repository_url: ?string, default_branch: ?string, root: ?string}  $normalized
      */
-    private function changesState(OrbitApp $app, array $normalized): bool
+    private function changesState(Project $app, array $normalized): bool
     {
         return $normalized['slug'] !== $app->slug
             || $normalized['repository_url'] !== $app->repository_url
@@ -590,9 +590,9 @@ final readonly class UpdateAppAction
             || $normalized['root'] !== $app->root;
     }
 
-    private function assertSlugAvailable(OrbitApp $app, string $slug): void
+    private function assertSlugAvailable(Project $app, string $slug): void
     {
-        if (OrbitApp::query()->where('slug', $slug)->whereKeyNot($app->id)->exists()) {
+        if (Project::query()->where('slug', $slug)->whereKeyNot($app->id)->exists()) {
             throw new ResourceOperationException(
                 errorCode: 'app.slug_conflict',
                 message: "Project slug [{$slug}] is already owned.",
@@ -601,13 +601,13 @@ final readonly class UpdateAppAction
         }
     }
 
-    private function assertRepositoryIdentity(OrbitApp $app, string $repositoryUrl): void
+    private function assertRepositoryIdentity(Project $app, string $repositoryUrl): void
     {
         $identity = GitRepositoryIdentity::derive($repositoryUrl);
 
         if (
             $identity !== $app->repository_identity
-            && OrbitApp::query()->where('repository_identity', $identity)->whereKeyNot($app->id)->exists()
+            && Project::query()->where('repository_identity', $identity)->whereKeyNot($app->id)->exists()
         ) {
             throw new ResourceOperationException(
                 errorCode: 'app.repository_identity_conflict',
@@ -618,7 +618,7 @@ final readonly class UpdateAppAction
     }
 
     /**
-     * @param  iterable<int, AppInstance>  $instances
+     * @param  iterable<int, Instance>  $instances
      * @return list<array<string, mixed>>
      */
     private function productionSnapshots(iterable $instances): array
@@ -637,7 +637,7 @@ final readonly class UpdateAppAction
     }
 
     /** @return array<string, mixed> */
-    private function productionSnapshot(AppInstance $instance): array
+    private function productionSnapshot(Instance $instance): array
     {
         return [
             'id' => $instance->id,
@@ -736,9 +736,9 @@ final readonly class UpdateAppAction
                 continue;
             }
 
-            $instance = AppInstance::query()->find($snapshot['id']);
+            $instance = Instance::query()->find($snapshot['id']);
 
-            if (! $instance instanceof AppInstance) {
+            if (! $instance instanceof Instance) {
                 throw new ResourceOperationException(
                     errorCode: 'app.production_ownership_changed',
                     message: 'A production Instance changed during the Project update.',
@@ -756,7 +756,7 @@ final readonly class UpdateAppAction
         }
     }
 
-    private function assertRouteTargetRootCompatibility(OrbitApp $app, ?string $root, ?string $message = null): void
+    private function assertRouteTargetRootCompatibility(Project $app, ?string $root, ?string $message = null): void
     {
         $hasInheritedRouteTarget = $app->appInstances()
             ->whereNull('root')
@@ -768,7 +768,7 @@ final readonly class UpdateAppAction
         }
     }
 
-    private function assertTypeChange(OrbitApp $app, ProjectType $type): void
+    private function assertTypeChange(Project $app, ProjectType $type): void
     {
         if ($type !== ProjectType::LaravelApp) {
             return;

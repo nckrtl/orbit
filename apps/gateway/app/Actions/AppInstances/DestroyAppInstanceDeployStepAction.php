@@ -10,7 +10,7 @@ use App\Domain\AppInstances\Deployment\DeploymentStep;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class DestroyAppInstanceDeployStepAction
 {
@@ -21,10 +21,10 @@ final readonly class DestroyAppInstanceDeployStepAction
         private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
-    public function execute(AppInstance $instance, string $name): DeploymentStep
+    public function execute(Instance $instance, string $name): DeploymentStep
     {
         $result = $this->operations->run([$instance->id], function () use ($instance, $name): DeploymentStep {
-            $locked = AppInstance::query()->lockForUpdate()->findOrFail($instance->id);
+            $locked = Instance::query()->lockForUpdate()->findOrFail($instance->id);
             $this->resolver->assertAvailable($locked);
 
             return $this->steps->destroy($locked, $name);

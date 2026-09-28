@@ -41,12 +41,12 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
 use App\Models\AppInstanceRemovalMember;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
@@ -106,7 +106,7 @@ it('serves the exact transient development 503 without an upstream then deletes 
         ->toContain('host-record=dev.acme.test,10.44.0.31');
 
     $replacement = Route::query()->create([
-        'app_id' => $member->app_id,
+        'project_id' => $member->project_id,
         'node_id' => $member->node_id,
         'domain' => $route->domain,
         'provenance' => RouteProvenance::Explicit,
@@ -122,7 +122,7 @@ it('withdraws the final Route in a build before it removes the Instance certific
 
     expect($projector->clearRouteTarget($member))->toBe('deleted');
 
-    $scope = "app-instance-{$member->app_instance_id}";
+    $scope = "app-instance-{$member->instance_id}";
     $removal = collect($ssh->commands)->search(
         static fn (RemoteCommand $command): bool => is_string($command->input)
             && str_contains($command->input, 'rm -rf -- "$managed_home/.orbit/certificates/$scope"')
@@ -182,8 +182,8 @@ it('withdraws the second placement of a Route that waits for its placement withd
             "route-{$route->id}-router-hostname-change",
         ])
         ->and($removed($on('10.44.0.31')))->toContain(
-            "app-instance-{$member->app_instance_id}",
-            "app-instance-{$member->app_instance_id}-hostname-change",
+            "app-instance-{$member->instance_id}",
+            "app-instance-{$member->instance_id}-hostname-change",
         );
 });
 
@@ -221,7 +221,7 @@ it('resumes final Route cleanup after certificate deletion and a late DNS failur
         ->and(collect($ssh->commands)
             ->contains(
                 static fn (RemoteCommand $command): bool => in_array(
-                    "app-instance-{$member->app_instance_id}",
+                    "app-instance-{$member->instance_id}",
                     $command->arguments,
                     true,
                 ),
@@ -320,7 +320,7 @@ it('refuses PHP production runtime cleanup without its dedicated PHP-FPM service
 it('removes a final public Route edge before deleting the Route and refreshes a surviving public Route', function (): void {
     [$member, $route, $departing, $survivor] = orb183_projector_production_member(shared: false);
     $survivorRoute = orb181_projector_route($departing->app, null, $route->cluster, 'survivor.production.test');
-    $survivorRoute->targets()->create(['app_instance_id' => $survivor->id, 'position' => 0]);
+    $survivorRoute->targets()->create(['instance_id' => $survivor->id, 'position' => 0]);
     $survivorRoute->update([
         'status' => RouteStatus::Active,
         'publication' => RoutePublication::Public,
@@ -350,9 +350,9 @@ it('removes a final public Route edge before deleting the Route and refreshes a 
         ->toBeNull();
 });
 
-it('removes only the dedicated runtime for an associated production AppInstance', function (): void {
+it('removes only the dedicated runtime for an associated production Instance', function (): void {
     [$member, , $departing] = orb183_projector_production_member(shared: false);
-    $user = "orbit-app-{$departing->app_id}";
+    $user = "orbit-app-{$departing->project_id}";
     $departing->update([
         'checkout_path' => "/home/{$user}",
         'production_user' => $user,
@@ -385,14 +385,14 @@ it('retries shared and final production cleanup without restoring targets or Rou
 
     expect(fn () => $projector->clearRouteTarget($member))
         ->toThrow(RuntimeConvergenceException::class);
-    expect($route->refresh()->targets()->pluck('app_instance_id')->all())
+    expect($route->refresh()->targets()->pluck('instance_id')->all())
         ->toBe($shared ? [$survivor->id] : [])
         ->and(Route::query()->find($route->id))
         ->not->toBeNull();
 
     expect($projector->clearRouteTarget($member))
         ->toBe($shared ? 'retained' : 'deleted')
-        ->and($route->targets()->pluck('app_instance_id')->all())
+        ->and($route->targets()->pluck('instance_id')->all())
         ->toBe($shared ? [$survivor->id] : [])
         ->and(Route::query()->find($route->id) instanceof Route)
         ->toBe($shared)
@@ -421,7 +421,7 @@ function expectConnectionHost(?string $host): SshConnection
     );
 }
 
-/** @return array{AppInstanceRemovalMember, Route, AppInstance, AppInstance, Node} */
+/** @return array{AppInstanceRemovalMember, Route, Instance, Instance, Node} */
 function orb183_projector_production_member(bool $shared): array
 {
     $app = orb181_projector_app($shared ? 'production-shared' : 'production-final');
@@ -455,10 +455,10 @@ function orb183_projector_production_member(bool $shared): array
         $cluster,
         $shared ? 'shared.production.test' : 'final.production.test',
     );
-    $route->targets()->create(['app_instance_id' => $departing->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $departing->id, 'position' => 0]);
 
     if ($shared) {
-        $route->targets()->create(['app_instance_id' => $survivor->id, 'position' => 1]);
+        $route->targets()->create(['instance_id' => $survivor->id, 'position' => 1]);
     }
 
     $route->update(['status' => RouteStatus::Active]);
@@ -556,13 +556,13 @@ final class Orb214RemovalPhpRuntimeManager implements ProductionPhpRuntimeManage
     /** @var list<int> */
     public array $removed = [];
 
-    public function converge(AppInstance $appInstance): void {}
+    public function converge(Instance $appInstance): void {}
 
-    public function convergeMonitoring(AppInstance $appInstance, bool $enabled): void {}
+    public function convergeMonitoring(Instance $appInstance, bool $enabled): void {}
 
-    public function refreshCache(AppInstance $appInstance): void {}
+    public function refreshCache(Instance $appInstance): void {}
 
-    public function remove(AppInstance $appInstance): void
+    public function remove(Instance $appInstance): void
     {
         $this->removed[] = $appInstance->id;
     }
@@ -575,16 +575,16 @@ function orb181_projector_development_member(): array
     $node = orb181_projector_node('app-dev', '31', null, RoleName::AppDev);
     $instance = orb181_projector_instance($app, $node, 'development', 'dev');
     $route = orb181_projector_route($app, $node, null, 'dev.acme.test');
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
     $instance->update(['status' => AppInstanceState::Active]);
 
     return [orb181_projector_member($instance, $route), $route];
 }
 
-function orb181_projector_app(string $suffix): OrbitApp
+function orb181_projector_app(string $suffix): Project
 {
-    return OrbitApp::query()->create([
+    return Project::query()->create([
         'name' => "Acme {$suffix}",
         'slug' => "acme-{$suffix}",
         'repository_url' => "https://example.test/acme-{$suffix}.git",
@@ -619,13 +619,13 @@ function orb181_projector_node(
 }
 
 function orb181_projector_instance(
-    OrbitApp $app,
+    Project $app,
     Node $node,
     string $environment,
     string $name,
-): AppInstance {
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+): Instance {
+    return Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => $name,
         'environment' => $environment,
@@ -639,13 +639,13 @@ function orb181_projector_instance(
 }
 
 function orb181_projector_route(
-    OrbitApp $app,
+    Project $app,
     ?Node $node,
     ?Cluster $cluster,
     string $domain,
 ): Route {
     return Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'node_id' => $node?->id,
         'cluster_id' => $cluster?->id,
         'generation_basis_node_id' => $node?->id,
@@ -656,11 +656,11 @@ function orb181_projector_route(
     ]);
 }
 
-function orb181_projector_member(AppInstance $instance, Route $route): AppInstanceRemovalMember
+function orb181_projector_member(Instance $instance, Route $route): AppInstanceRemovalMember
 {
     $operation = AppInstanceRemoval::query()->create([
         'id' => (string) Str::uuid(),
-        'requested_app_instance_id' => $instance->id,
+        'requested_instance_id' => $instance->id,
         'requested_name' => $instance->name,
         'force' => false,
         'inventory_digest' => str_repeat('d', 64),
@@ -672,8 +672,8 @@ function orb181_projector_member(AppInstance $instance, Route $route): AppInstan
         ->members()
         ->create([
             'position' => 0,
-            'app_instance_id' => $instance->id,
-            'app_id' => $instance->app_id,
+            'instance_id' => $instance->id,
+            'project_id' => $instance->project_id,
             'node_id' => $instance->node_id,
             'route_id' => $route->id,
             'name' => $instance->name,

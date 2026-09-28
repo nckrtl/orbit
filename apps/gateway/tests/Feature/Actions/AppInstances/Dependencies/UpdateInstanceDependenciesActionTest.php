@@ -23,19 +23,19 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 
 use function Pest\Laravel\mock;
 
-function dependency_update_instance(bool $production = false, ProjectType $type = ProjectType::LaravelApp): AppInstance
+function dependency_update_instance(bool $production = false, ProjectType $type = ProjectType::LaravelApp): Instance
 {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'slug' => 'dependency-update',
         'name' => 'Dependency update',
         'type' => $type,
@@ -148,7 +148,7 @@ describe('coordinated development dependency updates', function (): void {
         expect($result->inventory)->toBeNull();
         expect($result->composer->status)->toBe(DependencyUpdateStepStatus::NotRun);
         expect($result->javascript->status)->toBe(DependencyUpdateStepStatus::NotRun);
-        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 0);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 0);
     });
 
     it('prefights Yarn before Composer mutation', function (): void {
@@ -170,7 +170,7 @@ describe('coordinated development dependency updates', function (): void {
         expect($result->javascript->status)->toBe(DependencyUpdateStepStatus::NotRun);
         expect($result->inventory)->toBeNull();
         expect($result->mayHaveMutated())->toBeFalse();
-        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 0);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 0);
     });
 
     it('prefights both present ecosystems before mutating Composer', function (): void {
@@ -196,7 +196,7 @@ describe('coordinated development dependency updates', function (): void {
         expect($result->composer->status)->toBe(DependencyUpdateStepStatus::NotRun);
         expect($result->javascript->status)->toBe(DependencyUpdateStepStatus::NotRun);
         expect($result->inventory)->toBeNull();
-        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 0);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 0);
     });
 
     it('runs Composer then Vite+ and refreshes inventory for supported Project types', function (ProjectType $type): void {
@@ -375,7 +375,7 @@ describe('coordinated development dependency updates', function (): void {
         expect($result->javascript->status)->toBe(DependencyUpdateStepStatus::NotRun);
         expect($result->inventory)->toBeNull();
         expect($result->mayHaveMutated())->toBeFalse();
-        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 0);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 0);
     });
 
     it('cancels Composer mutation, skips JavaScript, and scans readable files', function (): void {
@@ -437,7 +437,7 @@ describe('coordinated development dependency updates', function (): void {
         expect($result->composer->status)->toBe(DependencyUpdateStepStatus::Succeeded);
         expect($result->javascript->status)->toBe(DependencyUpdateStepStatus::NotRun);
         expect($result->inventory?->composer->errorCode)->toBe('dependencies.instance_unavailable');
-        $this->assertDatabaseCount('app_instance_dependency_observations', 0);
+        $this->assertDatabaseCount('instance_dependency_observations', 0);
     });
 
     it('does not resurrect usage when removal starts during the post-update scan', function (): void {
@@ -449,17 +449,17 @@ describe('coordinated development dependency updates', function (): void {
             if ($kind === 'collect' && ++$calls === 1) {
                 $instance->app->update(['repository_identity' => 'example.test/update']);
                 $instance->update(['root' => 'public', 'branch' => 'main', 'starting_commit' => str_repeat('a', 40)]);
-                $route = Route::query()->create(['app_id' => $instance->app_id, 'node_id' => $instance->node_id, 'generation_basis_node_id' => $instance->node_id, 'domain' => 'update.test', 'provenance' => 'generated', 'publication' => 'private', 'status' => 'pending']);
-                $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+                $route = Route::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id, 'generation_basis_node_id' => $instance->node_id, 'domain' => 'update.test', 'provenance' => 'generated', 'publication' => 'private', 'status' => 'pending']);
+                $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
                 $route->update(['status' => 'active']);
-                $removal = AppInstanceRemoval::query()->create(['id' => (string) Str::uuid(), 'requested_app_instance_id' => $instance->id, 'requested_name' => $instance->name, 'force' => false, 'inventory_digest' => str_repeat('d', 64), 'total' => 1, 'status' => 'removing', 'current_step' => 'source_preparation']);
+                $removal = AppInstanceRemoval::query()->create(['id' => (string) Str::uuid(), 'requested_instance_id' => $instance->id, 'requested_name' => $instance->name, 'force' => false, 'inventory_digest' => str_repeat('d', 64), 'total' => 1, 'status' => 'removing', 'current_step' => 'source_preparation']);
                 $removal->members()->create([
-                    'position' => 0, 'app_instance_id' => $instance->id, 'app_id' => $instance->app_id, 'node_id' => $instance->node_id,
+                    'position' => 0, 'instance_id' => $instance->id, 'project_id' => $instance->project_id, 'node_id' => $instance->node_id,
                     'name' => $instance->name, 'environment' => $instance->defaultAppEnv(), 'source_layout' => $instance->source_layout,
                     'checkout_path' => $instance->checkout_path, 'linked_worktree_paths' => [], 'source_digest' => str_repeat('d', 64),
                     'route_id' => $route->id, 'repository_identity' => 'example.test/update', 'root' => 'public', 'branch' => 'main',
                     'starting_commit' => str_repeat('a', 40), 'source_commit' => str_repeat('a', 40),
-                    'common_repository_path' => $instance->checkout_path, 'source_identity' => "{$instance->app_id}:{$instance->id}",
+                    'common_repository_path' => $instance->checkout_path, 'source_identity' => "{$instance->project_id}:{$instance->id}",
                 ]);
                 $instance->update(['status' => 'removing']);
             }
@@ -480,7 +480,7 @@ describe('coordinated development dependency updates', function (): void {
         expect($result->composer->status)->toBe(DependencyUpdateStepStatus::Succeeded);
         expect($result->javascript->status)->toBe(DependencyUpdateStepStatus::Succeeded);
         expect($result->inventory?->composer->errorCode)->toBe('dependencies.instance_unavailable');
-        $this->assertDatabaseCount('app_instance_dependency_resolutions', 0);
+        $this->assertDatabaseCount('instance_dependency_resolutions', 0);
     });
 
     it('returns busy without mutation when another lifecycle owner holds the instance', function (): void {
@@ -501,7 +501,7 @@ describe('coordinated development dependency updates', function (): void {
             expect($result->errorCode)->toBe('dependencies.operation_busy');
             expect($result->composer->status)->toBe(DependencyUpdateStepStatus::NotRun);
             expect($result->inventory)->toBeNull();
-            $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 0);
+            $this->assertDatabaseCount('instance_dependency_scan_attempts', 0);
         } finally {
             new Filesystem()->deleteDirectory($directory);
         }

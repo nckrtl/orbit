@@ -7,7 +7,7 @@ namespace Tests\Support;
 use App\Domain\Hibernation\AppInstanceCheckoutInspector;
 use App\Domain\Hibernation\HibernationException;
 use App\Domain\Hibernation\RuntimeDependencyState;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final class FakeAppInstanceCheckoutInspector implements AppInstanceCheckoutInspector
 {
@@ -37,17 +37,17 @@ final class FakeAppInstanceCheckoutInspector implements AppInstanceCheckoutInspe
         );
     }
 
-    public function inspect(AppInstance $instance): RuntimeDependencyState
+    public function inspect(Instance $instance): RuntimeDependencyState
     {
         return $this->state;
     }
 
-    public function prune(AppInstance $instance, RuntimeDependencyState $state): void
+    public function prune(Instance $instance, RuntimeDependencyState $state): void
     {
         $this->pruned[] = (string) $instance->id;
     }
 
-    public function restore(AppInstance $instance, RuntimeDependencyState $state): void
+    public function restore(Instance $instance, RuntimeDependencyState $state): void
     {
         if ($this->restoreFailure instanceof HibernationException) {
             throw $this->restoreFailure;

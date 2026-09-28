@@ -13,7 +13,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use Throwable;
 
 final readonly class CollectInstanceDependencyFilesAction
@@ -26,7 +26,7 @@ final readonly class CollectInstanceDependencyFilesAction
         private KnownHostsStore $knownHosts,
     ) {}
 
-    public function execute(AppInstance $instance): CollectedDependencyFiles
+    public function execute(Instance $instance): CollectedDependencyFiles
     {
         $node = $instance->node;
         $production = $instance->placedOnAppProd();

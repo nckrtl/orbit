@@ -48,11 +48,11 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Infrastructure\AppDev\NativeDevelopmentProjectionOperationLock;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Event;
@@ -78,7 +78,7 @@ function ensure_active_app_dev_role(Node $node): void
 }
 
 beforeEach(function (): void {
-    $this->orbitApp = OrbitApp::query()->create([
+    $this->orbitApp = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
@@ -93,7 +93,7 @@ it('broadcasts a cleared Route target before a metrics reconcile failure', funct
     Event::fake();
     $route = reconciliation_route($this->orbitApp, 'clear-before-reconcile.test', $this->node);
     $this->target->update(['status' => AppInstanceState::Reserved]);
-    $route->targets()->create(['app_instance_id' => $this->target->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $this->target->id, 'position' => 0]);
     $metrics = Mockery::mock(MetricsFleetReconciler::class);
     $metrics->shouldReceive('reconcile')->once()->andThrow(new RuntimeException('metrics unavailable'));
     app()->instance(MetricsFleetReconciler::class, $metrics);
@@ -117,7 +117,7 @@ it('broadcasts a changed Route target before a metrics reconcile failure', funct
         ->toThrow(RuntimeException::class, 'metrics unavailable');
 
     Event::assertDispatched(RecordBroadcast::class);
-    expect($route->refresh()->targets->sole()->app_instance_id)->toBe($replacement->id);
+    expect($route->refresh()->targets->sole()->instance_id)->toBe($replacement->id);
 });
 
 it('converges an eligible active explicit development Route domain', function (): void {
@@ -394,7 +394,7 @@ it('bypasses Route reconciliation when a Cluster patch leaves placement inputs u
         node: $unrelatedNode,
         basis: $unrelatedNode,
     );
-    $unrelatedRoute->targets()->create(['app_instance_id' => $unrelatedTarget->id, 'position' => 0]);
+    $unrelatedRoute->targets()->create(['instance_id' => $unrelatedTarget->id, 'position' => 0]);
     $unrelatedRoute->update([
         'status' => RouteStatus::Failed,
         'failed_step' => 'provisioning',
@@ -450,8 +450,8 @@ it('hydrates and reconciles the complete affected Route dependency closure', fun
     $firstTarget->update(['environment' => 'production', 'status' => AppInstanceState::SourceResolved]);
     $secondTarget->update(['environment' => 'production', 'status' => AppInstanceState::SourceResolved]);
     $multiTarget = reconciliation_route($this->orbitApp, 'production.example.test', cluster: $cluster);
-    $multiTarget->targets()->create(['app_instance_id' => $firstTarget->id, 'position' => 0]);
-    $multiTarget->targets()->create(['app_instance_id' => $secondTarget->id, 'position' => 1]);
+    $multiTarget->targets()->create(['instance_id' => $firstTarget->id, 'position' => 0]);
+    $multiTarget->targets()->create(['instance_id' => $secondTarget->id, 'position' => 1]);
     $multiTarget->update(['status' => RouteStatus::Active]);
     $firstTarget->update(['status' => AppInstanceState::Active]);
     $secondTarget->update(['status' => AppInstanceState::Active]);
@@ -466,7 +466,7 @@ it('hydrates and reconciles the complete affected Route dependency closure', fun
         node: $unrelatedNode,
         basis: $unrelatedNode,
     );
-    $unrelated->targets()->create(['app_instance_id' => $unrelatedTarget->id, 'position' => 0]);
+    $unrelated->targets()->create(['instance_id' => $unrelatedTarget->id, 'position' => 0]);
     $unrelated->update([
         'status' => RouteStatus::Failed,
         'failed_step' => 'provisioning',
@@ -694,7 +694,7 @@ it('preserves Instance source while regenerating a generated domain during Route
         node: $this->node,
         basis: $this->node,
     );
-    $route->targets()->create(['app_instance_id' => $this->target->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $this->target->id, 'position' => 0]);
     $cluster = Cluster::query()->create([
         'name' => 'legacy-routing',
         'state' => ClusterState::Inactive,
@@ -729,7 +729,7 @@ it('preserves Instance source while regenerating a generated domain during Route
         ->toBe($sourceBefore)
         ->and($current->cluster_id)
         ->toBe($cluster->id)
-        ->and($current->targets()->firstOrFail()->app_instance_id)
+        ->and($current->targets()->firstOrFail()->instance_id)
         ->toBe($this->target->id)
         ->and(Route::query()->whereKey($route->id)->exists())
         ->toBeFalse();
@@ -798,7 +798,7 @@ it('keeps an explicit app-prod Route valid when its Node has no TLD', function (
     $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $this->target->delete();
     $route = Route::query()->create([
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'domain' => 'production.example.test',
         'provenance' => 'explicit',
@@ -1488,8 +1488,8 @@ it('restores Cluster and Route state when activation fails before publication', 
         ])
         ->and(Route::query()->where('domain', 'feature.acme.cluster.test')->exists())
         ->toBeFalse()
-        ->and($generated->targets()->pluck('app_instance_id')->all())
-        ->toBe(array_column($routeBefore['targets'], 'app_instance_id'))
+        ->and($generated->targets()->pluck('instance_id')->all())
+        ->toBe(array_column($routeBefore['targets'], 'instance_id'))
         ->and($events->values)
         ->toContain('rollback-dns');
 });
@@ -1567,7 +1567,7 @@ it('requires a Router only after a TLD-less active Cluster owns a Route', functi
         ->and(fn () => app(SetRouteTargetAction::class)->execute($explicit, $memberTarget->id))
         ->toThrow(
             ResourceOperationException::class,
-            "AppInstance [{$memberTarget->id}] is already associated with Route",
+            "Instance [{$memberTarget->id}] is already associated with Route",
         );
 });
 
@@ -2456,14 +2456,14 @@ function bind_route_reconciliation_provisioning(?Closure $onConverge = null): vo
     app()->instance(MetricsFleetReconciler::class, $metrics);
 }
 
-function reconciliation_instance(OrbitApp $app, Node $node, string $name): AppInstance
+function reconciliation_instance(Project $app, Node $node, string $name): Instance
 {
     if (! $node->roles()->whereIn('role', [RoleName::AppDev->value, RoleName::AppProd->value])->exists()) {
         ensure_active_app_dev_role($node);
     }
 
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => $name,
         'checkout_path' => "/srv/{$name}",
@@ -2495,14 +2495,14 @@ function reconciliation_route_by_domain(string $domain): Route
 }
 
 function reconciliation_route(
-    OrbitApp $app,
+    Project $app,
     string $domain,
     ?Node $node = null,
     ?Cluster $cluster = null,
     ?Node $basis = null,
 ): Route {
     return Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'node_id' => $node?->id,
         'cluster_id' => $cluster?->id,
         'generation_basis_node_id' => $basis?->id,
@@ -2517,7 +2517,7 @@ function reconciliation_custom_proxy(Node $node, string $domain): Route
 {
     $route = Route::query()->create([
         'kind' => RouteKind::CustomProxy,
-        'app_id' => null,
+        'project_id' => null,
         'node_id' => $node->id,
         'cluster_id' => null,
         'generation_basis_node_id' => null,
@@ -2539,9 +2539,9 @@ function reconciliation_custom_proxy(Node $node, string $domain): Route
  * Two active private Routes on the target's Node: the first one movable and the second one on an
  * Instance whose source profile the caller removes to make it refuse.
  *
- * @return array{0: Route, 1: AppInstance}
+ * @return array{0: Route, 1: Instance}
  */
-function reconciliation_routes_with_legacy(OrbitApp $app, AppInstance $target, bool $generated): array
+function reconciliation_routes_with_legacy(Project $app, Instance $target, bool $generated): array
 {
     $legacy = reconciliation_instance($app, $target->node, 'legacy');
     $routes = [];
@@ -2565,11 +2565,11 @@ function reconciliation_routes_with_legacy(OrbitApp $app, AppInstance $target, b
     return [$routes[0], $legacy];
 }
 
-function reconciliation_tracking_route(AppInstance $instance, Route $owner, string $domain): Route
+function reconciliation_tracking_route(Instance $instance, Route $owner, string $domain): Route
 {
     $route = Route::query()->create([
         'kind' => RouteKind::AnalyticsTracking,
-        'app_id' => null,
+        'project_id' => null,
         'node_id' => $owner->node_id,
         'cluster_id' => $owner->cluster_id,
         'generation_basis_node_id' => null,
@@ -2578,7 +2578,7 @@ function reconciliation_tracking_route(AppInstance $instance, Route $owner, stri
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $route->analyticsTracking()->create(['app_instance_id' => $instance->id]);
+    $route->analyticsTracking()->create(['instance_id' => $instance->id]);
     $route->update(['status' => RouteStatus::Active]);
 
     return $route;
@@ -2655,32 +2655,32 @@ final class NodeTldRouteProjector implements RouteDomainProjector
         private NodeTldProjectionEvents $events,
     ) {}
 
-    public function prepareWorkloadCertificate(AppInstance $appInstance, Route $current, Route $candidate): void
+    public function prepareWorkloadCertificate(Instance $appInstance, Route $current, Route $candidate): void
     {
         $this->event('workload-certificate', $candidate);
     }
 
-    public function prepareWorkloadCaddy(AppInstance $appInstance, Route $current, Route $candidate): void
+    public function prepareWorkloadCaddy(Instance $appInstance, Route $current, Route $candidate): void
     {
         $this->event('workload-caddy', $candidate);
     }
 
-    public function prepareRouterCertificate(AppInstance $appInstance, Route $current, Route $candidate): void
+    public function prepareRouterCertificate(Instance $appInstance, Route $current, Route $candidate): void
     {
         $this->event('router-certificate', $candidate);
     }
 
-    public function prepareFirewallPolicy(AppInstance $appInstance, Route $candidate): void
+    public function prepareFirewallPolicy(Instance $appInstance, Route $candidate): void
     {
         $this->event('firewall-policy', $candidate);
     }
 
-    public function verifyWorkload(AppInstance $appInstance, Route $candidate): void
+    public function verifyWorkload(Instance $appInstance, Route $candidate): void
     {
         $this->event('workload-verify', $candidate);
     }
 
-    public function prepareRouterCaddy(AppInstance $appInstance, Route $current, Route $candidate): void
+    public function prepareRouterCaddy(Instance $appInstance, Route $current, Route $candidate): void
     {
         $this->event('router-caddy', $candidate);
     }
@@ -2700,12 +2700,12 @@ final class NodeTldRouteProjector implements RouteDomainProjector
         $this->event('dns-publication');
     }
 
-    public function prepareCleanup(AppInstance $appInstance, Route $route): void
+    public function prepareCleanup(Instance $appInstance, Route $route): void
     {
         $this->event('prepare-cleanup');
     }
 
-    public function cleanup(AppInstance $appInstance, Route $route): void
+    public function cleanup(Instance $appInstance, Route $route): void
     {
         $this->event('cleanup');
     }
@@ -2715,12 +2715,12 @@ final class NodeTldRouteProjector implements RouteDomainProjector
         $this->events->values[] = 'rollback-dns';
     }
 
-    public function rollbackCaddy(AppInstance $appInstance, Route $route): void
+    public function rollbackCaddy(Instance $appInstance, Route $route): void
     {
         $this->events->values[] = 'rollback-caddy';
     }
 
-    public function rollbackCertificates(AppInstance $appInstance, Route $route): void
+    public function rollbackCertificates(Instance $appInstance, Route $route): void
     {
         $this->events->values[] = 'rollback-certificates';
     }
@@ -2760,12 +2760,12 @@ final class NodeTldRouteConfigurator implements DevelopmentAppInstanceConfigurat
         private NodeTldProjectionEvents $events,
     ) {}
 
-    public function inspect(AppInstance $appInstance): DevelopmentSourceProfile
+    public function inspect(Instance $appInstance): DevelopmentSourceProfile
     {
         return new DevelopmentSourceProfile('8.5', (bool) $appInstance->source_is_laravel);
     }
 
-    public function configureLaravelUrl(AppInstance $appInstance, string $url): void
+    public function configureLaravelUrl(Instance $appInstance, string $url): void
     {
         $this->events->values[] = "url:{$url}";
     }

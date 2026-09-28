@@ -14,10 +14,10 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\AppDev\PrivateDnsAnswerCatalog;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Tests\Support\PrivateDnsPublishHarness;
 
@@ -219,14 +219,14 @@ function orb260_published_cluster(): array
         'role' => RoleName::Router,
         'status' => LifecycleStatus::Active,
     ]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Published',
         'slug' => 'published',
         'repository_url' => 'https://example.test/published.git',
         'root' => 'public',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $member->id,
         'name' => 'default',
         'checkout_path' => '/home/orbit/apps/published',
@@ -237,14 +237,14 @@ function orb260_published_cluster(): array
         'status' => AppInstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'cluster_id' => $cluster->id,
         'domain' => 'app.cluster.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
 
     return [$route->fresh(), $member->fresh()];

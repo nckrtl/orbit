@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Logs;
 
+use App\Models\Instance;
+
 /** The three log sources a Node agent may read for a live log stream, and nothing else (ADR 0153). */
 enum LogSourceType: string
 {

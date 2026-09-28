@@ -15,7 +15,7 @@ final class RuntimeHibernatorCommand extends Command
     protected $signature = 'orbit:runtime-hibernator';
 
     #[\Override]
-    protected $description = 'Halt idle app-dev AppInstance Processes and prune reconstructable checkout dependencies after the configured idle windows.';
+    protected $description = 'Halt idle app-dev Instance Processes and prune reconstructable checkout dependencies after the configured idle windows.';
 
     public function handle(SweepIdleAppDevRuntimesAction $sweep): int
     {
@@ -31,8 +31,8 @@ final class RuntimeHibernatorCommand extends Command
             return self::FAILURE;
         }
 
-        $this->info("Halted [{$result->halted}] idle app-dev AppInstance runtime groups.");
-        $this->info("Pruned [{$result->pruned}] cold app-dev AppInstance dependency trees.");
+        $this->info("Halted [{$result->halted}] idle app-dev Instance runtime groups.");
+        $this->info("Pruned [{$result->pruned}] cold app-dev Instance dependency trees.");
 
         return self::SUCCESS;
     }

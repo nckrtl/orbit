@@ -10,7 +10,7 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property string $id
- * @property int|null $app_instance_id
+ * @property int|null $instance_id
  * @property int $task_id
  * @property-read Task $task
  * @property string $delivery
@@ -23,7 +23,7 @@ use Illuminate\Support\Carbon;
  * @property array<string, mixed>|null $command
  * @property Carbon|null $lease_until
  * @property Carbon $created_at
- * @property-read AppInstance|null $instance
+ * @property-read Instance|null $instance
  */
 final class Annotation extends Model
 {
@@ -39,10 +39,10 @@ final class Annotation extends Model
     #[\Override]
     protected $hidden = ['command'];
 
-    /** @return BelongsTo<AppInstance, $this> */
+    /** @return BelongsTo<Instance, $this> */
     public function instance(): BelongsTo
     {
-        return $this->belongsTo(AppInstance::class, 'app_instance_id');
+        return $this->belongsTo(Instance::class, 'instance_id');
     }
 
     /** @return BelongsTo<Task, $this> */

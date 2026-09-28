@@ -6,16 +6,16 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferStatus;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferStep;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceTransfer;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Support\Facades\Schema;
 
-it('creates the AppInstance transfer table and refuses to drop retained evidence', function (): void {
-    expect(Schema::hasTable('app_instance_transfers'))->toBeTrue();
+it('creates the Instance transfer table and refuses to drop retained evidence', function (): void {
+    expect(Schema::hasTable('instance_transfers'))->toBeTrue();
 
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Transfer migration',
         'slug' => 'transfer-migration',
         'repository_url' => 'https://example.test/transfer-migration.git',
@@ -25,8 +25,8 @@ it('creates the AppInstance transfer table and refuses to drop retained evidence
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => 'transfer-migration.example.test',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'web',
         'environment' => 'development',
@@ -34,7 +34,7 @@ it('creates the AppInstance transfer table and refuses to drop retained evidence
         'status' => AppInstanceState::Active,
     ]);
     AppInstanceTransfer::query()->create([
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'source_node_id' => $node->id,
         'destination_node_id' => $node->id,
         'destination_name' => 'web',
@@ -51,8 +51,8 @@ it('creates the AppInstance transfer table and refuses to drop retained evidence
         'database/migrations/2026_09_15_060000_create_app_instance_transfers_table.php',
     );
 
-    expect(fn () => $migration->down())
+    expect(fn () => run_legacy_schema_migration($migration, 'down'))
         ->toThrow(RuntimeException::class, 'Cannot discard retained AppInstance transfer evidence.')
-        ->and(Schema::hasTable('app_instance_transfers'))
+        ->and(Schema::hasTable('instance_transfers'))
         ->toBeTrue();
 });

@@ -19,7 +19,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 /**
  * @property int $id
  * @property RouteKind $kind
- * @property int|null $app_id
+ * @property int|null $project_id
  * @property int|null $node_id
  * @property int|null $cluster_id
  * @property int|null $generation_basis_node_id
@@ -38,7 +38,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property int|null $transition_node_id
  * @property int|null $transition_cluster_id
  * @property CarbonImmutable|null $transition_dns_moved_at
- * @property-read App|null $app
+ * @property-read Project|null $app
  * @property-read Node|null $node
  * @property-read Cluster|null $cluster
  * @property-read Node|null $generationBasisNode
@@ -64,7 +64,7 @@ final class Route extends Model
     #[\Override]
     protected $fillable = [
         'kind',
-        'app_id',
+        'project_id',
         'node_id',
         'cluster_id',
         'generation_basis_node_id',
@@ -142,10 +142,10 @@ final class Route extends Model
         return $this->transition_node_id !== null || $this->transition_cluster_id !== null;
     }
 
-    /** @return BelongsTo<App, $this> */
+    /** @return BelongsTo<Project, $this> */
     public function app(): BelongsTo
     {
-        return $this->belongsTo(App::class);
+        return $this->belongsTo(Project::class, 'project_id');
     }
 
     /** @return BelongsTo<Node, $this> */

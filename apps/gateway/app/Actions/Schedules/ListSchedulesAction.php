@@ -6,7 +6,7 @@ namespace App\Actions\Schedules;
 
 use App\Data\Schedules\ScheduleData;
 use App\Domain\Nodes\NodeAccessAuthorizer;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Schedule;
 use App\Support\ValidatedData;
@@ -31,10 +31,10 @@ final readonly class ListSchedulesAction
                     })
                     ->orWhere(static function ($query) use ($accessibleNodeIds): void {
                         $query
-                            ->whereIn('target_type', AppInstance::morphTypes())
+                            ->whereIn('target_type', Instance::morphTypes())
                             ->whereIn(
                                 'target_id',
-                                AppInstance::query()
+                                Instance::query()
                                     ->select('id')
                                     ->whereIn('node_id', $accessibleNodeIds),
                             );

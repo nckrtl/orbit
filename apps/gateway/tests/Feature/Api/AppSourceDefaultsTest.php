@@ -10,8 +10,8 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\SourceControl\NativeRepositoryDefaultBranchResolver;
-use App\Models\App as OrbitApp;
 use App\Models\Node;
+use App\Models\Project;
 
 beforeEach(function (): void {
     $operator = Node::query()->create([
@@ -95,7 +95,7 @@ it('stores explicit source defaults and returns them through every App response'
             'repository' => 'https://github.com/acme/site.git',
             'branch' => 'stable',
         ]])
-        ->and(OrbitApp::query()->sole()->only(['repository_url', 'default_branch', 'root']))
+        ->and(Project::query()->sole()->only(['repository_url', 'default_branch', 'root']))
         ->toBe([
             'repository_url' => 'https://github.com/acme/site.git',
             'default_branch' => 'stable',
@@ -149,7 +149,7 @@ it('rejects conflicting creation identity without mutation or remote access', fu
         ->assertConflict()
         ->assertJsonPath('error.code', 'app.identity_conflict');
 
-    expect(OrbitApp::query()
+    expect(Project::query()
         ->sole()
         ->only([
             'name',
@@ -176,7 +176,7 @@ it('rejects conflicting creation identity without mutation or remote access', fu
 ]);
 
 it('returns null source defaults truthfully for a legacy App', function (): void {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Legacy',
         'slug' => 'legacy',
         'type' => 'laravel-app',
@@ -198,7 +198,7 @@ it('returns null source defaults truthfully for a legacy App', function (): void
 it('rejects invalid or incomplete source defaults without persistence', function (array $payload): void {
     $this->postJson('/api/v1/projects', $payload)->assertUnprocessable();
 
-    expect(OrbitApp::query()->count())->toBe(0);
+    expect(Project::query()->count())->toBe(0);
 })->with([
     'missing repository' => [[
         'slug' => 'acme',
@@ -282,7 +282,7 @@ it('rejects an unavailable explicit or default branch with one stable error', fu
     expect($response->getContent())
         ->not
         ->toContain($repository)
-        ->and(OrbitApp::query()->exists())
+        ->and(Project::query()->exists())
         ->toBeFalse();
 })->with([
     'omitted default branch' => [null],
@@ -312,7 +312,7 @@ it('returns 422 without persistence when the remote default branch is malformed 
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'app.default_branch_unavailable');
 
-    expect(OrbitApp::query()->exists())->toBeFalse();
+    expect(Project::query()->exists())->toBeFalse();
 });
 
 it('rejects unsupported and duplicate App source keys', function (string $body): void {
@@ -322,7 +322,7 @@ it('rejects unsupported and duplicate App source keys', function (string $body):
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation.failed');
 
-    expect(OrbitApp::query()->count())->toBe(0);
+    expect(Project::query()->count())->toBe(0);
 })->with([
     'unsupported key' => [
         '{"slug":"acme","repository_url":"https://github.com/acme/site.git","default_branch":"main","root":"public","command":"id"}',

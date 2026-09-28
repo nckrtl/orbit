@@ -9,7 +9,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ClusterRouterReplacementProjector;
 use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Route;
@@ -41,17 +41,17 @@ final class FakeClusterRouterReplacementProjector implements ClusterRouterReplac
      */
     public array $serving = [];
 
-    public function prepareRouterCertificate(Route $route, Node $router, AppInstance $workload): void
+    public function prepareRouterCertificate(Route $route, Node $router, Instance $workload): void
     {
         $this->event('router-certificate', $route, $router, $workload);
     }
 
-    public function prepareFirewallPolicy(Route $route, Node $router, AppInstance $workload): void
+    public function prepareFirewallPolicy(Route $route, Node $router, Instance $workload): void
     {
         $this->event('firewall-policy', $route, $router, $workload);
     }
 
-    public function verifyWorkload(Route $route, Node $router, AppInstance $workload): void
+    public function verifyWorkload(Route $route, Node $router, Instance $workload): void
     {
         $this->event('workload-verify', $route, $router, $workload);
     }
@@ -60,7 +60,7 @@ final class FakeClusterRouterReplacementProjector implements ClusterRouterReplac
     {
         $route->loadMissing('targets.appInstance.node');
         $colocated = $route->targets->contains(
-            static fn ($target): bool => $target->appInstance instanceof AppInstance
+            static fn ($target): bool => $target->appInstance instanceof Instance
                 && $router->is($target->appInstance->node),
         );
         $this->event($colocated ? 'router-caddy:local-next-hop' : 'router-caddy', $route, $router);
@@ -98,7 +98,7 @@ final class FakeClusterRouterReplacementProjector implements ClusterRouterReplac
         $this->serving[] = ['step' => $step, 'routers' => $routers];
     }
 
-    private function event(string $name, Route $route, Node $router, ?AppInstance $workload = null): void
+    private function event(string $name, Route $route, Node $router, ?Instance $workload = null): void
     {
         if ($this->observe instanceof Closure) {
             ($this->observe)($name);

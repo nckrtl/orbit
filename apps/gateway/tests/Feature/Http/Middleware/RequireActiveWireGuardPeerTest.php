@@ -8,10 +8,10 @@ use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Models\Activity;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 use Illuminate\Http\Middleware\TrustProxies;
@@ -358,13 +358,13 @@ it('keeps read-only gateway status available before peer enrollment', function (
 
 function peer_boundary_process(Node $node): Process
 {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Private App',
         'slug' => 'private-app',
         'repository_url' => 'https://example.test/private.git',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'main',
         'environment' => 'development',
@@ -375,7 +375,7 @@ function peer_boundary_process(Node $node): Process
     ]);
 
     return Process::query()->create([
-        'owner_type' => AppInstance::MorphAlias,
+        'owner_type' => Instance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => 'private-worker',
         'runtime' => 'systemd',

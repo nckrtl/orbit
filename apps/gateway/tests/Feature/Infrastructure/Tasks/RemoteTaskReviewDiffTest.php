@@ -23,9 +23,9 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\RemoteTaskReviewDiff;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskGroup;
 use Symfony\Component\Process\Process;
@@ -53,9 +53,9 @@ it('reads tracked and untracked review diff without updating the index', functio
     $start = trim((new Process(['git', '-C', $checkout, 'rev-parse', 'HEAD']))->mustRun()->getOutput());
     file_put_contents($checkout.'/tracked.php', "<?php\nreturn 2;\n");
     file_put_contents($checkout.'/untracked.php', "<?php\nreturn 'new';\n");
-    $app = OrbitApp::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'git@example.test:orbit.git', 'default_branch' => 'main']);
+    $app = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'git@example.test:orbit.git', 'default_branch' => 'main']);
     $node = Node::query()->create(['name' => 'review-diff-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.144', 'wireguard_ip' => '10.44.0.144', 'user' => 'orbit']);
-    $instance = AppInstance::query()->create(['app_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-14', 'checkout_path' => $checkout, 'branch' => 'task-14', 'status' => 'source_resolved']);
+    $instance = Instance::query()->create(['project_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-14', 'checkout_path' => $checkout, 'branch' => 'task-14', 'status' => 'source_resolved']);
     $reader = new RemoteTaskReviewDiff(new AppDevSshExecutor(
         new LocalShellSshExecutor,
         new class implements SshKeyProvider
@@ -175,7 +175,7 @@ it('does not send a review when git cannot produce the stat, the body, or the fi
     }
     $instance = review_diff_instance($checkout);
     $group = TaskGroup::query()->create([
-        'app_id' => $instance->app_id,
+        'project_id' => $instance->project_id,
         'title' => 'Unread diff',
         'brief' => 'Git cannot produce the diff.',
         'status' => TaskGroupStatus::Running,
@@ -224,12 +224,12 @@ function review_diff_checkout(): string
     return $checkout;
 }
 
-function review_diff_instance(string $checkout): AppInstance
+function review_diff_instance(string $checkout): Instance
 {
-    $app = OrbitApp::query()->create(['name' => 'orbit', 'slug' => 'orbit-'.bin2hex(random_bytes(3)), 'repository_url' => 'git@example.test:orbit.git', 'default_branch' => 'main']);
+    $app = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit-'.bin2hex(random_bytes(3)), 'repository_url' => 'git@example.test:orbit.git', 'default_branch' => 'main']);
     $node = Node::query()->create(['name' => 'review-diff-'.bin2hex(random_bytes(3)), 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.144', 'wireguard_ip' => '10.44.0.144', 'user' => 'orbit']);
 
-    return AppInstance::query()->create(['app_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-14', 'checkout_path' => $checkout, 'branch' => 'task-14', 'status' => 'source_resolved']);
+    return Instance::query()->create(['project_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-14', 'checkout_path' => $checkout, 'branch' => 'task-14', 'status' => 'source_resolved']);
 }
 
 function review_diff_reader(SshExecutor $ssh): RemoteTaskReviewDiff

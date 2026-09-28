@@ -17,8 +17,8 @@ use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
-use App\Models\AppInstance;
 use App\Models\AppInstanceRemovalMember;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
@@ -38,7 +38,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
 
     public function clearRouteTarget(AppInstanceRemovalMember $member): string
     {
-        $appInstance = AppInstance::query()->with('node')->findOrFail($member->app_instance_id);
+        $appInstance = Instance::query()->with('node')->findOrFail($member->instance_id);
         $route = $member->route_id === null
             ? null
             : Route::query()
@@ -52,7 +52,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
 
             throw new ResourceOperationException(
                 errorCode: 'instance.removal_conflict',
-                message: "AppInstance [{$member->name}] Route identity changed during removal.",
+                message: "Instance [{$member->name}] Route identity changed during removal.",
                 status: 409,
             );
         }
@@ -66,7 +66,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
 
         $removedTarget = (bool) DB::transaction(function () use ($route, $appInstance): bool {
             $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
-            $target = $locked->targets()->where('app_instance_id', $appInstance->id)->first();
+            $target = $locked->targets()->where('instance_id', $appInstance->id)->first();
 
             if ($target === null) {
                 return false;
@@ -122,7 +122,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
 
     public function cleanupRuntime(AppInstanceRemovalMember $member): void
     {
-        $appInstance = AppInstance::query()->with('node')->findOrFail($member->app_instance_id);
+        $appInstance = Instance::query()->with('node')->findOrFail($member->instance_id);
         if ($appInstance->placedOnAppProd()) {
             if (! ProductionPhpRuntimeIdentity::isAbsent($appInstance)) {
                 if (
@@ -151,7 +151,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
         return $this->productionPhp ?? app(ProductionPhpRuntimeManager::class);
     }
 
-    private function publishRoute(Route $route, AppInstance $departing): void
+    private function publishRoute(Route $route, Instance $departing): void
     {
         $router = $route->cluster?->routerAssignment?->node;
         $nodes = collect();
@@ -181,7 +181,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
      * and the Route row is deleted. A placement change that waits for its withdrawal also leaves
      * sites and certificates on its second placement, so removal withdraws those too.
      */
-    private function removeRouteProjection(Route $route, AppInstance $appInstance): void
+    private function removeRouteProjection(Route $route, Instance $appInstance): void
     {
         $route->loadMissing(['transitionCluster.routerAssignment.node']);
         $transitionRouter = $route->transitionCluster?->routerAssignment?->node;
@@ -258,7 +258,7 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
         return $this->publicEdge ?? app(PublicRouteEdgeProjector::class);
     }
 
-    private function servingNode(Route $route, AppInstance $appInstance): Node
+    private function servingNode(Route $route, Instance $appInstance): Node
     {
         $router = $route->cluster?->routerAssignment?->node;
 

@@ -15,6 +15,7 @@ use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 use Throwable;

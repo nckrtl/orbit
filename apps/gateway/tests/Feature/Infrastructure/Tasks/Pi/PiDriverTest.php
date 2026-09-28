@@ -14,9 +14,9 @@ use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Infrastructure\Tasks\Pi\PiDriver;
 use App\Models\AgentThread;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\TaskGroup;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
@@ -34,17 +34,17 @@ function pi_node(array $settings = ['pi' => ['token' => PI_TOKEN]]): Node
     ]);
 }
 
-function pi_workspace(Node $node): AppInstance
+function pi_workspace(Node $node): Instance
 {
-    $app = OrbitApp::query()->create(['name' => 'pi', 'slug' => 'pi', 'repository_url' => 'git@example.test:pi.git', 'default_branch' => 'main']);
+    $app = Project::query()->create(['name' => 'pi', 'slug' => 'pi', 'repository_url' => 'git@example.test:pi.git', 'default_branch' => 'main']);
 
-    return AppInstance::query()->create(['app_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-1', 'checkout_path' => '/srv/task-1', 'status' => 'source_resolved']);
+    return Instance::query()->create(['project_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-1', 'checkout_path' => '/srv/task-1', 'status' => 'source_resolved']);
 }
 
 function pi_thread(Node $node, string $externalId = 'session-1'): AgentThread
 {
     $workspace = pi_workspace($node);
-    $group = TaskGroup::query()->create(['app_id' => $workspace->app_id, 'implementer_agent_driver' => 'pi', 'title' => 'Feature', 'brief' => 'Brief', 'status' => 'running']);
+    $group = TaskGroup::query()->create(['project_id' => $workspace->project_id, 'implementer_agent_driver' => 'pi', 'title' => 'Feature', 'brief' => 'Brief', 'status' => 'running']);
 
     return AgentThread::query()->create([
         'task_group_id' => $group->id,

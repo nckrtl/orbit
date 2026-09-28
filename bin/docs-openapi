@@ -1525,14 +1525,14 @@ def route_create_accepts(schema, payload):
 
 route_create_schema = spec['paths']['/api/v1/routes']['post']['requestBody']['content']['application/json']['schema']
 for payload, expected in [
-    ({'app_instance_id': 12, 'domain': 'shop.example.test'}, True),
-    ({'app_instance_id': 12, 'domain': 'shop.example.test', 'publication': 'public'}, True),
+    ({'instance_id': 12, 'domain': 'shop.example.test'}, True),
+    ({'instance_id': 12, 'domain': 'shop.example.test', 'publication': 'public'}, True),
     ({'node_id': 4, 'domain': 'executor.orbit', 'upstream': 'http://127.0.0.1:4788'}, True),
     ({'node_id': 4, 'domain': 'executor.orbit', 'process_id': 7}, True),
-    ({'app_id': 3, 'app_instance_id': 12, 'domain': 'shop.example.test'}, False),
+    ({'app_id': 3, 'instance_id': 12, 'domain': 'shop.example.test'}, False),
     ({'node_id': 4, 'domain': 'shop.example.test'}, False),
     ({'cluster_id': 5, 'domain': 'shop.example.test'}, False),
-    ({'app_instance_id': 12, 'domain': 'shop.example.test', 'node_id': 4}, False),
+    ({'instance_id': 12, 'domain': 'shop.example.test', 'node_id': 4}, False),
     ({'node_id': 4, 'domain': 'executor.orbit', 'upstream': 'http://127.0.0.1:4788', 'process_id': 7}, False),
     ({'node_id': 4, 'domain': 'executor.orbit', 'upstream': 'http://127.0.0.1:4788', 'publication': 'public'}, False),
 ]:

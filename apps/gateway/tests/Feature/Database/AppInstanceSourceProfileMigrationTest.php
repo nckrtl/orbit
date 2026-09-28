@@ -3,9 +3,9 @@
 declare(strict_types=1);
 
 use App\Domain\AppInstances\AppInstanceState;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -13,16 +13,16 @@ it('adds nullable profile evidence without inferring or changing legacy rows', f
     $migration = app_instance_source_profile_migration();
 
     try {
-        $migration->down();
+        run_legacy_schema_migration($migration, 'down');
         [$active, $withoutCheckpoint, $phpSelected, $urlConfigured] = legacy_source_profile_rows();
         $before = source_profile_migration_rows();
 
-        $migration->up();
+        run_legacy_schema_migration($migration, 'up');
 
         $after = source_profile_migration_rows();
-        expect(Schema::hasColumn('app_instances', 'source_is_laravel'))->toBeTrue();
+        expect(Schema::hasColumn('instances', 'source_is_laravel'))->toBeTrue();
         foreach ([$active, $withoutCheckpoint, $phpSelected, $urlConfigured] as $instance) {
-            expect(DB::table('app_instances')->where('id', $instance->id)->value('source_is_laravel'))->toBeNull();
+            expect(DB::table('instances')->where('id', $instance->id)->value('source_is_laravel'))->toBeNull();
         }
         $withoutProfile = array_map(static function (array $row): array {
             unset($row['source_is_laravel']);
@@ -31,8 +31,8 @@ it('adds nullable profile evidence without inferring or changing legacy rows', f
         }, $after);
         expect($withoutProfile)->toBe($before);
     } finally {
-        if (! Schema::hasColumn('app_instances', 'source_is_laravel')) {
-            $migration->up();
+        if (! Schema::hasColumn('instances', 'source_is_laravel')) {
+            run_legacy_schema_migration($migration, 'up');
         }
     }
 });
@@ -42,13 +42,13 @@ it('refuses rollback before discarding non-active retained profile evidence', fu
     [$phpSelected, $urlConfigured] = complete_retained_source_profile_rows();
     $before = source_profile_migration_rows();
 
-    expect(fn () => $migration->down())
+    expect(fn () => run_legacy_schema_migration($migration, 'down'))
         ->toThrow(
             RuntimeException::class,
             "Cannot discard retained AppInstance source profiles: {$phpSelected->id}, {$urlConfigured->id}",
         );
 
-    expect(Schema::hasColumn('app_instances', 'source_is_laravel'))
+    expect(Schema::hasColumn('instances', 'source_is_laravel'))
         ->toBeTrue()
         ->and(source_profile_migration_rows())
         ->toBe($before);
@@ -60,16 +60,16 @@ it('allows rollback when complete profile evidence belongs only to Active rows',
     $before = $active->getAttributes();
 
     try {
-        $migration->down();
+        run_legacy_schema_migration($migration, 'down');
 
         unset($before['source_is_laravel']);
-        expect(Schema::hasColumn('app_instances', 'source_is_laravel'))
+        expect(Schema::hasColumn('instances', 'source_is_laravel'))
             ->toBeFalse()
-            ->and((array) DB::table('app_instances')->find($active->id))
+            ->and((array) DB::table('instances')->find($active->id))
             ->toBe($before);
     } finally {
-        if (! Schema::hasColumn('app_instances', 'source_is_laravel')) {
-            $migration->up();
+        if (! Schema::hasColumn('instances', 'source_is_laravel')) {
+            run_legacy_schema_migration($migration, 'up');
         }
     }
 });
@@ -81,7 +81,7 @@ function app_instance_source_profile_migration(): object
     );
 }
 
-/** @return array{AppInstance, AppInstance, AppInstance, AppInstance} */
+/** @return array{Instance, Instance, Instance, Instance} */
 function legacy_source_profile_rows(): array
 {
     return [
@@ -92,7 +92,7 @@ function legacy_source_profile_rows(): array
     ];
 }
 
-/** @return array{AppInstance, AppInstance} */
+/** @return array{Instance, Instance} */
 function complete_retained_source_profile_rows(
     AppInstanceState $status = AppInstanceState::SourceResolved,
 ): array {
@@ -109,14 +109,14 @@ function source_profile_migration_instance(
     AppInstanceState $status,
     ?string $checkpoint,
     ?string $phpVersion,
-): AppInstance {
+): Instance {
     $node = Node::query()->create([
         'name' => "profile-{$name}",
         'status' => 'active',
         'platform' => 'linux',
         'public_ssh_host' => "{$name}.example.test",
     ]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => "Profile {$name}",
         'slug' => "profile-{$name}",
         'repository_url' => "https://example.test/{$name}.git",
@@ -124,8 +124,8 @@ function source_profile_migration_instance(
         'root' => 'public',
     ]);
 
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => $name,
         'checkout_path' => "/srv/{$name}",
@@ -140,7 +140,7 @@ function source_profile_migration_instance(
 /** @return list<array<string, mixed>> */
 function source_profile_migration_rows(): array
 {
-    return DB::table('app_instances')
+    return DB::table('instances')
         ->orderBy('id')
         ->get()
         ->map(

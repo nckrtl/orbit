@@ -8,13 +8,13 @@ use App\Domain\AppInstances\Deployment\DeploymentRelease;
 use App\Domain\AppInstances\Deployment\DeploymentResult;
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceDeployment;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Support\Facades\Event;
 
-function orb350_deployment_recorder_instance(): AppInstance
+function orb350_deployment_recorder_instance(): Instance
 {
     $node = Node::query()->create([
         'name' => 'deployment-recorder-node',
@@ -24,7 +24,7 @@ function orb350_deployment_recorder_instance(): AppInstance
         'wireguard_ip' => '10.44.0.223',
         'user' => 'orbit',
     ]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Deployment Recorder',
         'slug' => 'deployment-recorder',
         'repository_url' => 'https://example.test/deployment-recorder.git',
@@ -32,8 +32,8 @@ function orb350_deployment_recorder_instance(): AppInstance
         'root' => 'public',
     ]);
 
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'production',
         'environment' => 'production',
@@ -98,7 +98,7 @@ it('records a failed run with its boundary and error code', function (): void {
         ->and($deployment->release)->toBeNull();
 });
 
-it('retains only the most recent 50 deployments per AppInstance', function (): void {
+it('retains only the most recent 50 deployments per Instance', function (): void {
     $instance = orb350_deployment_recorder_instance();
     $recorder = new AppInstanceDeploymentRecorder;
 
@@ -109,9 +109,9 @@ it('retains only the most recent 50 deployments per AppInstance', function (): v
         ), []);
     }
 
-    expect(AppInstanceDeployment::query()->where('app_instance_id', $instance->id)->count())
+    expect(AppInstanceDeployment::query()->where('instance_id', $instance->id)->count())
         ->toBe(AppInstanceDeploymentRecorder::RETAINED_PER_INSTANCE)
-        ->and(AppInstanceDeployment::query()->where('app_instance_id', $instance->id)->orderBy('id')->value('release'))
+        ->and(AppInstanceDeployment::query()->where('instance_id', $instance->id)->orderBy('id')->value('release'))
         ->toBe('20260918120005');
 });
 

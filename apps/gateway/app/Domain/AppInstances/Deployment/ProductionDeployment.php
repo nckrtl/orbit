@@ -5,24 +5,24 @@ declare(strict_types=1);
 namespace App\Domain\AppInstances\Deployment;
 
 use App\Infrastructure\Processes\CommandResult;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 interface ProductionDeployment
 {
-    public function prepare(AppInstance $appInstance, string $branch): DeploymentRelease;
+    public function prepare(Instance $appInstance, string $branch): DeploymentRelease;
 
     public function executeStep(
-        AppInstance $appInstance,
+        Instance $appInstance,
         DeploymentRelease $release,
         DeploymentStep $step,
         DeploymentRequest $request,
     ): CommandResult;
 
-    public function activate(AppInstance $appInstance, DeploymentRelease $release): DeploymentRelease;
+    public function activate(Instance $appInstance, DeploymentRelease $release): DeploymentRelease;
 
-    public function selected(AppInstance $appInstance): ?DeploymentRelease;
+    public function selected(Instance $appInstance): ?DeploymentRelease;
 
-    public function retained(AppInstance $appInstance, string $name): DeploymentRelease;
+    public function retained(Instance $appInstance, string $name): DeploymentRelease;
 
-    public function releases(AppInstance $appInstance): DeploymentReleaseState;
+    public function releases(Instance $appInstance): DeploymentReleaseState;
 }

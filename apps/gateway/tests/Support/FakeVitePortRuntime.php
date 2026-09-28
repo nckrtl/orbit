@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Tests\Support;
 
 use App\Domain\AppDev\VitePortRuntime;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use RuntimeException;
@@ -31,26 +31,26 @@ final class FakeVitePortRuntime implements VitePortRuntime
         throw new RuntimeException('No test port is available.');
     }
 
-    public function ownsListener(Process $process, AppInstance $instance, int $port): bool
+    public function ownsListener(Process $process, Instance $instance, int $port): bool
     {
         return false;
     }
 
-    public function ready(Process $process, AppInstance $instance, int $port): bool
+    public function ready(Process $process, Instance $instance, int $port): bool
     {
         $this->events[] = 'vite-ready';
 
         return true;
     }
 
-    public function suspendTraffic(AppInstance $instance): void {}
+    public function suspendTraffic(Instance $instance): void {}
 
-    public function markAwake(AppInstance $instance): void
+    public function markAwake(Instance $instance): void
     {
         $this->awakeInstances[] = $instance->id;
     }
 
-    public function prepare(Process $process, AppInstance $instance): void {}
+    public function prepare(Process $process, Instance $instance): void {}
 
-    public function project(AppInstance $instance): void {}
+    public function project(Instance $instance): void {}
 }

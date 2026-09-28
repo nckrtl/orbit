@@ -2,36 +2,36 @@
 
 declare(strict_types=1);
 
-use App\Models\App;
-use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 
-it('encrypts environment values and scopes unique keys to one AppInstance', function (): void {
+it('encrypts environment values and scopes unique keys to one Instance', function (): void {
     [$first, $second] = environment_database_instances();
     $literal = $first->environmentValues()->create(['env_key' => 'APP_KEY', 'env_value' => 'plain-literal']);
     $placeholder = $first
         ->environmentValues()
         ->create([
             'env_key' => 'APP_URL',
-            'env_value' => 'https://{{app_instance.domain}}',
+            'env_value' => 'https://{{instance.domain}}',
         ]);
     $second->environmentValues()->create(['env_key' => 'APP_KEY', 'env_value' => 'other-instance']);
 
     expect(fn () => $first->environmentValues()->create(['env_key' => 'APP_KEY', 'env_value' => 'duplicate']))
         ->toThrow(QueryException::class);
 
-    $raw = DB::table('app_instance_environment_values')->orderBy('id')->pluck('env_value')->all();
+    $raw = DB::table('instance_environment_values')->orderBy('id')->pluck('env_value')->all();
 
     expect($raw)
         ->each->toBeString()
-        ->not->toContain('plain-literal', 'https://{{app_instance.domain}}', 'other-instance')->and(
+        ->not->toContain('plain-literal', 'https://{{instance.domain}}', 'other-instance')->and(
             $literal->toArray(),
-        )->toHaveKeys(['id', 'app_instance_id', 'env_key', 'created_at', 'updated_at'])->and($literal->toArray())
+        )->toHaveKeys(['id', 'instance_id', 'env_key', 'created_at', 'updated_at'])->and($literal->toArray())
         ->not->toHaveKey('env_value')->and(print_r($placeholder, true))
-        ->not->toContain('https://{{app_instance.domain}}');
+        ->not->toContain('https://{{instance.domain}}');
 });
 
 it('adds no values during migration and cascades values only when the owner is deleted', function (): void {
@@ -45,10 +45,10 @@ it('adds no values during migration and cascades values only when the owner is d
     expect(AppInstanceEnvironmentValue::query()->count())->toBe(0);
 });
 
-/** @return array{AppInstance, AppInstance} */
+/** @return array{Instance, Instance} */
 function environment_database_instances(): array
 {
-    $app = App::query()->create([
+    $app = Project::query()->create([
         'name' => 'Environment database',
         'slug' => 'environment-database',
         'repository_url' => 'https://example.test/environment.git',
@@ -65,14 +65,14 @@ function environment_database_instances(): array
     ]);
 
     return [
-        AppInstance::query()->create([
-            'app_id' => $app->id,
+        Instance::query()->create([
+            'project_id' => $app->id,
             'node_id' => $node->id,
             'name' => 'first',
             'checkout_path' => '/srv/orbit/first',
         ]),
-        AppInstance::query()->create([
-            'app_id' => $app->id,
+        Instance::query()->create([
+            'project_id' => $app->id,
             'node_id' => $node->id,
             'name' => 'second',
             'checkout_path' => '/srv/orbit/second',

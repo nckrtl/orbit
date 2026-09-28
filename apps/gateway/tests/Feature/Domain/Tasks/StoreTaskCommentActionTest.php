@@ -19,9 +19,9 @@ use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Infrastructure\Tasks\T3\T3Dispatcher;
 use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Models\AgentThread;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskGroup;
 use Tests\Support\AcceptingTaskWorkspaceMcp;
@@ -31,7 +31,7 @@ use Tests\Support\FakeTaskRunReceipts;
 /** A blocked task in the given status, with an implementer and a reviewer thread. */
 function blocked_task(TaskStatus $status): Task
 {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'blocked', 'slug' => 'blocked',
         'repository_url' => 'git@example.test:blocked.git', 'default_branch' => 'main',
     ]);
@@ -39,12 +39,12 @@ function blocked_task(TaskStatus $status): Task
         'name' => 'blocked-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
         'public_ssh_host' => '10.44.0.190', 'wireguard_ip' => '10.44.0.190',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-9',
+    $instance = Instance::query()->create([
+        'project_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-9',
         'checkout_path' => '/tmp/task-9', 'status' => 'source_resolved',
     ]);
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id, 'title' => 'Blocked', 'brief' => 'Unblock it.',
+        'project_id' => $app->id, 'title' => 'Blocked', 'brief' => 'Unblock it.',
         'status' => $status === TaskStatus::Reviewing ? TaskGroupStatus::Reviewing : TaskGroupStatus::Running,
         'assistance_requested' => true, 'assistance_reason' => 'Blocked.',
     ]);
@@ -102,7 +102,7 @@ it('sends a resolution for a blocked review to the reviewer and does not request
 });
 
 it('starts a fresh subtask reviewer with a review resolution when that thread does not exist', function (): void {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'resolution-target', 'slug' => 'resolution-target',
         'repository_url' => 'git@example.test:resolution-target.git', 'default_branch' => 'main',
     ]);
@@ -110,12 +110,12 @@ it('starts a fresh subtask reviewer with a review resolution when that thread do
         'name' => 'resolution-target-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
         'public_ssh_host' => '10.44.0.191', 'wireguard_ip' => '10.44.0.191',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-136',
+    $instance = Instance::query()->create([
+        'project_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-136',
         'checkout_path' => '/tmp/task-136', 'branch' => 'task-136', 'status' => 'source_resolved',
     ]);
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id, 'title' => 'Resolutions', 'brief' => 'Route each resolution to its subtask.',
+        'project_id' => $app->id, 'title' => 'Resolutions', 'brief' => 'Route each resolution to its subtask.',
         'status' => TaskGroupStatus::Reviewing,
         'assistance_requested' => true, 'assistance_reason' => 'The review diff could not be read.',
     ]);

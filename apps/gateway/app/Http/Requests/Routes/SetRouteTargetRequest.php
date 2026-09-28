@@ -7,7 +7,7 @@ namespace App\Http\Requests\Routes;
 use App\Data\Routes\RouteTargetDispositionData;
 use App\Data\Routes\SetRouteTargetsData;
 use App\Http\Requests\TopLevelJsonObjectInspector;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Route;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -20,11 +20,11 @@ final class SetRouteTargetRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'app_instance_id' => ['required_without:targets', 'prohibits:targets', 'integer', Rule::exists(new AppInstance()->getTable(), 'id')],
-            'targets' => ['required_without:app_instance_id', 'array'],
-            'targets.*' => ['integer', Rule::exists(new AppInstance()->getTable(), 'id')],
+            'instance_id' => ['required_without:targets', 'prohibits:targets', 'integer', Rule::exists(new Instance()->getTable(), 'id')],
+            'targets' => ['required_without:instance_id', 'array'],
+            'targets.*' => ['integer', Rule::exists(new Instance()->getTable(), 'id')],
             'dispositions' => ['array'],
-            'dispositions.*.app_instance_id' => ['required', 'integer', Rule::exists(new AppInstance()->getTable(), 'id')],
+            'dispositions.*.instance_id' => ['required', 'integer', Rule::exists(new Instance()->getTable(), 'id')],
             'dispositions.*.route_id' => ['integer', Rule::exists(new Route()->getTable(), 'id')],
             'dispositions.*.remove' => ['boolean'],
         ];
@@ -36,7 +36,7 @@ final class SetRouteTargetRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['app_instance_id', 'targets', 'dispositions'],
+                ['instance_id', 'targets', 'dispositions'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -50,7 +50,7 @@ final class SetRouteTargetRequest extends FormRequest
 
     public function appInstanceId(): int
     {
-        return self::integerValue($this->validated('app_instance_id'));
+        return self::integerValue($this->validated('instance_id'));
     }
 
     public function payload(): SetRouteTargetsData
@@ -63,7 +63,7 @@ final class SetRouteTargetRequest extends FormRequest
                 continue;
             }
 
-            $appInstanceId = self::integerValue($disposition['app_instance_id'] ?? null);
+            $appInstanceId = self::integerValue($disposition['instance_id'] ?? null);
             $routeId = array_key_exists('route_id', $disposition)
                 ? self::integerValue($disposition['route_id'])
                 : null;

@@ -15,7 +15,7 @@ use App\Domain\AppInstances\Dependencies\DependencySnapshot;
 use App\Domain\AppInstances\Dependencies\InstanceDependencyScanResult;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use DateTimeImmutable;
 use Illuminate\Support\Facades\DB;
 
@@ -34,13 +34,13 @@ final readonly class ScanInstanceDependenciesAction
         private ReadInstanceDependencyScanAction $read,
     ) {}
 
-    public function execute(AppInstance $instance): InstanceDependencyScanResult
+    public function execute(Instance $instance): InstanceDependencyScanResult
     {
         $attemptedAt = now()->toDateTimeImmutable();
 
         try {
             return $this->operations->run([$instance->id], function () use ($instance, $attemptedAt): InstanceDependencyScanResult {
-                $current = AppInstance::query()->with('node')->find($instance->id);
+                $current = Instance::query()->with('node')->find($instance->id);
                 if ($current === null) {
                     return $this->failure($instance->id, $attemptedAt, 'dependencies.instance_unavailable', false);
                 }
@@ -55,11 +55,11 @@ final readonly class ScanInstanceDependenciesAction
         }
     }
 
-    private function scan(AppInstance $instance, DateTimeImmutable $attemptedAt): InstanceDependencyScanResult
+    private function scan(Instance $instance, DateTimeImmutable $attemptedAt): InstanceDependencyScanResult
     {
         $identity = $this->identity($instance);
-        $current = AppInstance::query()->with('node')->find($instance->id);
-        if (! $current instanceof AppInstance || ! $this->available($current)) {
+        $current = Instance::query()->with('node')->find($instance->id);
+        if (! $current instanceof Instance || ! $this->available($current)) {
             return $this->failure($instance->id, $attemptedAt, 'dependencies.instance_unavailable');
         }
         if ($identity !== $this->identity($current)) {
@@ -71,17 +71,17 @@ final readonly class ScanInstanceDependenciesAction
             $composer = $this->parse($files, DependencyEcosystem::Composer, $attemptedAt);
             $javascript = $this->parse($files, DependencyEcosystem::Npm, $attemptedAt);
             $confirmed = $this->collect->execute($current);
-            $current = AppInstance::query()->with('node')->find($instance->id);
-            if (! $current instanceof AppInstance || ! $this->available($current)) {
+            $current = Instance::query()->with('node')->find($instance->id);
+            if (! $current instanceof Instance || ! $this->available($current)) {
                 return $this->failure($instance->id, $attemptedAt, 'dependencies.instance_unavailable');
             }
             if ($files != $confirmed) {
                 throw new DependencyCollectionException('dependencies.source_changed');
             }
         } catch (DependencyCollectionException $exception) {
-            $current = AppInstance::query()->with('node')->find($instance->id);
+            $current = Instance::query()->with('node')->find($instance->id);
 
-            return ! $current instanceof AppInstance || ! $this->available($current)
+            return ! $current instanceof Instance || ! $this->available($current)
                 ? $this->failure($instance->id, $attemptedAt, 'dependencies.instance_unavailable')
                 : $this->failure($instance->id, $attemptedAt, $exception->errorCode);
         }
@@ -115,8 +115,8 @@ final readonly class ScanInstanceDependenciesAction
     private function publishCurrent(int $instanceId, array $identity, DependencyScanResult $result): DependencyScanResult
     {
         return DB::transaction(function () use ($instanceId, $identity, $result): DependencyScanResult {
-            $current = AppInstance::query()->with('node')->lockForUpdate()->find($instanceId);
-            if (! $current instanceof AppInstance || ! $this->available($current)) {
+            $current = Instance::query()->with('node')->lockForUpdate()->find($instanceId);
+            if (! $current instanceof Instance || ! $this->available($current)) {
                 $result = DependencyScanResult::failed($result->ecosystem, $result->attemptedAt, 'dependencies.instance_unavailable');
             } elseif ($identity !== $this->identity($current)) {
                 $result = DependencyScanResult::failed($result->ecosystem, $result->attemptedAt, 'dependencies.source_changed');
@@ -126,17 +126,17 @@ final readonly class ScanInstanceDependenciesAction
         });
     }
 
-    private function available(AppInstance $instance): bool
+    private function available(Instance $instance): bool
     {
         return $instance->status === AppInstanceState::Active
             && ! $instance->removalMember()->exists();
     }
 
     /** @return array<string, mixed> */
-    private function identity(AppInstance $instance): array
+    private function identity(Instance $instance): array
     {
         return [
-            ...$instance->only(['app_id', 'node_id', 'environment', 'source_layout', 'checkout_path', 'production_user', 'production_home']),
+            ...$instance->only(['project_id', 'node_id', 'environment', 'source_layout', 'checkout_path', 'production_user', 'production_home']),
             'node' => $instance->node->only(['wireguard_ip', 'user', 'status']),
         ];
     }

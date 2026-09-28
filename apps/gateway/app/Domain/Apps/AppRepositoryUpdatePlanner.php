@@ -6,18 +6,14 @@ namespace App\Domain\Apps;
 
 use App\Domain\AppInstances\AppInstanceSourceLayout;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use Illuminate\Support\Collection;
 
 final readonly class AppRepositoryUpdatePlanner
 {
     /**
-     * @param  Collection<int, AppInstance>  $instances
-     * @return array{
-     *     checkouts: list<AppInstance>,
-     *     worktrees: list<AppInstance>,
-     *     production: list<AppInstance>
-     * }
+     * @param  Collection<int, Instance>  $instances
+     * @return array{checkouts: list<Instance>, worktrees: list<Instance>, production: list<Instance>}
      */
     public function inventory(Collection $instances): array
     {
@@ -51,13 +47,13 @@ final readonly class AppRepositoryUpdatePlanner
     }
 
     /**
-     * @param  list<AppInstance>  $checkouts
-     * @param  list<AppInstance>  $worktrees
+     * @param  list<Instance>  $checkouts
+     * @param  list<Instance>  $worktrees
      */
     public function assertWorktreesOwned(array $checkouts, array $worktrees): void
     {
         foreach ($worktrees as $worktree) {
-            if ($this->ownedCheckout($checkouts, $worktree) instanceof AppInstance) {
+            if ($this->ownedCheckout($checkouts, $worktree) instanceof Instance) {
                 continue;
             }
 
@@ -70,7 +66,7 @@ final readonly class AppRepositoryUpdatePlanner
     }
 
     /**
-     * @param  list<AppInstance>  $checkouts
+     * @param  list<Instance>  $checkouts
      * @return list<string>
      */
     public function uniqueCheckoutPaths(array $checkouts): array
@@ -85,9 +81,9 @@ final readonly class AppRepositoryUpdatePlanner
     }
 
     /**
-     * @param  list<AppInstance>  $checkouts
+     * @param  list<Instance>  $checkouts
      */
-    public function ownedCheckout(array $checkouts, AppInstance $worktree): ?AppInstance
+    public function ownedCheckout(array $checkouts, Instance $worktree): ?Instance
     {
         foreach ($checkouts as $checkout) {
             if ($this->ownsCommonRepository($checkout, $worktree)) {
@@ -98,7 +94,7 @@ final readonly class AppRepositoryUpdatePlanner
         return null;
     }
 
-    private function ownsCommonRepository(AppInstance $checkout, AppInstance $worktree): bool
+    private function ownsCommonRepository(Instance $checkout, Instance $worktree): bool
     {
         if ($checkout->node_id !== $worktree->node_id) {
             return false;

@@ -28,12 +28,12 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Process;
+use App\Models\Project;
 use Illuminate\Support\Facades\DB;
 
 it('captures one configuration and preserves the complete deployment order', function (): void {
@@ -90,7 +90,7 @@ it('installs captured runtime definitions only after deployment selects the rele
     ]);
     $instance->update(['runtime_definitions_captured_at' => now()]);
     $process = Process::query()->create([
-        'owner_type' => AppInstance::MorphAlias,
+        'owner_type' => Instance::MorphAlias,
         'owner_id' => $instance->id,
         'source_definition_id' => $definition->id,
         'name' => 'queue',
@@ -434,7 +434,7 @@ function orb219_actions(
 }
 
 /** @param list<array{name: string, phase: string, command: string, timeout_seconds: int}> $steps */
-function orb219_deployment_instance(array $steps, bool $php = false): AppInstance
+function orb219_deployment_instance(array $steps, bool $php = false): Instance
 {
     $node = Node::query()->create([
         'name' => 'deployment-node',
@@ -449,7 +449,7 @@ function orb219_deployment_instance(array $steps, bool $php = false): AppInstanc
         'role' => RoleName::AppProd,
         'status' => LifecycleStatus::Active,
     ]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Deployment',
         'slug' => 'deployment',
         'repository_url' => 'https://example.test/deployment.git',
@@ -457,8 +457,8 @@ function orb219_deployment_instance(array $steps, bool $php = false): AppInstanc
         'root' => 'public',
     ]);
 
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'production',
         'environment' => 'production',
@@ -517,7 +517,7 @@ final readonly class Orb219EnvironmentSynchronizer implements AppInstanceEnviron
         private ?Closure $after = null,
     ) {}
 
-    public function execute(AppInstance $instance): AppInstanceEnvironmentResult
+    public function execute(Instance $instance): AppInstanceEnvironmentResult
     {
         $this->trace->entries[] = 'environment';
 
@@ -537,7 +537,7 @@ final readonly class Orb219ProductionDeployment implements ProductionDeployment
 {
     public function __construct(private Orb219DeploymentTrace $trace) {}
 
-    public function prepare(AppInstance $appInstance, string $branch): DeploymentRelease
+    public function prepare(Instance $appInstance, string $branch): DeploymentRelease
     {
         $this->record("prepare:{$branch}");
 
@@ -545,7 +545,7 @@ final readonly class Orb219ProductionDeployment implements ProductionDeployment
     }
 
     public function executeStep(
-        AppInstance $appInstance,
+        Instance $appInstance,
         DeploymentRelease $release,
         DeploymentStep $step,
         DeploymentRequest $request,
@@ -559,7 +559,7 @@ final readonly class Orb219ProductionDeployment implements ProductionDeployment
         return new CommandResult(0, "{$step->name}-stdout", "{$step->name}-stderr", 1, false);
     }
 
-    public function activate(AppInstance $appInstance, DeploymentRelease $release): DeploymentRelease
+    public function activate(Instance $appInstance, DeploymentRelease $release): DeploymentRelease
     {
         $entry = "activate:{$release->name}";
         $this->trace->entries[] = $entry;
@@ -577,7 +577,7 @@ final readonly class Orb219ProductionDeployment implements ProductionDeployment
         return $release;
     }
 
-    public function selected(AppInstance $appInstance): ?DeploymentRelease
+    public function selected(Instance $appInstance): ?DeploymentRelease
     {
         if ($this->trace->activationFailed && $this->trace->failActivationReinspection) {
             $this->trace->entries[] = 'selected:failed';
@@ -593,7 +593,7 @@ final readonly class Orb219ProductionDeployment implements ProductionDeployment
         return $this->trace->firstDeployment ? null : $this->release($name);
     }
 
-    public function retained(AppInstance $appInstance, string $name): DeploymentRelease
+    public function retained(Instance $appInstance, string $name): DeploymentRelease
     {
         if (preg_match('/\A[A-Za-z0-9][A-Za-z0-9._-]{0,127}\z/', $name) !== 1) {
             throw new ResourceOperationException('rollback.release_invalid', 'Invalid retained release.', 422);
@@ -604,7 +604,7 @@ final readonly class Orb219ProductionDeployment implements ProductionDeployment
         return $this->release($name);
     }
 
-    public function releases(AppInstance $appInstance): DeploymentReleaseState
+    public function releases(Instance $appInstance): DeploymentReleaseState
     {
         return new DeploymentReleaseState(['initial', 'retained'], 'initial');
     }
@@ -632,11 +632,11 @@ final readonly class Orb219PhpRuntime implements ProductionPhpRuntimeManager
 {
     public function __construct(private Orb219DeploymentTrace $trace) {}
 
-    public function converge(AppInstance $appInstance): void {}
+    public function converge(Instance $appInstance): void {}
 
-    public function convergeMonitoring(AppInstance $appInstance, bool $enabled): void {}
+    public function convergeMonitoring(Instance $appInstance, bool $enabled): void {}
 
-    public function refreshCache(AppInstance $appInstance): void
+    public function refreshCache(Instance $appInstance): void
     {
         $entry = 'cache:'.basename($appInstance->checkout_path);
         $this->trace->entries[] = $entry;
@@ -646,5 +646,5 @@ final readonly class Orb219PhpRuntime implements ProductionPhpRuntimeManager
         }
     }
 
-    public function remove(AppInstance $appInstance): void {}
+    public function remove(Instance $appInstance): void {}
 }

@@ -13,11 +13,11 @@ final readonly class AppInstanceEnvironmentResult
         public int $keyCount,
     ) {}
 
-    /** @return array{app_instance_id: int, operation: string, changed: bool, key_count: int} */
+    /** @return array{instance_id: int, operation: string, changed: bool, key_count: int} */
     public function toArray(): array
     {
         return [
-            'app_instance_id' => $this->appInstanceId,
+            'instance_id' => $this->appInstanceId,
             'operation' => $this->operation,
             'changed' => $this->changed,
             'key_count' => $this->keyCount,

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Processes;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 
 final readonly class ProcessTarget
@@ -16,7 +16,7 @@ final readonly class ProcessTarget
         public string $user,
         public string $checkoutPath,
         public ?string $certificateScope = null,
-        public ?AppInstance $appInstance = null,
+        public ?Instance $appInstance = null,
         public string $environmentFile = '',
         public bool $productionReleaseLayout = false,
         public ?string $routeDomain = null,

@@ -17,8 +17,8 @@ use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Apps\StoreAppRequest;
 use App\Http\Requests\Apps\UpdateAppRequest;
-use App\Models\App as OrbitApp;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\ProjectNodeExclusion;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -34,7 +34,7 @@ final class AppsController extends Controller
         return response()->json([
             'data' => $action
                 ->handle($consumer)
-                ->map(static fn (OrbitApp $app): array => AppData::fromModel($app)->toArray())
+                ->map(static fn (Project $app): array => AppData::fromModel($app)->toArray())
                 ->values()
                 ->all(),
             'meta' => $this->meta($request),
@@ -56,7 +56,7 @@ final class AppsController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::AppOwning)]
-    public function show(Request $request, OrbitApp $app, ShowAppAction $action): JsonResponse
+    public function show(Request $request, Project $app, ShowAppAction $action): JsonResponse
     {
         return response()->json([
             'data' => [
@@ -71,7 +71,7 @@ final class AppsController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::AppOwning)]
-    public function update(UpdateAppRequest $request, OrbitApp $app, UpdateAppAction $action): JsonResponse
+    public function update(UpdateAppRequest $request, Project $app, UpdateAppAction $action): JsonResponse
     {
         return response()->json([
             'data' => AppData::fromModel($action->execute($app, $request->payload()))->toArray(),
@@ -80,7 +80,7 @@ final class AppsController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::AppOwning)]
-    public function destroy(Request $request, OrbitApp $app, RemoveAppAction $action): JsonResponse
+    public function destroy(Request $request, Project $app, RemoveAppAction $action): JsonResponse
     {
         return response()->json([
             'data' => AppData::fromModel($action->execute($app))->toArray(),

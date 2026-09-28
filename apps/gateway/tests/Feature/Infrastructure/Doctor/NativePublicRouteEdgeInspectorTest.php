@@ -22,10 +22,10 @@ use App\Infrastructure\Routes\NativePublicRouteEdgeProjector;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\File;
 use Tests\Support\LocalRootShellSshExecutor;
@@ -502,7 +502,7 @@ function public_edge_route(Cluster $cluster, Node $workload): Route
 {
     static $number = 0;
     $number++;
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => "Shop {$number}",
         'slug' => "shop-{$number}",
         'repository_url' => "https://git.example.test/acme/shop-{$number}.git",
@@ -510,8 +510,8 @@ function public_edge_route(Cluster $cluster, Node $workload): Route
         'root' => 'public',
     ]);
     $user = "orbit-app-{$app->id}";
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $workload->id,
         'name' => 'production',
         'environment' => 'production',
@@ -529,14 +529,14 @@ function public_edge_route(Cluster $cluster, Node $workload): Route
         'status' => AppInstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'cluster_id' => $cluster->id,
         'domain' => "shop-{$number}.example.com",
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Public,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update([
         'status' => RouteStatus::Active,
         'replacement_step' => RouteReplacementStep::PublicActivated,

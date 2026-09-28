@@ -13,10 +13,10 @@ use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\WebSocket\WebSocketDnsTarget;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 
 it('renders managed header and terminal newline', function (): void {
@@ -48,14 +48,14 @@ it('projects a Node-scoped Route to the workload WireGuard address', function ()
         'user' => 'orbit',
     ]);
     $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Solo',
         'slug' => 'solo',
         'repository_url' => 'https://example.test/solo.git',
         'root' => 'public',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'default',
         'checkout_path' => '/home/orbit/apps/solo',
@@ -66,7 +66,7 @@ it('projects a Node-scoped Route to the workload WireGuard address', function ()
         'status' => AppInstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'domain' => 'solo.app.test',
         'provenance' => RouteProvenance::Explicit,
@@ -74,7 +74,7 @@ it('projects a Node-scoped Route to the workload WireGuard address', function ()
         'status' => RouteStatus::Pending,
     ]);
     $route->targets()->create([
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'position' => 0,
     ]);
     $route->update(['status' => RouteStatus::Active]);
@@ -388,14 +388,14 @@ function orb258_cluster_route(): Route
         'role' => RoleName::Router,
         'status' => LifecycleStatus::Active,
     ]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Clustered',
         'slug' => 'clustered',
         'repository_url' => 'https://example.test/clustered.git',
         'root' => 'public',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $workload->id,
         'name' => 'default',
         'checkout_path' => '/home/orbit/apps/clustered',
@@ -406,7 +406,7 @@ function orb258_cluster_route(): Route
         'status' => AppInstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'cluster_id' => $cluster->id,
         'domain' => 'app.cluster.test',
         'provenance' => RouteProvenance::Explicit,
@@ -414,7 +414,7 @@ function orb258_cluster_route(): Route
         'status' => RouteStatus::Pending,
     ]);
     $route->targets()->create([
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'position' => 0,
     ]);
     $route->update(['status' => RouteStatus::Active]);

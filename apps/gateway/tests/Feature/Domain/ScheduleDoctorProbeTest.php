@@ -15,10 +15,10 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Project;
 use App\Models\Schedule;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 
@@ -36,13 +36,13 @@ beforeEach(function (): void {
         'role' => RoleName::AppDev,
         'status' => LifecycleStatus::Active,
     ]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $this->node->id,
         'name' => 'main',
         'environment' => 'development',
@@ -51,7 +51,7 @@ beforeEach(function (): void {
         'status' => AppInstanceState::Active,
     ]);
     $this->schedule = Schedule::query()->create([
-        'target_type' => AppInstance::MorphAlias,
+        'target_type' => Instance::MorphAlias,
         'target_id' => $instance->id,
         'host_node_id' => $this->node->id,
         'name' => 'daily',
@@ -68,7 +68,7 @@ beforeEach(function (): void {
     );
 });
 
-it('accepts a requested disabled and stopped AppInstance timer as healthy', function (): void {
+it('accepts a requested disabled and stopped Instance timer as healthy', function (): void {
     $report = $this->probe->inspect(new DoctorNodeContext($this->node, new NodeInspectionData(true, 'linux', 'x86_64', true)));
 
     expect($report->family)->toBe(DoctorFamily::Schedule)

@@ -16,7 +16,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 
@@ -32,7 +32,7 @@ final readonly class RemoteAppInstanceRuntimeReadiness implements AppInstanceRun
     ) {}
 
     /** @param list<Process> $processes */
-    public function waitUntilReady(AppInstance $instance, array $processes): void
+    public function waitUntilReady(Instance $instance, array $processes): void
     {
         $deadline = time() + $this->timeoutSeconds;
 
@@ -103,7 +103,7 @@ final readonly class RemoteAppInstanceRuntimeReadiness implements AppInstanceRun
         return $viewed;
     }
 
-    private function waitUntilAgentationReady(AppInstance $instance, int $deadline): void
+    private function waitUntilAgentationReady(Instance $instance, int $deadline): void
     {
         $port = (string) ($instance->agentation_port ?? AgentationEndpoint::PORT);
         $remaining = max(1, $deadline - time());

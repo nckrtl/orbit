@@ -15,7 +15,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use Closure;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
@@ -38,7 +38,7 @@ final readonly class UpdateYarnDependenciesAction
     ) {}
 
     /** @param  (Closure(): bool)|null  $cancelled */
-    public function inspect(AppInstance $instance, ?Closure $cancelled = null): DependencyUpdateInspection
+    public function inspect(Instance $instance, ?Closure $cancelled = null): DependencyUpdateInspection
     {
         if ($instance->placedOnAppProd()) {
             return DependencyUpdateInspection::failed('dependencies.production_update_forbidden');
@@ -78,7 +78,7 @@ final readonly class UpdateYarnDependenciesAction
     }
 
     /** @param  (Closure(): bool)|null  $cancelled */
-    public function execute(AppInstance $instance, ?Closure $cancelled = null): DependencyUpdateStepResult
+    public function execute(Instance $instance, ?Closure $cancelled = null): DependencyUpdateStepResult
     {
         $inspection = $this->inspect($instance, $cancelled);
         if ($inspection->errorCode !== null) {
@@ -88,7 +88,7 @@ final readonly class UpdateYarnDependenciesAction
         return DependencyUpdateStepResult::absent(DependencyEcosystem::Npm);
     }
 
-    private function connection(AppInstance $instance): ?SshConnection
+    private function connection(Instance $instance): ?SshConnection
     {
         $node = $instance->node;
         $path = $instance->checkout_path;

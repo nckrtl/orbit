@@ -11,11 +11,11 @@ use App\Data\AppDefinitions\AppDefinitionInputData;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\ProcessDefinition;
+use App\Models\Project;
 use App\Models\Schedule;
 use App\Models\ScheduleDefinition;
 
@@ -211,7 +211,7 @@ it('keeps definition mutations database-only and preserves existing runtime stat
     $instance = domain_runtime_definition_instance($this->orbitApp, $this->gateway, 'primary');
     $other = domain_runtime_definition_instance($this->orbitApp, $this->gateway, 'other');
     $process = Process::query()->create([
-        'owner_type' => AppInstance::MorphAlias,
+        'owner_type' => Instance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => 'existing-worker',
         'runtime' => 'systemd',
@@ -222,7 +222,7 @@ it('keeps definition mutations database-only and preserves existing runtime stat
         'status' => 'active',
     ]);
     $schedule = Schedule::query()->create([
-        'target_type' => AppInstance::MorphAlias,
+        'target_type' => Instance::MorphAlias,
         'target_id' => $instance->id,
         'host_node_id' => $this->gateway->id,
         'name' => 'existing-report',
@@ -278,7 +278,7 @@ it('keeps definition mutations database-only and preserves existing runtime stat
         ->not->toBeNull();
 });
 
-it('keeps definitions when an AppInstance is removed and keeps unrelated copies independent', function (): void {
+it('keeps definitions when an Instance is removed and keeps unrelated copies independent', function (): void {
     $removed = domain_runtime_definition_instance($this->orbitApp, $this->gateway, 'removed');
     $unrelated = domain_runtime_definition_instance($this->orbitApp, $this->gateway, 'unrelated');
     $processDefinition = $this->orbitApp->processDefinitions()->create([
@@ -323,9 +323,9 @@ it('cascades both definition kinds when an otherwise removable App is deleted', 
         ->toBeNull();
 });
 
-function domain_runtime_definition_app(string $slug): OrbitApp
+function domain_runtime_definition_app(string $slug): Project
 {
-    return OrbitApp::query()->create([
+    return Project::query()->create([
         'name' => ucfirst($slug),
         'slug' => $slug,
         'repository_url' => "https://example.test/{$slug}.git",
@@ -334,10 +334,10 @@ function domain_runtime_definition_app(string $slug): OrbitApp
     ]);
 }
 
-function domain_runtime_definition_instance(OrbitApp $app, Node $node, string $name): AppInstance
+function domain_runtime_definition_instance(Project $app, Node $node, string $name): Instance
 {
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => $name,
         'environment' => 'development',

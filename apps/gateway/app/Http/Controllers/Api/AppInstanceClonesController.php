@@ -10,7 +10,7 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AppInstances\CloneAppInstanceRequest;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use Illuminate\Http\JsonResponse;
 
 final class AppInstanceClonesController extends Controller
@@ -18,7 +18,7 @@ final class AppInstanceClonesController extends Controller
     #[RequiresNodeAccess(ServingNode::CandidateClone)]
     public function store(
         CloneAppInstanceRequest $request,
-        AppInstance $candidate,
+        Instance $candidate,
         CloneAppInstanceAction $action,
     ): JsonResponse {
         $result = $action->execute($candidate, $request->payload());

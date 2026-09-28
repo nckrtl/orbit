@@ -7,9 +7,9 @@ namespace App\Actions\AppInstances\Dependencies;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\Dependencies\DependencyScanResult;
 use App\Domain\AppInstances\Dependencies\DependencySnapshot;
-use App\Models\AppInstance;
 use App\Models\AppInstanceDependencyScanAttempt;
 use App\Models\DependencyPackage;
+use App\Models\Instance;
 use DateTimeZone;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -24,7 +24,7 @@ final readonly class PublishInstanceDependencyScanAction
     {
         try {
             return DB::transaction(function () use ($instanceId, $result): DependencyScanResult {
-                $instance = AppInstance::query()->lockForUpdate()->find($instanceId);
+                $instance = Instance::query()->lockForUpdate()->find($instanceId);
 
                 if ($instance === null) {
                     return DependencyScanResult::failed($result->ecosystem, $result->attemptedAt, 'dependencies.instance_unavailable');
@@ -39,7 +39,7 @@ final readonly class PublishInstanceDependencyScanAction
                 }
 
                 AppInstanceDependencyScanAttempt::query()->create([
-                    'app_instance_id' => $instance->id,
+                    'instance_id' => $instance->id,
                     'ecosystem' => $result->ecosystem,
                     'attempted_at' => $result->attemptedAt->setTimezone(new DateTimeZone('UTC')),
                     'error_code' => $result->errorCode,
@@ -62,7 +62,7 @@ final readonly class PublishInstanceDependencyScanAction
         }
     }
 
-    private function replace(AppInstance $instance, DependencySnapshot $snapshot): void
+    private function replace(Instance $instance, DependencySnapshot $snapshot): void
     {
         $instance->dependencyObservations()->where('ecosystem', $snapshot->ecosystem)->delete();
         $observation = $instance->dependencyObservations()->create([

@@ -29,3 +29,16 @@ docs/reference/php-runtime.md: PHP-FPM still seeds local.conf from its built-in 
 docs/reference/schedules.md: Schedule placement and create rules are unchanged.
 docs/reference/web-app.md: The web app still generates its schema from OpenAPI. Navigation and layout are unchanged.
 docs/reference/cli-command-vocabulary.md: Option renames do not change verbs, family actions, noun-ending commands, or the command count.
+docs/cli/activity.mdx: mechanical App to Project/Instance rename, no behavior change
+docs/cli/cluster.mdx: mechanical App to Project/Instance rename, no behavior change
+docs/reference/app-dev-runtime-hibernation.md: mechanical App to Project/Instance rename, no behavior change
+docs/reference/instance-analytics-stats.md: mechanical App to Project/Instance rename, no behavior change
+docs/reference/instance-dependencies.md: mechanical App to Project/Instance rename, no behavior change
+docs/reference/live-logs.md: mechanical App to Project/Instance rename, no behavior change
+docs/reference/metrics.md: mechanical App to Project/Instance rename, no behavior change
+docs/reference/node-agent.md: mechanical App to Project/Instance rename, no behavior change
+docs/reference/node-settings.md: mechanical App to Project/Instance rename, no behavior change
+docs/reference/php-runtime.md: mechanical App to Project/Instance rename, no behavior change
+docs/reference/service-metrics.md: mechanical App to Project/Instance rename, no behavior change
+docs/solutions/doctor-incus-proof.md: mechanical App to Project/Instance rename, no behavior change
+docs/solutions/remote-file-writes-on-uutils-coreutils.md: mechanical App to Project/Instance rename, no behavior change

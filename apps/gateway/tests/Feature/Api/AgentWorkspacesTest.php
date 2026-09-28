@@ -5,9 +5,9 @@ declare(strict_types=1);
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\TaskGroup;
 
 function agent_workspace_node(string $name, string $address): Node
@@ -22,22 +22,22 @@ function agent_workspace_node(string $name, string $address): Node
     ]);
 }
 
-function agent_workspace_group(Node $node, string $name, TaskGroupStatus $status, ?string $start = null): AppInstance
+function agent_workspace_group(Node $node, string $name, TaskGroupStatus $status, ?string $start = null): Instance
 {
-    $app = OrbitApp::query()->firstOrCreate(['slug' => 'agent-workspaces'], [
+    $app = Project::query()->firstOrCreate(['slug' => 'agent-workspaces'], [
         'name' => 'Agent workspaces',
         'repository_url' => 'git@example.test:agent-workspaces.git',
         'default_branch' => 'main',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => $name,
         'checkout_path' => "/home/orbit/apps/agent-workspaces/{$name}",
         'status' => 'source_resolved',
         'starting_commit' => $start,
     ]);
-    $group = TaskGroup::query()->create(['app_id' => $app->id, 'title' => $name, 'brief' => 'Brief', 'status' => $status]);
+    $group = TaskGroup::query()->create(['project_id' => $app->id, 'title' => $name, 'brief' => 'Brief', 'status' => $status]);
     $group->taskable()->associate($instance);
     $group->save();
 

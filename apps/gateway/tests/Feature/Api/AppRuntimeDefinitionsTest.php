@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\ProcessDefinition;
+use App\Models\Project;
 use App\Models\ScheduleDefinition;
 use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\Event;
@@ -290,8 +290,8 @@ it('uses the placed App operation boundary and rejects cross-App names', functio
         'public_ssh_host' => '192.0.2.2',
         'wireguard_ip' => '10.44.0.2',
     ]);
-    AppInstance::query()->create([
-        'app_id' => $this->orbitApp->id,
+    Instance::query()->create([
+        'project_id' => $this->orbitApp->id,
         'node_id' => $owner->id,
         'name' => 'development',
         'checkout_path' => '/srv/acme',
@@ -374,7 +374,7 @@ it('keeps definition commands out of Activity and model debug output', function 
     expect($activity->command)
         ->toBe('project:process-definition:create')
         ->and($activity->subject_type)
-        ->toBe(OrbitApp::class)
+        ->toBe(Project::class)
         ->and($activity->subject_id)
         ->toBe($this->orbitApp->id)
         ->and(print_r($activity->toArray(), return: true))
@@ -412,7 +412,7 @@ it('records each definition command name against the App', function (
     expect($activity->command)
         ->toBe($command)
         ->and($activity->subject_type)
-        ->toBe(OrbitApp::class)
+        ->toBe(Project::class)
         ->and($activity->subject_id)
         ->toBe($this->orbitApp->id);
 })->with([
@@ -426,9 +426,9 @@ it('records each definition command name against the App', function (
     'schedule destroy' => ['DELETE', 'schedule-definitions/hourly', null, 'project:schedule-definition:destroy'],
 ]);
 
-function runtime_definition_app(string $slug): OrbitApp
+function runtime_definition_app(string $slug): Project
 {
-    return OrbitApp::query()->create([
+    return Project::query()->create([
         'name' => ucfirst($slug),
         'slug' => $slug,
         'repository_url' => "https://example.test/{$slug}.git",

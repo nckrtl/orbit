@@ -11,9 +11,9 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 
 it('normalizes valid ordered steps and the default timeout', function (): void {
     $config = new DeploymentConfig('release/next', [
@@ -188,10 +188,10 @@ it('updates only stored deployment intent without changing source evidence or cu
     }
 });
 
-/** @return array{OrbitApp, AppInstance, AppInstance} */
+/** @return array{Project, Instance, Instance} */
 function deployment_domain_fixture(): array
 {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Deployment domain',
         'slug' => 'deployment-domain',
         'repository_url' => 'https://example.test/deployment-domain.git',
@@ -210,8 +210,8 @@ function deployment_domain_fixture(): array
     $instances = [];
 
     foreach ([['first', 'main', 'main'], ['second', 'stable', null]] as $index => [$name, $branch, $override]) {
-        $instances[] = AppInstance::query()->create([
-            'app_id' => $app->id,
+        $instances[] = Instance::query()->create([
+            'project_id' => $app->id,
             'node_id' => $nodes[$index]->id,
             'name' => $name,
             'environment' => 'production',

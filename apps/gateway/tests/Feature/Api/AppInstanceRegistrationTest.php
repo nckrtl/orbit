@@ -25,9 +25,9 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Models\Activity;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Str;
 
@@ -80,7 +80,7 @@ beforeEach(function (): void {
         /** @var list<string> */
         public array $inspected = [];
 
-        public function inspect(AppInstance $appInstance): DevelopmentSourceProfile
+        public function inspect(Instance $appInstance): DevelopmentSourceProfile
         {
             $this->inspected[] = $appInstance->checkout_path;
 
@@ -95,14 +95,14 @@ beforeEach(function (): void {
             return new DevelopmentSourceProfile('8.5', true);
         }
 
-        public function configureLaravelUrl(AppInstance $appInstance, string $url): void {}
+        public function configureLaravelUrl(Instance $appInstance, string $url): void {}
     };
     app()->instance(DevelopmentAppInstanceConfigurator::class, $this->configuration);
     $this->projection = new class implements DevelopmentRouteProjector
     {
         public bool $fail = false;
 
-        public function converge(AppInstance $appInstance, Route $route): void
+        public function converge(Instance $appInstance, Route $route): void
         {
             if ($this->fail) {
                 throw new ResourceOperationException('instance.projection_failed', 'Projection failed.');
@@ -171,7 +171,7 @@ beforeEach(function (): void {
             }
         }
 
-        public function relocate(AppInstance $appInstance, RegistrationSourceFacts $facts): void
+        public function relocate(Instance $appInstance, RegistrationSourceFacts $facts): void
         {
             $this->calls[] = 'relocate';
         }
@@ -187,7 +187,7 @@ beforeEach(function (): void {
             }
 
             foreach ($members as $member) {
-                AppInstance::query()
+                Instance::query()
                     ->whereKey($member['appInstance']->id)
                     ->update([
                         'registration_relocation_state' => 'relocated',
@@ -196,10 +196,10 @@ beforeEach(function (): void {
             }
         }
 
-        public function restoreOriginal(AppInstance $appInstance, RegistrationSourceFacts $facts): void
+        public function restoreOriginal(Instance $appInstance, RegistrationSourceFacts $facts): void
         {
             $this->calls[] = 'restore-original';
-            AppInstance::query()
+            Instance::query()
                 ->whereKey($appInstance->id)
                 ->update([
                     'registration_relocation_state' => 'reserved',
@@ -207,17 +207,17 @@ beforeEach(function (): void {
                 ]);
         }
 
-        public function prepareLaravelRollback(AppInstance $appInstance): void
+        public function prepareLaravelRollback(Instance $appInstance): void
         {
             $this->calls[] = 'url-prepare';
         }
 
-        public function restoreLaravelConfiguration(AppInstance $appInstance): void
+        public function restoreLaravelConfiguration(Instance $appInstance): void
         {
             $this->calls[] = 'url-restore';
         }
 
-        public function discardLaravelRollback(AppInstance $appInstance): void
+        public function discardLaravelRollback(Instance $appInstance): void
         {
             $this->calls[] = 'url-discard';
 
@@ -243,9 +243,9 @@ it('refuses a non Git source before any registration mutation', function (): voi
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'instance.source_invalid');
 
-    expect(OrbitApp::query()->count())
+    expect(Project::query()->count())
         ->toBe(0)
-        ->and(AppInstance::query()->count())
+        ->and(Instance::query()->count())
         ->toBe(0)
         ->and(Route::query()->count())
         ->toBe(0)
@@ -254,7 +254,7 @@ it('refuses a non Git source before any registration mutation', function (): voi
 });
 
 it('resolves an App by canonical repository identity and returns bounded source state', function (): void {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
@@ -287,7 +287,7 @@ it('resolves an App by canonical repository identity and returns bounded source 
         ->not->toHaveKey('source_path');
 });
 
-it('creates a confirmed missing App before its AppInstance and retains it after later failure', function (): void {
+it('creates a confirmed missing App before its Instance and retains it after later failure', function (): void {
     $payload = [
         'source_path' => '/work/acme',
         'app_slug' => 'acme',
@@ -301,7 +301,7 @@ it('creates a confirmed missing App before its AppInstance and retains it after 
         ->assertJsonPath('data.app.slug', 'acme')
         ->assertJsonPath('data.app_instance.name', 'default');
 
-    expect(OrbitApp::query()->count())->toBe(1)->and(AppInstance::query()->count())->toBe(1);
+    expect(Project::query()->count())->toBe(1)->and(Instance::query()->count())->toBe(1);
 });
 
 it('requires unresolved values without mutating and keeps a valid App on incomplete registration', function (): void {
@@ -326,7 +326,7 @@ it('requires unresolved values without mutating and keeps a valid App on incompl
         ->postJson('/api/v1/instances/register', ['source_path' => '/work/acme'])
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'instance.registration_values_unresolved');
-    expect(OrbitApp::query()->count())->toBe(0)->and(AppInstance::query()->count())->toBe(0);
+    expect(Project::query()->count())->toBe(0)->and(Instance::query()->count())->toBe(0);
 
     $this->registrationSource->facts = [registration_facts()];
     $this->projection->fail = true;
@@ -341,19 +341,19 @@ it('requires unresolved values without mutating and keeps a valid App on incompl
         ->assertJsonPath('error.code', 'instance.registration_incomplete')
         ->assertJsonPath(
             'error.message',
-            'App [acme] was retained; AppInstance registration is incomplete and can be retried.',
+            'App [acme] was retained; Instance registration is incomplete and can be retried.',
         );
 
-    expect(OrbitApp::query()->count())
+    expect(Project::query()->count())
         ->toBe(1)
-        ->and(AppInstance::query()->sole()->status->value)
+        ->and(Instance::query()->sole()->status->value)
         ->toBe('source_resolved')
         ->and($this->registrationSource->calls)
         ->toContain('url-restore');
 });
 
 it('returns the same identities on an identical retry and refuses conflicting evidence', function (): void {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
@@ -368,7 +368,7 @@ it('returns the same identities on an identical retry and refuses conflicting ev
         ->toBe($first->json('data.app_instance.id'))
         ->and($second->json('data.app_instance.route.id'))
         ->toBe($first->json('data.app_instance.route.id'))
-        ->and(AppInstance::query()->count())
+        ->and(Instance::query()->count())
         ->toBe(1)
         ->and(Route::query()->count())
         ->toBe(1)
@@ -386,11 +386,11 @@ it('returns the same identities on an identical retry and refuses conflicting ev
         ->postJson('/api/v1/instances/register', [...$payload, 'app_slug' => 'different'])
         ->assertConflict()
         ->assertJsonPath('error.code', 'app.identity_conflict');
-    expect(AppInstance::query()->count())->toBe(1)->and(Route::query()->count())->toBe(1);
+    expect(Instance::query()->count())->toBe(1)->and(Route::query()->count())->toBe(1);
 });
 
 it('preserves an ordinary retained root when retry input is omitted or identical and returns 409 for a conflict', function (): void {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
@@ -409,7 +409,7 @@ it('preserves an ordinary retained root when retry input is omitted or identical
         'project_id' => $app->id,
     ])->assertOk();
     $identical = $this->postJson('/api/v1/instances/register', $payload)->assertOk();
-    $instance = AppInstance::query()->sole();
+    $instance = Instance::query()->sole();
     $route = Route::query()->sole();
     $before = $instance->refresh()->getAttributes();
 
@@ -434,7 +434,7 @@ it('preserves an ordinary retained root when retry input is omitted or identical
         ->toBe($first->json('data.app_instance.route.id'));
 });
 it('retains explicit hostname intent before Route creation and rejects a changed retry with 409', function (): void {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
@@ -453,7 +453,7 @@ it('retains explicit hostname intent before Route creation and rejects a changed
         ->assertStatus(502)
         ->assertJsonPath('error.code', 'instance.registration_incomplete');
 
-    $instance = AppInstance::query()->sole();
+    $instance = Instance::query()->sole();
     $before = $instance->refresh()->getAttributes();
 
     $this
@@ -489,7 +489,7 @@ it('retains explicit hostname intent before Route creation and rejects a changed
 });
 
 it('preserves explicit hostname intent after Route creation and returns 409 for a changed retry', function (): void {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
@@ -508,7 +508,7 @@ it('preserves explicit hostname intent after Route creation and returns 409 for 
         ->assertStatus(502)
         ->assertJsonPath('error.code', 'instance.registration_incomplete');
 
-    $instance = AppInstance::query()->sole();
+    $instance = Instance::query()->sole();
     $route = Route::query()->sole();
     $instanceBefore = $instance->refresh()->getAttributes();
     $routeBefore = $route->refresh()->getAttributes();
@@ -543,7 +543,7 @@ it('preserves explicit hostname intent after Route creation and returns 409 for 
 });
 
 it('retains generated hostname provenance and returns 409 for a later explicit hostname', function (): void {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
@@ -560,7 +560,7 @@ it('retains generated hostname provenance and returns 409 for a later explicit h
         ->assertStatus(502)
         ->assertJsonPath('error.code', 'instance.registration_incomplete');
 
-    $instance = AppInstance::query()->sole();
+    $instance = Instance::query()->sole();
     $before = $instance->refresh()->getAttributes();
 
     $this
@@ -593,7 +593,7 @@ it('retains generated hostname provenance and returns 409 for a later explicit h
 it('uses the current sole Route after publication for omitted, matching, and conflicting retries', function (
     bool $registrationCompleted,
 ): void {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
@@ -608,7 +608,7 @@ it('uses the current sole Route after publication for omitted, matching, and con
         ...$payload,
         'domain' => 'original.test',
     ])->assertOk();
-    $instance = AppInstance::query()->sole();
+    $instance = Instance::query()->sole();
     $route = Route::query()->sole();
     bind_route_domain_update_for_registration_test();
 
@@ -668,7 +668,7 @@ it('uses the current sole Route after publication for omitted, matching, and con
     'active publication before registration completion' => false,
 ]);
 it('refuses registration while the authoritative Route domain change is incomplete', function (): void {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
@@ -681,10 +681,10 @@ it('refuses registration while the authoritative Route domain change is incomple
         'domain' => 'original.test',
     ];
     $this->postJson('/api/v1/instances/register', $payload)->assertOk();
-    $instance = AppInstance::query()->sole();
+    $instance = Instance::query()->sole();
     $route = Route::query()->sole();
     $replacement = Route::query()->create([
-        'app_id' => $route->app_id,
+        'project_id' => $route->project_id,
         'node_id' => $route->node_id,
         'domain' => 'changed.test',
         'provenance' => $route->provenance,
@@ -712,7 +712,7 @@ it('refuses colliding complete-set identities before reservation on every retry'
     array $paths,
     ?string $name,
 ): void {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
@@ -733,7 +733,7 @@ it('refuses colliding complete-set identities before reservation on every retry'
             ->assertConflict()
             ->assertJsonPath('error.code', 'instance.identity_conflict');
 
-        expect(AppInstance::query()->count())
+        expect(Instance::query()->count())
             ->toBe(0, "attempt {$attempt}")
             ->and(Route::query()->count())
             ->toBe(0, "attempt {$attempt}");
@@ -752,7 +752,7 @@ it('refuses colliding complete-set identities before reservation on every retry'
 ]);
 
 it('refuses retained registration evidence that omits one requested worktree', function (): void {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
@@ -761,8 +761,8 @@ it('refuses retained registration evidence that omits one requested worktree', f
     ]);
     $paths = ['/work/primary/source', '/work/linked/feature'];
     $requestId = (string) Str::uuid();
-    AppInstance::query()->create([
-        'app_id' => $app->id,
+    Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $this->node->id,
         'name' => 'source',
         'source_layout' => 'checkout',
@@ -796,7 +796,7 @@ it('refuses retained registration evidence that omits one requested worktree', f
             ->assertConflict()
             ->assertJsonPath('error.code', 'instance.registration_evidence_invalid');
 
-        expect(AppInstance::query()->count())
+        expect(Instance::query()->count())
             ->toBe(1, "attempt {$attempt}")
             ->and(Route::query()->count())
             ->toBe(0, "attempt {$attempt}");
@@ -809,7 +809,7 @@ it('returns 409 for a retained secondary request and keeps the complete primary 
     bool $includeWorktrees,
     bool $relatedMemberDiscovery,
 ): void {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
@@ -822,9 +822,9 @@ it('returns 409 for a retained secondary request and keeps the complete primary 
     $instances = collect($facts)->map(function (RegistrationSourceFacts $fact, int $index) use (
         $app,
         $requestId,
-    ): AppInstance {
-        return AppInstance::query()->create([
-            'app_id' => $app->id,
+    ): Instance {
+        return Instance::query()->create([
+            'project_id' => $app->id,
             'node_id' => $this->node->id,
             'name' => $index === 0 ? 'default' : 'feature',
             'source_layout' => $fact->layout,
@@ -855,11 +855,11 @@ it('returns 409 for a retained secondary request and keeps the complete primary 
             'status' => AppInstanceState::Reserved,
         ]);
     });
-    $before = AppInstance::query()
+    $before = Instance::query()
         ->orderBy('id')
         ->get()
         ->mapWithKeys(
-            static fn (AppInstance $instance): array => [$instance->id => $instance->getAttributes()],
+            static fn (Instance $instance): array => [$instance->id => $instance->getAttributes()],
         )
         ->all();
     $submittedPath = $paths[1];
@@ -881,11 +881,11 @@ it('returns 409 for a retained secondary request and keeps the complete primary 
         ->assertJsonPath('error.code', 'instance.registration_conflict');
 
     expect(
-        AppInstance::query()
+        Instance::query()
             ->orderBy('id')
             ->get()
             ->mapWithKeys(
-                static fn (AppInstance $instance): array => [$instance->id => $instance->getAttributes()],
+                static fn (Instance $instance): array => [$instance->id => $instance->getAttributes()],
             )
             ->all(),
     )
@@ -932,7 +932,7 @@ it('accepts evidence-backed managed primary retries after completion and interru
     bool $includeWorktrees,
     bool $completed,
 ): void {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
@@ -958,9 +958,9 @@ it('accepts evidence-backed managed primary retries after completion and interru
         $originalPaths,
         $requestId,
         &$routeIds,
-    ): AppInstance {
-        $instance = AppInstance::query()->create([
-            'app_id' => $app->id,
+    ): Instance {
+        $instance = Instance::query()->create([
+            'project_id' => $app->id,
             'node_id' => $this->node->id,
             'name' => $index === 0 ? 'default' : 'feature',
             'source_layout' => $fact->layout,
@@ -989,7 +989,7 @@ it('accepts evidence-backed managed primary retries after completion and interru
             'status' => AppInstanceState::Active,
         ]);
         $route = Route::query()->create([
-            'app_id' => $app->id,
+            'project_id' => $app->id,
             'node_id' => $this->node->id,
             'generation_basis_node_id' => $index === 0 ? null : $this->node->id,
             'domain' => $index === 0 ? 'primary.test' : 'feature.acme.test',
@@ -997,7 +997,7 @@ it('accepts evidence-backed managed primary retries after completion and interru
             'publication' => RoutePublication::Private,
             'status' => RouteStatus::Pending,
         ]);
-        $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+        $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
         $route->update(['status' => RouteStatus::Active]);
         $routeIds[$instance->name] = $route->id;
 
@@ -1012,7 +1012,7 @@ it('accepts evidence-backed managed primary retries after completion and interru
     ])->assertOk();
     $retried = collect($response->json('data.instances'))->keyBy('name');
     $instanceIds = $instances->mapWithKeys(
-        static fn (AppInstance $instance): array => [$instance->name => $instance->id],
+        static fn (Instance $instance): array => [$instance->name => $instance->id],
     )->all();
 
     expect($response->json('data.source_count'))
@@ -1032,7 +1032,7 @@ it('accepts evidence-backed managed primary retries after completion and interru
         )
         ->toBe($routeIds)
         ->and(
-            AppInstance::query()
+            Instance::query()
                 ->whereIn('id', $instances->pluck('id'))
                 ->whereNotNull(
                     'registration_completed_at',
@@ -1048,15 +1048,15 @@ it('accepts evidence-backed managed primary retries after completion and interru
     'interrupted included source set' => [true, false],
 ]);
 it('finishes the same published registration without downgrading its active provisioning state', function (): void {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $this->node->id,
         'name' => 'default',
         'source_layout' => 'checkout',
@@ -1082,14 +1082,14 @@ it('finishes the same published registration without downgrading its active prov
         'status' => AppInstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'node_id' => $this->node->id,
         'domain' => 'preserved.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
 
     $response = $this->postJson('/api/v1/instances/register', [
@@ -1130,7 +1130,7 @@ it('finishes the same published registration without downgrading its active prov
 });
 
 it('retries receipt cleanup after registration completion without republishing or replacing evidence', function (): void {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
@@ -1145,7 +1145,7 @@ it('retries receipt cleanup after registration completion without republishing o
         ->assertStatus(502)
         ->assertJsonPath('error.code', 'instance.registration_incomplete');
 
-    $instance = AppInstance::query()->sole();
+    $instance = Instance::query()->sole();
     $route = Route::query()->sole();
     expect($instance->status)
         ->toBe(AppInstanceState::Active)
@@ -1169,7 +1169,7 @@ it('retries receipt cleanup after registration completion without republishing o
         ->toBeNull()
         ->and($instance->error_code)
         ->toBeNull()
-        ->and(AppInstance::query()->count())
+        ->and(Instance::query()->count())
         ->toBe(1)
         ->and(Route::query()->count())
         ->toBe(1)
@@ -1185,15 +1185,15 @@ it('retries receipt cleanup after registration completion without republishing o
 });
 
 it('recovers a same-filesystem move that outran its relocation checkpoint', function (): void {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $this->node->id,
         'name' => 'default',
         'source_layout' => 'checkout',
@@ -1230,7 +1230,7 @@ it('recovers a same-filesystem move that outran its relocation checkpoint', func
 });
 
 it('refuses a future managed primary path before relocation makes it a candidate', function (): void {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
@@ -1239,8 +1239,8 @@ it('refuses a future managed primary path before relocation makes it a candidate
     ]);
     $original = '/work/acme';
     $destination = '/srv/orbit/apps/acme/default';
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $this->node->id,
         'name' => 'default',
         'source_layout' => 'checkout',
@@ -1264,23 +1264,23 @@ it('refuses a future managed primary path before relocation makes it a candidate
 
     expect($instance->refresh()->getAttributes())
         ->toBe($before)
-        ->and(AppInstance::query()->count())
+        ->and(Instance::query()->count())
         ->toBe(1)
         ->and(Route::query()->count())
         ->toBe(0)
         ->and($this->registrationSource->calls)
         ->toBe([]);
 });
-it('refuses to adopt an AppInstance already owned through instance new', function (): void {
-    $app = OrbitApp::query()->create([
+it('refuses to adopt an Instance already owned through instance new', function (): void {
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $this->node->id,
         'name' => 'default',
         'source_layout' => 'checkout',
@@ -1311,7 +1311,7 @@ it('refuses to adopt an AppInstance already owned through instance new', functio
 });
 
 it('uses an explicit hostname only for the primary member of a requested source set', function (): void {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
@@ -1336,7 +1336,7 @@ it('uses an explicit hostname only for the primary member of a requested source 
         'domain' => 'primary.test',
     ])->assertOk();
     $retried = collect($retry->json('data.instances'))->keyBy('name');
-    $retained = AppInstance::query()->get()->keyBy('name');
+    $retained = Instance::query()->get()->keyBy('name');
     expect($instances['default']['route']['domain'])
         ->toBe('primary.test')
         ->and($instances['feature']['route']['domain'])
@@ -1362,7 +1362,7 @@ it('uses an explicit hostname only for the primary member of a requested source 
 });
 
 it('adopts an unregistered source already at its calculated managed destination', function (): void {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
@@ -1385,7 +1385,7 @@ it('adopts an unregistered source already at its calculated managed destination'
 });
 
 it('preflights every member source profile before reservation or relocation', function (): void {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
@@ -1407,14 +1407,14 @@ it('preflights every member source profile before reservation or relocation', fu
 
     expect($this->configuration->inspected)
         ->toBe($paths)
-        ->and(AppInstance::query()->count())
+        ->and(Instance::query()->count())
         ->toBe(0)
         ->and($this->registrationSource->calls)
         ->toBe(['inspect']);
 });
 
 it('refuses retained source identity replacement before activation', function (): void {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
@@ -1431,18 +1431,18 @@ it('refuses retained source identity replacement before activation', function ()
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.registration_conflict');
 
-    expect(AppInstance::query()->count())->toBe(1)->and(Route::query()->count())->toBe(1);
+    expect(Instance::query()->count())->toBe(1)->and(Route::query()->count())->toBe(1);
 });
 
-it('refuses a source nested in an AppInstance checkout', function (): void {
-    $app = OrbitApp::query()->create([
+it('refuses a source nested in an Instance checkout', function (): void {
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    $other = OrbitApp::query()->create([
+    $other = Project::query()->create([
         'name' => 'Other',
         'slug' => 'other',
         'repository_url' => 'https://github.com/acme/other.git',
@@ -1450,8 +1450,8 @@ it('refuses a source nested in an AppInstance checkout', function (): void {
         'root' => 'public',
     ]);
     $source = '/managed/other/nested/acme';
-    AppInstance::query()->create([
-        'app_id' => $other->id,
+    Instance::query()->create([
+        'project_id' => $other->id,
         'node_id' => $this->node->id,
         'name' => 'default',
         'environment' => 'development',

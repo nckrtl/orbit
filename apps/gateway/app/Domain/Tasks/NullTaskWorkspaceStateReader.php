@@ -4,21 +4,21 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class NullTaskWorkspaceStateReader implements TaskWorkspaceStateReader
 {
-    public function headCommit(AppInstance $instance): ?string
+    public function headCommit(Instance $instance): ?string
     {
         return null;
     }
 
-    public function currentBranch(AppInstance $instance): ?string
+    public function currentBranch(Instance $instance): ?string
     {
         return null;
     }
 
-    public function definesComposerCheckScript(AppInstance $instance): bool
+    public function definesComposerCheckScript(Instance $instance): bool
     {
         return false;
     }

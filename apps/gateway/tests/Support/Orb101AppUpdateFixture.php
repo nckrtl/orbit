@@ -14,18 +14,18 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Tests\TestCase;
 
 final class Orb101AppUpdateFixture
 {
     public function __construct(
-        public OrbitApp $app,
+        public Project $app,
         public Node $node,
-        public AppInstance $defaultInstance,
+        public Instance $defaultInstance,
         public Route $defaultRoute,
         public FakeAppUpdateSourceMutator $sources,
         public FakeAppUpdateProjectionMutator $projections,
@@ -61,15 +61,15 @@ final class Orb101AppUpdateFixture
             'role' => RoleName::AppDev,
             'status' => LifecycleStatus::Active,
         ]);
-        $app = OrbitApp::query()->create([
+        $app = Project::query()->create([
             'name' => 'Acme',
             'slug' => 'acme',
             'repository_url' => 'git@github.com:acme/site.git',
             'default_branch' => 'main',
             'root' => 'public',
         ]);
-        $default = AppInstance::query()->create([
-            'app_id' => $app->id,
+        $default = Instance::query()->create([
+            'project_id' => $app->id,
             'node_id' => $node->id,
             'name' => 'default',
             'environment' => 'development',
@@ -80,14 +80,14 @@ final class Orb101AppUpdateFixture
             'status' => AppInstanceState::Active,
         ]);
         $route = Route::query()->create([
-            'app_id' => $app->id,
+            'project_id' => $app->id,
             'node_id' => $node->id,
             'generation_basis_node_id' => $node->id,
             'domain' => 'acme.test',
             'provenance' => RouteProvenance::Generated,
             'publication' => RoutePublication::Private,
         ]);
-        $route->targets()->create(['app_instance_id' => $default->id, 'position' => 0]);
+        $route->targets()->create(['instance_id' => $default->id, 'position' => 0]);
         $route->update(['status' => RouteStatus::Active]);
 
         return new self($app, $node, $default, $route, $sources, $projections);

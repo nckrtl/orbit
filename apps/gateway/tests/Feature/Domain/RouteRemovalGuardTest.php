@@ -19,15 +19,15 @@ use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use App\Models\RouteTarget;
 
 beforeEach(function (): void {
-    $this->orbitApp = OrbitApp::query()->create([
+    $this->orbitApp = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
@@ -35,8 +35,8 @@ beforeEach(function (): void {
         'root' => 'public',
     ]);
     $this->node = route_removal_node('dev');
-    $this->instance = AppInstance::query()->create([
-        'app_id' => $this->orbitApp->id,
+    $this->instance = Instance::query()->create([
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
         'checkout_path' => '/srv/dev',
@@ -72,13 +72,13 @@ it('guards Cluster scope and Router clearing even when the Cluster has no TLD', 
 
 it('runs ownership and scope guards through destructive action entry points', function (): void {
     $caller = route_removal_node('caller');
-    $routed = OrbitApp::query()->create([
+    $routed = Project::query()->create([
         'name' => 'Routed',
         'slug' => 'routed',
         'repository_url' => 'https://example.test/routed.git',
     ]);
     Route::query()->create([
-        'app_id' => $routed->id,
+        'project_id' => $routed->id,
         'node_id' => $this->node->id,
         'domain' => 'routed.dev.test',
         'provenance' => RouteProvenance::Explicit,
@@ -203,7 +203,7 @@ it('refuses Ingress removal while public Routes depend on the Cluster', function
 
 it('eligible Route removal deletes only owned target rows and releases unrelated resources', function (): void {
     $unrelatedNode = route_removal_node('unrelated');
-    $unrelatedApp = OrbitApp::query()->create([
+    $unrelatedApp = Project::query()->create([
         'name' => 'Other',
         'slug' => 'other',
         'repository_url' => 'https://example.test/other.git',

@@ -10,14 +10,14 @@ use App\Domain\Analytics\AnalyticsHostname;
 use App\Domain\Analytics\AnalyticsTrackingHosts;
 use App\Domain\Analytics\AnalyticsTrackingUpstream;
 use App\Domain\Routes\RouteKind;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Database\Eloquent\Collection;
 
 final readonly class ShowInstanceAnalyticsAction
 {
-    public function execute(AppInstance $instance): InstanceAnalyticsData
+    public function execute(Instance $instance): InstanceAnalyticsData
     {
         $domain = $instance->unsetRelation('routes')->authoritativeRoute()?->domain;
         $routes = $this->trackingRoutes($instance);
@@ -40,11 +40,11 @@ final readonly class ShowInstanceAnalyticsAction
     }
 
     /** @return Collection<int, Route> */
-    public function trackingRoutes(AppInstance $instance): Collection
+    public function trackingRoutes(Instance $instance): Collection
     {
         return Route::query()
             ->where('kind', RouteKind::AnalyticsTracking->value)
-            ->whereHas('analyticsTracking', static fn ($query) => $query->where('app_instance_id', $instance->id))
+            ->whereHas('analyticsTracking', static fn ($query) => $query->where('instance_id', $instance->id))
             ->orderBy('id')
             ->get();
     }

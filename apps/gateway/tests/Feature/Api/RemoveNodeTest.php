@@ -34,13 +34,13 @@ use App\Infrastructure\Metrics\MetricsExporterState;
 use App\Infrastructure\Metrics\ServiceMetricsRuntime;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
 use App\Models\Activity;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\FirewallRule;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Schedule;
 use Illuminate\Support\Facades\Log;
 use Tests\Support\FakeNodeAgentRuntime;
@@ -127,7 +127,7 @@ it('re-reads removal eligibility after acquiring the lifecycle guard', function 
     $target = remove_node_record(name: 'app-dev', wireguardIp: '10.44.0.3');
     $cluster = Cluster::query()->create(['name' => 'development', 'state' => ClusterState::Active]);
     $target->update(['cluster_id' => $cluster->id]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',
@@ -136,12 +136,12 @@ it('re-reads removal eligibility after acquiring the lifecycle guard', function 
     ]);
     app()->instance(NodeProvisioningLock::class, new class($target, $app) implements NodeProvisioningLock
     {
-        public function __construct(private Node $target, private OrbitApp $app) {}
+        public function __construct(private Node $target, private Project $app) {}
 
         public function run(string $nodeName, Closure $callback): mixed
         {
-            AppInstance::query()->create([
-                'app_id' => $this->app->id,
+            Instance::query()->create([
+                'project_id' => $this->app->id,
                 'node_id' => $this->target->id,
                 'name' => 'dev',
                 'checkout_path' => '/srv/orbit/apps/acme/dev',
@@ -297,21 +297,21 @@ it('retries Grafana stream revocation before removing membership', function (): 
         ->toBeNull();
 });
 
-it('refuses Node removal around an AppInstance for ordinary and forced offline paths', function (array $body): void {
+it('refuses Node removal around an Instance for ordinary and forced offline paths', function (array $body): void {
     $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
     $target = remove_node_record(name: 'app-dev', wireguardIp: '10.44.0.3');
     $caller->accessibleNodes()->attach($target);
     $cluster = Cluster::query()->create(['name' => 'development', 'state' => ClusterState::Active]);
     $target->update(['cluster_id' => $cluster->id]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    AppInstance::query()->create([
-        'app_id' => $app->id,
+    Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $target->id,
         'name' => 'dev',
         'checkout_path' => '/srv/orbit/apps/acme/dev',
@@ -330,7 +330,7 @@ it('refuses Node removal around an AppInstance for ordinary and forced offline p
         ->toBe(LifecycleStatus::Active)
         ->and($target->cluster_id)
         ->toBe($cluster->id)
-        ->and(AppInstance::query()->count())
+        ->and(Instance::query()->count())
         ->toBe(1)
         ->and($this->peers->removed)
         ->toBeEmpty()

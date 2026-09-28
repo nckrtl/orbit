@@ -8,9 +8,9 @@ use App\Domain\Shared\ResourceOperationException;
 
 final readonly class AppInstanceEnvironmentRenderer
 {
-    private const string DomainPlaceholder = '{{app_instance.domain}}';
+    private const string DomainPlaceholder = '{{instance.domain}}';
 
-    private const string EnvironmentPlaceholder = '{{app_instance.environment}}';
+    private const string EnvironmentPlaceholder = '{{instance.environment}}';
 
     /** @param array<string, string> $values */
     public function render(
@@ -58,7 +58,7 @@ final readonly class AppInstanceEnvironmentRenderer
             if (strlen($rendered) > AppInstanceEnvironmentValidator::MaximumFileBytes) {
                 throw new ResourceOperationException(
                     errorCode: 'env.configuration_invalid',
-                    message: 'The complete AppInstance environment configuration is invalid.',
+                    message: 'The complete Instance environment configuration is invalid.',
                     details: [
                         'key' => $key,
                         'rule' => AppInstanceEnvironmentValidator::RuleFileSize,
@@ -74,7 +74,7 @@ final readonly class AppInstanceEnvironmentRenderer
     {
         throw new ResourceOperationException(
             errorCode: 'env.reference_unavailable',
-            message: 'The stored AppInstance environment configuration has an unavailable reference.',
+            message: 'The stored Instance environment configuration has an unavailable reference.',
             status: 409,
         );
     }

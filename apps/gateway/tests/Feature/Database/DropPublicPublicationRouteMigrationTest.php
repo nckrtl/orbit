@@ -12,10 +12,10 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
@@ -44,7 +44,7 @@ it('keeps a main-shaped live public Route live after dropping public_publication
 
     expect(new PublicRouteEligibility()->publicEdgeIsLive($active->refresh()))->toBeFalse();
 
-    drop_public_publication_migration()->up();
+    run_legacy_schema_migration(drop_public_publication_migration(), 'up');
 
     $eligibility = new PublicRouteEligibility;
     $active = drop_public_publication_reload($active);
@@ -94,13 +94,13 @@ function drop_public_publication_app_route(
     }
 
     $workload = drop_public_publication_node($cluster, "{$name}-prod", RoleName::AppProd);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => $name,
         'slug' => $name,
         'repository_url' => "https://example.test/{$name}.git",
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $workload->id,
         'name' => 'production',
         'environment' => 'production',
@@ -108,14 +108,14 @@ function drop_public_publication_app_route(
         'status' => AppInstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'cluster_id' => $cluster->id,
         'domain' => "{$name}.example.test",
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Public,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => $status]);
 
     return [$cluster->refresh(), $route->refresh()];
@@ -138,14 +138,14 @@ function drop_public_publication_tracking_route(Cluster $cluster, string $domain
 
 function drop_public_publication_private_route(Cluster $cluster): Route
 {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Private',
         'slug' => 'private-cutover',
         'repository_url' => 'https://example.test/private-cutover.git',
     ]);
     $workload = drop_public_publication_node($cluster, 'private-prod', RoleName::AppProd);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $workload->id,
         'name' => 'production',
         'environment' => 'production',
@@ -153,14 +153,14 @@ function drop_public_publication_private_route(Cluster $cluster): Route
         'status' => AppInstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'cluster_id' => $cluster->id,
         'domain' => 'private-cutover.example.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
 
     return $route->refresh();

@@ -213,14 +213,14 @@ it('changes the deployment branch without changing steps and refuses development
         ->assertJsonPath('error.code', 'deployment_config.unavailable');
 });
 
-it('refuses a step mutation while the AppInstance operation owner is held', function (): void {
+it('refuses a step mutation while the Instance operation owner is held', function (): void {
     app()->instance(AppInstanceEnvironmentOperationLock::class, new class implements AppInstanceEnvironmentOperationLock
     {
         public function run(array $appInstanceIds, Closure $operation): mixed
         {
             throw new ResourceOperationException(
                 errorCode: 'env.operation_busy',
-                message: 'Another AppInstance environment operation is active. Retry the request.',
+                message: 'Another Instance environment operation is active. Retry the request.',
                 status: 409,
             );
         }

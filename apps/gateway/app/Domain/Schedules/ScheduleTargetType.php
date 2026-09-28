@@ -4,20 +4,20 @@ declare(strict_types=1);
 
 namespace App\Domain\Schedules;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 
 enum ScheduleTargetType: string
 {
     case Node = 'node';
-    case AppInstance = 'instance';
+    case Instance = 'instance';
 
-    /** @return class-string<Node|AppInstance> */
+    /** @return class-string<Node|Instance> */
     public function modelClass(): string
     {
         return match ($this) {
             self::Node => Node::class,
-            self::AppInstance => AppInstance::class,
+            self::Instance => Instance::class,
         };
     }
 
@@ -25,7 +25,7 @@ enum ScheduleTargetType: string
     {
         return match ($this) {
             self::Node => Node::class,
-            self::AppInstance => AppInstance::MorphAlias,
+            self::Instance => Instance::MorphAlias,
         };
     }
 
@@ -34,7 +34,7 @@ enum ScheduleTargetType: string
     {
         return match ($this) {
             self::Node => [Node::class],
-            self::AppInstance => [AppInstance::MorphAlias],
+            self::Instance => [Instance::MorphAlias],
         };
     }
 }

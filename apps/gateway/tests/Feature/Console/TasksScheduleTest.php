@@ -9,7 +9,7 @@ use App\Domain\Tasks\ArchiveFinishedTaskThreads;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskSchedule;
 use App\Models\AgentThread;
-use App\Models\App as OrbitApp;
+use App\Models\Project;
 use App\Models\TaskGroup;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Carbon;
@@ -57,11 +57,11 @@ it('safely no-ops when the task tick command runs while tasks are disabled', fun
 
 it('reads only threads that can still change', function (): void {
     app(TaskExtensionState::class)->enable();
-    $app = OrbitApp::query()->create(['name' => 'collector-scope', 'slug' => 'collector-scope', 'repository_url' => 'https://example.test/repo.git', 'default_branch' => 'main']);
+    $app = Project::query()->create(['name' => 'collector-scope', 'slug' => 'collector-scope', 'repository_url' => 'https://example.test/repo.git', 'default_branch' => 'main']);
 
     $thread = static function (string $groupStatus, string $state, ?string $finalAt = null) use ($app): AgentThread {
         $group = TaskGroup::query()->create([
-            'app_id' => $app->id,
+            'project_id' => $app->id,
             'title' => 'Metrics scope',
             'brief' => 'Test collector scope',
             'status' => $groupStatus,
@@ -106,9 +106,9 @@ it('reads only threads that can still change', function (): void {
 
 it('backs off incomplete heartbeat timeouts until a successful final collection', function (): void {
     app(TaskExtensionState::class)->enable();
-    $app = OrbitApp::query()->create(['name' => 'collector-retry', 'slug' => 'collector-retry', 'repository_url' => 'https://example.test/repo.git', 'default_branch' => 'main']);
+    $app = Project::query()->create(['name' => 'collector-retry', 'slug' => 'collector-retry', 'repository_url' => 'https://example.test/repo.git', 'default_branch' => 'main']);
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Settled thread',
         'brief' => 'Await successful final read',
         'status' => 'completed',
@@ -141,9 +141,9 @@ it('backs off incomplete heartbeat timeouts until a successful final collection'
 
 it('waits for the final T3 metrics read before archiving a terminal thread', function (): void {
     app(TaskExtensionState::class)->enable();
-    $app = OrbitApp::query()->create(['name' => 'archive-after-metrics', 'slug' => 'archive-after-metrics', 'repository_url' => 'https://example.test/repo.git']);
+    $app = Project::query()->create(['name' => 'archive-after-metrics', 'slug' => 'archive-after-metrics', 'repository_url' => 'https://example.test/repo.git']);
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Terminal before collector',
         'brief' => 'Read final metrics before archiving',
         'status' => 'completed',
@@ -182,9 +182,9 @@ it('waits for the final T3 metrics read before archiving a terminal thread', fun
 it('lets healthy threads through a persistently failing batch and throttles reports per thread and kind', function (): void {
     app(TaskExtensionState::class)->enable();
     Log::spy();
-    $app = OrbitApp::query()->create(['name' => 'collector-fairness', 'slug' => 'collector-fairness', 'repository_url' => 'https://example.test/repo.git', 'default_branch' => 'main']);
+    $app = Project::query()->create(['name' => 'collector-fairness', 'slug' => 'collector-fairness', 'repository_url' => 'https://example.test/repo.git', 'default_branch' => 'main']);
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Collector backlog',
         'brief' => 'Exercise retry fairness',
         'status' => 'running',
@@ -229,9 +229,9 @@ it('lets healthy threads through a persistently failing batch and throttles repo
 
 it('gives a due failed thread priority over a full batch of recently collected healthy threads', function (): void {
     app(TaskExtensionState::class)->enable();
-    $app = OrbitApp::query()->create(['name' => 'collector-due-retry', 'slug' => 'collector-due-retry', 'repository_url' => 'https://example.test/repo.git', 'default_branch' => 'main']);
+    $app = Project::query()->create(['name' => 'collector-due-retry', 'slug' => 'collector-due-retry', 'repository_url' => 'https://example.test/repo.git', 'default_branch' => 'main']);
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Due retry fairness',
         'brief' => 'A due retry must progress',
         'status' => 'running',

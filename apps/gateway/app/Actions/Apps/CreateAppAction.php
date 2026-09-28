@@ -14,7 +14,7 @@ use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\SourceControl\ProjectRoot;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
-use App\Models\App as OrbitApp;
+use App\Models\Project;
 use Illuminate\Database\UniqueConstraintViolationException;
 
 final readonly class CreateAppAction
@@ -24,16 +24,16 @@ final readonly class CreateAppAction
         private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
-    /** @return array{app: OrbitApp, created: bool} */
+    /** @return array{app: Project, created: bool} */
     public function execute(CreateAppData $data): array
     {
         $repositoryUrl = GitRepositoryOrigin::validate($data->repositoryUrl);
         $repositoryIdentity = GitRepositoryIdentity::derive($repositoryUrl);
         $defaultBranch = $data->defaultBranch === null ? null : GitBranchName::validate($data->defaultBranch);
         $root = ProjectRoot::validate($data->root, $data->type);
-        $app = OrbitApp::query()->where('slug', $data->slug)->first();
+        $app = Project::query()->where('slug', $data->slug)->first();
 
-        if ($app instanceof OrbitApp) {
+        if ($app instanceof Project) {
             $this->assertIdentityMatches($app, $data, $repositoryUrl, $defaultBranch, $root);
 
             return ['app' => $app, 'created' => false];
@@ -50,7 +50,7 @@ final readonly class CreateAppAction
         }
 
         for ($attempt = 0; ; $attempt++) {
-            $candidate = new OrbitApp([
+            $candidate = new Project([
                 'code' => $data->code,
                 'slug' => $data->slug,
                 'name' => $data->name,
@@ -65,9 +65,9 @@ final readonly class CreateAppAction
                 $app = $candidate;
                 break;
             } catch (UniqueConstraintViolationException $exception) {
-                $app = OrbitApp::query()->where('slug', $data->slug)->first();
+                $app = Project::query()->where('slug', $data->slug)->first();
 
-                if ($app instanceof OrbitApp) {
+                if ($app instanceof Project) {
                     $this->assertIdentityMatches(
                         $app,
                         $data,
@@ -79,14 +79,14 @@ final readonly class CreateAppAction
                     return ['app' => $app, 'created' => false];
                 }
 
-                if (OrbitApp::query()->where('repository_identity', $repositoryIdentity)->exists()) {
+                if (Project::query()->where('repository_identity', $repositoryIdentity)->exists()) {
                     throw $this->repositoryIdentityConflict($exception);
                 }
 
-                if ($data->code !== null && OrbitApp::query()->where('code', $data->code)->exists()) {
+                if ($data->code !== null && Project::query()->where('code', $data->code)->exists()) {
                     throw new ResourceOperationException('app.code_conflict', 'This Project code is already in use.', 409, previous: $exception);
                 }
-                if ($data->code === null && $attempt < 4 && OrbitApp::query()->where('code', $candidate->code)->exists()) {
+                if ($data->code === null && $attempt < 4 && Project::query()->where('code', $candidate->code)->exists()) {
                     continue;
                 }
 
@@ -107,7 +107,7 @@ final readonly class CreateAppAction
 
     private function assertRepositoryIdentityAvailable(string $repositoryIdentity): void
     {
-        if (OrbitApp::query()->where('repository_identity', $repositoryIdentity)->exists()) {
+        if (Project::query()->where('repository_identity', $repositoryIdentity)->exists()) {
             throw $this->repositoryIdentityConflict();
         }
     }
@@ -124,7 +124,7 @@ final readonly class CreateAppAction
     }
 
     private function assertIdentityMatches(
-        OrbitApp $app,
+        Project $app,
         CreateAppData $data,
         string $repositoryUrl,
         ?string $defaultBranch,

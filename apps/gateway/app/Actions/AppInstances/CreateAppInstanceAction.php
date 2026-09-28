@@ -34,9 +34,9 @@ use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\SourceControl\ProjectRoot;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -69,10 +69,10 @@ final readonly class CreateAppInstanceAction
         private ?CommandDeadline $deadline = null,
     ) {}
 
-    /** @return array{appInstance: AppInstance, created: bool} */
+    /** @return array{appInstance: Instance, created: bool} */
     public function execute(CreateAppInstanceData $data): array
     {
-        $app = OrbitApp::query()->findOrFail($data->appId);
+        $app = Project::query()->findOrFail($data->appId);
         $this->assertCompleteSourceDefaults($app);
         $requestedNode = Node::query()->findOrFail($data->nodeId);
         $root = $data->root === null ? null : ProjectRoot::validate($data->root, $app->type);
@@ -87,12 +87,12 @@ final readonly class CreateAppInstanceAction
             return $this->announceCreated($this->productionProvisioner->execute($data, $app, $requestedNode, $root));
         }
 
-        $existing = AppInstance::query()
-            ->where('app_id', $app->id)
+        $existing = Instance::query()
+            ->where('project_id', $app->id)
             ->where('name', $data->name)
             ->first();
 
-        if ($existing instanceof AppInstance) {
+        if ($existing instanceof Instance) {
             $this->assertRetryIdentity($existing, $requestedNode, $root, $data->branch);
             $appInstance = $existing;
             $created = false;
@@ -114,8 +114,8 @@ final readonly class CreateAppInstanceAction
             if ($data->name === 'default') {
                 $this->assertDefaultPathUnoccupied($requestedNode, $checkout);
             }
-            $appInstance = AppInstance::query()->create([
-                'app_id' => $app->id,
+            $appInstance = Instance::query()->create([
+                'project_id' => $app->id,
                 'node_id' => $requestedNode->id,
                 'name' => $data->name,
                 'source_layout' => AppInstanceSourceLayout::Checkout,
@@ -129,9 +129,9 @@ final readonly class CreateAppInstanceAction
 
         $result = ($this->environmentOperations ?? app(AppInstanceEnvironmentOperationLock::class))->run(
             [$appInstance->id],
-            fn (): AppInstance => $this->sourceLock->synchronized(
+            fn (): Instance => $this->sourceLock->synchronized(
                 $appInstance->node_id,
-                function () use ($appInstance, $created, $data): AppInstance {
+                function () use ($appInstance, $created, $data): Instance {
                     $wasActive = $appInstance->refresh()->status === AppInstanceState::Active;
 
                     if ($wasActive && $appInstance->failed_step === 'setup') {
@@ -166,7 +166,7 @@ final readonly class CreateAppInstanceAction
         return $this->announceCreated(['appInstance' => $result, 'created' => $created]);
     }
 
-    private function finishSetup(AppInstance $instance): void
+    private function finishSetup(Instance $instance): void
     {
         $runner = $this->lifecycle ?? app(ProjectLifecycleRunner::class);
 
@@ -247,8 +247,8 @@ final readonly class CreateAppInstanceAction
     }
 
     /**
-     * @param  array{appInstance: AppInstance, created: bool}  $result
-     * @return array{appInstance: AppInstance, created: bool}
+     * @param  array{appInstance: Instance, created: bool}  $result
+     * @return array{appInstance: Instance, created: bool}
      */
     private function announceCreated(array $result): array
     {
@@ -266,7 +266,7 @@ final readonly class CreateAppInstanceAction
         return $result;
     }
 
-    private function resumeSource(AppInstance $appInstance, bool $allowPreparedSource): AppInstance
+    private function resumeSource(Instance $appInstance, bool $allowPreparedSource): Instance
     {
         while (true) {
             $appInstance->refresh()->loadMissing(['app', 'node']);
@@ -309,20 +309,20 @@ final readonly class CreateAppInstanceAction
     }
 
     /** @param array<string, mixed> $attributes */
-    private function transition(AppInstance $appInstance, AppInstanceState $from, array $attributes): void
+    private function transition(Instance $appInstance, AppInstanceState $from, array $attributes): void
     {
         DB::transaction(function () use ($appInstance, $from, $attributes): void {
-            $locked = AppInstance::query()->lockForUpdate()->findOrFail($appInstance->id);
+            $locked = Instance::query()->lockForUpdate()->findOrFail($appInstance->id);
 
             if ($locked->status !== $from) {
-                throw $this->conflict('instance.lifecycle_conflict', 'AppInstance lifecycle evidence changed.');
+                throw $this->conflict('instance.lifecycle_conflict', 'Instance lifecycle evidence changed.');
             }
 
             $locked->update($attributes);
         });
     }
 
-    private function assertCompleteSourceDefaults(OrbitApp $app): void
+    private function assertCompleteSourceDefaults(Project $app): void
     {
         if (
             ! is_string($app->default_branch)
@@ -354,7 +354,7 @@ final readonly class CreateAppInstanceAction
     }
 
     private function assertRetryIdentity(
-        AppInstance $appInstance,
+        Instance $appInstance,
         Node $requestedNode,
         ?string $root,
         ?string $branchOverride,
@@ -362,7 +362,7 @@ final readonly class CreateAppInstanceAction
         if ($appInstance->status === AppInstanceState::Removing) {
             throw $this->conflict(
                 'instance.removal_conflict',
-                "AppInstance [{$appInstance->name}] is being removed.",
+                "Instance [{$appInstance->name}] is being removed.",
             );
         }
 
@@ -374,7 +374,7 @@ final readonly class CreateAppInstanceAction
             || $appInstance->root !== $root
             || $appInstance->branch_override !== $branchOverride
         ) {
-            throw $this->conflict('instance.placement_conflict', 'AppInstance placement is immutable.');
+            throw $this->conflict('instance.placement_conflict', 'Instance placement is immutable.');
         }
 
         $this->assertPlacement($recordedNode);
@@ -398,15 +398,15 @@ final readonly class CreateAppInstanceAction
         }
     }
 
-    private function assertPersistedOwnership(AppInstance $appInstance): void
+    private function assertPersistedOwnership(Instance $appInstance): void
     {
         if ($appInstance->source_layout !== AppInstanceSourceLayout::Checkout->value) {
-            throw $this->conflict('instance.source_layout_conflict', 'AppInstance source ownership is invalid.');
+            throw $this->conflict('instance.source_layout_conflict', 'Instance source ownership is invalid.');
         }
     }
 
     private function assertResolution(
-        AppInstance $appInstance,
+        Instance $appInstance,
         DevelopmentSourceResolution $resolution,
     ): void {
         if (
@@ -418,7 +418,7 @@ final readonly class CreateAppInstanceAction
     }
 
     private function assertStoredResolution(
-        AppInstance $appInstance,
+        Instance $appInstance,
         DevelopmentSourceResolution $resolution,
     ): void {
         $this->assertStoredResolutionEvidence($appInstance);
@@ -428,22 +428,22 @@ final readonly class CreateAppInstanceAction
             $appInstance->branch !== $resolution->branch
             || $appInstance->starting_commit !== $resolution->startingCommit
         ) {
-            throw $this->conflict('instance.source_identity_changed', 'AppInstance source identity changed.');
+            throw $this->conflict('instance.source_identity_changed', 'Instance source identity changed.');
         }
     }
 
-    private function assertStoredResolutionEvidence(AppInstance $appInstance): void
+    private function assertStoredResolutionEvidence(Instance $appInstance): void
     {
         if (
             $appInstance->branch !== $this->expectedBranch($appInstance)
             || ! is_string($appInstance->starting_commit)
             || preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $appInstance->starting_commit) !== 1
         ) {
-            throw $this->conflict('instance.source_identity_changed', 'AppInstance source identity changed.');
+            throw $this->conflict('instance.source_identity_changed', 'Instance source identity changed.');
         }
     }
 
-    private function expectedBranch(AppInstance $appInstance): string
+    private function expectedBranch(Instance $appInstance): string
     {
         if (is_string($appInstance->branch_override)) {
             return $appInstance->branch_override;
@@ -462,11 +462,11 @@ final readonly class CreateAppInstanceAction
     }
 
     /**
-     * Records failure evidence on a non-active AppInstance and its non-active
-     * Route. An active AppInstance is terminal for creation retry, so a refused
+     * Records failure evidence on a non-active Instance and its non-active
+     * Route. An active Instance is terminal for creation retry, so a refused
      * retry leaves its row untouched.
      */
-    private function recordFailure(AppInstance $appInstance, Throwable $exception): void
+    private function recordFailure(Instance $appInstance, Throwable $exception): void
     {
         $appInstance->refresh();
 
@@ -486,14 +486,14 @@ final readonly class CreateAppInstanceAction
             : 'instance.provisioning_failed';
 
         DB::transaction(static function () use ($appInstance, $step, $errorCode): void {
-            AppInstance::query()
+            Instance::query()
                 ->whereKey($appInstance->id)
                 ->update([
                     'failed_step' => $step,
                     'error_code' => $errorCode,
                 ]);
             Route::query()
-                ->whereHas('targets', static fn ($query) => $query->where('app_instance_id', $appInstance->id))
+                ->whereHas('targets', static fn ($query) => $query->where('instance_id', $appInstance->id))
                 ->where('status', '<>', RouteStatus::Active->value)
                 ->update([
                     'sites_published' => false,

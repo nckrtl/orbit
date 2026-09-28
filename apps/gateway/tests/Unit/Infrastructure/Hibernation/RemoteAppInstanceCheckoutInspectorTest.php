@@ -10,7 +10,7 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use Tests\Support\AppDevFakeSshExecutor;
 
@@ -124,14 +124,14 @@ function checkout_inspector(AppDevFakeSshExecutor $ssh, int $timeout = 1_800): R
     );
 }
 
-function checkout_instance(): AppInstance
+function checkout_instance(): Instance
 {
     $node = new Node([
         'name' => 'app-dev',
         'user' => 'orbit',
         'wireguard_ip' => '10.44.0.3',
     ]);
-    $instance = new AppInstance([
+    $instance = new Instance([
         'name' => 'main',
         'environment' => 'development',
         'checkout_path' => '/home/orbit/apps/docs',

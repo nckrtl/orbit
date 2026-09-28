@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Models\AgentThread;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskGroup;
 use Illuminate\Database\Eloquent\Collection;
@@ -126,7 +126,7 @@ final readonly class TaskSessionObserver
     {
         $instance = $group->taskable;
 
-        if (! $instance instanceof AppInstance) {
+        if (! $instance instanceof Instance) {
             return false;
         }
 

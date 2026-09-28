@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Metrics;
 
+use App\Models\Instance;
+
 /**
  * Maps decoded Prometheus instant-query API responses (as Grafana's datasource proxy replays
  * them) into the raw metrics snapshot shape `NodeMetricsData::fromRaw()` consumes, keyed by the

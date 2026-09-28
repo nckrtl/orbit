@@ -20,8 +20,8 @@ use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\AppInstance;
 use App\Models\AppInstanceTransfer;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 use App\Models\RouteTarget;
@@ -37,7 +37,7 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
         private ?PublicRouteEdgeProjector $publicEdge = null,
     ) {}
 
-    public function converge(AppInstance $appInstance, Route $route): void
+    public function converge(Instance $appInstance, Route $route): void
     {
         $appInstance->loadMissing('node');
         $route->loadMissing('cluster.routerAssignment.node');
@@ -84,7 +84,7 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
         $this->dns->converge();
     }
 
-    public function prepareWorkloadCertificate(AppInstance $appInstance, Route $current, Route $candidate): void
+    public function prepareWorkloadCertificate(Instance $appInstance, Route $current, Route $candidate): void
     {
         $this->certificates->convergeAppInstanceHostnameChange($appInstance, $candidate->domain);
     }
@@ -140,13 +140,13 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
         );
     }
 
-    public function prepareWorkloadCaddy(AppInstance $appInstance, Route $current, Route $candidate): void
+    public function prepareWorkloadCaddy(Instance $appInstance, Route $current, Route $candidate): void
     {
         $appInstance->loadMissing('node');
         $this->caddy->build($appInstance->node);
     }
 
-    public function prepareRouterCertificate(AppInstance $appInstance, Route $current, Route $candidate): void
+    public function prepareRouterCertificate(Instance $appInstance, Route $current, Route $candidate): void
     {
         $router = $this->router($appInstance, $candidate);
 
@@ -155,7 +155,7 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
         }
     }
 
-    public function prepareFirewallPolicy(AppInstance $appInstance, Route $candidate): void
+    public function prepareFirewallPolicy(Instance $appInstance, Route $candidate): void
     {
         $router = $this->router($appInstance, $candidate);
 
@@ -164,7 +164,7 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
         }
     }
 
-    public function verifyWorkload(AppInstance $appInstance, Route $candidate): void
+    public function verifyWorkload(Instance $appInstance, Route $candidate): void
     {
         $router = $this->router($appInstance, $candidate);
 
@@ -173,7 +173,7 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
         }
     }
 
-    public function prepareRouterCaddy(AppInstance $appInstance, Route $current, Route $candidate): void
+    public function prepareRouterCaddy(Instance $appInstance, Route $current, Route $candidate): void
     {
         $router = $this->router($appInstance, $candidate);
 
@@ -229,7 +229,7 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
      * automatic HTTPS for a private Orbit domain. The live certificates exist before the Route's
      * stored step makes its sites name them.
      */
-    public function prepareCleanup(AppInstance $appInstance, Route $route): void
+    public function prepareCleanup(Instance $appInstance, Route $route): void
     {
         $appInstance->loadMissing('node');
         $route->loadMissing('cluster.routerAssignment.node');
@@ -245,7 +245,7 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
      * The stored step now renders the live scopes and no second placement, so each build drops the
      * staging and old sites before their certificates are removed.
      */
-    public function cleanup(AppInstance $appInstance, Route $route): void
+    public function cleanup(Instance $appInstance, Route $route): void
     {
         $appInstance->loadMissing('node');
         $route->loadMissing(['cluster.routerAssignment.node', 'transitionCluster.routerAssignment.node']);
@@ -340,7 +340,7 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
         $this->dns->converge();
     }
 
-    public function rollbackCaddy(AppInstance $appInstance, Route $route): void
+    public function rollbackCaddy(Instance $appInstance, Route $route): void
     {
         $appInstance->loadMissing('node');
         $this->caddy->build($appInstance->node);
@@ -351,7 +351,7 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
         }
     }
 
-    public function rollbackCertificates(AppInstance $appInstance, Route $route): void
+    public function rollbackCertificates(Instance $appInstance, Route $route): void
     {
         $this->certificates->removeHostnameChange($appInstance, $route);
     }
@@ -361,7 +361,7 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
         return $this->publicEdge ?? app(PublicRouteEdgeProjector::class);
     }
 
-    private function router(AppInstance $appInstance, Route $route): ?Node
+    private function router(Instance $appInstance, Route $route): ?Node
     {
         $appInstance->loadMissing('node');
         $route->loadMissing('cluster.routerAssignment.node');
@@ -370,7 +370,7 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
         return $router instanceof Node && ! $router->is($appInstance->node) ? $router : null;
     }
 
-    private function convergeLanFirewall(AppInstance $appInstance, Route $route, Node $router): void
+    private function convergeLanFirewall(Instance $appInstance, Route $route, Node $router): void
     {
         $workloadAddress = $appInstance->node->lan_ip;
 
@@ -411,7 +411,7 @@ final readonly class NativeDevelopmentRouteProjector implements AppInstanceTrans
         );
     }
 
-    private function verifyWorkloadLeaf(AppInstance $appInstance, Route $route, Node $router): void
+    private function verifyWorkloadLeaf(Instance $appInstance, Route $route, Node $router): void
     {
         $address = is_string($appInstance->node->lan_ip) && $appInstance->node->lan_ip !== ''
             ? $appInstance->node->lan_ip

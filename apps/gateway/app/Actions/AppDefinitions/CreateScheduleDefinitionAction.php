@@ -6,14 +6,14 @@ namespace App\Actions\AppDefinitions;
 
 use App\Data\AppDefinitions\AppDefinitionInputData;
 use App\Domain\AppDefinitions\AppDefinitionConflict;
-use App\Models\App as OrbitApp;
+use App\Models\Project;
 use App\Models\ScheduleDefinition;
 use Illuminate\Database\UniqueConstraintViolationException;
 use SensitiveParameter;
 
 final readonly class CreateScheduleDefinitionAction
 {
-    public function execute(OrbitApp $app, #[SensitiveParameter] AppDefinitionInputData $data): ScheduleDefinition
+    public function execute(Project $app, #[SensitiveParameter] AppDefinitionInputData $data): ScheduleDefinition
     {
         try {
             return $app->scheduleDefinitions()->create([

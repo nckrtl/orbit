@@ -18,10 +18,10 @@ use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskComment;
 use App\Models\TaskGroup;
@@ -43,7 +43,7 @@ it('claimNext continues after provision null', function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
     $this->postJson('/api/v1/extensions/tasks/enable')->assertOk();
 
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Claim HOL',
         'slug' => 'claim-hol',
         'repository_url' => 'git@example.test:claim-hol.git',
@@ -58,8 +58,8 @@ it('claimNext continues after provision null', function (): void {
         'public_ssh_host' => '192.0.2.88',
         'wireguard_ip' => '10.44.0.88',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'claim-hol-second',
         'checkout_path' => '/tmp/claim-hol-second',
@@ -70,9 +70,9 @@ it('claimNext continues after provision null', function (): void {
     {
         public int $calls = 0;
 
-        public function __construct(private AppInstance $instance) {}
+        public function __construct(private Instance $instance) {}
 
-        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        public function provision(InstanceProvisionIntent $intent): ?Instance
         {
             $this->calls++;
 
@@ -129,7 +129,7 @@ it('leaves every group untouched in todo and stops claiming when the fleet is fu
     {
         public int $calls = 0;
 
-        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        public function provision(InstanceProvisionIntent $intent): ?Instance
         {
             $this->calls++;
 
@@ -157,9 +157,9 @@ it('passes a group whose eligible Nodes are full without a failure reason', func
     $instance = claim_hol_instance($app, 'claim-hol-next');
     app()->instance(InstanceProvisioning::class, new class($waiting->id, $instance) implements InstanceProvisioning
     {
-        public function __construct(private int $waitingId, private AppInstance $instance) {}
+        public function __construct(private int $waitingId, private Instance $instance) {}
 
-        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        public function provision(InstanceProvisionIntent $intent): ?Instance
         {
             if ($intent->group->id === $this->waitingId) {
                 throw new TaskCapacityException(fleetFull: false);
@@ -188,9 +188,9 @@ it('tries a failing group once per tick', function (): void {
         /** @var array<int, int> */
         public array $calls = [];
 
-        public function __construct(private int $failingId, private OrbitApp $app) {}
+        public function __construct(private int $failingId, private Project $app) {}
 
-        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        public function provision(InstanceProvisionIntent $intent): ?Instance
         {
             $this->calls[$intent->group->id] = ($this->calls[$intent->group->id] ?? 0) + 1;
 
@@ -220,9 +220,9 @@ it('returns a group to todo when provisioning throws and continues the tick with
         /** @var array<int, int> */
         public array $calls = [];
 
-        public function __construct(private int $failingId, private OrbitApp $app) {}
+        public function __construct(private int $failingId, private Project $app) {}
 
-        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        public function provision(InstanceProvisionIntent $intent): ?Instance
         {
             $this->calls[$intent->group->id] = ($this->calls[$intent->group->id] ?? 0) + 1;
             if ($intent->group->id === $this->failingId) {
@@ -258,10 +258,10 @@ it('clears the provisioning failure reason when a group moves to backlog', funct
         ->and($group->fresh()?->assistance_reason)->toBeNull();
 });
 
-function claim_hol_group(OrbitApp $app, string $title): TaskGroup
+function claim_hol_group(Project $app, string $title): TaskGroup
 {
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => $title,
         'brief' => "{$title} brief",
         'status' => TaskGroupStatus::Todo,
@@ -293,16 +293,16 @@ function claim_hol_enable(): Node
     return $gateway;
 }
 
-function claim_hol_app(): OrbitApp
+function claim_hol_app(): Project
 {
-    return OrbitApp::query()->firstOrCreate(['slug' => 'claim-hol'], [
+    return Project::query()->firstOrCreate(['slug' => 'claim-hol'], [
         'name' => 'Claim HOL',
         'repository_url' => 'git@example.test:claim-hol.git',
         'default_branch' => 'main',
     ]);
 }
 
-function claim_hol_instance(OrbitApp $app, string $name): AppInstance
+function claim_hol_instance(Project $app, string $name): Instance
 {
     $node = Node::query()->firstOrCreate(['name' => 'claim-hol-node'], [
         'status' => LifecycleStatus::Active,
@@ -311,8 +311,8 @@ function claim_hol_instance(OrbitApp $app, string $name): AppInstance
         'wireguard_ip' => '10.44.0.88',
     ]);
 
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => $name,
         'checkout_path' => "/tmp/{$name}",
@@ -378,7 +378,7 @@ describe('a start that fails after provisioning', function (): void {
         expect($claimed?->status)->toBe(TaskGroupStatus::Running)
             ->and($claimed?->assistance_reason)->toBeNull()
             ->and($provisioning->attached)->toBe([null, $provisioning->instances[$group->id]->id])
-            ->and(AppInstance::query()->count())->toBe(1);
+            ->and(Instance::query()->count())->toBe(1);
     });
 });
 
@@ -424,9 +424,9 @@ describe('the stale reservation sweep', function (): void {
         $instance = claim_hol_instance($app, 'claim-hol-slow');
         app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
         {
-            public function __construct(private AppInstance $instance) {}
+            public function __construct(private Instance $instance) {}
 
-            public function provision(InstanceProvisionIntent $intent): ?AppInstance
+            public function provision(InstanceProvisionIntent $intent): ?Instance
             {
                 test()->travel(3601)->seconds();
                 app(TaskScheduler::class)->releaseStaleReservations();
@@ -456,9 +456,9 @@ describe('a group cancelled while its claim runs', function (): void {
         $instance = claim_hol_instance($app, 'task-'.$group->id);
         app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
         {
-            public function __construct(private AppInstance $instance) {}
+            public function __construct(private Instance $instance) {}
 
-            public function provision(InstanceProvisionIntent $intent): ?AppInstance
+            public function provision(InstanceProvisionIntent $intent): ?Instance
             {
                 app(CancelTaskGroupAction::class)->execute($intent->group);
 
@@ -471,7 +471,7 @@ describe('a group cancelled while its claim runs', function (): void {
             ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Cancelled)
             ->and($group->fresh()?->taskable_id)->toBeNull()
             ->and($removed->ids)->toBe([$instance->id])
-            ->and(AppInstance::query()->find($instance->id))->toBeNull();
+            ->and(Instance::query()->find($instance->id))->toBeNull();
     });
 
     it('removes a half-provisioned workspace and does not return the group to todo when provisioning fails', function (): void {
@@ -482,9 +482,9 @@ describe('a group cancelled while its claim runs', function (): void {
         $removed = claim_hol_recording_remover();
         app()->instance(InstanceProvisioning::class, new class($app) implements InstanceProvisioning
         {
-            public function __construct(private OrbitApp $app) {}
+            public function __construct(private Project $app) {}
 
-            public function provision(InstanceProvisionIntent $intent): ?AppInstance
+            public function provision(InstanceProvisionIntent $intent): ?Instance
             {
                 $name = 'task-'.$intent->group->id;
                 claim_hol_instance($this->app, $name)->update(['branch_override' => $name]);
@@ -499,7 +499,7 @@ describe('a group cancelled while its claim runs', function (): void {
             ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Cancelled)
             ->and($group->fresh()?->assistance_reason)->toBeNull()
             ->and($removed->ids)->toHaveCount(1)
-            ->and(AppInstance::query()->where('name', 'task-'.$group->id)->exists())->toBeFalse();
+            ->and(Instance::query()->where('name', 'task-'.$group->id)->exists())->toBeFalse();
     });
 });
 
@@ -519,7 +519,7 @@ describe('the abandoned workspace sweep', function (): void {
         $this->artisan('tasks:tick')->assertSuccessful();
 
         expect($removed->ids)->toBe([$workspace->id])
-            ->and(AppInstance::query()->find($workspace->id))->toBeNull()
+            ->and(Instance::query()->find($workspace->id))->toBeNull()
             ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Cancelled)
             ->and(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0);
     });
@@ -536,7 +536,7 @@ describe('the abandoned workspace sweep', function (): void {
 
         expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0)
             ->and($removed->ids)->toBe([])
-            ->and(AppInstance::query()->count())->toBe(2);
+            ->and(Instance::query()->count())->toBe(2);
     });
 
     it('backs off failing removals per Instance so a later workspace is still removed', function (): void {
@@ -554,7 +554,7 @@ describe('the abandoned workspace sweep', function (): void {
         $goodWorkspace = claim_hol_workspace($app, $good, 'source_resolved');
 
         expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1)
-            ->and(AppInstance::query()->find($goodWorkspace->id))->toBeNull()
+            ->and(Instance::query()->find($goodWorkspace->id))->toBeNull()
             ->and(TaskGroup::query()->where('assistance_requested', true)->count())->toBe(5)
             ->and(TaskGroup::query()->where('assistance_requested', true)->pluck('assistance_reason')->unique()->values()->all())
             ->toBe([RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.']);
@@ -576,7 +576,7 @@ describe('the abandoned workspace sweep', function (): void {
         $remover->failing = [];
         $this->travel(TaskScheduler::AbandonedWorkspaceBackoffSeconds)->seconds();
         expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(5)
-            ->and(AppInstance::query()->count())->toBe(0);
+            ->and(Instance::query()->count())->toBe(0);
     });
 
     it('keeps sweeping and ticking when the backoff cache fails', function (): void {
@@ -613,7 +613,7 @@ describe('the abandoned workspace sweep', function (): void {
         $goodWorkspace = claim_hol_workspace($app, $good, 'source_resolved');
 
         expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1)
-            ->and(AppInstance::query()->find($goodWorkspace->id))->toBeNull()
+            ->and(Instance::query()->find($goodWorkspace->id))->toBeNull()
             ->and($remover->attempts)->toHaveCount(2);
 
         $this->artisan('tasks:tick')->assertSuccessful();
@@ -675,7 +675,7 @@ describe('the abandoned workspace sweep', function (): void {
 
         expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0)
             ->and($removed->ids)->toBe([])
-            ->and(AppInstance::query()->find($workspace->id))->not->toBeNull();
+            ->and(Instance::query()->find($workspace->id))->not->toBeNull();
     });
 
     it('stops starting removals once the tick has spent its time budget', function (): void {
@@ -689,7 +689,7 @@ describe('the abandoned workspace sweep', function (): void {
         }
 
         expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(3)
-            ->and(AppInstance::query()->count())->toBe(1)
+            ->and(Instance::query()->count())->toBe(1)
             ->and(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1);
     });
 
@@ -715,7 +715,7 @@ describe('the abandoned workspace sweep', function (): void {
 
         expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1)
             ->and($removed->ids)->toBe([$workspace->id])
-            ->and(AppInstance::query()->find($userInstance->id))->not->toBeNull()
+            ->and(Instance::query()->find($userInstance->id))->not->toBeNull()
             ->and($annotation->fresh()?->taskable_id)->toBe($userInstance->id);
     });
 
@@ -787,7 +787,7 @@ describe('the abandoned workspace sweep', function (): void {
         });
 
         expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0)
-            ->and(AppInstance::query()->find($stuckWorkspace->id))->not->toBeNull()
+            ->and(Instance::query()->find($stuckWorkspace->id))->not->toBeNull()
             ->and($stuck->fresh()?->assistance_reason)->toBe(RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The task branch could not be pushed.')
             ->and($removed->ids)->toBe([$workspace->id]);
     });
@@ -806,7 +806,7 @@ function claim_hol_failing_remover(int $secondsPerRemoval = 0): object
 
         public function __construct(private int $secondsPerRemoval) {}
 
-        public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
+        public function execute(Instance $instance, bool $force): AppInstanceRemoval
         {
             $this->attempts[] = $instance->id;
             test()->travel($this->secondsPerRemoval)->seconds();
@@ -824,7 +824,7 @@ function claim_hol_failing_remover(int $secondsPerRemoval = 0): object
 }
 
 /** The group's deterministic workspace, as TaskWorkspaceProvisioner creates it. */
-function claim_hol_workspace(OrbitApp $app, TaskGroup $group, string $status = 'reserved'): AppInstance
+function claim_hol_workspace(Project $app, TaskGroup $group, string $status = 'reserved'): Instance
 {
     $name = 'task-'.$group->id;
     $workspace = claim_hol_instance($app, $name);
@@ -841,7 +841,7 @@ function claim_hol_recording_remover(): object
         /** @var list<int> */
         public array $ids = [];
 
-        public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
+        public function execute(Instance $instance, bool $force): AppInstanceRemoval
         {
             $this->ids[] = $instance->id;
             $instance->delete();
@@ -857,24 +857,24 @@ function claim_hol_recording_remover(): object
 /**
  * Provisions one Instance per group and returns the Instance a group already holds, as TaskWorkspaceProvisioner does.
  */
-function claim_hol_recording_provisioning(OrbitApp $app): object
+function claim_hol_recording_provisioning(Project $app): object
 {
     return new class($app) implements InstanceProvisioning
     {
-        /** @var array<int, AppInstance> */
+        /** @var array<int, Instance> */
         public array $instances = [];
 
         /** @var list<int|null> */
         public array $attached = [];
 
-        public function __construct(private OrbitApp $app) {}
+        public function __construct(private Project $app) {}
 
-        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        public function provision(InstanceProvisionIntent $intent): ?Instance
         {
             $held = $intent->group->taskable;
-            $this->attached[] = $held instanceof AppInstance ? $held->id : null;
+            $this->attached[] = $held instanceof Instance ? $held->id : null;
 
-            return $this->instances[$intent->group->id] = $held instanceof AppInstance
+            return $this->instances[$intent->group->id] = $held instanceof Instance
                 ? $held
                 : claim_hol_instance($this->app, 'claim-hol-'.$intent->group->id);
         }

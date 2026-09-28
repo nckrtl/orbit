@@ -14,18 +14,18 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceDependencyScanAttempt;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 
 use function Pest\Laravel\mock;
 
-function dependency_scan_instance(): AppInstance
+function dependency_scan_instance(): Instance
 {
-    $app = OrbitApp::query()->create(['slug' => 'dependency-scan', 'name' => 'Dependency scan', 'repository_url' => 'https://example.test/scan.git']);
+    $app = Project::query()->create(['slug' => 'dependency-scan', 'name' => 'Dependency scan', 'repository_url' => 'https://example.test/scan.git']);
     $node = Node::query()->create(['name' => 'dependency-scan', 'public_ssh_host' => '192.0.2.180', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit', 'status' => 'active']);
     orbit_test_set_app_placement_role($node, false);
 
@@ -79,9 +79,9 @@ describe('coordinated instance dependency scans', function (): void {
         expect($second->composer->snapshot->graph)->toEqual($first->composer->snapshot->graph);
         expect($second->javascript->snapshot->graph)->toEqual($first->javascript->snapshot->graph);
         expect($count)->toBeGreaterThan(5);
-        $this->assertDatabaseCount('app_instance_dependency_observations', 2);
-        $this->assertDatabaseCount('app_instance_dependency_resolutions', $count);
-        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 4);
+        $this->assertDatabaseCount('instance_dependency_observations', 2);
+        $this->assertDatabaseCount('instance_dependency_resolutions', $count);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 4);
     })->with(['npm', 'pnpm', 'bun']);
 
     it('clears usage only after confirmed absence and preserves the other ecosystem', function (): void {
@@ -192,8 +192,8 @@ describe('coordinated instance dependency scans', function (): void {
 
         expect($result->succeeded())->toBeTrue();
         expect($result->javascript->snapshot->graph->resolutions[0]->version)->toBe('1.1.0');
-        $this->assertDatabaseCount('app_instance_dependency_resolutions', 1);
-        $this->assertDatabaseMissing('app_instance_dependency_resolutions', ['version' => '1.0.0']);
+        $this->assertDatabaseCount('instance_dependency_resolutions', 1);
+        $this->assertDatabaseMissing('instance_dependency_resolutions', ['version' => '1.0.0']);
     });
 
     it('keeps a first collection failure unknown', function (): void {
@@ -204,8 +204,8 @@ describe('coordinated instance dependency scans', function (): void {
 
         expect($result->composer->state())->toBe(DependencyInventoryState::Unknown);
         expect($result->javascript->state())->toBe(DependencyInventoryState::Unknown);
-        $this->assertDatabaseCount('app_instance_dependency_observations', 0);
-        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 2);
+        $this->assertDatabaseCount('instance_dependency_observations', 0);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 2);
     });
 
     it('rejects changed release and directory receipts instead of publishing mixed source', function (bool $production): void {
@@ -235,7 +235,7 @@ describe('coordinated instance dependency scans', function (): void {
 
         expect($result->composer->errorCode)->toBe('dependencies.source_changed');
         expect($result->javascript->errorCode)->toBe('dependencies.source_changed');
-        $this->assertDatabaseCount('app_instance_dependency_observations', 0);
+        $this->assertDatabaseCount('instance_dependency_observations', 0);
     })->with([false, true]);
 
     it('rejects a changed database source at the publication boundary', function (string $field, mixed $value): void {
@@ -253,7 +253,7 @@ describe('coordinated instance dependency scans', function (): void {
         $result = app(ScanInstanceDependenciesAction::class)->execute($instance);
 
         expect($result->succeeded())->toBeFalse();
-        $this->assertDatabaseCount('app_instance_dependency_observations', 0);
+        $this->assertDatabaseCount('instance_dependency_observations', 0);
     })->with([['checkout_path', '/home/orbit/other'], ['status', 'reserved']]);
 
     it('does not resurrect usage when removal deletes the instance during collection', function (): void {
@@ -272,8 +272,8 @@ describe('coordinated instance dependency scans', function (): void {
 
         expect($result->composer->errorCode)->toBe('dependencies.instance_unavailable');
         expect($result->javascript->errorCode)->toBe('dependencies.instance_unavailable');
-        $this->assertDatabaseCount('app_instance_dependency_observations', 0);
-        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 0);
+        $this->assertDatabaseCount('instance_dependency_observations', 0);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 0);
     });
 
     it('refuses unavailable instances before SSH', function (bool $deleted): void {
@@ -289,7 +289,7 @@ describe('coordinated instance dependency scans', function (): void {
 
         expect($result->composer->errorCode)->toBe('dependencies.instance_unavailable');
         expect($result->javascript->errorCode)->toBe('dependencies.instance_unavailable');
-        $this->assertDatabaseCount('app_instance_dependency_observations', 0);
+        $this->assertDatabaseCount('instance_dependency_observations', 0);
     })->with([false, true]);
 
     it('holds the shared lifecycle and development source locks through both inspections and publication', function (): void {
@@ -342,7 +342,7 @@ describe('coordinated instance dependency scans', function (): void {
             $result = $owner->run([$instance->id], fn () => app(ScanInstanceDependenciesAction::class)->execute($instance));
             expect($result->composer->errorCode)->toBe('dependencies.operation_busy');
             expect($result->javascript->errorCode)->toBe('dependencies.operation_busy');
-            $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 0);
+            $this->assertDatabaseCount('instance_dependency_scan_attempts', 0);
         } finally {
             new Filesystem()->deleteDirectory($directory);
         }

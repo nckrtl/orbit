@@ -9,10 +9,10 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Models\Activity;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Testing\TestResponse;
@@ -30,16 +30,16 @@ function log_stream_node(string $name, string $address): Node
     ]);
 }
 
-function log_stream_instance(Node $node, string $checkout = '/home/orbit/apps/shop/main'): AppInstance
+function log_stream_instance(Node $node, string $checkout = '/home/orbit/apps/shop/main'): Instance
 {
-    $app = OrbitApp::query()->firstOrCreate(['slug' => 'shop'], [
+    $app = Project::query()->firstOrCreate(['slug' => 'shop'], [
         'name' => 'Shop',
         'repository_url' => 'git@example.test:shop.git',
         'default_branch' => 'main',
     ]);
 
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'main-'.$node->id.'-'.random_int(1, 1_000_000),
         'checkout_path' => $checkout,

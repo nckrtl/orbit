@@ -6,7 +6,7 @@ namespace App\Actions\AppInstances;
 
 use App\Domain\AppInstances\Deployment\AppInstanceDeployStepStore;
 use App\Domain\AppInstances\Deployment\DeploymentStep;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class ListAppInstanceDeployStepsAction
 {
@@ -16,7 +16,7 @@ final readonly class ListAppInstanceDeployStepsAction
     ) {}
 
     /** @return list<DeploymentStep> */
-    public function execute(AppInstance $instance): array
+    public function execute(Instance $instance): array
     {
         $this->resolver->assertAvailable($instance->refresh());
 

@@ -22,11 +22,11 @@ use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
 use App\Models\AppInstanceRemoval;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Dotenv\Dotenv;
 use Illuminate\Filesystem\Filesystem;
@@ -194,7 +194,7 @@ it('refuses a stale import across the recorded Route domain transition without a
     DB::transaction(function () use ($route, $instance): void {
         $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
         $replacement = Route::query()->create([
-            'app_id' => $locked->app_id,
+            'project_id' => $locked->project_id,
             'node_id' => $locked->node_id,
             'domain' => 'next.example.test',
             'provenance' => $locked->provenance,
@@ -204,7 +204,7 @@ it('refuses a stale import across the recorded Route domain transition without a
             'replacement_step' => RouteReplacementStep::Reserved,
         ]);
         $replacement->targets()->create([
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'position' => 0,
         ]);
         $locked->update(['replaced_by_route_id' => $replacement->id]);
@@ -245,11 +245,11 @@ it('renders stored production values for candidate and previous Route domains wi
     ]);
     $instance->environmentValues()->createMany([
         ['env_key' => 'APP_KEY', 'env_value' => 'base64:literal-key'],
-        ['env_key' => 'APP_URL', 'env_value' => 'https://{{app_instance.domain}}'],
+        ['env_key' => 'APP_URL', 'env_value' => 'https://{{instance.domain}}'],
         ['env_key' => 'OTHER', 'env_value' => 'literal'],
     ]);
     $replacement = Route::query()->create([
-        'app_id' => $route->app_id,
+        'project_id' => $route->project_id,
         'node_id' => $route->node_id,
         'domain' => 'next.example.test',
         'provenance' => $route->provenance,
@@ -259,7 +259,7 @@ it('renders stored production values for candidate and previous Route domains wi
         'replacement_step' => RouteReplacementStep::RouterCaddy,
     ]);
     $replacement->targets()->create([
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'position' => 0,
     ]);
     $route->update(['replaced_by_route_id' => $replacement->id]);
@@ -313,7 +313,7 @@ it('renders stored production values for candidate and previous Route domains wi
             'OTHER' => 'literal',
         ])
         ->and($instance->environmentValues()->orderBy('env_key')->pluck('env_value')->all())
-        ->toBe(['base64:literal-key', 'https://{{app_instance.domain}}', 'literal']);
+        ->toBe(['base64:literal-key', 'https://{{instance.domain}}', 'literal']);
 });
 
 it('marks every submitted and parsed value frame as sensitive', function (): void {
@@ -348,10 +348,10 @@ it('marks every submitted and parsed value frame as sensitive', function (): voi
     expect(AppInstanceEnvironmentValue::query()->count())->toBe(0);
 });
 
-/** @return array{AppInstance, Route} */
+/** @return array{Instance, Route} */
 function orb207_concurrency_fixture(): array
 {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Concurrency',
         'slug' => 'concurrency',
         'repository_url' => 'https://example.test/concurrency.git',
@@ -367,8 +367,8 @@ function orb207_concurrency_fixture(): array
         'user' => 'orbit',
     ]);
     $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'default',
         'environment' => 'development',
@@ -382,28 +382,28 @@ function orb207_concurrency_fixture(): array
         'status' => AppInstanceState::SourceResolved,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'domain' => 'concurrency.example.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
     $instance->update(['status' => AppInstanceState::Active]);
 
     return [$instance->fresh(['app', 'node']), $route->fresh()];
 }
 
-function orb207_begin_recorded_removal(AppInstance $instance): void
+function orb207_begin_recorded_removal(Instance $instance): void
 {
     DB::transaction(function () use ($instance): void {
-        $locked = AppInstance::query()->lockForUpdate()->findOrFail($instance->id);
+        $locked = Instance::query()->lockForUpdate()->findOrFail($instance->id);
         $route = $locked->routes()->sole();
         $removal = AppInstanceRemoval::query()->create([
             'id' => (string) Str::uuid(),
-            'requested_app_instance_id' => $locked->id,
+            'requested_instance_id' => $locked->id,
             'requested_name' => $locked->name,
             'force' => false,
             'inventory_digest' => str_repeat('b', 64),
@@ -415,8 +415,8 @@ function orb207_begin_recorded_removal(AppInstance $instance): void
             ->members()
             ->create([
                 'position' => 0,
-                'app_instance_id' => $locked->id,
-                'app_id' => $locked->app_id,
+                'instance_id' => $locked->id,
+                'project_id' => $locked->project_id,
                 'node_id' => $locked->node_id,
                 'route_id' => $route->id,
                 'name' => $locked->name,
@@ -463,7 +463,7 @@ function orb207_concurrency_worker_script(): string
 
         if ($mode === 'setup') {
             Illuminate\Support\Facades\Artisan::call('migrate:fresh', ['--force' => true]);
-            $orbitApp = App\Models\App::query()->create([
+            $orbitApp = App\Models\Project::query()->create([
                 'name' => 'Concurrent worker',
                 'slug' => 'concurrent-worker',
                 'repository_url' => 'https://example.test/concurrent-worker.git',
@@ -479,8 +479,8 @@ function orb207_concurrency_worker_script(): string
                 'user' => 'orbit',
             ]);
             $node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
-            $instance = App\Models\AppInstance::query()->create([
-                'app_id' => $orbitApp->id,
+            $instance = App\Models\Instance::query()->create([
+                'project_id' => $orbitApp->id,
                 'node_id' => $node->id,
                 'name' => 'default',
                 'environment' => 'development',
@@ -490,14 +490,14 @@ function orb207_concurrency_worker_script(): string
                 'status' => 'source_resolved',
             ]);
             $route = App\Models\Route::query()->create([
-                'app_id' => $orbitApp->id,
+                'project_id' => $orbitApp->id,
                 'node_id' => $node->id,
                 'domain' => 'concurrent-worker.example.test',
                 'provenance' => 'explicit',
                 'publication' => 'private',
                 'status' => 'pending',
             ]);
-            $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+            $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
             $route->update(['status' => 'active']);
             $instance->update(['status' => 'active']);
             exit(0);
@@ -511,7 +511,7 @@ function orb207_concurrency_worker_script(): string
             exit(0);
         }
 
-        $instance = App\Models\AppInstance::query()->firstOrFail();
+        $instance = App\Models\Instance::query()->firstOrFail();
         $context = app(App\Domain\AppInstances\Environment\AppInstanceEnvironmentContextResolver::class)
             ->resolve($instance, false);
         touch("{$directory}/{$mode}.ready");
@@ -617,7 +617,7 @@ function orb212_sync_concurrency_worker_script(): string
 
         if ($mode === 'setup') {
             Illuminate\Support\Facades\Artisan::call('migrate:fresh', ['--force' => true]);
-            $orbitApp = App\Models\App::query()->create([
+            $orbitApp = App\Models\Project::query()->create([
                 'name' => 'Concurrent sync worker',
                 'slug' => 'concurrent-sync-worker',
                 'repository_url' => 'https://example.test/concurrent-sync-worker.git',
@@ -633,8 +633,8 @@ function orb212_sync_concurrency_worker_script(): string
                 'user' => 'orbit',
             ]);
             $node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
-            $instance = App\Models\AppInstance::query()->create([
-                'app_id' => $orbitApp->id,
+            $instance = App\Models\Instance::query()->create([
+                'project_id' => $orbitApp->id,
                 'node_id' => $node->id,
                 'name' => 'default',
                 'environment' => 'development',
@@ -644,21 +644,21 @@ function orb212_sync_concurrency_worker_script(): string
                 'status' => 'source_resolved',
             ]);
             $route = App\Models\Route::query()->create([
-                'app_id' => $orbitApp->id,
+                'project_id' => $orbitApp->id,
                 'node_id' => $node->id,
                 'domain' => 'concurrent-sync-worker.example.test',
                 'provenance' => 'explicit',
                 'publication' => 'private',
                 'status' => 'pending',
             ]);
-            $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+            $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
             $route->update(['status' => 'active']);
             $instance->update(['status' => 'active']);
             $instance->environmentValues()->create(['env_key' => 'INITIAL', 'env_value' => 'before-sync']);
             exit(0);
         }
 
-        $instance = App\Models\AppInstance::query()->firstOrFail();
+        $instance = App\Models\Instance::query()->firstOrFail();
 
         if ($mode === 'inspect') {
             echo json_encode($instance->environmentValues()->orderBy('env_key')->pluck('env_value', 'env_key')->all(), JSON_THROW_ON_ERROR);

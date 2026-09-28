@@ -8,7 +8,7 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Process;
 use App\Models\Route;
 use Illuminate\Testing\TestResponse;
@@ -34,10 +34,10 @@ final class RecordingAppInstanceQueueReader implements AppInstanceQueueReader
     }
 }
 
-function queue_api_process(AppInstance $instance, string $name, string $command): Process
+function queue_api_process(Instance $instance, string $name, string $command): Process
 {
     return Process::query()->create([
-        'owner_type' => AppInstance::MorphAlias,
+        'owner_type' => Instance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => $name,
         'runtime' => 'systemd',
@@ -52,14 +52,14 @@ function queue_api_process(AppInstance $instance, string $name, string $command)
 beforeEach(function (): void {
     $this->fixture = Orb220DeploymentApiFixture::create();
     $route = Route::query()->create([
-        'app_id' => $this->fixture->instance->app_id,
+        'project_id' => $this->fixture->instance->project_id,
         'node_id' => $this->fixture->instance->node_id,
         'generation_basis_node_id' => $this->fixture->instance->node_id,
         'domain' => 'shop.test',
         'provenance' => RouteProvenance::Generated,
         'publication' => RoutePublication::Private,
     ]);
-    $route->targets()->create(['app_instance_id' => $this->fixture->instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $this->fixture->instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
     $this->reader = new RecordingAppInstanceQueueReader([
         'installed' => true,

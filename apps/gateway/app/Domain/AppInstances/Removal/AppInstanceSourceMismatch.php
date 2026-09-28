@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Domain\AppInstances\Removal;
 
+use App\Models\Instance;
+
 /**
- * One development source identity check that AppInstance removal never waives.
+ * One development source identity check that Instance removal never waives.
  *
  * The backed value is the bounded error code that names the refused check.
  */
@@ -20,7 +22,7 @@ enum AppInstanceSourceMismatch: string
 
     public function describe(string $appInstanceName): string
     {
-        return "AppInstance [{$appInstanceName}] ".match ($this) {
+        return "Instance [{$appInstanceName}] ".match ($this) {
             self::Path => 'source path is not the recorded Orbit-owned directory.',
             self::Ownership => 'source is not owned by the managed Node account.',
             self::Layout => 'source Git layout does not match the recorded source layout.',

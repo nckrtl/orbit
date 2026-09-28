@@ -13,7 +13,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 
 final readonly class RemoteAppInstanceLogReader implements AppInstanceLogReader
@@ -24,7 +24,7 @@ final readonly class RemoteAppInstanceLogReader implements AppInstanceLogReader
         private KnownHostsStore $knownHosts,
     ) {}
 
-    public function tail(AppInstance $instance, int $lines): string
+    public function tail(Instance $instance, int $lines): string
     {
         $result = $this->ssh->execute(
             $this->connection($instance->node),
@@ -38,7 +38,7 @@ final readonly class RemoteAppInstanceLogReader implements AppInstanceLogReader
         if (! $result->succeeded()) {
             throw new ResourceOperationException(
                 errorCode: 'instance.logs_failed',
-                message: "The application log of AppInstance [{$instance->name}] could not be read.",
+                message: "The application log of Instance [{$instance->name}] could not be read.",
                 status: 502,
             );
         }
@@ -46,14 +46,14 @@ final readonly class RemoteAppInstanceLogReader implements AppInstanceLogReader
         return LogReadLimit::wholeLines($result->stdout);
     }
 
-    private function checkout(AppInstance $instance): string
+    private function checkout(Instance $instance): string
     {
         $path = StoragePath::tryParse($instance->checkout_path);
 
         if ($path === null) {
             throw new ResourceOperationException(
                 errorCode: 'instance.checkout_path_invalid',
-                message: "AppInstance [{$instance->name}] has an invalid checkout path.",
+                message: "Instance [{$instance->name}] has an invalid checkout path.",
             );
         }
 

@@ -38,7 +38,7 @@ it('preserves the live extension state while moving legacy task switches', funct
     ]);
 
     $migration = require database_path('migrations/2026_10_01_000001_move_extension_switches_to_gateway_extension_keys.php');
-    $migration->up();
+    run_legacy_schema_migration($migration, 'up');
 
     expect(DB::table('settings')->where('key', 'extension.tasks.enabled')->value('value'))->toBe('1')
         ->and(DB::table('settings')->where('key', 'extension.proxycli.enabled')->value('value'))->toBe('1')
@@ -54,7 +54,7 @@ it('restores the legacy task switch when rolling back an enabled extension', fun
     ]);
 
     $migration = require database_path('migrations/2026_10_01_000001_move_extension_switches_to_gateway_extension_keys.php');
-    $migration->down();
+    run_legacy_schema_migration($migration, 'down');
 
     expect(DB::table('settings')->where('key', 'tasks.enabled')->value('value'))->toBe('1')
         ->and(DB::table('settings')->where('key', 'extension.tasks.enabled')->exists())->toBeFalse();
@@ -75,14 +75,14 @@ it('restores the task switch before a failed deletion and can retry the rollback
 
     $migration = require database_path('migrations/2026_10_01_000001_move_extension_switches_to_gateway_extension_keys.php');
 
-    expect(fn () => $migration->down())
+    expect(fn () => run_legacy_schema_migration($migration, 'down'))
         ->toThrow(QueryException::class, 'injected extension rollback failure');
 
     expect(DB::table('settings')->where('key', 'tasks.enabled')->value('value'))->toBe('1')
         ->and(DB::table('settings')->where('key', 'extension.tasks.enabled')->exists())->toBeTrue();
 
     DB::unprepared('DROP TRIGGER fail_extension_switch_delete');
-    $migration->down();
+    run_legacy_schema_migration($migration, 'down');
 
     expect(DB::table('settings')->where('key', 'tasks.enabled')->value('value'))->toBe('1')
         ->and(DB::table('settings')->where('key', 'extension.tasks.enabled')->exists())->toBeFalse();
@@ -98,7 +98,7 @@ it('keeps a configured but stopped proxycli collector disabled', function (): vo
     }
 
     $migration = require database_path('migrations/2026_10_01_000001_move_extension_switches_to_gateway_extension_keys.php');
-    $migration->up();
+    run_legacy_schema_migration($migration, 'up');
 
     expect(DB::table('settings')->where('key', 'extension.proxycli.enabled')->exists())->toBeFalse()
         ->and(DB::table('settings')->where('key', 'proxycli.enabled')->value('value'))->toBe('1');

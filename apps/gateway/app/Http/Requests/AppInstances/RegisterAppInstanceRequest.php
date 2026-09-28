@@ -10,7 +10,7 @@ use App\Domain\Routes\RouteDomain;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\ProjectRoot;
 use App\Http\Requests\TopLevelJsonObjectInspector;
-use App\Models\App as OrbitApp;
+use App\Models\Project;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -25,7 +25,7 @@ final class RegisterAppInstanceRequest extends FormRequest
         return [
             'source_path' => ['required', 'string', 'max:4096', 'regex:/\A\/[^\x00-\x1f]*\z/'],
             'include_worktrees' => ['sometimes', 'boolean'],
-            'project_id' => ['sometimes', 'integer', Rule::exists(new OrbitApp()->getTable(), 'id')],
+            'project_id' => ['sometimes', 'integer', Rule::exists(new Project()->getTable(), 'id')],
             'app_name' => ['sometimes', 'string', 'max:255'],
             'app_slug' => ['sometimes', 'string', 'alpha_dash:ascii', 'max:63'],
             'default_branch' => ['sometimes', 'string', 'max:255'],
@@ -68,8 +68,8 @@ final class RegisterAppInstanceRequest extends FormRequest
 
             $root = $this->input('root');
             $projectId = $this->input('project_id');
-            $project = is_numeric($projectId) ? OrbitApp::query()->find((int) $projectId) : null;
-            $type = $project instanceof OrbitApp ? $project->type : ProjectType::LaravelPackage;
+            $project = is_numeric($projectId) ? Project::query()->find((int) $projectId) : null;
+            $type = $project instanceof Project ? $project->type : ProjectType::LaravelPackage;
 
             if (is_string($root) && ! ProjectRoot::isValid($root, $type)) {
                 $validator->errors()->add('root', 'The root must be a normalized relative Project path.');

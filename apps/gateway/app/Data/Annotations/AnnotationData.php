@@ -19,7 +19,7 @@ final class AnnotationData extends Data
         return new self(app(CommandActivityInputSanitizer::class)->sanitizeProperties([
             ...$annotation->context,
             'id' => $annotation->id,
-            'instanceId' => $annotation->app_instance_id,
+            'instanceId' => $annotation->instance_id,
             'taskId' => $annotation->task_id,
             'taskGroupId' => $annotation->task->task_group_id,
             'threadId' => $annotation->task->target_thread_id,

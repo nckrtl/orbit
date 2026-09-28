@@ -10,7 +10,7 @@ use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use SensitiveParameter;
@@ -27,14 +27,14 @@ final readonly class LogStreamTargetResolver
         private DockerProcessRenderer $docker,
     ) {}
 
-    public function forInstance(AppInstance $instance): LogStreamTarget
+    public function forInstance(Instance $instance): LogStreamTarget
     {
         $checkout = StoragePath::tryParse((string) $instance->checkout_path);
 
         if ($checkout === null) {
             throw new ResourceOperationException(
                 errorCode: 'instance.checkout_path_invalid',
-                message: "AppInstance [{$instance->name}] has an invalid checkout path.",
+                message: "Instance [{$instance->name}] has an invalid checkout path.",
             );
         }
 

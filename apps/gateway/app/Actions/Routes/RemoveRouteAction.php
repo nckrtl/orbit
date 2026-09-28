@@ -56,8 +56,8 @@ final readonly class RemoveRouteAction
     {
         $expectedTargetIds = $route
             ->targets()
-            ->orderBy('app_instance_id')
-            ->pluck('app_instance_id')
+            ->orderBy('instance_id')
+            ->pluck('instance_id')
             ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->values()
             ->all();
@@ -89,7 +89,7 @@ final readonly class RemoveRouteAction
             if (RouteRemovalStep::tryFrom((string) $locked->failed_step) instanceof RouteRemovalStep) {
                 throw new ResourceOperationException(
                     errorCode: 'env.owner_changed',
-                    message: 'The AppInstance environment owner changed during the operation.',
+                    message: 'The Instance environment owner changed during the operation.',
                     status: 409,
                 );
             }
@@ -236,7 +236,7 @@ final readonly class RemoveRouteAction
     {
         $currentTargetIds = $route
             ->targets
-            ->pluck('app_instance_id')
+            ->pluck('instance_id')
             ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->sort()
             ->values()
@@ -247,7 +247,7 @@ final readonly class RemoveRouteAction
         if ($currentTargetIds !== $expectedSorted) {
             throw new ResourceOperationException(
                 errorCode: 'env.owner_changed',
-                message: 'The AppInstance environment owner changed during the operation.',
+                message: 'The Instance environment owner changed during the operation.',
                 status: 409,
             );
         }

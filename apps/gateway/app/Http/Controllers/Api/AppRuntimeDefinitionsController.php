@@ -20,8 +20,8 @@ use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AppDefinitions\ProcessDefinitionRequest;
 use App\Http\Requests\AppDefinitions\ScheduleDefinitionRequest;
-use App\Models\App as OrbitApp;
 use App\Models\ProcessDefinition;
+use App\Models\Project;
 use App\Models\ScheduleDefinition;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -31,7 +31,7 @@ final class AppRuntimeDefinitionsController extends Controller
     #[RequiresNodeAccess(ServingNode::AppOwning)]
     public function processIndex(
         Request $request,
-        OrbitApp $app,
+        Project $app,
         ListProcessDefinitionsAction $action,
     ): JsonResponse {
         return response()->json([
@@ -50,7 +50,7 @@ final class AppRuntimeDefinitionsController extends Controller
     #[RequiresNodeAccess(ServingNode::AppOwning)]
     public function processStore(
         ProcessDefinitionRequest $request,
-        OrbitApp $app,
+        Project $app,
         CreateProcessDefinitionAction $action,
     ): JsonResponse {
         return response()->json([
@@ -62,7 +62,7 @@ final class AppRuntimeDefinitionsController extends Controller
     #[RequiresNodeAccess(ServingNode::AppOwning)]
     public function processShow(
         Request $request,
-        OrbitApp $app,
+        Project $app,
         ProcessDefinition $processDefinition,
         ShowProcessDefinitionAction $action,
     ): JsonResponse {
@@ -75,7 +75,7 @@ final class AppRuntimeDefinitionsController extends Controller
     #[RequiresNodeAccess(ServingNode::AppOwning)]
     public function processUpdate(
         ProcessDefinitionRequest $request,
-        OrbitApp $app,
+        Project $app,
         ProcessDefinition $processDefinition,
         ReplaceProcessDefinitionAction $action,
     ): JsonResponse {
@@ -90,7 +90,7 @@ final class AppRuntimeDefinitionsController extends Controller
     #[RequiresNodeAccess(ServingNode::AppOwning)]
     public function processDestroy(
         Request $request,
-        OrbitApp $app,
+        Project $app,
         ProcessDefinition $processDefinition,
         RemoveProcessDefinitionAction $action,
     ): JsonResponse {
@@ -106,7 +106,7 @@ final class AppRuntimeDefinitionsController extends Controller
     #[RequiresNodeAccess(ServingNode::AppOwning)]
     public function scheduleIndex(
         Request $request,
-        OrbitApp $app,
+        Project $app,
         ListScheduleDefinitionsAction $action,
     ): JsonResponse {
         return response()->json([
@@ -125,7 +125,7 @@ final class AppRuntimeDefinitionsController extends Controller
     #[RequiresNodeAccess(ServingNode::AppOwning)]
     public function scheduleStore(
         ScheduleDefinitionRequest $request,
-        OrbitApp $app,
+        Project $app,
         CreateScheduleDefinitionAction $action,
     ): JsonResponse {
         return response()->json([
@@ -137,7 +137,7 @@ final class AppRuntimeDefinitionsController extends Controller
     #[RequiresNodeAccess(ServingNode::AppOwning)]
     public function scheduleShow(
         Request $request,
-        OrbitApp $app,
+        Project $app,
         ScheduleDefinition $scheduleDefinition,
         ShowScheduleDefinitionAction $action,
     ): JsonResponse {
@@ -150,7 +150,7 @@ final class AppRuntimeDefinitionsController extends Controller
     #[RequiresNodeAccess(ServingNode::AppOwning)]
     public function scheduleUpdate(
         ScheduleDefinitionRequest $request,
-        OrbitApp $app,
+        Project $app,
         ScheduleDefinition $scheduleDefinition,
         ReplaceScheduleDefinitionAction $action,
     ): JsonResponse {
@@ -165,7 +165,7 @@ final class AppRuntimeDefinitionsController extends Controller
     #[RequiresNodeAccess(ServingNode::AppOwning)]
     public function scheduleDestroy(
         Request $request,
-        OrbitApp $app,
+        Project $app,
         ScheduleDefinition $scheduleDefinition,
         RemoveScheduleDefinitionAction $action,
     ): JsonResponse {

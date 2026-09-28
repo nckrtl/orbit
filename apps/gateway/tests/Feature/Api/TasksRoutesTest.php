@@ -18,10 +18,10 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Api\TaskGroupsController;
 use App\Http\Controllers\Api\TasksController;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskGroup;
@@ -46,9 +46,9 @@ function tasks_gateway(): Node
     return $gateway;
 }
 
-function tasks_app(string $slug = 'commander-demo'): OrbitApp
+function tasks_app(string $slug = 'commander-demo'): Project
 {
-    return OrbitApp::query()->create([
+    return Project::query()->create([
         'name' => $slug,
         'slug' => $slug,
         'repository_url' => "git@example.test:{$slug}.git",
@@ -94,7 +94,7 @@ it('creates and reads operator task comments', function (): void {
     enable_tasks();
     $app = tasks_app('comments');
     $group = $this->postJson('/api/v1/task-groups', [
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Comments',
         'brief' => 'Record comments.',
         'tasks' => [['title' => 'Comment task', 'brief' => 'A task.']],
@@ -127,7 +127,7 @@ it('refuses turn outcomes, which agents report with the run script', function (s
     enable_tasks();
     $app = tasks_app('invalid-comments');
     $group = $this->postJson('/api/v1/task-groups', [
-        'app_id' => $app->id, 'title' => 'Comments', 'brief' => 'Record comments.',
+        'project_id' => $app->id, 'title' => 'Comments', 'brief' => 'Record comments.',
         'tasks' => [['title' => 'Comment task', 'brief' => 'A task.']],
     ])->assertCreated()->json('data');
     $taskId = $group['tasks'][0]['id'];
@@ -190,7 +190,7 @@ it('accepts notify_on_settle as the Commander alias for notify_coder', function 
     $app = tasks_app('notify-alias');
 
     $this->postJson('/api/v1/task-groups', [
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Notify alias',
         'brief' => 'Commander callers send notify_on_settle.',
         'notify_on_settle' => true,
@@ -204,7 +204,7 @@ it('returns 409 extension.disabled for create and list while the extension is of
     $app = tasks_app();
 
     $this->postJson('/api/v1/task-groups', [
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Ship absorb',
         'brief' => 'Deliver the first slice. Accept when MCP create works.',
     ])
@@ -230,8 +230,8 @@ it('still returns the created group, and fails it when the first implementer can
         'public_ssh_host' => '192.0.2.81',
         'wireguard_ip' => '10.44.0.81',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'workspace',
         'checkout_path' => '/tmp/tasks-spawn-failure',
@@ -240,9 +240,9 @@ it('still returns the created group, and fails it when the first implementer can
 
     app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
     {
-        public function __construct(private AppInstance $instance) {}
+        public function __construct(private Instance $instance) {}
 
-        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        public function provision(InstanceProvisionIntent $intent): ?Instance
         {
             return $this->instance;
         }
@@ -263,7 +263,7 @@ it('still returns the created group, and fails it when the first implementer can
     });
 
     $this->postJson('/api/v1/task-groups', [
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Spawn failure',
         'brief' => 'Fail the group. Accept when create still answers.',
         'status' => 'todo',
@@ -286,7 +286,7 @@ it('creates a group with ordered tasks and lists and shows it', function (): voi
     $app = tasks_app();
 
     $created = $this->postJson('/api/v1/task-groups', [
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Absorb Commander',
         'brief' => 'Persist groups. Accept when create and list work.',
         'notify_coder' => true,
@@ -344,7 +344,7 @@ it('creates a fourth group when the App already has three active groups', functi
 
     foreach (['One', 'Two', 'Three'] as $title) {
         $this->postJson('/api/v1/task-groups', [
-            'app_id' => $app->id,
+            'project_id' => $app->id,
             'title' => $title,
             'brief' => "{$title} brief",
             'status' => 'todo',
@@ -353,7 +353,7 @@ it('creates a fourth group when the App already has three active groups', functi
     }
 
     $this->postJson('/api/v1/task-groups', [
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Four',
         'brief' => 'No per-Project ceiling holds this group.',
         'status' => 'todo',
@@ -378,7 +378,7 @@ it('rejects create payloads with missing fields or unsupported keys', function (
         'brief' => 'App id is required.',
     ])
         ->assertUnprocessable()
-        ->assertJsonPath('error.details.app_id.0', 'The app id field is required.');
+        ->assertJsonPath('error.details.project_id.0', 'The project id field is required.');
 });
 
 it('returns 403 node_access.required when create comes from a Node without Gateway access', function (): void {
@@ -403,7 +403,7 @@ it('returns 403 node_access.required when create comes from a Node without Gatew
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
         ->postJson('/api/v1/task-groups', [
-            'app_id' => $app->id,
+            'project_id' => $app->id,
             'title' => 'Denied',
             'brief' => 'Must not persist.',
         ])
@@ -436,7 +436,7 @@ it('lets a Node with a Gateway grant create a group', function (): void {
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
         ->postJson('/api/v1/task-groups', [
-            'app_id' => $app->id,
+            'project_id' => $app->id,
             'title' => 'Granted',
             'brief' => 'Caller has Gateway access.',
         ])
@@ -455,15 +455,15 @@ it('completes a settling group and removes its App instance', function (): void 
         'public_ssh_host' => '192.0.2.86',
         'wireguard_ip' => '10.44.0.86',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'task-30',
         'checkout_path' => '/tmp/task-30',
         'status' => 'source_resolved',
     ]);
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Ready',
         'brief' => 'PR is merged.',
         'status' => TaskGroupStatus::Settling,
@@ -473,7 +473,7 @@ it('completes a settling group and removes its App instance', function (): void 
     $group->save();
     $remover = new class implements AppInstanceRemover
     {
-        public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
+        public function execute(Instance $instance, bool $force): AppInstanceRemoval
         {
             $instance->delete();
 
@@ -494,7 +494,7 @@ it('returns 409 tasks.not_settling when complete runs before settle', function (
     enable_tasks();
     $app = tasks_app('too-early');
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Running',
         'brief' => 'Not ready.',
         'status' => TaskGroupStatus::Running,
@@ -512,7 +512,7 @@ it('stores the configured models on a new group and keeps the defaults when unse
     config()->set('orbit.tasks.implementer_model', 'gpt-6-luna');
     config()->set('orbit.tasks.reviewer_model', '');
 
-    $this->postJson('/api/v1/task-groups', ['app_id' => $app->id, 'title' => 'Models', 'brief' => 'Configured models'])
+    $this->postJson('/api/v1/task-groups', ['project_id' => $app->id, 'title' => 'Models', 'brief' => 'Configured models'])
         ->assertCreated();
 
     $this->assertDatabaseHas('task_groups', ['title' => 'Models', 'implementer_model' => 'gpt-6-luna', 'reviewer_model' => TaskAgentDefaults::ReviewerModel]);
@@ -525,7 +525,7 @@ it('stores the configured implementer and reviewer drivers on a new group', func
     config()->set('orbit.tasks.implementer_agent_driver', 'pi');
     config()->set('orbit.tasks.reviewer_agent_driver', 't3');
 
-    $this->postJson('/api/v1/task-groups', ['app_id' => $app->id, 'title' => 'Mixed', 'brief' => 'Pi implements, T3 reviews'])
+    $this->postJson('/api/v1/task-groups', ['project_id' => $app->id, 'title' => 'Mixed', 'brief' => 'Pi implements, T3 reviews'])
         ->assertCreated();
 
     $this->assertDatabaseHas('task_groups', ['title' => 'Mixed', 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 't3']);
@@ -537,7 +537,7 @@ it('rejects an unregistered configured driver with 409 before storing a group', 
     $app = tasks_app();
     config()->set("orbit.tasks.{$role}_agent_driver", 'missing-driver');
 
-    $this->postJson('/api/v1/task-groups', ['app_id' => $app->id, 'title' => 'Unavailable', 'brief' => 'No driver'])
+    $this->postJson('/api/v1/task-groups', ['project_id' => $app->id, 'title' => 'Unavailable', 'brief' => 'No driver'])
         ->assertStatus(409)->assertJsonPath('error.code', 'tasks.agent_driver_unavailable');
 
     $this->assertDatabaseCount('task_groups', 0);
@@ -549,8 +549,8 @@ it('cancels a running check and shows it on the task', function (): void {
     enable_tasks();
     $app = tasks_app('checks');
     $node = Node::query()->create(['name' => 'check-dev', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '192.0.2.81', 'wireguard_ip' => '10.44.0.81']);
-    $instance = AppInstance::query()->create(['app_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-1', 'checkout_path' => '/srv/apps/checks/task-1', 'status' => 'source_resolved']);
-    $group = TaskGroup::query()->create(['app_id' => $app->id, 'title' => 'Checks', 'brief' => 'Run the check.', 'status' => 'running']);
+    $instance = Instance::query()->create(['project_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-1', 'checkout_path' => '/srv/apps/checks/task-1', 'status' => 'source_resolved']);
+    $group = TaskGroup::query()->create(['project_id' => $app->id, 'title' => 'Checks', 'brief' => 'Run the check.', 'status' => 'running']);
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create(['task_group_id' => $group->id, 'position' => 1, 'title' => 'Check', 'brief' => 'Run it.', 'status' => 'running']);
@@ -606,7 +606,7 @@ it('returns assistance fields on show and list for flagged and unflagged groups'
     $app = tasks_app('assistance');
     $create = function (string $title) use ($app): array {
         $group = $this->postJson('/api/v1/task-groups', [
-            'app_id' => $app->id,
+            'project_id' => $app->id,
             'title' => $title,
             'brief' => "{$title} brief.",
             'tasks' => [
@@ -685,7 +685,7 @@ it('summarises groups asking for assistance on tasks status', function (): void 
     enable_tasks();
     $create = function (string $title) use ($app): int {
         $id = $this->postJson('/api/v1/task-groups', [
-            'app_id' => $app->id,
+            'project_id' => $app->id,
             'title' => $title,
             'brief' => "{$title} brief.",
             'tasks' => [['title' => 'Step', 'brief' => 'Step brief.']],

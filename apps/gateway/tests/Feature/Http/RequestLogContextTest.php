@@ -197,7 +197,7 @@ it('renders domain and framework exception statuses from one status source', fun
     $result = new CommandResult(1, '', '', 1, false);
     $removal = new AppInstanceRemoval([
         'id' => 'status-source-removal',
-        'requested_app_instance_id' => 1,
+        'requested_instance_id' => 1,
         'requested_name' => 'status-source-app',
         'force' => false,
         'inventory_digest' => 'digest',

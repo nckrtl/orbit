@@ -8,7 +8,7 @@ use App\Data\Routes\CreateRouteData;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\Routes\RoutePublication;
 use App\Http\Requests\TopLevelJsonObjectInspector;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Foundation\Http\FormRequest;
@@ -44,7 +44,7 @@ final class StoreRouteRequest extends FormRequest
         return [
             'domain' => ['required', 'string', 'max:253'],
             'publication' => ['sometimes', Rule::enum(RoutePublication::class)],
-            'app_instance_id' => ['required', 'integer', Rule::exists(new AppInstance()->getTable(), 'id')],
+            'instance_id' => ['required', 'integer', Rule::exists(new Instance()->getTable(), 'id')],
         ];
     }
 
@@ -57,7 +57,7 @@ final class StoreRouteRequest extends FormRequest
                 [
                     'domain',
                     'publication',
-                    'app_instance_id',
+                    'instance_id',
                     'node_id',
                     'upstream',
                     'process_id',
@@ -107,7 +107,7 @@ final class StoreRouteRequest extends FormRequest
         return new CreateRouteData(
             domain: $this->string('domain')->toString(),
             publication: RoutePublication::from(is_string($validated['publication'] ?? null) ? $validated['publication'] : RoutePublication::Private->value),
-            appInstanceId: $this->integer('app_instance_id'),
+            appInstanceId: $this->integer('instance_id'),
         );
     }
 
@@ -118,7 +118,7 @@ final class StoreRouteRequest extends FormRequest
 
     private function validateCustomProxy(Validator $validator): void
     {
-        if ($this->input('app_id') !== null || $this->input('app_instance_id') !== null || $this->input('cluster_id') !== null) {
+        if ($this->input('project_id') !== null || $this->input('instance_id') !== null || $this->input('cluster_id') !== null) {
             $validator->errors()->add('scope', 'A custom proxy Route cannot own an App, Instance, or Cluster scope.');
         }
 

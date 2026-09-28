@@ -14,7 +14,7 @@ use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessRuntimeStatusIndex;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Process;
 use SensitiveParameter;
 
@@ -42,7 +42,7 @@ final readonly class RestartProcessAction
 
     public function execute(#[SensitiveParameter] Process $process): Process
     {
-        if (! AppInstance::isMorphType($process->owner_type)) {
+        if (! Instance::isMorphType($process->owner_type)) {
             return $this->mutate($process);
         }
 
@@ -54,7 +54,7 @@ final readonly class RestartProcessAction
             fn (): Process => $this->mutate(
                 Process::query()
                     ->whereKey($processId)
-                    ->whereIn('owner_type', AppInstance::morphTypes())
+                    ->whereIn('owner_type', Instance::morphTypes())
                     ->where('owner_id', $ownerId)
                     ->firstOrFail(),
             ),

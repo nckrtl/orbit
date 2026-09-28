@@ -10,10 +10,10 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
- * @property string $app_instance_removal_id
+ * @property string $instance_removal_id
  * @property int $position
- * @property int $app_instance_id
- * @property int $app_id
+ * @property int $instance_id
+ * @property int $project_id
  * @property int $node_id
  * @property int|null $route_id
  * @property string $name
@@ -41,13 +41,16 @@ use Illuminate\Support\Carbon;
  */
 final class AppInstanceRemovalMember extends Model
 {
+    #[\Override]
+    protected $table = 'instance_removal_members';
+
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
-        'app_instance_removal_id',
+        'instance_removal_id',
         'position',
-        'app_instance_id',
-        'app_id',
+        'instance_id',
+        'project_id',
         'node_id',
         'route_id',
         'name',
@@ -76,7 +79,7 @@ final class AppInstanceRemovalMember extends Model
     /** @return BelongsTo<AppInstanceRemoval, $this> */
     public function removal(): BelongsTo
     {
-        return $this->belongsTo(AppInstanceRemoval::class, 'app_instance_removal_id');
+        return $this->belongsTo(AppInstanceRemoval::class, 'instance_removal_id');
     }
 
     /** @return array<string, string> */

@@ -11,9 +11,9 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskStatus;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskComment;
 use App\Models\TaskGroup;
@@ -28,7 +28,7 @@ beforeEach(function (): void {
     ]));
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
     app(TaskExtensionState::class)->enable();
-    $this->appRecord = OrbitApp::query()->create([
+    $this->appRecord = Project::query()->create([
         'name' => 'Backlog demo',
         'slug' => 'backlog-demo',
         'repository_url' => 'git@example.test:backlog-demo.git',
@@ -38,7 +38,7 @@ beforeEach(function (): void {
     {
         public int $calls = 0;
 
-        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        public function provision(InstanceProvisionIntent $intent): ?Instance
         {
             $this->calls++;
 
@@ -56,7 +56,7 @@ beforeEach(function (): void {
 function backlog_group(mixed $test, array $subtasks = ['One', 'Two', 'Three'], array $extra = []): array
 {
     return $test->postJson('/api/v1/task-groups', [
-        'app_id' => $test->appRecord->id,
+        'project_id' => $test->appRecord->id,
         'title' => 'Backlog feature',
         'brief' => 'Prepare before running.',
         'tasks' => array_map(static fn (string $title): array => [
@@ -106,7 +106,7 @@ it('claims a group created in todo', function (): void {
 
 it('refuses todo for a group without subtasks', function (): void {
     $this->postJson('/api/v1/task-groups', [
-        'app_id' => $this->appRecord->id,
+        'project_id' => $this->appRecord->id,
         'title' => 'Empty',
         'brief' => 'No subtasks.',
         'status' => 'todo',
@@ -513,11 +513,11 @@ describe('subtask deliverables', function (): void {
     it('refuses an id twice within one subtask but allows it across subtasks', function (): void {
         $review = ['id' => 'done', 'type' => 'review', 'description' => 'Done.'];
 
-        $this->postJson('/api/v1/task-groups', ['app_id' => $this->appRecord->id, 'title' => 'Twice', 'brief' => 'Twice.', 'tasks' => [
+        $this->postJson('/api/v1/task-groups', ['project_id' => $this->appRecord->id, 'title' => 'Twice', 'brief' => 'Twice.', 'tasks' => [
             ['title' => 'One', 'brief' => 'One.', 'deliverables' => [$review, $review]],
         ]])->assertUnprocessable()->assertJsonPath('error.details', ['tasks.0.deliverables' => ['Each deliverable id must be unique within the subtask. Repeated: done.']]);
 
-        $this->postJson('/api/v1/task-groups', ['app_id' => $this->appRecord->id, 'title' => 'Across', 'brief' => 'Across.', 'tasks' => [
+        $this->postJson('/api/v1/task-groups', ['project_id' => $this->appRecord->id, 'title' => 'Across', 'brief' => 'Across.', 'tasks' => [
             ['title' => 'One', 'brief' => 'One.', 'deliverables' => [$review]],
             ['title' => 'Two', 'brief' => 'Two.', 'deliverables' => [$review]],
         ]])->assertCreated();
@@ -546,7 +546,7 @@ describe('subtask deliverables', function (): void {
     });
 
     it('refuses to create a group in todo while a subtask has no deliverables', function (): void {
-        $this->postJson('/api/v1/task-groups', ['app_id' => $this->appRecord->id, 'title' => 'Ready', 'brief' => 'Ready.', 'status' => 'todo', 'tasks' => [
+        $this->postJson('/api/v1/task-groups', ['project_id' => $this->appRecord->id, 'title' => 'Ready', 'brief' => 'Ready.', 'status' => 'todo', 'tasks' => [
             ['title' => 'One', 'brief' => 'One.', 'deliverables' => [['id' => 'done', 'type' => 'review', 'description' => 'Done.']]],
             ['title' => 'Two', 'brief' => 'Two.'],
         ]])
@@ -610,7 +610,7 @@ describe('subtask deliverables', function (): void {
         $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$created['id']}", ['deliverables' => $deliverables])
             ->assertOk()->assertJsonPath('data.deliverables', $deliverables);
         $this->postJson('/api/v1/task-groups', [
-            'app_id' => $this->appRecord->id,
+            'project_id' => $this->appRecord->id,
             'title' => 'Layout group',
             'brief' => 'Fix the layout.',
             'tasks' => [['title' => 'Layout', 'brief' => 'Fix the layout.', 'deliverables' => $deliverables]],
@@ -638,7 +638,7 @@ describe('subtask deliverables', function (): void {
             expect($updated['deliverables'][0]['fails_on_base'])->toBe($value === false);
 
             $this->postJson('/api/v1/task-groups', [
-                'app_id' => $this->appRecord->id,
+                'project_id' => $this->appRecord->id,
                 'title' => 'Layout group',
                 'brief' => 'Fix the layout.',
                 'tasks' => [['title' => 'Layout', 'brief' => 'Fix the layout.', 'deliverables' => [$repro]]],
@@ -670,7 +670,7 @@ describe('subtask deliverables', function (): void {
             ]);
 
         $groupCreated = $this->postJson('/api/v1/task-groups', [
-            'app_id' => $this->appRecord->id,
+            'project_id' => $this->appRecord->id,
             'title' => 'Layout group',
             'brief' => 'Refuse the field.',
             'tasks' => [['title' => 'Layout', 'brief' => 'Fix the layout.', 'deliverables' => [$repro]]],
@@ -703,7 +703,7 @@ describe('subtask deliverables', function (): void {
             'deliverables' => [$deliverable],
         ]);
         $groupCreated = $this->postJson('/api/v1/task-groups', [
-            'app_id' => $this->appRecord->id,
+            'project_id' => $this->appRecord->id,
             'title' => 'Invalid group',
             'brief' => 'Invalid task.',
             'tasks' => [['title' => 'Invalid', 'brief' => 'Invalid task.', 'deliverables' => [$deliverable]]],
@@ -750,7 +750,7 @@ describe('subtask deliverables', function (): void {
             ]);
 
         $groupCreated = $this->postJson('/api/v1/task-groups', [
-            'app_id' => $this->appRecord->id,
+            'project_id' => $this->appRecord->id,
             'title' => 'Docs group',
             'brief' => 'Refuse the field.',
             'tasks' => [['title' => 'Docs', 'brief' => 'Write the docs.', 'deliverables' => [$deliverable]]],

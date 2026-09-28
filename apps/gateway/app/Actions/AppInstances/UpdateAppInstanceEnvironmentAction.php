@@ -10,7 +10,7 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentResult;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentStore;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentValidator;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class UpdateAppInstanceEnvironmentAction
 {
@@ -21,7 +21,7 @@ final readonly class UpdateAppInstanceEnvironmentAction
     ) {}
 
     public function execute(
-        AppInstance $instance,
+        Instance $instance,
         string $key,
         #[\SensitiveParameter]
         string $value,
@@ -36,11 +36,11 @@ final readonly class UpdateAppInstanceEnvironmentAction
             if (
                 $context->laravel
                 && $key === 'APP_URL'
-                && $value !== 'https://{{app_instance.domain}}'
+                && $value !== 'https://{{instance.domain}}'
             ) {
                 throw new ResourceOperationException(
                     errorCode: 'env.configuration_invalid',
-                    message: 'The complete AppInstance environment configuration is invalid.',
+                    message: 'The complete Instance environment configuration is invalid.',
                     details: [
                         'key' => 'APP_URL',
                         'rule' => AppInstanceEnvironmentValidator::RuleLaravelAppUrl,

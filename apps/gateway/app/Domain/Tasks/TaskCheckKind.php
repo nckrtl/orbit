@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Models\Project;
+
 enum TaskCheckKind: string
 {
     /** The Project's setup steps and check on the fresh workspace, before the first implementer starts. */

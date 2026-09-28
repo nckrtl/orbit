@@ -26,7 +26,7 @@ it('refuses a task comment whose type is not a known comment', function (): void
 
 it('refuses transfer history that no longer belongs to an Instance', function (): void {
     $transfer = new AppInstanceTransfer;
-    $transfer->setRawAttributes(['app_instance_id' => null], true);
+    $transfer->setRawAttributes(['instance_id' => null], true);
 
     expect(fn () => AppInstanceTransferData::fromModel($transfer))
         ->toThrow(InvalidArgumentException::class, 'An Instance transfer has no Instance.');

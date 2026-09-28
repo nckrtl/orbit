@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace App\Domain\AppInstances;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 interface DevelopmentAppInstanceSourceLifecycle
 {
-    public function prepare(AppInstance $appInstance, bool $allowExisting): void;
+    public function prepare(Instance $appInstance, bool $allowExisting): void;
 
-    public function inspectPrepared(AppInstance $appInstance): void;
+    public function inspectPrepared(Instance $appInstance): void;
 
-    public function resolve(AppInstance $appInstance): DevelopmentSourceResolution;
+    public function resolve(Instance $appInstance): DevelopmentSourceResolution;
 
-    public function inspectResolved(AppInstance $appInstance): DevelopmentSourceResolution;
+    public function inspectResolved(Instance $appInstance): DevelopmentSourceResolution;
 }

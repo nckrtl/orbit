@@ -13062,7 +13062,7 @@ export interface operations {
                     domain: string;
                     /** @enum {string} */
                     publication?: "private" | "public";
-                    app_instance_id: number;
+                    instance_id: number;
                 } | ({
                     domain: string;
                     /** @enum {string} */
@@ -13325,11 +13325,11 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @description Required when `targets` is absent. */
-                    app_instance_id?: number;
-                    /** @description Required when `app_instance_id` is absent. */
+                    instance_id?: number;
+                    /** @description Required when `instance_id` is absent. */
                     targets?: number[];
                     dispositions?: {
-                        app_instance_id: number;
+                        instance_id: number;
                         route_id?: number;
                         remove?: boolean;
                     }[];
@@ -13948,7 +13948,7 @@ export interface operations {
     "tasks-list": {
         parameters: {
             query?: {
-                app_id?: number;
+                project_id?: number;
                 status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "completed" | "failed" | "cancelled";
             };
             header?: never;
@@ -13999,7 +13999,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    app_id: number;
+                    project_id: number;
                     title: string;
                     brief: string;
                     /** @enum {string} */

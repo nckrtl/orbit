@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -12,12 +12,12 @@ afterEach(fn () => restore_app_instance_environment_schema_for_migration_test())
 it('copies JSON deploy steps into named records and drops the JSON column', function (): void {
     $legacy = app_instance_deployment_config_migration();
     $records = app_instance_deploy_step_records_migration();
-    $records->down();
-    DB::table('app_instances')->update(['deployment_branch' => null, 'deployment_steps' => null]);
-    $legacy->down();
+    run_legacy_schema_migration($records, 'down');
+    DB::table('instances')->update(['deployment_branch' => null, 'deployment_steps' => null]);
+    run_legacy_schema_migration($legacy, 'down');
     [$app, $node] = deployment_migration_parents();
-    $configured = DB::table('app_instances')->insertGetId([
-        'app_id' => $app->id,
+    $configured = DB::table('instances')->insertGetId([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'configured',
         'environment' => 'production',
@@ -32,8 +32,8 @@ it('copies JSON deploy steps into named records and drops the JSON column', func
     ]);
 
     try {
-        $legacy->up();
-        DB::table('app_instances')->where('id', $configured)->update([
+        run_legacy_schema_migration($legacy, 'up');
+        DB::table('instances')->where('id', $configured)->update([
             'deployment_steps' => json_encode([
                 [
                     'name' => 'migrate',
@@ -43,13 +43,13 @@ it('copies JSON deploy steps into named records and drops the JSON column', func
                 ],
             ], JSON_THROW_ON_ERROR),
         ]);
-        $records->up();
+        run_legacy_schema_migration($records, 'up');
 
-        expect(Schema::hasColumn('app_instances', 'deployment_branch'))->toBeTrue()
-            ->and(Schema::hasColumn('app_instances', 'deployment_steps'))->toBeFalse()
-            ->and(Schema::hasTable('app_instance_deploy_steps'))->toBeTrue()
-            ->and(DB::table('app_instances')->find($configured)->deployment_branch)->toBe('release/one')
-            ->and(normalized_deploy_steps(AppInstance::query()->findOrFail($configured)))->toBe([
+        expect(Schema::hasColumn('instances', 'deployment_branch'))->toBeTrue()
+            ->and(Schema::hasColumn('instances', 'deployment_steps'))->toBeFalse()
+            ->and(Schema::hasTable('instance_deploy_steps'))->toBeTrue()
+            ->and(DB::table('instances')->find($configured)->deployment_branch)->toBe('release/one')
+            ->and(normalized_deploy_steps(Instance::query()->findOrFail($configured)))->toBe([
                 [
                     'name' => 'migrate',
                     'phase' => 'before_activation',
@@ -58,8 +58,8 @@ it('copies JSON deploy steps into named records and drops the JSON column', func
                 ],
             ]);
     } finally {
-        if (! Schema::hasTable('app_instance_deploy_steps')) {
-            $records->up();
+        if (! Schema::hasTable('instance_deploy_steps')) {
+            run_legacy_schema_migration($records, 'up');
         }
     }
 });

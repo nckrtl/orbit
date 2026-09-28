@@ -17,12 +17,12 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
 use App\Infrastructure\AppDev\AppDevSite;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -284,7 +284,7 @@ it('renders the unavailable answer of an Instance removal from stored state', fu
 })->with(['Router serves it' => false, 'workload serves it' => true]);
 
 /**
- * @return array{clusterA: Cluster, clusterB: Cluster, workload: Node, routerA: Node, routerB: Node, candidate: Node, ingress: ?Node, instance: AppInstance}
+ * @return array{clusterA: Cluster, clusterB: Cluster, workload: Node, routerA: Node, routerB: Node, candidate: Node, ingress: ?Node, instance: Instance}
  */
 function stored_transition_fleet(bool $coLocated = false, bool $ingress = false): array
 {
@@ -317,14 +317,14 @@ function stored_transition_fleet(bool $coLocated = false, bool $ingress = false)
     $routerB = $node($clusterB, 'router-b', 30, RoleName::Router);
     $candidate = $node($clusterA, 'candidate', 40, null);
     $ingressNode = $ingress ? $node($clusterA, 'ingress', 50, RoleName::Ingress) : null;
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme-'.Str::lower(Str::random(6)),
         'repository_url' => 'https://example.test/acme.git',
         'root' => 'public',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $workload->id,
         'name' => 'feature',
         'checkout_path' => '/home/orbit/apps/acme/feature',
@@ -346,18 +346,18 @@ function stored_transition_fleet(bool $coLocated = false, bool $ingress = false)
     ];
 }
 
-/** @param array{clusterA: Cluster, instance: AppInstance} $fleet */
+/** @param array{clusterA: Cluster, instance: Instance} $fleet */
 function stored_transition_route(array $fleet, RouteStatus $status, bool $public = false): Route
 {
     $route = Route::query()->create([
-        'app_id' => $fleet['instance']->app_id,
+        'project_id' => $fleet['instance']->project_id,
         'cluster_id' => $fleet['clusterA']->id,
         'domain' => 'feature.acme.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => $public ? RoutePublication::Public : RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $fleet['instance']->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $fleet['instance']->id, 'position' => 0]);
 
     if ($status !== RouteStatus::Pending) {
         $route->update([
@@ -370,10 +370,10 @@ function stored_transition_route(array $fleet, RouteStatus $status, bool $public
     return $route->refresh();
 }
 
-function stored_transition_replacement(Route $route, AppInstance $instance, RouteReplacementStep $step): Route
+function stored_transition_replacement(Route $route, Instance $instance, RouteReplacementStep $step): Route
 {
     $replacement = Route::query()->create([
-        'app_id' => $route->app_id,
+        'project_id' => $route->project_id,
         'cluster_id' => $route->cluster_id,
         'domain' => 'next.acme.test',
         'provenance' => $route->provenance,
@@ -382,18 +382,18 @@ function stored_transition_replacement(Route $route, AppInstance $instance, Rout
         'replaces_route_id' => $route->id,
         'replacement_step' => $step,
     ]);
-    $replacement->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $replacement->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['replaced_by_route_id' => $replacement->id]);
 
     return $replacement;
 }
 
 /** An Instance removal has cleared the final target; its member row stays open. */
-function stored_transition_remove_target(Route $route, AppInstance $instance): void
+function stored_transition_remove_target(Route $route, Instance $instance): void
 {
     $removal = AppInstanceRemoval::query()->create([
         'id' => (string) Str::uuid(),
-        'requested_app_instance_id' => $instance->id,
+        'requested_instance_id' => $instance->id,
         'requested_name' => $instance->name,
         'force' => false,
         'inventory_digest' => str_repeat('d', 64),
@@ -403,8 +403,8 @@ function stored_transition_remove_target(Route $route, AppInstance $instance): v
     ]);
     $member = $removal->members()->create([
         'position' => 0,
-        'app_instance_id' => $instance->id,
-        'app_id' => $instance->app_id,
+        'instance_id' => $instance->id,
+        'project_id' => $instance->project_id,
         'node_id' => $instance->node_id,
         'route_id' => $route->id,
         'name' => $instance->name,

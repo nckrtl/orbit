@@ -15,7 +15,7 @@ use App\Domain\Projects\ProjectType;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class RemoteProductionAppInstanceSourceLifecycle implements ProductionAppInstanceSourceLifecycle, ProductionReleaseLayout
 {
@@ -25,7 +25,7 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
         private RepositoryReadAccess $access,
     ) {}
 
-    public function prepareUser(AppInstance $appInstance): void
+    public function prepareUser(Instance $appInstance): void
     {
         $appInstance->loadMissing('node');
         [$user, $home] = $this->identity($appInstance);
@@ -67,7 +67,7 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
         );
     }
 
-    public function prepareSource(AppInstance $appInstance, bool $allowExisting): void
+    public function prepareSource(Instance $appInstance, bool $allowExisting): void
     {
         $appInstance->loadMissing(['app', 'node']);
         [$user, $home] = $this->identity($appInstance);
@@ -187,7 +187,7 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
         );
     }
 
-    public function resolve(AppInstance $appInstance): DevelopmentSourceResolution
+    public function resolve(Instance $appInstance): DevelopmentSourceResolution
     {
         $appInstance->loadMissing(['app', 'node']);
         [$user, $home] = $this->identity($appInstance);
@@ -269,7 +269,7 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
         return new DevelopmentSourceResolution($parts[0], $parts[1]);
     }
 
-    public function inspectProfile(AppInstance $appInstance): DevelopmentSourceProfile
+    public function inspectProfile(Instance $appInstance): DevelopmentSourceProfile
     {
         $appInstance->loadMissing(['app', 'node']);
         [$user, $home] = $this->identity($appInstance);
@@ -334,7 +334,7 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
         return $this->profile(trim($result->stdout), $appInstance->app->type);
     }
 
-    public function prepareCaddyAccess(AppInstance $appInstance): void
+    public function prepareCaddyAccess(Instance $appInstance): void
     {
         $appInstance->loadMissing(['app', 'node']);
         [$user, $home] = $this->identity($appInstance);
@@ -425,17 +425,17 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
         );
     }
 
-    public function validateCurrent(AppInstance $appInstance): void
+    public function validateCurrent(Instance $appInstance): void
     {
         $this->releaseLayout($appInstance, false);
     }
 
-    public function clearCurrent(AppInstance $appInstance): void
+    public function clearCurrent(Instance $appInstance): void
     {
         $this->releaseLayout($appInstance, true);
     }
 
-    private function releaseLayout(AppInstance $appInstance, bool $clearCurrent): void
+    private function releaseLayout(Instance $appInstance, bool $clearCurrent): void
     {
         if (! $appInstance->usesProductionReleaseLayout()) {
             return;
@@ -537,7 +537,7 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
     }
 
     /** @return array{string, string} */
-    private function identity(AppInstance $appInstance): array
+    private function identity(Instance $appInstance): array
     {
         if (! is_string($appInstance->production_user) || ! is_string($appInstance->production_home)) {
             throw $this->failure('production-identity', 'app-prod.identity_missing');
@@ -588,7 +588,7 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
         return new RuntimeConvergenceException(
             step: $step,
             errorCode: $errorCode,
-            message: 'Production AppInstance source preparation failed.',
+            message: 'Production Instance source preparation failed.',
             previous: $previous,
         );
     }

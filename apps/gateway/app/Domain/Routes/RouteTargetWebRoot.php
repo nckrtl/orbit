@@ -6,11 +6,11 @@ namespace App\Domain\Routes;
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\RelativeWebRoot;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class RouteTargetWebRoot
 {
-    public static function assertSupported(AppInstance $instance): void
+    public static function assertSupported(Instance $instance): void
     {
         self::assertSupportedRoot($instance->root ?? $instance->app->root);
     }

@@ -19,9 +19,9 @@ use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Http;
 use Symfony\Component\Process\Process;
@@ -378,7 +378,7 @@ it('rejects traversal before asking the remote host to inspect a release', funct
 
 /**
  * @param  list<CommandResult>  $results
- * @return array{RemoteProductionDeployment, AppDevFakeSshExecutor, AppInstance}
+ * @return array{RemoteProductionDeployment, AppDevFakeSshExecutor, Instance}
  */
 function orb219_remote_deployment(array $results): array
 {
@@ -416,15 +416,15 @@ function orb219_remote_deployment(array $results): array
         'user' => 'orbit',
     ]);
     $node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Deployment',
         'slug' => 'deployment',
         'repository_url' => 'https://example.test/deployment.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'production',
         'environment' => 'production',

@@ -10,9 +10,9 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Tool;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Request;
@@ -428,21 +428,21 @@ function middleware_gateway(): Node
     return $gateway;
 }
 
-function middleware_app(string $slug): OrbitApp
+function middleware_app(string $slug): Project
 {
-    return OrbitApp::query()->create([
+    return Project::query()->create([
         'name' => $slug,
         'slug' => $slug,
         'repository_url' => 'https://example.test/'.$slug.'.git',
     ]);
 }
 
-function middleware_app_instance(OrbitApp $app, Node $node, string $name): AppInstance
+function middleware_app_instance(Project $app, Node $node, string $name): Instance
 {
     orbit_test_set_app_placement_role($node, false);
 
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => $name,
         'checkout_path' => "/srv/{$name}",
@@ -518,11 +518,11 @@ final class NodeAccessTestController
         return ['node_id' => $node->id];
     }
 
-    /** @return array{app_id: int} */
+    /** @return array{project_id: int} */
     #[RequiresNodeAccess(ServingNode::AppOwning)]
-    public function app(OrbitApp $app): array
+    public function app(Project $app): array
     {
-        return ['app_id' => $app->id];
+        return ['project_id' => $app->id];
     }
 
     /** @return array{ok: true} */
@@ -541,7 +541,7 @@ final class NodeAccessTestController
 
     /** @return array{candidate_id: int, destination_node_id: int} */
     #[RequiresNodeAccess(ServingNode::CandidateClone)]
-    public function clone(NodeAccessCloneRequest $request, AppInstance $candidate): array
+    public function clone(NodeAccessCloneRequest $request, Instance $candidate): array
     {
         self::$cloneExecuted = true;
 
@@ -664,8 +664,8 @@ it('requires access to the resolved instance Node when a process target is a Rou
     $node = middleware_node('vite-workload');
     middleware_gateway();
     $instance = middleware_app_instance(middleware_app('vite-access'), $node, 'main');
-    $route = App\Models\Route::query()->create(['app_id' => $instance->app_id, 'node_id' => $node->id, 'domain' => 'vite-access.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route = App\Models\Route::query()->create(['project_id' => $instance->project_id, 'node_id' => $node->id, 'domain' => 'vite-access.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     middleware_get($this, $consumer, '/_node-access/process?target_type=instance&target_id=vite-access.test')->assertForbidden()->assertJsonPath('error.details.serving_node.id', $node->id);
     $consumer->accessibleNodes()->attach($node);
     middleware_get($this, $consumer, '/_node-access/process?target_type=instance&target_id=vite-access.test')->assertOk();

@@ -12,7 +12,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class RemoteAppUpdateSourceMutator implements AppUpdateSourceMutator
 {
@@ -96,11 +96,11 @@ final readonly class RemoteAppUpdateSourceMutator implements AppUpdateSourceMuta
                 continue;
             }
 
-            $checkout = AppInstance::query()
+            $checkout = Instance::query()
                 ->where('checkout_path', $mutation['path'])
                 ->first();
 
-            if (! $checkout instanceof AppInstance) {
+            if (! $checkout instanceof Instance) {
                 continue;
             }
 
@@ -118,7 +118,7 @@ final readonly class RemoteAppUpdateSourceMutator implements AppUpdateSourceMuta
         }
     }
 
-    public function preflightDefaultBranch(AppInstance $instance, string $newBranch): void
+    public function preflightDefaultBranch(Instance $instance, string $newBranch): void
     {
         $this->run(
             $instance,
@@ -137,7 +137,7 @@ final readonly class RemoteAppUpdateSourceMutator implements AppUpdateSourceMuta
         );
     }
 
-    public function switchDefaultBranch(AppInstance $instance, string $newBranch): void
+    public function switchDefaultBranch(Instance $instance, string $newBranch): void
     {
         $this->run(
             $instance,
@@ -152,7 +152,7 @@ final readonly class RemoteAppUpdateSourceMutator implements AppUpdateSourceMuta
         );
     }
 
-    public function restoreDefaultBranch(AppInstance $instance, string $previousBranch): void
+    public function restoreDefaultBranch(Instance $instance, string $previousBranch): void
     {
         $this->run(
             $instance,
@@ -168,8 +168,8 @@ final readonly class RemoteAppUpdateSourceMutator implements AppUpdateSourceMuta
     }
 
     /**
-     * @param  list<AppInstance>  $checkouts
-     * @return list<AppInstance>
+     * @param  list<Instance>  $checkouts
+     * @return list<Instance>
      */
     private function uniqueCheckouts(array $checkouts): array
     {
@@ -184,7 +184,7 @@ final readonly class RemoteAppUpdateSourceMutator implements AppUpdateSourceMuta
 
     /** @param list<string> $arguments */
     private function run(
-        AppInstance $instance,
+        Instance $instance,
         array $arguments,
         string $script,
         string $step,

@@ -10,7 +10,7 @@ use App\Domain\AppInstances\Deployment\DeploymentStep;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class CreateAppInstanceDeployStepAction
 {
@@ -22,13 +22,13 @@ final readonly class CreateAppInstanceDeployStepAction
     ) {}
 
     public function execute(
-        AppInstance $instance,
+        Instance $instance,
         DeploymentStep $step,
         ?string $before,
         ?string $after,
     ): DeploymentStep {
         $result = $this->operations->run([$instance->id], function () use ($instance, $step, $before, $after): DeploymentStep {
-            $locked = AppInstance::query()->lockForUpdate()->findOrFail($instance->id);
+            $locked = Instance::query()->lockForUpdate()->findOrFail($instance->id);
             $this->resolver->assertAvailable($locked);
 
             return $this->steps->create($locked, $step, $before, $after);

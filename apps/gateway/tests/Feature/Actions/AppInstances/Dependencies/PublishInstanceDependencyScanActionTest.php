@@ -16,20 +16,20 @@ use App\Domain\AppInstances\Dependencies\DependencyScope;
 use App\Domain\AppInstances\Dependencies\DependencySnapshot;
 use App\Domain\AppInstances\Dependencies\DependencySource;
 use App\Domain\AppInstances\Dependencies\InstanceDependencyScanResult;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceDependencyObservation;
 use App\Models\AppInstanceDependencyScanAttempt;
 use App\Models\AppInstanceRemoval;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
-function dependency_publication_instance(string $name = 'web'): AppInstance
+function dependency_publication_instance(string $name = 'web'): Instance
 {
-    $app = OrbitApp::query()->firstOrCreate(['slug' => 'dependency-publication'], [
+    $app = Project::query()->firstOrCreate(['slug' => 'dependency-publication'], [
         'name' => 'Dependency publication',
         'repository_url' => 'https://example.test/dependency-publication.git',
     ]);
@@ -89,10 +89,10 @@ describe('dependency snapshot replacement', function (): void {
         expect($result->snapshot)->toEqual($snapshot);
         expect($result->state())->toBe(DependencyInventoryState::Present);
         $this->assertDatabaseCount('dependency_packages', 1);
-        $this->assertDatabaseCount('app_instance_dependency_observations', 1);
-        $this->assertDatabaseCount('app_instance_dependency_resolutions', 3);
-        $this->assertDatabaseCount('app_instance_dependency_edges', 5);
-        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 2);
+        $this->assertDatabaseCount('instance_dependency_observations', 1);
+        $this->assertDatabaseCount('instance_dependency_resolutions', 3);
+        $this->assertDatabaseCount('instance_dependency_edges', 5);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 2);
         expect(app(ReadInstanceDependencyScanAction::class)->execute($instance->id, DependencyEcosystem::Npm))->toEqual($result);
     });
 
@@ -114,8 +114,8 @@ describe('dependency snapshot replacement', function (): void {
         expect($result->snapshot)->toEqual($replacement);
         expect(app(ReadInstanceDependencyScanAction::class)->execute($other->id, DependencyEcosystem::Npm)?->snapshot)->toEqual($snapshot);
         $this->assertDatabaseCount('dependency_packages', 2);
-        $this->assertDatabaseCount('app_instance_dependency_resolutions', 4);
-        $this->assertDatabaseCount('app_instance_dependency_edges', 5);
+        $this->assertDatabaseCount('instance_dependency_resolutions', 4);
+        $this->assertDatabaseCount('instance_dependency_edges', 5);
     });
 
     it('clears previous usage for verified absence and present empty projects', function (bool $present): void {
@@ -134,8 +134,8 @@ describe('dependency snapshot replacement', function (): void {
 
         expect($result->state())->toBe($present ? DependencyInventoryState::Present : DependencyInventoryState::Absent);
         expect($result->snapshot)->toEqual($snapshot);
-        $this->assertDatabaseCount('app_instance_dependency_resolutions', 0);
-        $this->assertDatabaseCount('app_instance_dependency_edges', 0);
+        $this->assertDatabaseCount('instance_dependency_resolutions', 0);
+        $this->assertDatabaseCount('instance_dependency_edges', 0);
         $this->assertDatabaseCount('dependency_packages', 1);
     })->with(['verified absence' => false, 'empty project' => true]);
 });
@@ -163,8 +163,8 @@ describe('latest attempt and retained observations', function (): void {
 
         expect($result->state())->toBe(DependencyInventoryState::Unknown);
         expect($reader->execute($instance->id, DependencyEcosystem::Npm))->toEqual($result);
-        $this->assertDatabaseCount('app_instance_dependency_observations', 0);
-        $this->assertDatabaseHas('app_instance_dependency_scan_attempts', ['error_code' => $errorCode]);
+        $this->assertDatabaseCount('instance_dependency_observations', 0);
+        $this->assertDatabaseHas('instance_dependency_scan_attempts', ['error_code' => $errorCode]);
     })->with(['dependencies.incomplete_source', 'dependencies.unsupported_format']);
 
     it('retains the stored snapshot and provenance instead of trusting a failure supplied snapshot', function (string $errorCode): void {
@@ -225,7 +225,7 @@ describe('latest attempt and retained observations', function (): void {
         expect($composer->snapshot)->toEqual($composerSnapshot);
         expect($npm->snapshot)->toEqual($npmSnapshot);
         expect($npm->state())->toBe(DependencyInventoryState::Stale);
-        $this->assertDatabaseCount('app_instance_dependency_observations', 2);
+        $this->assertDatabaseCount('instance_dependency_observations', 2);
         $this->assertDatabaseCount('dependency_packages', 2);
     });
 });
@@ -251,9 +251,9 @@ describe('publication failure and removal races', function (): void {
         expect($result->snapshot)->toEqual($previous);
         expect(AppInstanceDependencyObservation::query()->sole()->getAttributes())->toBe($oldRow);
         $this->assertDatabaseCount('dependency_packages', 1);
-        $this->assertDatabaseCount('app_instance_dependency_resolutions', 3);
-        $this->assertDatabaseCount('app_instance_dependency_edges', 5);
-        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 2);
+        $this->assertDatabaseCount('instance_dependency_resolutions', 3);
+        $this->assertDatabaseCount('instance_dependency_edges', 5);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 2);
     });
 
     it('does not commit replacement if recording its successful attempt fails', function (): void {
@@ -261,7 +261,7 @@ describe('publication failure and removal races', function (): void {
         $publisher = app(PublishInstanceDependencyScanAction::class);
         $previous = dependency_publication_snapshot();
         $publisher->execute($instance->id, DependencyScanResult::refreshed($previous));
-        DB::unprepared("CREATE TEMP TRIGGER reject_success_attempt BEFORE INSERT ON app_instance_dependency_scan_attempts WHEN NEW.error_code IS NULL BEGIN SELECT RAISE(ABORT, 'injected write failure'); END");
+        DB::unprepared("CREATE TEMP TRIGGER reject_success_attempt BEFORE INSERT ON instance_dependency_scan_attempts WHEN NEW.error_code IS NULL BEGIN SELECT RAISE(ABORT, 'injected write failure'); END");
 
         try {
             $result = $publisher->execute($instance->id, DependencyScanResult::refreshed(dependency_publication_snapshot(version: 'changed')));
@@ -271,12 +271,12 @@ describe('publication failure and removal races', function (): void {
 
         expect($result->snapshot)->toEqual($previous);
         expect($result->errorCode)->toBe('dependencies.persistence_failed');
-        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 2);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 2);
     });
 
     it('throws when the database cannot record even the failure', function (): void {
         $instance = dependency_publication_instance();
-        DB::unprepared("CREATE TEMP TRIGGER reject_all_attempts BEFORE INSERT ON app_instance_dependency_scan_attempts BEGIN SELECT RAISE(ABORT, 'injected write failure'); END");
+        DB::unprepared("CREATE TEMP TRIGGER reject_all_attempts BEFORE INSERT ON instance_dependency_scan_attempts BEGIN SELECT RAISE(ABORT, 'injected write failure'); END");
 
         try {
             expect(fn () => app(PublishInstanceDependencyScanAction::class)->execute($instance->id, DependencyScanResult::refreshed(dependency_publication_snapshot())))
@@ -285,8 +285,8 @@ describe('publication failure and removal races', function (): void {
             DB::unprepared('DROP TRIGGER reject_all_attempts');
         }
 
-        $this->assertDatabaseCount('app_instance_dependency_observations', 0);
-        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 0);
+        $this->assertDatabaseCount('instance_dependency_observations', 0);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 0);
         $this->assertDatabaseCount('dependency_packages', 0);
     });
 
@@ -298,7 +298,7 @@ describe('publication failure and removal races', function (): void {
 
         expect($result->errorCode)->toBe('dependencies.persistence_failed');
         expect($result->state())->toBe(DependencyInventoryState::Unknown);
-        $this->assertDatabaseCount('app_instance_dependency_observations', 0);
+        $this->assertDatabaseCount('instance_dependency_observations', 0);
         expect(AppInstanceDependencyScanAttempt::query()->sole()->error_code)->toBe('dependencies.persistence_failed');
     });
 
@@ -310,7 +310,7 @@ describe('publication failure and removal races', function (): void {
         $instance->app->update(['repository_identity' => 'example.test/dependency-publication']);
         $instance->update(['root' => 'public', 'branch' => 'main', 'starting_commit' => str_repeat('a', 40)]);
         $route = Route::query()->create([
-            'app_id' => $instance->app_id,
+            'project_id' => $instance->project_id,
             'node_id' => $instance->node_id,
             'generation_basis_node_id' => $instance->node_id,
             'domain' => 'dependency-publication.test',
@@ -318,11 +318,11 @@ describe('publication failure and removal races', function (): void {
             'publication' => 'private',
             'status' => 'pending',
         ]);
-        $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+        $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
         $route->update(['status' => 'active']);
         $removal = AppInstanceRemoval::query()->create([
             'id' => (string) Str::uuid(),
-            'requested_app_instance_id' => $instance->id,
+            'requested_instance_id' => $instance->id,
             'requested_name' => $instance->name,
             'force' => false,
             'inventory_digest' => str_repeat('d', 64),
@@ -332,8 +332,8 @@ describe('publication failure and removal races', function (): void {
         ]);
         $removal->members()->create([
             'position' => 0,
-            'app_instance_id' => $instance->id,
-            'app_id' => $instance->app_id,
+            'instance_id' => $instance->id,
+            'project_id' => $instance->project_id,
             'node_id' => $instance->node_id,
             'name' => $instance->name,
             'environment' => $instance->defaultAppEnv(),
@@ -351,7 +351,7 @@ describe('publication failure and removal races', function (): void {
             'source_identity' => '1:100',
         ]);
         if ($markedRemoving) {
-            AppInstance::query()->whereKey($instance->id)->update(['status' => 'removing']);
+            Instance::query()->whereKey($instance->id)->update(['status' => 'removing']);
         } else {
             $removal->update([
                 'status' => 'failed',
@@ -381,9 +381,9 @@ describe('publication failure and removal races', function (): void {
         expect($result->errorCode)->toBe('dependencies.instance_unavailable');
         expect($result->snapshot)->toBeNull();
         expect(app(ReadInstanceDependencyScanAction::class)->execute($other->id, DependencyEcosystem::Npm)?->snapshot)->toEqual($snapshot);
-        $this->assertDatabaseCount('app_instance_dependency_observations', 1);
-        $this->assertDatabaseCount('app_instance_dependency_resolutions', 3);
-        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 1);
+        $this->assertDatabaseCount('instance_dependency_observations', 1);
+        $this->assertDatabaseCount('instance_dependency_resolutions', 3);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 1);
         $this->assertDatabaseCount('dependency_packages', 1);
     })->with(['late success' => true, 'late failure' => false]);
 });

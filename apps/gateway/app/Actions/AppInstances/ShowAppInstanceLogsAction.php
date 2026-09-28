@@ -6,7 +6,7 @@ namespace App\Actions\AppInstances;
 
 use App\Domain\AppInstances\Logs\AppInstanceLogReader;
 use App\Domain\Logs\LogRedactor;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class ShowAppInstanceLogsAction
 {
@@ -15,7 +15,7 @@ final readonly class ShowAppInstanceLogsAction
         private LogRedactor $redactor,
     ) {}
 
-    public function execute(AppInstance $instance, int $lines): string
+    public function execute(Instance $instance, int $lines): string
     {
         return $this->redactor->redact($this->logs->tail($instance, $lines), $this->redactor->valuesFor($instance));
     }

@@ -6,7 +6,7 @@ namespace App\Domain\Nodes\Storage;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\ManagedUserAccount;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class CheckoutRemovalBoundary
 {
@@ -14,7 +14,7 @@ final readonly class CheckoutRemovalBoundary
         private ProtectedPathCatalog $catalog,
     ) {}
 
-    public function appInstanceRoot(AppInstance $appInstance, ManagedUserAccount $account): StoragePath
+    public function appInstanceRoot(Instance $appInstance, ManagedUserAccount $account): StoragePath
     {
         $checkout = StoragePath::tryParse($appInstance->checkout_path);
 
@@ -34,17 +34,17 @@ final readonly class CheckoutRemovalBoundary
         return $root;
     }
 
-    public function appInstanceGroupingDirectory(AppInstance $appInstance, StoragePath $root): StoragePath
+    public function appInstanceGroupingDirectory(Instance $appInstance, StoragePath $root): StoragePath
     {
         return $root->append($appInstance->app->slug);
     }
 
-    private function unsafeAppInstance(AppInstance $appInstance): never
+    private function unsafeAppInstance(Instance $appInstance): never
     {
         throw new RuntimeConvergenceException(
             step: 'app-instance-source-path',
             errorCode: 'instance.checkout_path_unsafe',
-            message: "AppInstance [{$appInstance->name}] has an unsafe checkout path.",
+            message: "Instance [{$appInstance->name}] has an unsafe checkout path.",
         );
     }
 }

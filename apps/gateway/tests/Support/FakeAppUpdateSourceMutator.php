@@ -6,7 +6,7 @@ namespace Tests\Support;
 
 use App\Domain\Apps\AppUpdateSourceMutator;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final class FakeAppUpdateSourceMutator implements AppUpdateSourceMutator
 {
@@ -26,7 +26,7 @@ final class FakeAppUpdateSourceMutator implements AppUpdateSourceMutator
     public bool $refuseDefaultBranchPreflight = false;
 
     /**
-     * @param  list<AppInstance>  $checkouts
+     * @param  list<Instance>  $checkouts
      */
     public function preflightRepository(array $checkouts, string $currentUrl, string $proposedUrl): void
     {
@@ -85,7 +85,7 @@ final class FakeAppUpdateSourceMutator implements AppUpdateSourceMutator
         }
     }
 
-    public function preflightDefaultBranch(AppInstance $instance, string $newBranch): void
+    public function preflightDefaultBranch(Instance $instance, string $newBranch): void
     {
         if ($this->refuseDefaultBranchPreflight) {
             throw new ResourceOperationException(
@@ -96,10 +96,10 @@ final class FakeAppUpdateSourceMutator implements AppUpdateSourceMutator
         }
     }
 
-    public function switchDefaultBranch(AppInstance $instance, string $newBranch): void
+    public function switchDefaultBranch(Instance $instance, string $newBranch): void
     {
         $this->switchedInstances[] = $instance->id;
     }
 
-    public function restoreDefaultBranch(AppInstance $instance, string $previousBranch): void {}
+    public function restoreDefaultBranch(Instance $instance, string $previousBranch): void {}
 }

@@ -6,9 +6,9 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 
 beforeEach(function (): void {
     $this->operator = Node::query()->create([
@@ -54,7 +54,7 @@ it('requires an explicit Project type', function (): void {
 });
 
 it('activates a laravel-package Instance without a Route', function (): void {
-    $project = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'support',
         'slug' => 'support',
         'type' => ProjectType::LaravelPackage,
@@ -74,8 +74,8 @@ it('activates a laravel-package Instance without a Route', function (): void {
         'status' => LifecycleStatus::Active,
     ]);
 
-    $instance = AppInstance::query()->create([
-        'app_id' => $project->id,
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'default',
         'checkout_path' => '/var/orbit/apps/support/default',
@@ -93,7 +93,7 @@ it('activates a laravel-package Instance without a Route', function (): void {
 });
 
 it('refuses a type change to laravel-app while an active Instance has no Route', function (): void {
-    $project = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'support',
         'slug' => 'support',
         'type' => ProjectType::LaravelPackage,
@@ -108,8 +108,8 @@ it('refuses a type change to laravel-app while an active Instance has no Route',
         'public_ssh_host' => '192.0.2.81',
         'wireguard_ip' => '10.44.0.81',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $project->id,
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'default',
         'checkout_path' => '/var/orbit/apps/support/work',
@@ -127,7 +127,7 @@ it('refuses a type change to laravel-app while an active Instance has no Route',
 });
 
 it('normalizes APP_ENV and APP_DEBUG on existing app-prod Instances', function (): void {
-    $project = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'shop',
         'slug' => 'shop',
         'repository_url' => 'https://github.com/acme/shop.git',
@@ -145,8 +145,8 @@ it('normalizes APP_ENV and APP_DEBUG on existing app-prod Instances', function (
         'role' => RoleName::AppProd,
         'status' => LifecycleStatus::Active,
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $project->id,
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'web',
         'environment' => 'production',
@@ -167,8 +167,8 @@ it('normalizes APP_ENV and APP_DEBUG on existing app-prod Instances', function (
     $migration = require base_path(
         'database/migrations/2026_09_20_210000_add_project_type_and_normalize_app_prod_mode.php',
     );
-    $migration->down();
-    $migration->up();
+    run_legacy_schema_migration($migration, 'down');
+    run_legacy_schema_migration($migration, 'up');
 
     expect($project->refresh()->type)->toBe(ProjectType::LaravelApp)
         ->and($instance->environmentValues()->where('env_key', 'APP_ENV')->sole()->env_value)
@@ -180,7 +180,7 @@ it('normalizes APP_ENV and APP_DEBUG on existing app-prod Instances', function (
 });
 
 it('classifies the Orbit repository as a monorepo during upgrade', function (): void {
-    $orbit = OrbitApp::query()->create([
+    $orbit = Project::query()->create([
         'name' => 'Orbit',
         'slug' => 'orbit',
         'repository_url' => 'https://github.com/nckrtl/orbit.git',
@@ -191,14 +191,14 @@ it('classifies the Orbit repository as a monorepo during upgrade', function (): 
     $migration = require base_path(
         'database/migrations/2026_09_20_210000_add_project_type_and_normalize_app_prod_mode.php',
     );
-    $migration->down();
-    $migration->up();
+    run_legacy_schema_migration($migration, 'down');
+    run_legacy_schema_migration($migration, 'up');
 
     expect($orbit->refresh()->type)->toBe(ProjectType::Monorepo);
 });
 
 it('exposes the Project identity on Instance payloads', function (): void {
-    $project = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'shop',
         'slug' => 'shop',
         'type' => ProjectType::LaravelApp,
@@ -213,8 +213,8 @@ it('exposes the Project identity on Instance payloads', function (): void {
         'public_ssh_host' => '192.0.2.83',
         'wireguard_ip' => '10.44.0.83',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $project->id,
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'default',
         'checkout_path' => '/var/orbit/apps/shop/default',

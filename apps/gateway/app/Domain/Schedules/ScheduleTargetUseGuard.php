@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Schedules;
 
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Schedule;
 
@@ -24,11 +24,11 @@ final readonly class ScheduleTargetUseGuard
         }
     }
 
-    public function assertAppInstanceStable(AppInstance $instance): void
+    public function assertAppInstanceStable(Instance $instance): void
     {
         if (
             Schedule::query()
-                ->whereIn('target_type', AppInstance::morphTypes())
+                ->whereIn('target_type', Instance::morphTypes())
                 ->where('target_id', $instance->id)
                 ->exists()
         ) {

@@ -37,12 +37,12 @@ use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -956,7 +956,7 @@ it('does not configure Laravel for a source profile classified as non-Laravel', 
 
 it('synchronizes the production candidate environment before DNS and preserves the Route target', function (): void {
     $route = route_domain_change_route(laravel: true, environment: 'production');
-    $targetId = $route->targets->sole()->app_instance_id;
+    $targetId = $route->targets->sole()->instance_id;
 
     $updated = app(ConvergeRouteAction::class)->execute($route, 'next.example.test');
 
@@ -980,20 +980,20 @@ it('synchronizes the production candidate environment before DNS and preserves t
         ->toBe('next.example.test')
         ->and($updated->targets)
         ->toHaveCount(1)
-        ->and($updated->targets->sole()->app_instance_id)
+        ->and($updated->targets->sole()->instance_id)
         ->toBe($targetId);
 });
 
 it('replaces a shared production Route while preserving the ordered target pool', function (): void {
     $route = route_domain_change_shared_production_route();
-    $expected = $route->targets()->orderBy('position')->pluck('app_instance_id')->all();
+    $expected = $route->targets()->orderBy('position')->pluck('instance_id')->all();
     expect($expected)->toHaveCount(2);
 
     $updated = app(ConvergeRouteAction::class)->execute($route, 'next.example.test');
 
     expect($updated->domain)
         ->toBe('next.example.test')
-        ->and($updated->targets()->orderBy('position')->pluck('app_instance_id')->all())
+        ->and($updated->targets()->orderBy('position')->pluck('instance_id')->all())
         ->toBe($expected)
         ->and($updated->id)
         ->not->toBe($route->id)
@@ -1344,8 +1344,8 @@ it('records record-deletion failure and refuses a conflicting mutation on untarg
         ->and($route->error_code)
         ->toBe('route.removal_failed');
 
-    $conflict = AppInstance::query()->create([
-        'app_id' => $route->app_id,
+    $conflict = Instance::query()->create([
+        'project_id' => $route->project_id,
         'node_id' => $route->node_id,
         'name' => 'conflict',
         'checkout_path' => '/srv/acme/conflict',
@@ -1353,7 +1353,7 @@ it('records record-deletion failure and refuses a conflicting mutation on untarg
         'starting_commit' => str_repeat('b', 40),
         'status' => AppInstanceState::Reserved,
     ]);
-    $route->targets()->create(['app_instance_id' => $conflict->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $conflict->id, 'position' => 0]);
 
     expect(fn () => app(RemoveRouteAction::class)->execute($route))
         ->toThrow(function (ResourceOperationException $exception): void {
@@ -1482,7 +1482,7 @@ it('prepares workloads before publishing a production target set and does not re
         new SetRouteTargetsData([$first->id, $second->id], []),
     );
 
-    expect($updated->targets()->orderBy('position')->pluck('app_instance_id')->all())
+    expect($updated->targets()->orderBy('position')->pluck('instance_id')->all())
         ->toBe([$first->id, $second->id])
         ->and($updated->target_set_intent)
         ->toBeNull()
@@ -1499,14 +1499,14 @@ it('prepares workloads before publishing a production target set and does not re
 it('restores preparations when a target-set change fails before database commit', function (): void {
     [$route, $first, $second] = route_target_set_expandable_pool();
     $this->projector->failures['workload-verify'] = 1;
-    $before = $route->targets()->orderBy('position')->pluck('app_instance_id')->all();
+    $before = $route->targets()->orderBy('position')->pluck('instance_id')->all();
 
     expect(fn () => app(ConvergeRouteTargetSetAction::class)->execute(
         $route,
         new SetRouteTargetsData([$first->id, $second->id], []),
     ))->toThrow(ResourceOperationException::class, 'Injected workload-verify failure.');
 
-    expect($route->refresh()->targets()->orderBy('position')->pluck('app_instance_id')->all())
+    expect($route->refresh()->targets()->orderBy('position')->pluck('instance_id')->all())
         ->toBe($before)
         ->and($route->failed_step)
         ->toBe('workload-prepared')
@@ -1524,7 +1524,7 @@ it('retains committed target-set progress and resumes the recorded intent', func
         new SetRouteTargetsData([$first->id, $second->id], []),
     ))->toThrow(ResourceOperationException::class, 'Injected router-caddy failure.');
 
-    expect($route->refresh()->targets()->orderBy('position')->pluck('app_instance_id')->all())
+    expect($route->refresh()->targets()->orderBy('position')->pluck('instance_id')->all())
         ->toBe([$first->id, $second->id])
         ->and($route->failed_step)
         ->toBe('router-published')
@@ -1538,7 +1538,7 @@ it('retains committed target-set progress and resumes the recorded intent', func
         new SetRouteTargetsData([$first->id, $second->id], []),
     );
 
-    expect($updated->targets()->orderBy('position')->pluck('app_instance_id')->all())
+    expect($updated->targets()->orderBy('position')->pluck('instance_id')->all())
         ->toBe([$first->id, $second->id])
         ->and($updated->target_set_intent)
         ->toBeNull()
@@ -1563,7 +1563,7 @@ it('refuses a competing target-set intent and treats an identical completed chan
         new SetRouteTargetsData([$first->id, $second->id], []),
     );
 
-    expect($again->targets()->orderBy('position')->pluck('app_instance_id')->all())
+    expect($again->targets()->orderBy('position')->pluck('instance_id')->all())
         ->toBe([$first->id, $second->id])
         ->and($this->events->values)
         ->toBe(['owner']);
@@ -1572,7 +1572,7 @@ it('refuses a competing target-set intent and treats an identical completed chan
         'target_set_intent' => ['targets' => [$second->id], 'dispositions' => []],
         'target_set_step' => 'reserved',
     ]);
-    $before = $route->fresh()->targets()->orderBy('position')->pluck('app_instance_id')->all();
+    $before = $route->fresh()->targets()->orderBy('position')->pluck('instance_id')->all();
 
     expect(fn () => app(ConvergeRouteTargetSetAction::class)->execute(
         $route,
@@ -1583,7 +1583,7 @@ it('refuses a competing target-set intent and treats an identical completed chan
         expect($exception->errorCode)->toBe('route.target_set_conflict');
     });
 
-    expect($route->refresh()->targets()->orderBy('position')->pluck('app_instance_id')->all())
+    expect($route->refresh()->targets()->orderBy('position')->pluck('instance_id')->all())
         ->toBe($before);
 });
 
@@ -1594,7 +1594,7 @@ it('invokes authorized App instance removal after the replacement pool is record
         /** @var list<array{0: int, 1: bool}> */
         public array $calls = [];
 
-        public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
+        public function execute(Instance $instance, bool $force): AppInstanceRemoval
         {
             $this->calls[] = [$instance->id, $force];
 
@@ -1610,7 +1610,7 @@ it('invokes authorized App instance removal after the replacement pool is record
         ]),
     );
 
-    expect($updated->targets()->orderBy('position')->pluck('app_instance_id')->all())
+    expect($updated->targets()->orderBy('position')->pluck('instance_id')->all())
         ->toContain($second->id)
         ->and($removed->calls)
         ->toBe([[$first->id, true]])
@@ -1709,15 +1709,15 @@ function cluster_tld_generated_route(): array
         'user' => 'orbit',
     ]);
     $member->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $member->id,
         'name' => 'main',
         'environment' => 'development',
@@ -1737,7 +1737,7 @@ function cluster_tld_generated_route(): array
 
 function route_domain_change_route(bool $laravel, string $environment = 'development', bool $generated = false): Route
 {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
@@ -1758,8 +1758,8 @@ function route_domain_change_route(bool $laravel, string $environment = 'develop
         'role' => $environment === 'production' ? RoleName::AppProd : RoleName::AppDev,
         'status' => LifecycleStatus::Active,
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'main',
         'checkout_path' => '/srv/acme/main',
@@ -1773,7 +1773,7 @@ function route_domain_change_route(bool $laravel, string $environment = 'develop
         'status' => AppInstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'generation_basis_node_id' => $generated ? $node->id : null,
         'domain' => $generated ? 'feature.acme.dev.test' : 'old.example.test',
@@ -1781,27 +1781,27 @@ function route_domain_change_route(bool $laravel, string $environment = 'develop
         'publication' => 'private',
         'status' => 'pending',
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => 'active']);
 
     return $route->refresh()->load(['targets.appInstance.app', 'targets.appInstance.node']);
 }
 
-/** @return array{Route, AppInstance, AppInstance} */
+/** @return array{Route, Instance, Instance} */
 function route_target_set_expandable_pool(): array
 {
     $route = route_domain_change_shared_production_route();
     $first = $route->targets[0]->appInstance;
     $second = $route->targets[1]->appInstance;
     $sibling = Route::query()->create([
-        'app_id' => $route->app_id,
+        'project_id' => $route->project_id,
         'cluster_id' => $route->cluster_id,
         'domain' => 'sibling.example.test',
         'provenance' => 'explicit',
         'publication' => 'private',
         'status' => 'pending',
     ]);
-    $route->targets()->where('app_instance_id', $second->id)->update([
+    $route->targets()->where('instance_id', $second->id)->update([
         'route_id' => $sibling->id,
         'position' => 0,
     ]);
@@ -1812,7 +1812,7 @@ function route_target_set_expandable_pool(): array
 
 function route_domain_change_shared_production_route(): Route
 {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Shared',
         'slug' => 'shared',
         'repository_url' => 'https://example.test/shared.git',
@@ -1820,7 +1820,7 @@ function route_domain_change_shared_production_route(): Route
         'root' => 'public',
     ]);
     $cluster = Cluster::query()->create(['name' => 'shared', 'state' => 'active']);
-    $instances = collect(['one', 'two'])->map(function (string $name) use ($app, $cluster): AppInstance {
+    $instances = collect(['one', 'two'])->map(function (string $name) use ($app, $cluster): Instance {
         $suffix = $name === 'one' ? '71' : '72';
         $node = Node::query()->create([
             'name' => "shared-{$name}",
@@ -1834,8 +1834,8 @@ function route_domain_change_shared_production_route(): Route
         ]);
         $node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
 
-        return AppInstance::query()->create([
-            'app_id' => $app->id,
+        return Instance::query()->create([
+            'project_id' => $app->id,
             'node_id' => $node->id,
             'name' => $name,
             'environment' => 'production',
@@ -1851,15 +1851,15 @@ function route_domain_change_shared_production_route(): Route
         ]);
     });
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'cluster_id' => $cluster->id,
         'domain' => 'old.example.test',
         'provenance' => 'explicit',
         'publication' => 'private',
         'status' => 'pending',
     ]);
-    $route->targets()->create(['app_instance_id' => $instances[0]->id, 'position' => 0]);
-    $route->targets()->create(['app_instance_id' => $instances[1]->id, 'position' => 1]);
+    $route->targets()->create(['instance_id' => $instances[0]->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instances[1]->id, 'position' => 1]);
     $route->update(['status' => 'active']);
     $instances[0]->update(['status' => AppInstanceState::Active]);
     $instances[1]->update(['status' => AppInstanceState::Active]);
@@ -1869,7 +1869,7 @@ function route_domain_change_shared_production_route(): Route
 
 function route_untargeted_removal_route(): Route
 {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Untargeted',
         'slug' => 'untargeted',
         'repository_url' => 'https://example.test/untargeted.git',
@@ -1886,8 +1886,8 @@ function route_untargeted_removal_route(): Route
         'wireguard_ip' => '10.44.0.91',
         'user' => 'orbit',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'main',
         'checkout_path' => '/srv/untargeted/main',
@@ -1913,7 +1913,7 @@ function route_untargeted_removal_route(): Route
 function route_untargeted_removal_unrelated(Route $route): Route
 {
     return Route::query()->create([
-        'app_id' => $route->app_id,
+        'project_id' => $route->project_id,
         'node_id' => $route->node_id,
         'domain' => 'unrelated.example.test',
         'provenance' => 'explicit',
@@ -1924,7 +1924,7 @@ function route_untargeted_removal_unrelated(Route $route): Route
 
 function route_domain_change_public_route(): Route
 {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Public',
         'slug' => 'public',
         'repository_url' => 'https://example.test/public.git',
@@ -1944,8 +1944,8 @@ function route_domain_change_public_route(): Route
         'user' => 'orbit',
     ]);
     $node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'production',
         'environment' => 'production',
@@ -1960,14 +1960,14 @@ function route_domain_change_public_route(): Route
         'status' => AppInstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'cluster_id' => $cluster->id,
         'domain' => 'old.example.test',
         'provenance' => 'explicit',
         'publication' => 'private',
         'status' => 'pending',
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => 'active']);
 
     return $route->refresh()->load(['targets.appInstance.app', 'targets.appInstance.node', 'cluster']);
@@ -1983,7 +1983,7 @@ final class RouteDomainChangeEnvironmentFake implements AppInstanceRouteEnvironm
     ) {}
 
     public function synchronizeRouteDomain(
-        AppInstance $instance,
+        Instance $instance,
         AppInstanceEnvironmentRouteDomain $domain,
     ): AppInstanceEnvironmentResult {
         $this->events->values[] = "environment:{$domain->value}";
@@ -2034,33 +2034,33 @@ final class RouteDomainChangeProjectorFake implements RouteDomainProjector
         private readonly RouteDomainChangeEvents $events,
     ) {}
 
-    public function prepareWorkloadCertificate(AppInstance $appInstance, Route $current, Route $candidate): void
+    public function prepareWorkloadCertificate(Instance $appInstance, Route $current, Route $candidate): void
     {
         $this->event('workload-certificate');
     }
 
-    public function prepareWorkloadCaddy(AppInstance $appInstance, Route $current, Route $candidate): void
+    public function prepareWorkloadCaddy(Instance $appInstance, Route $current, Route $candidate): void
     {
         $this->placement('workload-caddy', $current);
         $this->event('workload-caddy');
     }
 
-    public function prepareRouterCertificate(AppInstance $appInstance, Route $current, Route $candidate): void
+    public function prepareRouterCertificate(Instance $appInstance, Route $current, Route $candidate): void
     {
         $this->event('router-certificate');
     }
 
-    public function prepareFirewallPolicy(AppInstance $appInstance, Route $candidate): void
+    public function prepareFirewallPolicy(Instance $appInstance, Route $candidate): void
     {
         $this->event('firewall-policy');
     }
 
-    public function verifyWorkload(AppInstance $appInstance, Route $candidate): void
+    public function verifyWorkload(Instance $appInstance, Route $candidate): void
     {
         $this->event('workload-verify');
     }
 
-    public function prepareRouterCaddy(AppInstance $appInstance, Route $current, Route $candidate): void
+    public function prepareRouterCaddy(Instance $appInstance, Route $current, Route $candidate): void
     {
         $this->event('router-caddy');
     }
@@ -2096,14 +2096,14 @@ final class RouteDomainChangeProjectorFake implements RouteDomainProjector
         $this->event('dns-publication');
     }
 
-    public function prepareCleanup(AppInstance $appInstance, Route $route): void
+    public function prepareCleanup(Instance $appInstance, Route $route): void
     {
         $this->placement('prepare-cleanup', $route);
         $this->events->cleanupSteps[] = Route::query()->find($route->id)?->replacement_step?->value;
         $this->event('prepare-cleanup');
     }
 
-    public function cleanup(AppInstance $appInstance, Route $route): void
+    public function cleanup(Instance $appInstance, Route $route): void
     {
         $this->placement('cleanup', $route);
         $this->events->cleanupSteps[] = Route::query()->find($route->id)?->replacement_step?->value;
@@ -2117,14 +2117,14 @@ final class RouteDomainChangeProjectorFake implements RouteDomainProjector
         $this->event('rollback-dns');
     }
 
-    public function rollbackCaddy(AppInstance $appInstance, Route $route): void
+    public function rollbackCaddy(Instance $appInstance, Route $route): void
     {
         $this->placement('rollback-caddy', $route);
         $this->events->rollbackCaddyStatuses[] = Route::query()->find($route->id)?->status;
         $this->event('rollback-caddy');
     }
 
-    public function rollbackCertificates(AppInstance $appInstance, Route $route): void
+    public function rollbackCertificates(Instance $appInstance, Route $route): void
     {
         $this->event('rollback-certificates');
     }
@@ -2174,12 +2174,12 @@ final class RouteDomainChangeConfiguratorFake implements DevelopmentAppInstanceC
         private RouteDomainChangeEvents $events,
     ) {}
 
-    public function inspect(AppInstance $appInstance): DevelopmentSourceProfile
+    public function inspect(Instance $appInstance): DevelopmentSourceProfile
     {
         return new DevelopmentSourceProfile('8.5', (bool) $appInstance->source_is_laravel);
     }
 
-    public function configureLaravelUrl(AppInstance $appInstance, string $url): void
+    public function configureLaravelUrl(Instance $appInstance, string $url): void
     {
         $this->events->values[] = "url:{$url}";
 

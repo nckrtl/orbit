@@ -11,7 +11,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 
 use function Pest\Laravel\mock;
@@ -25,14 +25,14 @@ function dependency_collection_receipt(string $root = '/home/orbit/project', ?st
     return ['root' => $root, 'reference' => $reference, 'identity' => str_repeat('a', 64), 'files' => $files];
 }
 
-function dependency_collection_instance(bool $production = false): AppInstance
+function dependency_collection_instance(bool $production = false): Instance
 {
-    $instance = new AppInstance([
+    $instance = new Instance([
         'environment' => $production ? 'production' : 'development',
         'source_layout' => 'checkout', 'checkout_path' => '/home/orbit/project',
         'production_user' => $production ? 'app_sample' : null,
         'production_home' => $production ? '/home/app_sample' : null,
-        'root' => 'public', 'migration_required' => false,
+        'root' => 'public',
     ]);
     $node = new Node(['user' => 'orbit', 'wireguard_ip' => '10.44.0.2']);
     orbit_test_set_app_placement_role($node, $production);

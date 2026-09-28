@@ -12,7 +12,7 @@ use App\Domain\Schedules\ScheduleErrorCode;
 use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Schedule;
 use SensitiveParameter;
 
@@ -25,7 +25,7 @@ final readonly class ActivateScheduleAction
 
     public function execute(#[SensitiveParameter] Schedule $schedule): Schedule
     {
-        if (! AppInstance::isMorphType($schedule->target_type)) {
+        if (! Instance::isMorphType($schedule->target_type)) {
             throw new ResourceOperationException(
                 ScheduleErrorCode::TargetInvalid->value,
                 'Only an Instance Schedule can be activated.',

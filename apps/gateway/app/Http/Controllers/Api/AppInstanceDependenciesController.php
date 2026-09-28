@@ -9,24 +9,24 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AppInstances\InstanceDependenciesRequest;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use Illuminate\Http\JsonResponse;
 
 #[RequiresNodeAccess(ServingNode::InstanceOwning)]
 final class AppInstanceDependenciesController extends Controller
 {
-    public function show(InstanceDependenciesRequest $request, AppInstance $instance, AccessInstanceDependenciesAction $action): JsonResponse
+    public function show(InstanceDependenciesRequest $request, Instance $instance, AccessInstanceDependenciesAction $action): JsonResponse
     {
         return $this->respond($request, $instance, $action, false);
     }
 
-    public function scan(InstanceDependenciesRequest $request, AppInstance $instance, AccessInstanceDependenciesAction $action): JsonResponse
+    public function scan(InstanceDependenciesRequest $request, Instance $instance, AccessInstanceDependenciesAction $action): JsonResponse
     {
         return $this->respond($request, $instance, $action, true);
     }
 
-    public function update(InstanceDependenciesRequest $request, AppInstance $instance, AccessInstanceDependenciesAction $action): JsonResponse
+    public function update(InstanceDependenciesRequest $request, Instance $instance, AccessInstanceDependenciesAction $action): JsonResponse
     {
         $consumer = $request->user();
         abort_unless($consumer instanceof Node, 401);
@@ -38,7 +38,7 @@ final class AppInstanceDependenciesController extends Controller
         ]);
     }
 
-    private function respond(InstanceDependenciesRequest $request, AppInstance $instance, AccessInstanceDependenciesAction $action, bool $scan): JsonResponse
+    private function respond(InstanceDependenciesRequest $request, Instance $instance, AccessInstanceDependenciesAction $action, bool $scan): JsonResponse
     {
         $consumer = $request->user();
         abort_unless($consumer instanceof Node, 401);

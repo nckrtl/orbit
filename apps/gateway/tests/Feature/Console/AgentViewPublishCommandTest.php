@@ -10,9 +10,9 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskBroadcasts;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Infrastructure\AgentView\CacheAgentStateView;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\TaskGroup;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Collection;
@@ -20,16 +20,16 @@ use Illuminate\Support\Facades\Event;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 
-/** @return array{Node, AppInstance, TaskGroup} */
+/** @return array{Node, Instance, TaskGroup} */
 function publish_group(): array
 {
     $node = Node::query()->create([
         'name' => 'publish-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
         'public_ssh_host' => '192.0.2.71', 'wireguard_ip' => '10.44.0.71',
     ]);
-    $app = OrbitApp::query()->create(['name' => 'Publish', 'slug' => 'publish', 'repository_url' => 'git@example.test:publish.git', 'default_branch' => 'main']);
-    $instance = AppInstance::query()->create(['app_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-1', 'checkout_path' => '/home/orbit/apps/publish/task-1', 'status' => 'source_resolved']);
-    $group = TaskGroup::query()->create(['app_id' => $app->id, 'title' => 'Publish', 'brief' => 'Brief', 'status' => TaskGroupStatus::Running, 'lines_added' => 1, 'lines_deleted' => 1, 'line_diff' => 2]);
+    $app = Project::query()->create(['name' => 'Publish', 'slug' => 'publish', 'repository_url' => 'git@example.test:publish.git', 'default_branch' => 'main']);
+    $instance = Instance::query()->create(['project_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-1', 'checkout_path' => '/home/orbit/apps/publish/task-1', 'status' => 'source_resolved']);
+    $group = TaskGroup::query()->create(['project_id' => $app->id, 'title' => 'Publish', 'brief' => 'Brief', 'status' => TaskGroupStatus::Running, 'lines_added' => 1, 'lines_deleted' => 1, 'line_diff' => 2]);
     $group->taskable()->associate($instance)->save();
     app(TaskBroadcasts::class)->flush();
 
@@ -37,7 +37,7 @@ function publish_group(): array
 }
 
 /** @param array<string, mixed>|null $diff */
-function publish_view(Node $node, AppInstance $instance, ?array $diff): void
+function publish_view(Node $node, Instance $instance, ?array $diff): void
 {
     app(CacheAgentStateView::class)->putNode($node->id, [], 'available', 3, CacheAgentStateView::now(), null, [$instance->id => [
         'instance_id' => $instance->id, 'base' => 'main', 'start' => null, 'branch' => 'task-1', 'head' => str_repeat('d', 40),

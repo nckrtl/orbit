@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 /**
  * Reads the line diff of a task workspace against the App default branch.
@@ -14,9 +14,9 @@ use App\Models\AppInstance;
 interface TaskWorkspaceDiffReader
 {
     /** @return array{additions: int, deletions: int}|null */
-    public function lineChanges(AppInstance $instance, string $baseBranch): ?array;
+    public function lineChanges(Instance $instance, string $baseBranch): ?array;
 
-    public function lineDiff(AppInstance $instance, string $baseBranch): int;
+    public function lineDiff(Instance $instance, string $baseBranch): int;
 
-    public function hasCommitsSince(AppInstance $instance, string $since): bool;
+    public function hasCommitsSince(Instance $instance, string $since): bool;
 }

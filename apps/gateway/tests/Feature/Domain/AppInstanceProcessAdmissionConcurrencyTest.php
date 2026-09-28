@@ -20,11 +20,11 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
@@ -88,7 +88,7 @@ it('refuses a stale add when removal accepts after initial resolution and before
     );
     $action = new AddProcessAction(new ProcessTargetResolver, $runtime, $lock);
     $data = new AddProcessData(
-        targetType: ProcessTargetType::AppInstance,
+        targetType: ProcessTargetType::Instance,
         targetId: $instance->id,
         name: 'queue',
         runtime: ProcessRuntime::Systemd,
@@ -127,7 +127,7 @@ it('finishes an admitted Process before removal acceptance includes it in cleanu
         },
     );
     $data = new AddProcessData(
-        targetType: ProcessTargetType::AppInstance,
+        targetType: ProcessTargetType::Instance,
         targetId: $instance->id,
         name: 'queue',
         runtime: ProcessRuntime::Systemd,
@@ -182,9 +182,9 @@ it('keeps add start and restart admission behind SQLite placement after a clean 
     ]);
 });
 
-function orb131_process_admission_instance(): AppInstance
+function orb131_process_admission_instance(): Instance
 {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Admission',
         'slug' => 'admission',
         'repository_url' => 'https://example.test/admission.git',
@@ -200,8 +200,8 @@ function orb131_process_admission_instance(): AppInstance
         'user' => 'orbit',
     ]);
     orbit_test_set_app_placement_role($node, false);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'default',
         'environment' => 'development',
@@ -214,27 +214,27 @@ function orb131_process_admission_instance(): AppInstance
         'status' => AppInstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'domain' => 'admission.example.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
 
     return $instance->fresh(['app', 'node', 'routes']);
 }
 
-function orb131_accept_process_removal(AppInstance $instance): void
+function orb131_accept_process_removal(Instance $instance): void
 {
     DB::transaction(function () use ($instance): void {
-        $locked = AppInstance::query()->lockForUpdate()->findOrFail($instance->id);
+        $locked = Instance::query()->lockForUpdate()->findOrFail($instance->id);
         $route = $locked->routes()->sole();
         $removal = AppInstanceRemoval::query()->create([
             'id' => (string) Str::uuid(),
-            'requested_app_instance_id' => $locked->id,
+            'requested_instance_id' => $locked->id,
             'requested_name' => $locked->name,
             'force' => false,
             'inventory_digest' => str_repeat('b', 64),
@@ -244,8 +244,8 @@ function orb131_accept_process_removal(AppInstance $instance): void
         ]);
         $removal->members()->create([
             'position' => 0,
-            'app_instance_id' => $locked->id,
-            'app_id' => $locked->app_id,
+            'instance_id' => $locked->id,
+            'project_id' => $locked->project_id,
             'node_id' => $locked->node_id,
             'route_id' => $route->id,
             'name' => $locked->name,

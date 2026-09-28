@@ -11,7 +11,7 @@ use App\Domain\AppInstances\Dependencies\DependencyEcosystem;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use Illuminate\Support\Facades\DB;
 
@@ -25,7 +25,7 @@ final readonly class AccessInstanceDependenciesAction
         private UpdateInstanceDependenciesAction $updates,
     ) {}
 
-    public function execute(AppInstance $instance, Node $consumer, bool $scan): InstanceDependencyInventoryData
+    public function execute(Instance $instance, Node $consumer, bool $scan): InstanceDependencyInventoryData
     {
         try {
             return $this->operations->run([$instance->id], function () use ($instance, $consumer, $scan): InstanceDependencyInventoryData {
@@ -51,7 +51,7 @@ final readonly class AccessInstanceDependenciesAction
         }
     }
 
-    public function update(AppInstance $instance, Node $consumer): InstanceDependencyUpdateData
+    public function update(Instance $instance, Node $consumer): InstanceDependencyUpdateData
     {
         try {
             return $this->operations->run([$instance->id], function () use ($instance, $consumer): InstanceDependencyUpdateData {
@@ -73,9 +73,9 @@ final readonly class AccessInstanceDependenciesAction
         }
     }
 
-    private function target(int $instanceId, Node $consumer): AppInstance
+    private function target(int $instanceId, Node $consumer): Instance
     {
-        $current = AppInstance::query()->with('node')->findOrFail($instanceId);
+        $current = Instance::query()->with('node')->findOrFail($instanceId);
         if (! $this->authorizer->allows($consumer, $current->node)) {
             throw new ResourceOperationException('node_access.required', 'Node access is required.', 403);
         }

@@ -43,7 +43,7 @@ final readonly class DatabaseConnectionDoctorInspection
         }
 
         try {
-            $stored = $this->storedValues($attachment->app_instance_id);
+            $stored = $this->storedValues($attachment->instance_id);
             $projected = $this->projection->project($connection, $attachment->appInstance, $attachment->prefix);
         } catch (DecryptException) {
             return [$this->issue(
@@ -135,7 +135,7 @@ final readonly class DatabaseConnectionDoctorInspection
     private function storedValues(int $appInstanceId): array
     {
         return AppInstanceEnvironmentValue::query()
-            ->where('app_instance_id', $appInstanceId)
+            ->where('instance_id', $appInstanceId)
             ->orderBy('env_key')
             ->get()
             ->mapWithKeys(static fn (AppInstanceEnvironmentValue $row): array => [$row->env_key => $row->env_value])

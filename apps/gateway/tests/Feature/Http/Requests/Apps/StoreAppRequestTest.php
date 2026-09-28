@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
-use App\Models\App as OrbitApp;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Str;
 
@@ -34,7 +34,7 @@ it('accepts supported repository origins', function (string $repositoryUrl): voi
         ->assertCreated()
         ->assertJsonPath('data.repository_url', $repositoryUrl);
 
-    expect(OrbitApp::query()->sole()->repository_url)->toBe($repositoryUrl);
+    expect(Project::query()->sole()->repository_url)->toBe($repositoryUrl);
 })->with([
     'HTTPS URL' => ['https://github.com/acme/site.git'],
     'SSH URL' => ['ssh://git@github.com/acme/site.git'],
@@ -74,7 +74,7 @@ it('returns 422 without persistence or secret exposure for credential-bearing re
         ->assertOk()
         ->getContent();
 
-    expect(OrbitApp::query()->exists())
+    expect(Project::query()->exists())
         ->toBeFalse()
         ->and($activity->status)
         ->toBe('failed')
@@ -140,7 +140,7 @@ it('returns 422 without persistence or secret exposure for embedded repository c
         'activity' => $activity->toArray(),
     ], return: true);
 
-    expect(OrbitApp::query()->exists())
+    expect(Project::query()->exists())
         ->toBeFalse()
         ->and($activity->status)
         ->toBe('failed')
@@ -174,7 +174,7 @@ it('returns 422 without persistence when a repository origin contains a query or
             'The repository URL must be a valid HTTPS or SSH Git origin.',
         );
 
-    expect(OrbitApp::query()->exists())->toBeFalse();
+    expect(Project::query()->exists())->toBeFalse();
 })->with([
     'HTTPS query' => ['https://example.test/acme/site.git?branch=main'],
     'scp-like SSH query' => ['git@example.test:acme/site.git?branch=main'],

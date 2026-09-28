@@ -13,7 +13,7 @@ use App\Domain\Projects\ProjectType;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class RemoteDevelopmentAppInstanceConfigurator implements DevelopmentAppInstanceConfigurator
 {
@@ -23,7 +23,7 @@ final readonly class RemoteDevelopmentAppInstanceConfigurator implements Develop
         private ComposerSourceClassifier $classifier,
     ) {}
 
-    public function inspect(AppInstance $appInstance): DevelopmentSourceProfile
+    public function inspect(Instance $appInstance): DevelopmentSourceProfile
     {
         $appInstance->loadMissing(['app', 'node']);
         $account = $this->accounts->resolve($appInstance->node);
@@ -63,7 +63,7 @@ final readonly class RemoteDevelopmentAppInstanceConfigurator implements Develop
         return $this->profile(trim($result->stdout), $appInstance->app->type);
     }
 
-    public function configureLaravelUrl(AppInstance $appInstance, string $url): void
+    public function configureLaravelUrl(Instance $appInstance, string $url): void
     {
         $appInstance->loadMissing('node');
         $account = $this->accounts->resolve($appInstance->node);

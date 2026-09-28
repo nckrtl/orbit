@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * @property int $id
- * @property int $app_id
+ * @property int $project_id
  * @property AppUpdateStatus $status
  * @property string $fingerprint
  * @property string|null $requested_slug
@@ -24,14 +24,17 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property array<string, mixed>|null $inventory
  * @property array<string, mixed>|null $evidence
  * @property string|null $error_code
- * @property-read App $app
+ * @property-read Project $app
  */
 final class AppUpdate extends Model
 {
+    #[\Override]
+    protected $table = 'project_updates';
+
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
-        'app_id',
+        'project_id',
         'status',
         'fingerprint',
         'requested_slug',
@@ -47,10 +50,10 @@ final class AppUpdate extends Model
         'error_code',
     ];
 
-    /** @return BelongsTo<App, $this> */
+    /** @return BelongsTo<Project, $this> */
     public function app(): BelongsTo
     {
-        return $this->belongsTo(App::class);
+        return $this->belongsTo(Project::class, 'project_id');
     }
 
     /**

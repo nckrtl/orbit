@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Processes\ProcessTarget;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 
@@ -316,7 +316,7 @@ it('pins the Route development-server origin after the app environment file', fu
         'restart_policy' => 'never',
     ]);
     $process->id = 11;
-    $instance = new AppInstance(['vite_port' => 5173]);
+    $instance = new Instance(['vite_port' => 5173]);
     $target = new ProcessTarget(
         node: new Node(['name' => 'dev']),
         user: 'orbit',
@@ -346,7 +346,7 @@ it('pins the Route development-server origin after the app environment file', fu
 });
 
 it('expands only the preset port and gives its owned environment file precedence', function (): void {
-    $instance = new AppInstance(['vite_port' => 5210]);
+    $instance = new Instance(['vite_port' => 5210]);
     $instance->id = 64;
     $process = new Process(['name' => 'assets', 'runtime_config' => ['preset' => 'vp-dev', 'command' => ['/usr/local/bin/vp', 'dev'], 'environment_file' => '/apps/main/.env'], 'working_directory' => '/apps/main', 'restart_policy' => 'on-failure']);
     $process->id = 9;
@@ -357,7 +357,7 @@ it('expands only the preset port and gives its owned environment file precedence
 });
 
 it('projects AGENTATION_URL and expands the Agentation HTTP port', function (): void {
-    $instance = new AppInstance(['agentation_port' => 4749]);
+    $instance = new Instance(['agentation_port' => 4749]);
     $instance->id = 12;
     $process = new Process([
         'name' => 'agentation',
@@ -390,7 +390,7 @@ it('projects AGENTATION_URL and expands the Agentation HTTP port', function (): 
 });
 
 it('projects AGENTATION_URL onto the Antigravity watcher unit', function (): void {
-    $instance = new AppInstance(['agentation_port' => 4747]);
+    $instance = new Instance(['agentation_port' => 4747]);
     $process = new Process([
         'name' => 'watch',
         'runtime_config' => ['preset' => 'antigravity-watch', 'command' => ['/usr/local/bin/agy']],

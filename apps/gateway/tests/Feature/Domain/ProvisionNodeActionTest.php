@@ -33,11 +33,11 @@ use App\Domain\Tools\ToolManagerName;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
 use App\Infrastructure\Processes\CommandResult;
-use App\Models\App;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Project;
 use App\Models\ToolManagerRecord;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
@@ -331,7 +331,7 @@ describe(ProvisionNodeAction::class, function (): void {
             ->toBe(LifecycleStatus::Failed);
     });
 
-    it('refuses existing Node reprovisioning while it owns an AppInstance', function (): void {
+    it('refuses existing Node reprovisioning while it owns an Instance', function (): void {
         $cluster = Cluster::query()->create(['name' => 'development', 'state' => ClusterState::Active]);
         $existing = Node::query()->create([
             'cluster_id' => $cluster->id,
@@ -343,15 +343,15 @@ describe(ProvisionNodeAction::class, function (): void {
             'wireguard_ip' => '10.44.0.71',
             'user' => 'orbit',
         ]);
-        $app = App::query()->create([
+        $app = Project::query()->create([
             'name' => 'Acme',
             'slug' => 'acme',
             'repository_url' => 'https://github.com/acme/site.git',
             'default_branch' => 'main',
             'root' => 'public',
         ]);
-        AppInstance::query()->create([
-            'app_id' => $app->id,
+        Instance::query()->create([
+            'project_id' => $app->id,
             'node_id' => $existing->id,
             'name' => 'dev',
             'checkout_path' => '/srv/orbit/apps/acme/dev',
@@ -392,7 +392,7 @@ describe(ProvisionNodeAction::class, function (): void {
             ->toBe(LifecycleStatus::Active)
             ->and($existing->cluster_id)
             ->toBe($cluster->id)
-            ->and(AppInstance::query()->count())
+            ->and(Instance::query()->count())
             ->toBe(1);
     });
 
@@ -1785,13 +1785,13 @@ describe(ProvisionNodeAction::class, function (): void {
         app()->instance(NodeConverger::class, $nodeConverger);
         $node = provision_node_tld_change_record();
         $node->roles()->update(['status' => $roleStatus]);
-        $app = App::query()->create([
+        $app = Project::query()->create([
             'name' => 'Orbit',
             'slug' => 'orbit',
             'repository_url' => 'git@example.test:orbit.git',
         ]);
-        $appInstance = AppInstance::query()->create([
-            'app_id' => $app->id,
+        $appInstance = Instance::query()->create([
+            'project_id' => $app->id,
             'node_id' => $node->id,
             'name' => 'main',
             'environment' => 'development',
@@ -1969,13 +1969,13 @@ describe(ProvisionNodeAction::class, function (): void {
             'wireguard_ip' => '10.44.0.3',
             'ssh_host_fingerprint' => 'SHA256:pinned',
         ]);
-        $app = App::query()->create([
+        $app = Project::query()->create([
             'name' => 'Orbit',
             'slug' => 'orbit',
             'repository_url' => 'git@example.test:orbit.git',
         ]);
-        AppInstance::query()->create([
-            'app_id' => $app->id,
+        Instance::query()->create([
+            'project_id' => $app->id,
             'node_id' => $node->id,
             'name' => 'main',
             'environment' => 'development',

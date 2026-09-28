@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\AppInstances\Logs;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 interface AppInstanceLogReader
 {
@@ -13,5 +13,5 @@ interface AppInstanceLogReader
      * `laravel.log`, or the newest `laravel-*.log` of a daily channel. An instance
      * without such a file has an empty log.
      */
-    public function tail(AppInstance $instance, int $lines): string;
+    public function tail(Instance $instance, int $lines): string;
 }

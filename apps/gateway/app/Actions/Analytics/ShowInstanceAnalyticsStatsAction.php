@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Analytics;
 
 use App\Domain\Analytics\AnalyticsStatsDriver;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class ShowInstanceAnalyticsStatsAction
 {
@@ -15,7 +15,7 @@ final readonly class ShowInstanceAnalyticsStatsAction
     ) {}
 
     /** @return array<string, mixed> */
-    public function execute(AppInstance $instance): array
+    public function execute(Instance $instance): array
     {
         if ($this->tracking->trackingRoutes($instance)->isEmpty() || ! $this->driver->fleetHealthy()) {
             return ['available' => false];

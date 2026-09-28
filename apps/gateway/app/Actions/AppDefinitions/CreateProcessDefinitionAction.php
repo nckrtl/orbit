@@ -6,14 +6,14 @@ namespace App\Actions\AppDefinitions;
 
 use App\Data\AppDefinitions\AppDefinitionInputData;
 use App\Domain\AppDefinitions\AppDefinitionConflict;
-use App\Models\App as OrbitApp;
 use App\Models\ProcessDefinition;
+use App\Models\Project;
 use Illuminate\Database\UniqueConstraintViolationException;
 use SensitiveParameter;
 
 final readonly class CreateProcessDefinitionAction
 {
-    public function execute(OrbitApp $app, #[SensitiveParameter] AppDefinitionInputData $data): ProcessDefinition
+    public function execute(Project $app, #[SensitiveParameter] AppDefinitionInputData $data): ProcessDefinition
     {
         try {
             return $app->processDefinitions()->create([

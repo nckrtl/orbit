@@ -9,7 +9,7 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AppInstances\AppInstanceLogsRequest;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -18,7 +18,7 @@ final class AppInstanceLogsController extends Controller
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]
     public function show(
         AppInstanceLogsRequest $request,
-        AppInstance $instance,
+        Instance $instance,
         ShowAppInstanceLogsAction $action,
     ): JsonResponse {
         $lines = $request->lines();

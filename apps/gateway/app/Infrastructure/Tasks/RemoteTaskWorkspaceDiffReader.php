@@ -8,7 +8,7 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class RemoteTaskWorkspaceDiffReader implements TaskWorkspaceDiffReader
 {
@@ -16,14 +16,14 @@ final readonly class RemoteTaskWorkspaceDiffReader implements TaskWorkspaceDiffR
         private AppDevSshExecutor $ssh,
     ) {}
 
-    public function lineDiff(AppInstance $instance, string $baseBranch): int
+    public function lineDiff(Instance $instance, string $baseBranch): int
     {
         $changes = $this->lineChanges($instance, $baseBranch);
 
         return $changes === null ? 0 : $changes['additions'] + $changes['deletions'];
     }
 
-    public function lineChanges(AppInstance $instance, string $baseBranch): ?array
+    public function lineChanges(Instance $instance, string $baseBranch): ?array
     {
         $instance->loadMissing('node');
 
@@ -64,7 +64,7 @@ final readonly class RemoteTaskWorkspaceDiffReader implements TaskWorkspaceDiffR
         return ['additions' => $additions, 'deletions' => $deletions];
     }
 
-    public function hasCommitsSince(AppInstance $instance, string $since): bool
+    public function hasCommitsSince(Instance $instance, string $since): bool
     {
         $instance->loadMissing('node');
 

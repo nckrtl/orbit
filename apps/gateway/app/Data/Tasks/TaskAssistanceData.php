@@ -29,7 +29,7 @@ final class TaskAssistanceData extends Data
 
         return new self(
             id: $group->id,
-            appId: $group->app_id,
+            appId: $group->project_id,
             app: $group->app->slug,
             projectCode: $group->app->code,
             title: $group->title,

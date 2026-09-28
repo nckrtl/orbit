@@ -9,14 +9,14 @@ use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceDiffReader;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Tests\Support\AppDevFakeSshExecutor;
 
-function remote_diff_instance(): AppInstance
+function remote_diff_instance(): Instance
 {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'orbit',
         'slug' => 'orbit',
         'repository_url' => 'git@github.com:nckrtl/orbit.git',
@@ -31,8 +31,8 @@ function remote_diff_instance(): AppInstance
         'user' => 'orbit',
     ]);
 
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'task-12',
         'checkout_path' => '/srv/orbit/apps/orbit/task-12',

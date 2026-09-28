@@ -7,7 +7,7 @@ namespace App\Domain\Nodes\Storage;
 use App\Data\Nodes\NodeSettingsData;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 
 final readonly class ConfiguredStoragePathValidator
@@ -81,7 +81,7 @@ final readonly class ConfiguredStoragePathValidator
     {
         $paths = [];
 
-        foreach (AppInstance::query()->where('node_id', $node->id)->get(['checkout_path']) as $appInstance) {
+        foreach (Instance::query()->where('node_id', $node->id)->get(['checkout_path']) as $appInstance) {
             $path = StoragePath::tryParse($appInstance->checkout_path);
 
             if ($path instanceof StoragePath) {

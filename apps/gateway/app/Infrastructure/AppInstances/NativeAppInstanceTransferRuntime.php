@@ -9,7 +9,7 @@ use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Schedules\ScheduleRuntimeManager;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 
 final readonly class NativeAppInstanceTransferRuntime implements AppInstanceTransferRuntime
@@ -19,7 +19,7 @@ final readonly class NativeAppInstanceTransferRuntime implements AppInstanceTran
         private ScheduleRuntimeManager $schedules,
     ) {}
 
-    public function pause(AppInstance $instance): void
+    public function pause(Instance $instance): void
     {
         $instance->loadMissing(['processes', 'schedules']);
 
@@ -37,7 +37,7 @@ final readonly class NativeAppInstanceTransferRuntime implements AppInstanceTran
         }
     }
 
-    public function restore(AppInstance $instance): void
+    public function restore(Instance $instance): void
     {
         $instance->loadMissing(['processes', 'schedules', 'node']);
 
@@ -59,7 +59,7 @@ final readonly class NativeAppInstanceTransferRuntime implements AppInstanceTran
     }
 
     public function relocate(
-        AppInstance $instance,
+        Instance $instance,
         Node $destination,
         string $sourcePath,
         string $workingDirectory,
@@ -78,7 +78,7 @@ final readonly class NativeAppInstanceTransferRuntime implements AppInstanceTran
         }
     }
 
-    public function activate(AppInstance $instance): void
+    public function activate(Instance $instance): void
     {
         $instance->loadMissing(['processes', 'schedules']);
 
@@ -99,7 +99,7 @@ final readonly class NativeAppInstanceTransferRuntime implements AppInstanceTran
         }
     }
 
-    public function cleanupSourceArtifacts(AppInstance $instance, Node $sourceNode, string $sourcePath): void
+    public function cleanupSourceArtifacts(Instance $instance, Node $sourceNode, string $sourcePath): void
     {
         $instance->loadMissing(['processes', 'schedules']);
 

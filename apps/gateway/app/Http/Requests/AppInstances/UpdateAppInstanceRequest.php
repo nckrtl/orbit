@@ -48,7 +48,7 @@ final class UpdateAppInstanceRequest extends FormRequest
     public function branch(): string
     {
         if (! is_string($this->branch)) {
-            throw new UnexpectedValueException('The AppInstance update was not validated.');
+            throw new UnexpectedValueException('The Instance update was not validated.');
         }
 
         return $this->branch;

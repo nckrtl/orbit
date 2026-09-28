@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\AppInstances\Environment;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 interface AppInstanceEnvironmentSynchronizer
 {
-    public function execute(AppInstance $instance): AppInstanceEnvironmentResult;
+    public function execute(Instance $instance): AppInstanceEnvironmentResult;
 }

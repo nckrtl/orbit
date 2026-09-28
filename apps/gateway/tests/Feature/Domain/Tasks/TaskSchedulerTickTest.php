@@ -48,11 +48,11 @@ use App\Infrastructure\Tasks\T3\T3Dispatcher;
 use App\Infrastructure\Tasks\T3\T3DispatchException;
 use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Models\AgentThread;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
+use App\Models\Instance;
 use App\Models\JevDecision;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
@@ -75,7 +75,7 @@ use function Pest\Laravel\mock;
 
 function tick_group(): TaskGroup
 {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'tick-app',
         'slug' => 'tick-app',
         'repository_url' => 'git@example.test:tick.git',
@@ -89,8 +89,8 @@ function tick_group(): TaskGroup
         'public_ssh_host' => '10.44.0.212',
         'wireguard_ip' => '10.44.0.212',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'task-21',
         'checkout_path' => '/srv/orbit/apps/tick-app/task-21',
@@ -98,7 +98,7 @@ function tick_group(): TaskGroup
         'status' => 'source_resolved',
     ]);
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Tick routing',
         'brief' => 'Observe, classify, and execute.',
         'status' => TaskGroupStatus::Running,
@@ -140,17 +140,17 @@ function tick_workspace(bool $definesCheckScript = true, ?string $branch = null)
     {
         public function __construct(private bool $definesCheckScript, private ?string $branch) {}
 
-        public function headCommit(AppInstance $instance): ?string
+        public function headCommit(Instance $instance): ?string
         {
             return null;
         }
 
-        public function currentBranch(AppInstance $instance): ?string
+        public function currentBranch(Instance $instance): ?string
         {
             return $this->branch;
         }
 
-        public function definesComposerCheckScript(AppInstance $instance): bool
+        public function definesComposerCheckScript(Instance $instance): bool
         {
             return $this->definesCheckScript;
         }
@@ -478,7 +478,7 @@ it('resumes a settling group without a pull request and opens the pull request w
         /** @var list<string> */
         public array $messages = [];
 
-        public function commit(AppInstance $instance, string $message): ?string
+        public function commit(Instance $instance, string $message): ?string
         {
             $this->messages[] = $message;
             $checks = app(TaskCheckRunner::class);
@@ -537,8 +537,8 @@ it('continues watching a prior settling PR and completes only after it merges', 
     app(TaskExtensionState::class)->enable();
     GitHubTestSupport::storeApp();
     mock(AppInstanceRemover::class)->shouldReceive('execute')->once()->withArgs(
-        fn (AppInstance $instance, bool $force): bool => $instance->id === $group->taskable_id && $force,
-    )->andReturnUsing(function (AppInstance $instance): AppInstanceRemoval {
+        fn (Instance $instance, bool $force): bool => $instance->id === $group->taskable_id && $force,
+    )->andReturnUsing(function (Instance $instance): AppInstanceRemoval {
         $instance->delete();
 
         return new AppInstanceRemoval;
@@ -558,7 +558,7 @@ it('continues watching a prior settling PR and completes only after it merges', 
     app(TaskScheduler::class)->tick();
 
     $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'completed', 'pr_url' => $group->pr_url, 'taskable_id' => null]);
-    $this->assertDatabaseMissing('app_instances', ['id' => $group->taskable_id]);
+    $this->assertDatabaseMissing('instances', ['id' => $group->taskable_id]);
     Http::assertSentCount(6);
 });
 
@@ -949,7 +949,7 @@ it('uses backoff for publication and removal retries and retries a failed manual
         /** @var list<int> */
         public array $attempts = [];
 
-        public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
+        public function execute(Instance $instance, bool $force): AppInstanceRemoval
         {
             $this->attempts[] = $instance->id;
             if (in_array($instance->id, $this->failing, true)) {
@@ -962,13 +962,13 @@ it('uses backoff for publication and removal retries and retries a failed manual
     };
     app()->instance(AppInstanceRemover::class, $remover);
     $ended = TaskGroup::query()->create([
-        'app_id' => $group->app_id,
+        'project_id' => $group->project_id,
         'title' => 'Ended',
         'brief' => 'Remove the workspace.',
         'status' => TaskGroupStatus::Cancelled,
     ]);
-    $workspace = AppInstance::query()->create([
-        'app_id' => $group->app_id,
+    $workspace = Instance::query()->create([
+        'project_id' => $group->project_id,
         'node_id' => $group->taskable->node_id,
         'name' => 'ended-workspace',
         'checkout_path' => '/tmp/ended-workspace',
@@ -1006,14 +1006,14 @@ it('uses backoff for publication and removal retries and retries a failed manual
     expect($remover->attempts)->toHaveCount(4);
 
     $settling = TaskGroup::query()->create([
-        'app_id' => $group->app_id,
+        'project_id' => $group->project_id,
         'title' => 'Manual complete',
         'brief' => 'The operator completes it.',
         'status' => TaskGroupStatus::Settling,
         'pr_url' => 'https://github.com/acme/orbit/pull/77',
     ]);
-    $kept = AppInstance::query()->create([
-        'app_id' => $group->app_id,
+    $kept = Instance::query()->create([
+        'project_id' => $group->project_id,
         'node_id' => $group->taskable->node_id,
         'name' => 'manual-complete',
         'checkout_path' => '/tmp/manual-complete',
@@ -1030,15 +1030,15 @@ it('uses backoff for publication and removal retries and retries a failed manual
         ->and($completed->assistance_reason)->toBe(RemoveTaskWorkspaceAction::RemovalFailedPrefix.'disk full');
 
     $other = TaskGroup::query()->create([
-        'app_id' => $group->app_id,
+        'project_id' => $group->project_id,
         'title' => 'Other cause',
         'brief' => 'Keep the question.',
         'status' => TaskGroupStatus::Cancelled,
         'assistance_requested' => true,
         'assistance_reason' => $hold,
     ]);
-    $otherWorkspace = AppInstance::query()->create([
-        'app_id' => $group->app_id,
+    $otherWorkspace = Instance::query()->create([
+        'project_id' => $group->project_id,
         'node_id' => $group->taskable->node_id,
         'name' => 'other-cause',
         'checkout_path' => '/tmp/other-cause',
@@ -1049,13 +1049,13 @@ it('uses backoff for publication and removal retries and retries a failed manual
     $remover->failing = [$workspace->id];
 
     expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(2)
-        ->and(AppInstance::query()->find($kept->id))->toBeNull()
+        ->and(Instance::query()->find($kept->id))->toBeNull()
         ->and($settling->fresh()?->taskable_id)->toBeNull()
         ->and($settling->fresh()?->assistance_requested)->toBeFalse()
-        ->and(AppInstance::query()->find($otherWorkspace->id))->toBeNull()
+        ->and(Instance::query()->find($otherWorkspace->id))->toBeNull()
         ->and($other->fresh()?->assistance_requested)->toBeTrue()
         ->and($other->fresh()?->assistance_reason)->toBe($hold)
-        ->and(AppInstance::query()->find($workspace->id))->not->toBeNull();
+        ->and(Instance::query()->find($workspace->id))->not->toBeNull();
 });
 
 it('replaces its pull request assistance request with the cleanup failure when a merged group cannot complete', function (): void {
@@ -2014,7 +2014,7 @@ it('records an unreachable workspace as a communication failure without aborting
 it('records a legacy turn read failure without skipping the other group', function (): void {
     $running = tick_group();
     $implementer = $running->tasks->sole();
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'tick-review-legacy', 'slug' => 'tick-review-legacy',
         'repository_url' => 'git@example.test:tick-review-legacy.git', 'default_branch' => 'main',
         'task_check' => 'composer check',
@@ -2023,12 +2023,12 @@ it('records a legacy turn read failure without skipping the other group', functi
         'name' => 'tick-review-legacy-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
         'public_ssh_host' => '10.44.0.213', 'wireguard_ip' => '10.44.0.213',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-22',
+    $instance = Instance::query()->create([
+        'project_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-22',
         'checkout_path' => '/srv/orbit/apps/tick-review-legacy/task-22', 'branch' => 'task-22', 'status' => 'source_resolved',
     ]);
     $reviewing = TaskGroup::query()->create([
-        'app_id' => $app->id, 'title' => 'Tick review', 'brief' => 'Review the records.', 'status' => TaskGroupStatus::Reviewing,
+        'project_id' => $app->id, 'title' => 'Tick review', 'brief' => 'Review the records.', 'status' => TaskGroupStatus::Reviewing,
     ]);
     $reviewing->taskable()->associate($instance);
     $reviewing->save();
@@ -3618,7 +3618,7 @@ function tick_review(array $receipts, bool $onBranch = true, bool $last = false)
 
         public bool $fails = false;
 
-        public function commit(AppInstance $instance, string $message): ?string
+        public function commit(Instance $instance, string $message): ?string
         {
             $this->messages[] = $message;
             if ($this->fails) {
@@ -3673,9 +3673,9 @@ it('does not apply a receipt from the thread named by a stale turn file', functi
     {
         public function __construct(private int $acting) {}
 
-        public function prepare(AppInstance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void {}
+        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void {}
 
-        public function read(AppInstance $instance, ?int $actingThreadId = null): ?TaskRunReceipt
+        public function read(Instance $instance, ?int $actingThreadId = null): ?TaskRunReceipt
         {
             expect($actingThreadId)->toBe($this->acting);
 
@@ -3684,9 +3684,9 @@ it('does not apply a receipt from the thread named by a stale turn file', functi
             ], JSON_THROW_ON_ERROR));
         }
 
-        public function clear(AppInstance $instance, TaskRunReceipt $receipt): void {}
+        public function clear(Instance $instance, TaskRunReceipt $receipt): void {}
 
-        public function hasLegacyTurn(AppInstance $instance): bool
+        public function hasLegacyTurn(Instance $instance): bool
         {
             return false;
         }
@@ -3708,22 +3708,22 @@ it('does not apply an unbound legacy receipt and reissues the bound run command'
         /** @var list<int|null> */
         public array $preparedThreads = [];
 
-        public function prepare(AppInstance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void
+        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void
         {
             $this->preparedThreads[] = $threadId;
             $this->legacy = false;
         }
 
-        public function read(AppInstance $instance, ?int $actingThreadId = null): ?TaskRunReceipt
+        public function read(Instance $instance, ?int $actingThreadId = null): ?TaskRunReceipt
         {
             return TaskRunReceipt::parse((string) json_encode([
                 'outcome' => 'approved', 'summary' => 'Approved the earlier subtask.',
             ], JSON_THROW_ON_ERROR));
         }
 
-        public function clear(AppInstance $instance, TaskRunReceipt $receipt): void {}
+        public function clear(Instance $instance, TaskRunReceipt $receipt): void {}
 
-        public function hasLegacyTurn(AppInstance $instance): bool
+        public function hasLegacyTurn(Instance $instance): bool
         {
             return $this->legacy;
         }
@@ -3748,18 +3748,18 @@ it('applies a receipt that names the acting reviewer', function (): void {
     {
         public function __construct(private int $acting) {}
 
-        public function prepare(AppInstance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void {}
+        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void {}
 
-        public function read(AppInstance $instance, ?int $actingThreadId = null): ?TaskRunReceipt
+        public function read(Instance $instance, ?int $actingThreadId = null): ?TaskRunReceipt
         {
             return TaskRunReceipt::parse((string) json_encode([
                 'outcome' => 'approved', 'summary' => 'Checked this subtask.', 'thread' => $actingThreadId,
             ], JSON_THROW_ON_ERROR));
         }
 
-        public function clear(AppInstance $instance, TaskRunReceipt $receipt): void {}
+        public function clear(Instance $instance, TaskRunReceipt $receipt): void {}
 
-        public function hasLegacyTurn(AppInstance $instance): bool
+        public function hasLegacyTurn(Instance $instance): bool
         {
             return false;
         }
@@ -4106,7 +4106,7 @@ it('retries publication after Orbit commits and changes HEAD itself', function (
 
         public function __construct(private FakeTaskCheckRunner $checks) {}
 
-        public function commit(AppInstance $instance, string $message): ?string
+        public function commit(Instance $instance, string $message): ?string
         {
             $this->commits++;
             $this->checks->head = str_repeat('c', 40);
@@ -4145,7 +4145,7 @@ it('refuses a reset to the pre-approval HEAD after Orbit committed', function ()
 
         public function __construct(private FakeTaskCheckRunner $checks) {}
 
-        public function commit(AppInstance $instance, string $message): ?string
+        public function commit(Instance $instance, string $message): ?string
         {
             $this->commits++;
             $this->checks->head = str_repeat('c', 40);

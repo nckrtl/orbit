@@ -22,11 +22,11 @@ final readonly class ReadInstanceDependencyScanAction
     {
         return DB::transaction(function () use ($instanceId, $ecosystem): ?DependencyScanResult {
             $observation = AppInstanceDependencyObservation::query()
-                ->where('app_instance_id', $instanceId)
+                ->where('instance_id', $instanceId)
                 ->where('ecosystem', $ecosystem)
                 ->first();
             $attempt = AppInstanceDependencyScanAttempt::query()
-                ->where('app_instance_id', $instanceId)
+                ->where('instance_id', $instanceId)
                 ->where('ecosystem', $ecosystem)
                 ->latest('id')
                 ->first();

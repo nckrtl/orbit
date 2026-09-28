@@ -2,23 +2,34 @@
 
 declare(strict_types=1);
 
+use App\Models\Instance;
 use App\Models\Node;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 beforeEach(fn () => roll_back_app_instance_environment_for_migration_test());
-afterEach(fn () => restore_app_instance_environment_schema_for_migration_test());
+afterEach(function (): void {
+    if (Schema::hasColumn('instances', 'migration_required')) {
+        DB::table('instances')->update(['migration_required' => false]);
+    }
+
+    if (Schema::hasColumn('instances', 'registration_migration_recovery')) {
+        DB::table('instances')->update(['registration_migration_recovery' => null]);
+    }
+
+    restore_app_instance_environment_schema_for_migration_test();
+});
 
 it('refuses unsupported legacy source ownership before changing schema or rows', function (): void {
     $removalMigration = app_instance_identity_removal_migration();
     $migration = app_instance_identity_migration();
-    $removalMigration->down();
+    run_legacy_schema_migration($removalMigration, 'down');
 
     try {
-        $migration->down();
+        run_legacy_schema_migration($migration, 'down');
         $ids = app_instance_identity_legacy_graph();
-        DB::table('app_instances')
+        DB::table('instances')
             ->where('id', $ids['instance'])
             ->update([
                 'source_kind' => 'registered_worktree',
@@ -26,7 +37,7 @@ it('refuses unsupported legacy source ownership before changing schema or rows',
         $schemaBefore = app_instance_identity_schema();
         $rowsBefore = app_instance_identity_rows();
 
-        expect(fn () => $migration->up())
+        expect(fn () => run_legacy_schema_migration($migration, 'up'))
             ->toThrow(
                 RuntimeException::class,
                 "Cannot migrate unsupported AppInstance source ownership: {$ids['instance']}",
@@ -37,100 +48,100 @@ it('refuses unsupported legacy source ownership before changing schema or rows',
             ->and(app_instance_identity_rows())
             ->toBe($rowsBefore);
     } finally {
-        DB::table('app_instances')
+        DB::table('instances')
             ->where('source_kind', 'registered_worktree')
             ->update(['source_kind' => 'managed_clone']);
-        $migration->up();
-        $removalMigration->up();
+        run_legacy_schema_migration($migration, 'up');
+        run_legacy_schema_migration($removalMigration, 'up');
     }
 });
 
 it('migrates stable source identity without changing legacy rows or relationships', function (): void {
     $removalMigration = app_instance_identity_removal_migration();
     $migration = app_instance_identity_migration();
-    $removalMigration->down();
+    run_legacy_schema_migration($removalMigration, 'down');
 
     try {
-        $migration->down();
+        run_legacy_schema_migration($migration, 'down');
         $ids = app_instance_identity_legacy_graph();
         $legacy = app_instance_identity_rows();
         $legacySchema = app_instance_identity_schema();
 
-        $migration->up();
+        run_legacy_schema_migration($migration, 'up');
 
         $migrated = app_instance_identity_rows();
-        $sourceLayout = collect(DB::select('PRAGMA table_info(app_instances)'))
+        $sourceLayout = collect(DB::select('PRAGMA table_info(instances)'))
             ->firstWhere('name', 'source_layout');
-        expect(Schema::hasColumns('apps', ['default_branch']))
+        expect(Schema::hasColumns('projects', ['default_branch']))
             ->toBeTrue()
-            ->and(Schema::hasColumn('apps', 'main_branch'))
+            ->and(Schema::hasColumn('projects', 'main_branch'))
             ->toBeFalse()
             ->and(Schema::hasColumns(
-                'app_instances',
+                'instances',
                 ['source_layout', 'branch_override', 'migration_required'],
             ))
             ->toBeTrue()
-            ->and(Schema::hasColumn('app_instances', 'source_kind'))
+            ->and(Schema::hasColumn('instances', 'source_kind'))
             ->toBeFalse()
             ->and($sourceLayout->dflt_value)
             ->toBe("'checkout'")
-            ->and($migrated['apps'][0]['default_branch'])
-            ->toBe($legacy['apps'][0]['main_branch'])
-            ->and($migrated['app_instances'][0]['source_layout'])
+            ->and($migrated['projects'][0]['default_branch'])
+            ->toBe($legacy['projects'][0]['main_branch'])
+            ->and($migrated['instances'][0]['source_layout'])
             ->toBe('checkout')
-            ->and($migrated['app_instances'][0]['branch_override'])
+            ->and($migrated['instances'][0]['branch_override'])
             ->toBeNull()
-            ->and($migrated['app_instances'][0]['migration_required'])
+            ->and($migrated['instances'][0]['migration_required'])
             ->toBe(1)
-            ->and($migrated['app_instances'][1]['source_layout'])
+            ->and($migrated['instances'][1]['source_layout'])
             ->toBe('checkout')
-            ->and($migrated['app_instances'][1]['branch_override'])
+            ->and($migrated['instances'][1]['branch_override'])
             ->toBeNull()
-            ->and($migrated['app_instances'][1]['migration_required'])
+            ->and($migrated['instances'][1]['migration_required'])
             ->toBe(0)
             ->and($migrated['routes'])
             ->toBe($legacy['routes'])
             ->and($migrated['route_targets'])
             ->toBe($legacy['route_targets']);
 
-        $unchangedApp = $migrated['apps'][0];
+        $unchangedApp = $migrated['projects'][0];
         unset($unchangedApp['default_branch']);
-        $legacyApp = $legacy['apps'][0];
+        $legacyApp = $legacy['projects'][0];
         unset($legacyApp['main_branch']);
         $unchangedInstances = array_map(static function (array $instance): array {
             unset($instance['source_layout'], $instance['branch_override'], $instance['migration_required']);
 
             return $instance;
-        }, $migrated['app_instances']);
+        }, $migrated['instances']);
         $legacyInstances = array_map(static function (array $instance): array {
             unset($instance['source_kind']);
 
             return $instance;
-        }, $legacy['app_instances']);
+        }, $legacy['instances']);
 
         expect($unchangedApp)
             ->toBe($legacyApp)
             ->and($unchangedInstances)
             ->toBe($legacyInstances)
-            ->and(fn () => DB::table('app_instances')
+            ->and(fn () => DB::table('instances')
                 ->where('id', $ids['instance'])
                 ->update([
                     'source_layout' => 'managed_clone',
                 ]))
             ->toThrow(QueryException::class);
 
-        $migration->down();
+        run_legacy_schema_migration($migration, 'down');
 
         expect(app_instance_identity_rows())
             ->toBe($legacy)
             ->and(app_instance_identity_schema())
             ->toBe($legacySchema);
     } finally {
-        if (! Schema::hasColumn('app_instances', 'source_layout')) {
-            $migration->up();
+        if (! Schema::hasColumn('instances', 'source_layout')) {
+            run_legacy_schema_migration($migration, 'up');
         }
 
-        $removalMigration->up();
+        run_legacy_schema_migration($removalMigration, 'up');
     }
 });
 
@@ -156,7 +167,7 @@ function app_instance_identity_legacy_graph(): array
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.50',
     ]);
-    $app = DB::table('apps')->insertGetId([
+    $app = DB::table('projects')->insertGetId([
         'name' => 'Legacy',
         'code' => 'LEG',
         'slug' => 'legacy',
@@ -168,8 +179,8 @@ function app_instance_identity_legacy_graph(): array
         'created_at' => $timestamp,
         'updated_at' => $timestamp,
     ]);
-    $instance = DB::table('app_instances')->insertGetId([
-        'app_id' => $app,
+    $instance = DB::table('instances')->insertGetId([
+        'project_id' => $app,
         'node_id' => $node->id,
         'name' => 'main',
         'environment' => 'development',
@@ -186,8 +197,8 @@ function app_instance_identity_legacy_graph(): array
         'created_at' => $timestamp,
         'updated_at' => $timestamp,
     ]);
-    DB::table('app_instances')->insert([
-        'app_id' => $app,
+    DB::table('instances')->insert([
+        'project_id' => $app,
         'node_id' => $node->id,
         'name' => 'preview',
         'environment' => 'development',
@@ -205,7 +216,7 @@ function app_instance_identity_legacy_graph(): array
         'updated_at' => $timestamp,
     ]);
     $route = DB::table('routes')->insertGetId([
-        'app_id' => $app,
+        'project_id' => $app,
         'node_id' => $node->id,
         'cluster_id' => null,
         'generation_basis_node_id' => $node->id,
@@ -220,13 +231,13 @@ function app_instance_identity_legacy_graph(): array
     ]);
     $target = DB::table('route_targets')->insertGetId([
         'route_id' => $route,
-        'app_instance_id' => $instance,
+        'instance_id' => $instance,
         'position' => 0,
         'created_at' => $timestamp,
         'updated_at' => $timestamp,
     ]);
     DB::table('routes')->where('id', $route)->update(['status' => 'active']);
-    DB::table('app_instances')->where('id', $instance)->update(['status' => 'active']);
+    DB::table('instances')->where('id', $instance)->update(['status' => 'active']);
 
     return ['app' => $app, 'instance' => $instance, 'route' => $route, 'target' => $target];
 }
@@ -236,7 +247,7 @@ function app_instance_identity_rows(): array
 {
     $rows = [];
 
-    foreach (['apps', 'app_instances', 'routes', 'route_targets'] as $table) {
+    foreach (['projects', 'instances', 'routes', 'route_targets'] as $table) {
         $rows[$table] = DB::table($table)
             ->orderBy('id')
             ->get()
@@ -254,13 +265,13 @@ function app_instance_identity_schema(): array
         SELECT type, name, tbl_name, sql
         FROM sqlite_master
         WHERE type IN ('table', 'index', 'trigger')
-            AND tbl_name IN ('apps', 'app_instances', 'routes', 'route_targets')
+            AND tbl_name IN ('projects', 'instances', 'routes', 'route_targets')
         ORDER BY type, name
         SQL))
-        ->reject(static fn (object $entry): bool => $entry->type === 'table' && $entry->name === 'app_instances')
+        ->reject(static fn (object $entry): bool => $entry->type === 'table' && $entry->name === 'instances')
         ->map(static fn (object $entry): array => (array) $entry)
         ->all();
-    $columns = collect(DB::select('PRAGMA table_info(app_instances)'))
+    $columns = collect(DB::select('PRAGMA table_info(instances)'))
         ->map(static function (object $column): array {
             $attributes = (array) $column;
             unset($attributes['cid']);
@@ -270,7 +281,7 @@ function app_instance_identity_schema(): array
         ->sortBy('name')
         ->values()
         ->all();
-    $foreignKeys = collect(DB::select('PRAGMA foreign_key_list(app_instances)'))
+    $foreignKeys = collect(DB::select('PRAGMA foreign_key_list(instances)'))
         ->map(static fn (object $foreignKey): array => (array) $foreignKey)
         ->sortBy(['table', 'from'])
         ->values()

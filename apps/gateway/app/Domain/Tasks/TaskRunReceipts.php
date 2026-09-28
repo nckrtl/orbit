@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 /**
  * Places the run script in a task workspace and reads the receipt an agent writes with it.
@@ -19,7 +19,7 @@ interface TaskRunReceipts
      *
      * @throws TaskRunReceiptException
      */
-    public function prepare(AppInstance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void;
+    public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void;
 
     /**
      * Reads the receipt. When `$actingThreadId` is set, the receipt applies only when it names that
@@ -27,19 +27,19 @@ interface TaskRunReceipts
      *
      * @throws TaskRunReceiptException
      */
-    public function read(AppInstance $instance, ?int $actingThreadId = null): ?TaskRunReceipt;
+    public function read(Instance $instance, ?int $actingThreadId = null): ?TaskRunReceipt;
 
     /**
      * Whether the current turn file exists and does not name an Orbit thread. A missing turn file is not legacy.
      *
      * @throws TaskRunReceiptException
      */
-    public function hasLegacyTurn(AppInstance $instance): bool;
+    public function hasLegacyTurn(Instance $instance): bool;
 
     /**
      * Removes the receipt only while it still has the content that was read.
      *
      * @throws TaskRunReceiptException
      */
-    public function clear(AppInstance $instance, TaskRunReceipt $receipt): void;
+    public function clear(Instance $instance, TaskRunReceipt $receipt): void;
 }

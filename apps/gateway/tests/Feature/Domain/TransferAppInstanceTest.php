@@ -34,12 +34,12 @@ use App\Domain\Schedules\ScheduleTargetUseGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppInstances\NativeAppInstanceTransferRuntime;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceTransfer;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Route;
 use App\Models\Schedule;
 use Illuminate\Support\Facades\DB;
@@ -56,7 +56,7 @@ use Tests\Support\Orb245TransferSource;
 use Tests\Support\Orb368RouterLock;
 
 beforeEach(function (): void {
-    $this->orbitApp = OrbitApp::query()->create([
+    $this->orbitApp = Project::query()->create([
         'name' => 'Transfer shop',
         'slug' => 'shop',
         'repository_url' => 'https://example.test/shop.git',
@@ -76,7 +76,7 @@ beforeEach(function (): void {
     $this->instance = orb245_instance($this->orbitApp, $this->sourceNode, 'web', 'checkout');
     $this->route = orb245_route($this->instance, 'web.shop.dev.orbit', RouteProvenance::Generated);
     $this->process = Process::query()->create([
-        'owner_type' => AppInstance::MorphAlias,
+        'owner_type' => Instance::MorphAlias,
         'owner_id' => $this->instance->id,
         'name' => 'queue',
         'runtime' => 'systemd',
@@ -92,7 +92,7 @@ beforeEach(function (): void {
     ]);
     $this->instance->environmentValues()->create([
         'env_key' => 'APP_URL',
-        'env_value' => 'https://{{app_instance.domain}}/{{app_instance.environment}}',
+        'env_value' => 'https://{{instance.domain}}/{{instance.environment}}',
     ]);
     $this->accounts = new Orb245Accounts;
     $this->destinationGuard = new Orb245DestinationGuard;
@@ -139,9 +139,9 @@ beforeEach(function (): void {
     );
 });
 
-it('refuses transfer when schedules target the AppInstance', function (): void {
+it('refuses transfer when schedules target the Instance', function (): void {
     Schedule::query()->create([
-        'target_type' => AppInstance::MorphAlias,
+        'target_type' => Instance::MorphAlias,
         'target_id' => $this->instance->id,
         'host_node_id' => $this->sourceNode->id,
         'name' => 'nightly',
@@ -163,9 +163,9 @@ it('refuses transfer when schedules target the AppInstance', function (): void {
 });
 
 it('rechecks Schedules created after reserve before transfer cutover', function (): void {
-    $this->runtime->onPause = function (AppInstance $instance): void {
+    $this->runtime->onPause = function (Instance $instance): void {
         Schedule::query()->create([
-            'target_type' => AppInstance::MorphAlias,
+            'target_type' => Instance::MorphAlias,
             'target_id' => $instance->id,
             'host_node_id' => $this->sourceNode->id,
             'name' => 'late-nightly',
@@ -184,7 +184,7 @@ it('rechecks Schedules created after reserve before transfer cutover', function 
         ->and(AppInstanceTransfer::query()->whereNull('cutover_at')->exists())->toBeTrue();
 });
 
-it('transfers a development AppInstance to another app-dev Node in the same Cluster', function (): void {
+it('transfers a development Instance to another app-dev Node in the same Cluster', function (): void {
     $this->destinationNode->update([
         'cluster_id' => $this->sourceCluster->id,
         'tld' => null,
@@ -196,7 +196,7 @@ it('transfers a development AppInstance to another app-dev Node in the same Clus
 
     expect($result['created'])->toBeTrue()
         ->and($instance->id)->toBe($this->instance->id)
-        ->and($instance->app_id)->toBe($this->orbitApp->id)
+        ->and($instance->project_id)->toBe($this->orbitApp->id)
         ->and($instance->node_id)->toBe($this->destinationNode->id)
         ->and($instance->name)->toBe('web')
         ->and($instance->checkout_path)->toBe('/srv/orbit/apps/shop/web')
@@ -220,7 +220,7 @@ it('transfers a development AppInstance to another app-dev Node in the same Clus
         ->toBe("APP_KEY=\"base64:stored-app-key\"\nAPP_URL=\"https://web.shop.dev.orbit/development\"\nNEW_FROM_ENV=\"imported\"\n");
 });
 
-it('transfers a development AppInstance across Clusters and replaces a generated domain', function (): void {
+it('transfers a development Instance across Clusters and replaces a generated domain', function (): void {
     $this->destinationCluster->update(['tld' => 'other.orbit']);
     $this->destinationNode->update(['tld' => null]);
     $result = $this->action->execute($this->instance, $this->data);
@@ -319,7 +319,7 @@ it('retains the source Route and Vite reservation until projection retirement ca
         ->and($transfer->completed_at)->toBeNull()
         ->and($this->sources->calls)->toBe(['capture', 'materialize'])
         ->and($this->runtime->calls)->toBe(['pause', 'relocate', 'activate']);
-    expect(DB::table('vite_port_assignments')->where('app_instance_id', $this->instance->id)->count())->toBe(2);
+    expect(DB::table('vite_port_assignments')->where('instance_id', $this->instance->id)->count())->toBe(2);
 
     $result = $this->action->execute($this->instance->refresh(), $this->data);
 
@@ -386,8 +386,8 @@ it('refuses ineligible sources and destinations before source mutation', functio
 ]);
 
 it('refuses an occupied destination path with a rename hint before source mutation', function (): void {
-    AppInstance::query()->create([
-        'app_id' => $this->orbitApp->id,
+    Instance::query()->create([
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->destinationNode->id,
         'name' => 'other',
         'environment' => 'development',
@@ -421,8 +421,8 @@ it('recalculates destination path and generated domain for an explicit rename', 
 });
 
 it('rejects a colliding rename identity and leaves the original name unchanged', function (): void {
-    AppInstance::query()->create([
-        'app_id' => $this->orbitApp->id,
+    Instance::query()->create([
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->destinationNode->id,
         'name' => 'preview',
         'environment' => 'development',
@@ -444,7 +444,7 @@ it('rejects a colliding rename identity and leaves the original name unchanged',
 
 it('resumes a SourceCaptured transfer after source process artifacts were removed', function (): void {
     $transfer = AppInstanceTransfer::query()->create([
-        'app_instance_id' => $this->instance->id,
+        'instance_id' => $this->instance->id,
         'source_node_id' => $this->sourceNode->id,
         'source_router_node_id' => $this->sourceCluster->routerAssignment->node_id,
         'destination_node_id' => $this->destinationNode->id,
@@ -490,7 +490,7 @@ it('pauses before capture', function (): void {
 it('gracefully stops an owned Docker Process before removing it and capturing the checkout', function (): void {
     $this->process->update(['runtime' => ProcessRuntime::Docker]);
     $this->schedule = Schedule::query()->create([
-        'target_type' => AppInstance::MorphAlias,
+        'target_type' => Instance::MorphAlias,
         'target_id' => $this->instance->id,
         'host_node_id' => $this->sourceNode->id,
         'name' => 'nightly',
@@ -536,7 +536,7 @@ it('gracefully stops an owned Docker Process before removing it and capturing th
 
 it('repeats native transfer pause after process artifacts are removed', function (): void {
     $this->schedule = Schedule::query()->create([
-        'target_type' => AppInstance::MorphAlias,
+        'target_type' => Instance::MorphAlias,
         'target_id' => $this->instance->id,
         'host_node_id' => $this->sourceNode->id,
         'name' => 'nightly',
@@ -610,7 +610,7 @@ it('transfers only the selected SQLite snapshot after the source pause', functio
 it('refuses an unreadable env instead of silently transferring without it', function (): void {
     $this->reader->failure = new ResourceOperationException(
         'env.import_preflight_failed',
-        'The recorded AppInstance environment file cannot be read safely.',
+        'The recorded Instance environment file cannot be read safely.',
         409,
     );
 
@@ -624,7 +624,7 @@ it('refuses an unreadable env instead of silently transferring without it', func
 it('imports no environment values when the source env is missing', function (): void {
     $this->reader->failure = new ResourceOperationException(
         'env.import_source_missing',
-        'The recorded AppInstance environment file does not exist.',
+        'The recorded Instance environment file does not exist.',
         404,
     );
 
@@ -651,7 +651,7 @@ it('restores the source and discards destination state when transfer fails befor
     expect(fn () => $this->action->execute($this->instance, $this->data))
         ->toThrow(ResourceOperationException::class);
 
-    $transfer = AppInstanceTransfer::query()->where('app_instance_id', $this->instance->id)->sole();
+    $transfer = AppInstanceTransfer::query()->where('instance_id', $this->instance->id)->sole();
 
     expect($this->instance->refresh()->node_id)->toBe($this->sourceNode->id)
         ->and($this->instance->name)->toBe('web')
@@ -666,7 +666,7 @@ it('restores the source and discards destination state when transfer fails befor
         new TransferAppInstanceData($this->destinationNode->id, 'other', null),
     ))->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.transfer_retry_conflict'));
 
-    expect(DB::table('vite_port_assignments')->where('app_instance_id', $this->instance->id)->pluck('node_id')->all())->toBe([$this->sourceNode->id]);
+    expect(DB::table('vite_port_assignments')->where('instance_id', $this->instance->id)->pluck('node_id')->all())->toBe([$this->sourceNode->id]);
     $this->sources->failMaterialize = false;
     $result = $this->action->execute($this->instance->refresh(), $this->data);
 
@@ -719,18 +719,18 @@ it('rolls back previously imported env keys after retry adds new imports', funct
         ->and($transfer->refresh()->imported_environment_keys)->toBe([]);
 });
 
-it('refuses a pre-cutover retry when schedules target the AppInstance', function (): void {
+it('refuses a pre-cutover retry when schedules target the Instance', function (): void {
     $this->sources->failMaterialize = true;
 
     expect(fn () => $this->action->execute($this->instance, $this->data))
         ->toThrow(ResourceOperationException::class);
 
-    $transfer = AppInstanceTransfer::query()->where('app_instance_id', $this->instance->id)->sole();
+    $transfer = AppInstanceTransfer::query()->where('instance_id', $this->instance->id)->sole();
     $sourceCalls = $this->sources->calls;
     $runtimeCalls = $this->runtime->calls;
 
     Schedule::query()->create([
-        'target_type' => AppInstance::MorphAlias,
+        'target_type' => Instance::MorphAlias,
         'target_id' => $this->instance->id,
         'host_node_id' => $this->sourceNode->id,
         'name' => 'nightly',
@@ -760,7 +760,7 @@ it('continues only forward after cutover and does not recopy source', function (
     expect(fn () => $this->action->execute($this->instance, $this->data))
         ->toThrow(ResourceOperationException::class);
 
-    $transfer = AppInstanceTransfer::query()->where('app_instance_id', $this->instance->id)->sole();
+    $transfer = AppInstanceTransfer::query()->where('instance_id', $this->instance->id)->sole();
 
     expect($this->instance->refresh()->node_id)->toBe($this->destinationNode->id)
         ->and($transfer->cutover_at)->not->toBeNull()
@@ -780,7 +780,7 @@ it('reports incomplete old-placement cleanup and retries only cleanup', function
     expect(fn () => $this->action->execute($this->instance, $this->data))
         ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.transfer_cleanup_incomplete'));
 
-    $transfer = AppInstanceTransfer::query()->where('app_instance_id', $this->instance->id)->sole();
+    $transfer = AppInstanceTransfer::query()->where('instance_id', $this->instance->id)->sole();
 
     expect($this->instance->refresh()->node_id)->toBe($this->destinationNode->id)
         ->and($transfer->recovery_evidence)->toHaveKey('incomplete')
@@ -788,13 +788,13 @@ it('reports incomplete old-placement cleanup and retries only cleanup', function
         ->and(Route::query()->findOrFail($transfer->destination_route_id)->replacement_step)->toBe(RouteReplacementStep::DatabaseCutover)
         ->and($this->sources->calls)->toBe(['capture', 'materialize', 'cleanup']);
 
-    expect(DB::table('vite_port_assignments')->where('app_instance_id', $this->instance->id)->count())->toBe(2);
+    expect(DB::table('vite_port_assignments')->where('instance_id', $this->instance->id)->count())->toBe(2);
     $this->sources->cleanupIncomplete = false;
     $result = $this->action->execute($this->instance->refresh(), $this->data);
 
     expect($result['transfer']->status)->toBe(AppInstanceTransferStatus::Completed)
         ->and($this->sources->calls)->toBe(['capture', 'materialize', 'cleanup', 'cleanup']);
-    expect(DB::table('vite_port_assignments')->where('app_instance_id', $this->instance->id)->pluck('node_id')->all())->toBe([$this->destinationNode->id]);
+    expect(DB::table('vite_port_assignments')->where('instance_id', $this->instance->id)->pluck('node_id')->all())->toBe([$this->destinationNode->id]);
 });
 
 it('completes transfer from verified placement state without application HTTP health', function (): void {
@@ -847,10 +847,10 @@ function orb245_clustered_app_dev(string $role, string $address, string $tld): a
     return [$cluster, $node];
 }
 
-function orb245_instance(OrbitApp $app, Node $node, string $name, string $layout): AppInstance
+function orb245_instance(Project $app, Node $node, string $name, string $layout): Instance
 {
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => $name,
         'environment' => 'development',
@@ -864,10 +864,10 @@ function orb245_instance(OrbitApp $app, Node $node, string $name, string $layout
     ]);
 }
 
-function orb245_route(AppInstance $instance, string $domain, RouteProvenance $provenance): Route
+function orb245_route(Instance $instance, string $domain, RouteProvenance $provenance): Route
 {
     $route = Route::query()->create([
-        'app_id' => $instance->app_id,
+        'project_id' => $instance->project_id,
         'cluster_id' => $instance->node->cluster_id,
         'generation_basis_node_id' => $provenance === RouteProvenance::Generated ? $instance->node_id : null,
         'domain' => $domain,
@@ -876,7 +876,7 @@ function orb245_route(AppInstance $instance, string $domain, RouteProvenance $pr
         'status' => RouteStatus::Pending,
     ]);
     $route->targets()->create([
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'position' => 0,
     ]);
     $route->update(['status' => RouteStatus::Active]);

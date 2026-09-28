@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/Domain/AppInstances/{AppInstanceState,AppInstanceSourceLayout,AppInstanceDestinationGuard,ComposerSourceClassifier,Development*}.php
   - apps/gateway/app/Domain/AppInstances/Registration/**
   - apps/gateway/app/Infrastructure/AppInstances/{NativeDevelopmentAppInstanceProvisioner,RemoteDevelopmentAppInstanceSourceLifecycle,RemoteDevelopmentAppInstanceConfigurator,RemoteRegistrationSourceManager,RemoteAppInstanceDestinationGuard}.php
-  - apps/gateway/app/{Http/Controllers/Api/AppInstancesController.php,Http/Requests/AppInstances/**,Data/AppInstances/**,Models/AppInstance.php}
+  - apps/gateway/app/{Http/Controllers/Api/AppInstancesController.php,Http/Requests/AppInstances/**,Data/AppInstances/**,Models/Instance.php}
   - apps/cli/app/Commands/Instances/{CreateInstanceCommand,RegisterInstanceCommand,ListInstancesCommand,ShowInstanceCommand,InstanceOutput}.php
   - apps/cli/app/Services/Git/**
 ---
@@ -64,6 +64,7 @@ The Gateway refuses these requests before it changes anything:
 | `instance.path_taken` | The name is not `default`, and another managed Instance uses the path. |
 | `instance.default_path_occupied` | The name is `default`, and its path is used by a managed Instance or holds an unmanaged directory. |
 | `instance.candidate_required` | The Node has the active `app-prod` role. A repeat for an existing production Instance is refused the same way. Use [`instance:clone`](/reference/instance-cloning). |
+| `instance.placement_unavailable` | The owning Node does not have exactly one active `app-dev` or `app-prod` role. |
 
 ## Register an existing checkout
 

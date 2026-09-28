@@ -16,44 +16,36 @@ function app_era_instance_leftover_migration(): object
 
 function restore_app_era_instance_leftovers_for_migration_test(): void
 {
-    app_era_instance_leftover_migration()->down();
+    run_legacy_schema_migration(app_era_instance_leftover_migration(), 'down');
 }
 
 function drop_app_era_instance_leftovers_for_migration_test(): void
 {
-    if (Schema::hasColumn('app_instances', 'migration_required')) {
-        DB::table('app_instances')->update(['migration_required' => false]);
+    if (Schema::hasColumn('projects', 'defaults')) {
+        DB::table('projects')->update(['defaults' => null]);
     }
 
-    if (Schema::hasColumn('app_instances', 'registration_migration_recovery')) {
-        DB::table('app_instances')->update(['registration_migration_recovery' => null]);
-    }
-
-    if (Schema::hasColumn('apps', 'defaults')) {
-        DB::table('apps')->update(['defaults' => null]);
-    }
-
-    app_era_instance_leftover_migration()->up();
+    run_legacy_schema_migration(app_era_instance_leftover_migration(), 'up');
 }
 
 function roll_back_app_instance_environment_for_migration_test(): void
 {
     restore_app_era_instance_leftovers_for_migration_test();
-    app_instance_environment_migration()->down();
+    run_legacy_schema_migration(app_instance_environment_migration(), 'down');
 }
 
 function restore_app_instance_environment_schema_for_migration_test(): void
 {
-    if (! Schema::hasColumn('app_instances', 'environment')
+    if (! Schema::hasColumn('instances', 'environment')
         || ! Schema::hasTable('node_roles')) {
         return;
     }
 
-    DB::table('app_instances')
+    DB::table('instances')
         ->whereNotIn('environment', ['development', 'production'])
         ->update(['environment' => 'development']);
 
-    foreach (DB::table('app_instances')->select(['node_id', 'environment'])->distinct()->get() as $instance) {
+    foreach (DB::table('instances')->select(['node_id', 'environment'])->distinct()->get() as $instance) {
         DB::table('node_roles')->updateOrInsert(
             [
                 'node_id' => $instance->node_id,
@@ -63,6 +55,6 @@ function restore_app_instance_environment_schema_for_migration_test(): void
         );
     }
 
-    app_instance_environment_migration()->up();
+    run_legacy_schema_migration(app_instance_environment_migration(), 'up');
     drop_app_era_instance_leftovers_for_migration_test();
 }

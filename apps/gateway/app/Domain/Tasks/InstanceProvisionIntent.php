@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Models\App;
+use App\Models\Project;
 use App\Models\TaskGroup;
 
 /**
@@ -28,7 +28,7 @@ final readonly class InstanceProvisionIntent
     }
 
     /** Orbit monorepo feature work (`orbit`) gets an isolated checkout; every other Project stays visitable. */
-    public static function visitableFor(App $app): bool
+    public static function visitableFor(Project $app): bool
     {
         return $app->slug !== 'orbit';
     }

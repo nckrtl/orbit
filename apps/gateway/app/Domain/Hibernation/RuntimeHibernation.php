@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Hibernation;
 
+use App\Models\Instance;
 use InvalidArgumentException;
 
 final readonly class RuntimeHibernation
@@ -34,7 +35,7 @@ final readonly class RuntimeHibernation
     public static function key(int $appInstanceId): string
     {
         if ($appInstanceId < 1) {
-            throw new InvalidArgumentException('A hibernation key needs a positive AppInstance ID.');
+            throw new InvalidArgumentException('A hibernation key needs a positive Instance ID.');
         }
 
         return 'app-instance-'.$appInstanceId;

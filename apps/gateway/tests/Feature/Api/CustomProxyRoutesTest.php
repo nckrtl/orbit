@@ -18,29 +18,29 @@ use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Route;
 use App\Models\RouteCustomProxy;
 use App\Models\RouteTarget;
 use Tests\Support\FakeCustomProxyRouteProjector;
 use Tests\Support\FakeRouteRemovalProjector;
 
-function customProxyAppRouteFixture(OrbitApp $app, Node $node, string $domain, AppInstance $target): Route
+function customProxyAppRouteFixture(Project $app, Node $node, string $domain, Instance $target): Route
 {
     $route = Route::query()->create([
         'kind' => RouteKind::App,
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'domain' => $domain,
         'provenance' => 'explicit',
         'publication' => 'private',
         'status' => 'pending',
     ]);
-    $route->targets()->create(['app_instance_id' => $target->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $target->id, 'position' => 0]);
 
     return $route;
 }
@@ -60,7 +60,7 @@ beforeEach(function (): void {
     $this->markAsGateway($this->gateway);
     $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.1']);
 
-    $this->orbitApp = OrbitApp::query()->create([
+    $this->orbitApp = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
@@ -68,8 +68,8 @@ beforeEach(function (): void {
         'root' => 'public',
     ]);
     $this->node = custom_proxy_node('beast', '10.44.0.7');
-    $this->target = AppInstance::query()->create([
-        'app_id' => $this->orbitApp->id,
+    $this->target = Instance::query()->create([
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'main',
         'checkout_path' => '/srv/orbit/apps/acme/main',
@@ -87,7 +87,7 @@ describe('custom proxy Route create', function (): void {
             ])
             ->assertCreated()
             ->assertJsonPath('data.kind', 'custom_proxy')
-            ->assertJsonPath('data.app_id', null)
+            ->assertJsonPath('data.project_id', null)
             ->assertJsonPath('data.node_id', $this->node->id)
             ->assertJsonPath('data.cluster_id', null)
             ->assertJsonPath('data.domain', $domain)
@@ -184,7 +184,7 @@ describe('custom proxy Route refusals', function (): void {
     it('refuses mixing an App owner with a custom proxy upstream', function (): void {
         $this
             ->postJson('/api/v1/routes', [
-                'app_id' => $this->orbitApp->id,
+                'project_id' => $this->orbitApp->id,
                 'domain' => 'executor.orbit',
                 'publication' => 'private',
                 'node_id' => $this->node->id,
@@ -299,7 +299,7 @@ describe('custom proxy Route list, show, destroy, and App mutations', function (
             ->json('data.id');
 
         $this
-            ->putJson("/api/v1/routes/{$routeId}/target", ['app_instance_id' => $this->target->id])
+            ->putJson("/api/v1/routes/{$routeId}/target", ['instance_id' => $this->target->id])
             ->assertConflict()
             ->assertJsonPath('error.code', 'route.kind_unsupported');
         $this

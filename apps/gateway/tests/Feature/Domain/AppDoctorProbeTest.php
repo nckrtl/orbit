@@ -10,9 +10,9 @@ use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\App;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Support\Facades\DB;
 
 it('returns a healthy empty report when no app projects a checkout on the node', function (): void {
@@ -27,7 +27,7 @@ it('returns a healthy empty report when no app projects a checkout on the node',
             private int &$calls,
         ) {}
 
-        public function inspect(App $app, Node $node): AppInspectionData
+        public function inspect(Project $app, Node $node): AppInspectionData
         {
             $this->calls++;
 
@@ -52,10 +52,10 @@ it('checks selected apps in id order and reports a bounded origin mismatch', fun
     {
         public function __construct(
             private array &$seen,
-            private App $mismatch,
+            private Project $mismatch,
         ) {}
 
-        public function inspect(App $app, Node $node): AppInspectionData
+        public function inspect(Project $app, Node $node): AppInspectionData
         {
             $this->seen[] = $app->id;
 
@@ -94,7 +94,7 @@ it('ignores removal in flight when the only checkout mismatch belongs to a remov
             private int &$calls,
         ) {}
 
-        public function inspect(App $app, Node $node): AppInspectionData
+        public function inspect(Project $app, Node $node): AppInspectionData
         {
             $this->calls++;
 
@@ -120,11 +120,11 @@ it('reports App drift for an active Instance but skips a mismatching removing In
     $report = new AppDoctorProbe(new class($active, $removing) implements AppStateInspector
     {
         public function __construct(
-            private AppInstance $active,
-            private AppInstance $removing,
+            private Instance $active,
+            private Instance $removing,
         ) {}
 
-        public function inspect(App $app, Node $node): AppInspectionData
+        public function inspect(Project $app, Node $node): AppInspectionData
         {
             return new AppInspectionData(2, false, [(int) $this->active->id, (int) $this->removing->id]);
         }
@@ -151,7 +151,7 @@ it('ignores App drift for an Instance with provisioning in flight', function ():
     {
         public function __construct(private int &$calls) {}
 
-        public function inspect(App $app, Node $node): AppInspectionData
+        public function inspect(Project $app, Node $node): AppInspectionData
         {
             $this->calls++;
 
@@ -177,11 +177,11 @@ it('keeps settled checkout failures visible beside a provisioning Instance', fun
     $report = new AppDoctorProbe(new class($settled, $provisioning) implements AppStateInspector
     {
         public function __construct(
-            private AppInstance $settled,
-            private AppInstance $provisioning,
+            private Instance $settled,
+            private Instance $provisioning,
         ) {}
 
-        public function inspect(App $app, Node $node): AppInspectionData
+        public function inspect(Project $app, Node $node): AppInspectionData
         {
             return new AppInspectionData(2, true, [], [(int) $this->settled->id, (int) $this->provisioning->id]);
         }
@@ -201,10 +201,10 @@ it('drops removal in flight mismatch when the Instance starts removing during in
     $report = new AppDoctorProbe(new class($instance) implements AppStateInspector
     {
         public function __construct(
-            private AppInstance $instance,
+            private Instance $instance,
         ) {}
 
-        public function inspect(App $app, Node $node): AppInspectionData
+        public function inspect(Project $app, Node $node): AppInspectionData
         {
             app_probe_mark_removing($this->instance);
 
@@ -226,9 +226,9 @@ it('ignores removal in flight checkout failures when another checkout remains he
 
     $report = new AppDoctorProbe(new class($removing) implements AppStateInspector
     {
-        public function __construct(private AppInstance $removing) {}
+        public function __construct(private Instance $removing) {}
 
-        public function inspect(App $app, Node $node): AppInspectionData
+        public function inspect(Project $app, Node $node): AppInspectionData
         {
             app_probe_mark_removing($this->removing);
 
@@ -249,9 +249,9 @@ it('reports a checkout failure while its Instance remains active', function (): 
 
     $report = new AppDoctorProbe(new class($instance) implements AppStateInspector
     {
-        public function __construct(private AppInstance $failed) {}
+        public function __construct(private Instance $failed) {}
 
-        public function inspect(App $app, Node $node): AppInspectionData
+        public function inspect(Project $app, Node $node): AppInspectionData
         {
             return new AppInspectionData(1, true, [], [(int) $this->failed->id]);
         }
@@ -276,7 +276,7 @@ it('short-circuits app inspection when the node is unreachable', function (): vo
             private int &$calls,
         ) {}
 
-        public function inspect(App $app, Node $node): AppInspectionData
+        public function inspect(Project $app, Node $node): AppInspectionData
         {
             $this->calls++;
             throw new DoctorInspectionException;
@@ -303,10 +303,10 @@ it('continues after a typed app inspection failure and counts the projected app'
     $report = new AppDoctorProbe(new class($failed) implements AppStateInspector
     {
         public function __construct(
-            private App $failed,
+            private Project $failed,
         ) {}
 
-        public function inspect(App $app, Node $node): AppInspectionData
+        public function inspect(Project $app, Node $node): AppInspectionData
         {
             if ($app->is($this->failed)) {
                 throw new DoctorInspectionException;
@@ -344,24 +344,24 @@ function app_probe_node(): Node
     ]);
 }
 
-function app_probe_app(): App
+function app_probe_app(): Project
 {
     static $number = 0;
     $number++;
 
-    return App::query()->create([
+    return Project::query()->create([
         'name' => "App {$number}",
         'slug' => "app-{$number}",
         'repository_url' => "https://github.com/acme/private-origin-{$number}.git",
     ]);
 }
 
-function app_probe_projection(App $app, Node $node): AppInstance
+function app_probe_projection(Project $app, Node $node): Instance
 {
     $number = $app->appInstances()->count() + 1;
 
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => "development-{$number}",
         'checkout_path' => "/home/orbit/apps/{$app->slug}/development-{$number}",
@@ -371,15 +371,15 @@ function app_probe_projection(App $app, Node $node): AppInstance
     ]);
 }
 
-function app_probe_mark_removing(AppInstance $instance): void
+function app_probe_mark_removing(Instance $instance): void
 {
     // Model a concurrent persisted status change without building the unrelated removal inventory fixture.
     $trigger = DB::table('sqlite_master')
         ->where('type', 'trigger')
-        ->where('name', 'app_instances_removal_status_update')
+        ->where('name', 'instances_removal_status_update')
         ->value('sql');
     expect($trigger)->toBeString();
-    DB::statement('DROP TRIGGER app_instances_removal_status_update');
+    DB::statement('DROP TRIGGER instances_removal_status_update');
 
     try {
         $instance->update(['status' => AppInstanceState::Removing]);

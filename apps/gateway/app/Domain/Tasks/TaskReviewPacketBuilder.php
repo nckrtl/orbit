@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
@@ -23,7 +23,7 @@ final readonly class TaskReviewPacketBuilder
         $group = $task->taskGroup;
         $start = TaskReviewBase::commit($task);
         $instance = $group->taskable;
-        if (! $instance instanceof AppInstance) {
+        if (! $instance instanceof Instance) {
             throw new TaskReviewDiffException('The review diff could not be read.');
         }
         $diff = $this->diffs->read($instance, $start);

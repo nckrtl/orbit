@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Logs;
 
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Process;
 use SensitiveParameter;
 
@@ -44,11 +44,11 @@ final readonly class LogRedactor
      *
      * @return list<string>
      */
-    public function valuesFor(#[SensitiveParameter] AppInstance|Process $record): array
+    public function valuesFor(#[SensitiveParameter] Instance|Process $record): array
     {
         $environment = [];
 
-        if ($record instanceof AppInstance) {
+        if ($record instanceof Instance) {
             foreach ($record->environmentValues as $value) {
                 $environment[] = [$value->env_key, $value->env_value];
             }

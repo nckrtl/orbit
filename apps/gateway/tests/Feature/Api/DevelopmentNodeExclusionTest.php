@@ -10,10 +10,10 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Project;
 use App\Models\ProjectNodeExclusion;
 
 beforeEach(function (): void {
@@ -28,7 +28,7 @@ beforeEach(function (): void {
     $this->operator = $this->markAsGateway($this->operator);
     $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
 
-    $this->project = OrbitApp::query()->create([
+    $this->project = Project::query()->create([
         'name' => 'Orbit',
         'slug' => 'orbit',
         'type' => ProjectType::Monorepo,
@@ -87,8 +87,8 @@ it('refuses a node that has no active app-dev role and a missing pair', function
 });
 
 it('counts development instances already on the excluded node and leaves them there', function (): void {
-    AppInstance::query()->create([
-        'app_id' => $this->project->id,
+    Instance::query()->create([
+        'project_id' => $this->project->id,
         'node_id' => $this->sabre->id,
         'name' => 'existing',
         'checkout_path' => '/srv/orbit/apps/orbit/existing',
@@ -100,11 +100,11 @@ it('counts development instances already on the excluded node and leaves them th
         ->assertCreated()
         ->assertJsonPath('data.development_instance_count', 1);
 
-    expect(AppInstance::query()->where('node_id', $this->sabre->id)->count())->toBe(1);
+    expect(Instance::query()->where('node_id', $this->sabre->id)->count())->toBe(1);
 });
 
 it('deletes exclusion rows when the app-dev role is removed and does not restore them', function (): void {
-    ProjectNodeExclusion::query()->create(['app_id' => $this->project->id, 'node_id' => $this->sabre->id]);
+    ProjectNodeExclusion::query()->create(['project_id' => $this->project->id, 'node_id' => $this->sabre->id]);
     $role = NodeRole::query()->where('node_id', $this->sabre->id)->where('role', RoleName::AppDev)->firstOrFail();
 
     $role->delete();
@@ -117,7 +117,7 @@ it('deletes exclusion rows when the app-dev role is removed and does not restore
 });
 
 it('refuses a new development instance on an excluded node', function (): void {
-    ProjectNodeExclusion::query()->create(['app_id' => $this->project->id, 'node_id' => $this->sabre->id]);
+    ProjectNodeExclusion::query()->create(['project_id' => $this->project->id, 'node_id' => $this->sabre->id]);
 
     expect(fn () => app(CreateAppInstanceAction::class)->execute(new CreateAppInstanceData(
         appId: $this->project->id,
@@ -128,21 +128,21 @@ it('refuses a new development instance on an excluded node', function (): void {
         branch: 'main',
     )))->toThrow(ResourceOperationException::class, 'cannot use Node [sabre]');
 
-    expect(AppInstance::query()->where('name', 'feature')->exists())->toBeFalse();
+    expect(Instance::query()->where('name', 'feature')->exists())->toBeFalse();
 });
 
 it('still places a production instance when the node is excluded for development', function (): void {
     $this->sabre->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
-    ProjectNodeExclusion::query()->create(['app_id' => $this->project->id, 'node_id' => $this->sabre->id]);
+    ProjectNodeExclusion::query()->create(['project_id' => $this->project->id, 'node_id' => $this->sabre->id]);
     $provisioner = new class implements ProductionAppInstanceProvisioner
     {
         public bool $called = false;
 
-        public function execute(CreateAppInstanceData $data, OrbitApp $app, Node $node, ?string $root): array
+        public function execute(CreateAppInstanceData $data, Project $app, Node $node, ?string $root): array
         {
             $this->called = true;
-            $instance = AppInstance::query()->create([
-                'app_id' => $app->id,
+            $instance = Instance::query()->create([
+                'project_id' => $app->id,
                 'node_id' => $node->id,
                 'name' => $data->name,
                 'checkout_path' => '/srv/orbit/apps/orbit/'.$data->name,

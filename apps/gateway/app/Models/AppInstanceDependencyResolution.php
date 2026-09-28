@@ -29,6 +29,9 @@ use InvalidArgumentException;
  */
 final class AppInstanceDependencyResolution extends Model
 {
+    #[\Override]
+    protected $table = 'instance_dependency_resolutions';
+
     /** @var list<string> */
     #[\Override]
     protected $fillable = [

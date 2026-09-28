@@ -18,9 +18,9 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
@@ -38,12 +38,12 @@ function check_runner_checkout(string $check): string
     return $checkout;
 }
 
-function check_runner_instance(string $checkout): AppInstance
+function check_runner_instance(string $checkout): Instance
 {
-    $app = OrbitApp::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@github.com:acme/shop.git', 'default_branch' => 'main']);
+    $app = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@github.com:acme/shop.git', 'default_branch' => 'main']);
     $node = Node::query()->create(['name' => 'check-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.160', 'wireguard_ip' => '10.44.0.160', 'user' => 'orbit']);
 
-    return AppInstance::query()->create(['app_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-8', 'checkout_path' => $checkout, 'branch' => 'task-8', 'status' => 'source_resolved']);
+    return Instance::query()->create(['project_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-8', 'checkout_path' => $checkout, 'branch' => 'task-8', 'status' => 'source_resolved']);
 }
 
 function check_runner(SshExecutor $transport): RemoteTaskCheckRunner
@@ -74,7 +74,7 @@ function check_runner(SshExecutor $transport): RemoteTaskCheckRunner
     ));
 }
 
-function check_runner_wait(RemoteTaskCheckRunner $runner, AppInstance $instance, TaskCheckProcess $process): TaskCheckReading
+function check_runner_wait(RemoteTaskCheckRunner $runner, Instance $instance, TaskCheckProcess $process): TaskCheckReading
 {
     for ($attempt = 0; $attempt < 150; $attempt++) {
         $reading = $runner->read($instance, $process);

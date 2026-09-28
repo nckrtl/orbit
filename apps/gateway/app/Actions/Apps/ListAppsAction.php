@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Actions\Apps;
 
 use App\Domain\Nodes\NodeAccessAuthorizer;
-use App\Models\App as OrbitApp;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Database\Eloquent\Collection;
 
 final readonly class ListAppsAction
@@ -15,10 +15,10 @@ final readonly class ListAppsAction
         private NodeAccessAuthorizer $access,
     ) {}
 
-    /** @return Collection<int, OrbitApp> */
+    /** @return Collection<int, Project> */
     public function handle(Node $consumer): Collection
     {
-        return OrbitApp::query()
+        return Project::query()
             ->when(
                 ! $this->access->hasGatewayAuthority($consumer),
                 fn ($query) => $query->whereHas(

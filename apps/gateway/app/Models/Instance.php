@@ -22,7 +22,7 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
- * @property int $app_id
+ * @property int $project_id
  * @property int|null $vite_port
  * @property int|null $agentation_port
  * @property int $node_id
@@ -73,7 +73,9 @@ use Illuminate\Support\Carbon;
  * @property string|null $error_code
  * @property Carbon|null $runtime_definitions_captured_at
  * @property AppInstanceState $status
- * @property-read App $app
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read Project $app
  * @property-read Node $node
  * @property-read Collection<int, RouteTarget> $routeTargets
  * @property-read Collection<int, Route> $routes
@@ -88,7 +90,7 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, AppInstanceDependencyScanAttempt> $dependencyScanAttempts
  * @property-read Collection<int, TaskGroup> $taskGroups
  */
-final class AppInstance extends Model
+final class Instance extends Model
 {
     /** @var array<string, mixed> */
     #[\Override]
@@ -103,7 +105,7 @@ final class AppInstance extends Model
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
-        'app_id',
+        'project_id',
         'node_id',
         'vite_port',
         'agentation_port',
@@ -151,9 +153,9 @@ final class AppInstance extends Model
         'source_is_laravel',
         'provisioning_step',
         'failed_step',
-        'error_code',
         'runtime_definitions_captured_at',
         'status',
+        'error_code',
     ];
 
     public const string MorphAlias = 'instance';
@@ -169,10 +171,10 @@ final class AppInstance extends Model
         return $type === self::MorphAlias;
     }
 
-    /** @return BelongsTo<App, $this> */
+    /** @return BelongsTo<Project, $this> */
     public function app(): BelongsTo
     {
-        return $this->belongsTo(App::class);
+        return $this->belongsTo(Project::class, 'project_id');
     }
 
     /** @return BelongsTo<Node, $this> */
@@ -312,8 +314,8 @@ final class AppInstance extends Model
 
         if ($environment === null) {
             throw new ResourceOperationException(
-                errorCode: 'app_instance.placement_unavailable',
-                message: "AppInstance [{$this->name}] has no app-dev or app-prod Node role.",
+                errorCode: 'instance.placement_unavailable',
+                message: "Instance [{$this->name}] has no app-dev or app-prod Node role.",
                 status: 409,
             );
         }
@@ -328,7 +330,7 @@ final class AppInstance extends Model
             ->first()
             ?->env_value;
 
-        if (is_string($value) && $value !== '' && $value !== '{{app_instance.environment}}') {
+        if (is_string($value) && $value !== '' && $value !== '{{instance.environment}}') {
             return $value;
         }
 

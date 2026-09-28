@@ -7,8 +7,6 @@ use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\AgentThreadSendLease;
 use App\Models\Annotation;
-use App\Models\App as AppModel;
-use App\Models\AppInstance;
 use App\Models\AppInstanceDependencyEdge;
 use App\Models\AppInstanceDependencyObservation;
 use App\Models\AppInstanceDependencyResolution;
@@ -26,12 +24,14 @@ use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseUser;
 use App\Models\DependencyPackage;
 use App\Models\FirewallRule;
+use App\Models\Instance;
 use App\Models\JevDecision;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRole;
 use App\Models\Process;
 use App\Models\ProcessDefinition;
+use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
 use App\Models\ProjectNodeExclusion;
 use App\Models\Route;
@@ -52,8 +52,8 @@ it('partitions every persisted model across doctor dispositions', function (): v
     $familyModels = [
         Node::class => DoctorFamily::Node,
         NodeRole::class => DoctorFamily::Role,
-        AppModel::class => DoctorFamily::App,
-        AppInstance::class => DoctorFamily::Instance,
+        Project::class => DoctorFamily::App,
+        Instance::class => DoctorFamily::Instance,
         Schedule::class => DoctorFamily::Schedule,
         Tool::class => DoctorFamily::Tool,
         Process::class => DoctorFamily::Process,

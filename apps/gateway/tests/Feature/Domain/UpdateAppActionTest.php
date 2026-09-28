@@ -23,9 +23,9 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\Apps\NativeAppUpdateProjectionMutator;
-use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
 use App\Models\AppUpdate;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 use Tests\Support\Orb101AppUpdateFixture;
@@ -184,8 +184,8 @@ describe('UpdateAppAction', function (): void {
     });
 
     it('projects generated routes and retries a native slug projection failure per Instance', function (): void {
-        $docs = AppInstance::query()->create([
-            'app_id' => $this->fixture->app->id,
+        $docs = Instance::query()->create([
+            'project_id' => $this->fixture->app->id,
             'node_id' => $this->fixture->node->id,
             'name' => 'docs',
             'environment' => 'development',
@@ -210,14 +210,14 @@ describe('UpdateAppAction', function (): void {
             'env_value' => 'https://docs.acme.test',
         ]);
         $docsRoute = Route::query()->create([
-            'app_id' => $this->fixture->app->id,
+            'project_id' => $this->fixture->app->id,
             'node_id' => $this->fixture->node->id,
             'generation_basis_node_id' => $this->fixture->node->id,
             'domain' => 'docs.acme.test',
             'provenance' => 'generated',
             'publication' => 'private',
         ]);
-        $docsRoute->targets()->create(['app_instance_id' => $docs->id, 'position' => 0]);
+        $docsRoute->targets()->create(['instance_id' => $docs->id, 'position' => 0]);
         $docsRoute->update(['status' => 'active']);
         $basisNode = Node::query()->create([
             'name' => 'slug-targetless-basis',
@@ -227,7 +227,7 @@ describe('UpdateAppAction', function (): void {
             'tld' => 'preview',
         ]);
         $targetlessRoute = Route::query()->create([
-            'app_id' => $this->fixture->app->id,
+            'project_id' => $this->fixture->app->id,
             'node_id' => $basisNode->id,
             'generation_basis_node_id' => $basisNode->id,
             'domain' => 'acme.preview',
@@ -239,7 +239,7 @@ describe('UpdateAppAction', function (): void {
         $routeProjection = Mockery::mock(RouteDomainProjector::class)->shouldIgnoreMissing();
         $renderedDomains = [];
         $routeProjection->shouldReceive('prepareWorkloadCaddy')->andReturnUsing(
-            function (AppInstance $instance, Route $current, Route $candidate) use (&$renderedDomains): void {
+            function (Instance $instance, Route $current, Route $candidate) use (&$renderedDomains): void {
                 $sites = (new AppDevSiteRepository)->forNode($instance->node);
                 expect($sites->pluck('domain'))->toContain($candidate->domain);
                 $renderedDomains[] = $candidate->domain;
@@ -266,7 +266,7 @@ describe('UpdateAppAction', function (): void {
         $failed = false;
         $configurator = Mockery::mock(DevelopmentAppInstanceConfigurator::class)->shouldIgnoreMissing();
         $configurator->shouldReceive('configureLaravelUrl')->andReturnUsing(
-            function (AppInstance $instance, string $url) use ($docs, &$failed): void {
+            function (Instance $instance, string $url) use ($docs, &$failed): void {
                 if ($instance->is($docs) && ! $failed) {
                     $failed = true;
                     throw new RuntimeException('Laravel URL configuration failed.');
@@ -294,21 +294,21 @@ describe('UpdateAppAction', function (): void {
 
         expect($this->fixture->app->refresh()->slug)
             ->toBe('shop')
-            ->and(Route::query()->where('app_id', $this->fixture->app->id)->where('status', 'active')->pluck('domain')->all())
+            ->and(Route::query()->where('project_id', $this->fixture->app->id)->where('status', 'active')->pluck('domain')->all())
             ->toBe(['shop.test', 'docs.shop.test'])
             ->and(Route::query()->whereKey($targetlessRouteId)->exists())
             ->toBeFalse()
-            ->and(Route::query()->where('app_id', $this->fixture->app->id)->where('domain', 'shop.preview')->value('status'))
+            ->and(Route::query()->where('project_id', $this->fixture->app->id)->where('domain', 'shop.preview')->value('status'))
             ->toBe(RouteStatus::Pending)
-            ->and(Route::query()->where('app_id', $this->fixture->app->id)->where('domain', 'shop.preview')->value('generation_basis_node_id'))
+            ->and(Route::query()->where('project_id', $this->fixture->app->id)->where('domain', 'shop.preview')->value('generation_basis_node_id'))
             ->toBe($basisNode->id)
-            ->and(Route::query()->where('app_id', $this->fixture->app->id)->where('domain', 'shop.preview')->value('replacement_step'))
+            ->and(Route::query()->where('project_id', $this->fixture->app->id)->where('domain', 'shop.preview')->value('replacement_step'))
             ->toBeNull()
-            ->and(Route::query()->where('app_id', $this->fixture->app->id)->where('domain', 'shop.preview')->firstOrFail()->targets()->exists())
+            ->and(Route::query()->where('project_id', $this->fixture->app->id)->where('domain', 'shop.preview')->firstOrFail()->targets()->exists())
             ->toBeFalse()
-            ->and(Route::query()->where('app_id', $this->fixture->app->id)->whereNotNull('replaces_route_id')->count())
+            ->and(Route::query()->where('project_id', $this->fixture->app->id)->whereNotNull('replaces_route_id')->count())
             ->toBe(0)
-            ->and(Route::query()->where('app_id', $this->fixture->app->id)->where('status', 'pending')->count())
+            ->and(Route::query()->where('project_id', $this->fixture->app->id)->where('status', 'pending')->count())
             ->toBe(1)
             ->and($renderedDomains)
             ->toContain('docs.shop.test');
@@ -330,15 +330,15 @@ describe('UpdateAppAction', function (): void {
             ->toBe('acme')
             ->and($this->fixture->defaultRoute->refresh()->id)
             ->toBe($oldRouteId)
-            ->and(Route::query()->where('app_id', $this->fixture->app->id)->value('domain'))
+            ->and(Route::query()->where('project_id', $this->fixture->app->id)->value('domain'))
             ->toBe('acme.test')
             ->and(AppUpdate::query()->latest('id')->first()?->status)
             ->not->toBe(AppUpdateStatus::Complete);
     });
 
     it('reconciles inherited web roots without deploying production', function (): void {
-        $override = AppInstance::query()->create([
-            'app_id' => $this->fixture->app->id,
+        $override = Instance::query()->create([
+            'project_id' => $this->fixture->app->id,
             'node_id' => $this->fixture->node->id,
             'name' => 'docs',
             'environment' => 'development',
@@ -358,8 +358,8 @@ describe('UpdateAppAction', function (): void {
             'role' => RoleName::AppProd,
             'status' => LifecycleStatus::Active,
         ]);
-        $production = AppInstance::query()->create([
-            'app_id' => $this->fixture->app->id,
+        $production = Instance::query()->create([
+            'project_id' => $this->fixture->app->id,
             'node_id' => $productionNode->id,
             'name' => 'prod',
             'environment' => 'production',
@@ -404,7 +404,7 @@ describe('UpdateAppAction', function (): void {
 
     it('refuses a conflicting update while one update is incomplete', function (): void {
         AppUpdate::query()->create([
-            'app_id' => $this->fixture->app->id,
+            'project_id' => $this->fixture->app->id,
             'status' => AppUpdateStatus::Prepared,
             'fingerprint' => orb101_update_data(defaultBranch: 'stable')->fingerprint(),
             'requested_default_branch' => 'stable',

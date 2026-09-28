@@ -17,7 +17,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use Throwable;
 
@@ -30,7 +30,7 @@ final readonly class RemoteAppInstanceCloneCandidateInspector implements AppInst
         private RepositoryReadAccess $access,
     ) {}
 
-    public function inspect(AppInstance $candidate, string $targetBranch): CloneCandidateSource
+    public function inspect(Instance $candidate, string $targetBranch): CloneCandidateSource
     {
         if (! GitBranchName::isValid($targetBranch)) {
             throw $this->conflict(
@@ -202,7 +202,7 @@ final readonly class RemoteAppInstanceCloneCandidateInspector implements AppInst
     }
 
     /** @return array{string, string, string, string} */
-    private function identity(AppInstance $candidate, Node $node): array
+    private function identity(Instance $candidate, Node $node): array
     {
         if (
             $candidate->status !== AppInstanceState::Active

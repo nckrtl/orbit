@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\AppInstances\Logs\AppInstanceLogReader;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
+use App\Models\Instance;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\Orb220DeploymentApiFixture;
 
@@ -16,7 +16,7 @@ final class RecordingAppInstanceLogReader implements AppInstanceLogReader
 
     public function __construct(public string $log = '', public bool $fails = false) {}
 
-    public function tail(AppInstance $instance, int $lines): string
+    public function tail(Instance $instance, int $lines): string
     {
         $this->reads[] = [$instance->id, $lines];
 
@@ -64,12 +64,12 @@ describe('instance:logs', function (): void {
 
     it('redacts the values of the instance environment', function (): void {
         AppInstanceEnvironmentValue::query()->create([
-            'app_instance_id' => $this->fixture->instance->id,
+            'instance_id' => $this->fixture->instance->id,
             'env_key' => 'PAYMENT_SECRET',
             'env_value' => 'orbit-test-secret-value-4821',
         ]);
         AppInstanceEnvironmentValue::query()->create([
-            'app_instance_id' => $this->fixture->instance->id,
+            'instance_id' => $this->fixture->instance->id,
             'env_key' => 'APP_ENV',
             'env_value' => 'local',
         ]);

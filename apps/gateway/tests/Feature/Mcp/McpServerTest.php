@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\App as OrbitApp;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -93,7 +93,7 @@ describe('POST /mcp', function (): void {
 
     it('places a DELETE path parameter from the tool arguments onto the Route', function (): void {
         app()->instance(RouteRemovalProjector::class, new FakeRouteRemovalProjector);
-        $app = OrbitApp::query()->create([
+        $app = Project::query()->create([
             'name' => 'MCP routes',
             'slug' => 'mcp-routes',
             'repository_url' => 'https://example.test/mcp-routes.git',
@@ -111,7 +111,7 @@ describe('POST /mcp', function (): void {
             'user' => 'orbit',
         ]);
         $routeId = Route::query()->create([
-            'app_id' => $app->id,
+            'project_id' => $app->id,
             'node_id' => $node->id,
             'domain' => 'mcp-destroy.example.test',
             'provenance' => 'explicit',

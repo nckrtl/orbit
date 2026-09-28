@@ -11,9 +11,9 @@ use Dotenv\Dotenv;
 it('resolves each selected owner from one stored expression while retaining literals', function (): void {
     $renderer = new AppInstanceEnvironmentRenderer;
     $values = [
-        'APP_ENV' => '{{app_instance.environment}}',
+        'APP_ENV' => '{{instance.environment}}',
         'APP_KEY' => 'base64:literal-key',
-        'APP_URL' => 'https://{{app_instance.domain}}/path',
+        'APP_URL' => 'https://{{instance.domain}}/path',
     ];
 
     $development = Dotenv::parse($renderer->render(

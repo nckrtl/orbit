@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -14,10 +14,10 @@ afterEach(fn () => restore_app_instance_environment_schema_for_migration_test())
 
 it('adds nullable clone evidence without changing legacy AppInstances', function (): void {
     $migration = app_instance_clone_migration();
-    $migration->down();
+    run_legacy_schema_migration($migration, 'down');
     [$app, $node] = clone_migration_parents('legacy');
-    $instanceId = DB::table('app_instances')->insertGetId([
-        'app_id' => $app->id,
+    $appInstanceId = DB::table('instances')->insertGetId([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'legacy',
         'environment' => 'development',
@@ -28,27 +28,27 @@ it('adds nullable clone evidence without changing legacy AppInstances', function
         'created_at' => now(),
         'updated_at' => now(),
     ]);
-    $before = (array) DB::table('app_instances')->find($instanceId);
+    $before = (array) DB::table('instances')->find($appInstanceId);
 
     try {
-        $migration->up();
+        run_legacy_schema_migration($migration, 'up');
 
-        $after = (array) DB::table('app_instances')->find($instanceId);
+        $after = (array) DB::table('instances')->find($appInstanceId);
         $isolationColumns = app_instance_clone_isolation_columns();
         $evidence = array_intersect_key($after, array_flip($isolationColumns));
         foreach ($isolationColumns as $column) {
             unset($after[$column]);
         }
 
-        expect(Schema::hasColumns('app_instances', $isolationColumns))
+        expect(Schema::hasColumns('instances', $isolationColumns))
             ->toBeTrue()
             ->and($evidence)
             ->toBe(array_fill_keys($isolationColumns, null))
             ->and($after)
             ->toBe($before);
     } finally {
-        if (! Schema::hasColumn('app_instances', 'clone_candidate_id')) {
-            $migration->up();
+        if (! Schema::hasColumn('instances', 'clone_candidate_id')) {
+            run_legacy_schema_migration($migration, 'up');
         }
     }
 });
@@ -56,8 +56,8 @@ it('adds nullable clone evidence without changing legacy AppInstances', function
 it('persists clone evidence with integer and immutable time casts', function (): void {
     [$app, $candidateNode] = clone_migration_parents('casts-candidate');
     [, $targetNode] = clone_migration_parents('casts-target', $app);
-    $candidate = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $candidate = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $candidateNode->id,
         'name' => 'candidate',
         'environment' => 'development',
@@ -65,8 +65,8 @@ it('persists clone evidence with integer and immutable time casts', function ():
     ]);
     $completedAt = CarbonImmutable::parse('2026-09-12T12:34:56+00:00');
 
-    $target = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $target = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $targetNode->id,
         'name' => 'target',
         'environment' => 'production',
@@ -101,8 +101,8 @@ it('persists clone evidence with integer and immutable time casts', function ():
 it('refuses rollback before discarding any retained clone evidence', function (array $evidence): void {
     $migration = app_instance_clone_migration();
     [$app, $node] = clone_migration_parents('rollback');
-    AppInstance::query()->create([
-        'app_id' => $app->id,
+    Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'rollback',
         'environment' => 'production',
@@ -111,13 +111,13 @@ it('refuses rollback before discarding any retained clone evidence', function (a
     ]);
 
     try {
-        expect(fn () => $migration->down())
+        expect(fn () => run_legacy_schema_migration($migration, 'down'))
             ->toThrow(RuntimeException::class, 'Cannot discard retained AppInstance clone evidence.');
 
-        expect(Schema::hasColumns('app_instances', app_instance_clone_columns()))->toBeTrue();
+        expect(Schema::hasColumns('instances', app_instance_clone_columns()))->toBeTrue();
     } finally {
-        if (! Schema::hasColumn('app_instances', 'clone_candidate_id')) {
-            $migration->up();
+        if (! Schema::hasColumn('instances', 'clone_candidate_id')) {
+            run_legacy_schema_migration($migration, 'up');
         }
     }
 })->with([
@@ -133,8 +133,8 @@ it('refuses rollback before discarding any retained clone evidence', function (a
 it('removes only nullable clone columns when rollback is safe', function (): void {
     $migration = app_instance_clone_migration();
     [$app, $node] = clone_migration_parents('safe-down');
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'safe-down',
         'environment' => 'development',
@@ -142,15 +142,15 @@ it('removes only nullable clone columns when rollback is safe', function (): voi
     ]);
 
     try {
-        $migration->down();
+        run_legacy_schema_migration($migration, 'down');
 
-        expect(Schema::hasColumns('app_instances', app_instance_clone_columns()))
+        expect(Schema::hasColumns('instances', app_instance_clone_columns()))
             ->toBeFalse()
-            ->and(DB::table('app_instances')->where('id', $instance->id)->value('name'))
+            ->and(DB::table('instances')->where('id', $instance->id)->value('name'))
             ->toBe('safe-down');
     } finally {
-        if (! Schema::hasColumn('app_instances', 'clone_candidate_id')) {
-            $migration->up();
+        if (! Schema::hasColumn('instances', 'clone_candidate_id')) {
+            run_legacy_schema_migration($migration, 'up');
         }
     }
 });
@@ -190,8 +190,8 @@ function app_instance_clone_columns(): array
     ];
 }
 
-/** @return array{OrbitApp, Node} */
-function clone_migration_parents(string $suffix, ?OrbitApp $app = null): array
+/** @return array{Project, Node} */
+function clone_migration_parents(string $suffix, ?Project $app = null): array
 {
     $count = Node::query()->count();
     $node = Node::query()->create([
@@ -200,7 +200,7 @@ function clone_migration_parents(string $suffix, ?OrbitApp $app = null): array
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.'.(140 + $count),
     ]);
-    $app ??= OrbitApp::query()->create([
+    $app ??= Project::query()->create([
         'name' => "Clone migration {$suffix}",
         'slug' => "clone-migration-{$suffix}",
         'repository_url' => "https://example.test/clone-migration-{$suffix}.git",

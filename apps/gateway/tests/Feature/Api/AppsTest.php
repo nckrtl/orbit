@@ -15,10 +15,10 @@ use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\SourceControl\NativeRepositoryDefaultBranchResolver;
 use App\Models\Activity;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use App\Models\TaskGroup;
 use Illuminate\Support\Str;
@@ -75,7 +75,7 @@ describe('app creation', function (): void {
             ->assertJsonPath('data.id', $first->json('data.id'))
             ->assertJsonPath('data.name', 'acme');
 
-        expect(OrbitApp::query()->count())
+        expect(Project::query()->count())
             ->toBe(1)
             ->and(Activity::query()->where('request_id', $requestId)->sole()->command)
             ->toBe('project:create');
@@ -83,13 +83,13 @@ describe('app creation', function (): void {
         $activity = Activity::query()->where('request_id', $requestId)->sole();
 
         expect($activity->subject_type)
-            ->toBe(OrbitApp::class)
+            ->toBe(Project::class)
             ->and($activity->subject_id)
             ->toBe($first->json('data.id'));
     });
 
     it('rejects an incompatible repository change on an existing app', function (): void {
-        $app = OrbitApp::query()->create([
+        $app = Project::query()->create([
             'name' => 'Acme',
             'slug' => 'acme',
             'repository_url' => 'git@github.com:acme/site.git',
@@ -156,9 +156,9 @@ describe('app creation', function (): void {
             ->assertConflict()
             ->assertJsonPath('error.code', 'app.repository_identity_conflict');
 
-        expect(OrbitApp::query()->count())
+        expect(Project::query()->count())
             ->toBe(1)
-            ->and(OrbitApp::query()
+            ->and(Project::query()
                 ->sole()
                 ->only([
                     'id',
@@ -195,13 +195,13 @@ describe('app creation', function (): void {
         $repository = 'https://github.com/acme/site.git';
         $ownerCreated = false;
 
-        OrbitApp::creating(static function (OrbitApp $app) use (&$ownerCreated): void {
+        Project::creating(static function (Project $app) use (&$ownerCreated): void {
             if ($ownerCreated || $app->slug !== 'candidate') {
                 return;
             }
 
             $ownerCreated = true;
-            OrbitApp::query()->create([
+            Project::query()->create([
                 'name' => 'Owner',
                 'slug' => 'owner',
                 'repository_url' => 'git@github.com:acme/site.git',
@@ -223,7 +223,7 @@ describe('app creation', function (): void {
             ->assertConflict()
             ->assertJsonPath('error.code', 'app.repository_identity_conflict');
 
-        expect(OrbitApp::query()->sole()->only(['name', 'slug', 'repository_url']))
+        expect(Project::query()->sole()->only(['name', 'slug', 'repository_url']))
             ->toBe([
                 'name' => 'Owner',
                 'slug' => 'owner',
@@ -238,7 +238,7 @@ describe('app creation', function (): void {
 
 describe('app lifecycle', function (): void {
     it('lists, shows, and removes apps by numeric id', function (): void {
-        $app = OrbitApp::query()->create([
+        $app = Project::query()->create([
             'name' => 'Acme',
             'slug' => 'acme',
             'repository_url' => 'https://github.com/acme/site.git',
@@ -261,7 +261,7 @@ describe('app lifecycle', function (): void {
             ->assertOk()
             ->assertJsonPath('data.id', $app->id), 'apps/app-destroy/removed', DestroyAppRequest::class, 'DELETE /api/v1/projects/{app}');
 
-        expect(OrbitApp::query()->count())
+        expect(Project::query()->count())
             ->toBe(0)
             ->and(Activity::query()->where('request_id', $requestId)->sole()->command)
             ->toBe('project:destroy');
@@ -274,7 +274,7 @@ describe('app lifecycle', function (): void {
             ['Charlie shop', 'charlie-shop', 'git@github.com:charlie/shop.git', 'release', 'web/public'],
             ['Delta api', 'delta-api', 'https://github.com/delta/api.git', 'main', 'public'],
         ] as [$name, $slug, $repository, $branch, $root]) {
-            OrbitApp::query()->create(['name' => $name, 'slug' => $slug, 'repository_url' => $repository, 'default_branch' => $branch, 'root' => $root]);
+            Project::query()->create(['name' => $name, 'slug' => $slug, 'repository_url' => $repository, 'default_branch' => $branch, 'root' => $root]);
         }
 
         record_fixture($this->getJson('/api/v1/projects')->assertOk()->assertJsonCount(4, 'data'), 'apps/app-list/several', ListAppsRequest::class, 'GET /api/v1/projects');
@@ -287,7 +287,7 @@ describe('app lifecycle', function (): void {
             'Quebec queue', 'Romeo reports', 'Sierra store', 'Tango tickets', 'Uniform uploads', 'Victor video', 'Whiskey wiki', 'X-ray export'];
         foreach ($names as $index => $name) {
             $slug = str_replace(' ', '-', strtolower($name));
-            OrbitApp::query()->create([
+            Project::query()->create([
                 'name' => $name,
                 'slug' => $slug,
                 'repository_url' => ($index % 3 === 0 ? 'https://github.com/example/' : 'git@github.com:example/').$slug.'.git',
@@ -307,15 +307,15 @@ describe('app lifecycle', function (): void {
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.10',
         ]);
-        $app = OrbitApp::query()->create([
+        $app = Project::query()->create([
             'name' => 'Acme',
             'slug' => 'acme',
             'repository_url' => 'https://github.com/acme/site.git',
             'default_branch' => 'main',
             'root' => 'public',
         ]);
-        AppInstance::query()->create([
-            'app_id' => $app->id,
+        Instance::query()->create([
+            'project_id' => $app->id,
             'node_id' => $node->id,
             'name' => 'dev',
             'checkout_path' => '/srv/orbit/apps/acme/dev',
@@ -332,12 +332,12 @@ describe('app lifecycle', function (): void {
         expect($app->fresh())
             ->not
             ->toBeNull()
-            ->and(AppInstance::query()->count())
+            ->and(Instance::query()->count())
             ->toBe(1);
     });
 
     it('refuses removal when the Project has task groups', function (): void {
-        $app = OrbitApp::query()->create([
+        $app = Project::query()->create([
             'name' => 'Acme',
             'slug' => 'acme',
             'repository_url' => 'https://github.com/acme/site.git',
@@ -345,7 +345,7 @@ describe('app lifecycle', function (): void {
             'root' => 'public',
         ]);
         $taskGroup = TaskGroup::query()->create([
-            'app_id' => $app->id,
+            'project_id' => $app->id,
             'title' => 'Ship the feature',
             'brief' => 'Implement and verify the feature.',
         ]);
@@ -371,15 +371,15 @@ describe('app lifecycle', function (): void {
             'status' => LifecycleStatus::Active,
             'public_ssh_host' => '192.0.2.10',
         ]);
-        $app = OrbitApp::query()->create([
+        $app = Project::query()->create([
             'name' => 'Acme',
             'slug' => 'acme',
             'repository_url' => 'https://github.com/acme/site.git',
             'default_branch' => 'main',
             'root' => 'public',
         ]);
-        $instance = AppInstance::query()->create([
-            'app_id' => $app->id,
+        $instance = Instance::query()->create([
+            'project_id' => $app->id,
             'node_id' => $node->id,
             'name' => 'dev',
             'checkout_path' => '/srv/orbit/apps/acme/dev',
@@ -388,13 +388,13 @@ describe('app lifecycle', function (): void {
             'status' => AppInstanceState::Active,
         ]);
         $route = Route::query()->create([
-            'app_id' => $app->id,
+            'project_id' => $app->id,
             'node_id' => $node->id,
             'domain' => 'acme.dev.orbit',
             'provenance' => RouteProvenance::Explicit,
             'publication' => RoutePublication::Private,
         ]);
-        $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+        $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
         $route->update(['status' => RouteStatus::Active]);
 
         $this
@@ -402,7 +402,7 @@ describe('app lifecycle', function (): void {
             ->assertConflict()
             ->assertJsonPath('error.code', 'app.has_app_instances');
 
-        $routed = OrbitApp::query()->create([
+        $routed = Project::query()->create([
             'name' => 'Routed',
             'slug' => 'routed',
             'repository_url' => 'https://github.com/acme/routed.git',
@@ -410,7 +410,7 @@ describe('app lifecycle', function (): void {
             'root' => 'public',
         ]);
         Route::query()->create([
-            'app_id' => $routed->id,
+            'project_id' => $routed->id,
             'node_id' => $node->id,
             'domain' => 'routed.dev.orbit',
             'provenance' => RouteProvenance::Explicit,
@@ -566,49 +566,49 @@ describe('app list access', function (): void {
         ]);
         $directConsumer->accessibleNodes()->attach($accessibleNode);
         $gatewayAccessConsumer->accessibleNodes()->attach($gateway);
-        $unplaced = OrbitApp::query()->create([
+        $unplaced = Project::query()->create([
             'name' => 'Unplaced',
             'slug' => 'unplaced',
             'repository_url' => 'https://example.test/unplaced.git',
         ]);
-        $accessible = OrbitApp::query()->create([
+        $accessible = Project::query()->create([
             'name' => 'Accessible',
             'slug' => 'accessible',
             'repository_url' => 'https://example.test/accessible.git',
         ]);
-        $inaccessible = OrbitApp::query()->create([
+        $inaccessible = Project::query()->create([
             'name' => 'Inaccessible',
             'slug' => 'inaccessible',
             'repository_url' => 'https://example.test/inaccessible.git',
         ]);
-        $multiplyPlaced = OrbitApp::query()->create([
+        $multiplyPlaced = Project::query()->create([
             'name' => 'Multiply placed',
             'slug' => 'multiply-placed',
             'repository_url' => 'https://example.test/multiply-placed.git',
         ]);
-        AppInstance::query()->create([
-            'app_id' => $accessible->id,
+        Instance::query()->create([
+            'project_id' => $accessible->id,
             'node_id' => $accessibleNode->id,
             'name' => 'main',
             'checkout_path' => '/srv/accessible',
             'status' => AppInstanceState::Active,
         ]);
-        AppInstance::query()->create([
-            'app_id' => $inaccessible->id,
+        Instance::query()->create([
+            'project_id' => $inaccessible->id,
             'node_id' => $inaccessibleNode->id,
             'name' => 'main',
             'checkout_path' => '/srv/inaccessible',
             'status' => AppInstanceState::Active,
         ]);
-        AppInstance::query()->create([
-            'app_id' => $multiplyPlaced->id,
+        Instance::query()->create([
+            'project_id' => $multiplyPlaced->id,
             'node_id' => $accessibleNode->id,
             'name' => 'first',
             'checkout_path' => '/srv/multiply-placed/first',
             'status' => AppInstanceState::Active,
         ]);
-        AppInstance::query()->create([
-            'app_id' => $multiplyPlaced->id,
+        Instance::query()->create([
+            'project_id' => $multiplyPlaced->id,
             'node_id' => $accessibleNode->id,
             'name' => 'second',
             'checkout_path' => '/srv/multiply-placed/second',
@@ -640,7 +640,7 @@ describe('app list access', function (): void {
             ->assertJsonPath('error.code', 'node_access.required');
     });
 
-    it('uses only AppInstance placement for a direct consumer', function (): void {
+    it('uses only Instance placement for a direct consumer', function (): void {
         $accessibleNode = Node::query()->create([
             'name' => 'accessible-node',
             'status' => LifecycleStatus::Active,
@@ -660,30 +660,30 @@ describe('app list access', function (): void {
             'wireguard_ip' => '10.44.0.22',
         ]);
         $consumer->accessibleNodes()->attach($accessibleNode);
-        OrbitApp::query()->create([
+        Project::query()->create([
             'name' => 'Unplaced',
             'slug' => 'unplaced-direct',
             'repository_url' => 'https://example.test/unplaced-direct.git',
         ]);
-        $mixedHidden = OrbitApp::query()->create([
+        $mixedHidden = Project::query()->create([
             'name' => 'Mixed hidden',
             'slug' => 'mixed-hidden',
             'repository_url' => 'https://example.test/mixed-hidden.git',
         ]);
-        $mixedVisible = OrbitApp::query()->create([
+        $mixedVisible = Project::query()->create([
             'name' => 'Mixed visible',
             'slug' => 'mixed-visible',
             'repository_url' => 'https://example.test/mixed-visible.git',
         ]);
-        AppInstance::query()->create([
-            'app_id' => $mixedHidden->id,
+        Instance::query()->create([
+            'project_id' => $mixedHidden->id,
             'node_id' => $inaccessibleNode->id,
             'name' => 'current',
             'checkout_path' => '/srv/current/mixed-hidden',
             'status' => AppInstanceState::Active,
         ]);
-        AppInstance::query()->create([
-            'app_id' => $mixedVisible->id,
+        Instance::query()->create([
+            'project_id' => $mixedVisible->id,
             'node_id' => $accessibleNode->id,
             'name' => 'current',
             'checkout_path' => '/srv/current/mixed-visible',

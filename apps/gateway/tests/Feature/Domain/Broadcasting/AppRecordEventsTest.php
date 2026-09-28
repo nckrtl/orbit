@@ -10,7 +10,7 @@ use App\Data\Apps\UpdateAppData;
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Projects\ProjectType;
-use App\Models\App as OrbitApp;
+use App\Models\Project;
 use Illuminate\Support\Facades\Event;
 
 beforeEach(function (): void {
@@ -62,7 +62,7 @@ describe('App record events', function (): void {
     });
 
     it('broadcasts app.updated when an App field changes', function (): void {
-        $app = OrbitApp::query()->create([
+        $app = Project::query()->create([
             'slug' => 'acme',
             'name' => 'Acme',
             'repository_url' => 'git@github.com:acme/site.git',
@@ -95,7 +95,7 @@ describe('App record events', function (): void {
     });
 
     it('broadcasts app.deleted with a minimal snapshot when an App is removed', function (): void {
-        $app = OrbitApp::query()->create([
+        $app = Project::query()->create([
             'slug' => 'acme',
             'name' => 'Acme',
             'repository_url' => 'git@github.com:acme/site.git',

@@ -12,9 +12,9 @@ use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 use Tests\Support\LocalShellSshExecutor;
@@ -92,9 +92,9 @@ it('materializes a transferred checkout with an environment that other local use
             'name' => $name, 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'user' => 'orbit',
             'public_ssh_host' => $address, 'wireguard_ip' => $address,
         ]);
-        $app = OrbitApp::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@example.test:shop.git', 'default_branch' => 'main']);
-        $instance = AppInstance::query()->create([
-            'app_id' => $app->id, 'node_id' => $node('transfer-from', '10.44.0.51')->id, 'name' => 'dev',
+        $app = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@example.test:shop.git', 'default_branch' => 'main']);
+        $instance = Instance::query()->create([
+            'project_id' => $app->id, 'node_id' => $node('transfer-from', '10.44.0.51')->id, 'name' => 'dev',
             'checkout_path' => $root.'/'.$name, 'source_layout' => 'checkout', 'status' => 'source_resolved',
         ]);
         $source = transfer_env_source();

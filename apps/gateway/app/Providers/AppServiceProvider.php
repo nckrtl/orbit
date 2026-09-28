@@ -354,8 +354,8 @@ use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Infrastructure\WireGuard\WireGuardPeerConverger;
 use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
 use App\Models\Activity;
-use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
+use App\Models\Instance;
 use App\Support\ValidatedData;
 use Illuminate\Broadcasting\BroadcastManager;
 use Illuminate\Cache\CacheManager;
@@ -883,7 +883,7 @@ final class AppServiceProvider extends ServiceProvider
             fn ($app, array $config): ReverbBroadcaster => new ReverbBroadcaster($this->pusher($config), (bool) ($config['jsonp'] ?? false)),
         );
         Relation::morphMap([
-            'instance' => AppInstance::class,
+            'instance' => Instance::class,
         ]);
     }
 

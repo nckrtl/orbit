@@ -32,7 +32,7 @@ use App\Infrastructure\Activity\CommandActivityTargetResolver;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Activity;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Schedule;
@@ -466,8 +466,8 @@ final readonly class RecordCommandActivity
                 ...($activity->properties?->toArray() ?? []),
                 'schedule' => [
                     'id' => $schedule->id,
-                    'target_type' => AppInstance::isMorphType($schedule->target_type)
-                        ? ScheduleTargetType::AppInstance->value
+                    'target_type' => Instance::isMorphType($schedule->target_type)
+                        ? ScheduleTargetType::Instance->value
                         : ScheduleTargetType::Node->value,
                     'target_id' => $schedule->target_id,
                 ],
@@ -1043,7 +1043,7 @@ final readonly class RecordCommandActivity
         if ($target !== null) {
             $updates = [...$updates, ...$target];
 
-            if (AppInstance::isMorphType($target['subject_type'] ?? null)) {
+            if (Instance::isMorphType($target['subject_type'] ?? null)) {
                 $updates = $this->withAppInstanceSourceLayout($activity, $request, $updates, $target);
             }
         }
@@ -1086,11 +1086,11 @@ final readonly class RecordCommandActivity
         array $target,
     ): array {
         $bound = $request->route('instance');
-        $appInstance = $bound instanceof AppInstance
+        $appInstance = $bound instanceof Instance
             ? $bound
-            : AppInstance::query()->find($target['subject_id'] ?? null);
+            : Instance::query()->find($target['subject_id'] ?? null);
 
-        if (! $appInstance instanceof AppInstance) {
+        if (! $appInstance instanceof Instance) {
             return $updates;
         }
 

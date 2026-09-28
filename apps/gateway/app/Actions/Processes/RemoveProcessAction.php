@@ -17,7 +17,7 @@ use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\ProxyCli\ProxyCliProcessOwnership;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Process;
 use App\Models\RouteCustomProxy;
 use SensitiveParameter;
@@ -88,7 +88,7 @@ final readonly class RemoveProcessAction
                 throw $exception;
             }
 
-            if ($fresh->isAgentationMcp() && $fresh->owner instanceof AppInstance) {
+            if ($fresh->isAgentationMcp() && $fresh->owner instanceof Instance) {
                 $this->agentationPorts->release($fresh->owner);
                 $this->agentationUrls->forget($fresh->owner);
                 $this->agentationSites->project($fresh->owner);

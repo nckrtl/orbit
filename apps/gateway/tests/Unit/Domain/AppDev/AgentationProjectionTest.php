@@ -5,9 +5,9 @@ declare(strict_types=1);
 use App\Domain\AppDev\AgentationEndpoint;
 use App\Domain\AppDev\AgentationPortAllocator;
 use App\Domain\AppDev\AgentationUrlProjection;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -19,7 +19,7 @@ it('builds the reserved Agentation origin and stored placeholder', function (): 
         ->and(AgentationEndpoint::upstream(4749))
         ->toBe('127.0.0.1:4749')
         ->and(AgentationEndpoint::STORED_URL)
-        ->toBe('https://{{app_instance.domain}}/__orbit/agentation')
+        ->toBe('https://{{instance.domain}}/__orbit/agentation')
         ->and(AgentationEndpoint::PATH)
         ->toBe('/__orbit/agentation')
         ->and(AgentationEndpoint::PORT)
@@ -59,7 +59,7 @@ it('stores and forgets the AGENTATION_URL placeholder', function (): void {
     expect($instance->environmentValues()->where('env_key', AgentationEndpoint::URL_KEY)->exists())->toBeFalse();
 });
 
-function agentation_projection_instance(string $name): AppInstance
+function agentation_projection_instance(string $name): Instance
 {
     $node = Node::query()->create([
         'name' => 'agentation-'.$name,
@@ -68,14 +68,14 @@ function agentation_projection_instance(string $name): AppInstance
         'public_ssh_host' => '192.0.2.'.(80 + crc32($name) % 20),
         'status' => 'active',
     ]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Agentation '.$name,
         'slug' => 'agentation-'.$name,
         'repository_url' => 'git@example.test:agentation-'.$name.'.git',
     ]);
 
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => $name,
         'environment' => 'development',

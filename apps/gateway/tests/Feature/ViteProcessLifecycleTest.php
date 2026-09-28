@@ -7,19 +7,19 @@ use App\Domain\AppDev\VitePortAllocator;
 use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\AppDev\ViteProcessLifecycle;
 use App\Domain\Processes\ProcessOperationException;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use Tests\Support\FakeVitePortRuntime;
 
-function vite_lifecycle_instance(): AppInstance
+function vite_lifecycle_instance(): Instance
 {
     $node = Node::query()->create(['name' => 'vite', 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.10']);
     orbit_test_set_app_placement_role($node, false);
-    $app = OrbitApp::query()->create(['name' => 'Vite', 'slug' => 'vite', 'repository_url' => 'git@example.test:vite.git']);
+    $app = Project::query()->create(['name' => 'Vite', 'slug' => 'vite', 'repository_url' => 'git@example.test:vite.git']);
 
-    return AppInstance::query()->create(['app_id' => $app->id, 'node_id' => $node->id, 'name' => 'main', 'checkout_path' => '/apps/vite/main']);
+    return Instance::query()->create(['project_id' => $app->id, 'node_id' => $node->id, 'name' => 'main', 'checkout_path' => '/apps/vite/main']);
 }
 
 it('start leaves site awake after Vite becomes ready', function (): void {
@@ -70,7 +70,7 @@ it('retries a confirmed bind conflict and projects the replacement before launch
     $runtime->shouldReceive('suspendTraffic')->once();
     $runtime->shouldReceive('prepare')->twice();
     $projected = [];
-    $runtime->shouldReceive('project')->twice()->andReturnUsing(function (AppInstance $current) use (&$projected): void {
+    $runtime->shouldReceive('project')->twice()->andReturnUsing(function (Instance $current) use (&$projected): void {
         $projected[] = $current->vite_port;
     });
     $runtime->shouldReceive('ready')->twice()->andReturn(false, true);
@@ -101,26 +101,26 @@ final class ViteLifecycleAwakeRecordingRuntime implements VitePortRuntime
         return $preferred;
     }
 
-    public function ownsListener(Process $process, AppInstance $instance, int $port): bool
+    public function ownsListener(Process $process, Instance $instance, int $port): bool
     {
         return false;
     }
 
-    public function ready(Process $process, AppInstance $instance, int $port): bool
+    public function ready(Process $process, Instance $instance, int $port): bool
     {
         return true;
     }
 
-    public function suspendTraffic(AppInstance $instance): void {}
+    public function suspendTraffic(Instance $instance): void {}
 
-    public function markAwake(AppInstance $instance): void
+    public function markAwake(Instance $instance): void
     {
         $this->awakeInstances[] = $instance->id;
     }
 
-    public function prepare(Process $process, AppInstance $instance): void {}
+    public function prepare(Process $process, Instance $instance): void {}
 
-    public function project(AppInstance $instance): void {}
+    public function project(Instance $instance): void {}
 }
 
 it('does not change ports or relaunch for a startup failure without a bind conflict', function (): void {

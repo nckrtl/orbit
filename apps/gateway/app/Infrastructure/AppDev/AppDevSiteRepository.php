@@ -14,10 +14,11 @@ use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Infrastructure\Routes\IngressSiteRepository;
-use App\Models\AppInstance;
 use App\Models\AppInstanceRemovalMember;
 use App\Models\AppInstanceTransfer;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -107,10 +108,10 @@ final readonly class AppDevSiteRepository
                     )
                     ->orWhereExists(static fn ($members) => $members
                         ->selectRaw('1')
-                        ->from('app_instance_removal_members')
-                        ->whereColumn('app_instance_removal_members.route_id', 'routes.id')
-                        ->where('app_instance_removal_members.node_id', $nodeId)
-                        ->whereNull('app_instance_removal_members.row_deleted_at'));
+                        ->from('instance_removal_members')
+                        ->whereColumn('instance_removal_members.route_id', 'routes.id')
+                        ->where('instance_removal_members.node_id', $nodeId)
+                        ->whereNull('instance_removal_members.row_deleted_at'));
 
                 if ($secondRouterClusterIds !== []) {
                     $query->orWhereIn('routes.cluster_id', $secondRouterClusterIds);
@@ -210,7 +211,7 @@ final readonly class AppDevSiteRepository
             ->map(static fn ($targetRow) => $targetRow->appInstance)
             ->filter(
                 static fn ($target): bool => (
-                    $target instanceof AppInstance
+                    $target instanceof Instance
                     && is_string($target->node->wireguard_ip)
                     && in_array(
                         $target->status,
@@ -241,12 +242,12 @@ final readonly class AppDevSiteRepository
         // Caddy serves one site for a host on the public listener, so an Ingress Node that runs a target
         // serves the public Route from that target itself, as a Node with Ingress and the Router does.
         $ingressServesTarget = $hasPublicIngress
-            && $targets->contains(static fn (AppInstance $target): bool => $ingress->is($target->node));
+            && $targets->contains(static fn (Instance $target): bool => $ingress->is($target->node));
         $localTargets = $router instanceof Node
-            ? $targets->filter(static fn (AppInstance $target): bool => $router->is($target->node))
+            ? $targets->filter(static fn (Instance $target): bool => $router->is($target->node))
             : collect();
         $remoteTargets = $router instanceof Node
-            ? $targets->filter(static fn (AppInstance $target): bool => ! $router->is($target->node))
+            ? $targets->filter(static fn (Instance $target): bool => ! $router->is($target->node))
             : $targets;
         $hasComposedPool = $router instanceof Node
             && is_string($router->wireguard_ip)
@@ -312,7 +313,7 @@ final readonly class AppDevSiteRepository
         if (
             $hasPublicIngress
             && $ingressSharesRouter
-            && ! $targets->contains(static fn (AppInstance $target): bool => $ingress->is($target->node))
+            && ! $targets->contains(static fn (Instance $target): bool => $ingress->is($target->node))
         ) {
             $sites[] = $this->publicRouterSite(array_values($targets->all()), $route, $ingress);
         }
@@ -399,10 +400,10 @@ final readonly class AppDevSiteRepository
             ->orderBy('id')
             ->first();
         $instance = $member instanceof AppInstanceRemovalMember
-            ? AppInstance::query()->with('node')->find($member->app_instance_id)
+            ? Instance::query()->with('node')->find($member->instance_id)
             : null;
 
-        if (! $instance instanceof AppInstance) {
+        if (! $instance instanceof Instance) {
             return null;
         }
 
@@ -456,7 +457,7 @@ final readonly class AppDevSiteRepository
     }
 
     private function appInstanceSite(
-        AppInstance $instance,
+        Instance $instance,
         Route $route,
         bool $domainChange = false,
     ): AppDevSite {
@@ -484,7 +485,7 @@ final readonly class AppDevSiteRepository
     }
 
     /**
-     * @param  list<AppInstance>  $instances
+     * @param  list<Instance>  $instances
      * @param  bool  $publicUpstream  A target answers on the Ingress Node's public site, so the Router trusts
      *                                the Node's system roots, which hold the Orbit root, and not the Orbit
      *                                root alone.
@@ -497,7 +498,7 @@ final readonly class AppDevSiteRepository
         bool $publicUpstream = false,
     ): AppDevSite {
         $addresses = collect($instances)
-            ->map(static fn (AppInstance $instance): ?string => is_string($instance->node->lan_ip)
+            ->map(static fn (Instance $instance): ?string => is_string($instance->node->lan_ip)
                 && $instance->node->lan_ip !== ''
                     ? $instance->node->lan_ip
                     : $instance->node->wireguard_ip)
@@ -521,8 +522,8 @@ final readonly class AppDevSiteRepository
     }
 
     /**
-     * @param  list<AppInstance>  $local
-     * @param  list<AppInstance>  $remote
+     * @param  list<Instance>  $local
+     * @param  list<Instance>  $remote
      */
     private function composedPoolSite(
         array $local,
@@ -532,7 +533,7 @@ final readonly class AppDevSiteRepository
         bool $domainChange = false,
     ): AppDevSite {
         $addresses = collect($remote)
-            ->map(static fn (AppInstance $instance): ?string => is_string($instance->node->lan_ip)
+            ->map(static fn (Instance $instance): ?string => is_string($instance->node->lan_ip)
                 && $instance->node->lan_ip !== ''
                     ? $instance->node->lan_ip
                     : $instance->node->wireguard_ip)
@@ -582,7 +583,7 @@ final readonly class AppDevSiteRepository
         return $this->eligibility->publicEdgeIsLive($route);
     }
 
-    private function composedPublicSite(AppInstance $instance, Route $route, Node $ingress): AppDevSite
+    private function composedPublicSite(Instance $instance, Route $route, Node $ingress): AppDevSite
     {
         $site = $this->appInstanceSite($instance, $route);
 
@@ -605,7 +606,7 @@ final readonly class AppDevSiteRepository
         );
     }
 
-    /** @param list<AppInstance> $instances */
+    /** @param list<Instance> $instances */
     private function publicRouterSite(array $instances, Route $route, Node $ingress): AppDevSite
     {
         $router = $this->routerSite($instances, $route, $ingress);

@@ -7,11 +7,11 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolStatus;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\Process;
+use App\Models\Project;
 use Illuminate\Database\QueryException;
 
 it('stores apps, AppInstances, and their process ownership', function (): void {
@@ -19,13 +19,13 @@ it('stores apps, AppInstances, and their process ownership', function (): void {
         'name' => 'app-dev',
         'public_ssh_host' => '94.237.40.75',
     ]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Orbit',
         'slug' => 'orbit',
         'repository_url' => 'git@github.com:nckrtl/orbit.git',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'dev',
         'environment' => 'development',
@@ -53,18 +53,18 @@ it('stores apps, AppInstances, and their process ownership', function (): void {
         ->toBeTrue();
 });
 
-it('enforces one AppInstance name per app and one checkout path per node', function (): void {
+it('enforces one Instance name per app and one checkout path per node', function (): void {
     $node = Node::query()->create([
         'name' => 'app-dev',
         'public_ssh_host' => '94.237.40.75',
     ]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Orbit',
         'slug' => 'orbit',
         'repository_url' => 'git@github.com:nckrtl/orbit.git',
     ]);
-    AppInstance::query()->create([
-        'app_id' => $app->id,
+    Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'first',
         'environment' => 'development',
@@ -74,8 +74,8 @@ it('enforces one AppInstance name per app and one checkout path per node', funct
         'status' => AppInstanceState::Active,
     ]);
 
-    expect(fn () => AppInstance::query()->create([
-        'app_id' => $app->id,
+    expect(fn () => Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'first',
         'environment' => 'development',
@@ -85,8 +85,8 @@ it('enforces one AppInstance name per app and one checkout path per node', funct
         'status' => AppInstanceState::Active,
     ]))
         ->toThrow(QueryException::class)
-        ->and(fn () => AppInstance::query()->create([
-            'app_id' => $app->id,
+        ->and(fn () => Instance::query()->create([
+            'project_id' => $app->id,
             'node_id' => $node->id,
             'name' => 'second',
             'environment' => 'development',

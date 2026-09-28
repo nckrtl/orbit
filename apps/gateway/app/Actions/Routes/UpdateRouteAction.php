@@ -44,8 +44,8 @@ final readonly class UpdateRouteAction
 
         $targetIds = $route
             ->targets()
-            ->orderBy('app_instance_id')
-            ->pluck('app_instance_id')
+            ->orderBy('instance_id')
+            ->pluck('instance_id')
             ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->values()
             ->all();
@@ -72,7 +72,7 @@ final readonly class UpdateRouteAction
         $route->refresh()->load('targets');
         $currentTargetIds = $route
             ->targets
-            ->pluck('app_instance_id')
+            ->pluck('instance_id')
             ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->sort()
             ->values()
@@ -190,7 +190,7 @@ final readonly class UpdateRouteAction
             }
 
             $created = Route::query()->create([
-                'app_id' => $locked->app_id,
+                'project_id' => $locked->project_id,
                 'node_id' => $locked->node_id,
                 'cluster_id' => $locked->cluster_id,
                 'generation_basis_node_id' => $locked->generation_basis_node_id,
@@ -204,7 +204,7 @@ final readonly class UpdateRouteAction
 
             foreach ($locked->targets as $target) {
                 $created->targets()->create([
-                    'app_instance_id' => $target->app_instance_id,
+                    'instance_id' => $target->instance_id,
                     'position' => $target->position,
                 ]);
             }

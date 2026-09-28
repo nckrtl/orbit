@@ -12,7 +12,7 @@ use App\Domain\AppInstances\Dependencies\DependencyUpdateStepResult;
 use App\Domain\AppInstances\Dependencies\InstanceDependencyUpdateResult;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use Closure;
 
 final readonly class UpdateInstanceDependenciesAction
@@ -29,11 +29,11 @@ final readonly class UpdateInstanceDependenciesAction
     ) {}
 
     /** @param  (Closure(): bool)|null  $cancelled */
-    public function execute(AppInstance $instance, ?Closure $cancelled = null): InstanceDependencyUpdateResult
+    public function execute(Instance $instance, ?Closure $cancelled = null): InstanceDependencyUpdateResult
     {
         try {
             return $this->operations->run([$instance->id], function () use ($instance, $cancelled): InstanceDependencyUpdateResult {
-                $current = AppInstance::query()->with('node')->find($instance->id);
+                $current = Instance::query()->with('node')->find($instance->id);
                 if ($current === null || ! $this->available($current)) {
                     return $this->refused($instance->id, 'dependencies.instance_unavailable');
                 }
@@ -52,7 +52,7 @@ final readonly class UpdateInstanceDependenciesAction
     }
 
     /** @param  (Closure(): bool)|null  $cancelled */
-    private function update(AppInstance $instance, ?Closure $cancelled): InstanceDependencyUpdateResult
+    private function update(Instance $instance, ?Closure $cancelled): InstanceDependencyUpdateResult
     {
         $yarn = $this->yarn->inspect($instance, $cancelled);
         if ($yarn->blocked()) {
@@ -69,7 +69,7 @@ final readonly class UpdateInstanceDependenciesAction
             return $this->refused($instance->id, $javascriptInspection->errorCode ?? 'dependencies.unreadable_source');
         }
 
-        $current = AppInstance::query()->with('node')->find($instance->id);
+        $current = Instance::query()->with('node')->find($instance->id);
         if ($current === null || ! $this->available($current)) {
             return $this->refused($instance->id, 'dependencies.instance_unavailable');
         }
@@ -82,7 +82,7 @@ final readonly class UpdateInstanceDependenciesAction
             }
         }
 
-        $current = AppInstance::query()->with('node')->find($instance->id);
+        $current = Instance::query()->with('node')->find($instance->id);
         if ($current === null || ! $this->available($current)) {
             return $this->result($instance, $composer, DependencyUpdateStepResult::notRun(DependencyEcosystem::Npm));
         }
@@ -103,7 +103,7 @@ final readonly class UpdateInstanceDependenciesAction
      * @param  (Closure(): bool)|null  $cancelled
      * @return array{0: UpdateNpmDependenciesAction|UpdatePnpmDependenciesAction|UpdateBunDependenciesAction|null, 1: DependencyUpdateInspection}
      */
-    private function javascript(AppInstance $instance, ?Closure $cancelled): array
+    private function javascript(Instance $instance, ?Closure $cancelled): array
     {
         $adapters = [$this->npm, $this->pnpm, $this->bun];
         $selected = null;
@@ -126,7 +126,7 @@ final readonly class UpdateInstanceDependenciesAction
         return [$selected, $inspection];
     }
 
-    private function result(AppInstance $instance, DependencyUpdateStepResult $composer, DependencyUpdateStepResult $javascript): InstanceDependencyUpdateResult
+    private function result(Instance $instance, DependencyUpdateStepResult $composer, DependencyUpdateStepResult $javascript): InstanceDependencyUpdateResult
     {
         return new InstanceDependencyUpdateResult($instance->id, $composer, $javascript, $this->scan->execute($instance));
     }
@@ -142,7 +142,7 @@ final readonly class UpdateInstanceDependenciesAction
         );
     }
 
-    private function available(?AppInstance $instance): bool
+    private function available(?Instance $instance): bool
     {
         return $instance !== null && $instance->status === AppInstanceState::Active
             && ! $instance->removalMember()->exists();

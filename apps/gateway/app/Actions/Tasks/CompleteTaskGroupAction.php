@@ -6,7 +6,7 @@ namespace App\Actions\Tasks;
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\TaskGroup;
 use Throwable;
 
@@ -97,7 +97,7 @@ final readonly class CompleteTaskGroupAction
 
         $this->workspace->clearFailure($group);
 
-        if ($instanceId !== null && ! AppInstance::query()->whereKey($instanceId)->exists()) {
+        if ($instanceId !== null && ! Instance::query()->whereKey($instanceId)->exists()) {
             $group->refresh();
             $group->taskable()->dissociate();
             $group->save();

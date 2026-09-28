@@ -10,7 +10,7 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class RunInstanceSetupAction
 {
@@ -20,18 +20,18 @@ final readonly class RunInstanceSetupAction
         private AppInstanceEnvironmentOperationLock $environmentOperations,
     ) {}
 
-    public function execute(AppInstance $instance): AppInstance
+    public function execute(Instance $instance): Instance
     {
         return $this->environmentOperations->run(
             [$instance->id],
-            fn (): AppInstance => $this->sourceLock->synchronized(
+            fn (): Instance => $this->sourceLock->synchronized(
                 $instance->node_id,
-                fn (): AppInstance => $this->runLocked($instance->refresh()),
+                fn (): Instance => $this->runLocked($instance->refresh()),
             ),
         );
     }
 
-    private function runLocked(AppInstance $instance): AppInstance
+    private function runLocked(Instance $instance): Instance
     {
         if ($instance->placedOnAppProd() || $instance->status !== AppInstanceState::Active) {
             throw new ResourceOperationException(

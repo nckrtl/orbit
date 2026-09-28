@@ -15,7 +15,7 @@ use App\Actions\AppInstances\UpdateAppInstanceEnvironmentAction;
 use App\Actions\Routes\ConvergeRouteAction;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 
-it('shares one AppInstance mutation owner across deployment and every competing operation', function (): void {
+it('shares one Instance mutation owner across deployment and every competing operation', function (): void {
     $owner = app(AppInstanceEnvironmentOperationLock::class);
     $operations = [
         [DeployAppInstanceAction::class, 'operations'],

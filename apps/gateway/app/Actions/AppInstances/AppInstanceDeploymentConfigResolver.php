@@ -9,14 +9,14 @@ use App\Domain\AppInstances\Deployment\AppInstanceDeployStepStore;
 use App\Domain\AppInstances\Deployment\DeploymentConfig;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use InvalidArgumentException;
 
 final readonly class AppInstanceDeploymentConfigResolver
 {
     public function __construct(private AppInstanceDeployStepStore $steps) {}
 
-    public function resolve(AppInstance $instance): DeploymentConfig
+    public function resolve(Instance $instance): DeploymentConfig
     {
         $this->assertAvailable($instance);
         $branch = is_string($instance->deployment_branch) ? $instance->deployment_branch : $instance->branch;
@@ -29,7 +29,7 @@ final readonly class AppInstanceDeploymentConfigResolver
         }
     }
 
-    public function assertAvailable(AppInstance $instance): void
+    public function assertAvailable(Instance $instance): void
     {
         if (
             ! $instance->placedOnAppProd()
@@ -46,7 +46,7 @@ final readonly class AppInstanceDeploymentConfigResolver
     {
         return new ResourceOperationException(
             errorCode: 'deployment_config.unavailable',
-            message: 'Deployment configuration is unavailable for this AppInstance.',
+            message: 'Deployment configuration is unavailable for this Instance.',
             status: 409,
         );
     }

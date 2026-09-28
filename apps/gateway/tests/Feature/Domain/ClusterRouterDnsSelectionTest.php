@@ -17,10 +17,10 @@ use App\Infrastructure\AppDev\InMemoryPrivateDnsAnswerCache;
 use App\Infrastructure\AppDev\PrivateDnsAnswerCatalog;
 use App\Infrastructure\AppDev\PrivateDnsMessageCodec;
 use App\Infrastructure\AppDev\PrivateDnsRequestHandler;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Tests\Support\RegisteredNodeDnsRequesterResolver;
 
@@ -109,14 +109,14 @@ it('leaves Node-scoped Routes and control-plane names on their established addre
         'user' => 'orbit',
     ]);
     $solo->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Solo',
         'slug' => 'solo',
         'repository_url' => 'https://example.test/solo.git',
         'root' => 'public',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $solo->id,
         'name' => 'default',
         'checkout_path' => '/home/orbit/apps/solo',
@@ -127,14 +127,14 @@ it('leaves Node-scoped Routes and control-plane names on their established addre
         'status' => AppInstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'node_id' => $solo->id,
         'domain' => 'solo.app.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
     $gateway = Node::query()->create([
         'name' => 'gateway',
@@ -286,14 +286,14 @@ function orb260_cluster_routes(): array
         'wireguard_public_key' => 'other-key',
         'user' => 'orbit',
     ]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Clustered',
         'slug' => 'clustered',
         'repository_url' => 'https://example.test/clustered.git',
         'root' => 'public',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $workload->id,
         'name' => 'default',
         'checkout_path' => '/home/orbit/apps/clustered',
@@ -304,17 +304,17 @@ function orb260_cluster_routes(): array
         'status' => AppInstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'cluster_id' => $cluster->id,
         'domain' => 'app.cluster.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
-    $preview = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $preview = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $workload->id,
         'name' => 'preview',
         'checkout_path' => '/home/orbit/apps/clustered-preview',
@@ -325,14 +325,14 @@ function orb260_cluster_routes(): array
         'status' => AppInstanceState::Active,
     ]);
     $outside = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'cluster_id' => $cluster->id,
         'domain' => 'other.example.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $outside->targets()->create(['app_instance_id' => $preview->id, 'position' => 0]);
+    $outside->targets()->create(['instance_id' => $preview->id, 'position' => 0]);
     $outside->update(['status' => RouteStatus::Active]);
 
     return [$route->fresh(), $outside->fresh(), $workload->fresh()];

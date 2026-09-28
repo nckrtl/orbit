@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Domain\AppInstances;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class AppInstanceProvisioning
 {
     /** @var list<string> */
     private const array CompletedSteps = ['active'];
 
-    public static function isInFlight(AppInstance $instance, AppInstanceState $settled): bool
+    public static function isInFlight(Instance $instance, AppInstanceState $settled): bool
     {
         if ($instance->status === AppInstanceState::Active || $instance->failed_step !== null) {
             return false;

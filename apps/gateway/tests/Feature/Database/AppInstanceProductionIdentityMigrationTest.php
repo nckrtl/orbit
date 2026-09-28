@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -14,10 +14,10 @@ afterEach(fn () => restore_app_instance_environment_schema_for_migration_test())
 
 it('adds nullable production identity and enforces one production placement per App and Node', function (): void {
     $migration = app_instance_production_identity_migration();
-    $migration->down();
+    run_legacy_schema_migration($migration, 'down');
     [$app, $node] = production_identity_migration_parents();
-    $firstId = DB::table('app_instances')->insertGetId([
-        'app_id' => $app->id,
+    $firstId = DB::table('instances')->insertGetId([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'first',
         'environment' => 'production',
@@ -30,15 +30,15 @@ it('adds nullable production identity and enforces one production placement per 
     ]);
 
     try {
-        $migration->up();
+        run_legacy_schema_migration($migration, 'up');
 
-        expect(Schema::hasColumns('app_instances', ['production_user', 'production_home']))
+        expect(Schema::hasColumns('instances', ['production_user', 'production_home']))
             ->toBeTrue()
-            ->and(DB::table('app_instances')->find($firstId)->production_user)
+            ->and(DB::table('instances')->find($firstId)->production_user)
             ->toBeNull();
 
-        $development = AppInstance::query()->create([
-            'app_id' => $app->id,
+        $development = Instance::query()->create([
+            'project_id' => $app->id,
             'node_id' => $node->id,
             'name' => 'development',
             'environment' => 'development',
@@ -47,8 +47,8 @@ it('adds nullable production identity and enforces one production placement per 
 
         expect($development->exists)
             ->toBeTrue()
-            ->and(fn () => DB::table('app_instances')->insert([
-                'app_id' => $app->id,
+            ->and(fn () => DB::table('instances')->insert([
+                'project_id' => $app->id,
                 'node_id' => $node->id,
                 'name' => 'second',
                 'environment' => 'production',
@@ -61,8 +61,8 @@ it('adds nullable production identity and enforces one production placement per 
             ]))
             ->toThrow(QueryException::class);
     } finally {
-        if (! Schema::hasColumn('app_instances', 'production_user')) {
-            $migration->up();
+        if (! Schema::hasColumn('instances', 'production_user')) {
+            run_legacy_schema_migration($migration, 'up');
         }
     }
 });
@@ -70,8 +70,8 @@ it('adds nullable production identity and enforces one production placement per 
 it('refuses rollback before discarding recorded production identity', function (): void {
     $migration = app_instance_production_identity_migration();
     [$app, $node] = production_identity_migration_parents();
-    AppInstance::query()->create([
-        'app_id' => $app->id,
+    Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'production',
         'environment' => 'production',
@@ -80,10 +80,10 @@ it('refuses rollback before discarding recorded production identity', function (
         'production_home' => "/home/orbit-app-{$app->id}",
     ]);
 
-    expect(fn () => $migration->down())
+    expect(fn () => run_legacy_schema_migration($migration, 'down'))
         ->toThrow(RuntimeException::class, 'Cannot discard recorded production AppInstance identity.');
 
-    expect(Schema::hasColumns('app_instances', ['production_user', 'production_home']))->toBeTrue();
+    expect(Schema::hasColumns('instances', ['production_user', 'production_home']))->toBeTrue();
 });
 
 function app_instance_production_identity_migration(): object
@@ -93,7 +93,7 @@ function app_instance_production_identity_migration(): object
     );
 }
 
-/** @return array{OrbitApp, Node} */
+/** @return array{Project, Node} */
 function production_identity_migration_parents(): array
 {
     $node = Node::query()->create([
@@ -102,9 +102,9 @@ function production_identity_migration_parents(): array
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.'.(Node::query()->count() + 70),
     ]);
-    $app = OrbitApp::query()->create([
-        'name' => 'Production identity '.OrbitApp::query()->count(),
-        'slug' => 'production-identity-'.OrbitApp::query()->count(),
+    $app = Project::query()->create([
+        'name' => 'Production identity '.Project::query()->count(),
+        'slug' => 'production-identity-'.Project::query()->count(),
         'repository_url' => 'https://example.test/production-identity.git',
         'default_branch' => 'main',
         'root' => 'public',

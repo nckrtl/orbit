@@ -7,9 +7,9 @@ use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Domain\Schedules\ScheduleTargetType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 
 beforeEach(function (): void {
@@ -24,13 +24,13 @@ beforeEach(function (): void {
         'wireguard_ip' => '10.44.0.3',
     ]);
     $this->node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
     ]);
-    $this->instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $this->instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $this->node->id,
         'name' => 'main',
         'environment' => 'development',
@@ -40,9 +40,9 @@ beforeEach(function (): void {
     ]);
 });
 
-it('derives the Node and development AppInstance contexts', function (): void {
+it('derives the Node and development Instance contexts', function (): void {
     $node = $this->resolver->resolve(ScheduleTargetType::Node, $this->node->id);
-    $development = $this->resolver->resolve(ScheduleTargetType::AppInstance, $this->instance->id);
+    $development = $this->resolver->resolve(ScheduleTargetType::Instance, $this->instance->id);
 
     expect($node->node->is($this->node))->toBeTrue()
         ->and($node->user)->toBe('orbit')
@@ -66,7 +66,7 @@ it('derives the stable production current context with fixed non-login bash', fu
         'production_home' => '/home/docs',
     ]);
 
-    $target = $this->resolver->resolve(ScheduleTargetType::AppInstance, $this->instance->id);
+    $target = $this->resolver->resolve(ScheduleTargetType::Instance, $this->instance->id);
 
     expect($target->user)->toBe('docs')
         ->and($target->home)->toBe('/home/docs')
@@ -78,13 +78,13 @@ it('derives the stable production current context with fixed non-login bash', fu
 it('maps unavailable targets and account inspection to the stable catalog', function (): void {
     $this->accounts->unavailable = true;
 
-    expect(fn () => $this->resolver->resolve(ScheduleTargetType::AppInstance, $this->instance->id))
+    expect(fn () => $this->resolver->resolve(ScheduleTargetType::Instance, $this->instance->id))
         ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'schedule.target_unavailable');
 
     $this->accounts->unavailable = false;
     $this->instance->update(['status' => AppInstanceState::Reserved]);
 
-    expect(fn () => $this->resolver->resolve(ScheduleTargetType::AppInstance, $this->instance->id))
+    expect(fn () => $this->resolver->resolve(ScheduleTargetType::Instance, $this->instance->id))
         ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'schedule.target_unavailable');
 });
 

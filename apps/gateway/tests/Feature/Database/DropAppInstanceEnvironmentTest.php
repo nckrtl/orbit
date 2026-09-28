@@ -5,9 +5,9 @@ declare(strict_types=1);
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -23,10 +23,10 @@ function drop_app_instance_environment_migration(): object
 
 it('derives Instance placement from Node roles and restores the column and constraints on rollback', function (): void {
     $migration = drop_app_instance_environment_migration();
-    $migration->down();
+    run_legacy_schema_migration($migration, 'down');
 
     try {
-        $app = OrbitApp::query()->create([
+        $app = Project::query()->create([
             'name' => 'Placement',
             'slug' => 'placement',
             'repository_url' => 'https://example.test/placement.git',
@@ -40,8 +40,8 @@ it('derives Instance placement from Node roles and restores the column and const
             'wireguard_ip' => '10.44.0.91',
         ]);
         $node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
-        $instance = AppInstance::query()->create([
-            'app_id' => $app->id,
+        $instance = Instance::query()->create([
+            'project_id' => $app->id,
             'node_id' => $node->id,
             'name' => 'main',
             'checkout_path' => '/var/www/placement/releases/one',
@@ -51,11 +51,11 @@ it('derives Instance placement from Node roles and restores the column and const
             'starting_commit' => str_repeat('a', 40),
             'status' => AppInstanceState::Active,
         ]);
-        DB::table('app_instances')->where('id', $instance->id)->update(['environment' => 'production']);
+        DB::table('instances')->where('id', $instance->id)->update(['environment' => 'production']);
 
-        $migration->up();
+        run_legacy_schema_migration($migration, 'up');
 
-        expect(Schema::hasColumn('app_instances', 'environment'))
+        expect(Schema::hasColumn('instances', 'environment'))
             ->toBeFalse()
             ->and($instance->fresh()->placedOnAppProd())
             ->toBeTrue()
@@ -63,13 +63,13 @@ it('derives Instance placement from Node roles and restores the column and const
             ->toBe('production')
             ->and(DB::table('sqlite_master')
                 ->where('type', 'trigger')
-                ->whereIn('name', ['routes_contract_update', 'route_targets_contract_insert', 'production_route_target_instances_update', 'app_instance_removal_members_insert'])
-                ->where('sql', 'like', '%app_instances.environment%')
+                ->whereIn('name', ['routes_contract_update', 'route_targets_contract_insert', 'production_route_target_instances_update', 'instance_removal_members_insert'])
+                ->where('sql', 'like', '%instances.environment%')
                 ->exists())
             ->toBeFalse();
 
-        expect(fn () => AppInstance::query()->create([
-            'app_id' => $app->id,
+        expect(fn () => Instance::query()->create([
+            'project_id' => $app->id,
             'node_id' => $node->id,
             'name' => 'duplicate',
             'checkout_path' => '/var/www/placement/releases/two',
@@ -80,26 +80,26 @@ it('derives Instance placement from Node roles and restores the column and const
             'status' => AppInstanceState::Active,
         ]))->toThrow(QueryException::class);
 
-        $migration->down();
+        run_legacy_schema_migration($migration, 'down');
 
-        expect(Schema::hasColumn('app_instances', 'environment'))
+        expect(Schema::hasColumn('instances', 'environment'))
             ->toBeTrue()
-            ->and(DB::table('app_instances')->where('id', $instance->id)->value('environment'))
+            ->and(DB::table('instances')->where('id', $instance->id)->value('environment'))
             ->toBe('production');
     } finally {
-        if (! Schema::hasColumn('app_instances', 'environment')) {
-            $migration->down();
+        if (! Schema::hasColumn('instances', 'environment')) {
+            run_legacy_schema_migration($migration, 'down');
         }
-        $migration->up();
+        run_legacy_schema_migration($migration, 'up');
     }
 });
 
 it('rolls back the restored column and trigger rewrites when down fails and can retry', function (): void {
     $migration = drop_app_instance_environment_migration();
-    $migration->down();
+    run_legacy_schema_migration($migration, 'down');
 
     try {
-        $app = OrbitApp::query()->create([
+        $app = Project::query()->create([
             'name' => 'Atomic rollback',
             'slug' => 'atomic-rollback',
             'repository_url' => 'https://example.test/atomic-rollback.git',
@@ -112,8 +112,8 @@ it('rolls back the restored column and trigger rewrites when down fails and can 
             'wireguard_ip' => '10.44.0.95',
         ]);
         $node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
-        $instance = AppInstance::query()->create([
-            'app_id' => $app->id,
+        $instance = Instance::query()->create([
+            'project_id' => $app->id,
             'node_id' => $node->id,
             'name' => 'main',
             'checkout_path' => '/home/atomic-rollback/releases/one',
@@ -121,8 +121,8 @@ it('rolls back the restored column and trigger rewrites when down fails and can 
             'production_home' => '/home/atomic-rollback',
             'status' => AppInstanceState::Active,
         ]);
-        DB::table('app_instances')->where('id', $instance->id)->update(['environment' => 'production']);
-        $migration->up();
+        DB::table('instances')->where('id', $instance->id)->update(['environment' => 'production']);
+        run_legacy_schema_migration($migration, 'up');
         $triggersBefore = DB::table('sqlite_master')
             ->where('type', 'trigger')
             ->orderBy('name')
@@ -136,10 +136,10 @@ it('rolls back the restored column and trigger rewrites when down fails and can 
             }
         });
 
-        expect(fn () => $migration->down())
+        expect(fn () => run_legacy_schema_migration($migration, 'down'))
             ->toThrow(RuntimeException::class, 'Injected rollback trigger recreation failure.');
 
-        expect(Schema::hasColumn('app_instances', 'environment'))
+        expect(Schema::hasColumn('instances', 'environment'))
             ->toBeFalse()
             ->and(DB::table('sqlite_master')
                 ->where('type', 'trigger')
@@ -147,8 +147,8 @@ it('rolls back the restored column and trigger rewrites when down fails and can 
                 ->pluck('sql', 'name')
                 ->all())
             ->toBe($triggersBefore)
-            ->and(fn () => AppInstance::query()->create([
-                'app_id' => $app->id,
+            ->and(fn () => Instance::query()->create([
+                'project_id' => $app->id,
                 'node_id' => $node->id,
                 'name' => 'duplicate-after-failed-rollback',
                 'checkout_path' => '/home/atomic-rollback/releases/two',
@@ -160,31 +160,31 @@ it('rolls back the restored column and trigger rewrites when down fails and can 
             ]))
             ->toThrow(QueryException::class);
 
-        $migration->down();
+        run_legacy_schema_migration($migration, 'down');
 
-        expect(Schema::hasColumn('app_instances', 'environment'))
+        expect(Schema::hasColumn('instances', 'environment'))
             ->toBeTrue()
-            ->and(DB::table('app_instances')->where('id', $instance->id)->value('environment'))
+            ->and(DB::table('instances')->where('id', $instance->id)->value('environment'))
             ->toBe('production')
             ->and(DB::table('sqlite_master')
                 ->where('type', 'trigger')
-                ->where('name', 'app_instances_production_placement_insert')
+                ->where('name', 'instances_production_placement_insert')
                 ->where('sql', 'like', '%NEW.environment = \'production\'%')
                 ->exists())
             ->toBeTrue();
     } finally {
-        if (Schema::hasColumn('app_instances', 'environment')) {
-            $migration->up();
+        if (Schema::hasColumn('instances', 'environment')) {
+            run_legacy_schema_migration($migration, 'up');
         }
     }
 });
 
 it('rolls back trigger rewrites when an injected migration failure interrupts trigger recreation', function (): void {
     $migration = drop_app_instance_environment_migration();
-    $migration->down();
+    run_legacy_schema_migration($migration, 'down');
 
     try {
-        $app = OrbitApp::query()->create([
+        $app = Project::query()->create([
             'name' => 'Atomic placement',
             'slug' => 'atomic-placement',
             'repository_url' => 'https://example.test/atomic-placement.git',
@@ -197,8 +197,8 @@ it('rolls back trigger rewrites when an injected migration failure interrupts tr
             'wireguard_ip' => '10.44.0.93',
         ]);
         $node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
-        $instance = AppInstance::query()->create([
-            'app_id' => $app->id,
+        $instance = Instance::query()->create([
+            'project_id' => $app->id,
             'node_id' => $node->id,
             'name' => 'main',
             'checkout_path' => '/home/atomic-placement/releases/one',
@@ -206,7 +206,7 @@ it('rolls back trigger rewrites when an injected migration failure interrupts tr
             'production_home' => '/home/atomic-placement',
             'status' => AppInstanceState::Active,
         ]);
-        DB::table('app_instances')->where('id', $instance->id)->update(['environment' => 'production']);
+        DB::table('instances')->where('id', $instance->id)->update(['environment' => 'production']);
         $triggersBefore = DB::table('sqlite_master')
             ->where('type', 'trigger')
             ->orderBy('name')
@@ -220,10 +220,10 @@ it('rolls back trigger rewrites when an injected migration failure interrupts tr
             }
         });
 
-        expect(fn () => $migration->up())
+        expect(fn () => run_legacy_schema_migration($migration, 'up'))
             ->toThrow(RuntimeException::class, 'Injected trigger recreation failure.');
 
-        expect(Schema::hasColumn('app_instances', 'environment'))
+        expect(Schema::hasColumn('instances', 'environment'))
             ->toBeTrue()
             ->and(DB::table('sqlite_master')
                 ->where('type', 'trigger')
@@ -231,8 +231,8 @@ it('rolls back trigger rewrites when an injected migration failure interrupts tr
                 ->pluck('sql', 'name')
                 ->all())
             ->toBe($triggersBefore)
-            ->and(fn () => DB::table('app_instances')->insert([
-                'app_id' => $app->id,
+            ->and(fn () => DB::table('instances')->insert([
+                'project_id' => $app->id,
                 'node_id' => $node->id,
                 'name' => 'duplicate-before-retry',
                 'environment' => 'production',
@@ -245,29 +245,29 @@ it('rolls back trigger rewrites when an injected migration failure interrupts tr
             ]))
             ->toThrow(QueryException::class);
 
-        $migration->up();
+        run_legacy_schema_migration($migration, 'up');
 
-        expect(Schema::hasColumn('app_instances', 'environment'))
+        expect(Schema::hasColumn('instances', 'environment'))
             ->toBeFalse()
             ->and(DB::table('sqlite_master')
                 ->where('type', 'trigger')
-                ->where('name', 'app_instances_production_placement_insert')
+                ->where('name', 'instances_production_placement_insert')
                 ->exists())
             ->toBeTrue();
     } finally {
-        if (! Schema::hasColumn('app_instances', 'environment')) {
-            $migration->down();
+        if (! Schema::hasColumn('instances', 'environment')) {
+            run_legacy_schema_migration($migration, 'down');
         }
-        $migration->up();
+        run_legacy_schema_migration($migration, 'up');
     }
 });
 
 it('refuses to drop the column when an Instance has no active or removing matching Node role', function (): void {
     $migration = drop_app_instance_environment_migration();
-    $migration->down();
+    run_legacy_schema_migration($migration, 'down');
 
     try {
-        $app = OrbitApp::query()->create([
+        $app = Project::query()->create([
             'name' => 'Unplaced',
             'slug' => 'unplaced',
             'repository_url' => 'https://example.test/unplaced.git',
@@ -280,8 +280,8 @@ it('refuses to drop the column when an Instance has no active or removing matchi
             'public_ssh_host' => '192.0.2.92',
             'wireguard_ip' => '10.44.0.92',
         ]);
-        $instance = AppInstance::query()->create([
-            'app_id' => $app->id,
+        $instance = Instance::query()->create([
+            'project_id' => $app->id,
             'node_id' => $node->id,
             'name' => 'main',
             'environment' => 'production',
@@ -291,17 +291,17 @@ it('refuses to drop the column when an Instance has no active or removing matchi
             'status' => AppInstanceState::Active,
         ]);
 
-        expect(fn () => $migration->up())
+        expect(fn () => run_legacy_schema_migration($migration, 'up'))
             ->toThrow(RuntimeException::class, "Cannot remove AppInstance environment without a usable matching Node role for Instances: {$instance->id}.")
-            ->and(Schema::hasColumn('app_instances', 'environment'))
+            ->and(Schema::hasColumn('instances', 'environment'))
             ->toBeTrue();
 
         $instance->delete();
-        $migration->up();
+        run_legacy_schema_migration($migration, 'up');
     } finally {
-        if (! Schema::hasColumn('app_instances', 'environment')) {
-            $migration->down();
+        if (! Schema::hasColumn('instances', 'environment')) {
+            run_legacy_schema_migration($migration, 'down');
         }
-        $migration->up();
+        run_legacy_schema_migration($migration, 'up');
     }
 });

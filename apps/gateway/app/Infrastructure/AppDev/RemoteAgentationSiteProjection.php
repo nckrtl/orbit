@@ -6,7 +6,7 @@ namespace App\Infrastructure\AppDev;
 
 use App\Domain\AppDev\AgentationSiteProjection;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class RemoteAgentationSiteProjection implements AgentationSiteProjection
 {
@@ -15,7 +15,7 @@ final readonly class RemoteAgentationSiteProjection implements AgentationSitePro
         private DevelopmentProjectionOperationLock $projection,
     ) {}
 
-    public function project(AppInstance $instance): void
+    public function project(Instance $instance): void
     {
         $this->projection->run(function () use ($instance): void {
             $instance->loadMissing(['routes', 'node']);

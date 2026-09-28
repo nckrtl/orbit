@@ -7,9 +7,9 @@ use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Schedule;
 use Illuminate\Routing\Route as RoutingRoute;
 use Illuminate\Support\Facades\Route;
@@ -128,7 +128,7 @@ it('adds lists shows and runs bounded Schedule data without changing disabled ti
         ->toBe(DesiredTimerState::Disabled);
 });
 
-it('activates an AppInstance Schedule from an empty body idempotently and rejects invalid Node requests', function (): void {
+it('activates an Instance Schedule from an empty body idempotently and rejects invalid Node requests', function (): void {
     $schedule = schedules_api_record($this->instance, $this->targetNode, start: false);
 
     $this->postJson("/api/v1/schedules/{$schedule->id}/activate")
@@ -343,17 +343,17 @@ function schedules_api_node(string $name, string $ip): Node
     ]);
 }
 
-function schedules_api_instance(Node $node): AppInstance
+function schedules_api_instance(Node $node): Instance
 {
     orbit_test_set_app_placement_role($node, false);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Reports',
         'slug' => 'reports',
         'repository_url' => 'git@example.test:reports.git',
     ]);
 
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'main',
         'environment' => 'development',
@@ -365,13 +365,13 @@ function schedules_api_instance(Node $node): AppInstance
 }
 
 function schedules_api_record(
-    Node|AppInstance $target,
+    Node|Instance $target,
     Node $host,
     string $name = 'daily-report',
     bool $start = true,
 ): Schedule {
     return Schedule::query()->create([
-        'target_type' => $target instanceof AppInstance ? AppInstance::MorphAlias : Node::class,
+        'target_type' => $target instanceof Instance ? Instance::MorphAlias : Node::class,
         'target_id' => $target->id,
         'host_node_id' => $host->id,
         'name' => $name,
@@ -385,7 +385,7 @@ function schedules_api_record(
 
 /** @return array<string, mixed> */
 function schedules_api_payload(
-    Node|AppInstance $target,
+    Node|Instance $target,
     string $command = 'php artisan report:send',
     string $calendar = 'daily',
     bool $start = true,

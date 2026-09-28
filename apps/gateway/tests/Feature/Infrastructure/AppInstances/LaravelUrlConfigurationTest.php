@@ -17,10 +17,10 @@ use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
@@ -369,7 +369,7 @@ it('restores Laravel URL environment on a failed slug update and ignores applica
     expect($fixture->app->refresh()->slug)->toBe('acme');
 });
 
-/** @return array{RemoteDevelopmentAppInstanceConfigurator, AppDevFakeSshExecutor, AppInstance} */
+/** @return array{RemoteDevelopmentAppInstanceConfigurator, AppDevFakeSshExecutor, Instance} */
 function orb127_laravel_configurator(string $checkoutPath, ?string $managedUser = null): array
 {
     $owner = posix_getpwuid(posix_geteuid());
@@ -416,13 +416,13 @@ function orb127_laravel_configurator(string $checkoutPath, ?string $managedUser 
         'wireguard_ip' => '10.44.0.10',
         'user' => $user,
     ]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme-'.Str::lower(Str::random(8)),
         'repository_url' => 'https://example.test/acme.git',
     ]);
-    $appInstance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $appInstance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'feature',
         'checkout_path' => $checkoutPath,

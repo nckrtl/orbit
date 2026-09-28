@@ -21,7 +21,7 @@ use App\Infrastructure\Processes\ProcessOutput;
 use App\Infrastructure\Processes\ProcessOutputStream;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use Closure;
 
 final readonly class RemoteProductionDeployment implements ProductionDeployment
@@ -38,7 +38,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         $this->releaseName = $releaseName ?? static fn (): string => gmdate('YmdHis').'-'.bin2hex(random_bytes(8));
     }
 
-    public function prepare(AppInstance $appInstance, string $branch): DeploymentRelease
+    public function prepare(Instance $appInstance, string $branch): DeploymentRelease
     {
         [$repository, $user, $home, $root] = $this->identity($appInstance);
         $name = ($this->releaseName)();
@@ -134,7 +134,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
     }
 
     public function executeStep(
-        AppInstance $appInstance,
+        Instance $appInstance,
         DeploymentRelease $release,
         DeploymentStep $step,
         DeploymentRequest $request,
@@ -241,7 +241,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         );
     }
 
-    public function activate(AppInstance $appInstance, DeploymentRelease $release): DeploymentRelease
+    public function activate(Instance $appInstance, DeploymentRelease $release): DeploymentRelease
     {
         [$repository, $user, $home, $root] = $this->identity($appInstance);
         $this->assertRelease($release, $home);
@@ -334,7 +334,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         return $release;
     }
 
-    public function selected(AppInstance $appInstance): ?DeploymentRelease
+    public function selected(Instance $appInstance): ?DeploymentRelease
     {
         [$repository, $user, $home, $root] = $this->identity($appInstance);
         $result = $this->execute(
@@ -355,7 +355,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         return $this->releaseFromResult($result, $home);
     }
 
-    public function retained(AppInstance $appInstance, string $name): DeploymentRelease
+    public function retained(Instance $appInstance, string $name): DeploymentRelease
     {
         $this->assertReleaseName($name);
         [$repository, $user, $home, $root] = $this->identity($appInstance);
@@ -383,7 +383,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         return $this->releaseFromResult($result, $home);
     }
 
-    public function releases(AppInstance $appInstance): DeploymentReleaseState
+    public function releases(Instance $appInstance): DeploymentReleaseState
     {
         [$repository, $user, $home, $root] = $this->identity($appInstance);
         $result = $this->execute(
@@ -468,7 +468,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
     }
 
     /** @return array{string, string, string, string} */
-    private function identity(AppInstance $appInstance): array
+    private function identity(Instance $appInstance): array
     {
         $appInstance->loadMissing(['app', 'node']);
         $repository = $appInstance->app->repository_url;
@@ -564,7 +564,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
     }
 
     private function execute(
-        AppInstance $appInstance,
+        Instance $appInstance,
         RemoteCommand $command,
         string $step,
         string $errorCode,

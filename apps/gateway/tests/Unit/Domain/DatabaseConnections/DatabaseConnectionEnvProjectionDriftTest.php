@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
 use App\Domain\DatabaseConnections\DatabaseDriver;
-use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
+use App\Models\Instance;
 
 it('names drifted and leftover keys without returning stored values', function (): void {
     $projection = new DatabaseConnectionEnvProjection;
@@ -13,7 +13,7 @@ it('names drifted and leftover keys without returning stored values', function (
         'driver' => DatabaseDriver::Sqlite,
         'path' => '/var/lib/app/database.sqlite',
     ]);
-    $instance = new AppInstance(['node_id' => 1]);
+    $instance = new Instance(['node_id' => 1]);
     $projected = $projection->project($connection, $instance, 'DB');
 
     expect($projection->driftedKeys([

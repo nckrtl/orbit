@@ -7,10 +7,10 @@ use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 
 function managed_mysql_process_node(array $attributes = []): Node
 {
@@ -83,15 +83,15 @@ it('accepts mysql-server image names and published host ports', function (string
     'mysql/mysql-server:8.4',
 ]);
 
-it('refuses an AppInstance Process, a systemd Process, and a non-MySQL image', function (): void {
+it('refuses an Instance Process, a systemd Process, and a non-MySQL image', function (): void {
     $node = managed_mysql_process_node();
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'main',
         'environment' => 'development',
@@ -102,7 +102,7 @@ it('refuses an AppInstance Process, a systemd Process, and a non-MySQL image', f
     ]);
 
     $instanceProcess = managed_mysql_process_record($node, [
-        'owner_type' => AppInstance::MorphAlias,
+        'owner_type' => Instance::MorphAlias,
         'owner_id' => $instance->id,
     ]);
 

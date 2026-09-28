@@ -22,7 +22,7 @@ final readonly class DispatchAnnotationsAction
     {
         $sent = 0;
         $candidates = Annotation::query()->with('task.taskGroup')->whereHas('task', static fn ($q) => $q->where('status', TaskStatus::Todo)->whereHas('taskGroup', static fn ($g) => $g->where('execution_mode', TaskExecutionMode::ExistingThread)))->whereIn('delivery', ['queued', 'sending'])
-            ->whereHas('instance', static fn ($q) => $q->where('status', '!=', 'removing'))->whereNotNull('app_instance_id')->where(static fn ($q) => $q->whereNull('lease_until')->orWhere('lease_until', '<', now()))
+            ->whereHas('instance', static fn ($q) => $q->where('status', '!=', 'removing'))->whereNotNull('instance_id')->where(static fn ($q) => $q->whereNull('lease_until')->orWhere('lease_until', '<', now()))
             ->orderBy('submission_order')->limit(20)->get();
         foreach ($candidates as $candidate) {
             $annotation = DB::transaction(function () use ($candidate): ?Annotation {
@@ -103,7 +103,7 @@ final readonly class DispatchAnnotationsAction
 
     private function prompt(Annotation $annotation): string
     {
-        $path = '/api/v1/instances/'.$annotation->app_instance_id.'/annotations/'.$annotation->id.'/status';
+        $path = '/api/v1/instances/'.$annotation->instance_id.'/annotations/'.$annotation->id.'/status';
         $url = rtrim(Config::string('app.url'), '/').$path;
         $quote = static fn (string $value): string => "'".str_replace("'", "'\\''", $value)."'";
         $curl = static fn (array $body): string => 'curl --fail-with-body -sS -X POST '.$quote($url)." -H 'Content-Type: application/json' --data ".$quote(json_encode($body, JSON_THROW_ON_ERROR));

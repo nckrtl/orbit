@@ -9,9 +9,9 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
+use App\Models\Instance;
+use App\Models\Project;
 use App\Models\Route;
 
 final class FakeAppUpdateProjectionMutator implements AppUpdateProjectionMutator
@@ -31,7 +31,7 @@ final class FakeAppUpdateProjectionMutator implements AppUpdateProjectionMutator
 
     public bool $applicationErrorOnUrl = false;
 
-    public function preflightSlug(OrbitApp $app, string $newSlug): array
+    public function preflightSlug(Project $app, string $newSlug): array
     {
         if ($this->refuseSlug) {
             throw new ResourceOperationException(
@@ -75,7 +75,7 @@ final class FakeAppUpdateProjectionMutator implements AppUpdateProjectionMutator
         return ['routes' => $routes];
     }
 
-    public function prepareSlug(OrbitApp $app, string $newSlug, array $inventory): array
+    public function prepareSlug(Project $app, string $newSlug, array $inventory): array
     {
         if ($this->failSlugPrepare) {
             throw new ResourceOperationException(
@@ -99,7 +99,7 @@ final class FakeAppUpdateProjectionMutator implements AppUpdateProjectionMutator
             }
 
             $replacement = Route::query()->create([
-                'app_id' => $current->app_id,
+                'project_id' => $current->project_id,
                 'node_id' => $current->node_id,
                 'cluster_id' => $current->cluster_id,
                 'generation_basis_node_id' => $current->generation_basis_node_id,
@@ -115,7 +115,7 @@ final class FakeAppUpdateProjectionMutator implements AppUpdateProjectionMutator
 
             foreach ($current->targets as $target) {
                 $replacement->targets()->create([
-                    'app_instance_id' => $target->app_instance_id,
+                    'instance_id' => $target->instance_id,
                     'position' => $target->position,
                 ]);
             }
@@ -131,7 +131,7 @@ final class FakeAppUpdateProjectionMutator implements AppUpdateProjectionMutator
         return ['routes' => $prepared];
     }
 
-    public function publishSlug(OrbitApp $app, string $newSlug, array $prepared): void
+    public function publishSlug(Project $app, string $newSlug, array $prepared): void
     {
         foreach ($prepared['routes'] ?? [] as $row) {
             if (! is_array($row)) {
@@ -185,7 +185,7 @@ final class FakeAppUpdateProjectionMutator implements AppUpdateProjectionMutator
         }
     }
 
-    public function rollbackSlug(OrbitApp $app, array $prepared): void
+    public function rollbackSlug(Project $app, array $prepared): void
     {
         foreach ($prepared['routes'] ?? [] as $row) {
             if (! is_array($row)) {
@@ -213,7 +213,7 @@ final class FakeAppUpdateProjectionMutator implements AppUpdateProjectionMutator
         }
     }
 
-    public function preflightRoot(OrbitApp $app, string $newRoot): array
+    public function preflightRoot(Project $app, string $newRoot): array
     {
         $instances = [];
 
@@ -232,12 +232,12 @@ final class FakeAppUpdateProjectionMutator implements AppUpdateProjectionMutator
         return ['instances' => $instances];
     }
 
-    public function prepareRoot(OrbitApp $app, string $newRoot, array $inventory): array
+    public function prepareRoot(Project $app, string $newRoot, array $inventory): array
     {
         return $inventory;
     }
 
-    public function publishRoot(OrbitApp $app, string $newRoot, array $prepared): void
+    public function publishRoot(Project $app, string $newRoot, array $prepared): void
     {
         foreach ($prepared['instances'] ?? [] as $row) {
             if (! is_array($row)) {
@@ -248,22 +248,22 @@ final class FakeAppUpdateProjectionMutator implements AppUpdateProjectionMutator
         }
     }
 
-    public function rollbackRoot(OrbitApp $app, array $prepared): void
+    public function rollbackRoot(Project $app, array $prepared): void
     {
         foreach ($prepared['instances'] ?? [] as $row) {
             if (! is_array($row)) {
                 continue;
             }
 
-            $instance = AppInstance::query()->find((int) $row['instance_id']);
+            $instance = Instance::query()->find((int) $row['instance_id']);
 
-            if ($instance instanceof AppInstance) {
+            if ($instance instanceof Instance) {
                 $this->projectRuntime($instance->id, $this->effectiveRoot($instance, $app->root));
             }
         }
     }
 
-    private function proposedDomain(OrbitApp $app, Route $route, ?AppInstance $instance, string $newSlug): string
+    private function proposedDomain(Project $app, Route $route, ?Instance $instance, string $newSlug): string
     {
         $name = $instance?->name ?? 'default';
 
@@ -287,7 +287,7 @@ final class FakeAppUpdateProjectionMutator implements AppUpdateProjectionMutator
         }
 
         $value = AppInstanceEnvironmentValue::query()
-            ->where('app_instance_id', $instanceId)
+            ->where('instance_id', $instanceId)
             ->where('env_key', 'APP_URL')
             ->first();
 
@@ -297,7 +297,7 @@ final class FakeAppUpdateProjectionMutator implements AppUpdateProjectionMutator
     private function writeEnvironment(int $instanceId, string $url): void
     {
         $value = AppInstanceEnvironmentValue::query()
-            ->where('app_instance_id', $instanceId)
+            ->where('instance_id', $instanceId)
             ->where('env_key', 'APP_URL')
             ->first();
 
@@ -308,7 +308,7 @@ final class FakeAppUpdateProjectionMutator implements AppUpdateProjectionMutator
         }
 
         AppInstanceEnvironmentValue::query()->create([
-            'app_instance_id' => $instanceId,
+            'instance_id' => $instanceId,
             'env_key' => 'APP_URL',
             'env_value' => $url,
         ]);
@@ -325,7 +325,7 @@ final class FakeAppUpdateProjectionMutator implements AppUpdateProjectionMutator
         ];
     }
 
-    private function effectiveRoot(AppInstance $instance, ?string $appRoot): ?string
+    private function effectiveRoot(Instance $instance, ?string $appRoot): ?string
     {
         $root = $instance->root ?? $appRoot;
 

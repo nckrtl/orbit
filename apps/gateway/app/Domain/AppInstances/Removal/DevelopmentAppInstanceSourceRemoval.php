@@ -4,18 +4,18 @@ declare(strict_types=1);
 
 namespace App\Domain\AppInstances\Removal;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 interface DevelopmentAppInstanceSourceRemoval
 {
     public function inspect(
-        AppInstance $appInstance,
+        Instance $appInstance,
         bool $force,
         bool $inspectContent = true,
     ): AppInstanceSourceInventory;
 
     public function remove(
-        AppInstance $appInstance,
+        Instance $appInstance,
         AppInstanceSourceInventory $inventory,
         bool $force,
     ): void;

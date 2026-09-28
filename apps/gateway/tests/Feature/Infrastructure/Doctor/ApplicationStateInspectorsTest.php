@@ -34,10 +34,10 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
@@ -232,7 +232,7 @@ it('fails app inspection closed for invalid intent and failed observations', fun
     'truncated output' => ['https://github.com/acme/project.git', app_inspector_result("1\n", truncated: true)],
 ]);
 
-it('observes only AppInstance source evidence through the fixed SSH boundary', function (): void {
+it('observes only Instance source evidence through the fixed SSH boundary', function (): void {
     $node = application_inspector_node();
     $appInstance = application_app_instance(application_inspector_app(), $node);
     $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n1\n1\n1\n")]);
@@ -259,7 +259,7 @@ it('observes only AppInstance source evidence through the fixed SSH boundary', f
         ->not->toContain('caddy', 'php', 'certificate', 'dns', 'hostname');
 });
 
-it('maps each AppInstance source observation without retaining diagnostics', function (
+it('maps each Instance source observation without retaining diagnostics', function (
     string $remote,
     InstanceInspectionData $expected,
 ): void {
@@ -790,7 +790,7 @@ it('finds each of the Instance site blocks unchanged in the one live Caddyfile',
     $sandbox = sys_get_temp_dir().'/orbit-doctor-caddy-'.bin2hex(random_bytes(6));
     $live = $layout === 'fragment' ? "{$sandbox}/v1/Caddyfile" : "{$sandbox}/v2/Caddyfile";
     $program = application_production_observation_program('caddy_matches', "readlink() { printf '%s\\n' '{$live}'; }");
-    $instance = AppInstance::query()->latest('id')->firstOrFail();
+    $instance = Instance::query()->latest('id')->firstOrFail();
     $sites = app(ProductionInstanceInspectionExpectationFactory::class)->make($instance)->caddySites;
     $render = app(NodeCaddyfileRenderer::class)->render($instance->node)->content;
     $files = new Filesystem;
@@ -862,7 +862,7 @@ it('fails production inspection closed for malformed, failed, truncated, and dia
     'stderr' => [app_inspector_result("1\n1\n1\n1\n1\n1\n", stderr: 'private-production-value')],
 ]);
 
-it('reports shared AppInstance Git administration as non-independent', function (): void {
+it('reports shared Instance Git administration as non-independent', function (): void {
     $appInstance = application_app_instance(application_inspector_app(), application_inspector_node());
     $script = application_instance_remote_script($appInstance);
     $fixture = application_instance_repository_fixture($appInstance->app->repository_url);
@@ -1225,7 +1225,7 @@ function application_run(array $arguments, ?string $input = null): CommandResult
     return $result;
 }
 
-function application_instance_remote_script(AppInstance $appInstance): string
+function application_instance_remote_script(Instance $appInstance): string
 {
     $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n1\n1\n1\n")]);
     application_instance_inspector($ssh)->inspect($appInstance);
@@ -1325,7 +1325,7 @@ function application_commit(string $checkout, string $file): void
  * @param  array{sandbox: string, repository: string, allowedRoot: string, checkout: string, startingCommit: string, user: string, group: string}  $fixture
  * @return non-empty-list<string>
  */
-function application_instance_source_arguments(AppInstance $appInstance, array $fixture): array
+function application_instance_source_arguments(Instance $appInstance, array $fixture): array
 {
     return [
         'bash',
@@ -1379,27 +1379,27 @@ function application_inspector_node(): Node
     ]);
 }
 
-function application_inspector_app(): App
+function application_inspector_app(): Project
 {
     static $number = 0;
     $number++;
 
-    return App::query()->create([
+    return Project::query()->create([
         'name' => "Project {$number}",
         'slug' => "project-{$number}",
         'repository_url' => "https://git.example.test/acme/project-{$number}.git",
     ]);
 }
 
-function application_app_instance(App $app, Node $node, string $name = 'development'): AppInstance
+function application_app_instance(Project $app, Node $node, string $name = 'development'): Instance
 {
     $app->update(['default_branch' => 'main', 'root' => 'public']);
     if (! $node->roles()->whereIn('role', [RoleName::AppDev->value, RoleName::AppProd->value])->exists()) {
         $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     }
 
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => $name,
         'checkout_path' => "/srv/users/nckrtl/apps/{$app->slug}/{$name}",
@@ -1409,14 +1409,14 @@ function application_app_instance(App $app, Node $node, string $name = 'developm
     ]);
 }
 
-function application_mark_removing(AppInstance $instance): void
+function application_mark_removing(Instance $instance): void
 {
     $trigger = DB::table('sqlite_master')
         ->where('type', 'trigger')
-        ->where('name', 'app_instances_removal_status_update')
+        ->where('name', 'instances_removal_status_update')
         ->value('sql');
     expect($trigger)->toBeString();
-    DB::statement('DROP TRIGGER app_instances_removal_status_update');
+    DB::statement('DROP TRIGGER instances_removal_status_update');
 
     try {
         $instance->update(['status' => AppInstanceState::Removing]);
@@ -1450,7 +1450,7 @@ function application_instance_inspector(
     );
 }
 
-function application_production_app_instance(App $app, Node $node, string $secret): AppInstance
+function application_production_app_instance(Project $app, Node $node, string $secret): Instance
 {
     NodeRole::query()->firstOrCreate(
         ['node_id' => $node->id, 'role' => RoleName::AppProd],
@@ -1458,8 +1458,8 @@ function application_production_app_instance(App $app, Node $node, string $secre
     );
     $app->update(['default_branch' => 'main', 'root' => 'public']);
     $user = "orbit-app-{$app->id}";
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'production',
         'environment' => 'production',
@@ -1478,14 +1478,14 @@ function application_production_app_instance(App $app, Node $node, string $secre
         'status' => AppInstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'domain' => "{$app->slug}.example.test",
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Public,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
     $instance->environmentValues()->create(['env_key' => 'APP_KEY', 'env_value' => $secret]);
 

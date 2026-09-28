@@ -43,22 +43,22 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 
 it('copies independent encrypted values and resolves placeholders through the exact pending clone Route', function (): void {
     [$source, $target] = clone_environment_fixture();
     $source->environmentValues()->createMany([
-        ['env_key' => 'APP_ENV', 'env_value' => '{{app_instance.environment}}'],
+        ['env_key' => 'APP_ENV', 'env_value' => '{{instance.environment}}'],
         ['env_key' => 'APP_KEY', 'env_value' => 'base64:literal-key'],
-        ['env_key' => 'APP_URL', 'env_value' => 'https://{{app_instance.domain}}/path'],
+        ['env_key' => 'APP_URL', 'env_value' => 'https://{{instance.domain}}/path'],
     ]);
-    $sourceCiphertext = DB::table('app_instance_environment_values')
-        ->where('app_instance_id', $source->id)
+    $sourceCiphertext = DB::table('instance_environment_values')
+        ->where('instance_id', $source->id)
         ->orderBy('env_key')
         ->pluck('env_value', 'env_key')
         ->all();
@@ -67,14 +67,14 @@ it('copies independent encrypted values and resolves placeholders through the ex
     $result = app(CloneAppInstanceEnvironmentAction::class)->execute($source, $target);
 
     $targetValues = $target->environmentValues()->orderBy('env_key')->pluck('env_value', 'env_key')->all();
-    $targetCiphertext = DB::table('app_instance_environment_values')
-        ->where('app_instance_id', $target->id)
+    $targetCiphertext = DB::table('instance_environment_values')
+        ->where('instance_id', $target->id)
         ->orderBy('env_key')
         ->pluck('env_value', 'env_key')
         ->all();
     expect($result->toArray())
         ->toBe([
-            'app_instance_id' => $target->id,
+            'instance_id' => $target->id,
             'operation' => 'clone',
             'changed' => true,
             'key_count' => 4,
@@ -84,7 +84,7 @@ it('copies independent encrypted values and resolves placeholders through the ex
             'APP_DEBUG' => 'false',
             'APP_ENV' => 'production',
             'APP_KEY' => 'base64:literal-key',
-            'APP_URL' => 'https://{{app_instance.domain}}/path',
+            'APP_URL' => 'https://{{instance.domain}}/path',
         ])
         ->and($targetCiphertext)
         ->toHaveKeys(['APP_DEBUG', 'APP_ENV', 'APP_KEY', 'APP_URL']);
@@ -116,7 +116,7 @@ it('clones and deploys an Instance without a route', function (): void {
     $targetNode = Node::query()->findOrFail($reservedTarget->node_id);
     orbit_test_set_app_placement_role($targetNode, true);
     $candidate->environmentValues()->createMany([
-        ['env_key' => 'APP_ENV', 'env_value' => '{{app_instance.environment}}'],
+        ['env_key' => 'APP_ENV', 'env_value' => '{{instance.environment}}'],
         ['env_key' => 'APP_KEY', 'env_value' => 'base64:literal-key'],
     ]);
 
@@ -244,7 +244,7 @@ it('refuses a Route placeholder without a route before writing', function (): vo
     $instance->routes()->delete();
     $instance->environmentValues()->create([
         'env_key' => 'APP_URL',
-        'env_value' => 'https://{{app_instance.domain}}',
+        'env_value' => 'https://{{instance.domain}}',
     ]);
     [$lock, $preflight, $writer] = bind_clone_environment_fakes();
     $synchronizer = new SynchronizeAppInstanceEnvironmentAction(
@@ -269,7 +269,7 @@ it('supports a clone with no stored environment rows', function (): void {
 
     expect($result->toArray())
         ->toBe([
-            'app_instance_id' => $target->id,
+            'instance_id' => $target->id,
             'operation' => 'clone',
             'changed' => false,
             'key_count' => 2,
@@ -328,14 +328,14 @@ it('refuses a stale pending Route or target placement before copying values', fu
             expect($exception->errorCode)->toBe('env.owner_changed');
         });
 
-    expect(AppInstanceEnvironmentValue::query()->where('app_instance_id', $target->id)->count())->toBe(0);
+    expect(AppInstanceEnvironmentValue::query()->where('instance_id', $target->id)->count())->toBe(0);
 })->with([
-    'pending Route activates' => [static fn (AppInstance $target, Route $route) => $route->update([
+    'pending Route activates' => [static fn (Instance $target, Route $route) => $route->update([
         'status' => RouteStatus::Active,
     ])],
-    'pending Route domain changes' => [static function (AppInstance $target, Route $route): void {
+    'pending Route domain changes' => [static function (Instance $target, Route $route): void {
         $replacement = Route::query()->create([
-            'app_id' => $route->app_id,
+            'project_id' => $route->project_id,
             'node_id' => $route->node_id,
             'cluster_id' => $route->cluster_id,
             'domain' => 'changed.prod.orbit',
@@ -347,7 +347,7 @@ it('refuses a stale pending Route or target placement before copying values', fu
         ]);
         $route->targets()->delete();
         $replacement->targets()->create([
-            'app_instance_id' => $target->id,
+            'instance_id' => $target->id,
             'position' => 0,
         ]);
         $route->delete();
@@ -356,7 +356,7 @@ it('refuses a stale pending Route or target placement before copying values', fu
             'replacement_step' => null,
         ]);
     }],
-    'target placement changes' => [static fn (AppInstance $target, Route $route) => $target->update([
+    'target placement changes' => [static fn (Instance $target, Route $route) => $target->update([
         'production_home' => '/home/orbit-clone-target-moved',
         'checkout_path' => '/home/orbit-clone-target-moved',
     ])],
@@ -377,15 +377,15 @@ it('refuses copying when the target clone candidate no longer owns the operation
             expect($exception->errorCode)->toBe('env.owner_changed');
         });
 
-    expect(AppInstanceEnvironmentValue::query()->where('app_instance_id', $target->id)->count())->toBe(0);
+    expect(AppInstanceEnvironmentValue::query()->where('instance_id', $target->id)->count())->toBe(0);
 });
 
-/** @return array{AppInstance, AppInstance, Route} */
+/** @return array{Instance, Instance, Route} */
 function clone_environment_fixture(string $suffix = 'primary'): array
 {
     $count = Node::query()->count();
     $previewHostname = $suffix === 'primary' ? 'preview.prod.orbit' : "preview-{$suffix}.prod.orbit";
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => "Clone environment {$suffix}",
         'slug' => "clone-environment-{$suffix}-{$count}",
         'repository_url' => "https://example.test/clone-environment-{$suffix}.git",
@@ -394,8 +394,8 @@ function clone_environment_fixture(string $suffix = 'primary'): array
     ]);
     $sourceNode = clone_environment_node("source-{$suffix}", $count + 10);
     $targetNode = clone_environment_node("target-{$suffix}", $count + 11);
-    $source = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $source = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $sourceNode->id,
         'name' => 'candidate',
         'environment' => 'development',
@@ -406,17 +406,17 @@ function clone_environment_fixture(string $suffix = 'primary'): array
         'status' => AppInstanceState::Active,
     ]);
     $sourceRoute = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'node_id' => $sourceNode->id,
         'domain' => "source-{$suffix}.example.test",
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $sourceRoute->targets()->create(['app_instance_id' => $source->id, 'position' => 0]);
+    $sourceRoute->targets()->create(['instance_id' => $source->id, 'position' => 0]);
     $sourceRoute->update(['status' => RouteStatus::Active]);
-    $target = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $target = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $targetNode->id,
         'name' => 'target',
         'environment' => 'production',
@@ -433,14 +433,14 @@ function clone_environment_fixture(string $suffix = 'primary'): array
         'status' => AppInstanceState::SourceResolved,
     ]);
     $targetRoute = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'node_id' => $targetNode->id,
         'domain' => $previewHostname,
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $targetRoute->targets()->create(['app_instance_id' => $target->id, 'position' => 0]);
+    $targetRoute->targets()->create(['instance_id' => $target->id, 'position' => 0]);
 
     return [$source->fresh(), $target->fresh(), $targetRoute->fresh()];
 }

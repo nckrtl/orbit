@@ -12,9 +12,9 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Tests\Support\AppDevFakeSshExecutor;
 
 it('refreshes only the recorded runtime through its exact socket and verifies completion', function (): void {
@@ -193,10 +193,10 @@ function orb215_cache_node(): Node
     return $node;
 }
 
-/** @return array{AppInstance, ProductionPhpRuntimeIdentity} */
+/** @return array{Instance, ProductionPhpRuntimeIdentity} */
 function orb215_cache_instance(Node $node, string $suffix): array
 {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => "PHP cache {$suffix}",
         'slug' => "php-cache-{$suffix}",
         'repository_url' => "https://example.test/php-cache-{$suffix}.git",
@@ -204,8 +204,8 @@ function orb215_cache_instance(Node $node, string $suffix): array
         'root' => 'public',
     ]);
     $user = "orbit-app-{$app->id}";
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'primary',
         'environment' => 'production',

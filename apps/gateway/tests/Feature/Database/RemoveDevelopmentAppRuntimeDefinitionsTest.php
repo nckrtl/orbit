@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Models\App as OrbitApp;
+use App\Models\Project;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 it('removes inert development applicability from stored runtime definitions', function (): void {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Definitions',
         'slug' => 'definitions',
         'repository_url' => 'https://example.test/definitions.git',
@@ -17,7 +17,7 @@ it('removes inert development applicability from stored runtime definitions', fu
         DB::table($table)->insert([
             [
                 'id' => (string) Str::uuid(),
-                'app_id' => $app->id,
+                'project_id' => $app->id,
                 'name' => 'development-only',
                 'environments' => json_encode(['development'], JSON_THROW_ON_ERROR),
                 'spec' => json_encode(['command' => 'run'], JSON_THROW_ON_ERROR),
@@ -26,7 +26,7 @@ it('removes inert development applicability from stored runtime definitions', fu
             ],
             [
                 'id' => (string) Str::uuid(),
-                'app_id' => $app->id,
+                'project_id' => $app->id,
                 'name' => 'mixed',
                 'environments' => json_encode(['development', 'production'], JSON_THROW_ON_ERROR),
                 'spec' => json_encode(['command' => 'run'], JSON_THROW_ON_ERROR),
@@ -36,7 +36,7 @@ it('removes inert development applicability from stored runtime definitions', fu
         ]);
     }
 
-    (require database_path('migrations/2026_09_30_100100_remove_development_app_runtime_definitions.php'))->up();
+    run_legacy_schema_migration(require database_path('migrations/2026_09_30_100100_remove_development_app_runtime_definitions.php'), 'up');
 
     foreach (['process_definitions', 'schedule_definitions'] as $table) {
         expect(DB::table($table)->where('name', 'development-only')->exists())->toBeFalse()

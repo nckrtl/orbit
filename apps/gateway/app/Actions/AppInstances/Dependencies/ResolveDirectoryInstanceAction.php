@@ -8,7 +8,7 @@ use App\Data\AppInstances\Dependencies\ResolvedDirectoryInstanceData;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use Illuminate\Support\Facades\DB;
 
@@ -26,7 +26,7 @@ final readonly class ResolveDirectoryInstanceAction
             if (! $this->authorizer->allows($consumer, $consumer)) {
                 $this->notFound();
             }
-            $matches = AppInstance::query()->where('node_id', $consumer->id)->get()->filter(function (AppInstance $instance) use ($directory): bool {
+            $matches = Instance::query()->where('node_id', $consumer->id)->get()->filter(function (Instance $instance) use ($directory): bool {
                 $root = $instance->placedOnAppProd()
                     ? $instance->production_home
                     : ($instance->placedOnAppDev() ? $instance->checkout_path : null);
@@ -45,7 +45,7 @@ final readonly class ResolveDirectoryInstanceAction
                 throw new ResourceOperationException('dependencies.instance_unavailable', 'The instance is unavailable for dependency inventory.', 409);
             }
 
-            return new ResolvedDirectoryInstanceData($instance->id, $instance->app_id, $instance->node_id, $instance->defaultAppEnv());
+            return new ResolvedDirectoryInstanceData($instance->id, $instance->project_id, $instance->node_id, $instance->defaultAppEnv());
         });
     }
 

@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\AppInstances\Deployment;
 
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
 use App\Models\AppInstanceDeployStep;
+use App\Models\Instance;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
@@ -14,7 +14,7 @@ use InvalidArgumentException;
 final readonly class AppInstanceDeployStepStore
 {
     /** @return list<DeploymentStep> */
-    public function ordered(AppInstance $instance): array
+    public function ordered(Instance $instance): array
     {
         $rows = $instance->relationLoaded('deploySteps')
             ? $instance->deploySteps
@@ -27,14 +27,14 @@ final readonly class AppInstanceDeployStepStore
     }
 
     /** @param list<DeploymentStep> $steps */
-    public function replaceAll(AppInstance $instance, array $steps): void
+    public function replaceAll(Instance $instance, array $steps): void
     {
         $this->assertValid($instance, $steps);
         $this->persist($instance, $steps);
     }
 
     public function create(
-        AppInstance $instance,
+        Instance $instance,
         DeploymentStep $step,
         ?string $before,
         ?string $after,
@@ -55,7 +55,7 @@ final readonly class AppInstanceDeployStepStore
     }
 
     public function update(
-        AppInstance $instance,
+        Instance $instance,
         string $name,
         ?string $command,
         ?DeploymentPhase $phase,
@@ -95,7 +95,7 @@ final readonly class AppInstanceDeployStepStore
         return $updated;
     }
 
-    public function destroy(AppInstance $instance, string $name): DeploymentStep
+    public function destroy(Instance $instance, string $name): DeploymentStep
     {
         $existing = $this->ordered($instance);
         $index = $this->indexByName($existing, $name);
@@ -193,7 +193,7 @@ final readonly class AppInstanceDeployStepStore
     /**
      * @param  list<DeploymentStep>  $steps
      */
-    private function assertValid(AppInstance $instance, array $steps): void
+    private function assertValid(Instance $instance, array $steps): void
     {
         $branch = is_string($instance->deployment_branch) ? $instance->deployment_branch : $instance->branch;
 
@@ -209,10 +209,10 @@ final readonly class AppInstanceDeployStepStore
     }
 
     /** @param list<DeploymentStep> $steps */
-    private function persist(AppInstance $instance, array $steps): void
+    private function persist(Instance $instance, array $steps): void
     {
         DB::transaction(function () use ($instance, $steps): void {
-            AppInstanceDeployStep::query()->where('app_instance_id', $instance->id)->delete();
+            AppInstanceDeployStep::query()->where('instance_id', $instance->id)->delete();
             $positions = [
                 DeploymentPhase::BeforeActivation->value => 0,
                 DeploymentPhase::AfterActivation->value => 0,
@@ -220,7 +220,7 @@ final readonly class AppInstanceDeployStepStore
 
             foreach ($steps as $step) {
                 AppInstanceDeployStep::query()->create([
-                    'app_instance_id' => $instance->id,
+                    'instance_id' => $instance->id,
                     'name' => $step->name,
                     'phase' => $step->phase->value,
                     'command' => $step->command,

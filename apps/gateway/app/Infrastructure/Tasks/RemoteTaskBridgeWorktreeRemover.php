@@ -11,7 +11,7 @@ use App\Domain\Tasks\TaskBridgeWorktreeRemover;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 /**
  * Removes one task group's bridge worktree from the registered primary checkout.
@@ -23,7 +23,7 @@ final readonly class RemoteTaskBridgeWorktreeRemover implements TaskBridgeWorktr
 {
     public function __construct(private AppDevSshExecutor $ssh) {}
 
-    public function remove(AppInstance $instance): void
+    public function remove(Instance $instance): void
     {
         if (preg_match('/\Atask-[0-9]+\z/', $instance->name) !== 1) {
             return;

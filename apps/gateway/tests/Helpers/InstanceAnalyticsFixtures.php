@@ -10,10 +10,10 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 
 function instance_analytics_node(string $name, string $wireguardIp, ?Cluster $cluster, RoleName $role): Node
@@ -39,10 +39,10 @@ function instance_analytics_node(string $name, string $wireguardIp, ?Cluster $cl
     return $node;
 }
 
-function instance_analytics_instance(OrbitApp $app, Node $node, string $name): AppInstance
+function instance_analytics_instance(Project $app, Node $node, string $name): Instance
 {
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => $name,
         'checkout_path' => "/srv/orbit/apps/{$app->slug}/{$name}",
@@ -59,7 +59,7 @@ function instance_analytics_instance(OrbitApp $app, Node $node, string $name): A
 }
 
 /** A Node holds one production App instance of an App, so every further instance gets a Node of its own. */
-function instance_analytics_extra_instance(string $name): AppInstance
+function instance_analytics_extra_instance(string $name): Instance
 {
     static $octet = 60;
     $octet++;
@@ -72,13 +72,13 @@ function instance_analytics_extra_instance(string $name): AppInstance
 }
 
 function instance_analytics_app_route(
-    AppInstance $instance,
+    Instance $instance,
     string $domain,
     RoutePublication $publication,
     bool $activate = true,
 ): Route {
     $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        appId: $instance->app_id,
+        appId: $instance->project_id,
         domain: $domain,
         publication: $publication,
         appInstanceId: $instance->id,

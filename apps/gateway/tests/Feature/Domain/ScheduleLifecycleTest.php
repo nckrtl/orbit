@@ -19,9 +19,9 @@ use App\Domain\Schedules\ScheduleTargetType;
 use App\Domain\Schedules\ScheduleTargetUseGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Schedule;
 use Illuminate\Support\Str;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
@@ -53,13 +53,13 @@ beforeEach(function (): void {
         'user' => 'orbit',
         'wireguard_ip' => '10.44.0.4',
     ]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
     ]);
-    $this->instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $this->instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $this->node->id,
         'name' => 'main',
         'environment' => 'development',
@@ -69,10 +69,10 @@ beforeEach(function (): void {
     ]);
 });
 
-function lifecycle_schedule_data(AppInstance $instance, string $command = 'true', bool $start = false): AddScheduleData
+function lifecycle_schedule_data(Instance $instance, string $command = 'true', bool $start = false): AddScheduleData
 {
     return new AddScheduleData(
-        ScheduleTargetType::AppInstance,
+        ScheduleTargetType::Instance,
         $instance->id,
         'daily-backup',
         'daily',
@@ -89,7 +89,7 @@ it('persists UUID identity and resumes an identical add without resetting timer 
 
     expect($first['created'])->toBeTrue()
         ->and(Str::isUuid($first['schedule']->id))->toBeTrue()
-        ->and($first['schedule']->target)->toBeInstanceOf(AppInstance::class)
+        ->and($first['schedule']->target)->toBeInstanceOf(Instance::class)
         ->and($first['schedule']->host_node_id)->toBe($this->node->id)
         ->and($second['created'])->toBeFalse()
         ->and($second['schedule']->id)->toBe($first['schedule']->id)
@@ -172,7 +172,7 @@ it('keeps standalone removal resumable while a service is active', function (): 
     expect(Schedule::query()->whereKey($schedule->id)->exists())->toBeFalse();
 });
 
-it('activates only an active AppInstance Schedule and persists desired intent after success', function (): void {
+it('activates only an active Instance Schedule and persists desired intent after success', function (): void {
     $schedule = $this->addSchedule->execute(lifecycle_schedule_data($this->instance))['schedule'];
     $activated = new ActivateScheduleAction($this->runtime)->execute($schedule);
 
@@ -180,7 +180,7 @@ it('activates only an active AppInstance Schedule and persists desired intent af
         ->and($this->runtime->activated)->toBe([$schedule->id]);
 });
 
-it('cascades only the selected AppInstance schedules and blocks Node removal while hosted', function (): void {
+it('cascades only the selected Instance schedules and blocks Node removal while hosted', function (): void {
     $owned = $this->addSchedule->execute(lifecycle_schedule_data($this->instance))['schedule'];
     $nodeSchedule = $this->addSchedule->execute(new AddScheduleData(
         ScheduleTargetType::Node,

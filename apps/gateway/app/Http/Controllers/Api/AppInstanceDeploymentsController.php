@@ -13,8 +13,8 @@ use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AppInstances\DeployAppInstanceRequest;
 use App\Http\Streaming\DeploymentStreamResponse;
-use App\Models\AppInstance;
 use App\Models\AppInstanceDeployment;
+use App\Models\Instance;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -24,7 +24,7 @@ final class AppInstanceDeploymentsController extends Controller
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]
     public function index(
         Request $request,
-        AppInstance $instance,
+        Instance $instance,
         ListAppInstanceDeploymentsAction $action,
     ): JsonResponse {
         return response()->json([
@@ -51,7 +51,7 @@ final class AppInstanceDeploymentsController extends Controller
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]
     public function store(
         DeployAppInstanceRequest $request,
-        AppInstance $instance,
+        Instance $instance,
         DeployAppInstanceAction $action,
         DeploymentStreamResponse $stream,
     ): StreamedResponse {

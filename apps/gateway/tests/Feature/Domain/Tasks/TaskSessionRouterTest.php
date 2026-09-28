@@ -18,15 +18,15 @@ use App\Domain\Tasks\TaskThreadRole;
 use App\Infrastructure\Tasks\T3\T3Dispatcher;
 use App\Infrastructure\Tasks\T3\T3DispatchException;
 use App\Infrastructure\Tasks\T3\T3ModelSelection;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskGroup;
 
 function router_group(): TaskGroup
 {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'router-app',
         'slug' => 'router-app',
         'repository_url' => 'git@example.test:router.git',
@@ -39,8 +39,8 @@ function router_group(): TaskGroup
         'public_ssh_host' => '10.44.0.211',
         'wireguard_ip' => '10.44.0.211',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'task-21',
         'checkout_path' => '/srv/orbit/apps/router-app/task-21',
@@ -48,7 +48,7 @@ function router_group(): TaskGroup
         'status' => 'source_resolved',
     ]);
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Execute Jev actions',
         'brief' => 'Drain, advance, escalate, or stay quiet.',
         'status' => TaskGroupStatus::Running,

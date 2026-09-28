@@ -16,6 +16,6 @@ final class AppInstanceRemovalException extends RuntimeException
         public readonly AppInstanceRemoval $removal,
         ?Throwable $previous = null,
     ) {
-        parent::__construct('AppInstance removal was accepted but remains incomplete.', 0, $previous);
+        parent::__construct('Instance removal was accepted but remains incomplete.', 0, $previous);
     }
 }

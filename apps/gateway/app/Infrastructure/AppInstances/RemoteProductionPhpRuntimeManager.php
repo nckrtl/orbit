@@ -12,7 +12,7 @@ use App\Infrastructure\Metrics\ServiceMetricsProjection;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\SharedOrbitDirectory;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpRuntimeManager
 {
@@ -26,18 +26,18 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
         private ?ServiceMetricsProjection $serviceMetrics = null,
     ) {}
 
-    public function converge(AppInstance $appInstance): void
+    public function converge(Instance $appInstance): void
     {
         $this->convergeWithTuning($appInstance);
     }
 
-    public function convergeMonitoring(AppInstance $appInstance, bool $enabled): void
+    public function convergeMonitoring(Instance $appInstance, bool $enabled): void
     {
         $this->convergeWithTuning($appInstance, $enabled, 'monitor');
     }
 
     private function convergeWithTuning(
-        AppInstance $appInstance,
+        Instance $appInstance,
         ?bool $metricsEnabled = null,
         string $operation = 'converge',
     ): void {
@@ -88,7 +88,7 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
         );
     }
 
-    public function remove(AppInstance $appInstance): void
+    public function remove(Instance $appInstance): void
     {
         $identity = ProductionPhpRuntimeIdentity::from($appInstance);
 
@@ -120,7 +120,7 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
         );
     }
 
-    public function refreshCache(AppInstance $appInstance): void
+    public function refreshCache(Instance $appInstance): void
     {
         $identity = ProductionPhpRuntimeIdentity::from($appInstance);
 

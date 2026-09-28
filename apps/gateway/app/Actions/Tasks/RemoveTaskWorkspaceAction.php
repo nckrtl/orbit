@@ -8,7 +8,7 @@ use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\Tasks\TaskBridgeWorktreeRemover;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\TaskGroup;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Config;
@@ -38,18 +38,18 @@ final readonly class RemoveTaskWorkspaceAction
     ) {}
 
     /** The attached Instance, or the group's unattached `task-{group id}` workspace. */
-    public function find(TaskGroup $group): ?AppInstance
+    public function find(TaskGroup $group): ?Instance
     {
         $attached = $group->taskable;
 
-        if ($attached instanceof AppInstance) {
+        if ($attached instanceof Instance) {
             return $attached;
         }
 
         $name = TaskWorkspaceName::for($group);
 
-        return AppInstance::query()
-            ->where('app_id', $group->app_id)
+        return Instance::query()
+            ->where('project_id', $group->project_id)
             ->where('name', $name)
             ->where('branch_override', $name)
             ->first();
@@ -73,11 +73,11 @@ final readonly class RemoveTaskWorkspaceAction
     }
 
     /** Removes the group's workspace when it has one. It returns the removed Instance. */
-    public function execute(TaskGroup $group): ?AppInstance
+    public function execute(TaskGroup $group): ?Instance
     {
         $instance = $this->find($group);
 
-        if ($instance instanceof AppInstance) {
+        if ($instance instanceof Instance) {
             $this->remove($instance);
         }
 
@@ -85,7 +85,7 @@ final readonly class RemoveTaskWorkspaceAction
     }
 
     /** Removes the group's bridge worktree, then the checkout. The Instance row stays when removal refuses. */
-    public function remove(AppInstance $instance): void
+    public function remove(Instance $instance): void
     {
         $this->bridges->remove($instance);
         $this->remover->execute($instance, true);

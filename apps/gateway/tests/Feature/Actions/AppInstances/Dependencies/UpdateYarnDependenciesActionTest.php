@@ -13,23 +13,22 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 
 use function Pest\Laravel\mock;
 
-function yarn_update_instance(bool $production = false, string $path = '/home/orbit/project'): AppInstance
+function yarn_update_instance(bool $production = false, string $path = '/home/orbit/project'): Instance
 {
-    $instance = new AppInstance([
+    $instance = new Instance([
         'environment' => $production ? 'production' : 'development',
         'source_layout' => 'checkout',
         'checkout_path' => $path,
         'production_user' => $production ? 'app_sample' : null,
         'production_home' => $production ? '/home/app_sample' : null,
         'root' => 'public',
-        'migration_required' => false,
     ]);
     $node = new Node(['user' => 'orbit', 'wireguard_ip' => '10.44.0.2']);
     orbit_test_set_app_placement_role($node, $production);

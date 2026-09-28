@@ -10,7 +10,7 @@ use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\SourceControl\ProjectRoot;
 use App\Http\Requests\TopLevelJsonObjectInspector;
-use App\Models\App as OrbitApp;
+use App\Models\Project;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -79,9 +79,9 @@ final class UpdateAppRequest extends FormRequest
 
             $routeApp = $this->route('app');
             $type = ProjectType::tryFrom($this->string('type')->toString())
-                ?? ($routeApp instanceof OrbitApp ? $routeApp->type : ProjectType::LaravelApp);
+                ?? ($routeApp instanceof Project ? $routeApp->type : ProjectType::LaravelApp);
             $sentRoot = $this->input('root');
-            $root = is_string($sentRoot) ? $sentRoot : ($routeApp instanceof OrbitApp ? $routeApp->root : null);
+            $root = is_string($sentRoot) ? $sentRoot : ($routeApp instanceof Project ? $routeApp->root : null);
 
             if (is_string($root) && ! ProjectRoot::isValid($root, $type)) {
                 $validator->errors()->add('root', is_string($sentRoot)

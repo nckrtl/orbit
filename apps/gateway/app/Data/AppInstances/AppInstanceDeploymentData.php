@@ -33,7 +33,7 @@ final class AppInstanceDeploymentData extends Data
     {
         return new self(
             id: $deployment->id,
-            appInstanceId: $deployment->app_instance_id,
+            appInstanceId: $deployment->instance_id,
             release: $deployment->release,
             branch: $deployment->branch,
             commit: $deployment->commit,

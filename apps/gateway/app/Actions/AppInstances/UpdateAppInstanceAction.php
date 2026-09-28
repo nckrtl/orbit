@@ -8,7 +8,7 @@ use App\Data\AppInstances\AppInstanceData;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class UpdateAppInstanceAction
 {
@@ -18,10 +18,10 @@ final readonly class UpdateAppInstanceAction
         private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
-    public function execute(AppInstance $instance, string $branch): AppInstance
+    public function execute(Instance $instance, string $branch): Instance
     {
-        $result = $this->operations->run([$instance->id], function () use ($instance, $branch): AppInstance {
-            $locked = AppInstance::query()->lockForUpdate()->findOrFail($instance->id);
+        $result = $this->operations->run([$instance->id], function () use ($instance, $branch): Instance {
+            $locked = Instance::query()->lockForUpdate()->findOrFail($instance->id);
             $this->resolver->assertAvailable($locked);
             $locked->update(['deployment_branch' => $branch]);
 

@@ -9,16 +9,19 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * @property int $id
- * @property int $app_instance_id
+ * @property int $instance_id
  * @property string $name
  * @property string $phase
  * @property string $command
  * @property int $timeout_seconds
  * @property int $position
- * @property-read AppInstance $appInstance
+ * @property-read Instance $appInstance
  */
 final class AppInstanceDeployStep extends Model
 {
+    #[\Override]
+    protected $table = 'instance_deploy_steps';
+
     /** @var list<string> */
     #[\Override]
     protected $hidden = ['command'];
@@ -26,7 +29,7 @@ final class AppInstanceDeployStep extends Model
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
-        'app_instance_id',
+        'instance_id',
         'name',
         'phase',
         'command',
@@ -34,10 +37,10 @@ final class AppInstanceDeployStep extends Model
         'position',
     ];
 
-    /** @return BelongsTo<AppInstance, $this> */
+    /** @return BelongsTo<Instance, $this> */
     public function appInstance(): BelongsTo
     {
-        return $this->belongsTo(AppInstance::class);
+        return $this->belongsTo(Instance::class, 'instance_id');
     }
 
     /** @return array<string, string> */

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Processes;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Process;
 
 final readonly class CascadeAppInstanceProcessesAction
@@ -16,7 +16,7 @@ final readonly class CascadeAppInstanceProcessesAction
     public function execute(int $appInstanceId): void
     {
         Process::query()
-            ->whereIn('owner_type', AppInstance::morphTypes())
+            ->whereIn('owner_type', Instance::morphTypes())
             ->where('owner_id', $appInstanceId)
             ->orderBy('id')
             ->get()

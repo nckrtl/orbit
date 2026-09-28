@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\AgentView;
 
 use App\Domain\Shared\StoredInteger;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Support\Collection;
@@ -107,7 +107,7 @@ final readonly class AgentProcessView
             return (int) $process->owner_id;
         }
 
-        if (! AppInstance::isMorphType($process->owner_type)) {
+        if (! Instance::isMorphType($process->owner_type)) {
             return null;
         }
 
@@ -115,7 +115,7 @@ final readonly class AgentProcessView
             return $instanceNodes[(int) $process->owner_id] ?? null;
         }
 
-        $nodeId = AppInstance::query()->whereKey($process->owner_id)->value('node_id');
+        $nodeId = Instance::query()->whereKey($process->owner_id)->value('node_id');
 
         return is_numeric($nodeId) ? (int) $nodeId : null;
     }
@@ -127,7 +127,7 @@ final readonly class AgentProcessView
     private function instanceNodes(Collection $processes): array
     {
         $instanceIds = $processes
-            ->filter(static fn (Process $process): bool => AppInstance::isMorphType($process->owner_type))
+            ->filter(static fn (Process $process): bool => Instance::isMorphType($process->owner_type))
             ->map(static fn (Process $process): int => (int) $process->owner_id)
             ->unique()
             ->values()
@@ -137,7 +137,7 @@ final readonly class AgentProcessView
             return [];
         }
 
-        $nodes = AppInstance::query()
+        $nodes = Instance::query()
             ->whereKey($instanceIds)
             ->pluck('node_id', 'id')
             ->map(static fn (mixed $nodeId): int => StoredInteger::from($nodeId))

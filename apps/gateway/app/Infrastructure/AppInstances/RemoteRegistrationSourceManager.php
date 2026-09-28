@@ -16,7 +16,7 @@ use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use Illuminate\Support\Facades\DB;
 use JsonException;
@@ -81,7 +81,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
         return $facts;
     }
 
-    public function relocate(AppInstance $appInstance, RegistrationSourceFacts $facts): void
+    public function relocate(Instance $appInstance, RegistrationSourceFacts $facts): void
     {
         $this->relocateSet([['appInstance' => $appInstance, 'facts' => $facts]]);
     }
@@ -225,7 +225,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
         if ($cleanupReady === 0) {
             DB::transaction(static function () use ($members): void {
                 foreach ($members as $member) {
-                    AppInstance::query()
+                    Instance::query()
                         ->whereKey($member['appInstance']->id)
                         ->update([
                             'registration_relocation_state' => 'relocating',
@@ -243,7 +243,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                 foreach ($members as $member) {
                     $instance = $member['appInstance'];
                     $identity = $identities[$instance->id];
-                    AppInstance::query()
+                    Instance::query()
                         ->whereKey($instance->id)
                         ->update([
                             'registration_relocation_state' => 'destination_verified',
@@ -270,7 +270,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
 
         DB::transaction(static function () use ($members): void {
             foreach ($members as $member) {
-                AppInstance::query()
+                Instance::query()
                     ->whereKey($member['appInstance']->id)
                     ->update(['registration_relocation_state' => 'original_cleanup']);
             }
@@ -280,7 +280,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
 
         DB::transaction(static function () use ($members): void {
             foreach ($members as $member) {
-                AppInstance::query()
+                Instance::query()
                     ->whereKey($member['appInstance']->id)
                     ->update([
                         'registration_relocation_state' => 'relocated',
@@ -291,7 +291,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
     }
 
     /**
-     * @param  list<array{appInstance: AppInstance, facts: RegistrationSourceFacts}>  $members
+     * @param  list<array{appInstance: Instance, facts: RegistrationSourceFacts}>  $members
      * @return array<int, array{device: int|null, inode: int|null}>
      */
     private function preparationIdentities(string $output, array $members): array
@@ -377,7 +377,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
         );
     }
 
-    public function restoreOriginal(AppInstance $appInstance, RegistrationSourceFacts $facts): void
+    public function restoreOriginal(Instance $appInstance, RegistrationSourceFacts $facts): void
     {
         $destination = $appInstance->checkout_path;
         $appInstance->checkout_path = $facts->path;
@@ -405,22 +405,22 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
         $this->relocate($appInstance, $reverse);
     }
 
-    public function prepareLaravelRollback(AppInstance $appInstance): void
+    public function prepareLaravelRollback(Instance $appInstance): void
     {
         $this->runLaravelReceipt($appInstance, 'prepare');
     }
 
-    public function restoreLaravelConfiguration(AppInstance $appInstance): void
+    public function restoreLaravelConfiguration(Instance $appInstance): void
     {
         $this->runLaravelReceipt($appInstance, 'restore');
     }
 
-    public function discardLaravelRollback(AppInstance $appInstance): void
+    public function discardLaravelRollback(Instance $appInstance): void
     {
         $this->runLaravelReceipt($appInstance, 'discard');
     }
 
-    private function runLaravelReceipt(AppInstance $appInstance, string $operation): void
+    private function runLaravelReceipt(Instance $appInstance, string $operation): void
     {
         $appInstance->loadMissing('node');
         $this->ssh->execute(

@@ -6,7 +6,7 @@ namespace App\Actions\Hibernation;
 
 use App\Domain\Hibernation\HibernationException;
 use App\Domain\Hibernation\HibernationWakeFailureStore;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use SensitiveParameter;
 
 use function Illuminate\Support\defer;
@@ -18,7 +18,7 @@ final readonly class ScheduleAppInstanceRuntimeWakeAction
         private HibernationWakeFailureStore $failures,
     ) {}
 
-    public function afterResponse(#[SensitiveParameter] AppInstance $instance): void
+    public function afterResponse(#[SensitiveParameter] Instance $instance): void
     {
         $instanceId = $instance->id;
 

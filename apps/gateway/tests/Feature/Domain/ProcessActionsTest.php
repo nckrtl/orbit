@@ -32,10 +32,10 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\Analytics\NativePlausibleRuntimeLifecycle;
 use App\Infrastructure\Nodes\NativeNodeRoleDependentCleaner;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -55,13 +55,13 @@ beforeEach(function (): void {
         'wireguard_ip' => '10.44.0.3',
     ]);
     $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
-    $this->orbitApp = OrbitApp::query()->create([
+    $this->orbitApp = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
     ]);
-    $this->instance = AppInstance::query()->create([
-        'app_id' => $this->orbitApp->id,
+    $this->instance = Instance::query()->create([
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'main',
         'environment' => 'development',
@@ -74,7 +74,7 @@ beforeEach(function (): void {
 
 it('adds a stopped systemd process idempotently with the target defaults', function (): void {
     $data = new AddProcessData(
-        targetType: ProcessTargetType::AppInstance,
+        targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
         name: 'queue',
         runtime: ProcessRuntime::Systemd,
@@ -123,7 +123,7 @@ it('preserves the desired state when an existing process is added again', functi
     $process = process_actions_record($this->instance);
     $process->update(['desired_state' => 'running']);
     $data = new AddProcessData(
-        targetType: ProcessTargetType::AppInstance,
+        targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
         name: 'queue',
         runtime: ProcessRuntime::Systemd,
@@ -150,7 +150,7 @@ it('preserves the desired state when an existing process is added again', functi
 it('canonicalizes Docker environment maps before persistence and idempotency comparison', function (): void {
     $action = new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
     $first = new AddProcessData(
-        targetType: ProcessTargetType::AppInstance,
+        targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
         name: 'worker',
         runtime: ProcessRuntime::Docker,
@@ -164,7 +164,7 @@ it('canonicalizes Docker environment maps before persistence and idempotency com
         start: false,
     );
     $sameWithDifferentOrder = new AddProcessData(
-        targetType: ProcessTargetType::AppInstance,
+        targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
         name: 'worker',
         runtime: ProcessRuntime::Docker,
@@ -192,7 +192,7 @@ it('canonicalizes Docker environment maps before persistence and idempotency com
 it('canonicalizes systemd environment maps before persistence and idempotency comparison', function (): void {
     $action = new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
     $first = new AddProcessData(
-        targetType: ProcessTargetType::AppInstance,
+        targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
         name: 'proxycli',
         runtime: ProcessRuntime::Systemd,
@@ -206,7 +206,7 @@ it('canonicalizes systemd environment maps before persistence and idempotency co
         start: false,
     );
     $sameWithDifferentOrder = new AddProcessData(
-        targetType: ProcessTargetType::AppInstance,
+        targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
         name: 'proxycli',
         runtime: ProcessRuntime::Systemd,
@@ -242,7 +242,7 @@ it('canonicalizes systemd environment maps before persistence and idempotency co
 it('keeps Docker environment values out of action exception traces', function (): void {
     $sensitiveValue = 'action-boundary-secret';
     $data = new AddProcessData(
-        targetType: ProcessTargetType::AppInstance,
+        targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
         name: 'worker',
         runtime: ProcessRuntime::Docker,
@@ -274,7 +274,7 @@ it('keeps Docker environment values out of action exception traces', function ()
 
 it('adds and starts one Docker container process with explicit configuration', function (): void {
     $data = new AddProcessData(
-        targetType: ProcessTargetType::AppInstance,
+        targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
         name: 'redis',
         runtime: ProcessRuntime::Docker,
@@ -292,7 +292,7 @@ it('adds and starts one Docker container process with explicit configuration', f
     $process = $result['process'];
 
     expect($process->owner)
-        ->toBeInstanceOf(AppInstance::class)
+        ->toBeInstanceOf(Instance::class)
         ->and($process->runtime_config)
         ->toBe([
             'image' => 'redis:8-alpine',
@@ -320,7 +320,7 @@ it('refuses a new desired-running production process before admission when no re
     $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $this->runtime->startUnavailable = true;
     $data = new AddProcessData(
-        targetType: ProcessTargetType::AppInstance,
+        targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
         name: 'queue',
         runtime: ProcessRuntime::Systemd,
@@ -360,7 +360,7 @@ it('refuses an idempotent desired-running production add without changing its re
     $this->node->roles()->delete();
     $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $process = Process::query()->create([
-        'owner_type' => AppInstance::MorphAlias,
+        'owner_type' => Instance::MorphAlias,
         'owner_id' => $this->instance->id,
         'name' => 'worker',
         'runtime' => ProcessRuntime::Docker,
@@ -379,7 +379,7 @@ it('refuses an idempotent desired-running production add without changing its re
     $original = $process->fresh()->getRawOriginal();
     $this->runtime->startUnavailable = true;
     $data = new AddProcessData(
-        targetType: ProcessTargetType::AppInstance,
+        targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
         name: 'worker',
         runtime: ProcessRuntime::Docker,
@@ -411,7 +411,7 @@ it('refuses an idempotent desired-running production add without changing its re
 
 it('retains a failed desired-running process definition and clears recovery state on retry', function (): void {
     $data = new AddProcessData(
-        targetType: ProcessTargetType::AppInstance,
+        targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
         name: 'worker',
         runtime: ProcessRuntime::Docker,
@@ -459,7 +459,7 @@ it('retains a failed desired-running process definition and clears recovery stat
 it('rejects a conflicting process definition with the same owner and name', function (): void {
     $action = new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
     $initial = new AddProcessData(
-        targetType: ProcessTargetType::AppInstance,
+        targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
         name: 'queue',
         runtime: ProcessRuntime::Systemd,
@@ -473,7 +473,7 @@ it('rejects a conflicting process definition with the same owner and name', func
         start: true,
     );
     $changed = new AddProcessData(
-        targetType: ProcessTargetType::AppInstance,
+        targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
         name: 'queue',
         runtime: ProcessRuntime::Systemd,
@@ -502,7 +502,7 @@ it('uses an isolated app user for app-prod systemd processes', function (): void
     $this->node->roles()->delete();
     $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
 
-    $target = $this->targets->resolve(ProcessTargetType::AppInstance, $this->instance->id);
+    $target = $this->targets->resolve(ProcessTargetType::Instance, $this->instance->id);
 
     expect($target->user)
         ->toBe('orbit-docs')
@@ -512,8 +512,8 @@ it('uses an isolated app user for app-prod systemd processes', function (): void
         ->toBeNull();
 });
 
-it('uses the node managed user and AppInstance certificate scope for app-dev targets', function (): void {
-    $instanceTarget = $this->targets->resolve(ProcessTargetType::AppInstance, $this->instance->id);
+it('uses the node managed user and Instance certificate scope for app-dev targets', function (): void {
+    $instanceTarget = $this->targets->resolve(ProcessTargetType::Instance, $this->instance->id);
 
     expect($instanceTarget->user)
         ->toBe('nckrtl')
@@ -521,7 +521,7 @@ it('uses the node managed user and AppInstance certificate scope for app-dev tar
         ->toBe("app-instance-{$this->instance->id}");
 
     $removalTarget = $this->targets->forRemoval(Process::query()->create([
-        'owner_type' => AppInstance::MorphAlias,
+        'owner_type' => Instance::MorphAlias,
         'owner_id' => $this->instance->id,
         'name' => 'removal-target',
         'runtime' => 'systemd',
@@ -536,7 +536,7 @@ it('uses the node managed user and AppInstance certificate scope for app-dev tar
 
 it('rejects leftover Process owners before runtime removal', function (): void {
     $process = Process::query()->create([
-        'owner_type' => 'App\\Models\\Instance',
+        'owner_type' => 'App\\Models\\AppInstance',
         'owner_id' => 999_999,
         'name' => 'legacy',
         'runtime' => ProcessRuntime::Systemd,
@@ -548,7 +548,7 @@ it('rejects leftover Process owners before runtime removal', function (): void {
     ]);
 
     expect(fn () => new RemoveProcessAction($this->runtime, $this->targets)->execute($process))
-        ->toThrow(ResourceOperationException::class, 'not a supported AppInstance or Node')
+        ->toThrow(ResourceOperationException::class, 'not a supported Instance or Node')
         ->and($this->runtime->removed)
         ->toBeEmpty();
 });
@@ -556,7 +556,7 @@ it('rejects leftover Process owners before runtime removal', function (): void {
 it('rejects process targets on non-Linux nodes before runtime execution', function (): void {
     $this->node->update(['platform' => 'windows']);
     $data = new AddProcessData(
-        targetType: ProcessTargetType::AppInstance,
+        targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
         name: 'queue',
         runtime: ProcessRuntime::Systemd,
@@ -617,7 +617,7 @@ it('runs idempotent lifecycle actions and returns bounded logs', function (): vo
         ->toBe("one\ntwo\n");
 });
 
-it('locks and re-resolves AppInstance Processes before start and restart', function (): void {
+it('locks and re-resolves Instance Processes before start and restart', function (): void {
     $startedProcess = process_actions_record($this->instance);
     $restartedProcess = $startedProcess->replicate();
     $restartedProcess->name = 'scheduler';
@@ -642,7 +642,7 @@ it('locks and re-resolves AppInstance Processes before start and restart', funct
         ->toBe(['fresh-scheduler']);
 });
 
-it('refuses an AppInstance Process whose ownership changes before admitted execution', function (string $action): void {
+it('refuses an Instance Process whose ownership changes before admitted execution', function (string $action): void {
     $process = process_actions_record($this->instance);
     $lock = new ProcessActionsFakeAdmissionLock(function () use ($process): void {
         Process::query()->whereKey($process->id)->update([
@@ -665,7 +665,7 @@ it('refuses an AppInstance Process whose ownership changes before admitted execu
     'restart' => RestartProcessAction::class,
 ]);
 
-it('preserves lifecycle behavior for Processes not owned by an AppInstance', function (): void {
+it('preserves lifecycle behavior for Processes not owned by an Instance', function (): void {
     $process = process_actions_record($this->instance);
     $process->update([
         'owner_type' => Node::class,
@@ -711,7 +711,7 @@ it('lists runtime status and removes only the selected process', function (): vo
             ])->all();
         }
     })->execute(
-        ProcessTargetType::AppInstance,
+        ProcessTargetType::Instance,
         $this->instance->id,
     );
     $removed = new RemoveProcessAction($this->runtime, $this->targets)->execute($process);
@@ -856,7 +856,7 @@ it('refreshes the surviving process identity when an identical add retries under
         'error_code' => 'process.start_failed',
     ]);
     $data = new AddProcessData(
-        targetType: ProcessTargetType::AppInstance,
+        targetType: ProcessTargetType::Instance,
         targetId: $this->instance->id,
         name: 'queue',
         runtime: ProcessRuntime::Systemd,
@@ -903,7 +903,7 @@ it('does not rewrite an existing process when an identical add loses the runtime
     try {
         expect(fn () => new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class))->execute(
             new AddProcessData(
-                targetType: ProcessTargetType::AppInstance,
+                targetType: ProcessTargetType::Instance,
                 targetId: $this->instance->id,
                 name: 'queue',
                 runtime: ProcessRuntime::Systemd,
@@ -1013,17 +1013,17 @@ it('retains the process definition when runtime removal fails', function (): voi
 
 function process_actions_runtime_lock_key(Process $process): string
 {
-    $nodeId = $process->owner_type === AppInstance::MorphAlias
-        ? (int) AppInstance::query()->whereKey($process->owner_id)->value('node_id')
+    $nodeId = $process->owner_type === Instance::MorphAlias
+        ? (int) Instance::query()->whereKey($process->owner_id)->value('node_id')
         : 0;
 
     return "orbit:process-runtime:{$nodeId}:{$process->id}";
 }
 
-function process_actions_record(AppInstance $instance): Process
+function process_actions_record(Instance $instance): Process
 {
     return Process::query()->create([
-        'owner_type' => AppInstance::MorphAlias,
+        'owner_type' => Instance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => 'queue',
         'runtime' => ProcessRuntime::Systemd,

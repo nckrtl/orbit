@@ -12,7 +12,7 @@ use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskScheduler;
 use App\Models\AgentThread;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskGroup;
@@ -75,7 +75,7 @@ final readonly class CancelRunningSubtaskAction
         }
 
         $instance = $group->fresh()?->taskable;
-        if (! $instance instanceof AppInstance) {
+        if (! $instance instanceof Instance) {
             return;
         }
 

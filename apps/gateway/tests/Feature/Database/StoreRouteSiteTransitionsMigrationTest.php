@@ -8,16 +8,16 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 it('backfills the publication record for Routes that serve their sites', function (): void {
     $migration = store_route_site_transitions_migration();
-    $migration->down();
+    run_legacy_schema_migration($migration, 'down');
 
     expect(Schema::hasColumns('routes', ['sites_published', 'transition_node_id', 'transition_cluster_id']))
         ->toBeFalse();
@@ -30,12 +30,12 @@ it('backfills the publication record for Routes that serve their sites', functio
     $failed = store_route_site_transitions_route($node, 'failed', RouteStatus::Failed);
     // An interrupted Instance removal already deleted the last target of this authoritative Route.
     $interrupted = store_route_site_transitions_route($node, 'interrupted', RouteStatus::Active);
-    DB::table('app_instances')
-        ->whereIn('id', DB::table('route_targets')->where('route_id', $interrupted)->select('app_instance_id'))
+    DB::table('instances')
+        ->whereIn('id', DB::table('route_targets')->where('route_id', $interrupted)->select('instance_id'))
         ->update(['status' => AppInstanceState::SourceResolved->value]);
     DB::table('route_targets')->where('route_id', $interrupted)->delete();
 
-    $migration->up();
+    run_legacy_schema_migration($migration, 'up');
 
     $published = static fn (int $id): bool => (bool) DB::table('routes')->where('id', $id)->value('sites_published');
 
@@ -54,7 +54,7 @@ it('refuses to drop an unfinished placement transition', function (): void {
     $route = store_route_site_transitions_route($node, 'moving', RouteStatus::Active);
     DB::table('routes')->where('id', $route)->update(['transition_node_id' => $node->id]);
 
-    expect(fn () => store_route_site_transitions_migration()->down())
+    expect(fn () => run_legacy_schema_migration(store_route_site_transitions_migration(), 'down'))
         ->toThrow(RuntimeException::class, "Cannot remove Route placement transitions while they are unfinished: {$route}.");
 });
 
@@ -78,13 +78,13 @@ function store_route_site_transitions_node(): Node
 /** Writes the Route through the query builder, as a Gateway before this migration would have. */
 function store_route_site_transitions_route(Node $node, string $name, RouteStatus $status): int
 {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => $name,
         'slug' => "backfill-{$name}",
         'repository_url' => "https://example.test/{$name}.git",
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => $name,
         'checkout_path' => "/home/orbit/apps/{$name}",
@@ -92,7 +92,7 @@ function store_route_site_transitions_route(Node $node, string $name, RouteStatu
     ]);
     $id = DB::table('routes')->insertGetId([
         'kind' => 'app',
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'domain' => "{$name}.backfill.test",
         'provenance' => RouteProvenance::Explicit->value,
@@ -103,7 +103,7 @@ function store_route_site_transitions_route(Node $node, string $name, RouteStatu
     ]);
     DB::table('route_targets')->insert([
         'route_id' => $id,
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'position' => 0,
         'created_at' => now(),
         'updated_at' => now(),

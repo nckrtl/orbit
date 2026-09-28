@@ -10,7 +10,7 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Infrastructure\Caddy\CaddyPublicationLock;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 
@@ -23,7 +23,7 @@ final readonly class RemoteAppDevCertificateManager
         private AppDevSiteRepository $sites = new AppDevSiteRepository,
     ) {}
 
-    public function convergeAppInstance(AppInstance $appInstance, Route $route): void
+    public function convergeAppInstance(Instance $appInstance, Route $route): void
     {
         $appInstance->loadMissing('node');
         $this->converge($appInstance->node, "app-instance-{$appInstance->id}", $route->domain);
@@ -44,7 +44,7 @@ final readonly class RemoteAppDevCertificateManager
         $this->converge($node, "route-{$route->id}", $route->domain);
     }
 
-    public function convergeAppInstanceHostnameChange(AppInstance $appInstance, string $domain): void
+    public function convergeAppInstanceHostnameChange(Instance $appInstance, string $domain): void
     {
         $appInstance->loadMissing('node');
         $this->converge(
@@ -59,7 +59,7 @@ final readonly class RemoteAppDevCertificateManager
         $this->converge($router, "route-{$route->id}-router-hostname-change", $route->domain);
     }
 
-    public function appInstanceCertificateExists(AppInstance $appInstance): bool
+    public function appInstanceCertificateExists(Instance $appInstance): bool
     {
         $appInstance->loadMissing('node');
         $account = $this->accounts->resolve($appInstance->node);
@@ -89,12 +89,12 @@ final readonly class RemoteAppDevCertificateManager
             default => throw new RuntimeConvergenceException(
                 step: 'certificate-inspect',
                 errorCode: 'app-dev.certificate_inspection_failed',
-                message: 'AppInstance certificate inspection returned invalid evidence.',
+                message: 'Instance certificate inspection returned invalid evidence.',
             ),
         };
     }
 
-    public function removeAppInstance(AppInstance $appInstance): void
+    public function removeAppInstance(Instance $appInstance): void
     {
         $appInstance->loadMissing('node');
         $this->remove($appInstance->node, "app-instance-{$appInstance->id}");
@@ -120,7 +120,7 @@ final readonly class RemoteAppDevCertificateManager
         $this->remove($node, "route-{$route->id}");
     }
 
-    public function removeHostnameChange(AppInstance $appInstance, Route $route): void
+    public function removeHostnameChange(Instance $appInstance, Route $route): void
     {
         $appInstance->loadMissing('node');
         $this->remove($appInstance->node, "app-instance-{$appInstance->id}-hostname-change");

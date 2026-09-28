@@ -11,9 +11,9 @@ use App\Domain\Doctor\DatabaseConnectionDoctorInspection;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorNodeContext;
-use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\Instance;
 use App\Models\Node;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -44,22 +44,22 @@ final readonly class DatabaseConnectionDoctorProbe implements DoctorFamilyProbe
         foreach ($attachments as $attachment) {
             $found = $this->inspection->attachment($attachment);
             if ($found !== []) {
-                $attachmentIssues[$attachment->app_instance_id] = [
-                    ...($attachmentIssues[$attachment->app_instance_id] ?? []),
+                $attachmentIssues[$attachment->instance_id] = [
+                    ...($attachmentIssues[$attachment->instance_id] ?? []),
                     ...$found,
                 ];
             }
         }
 
         if ($attachmentIssues !== []) {
-            $instances = AppInstance::query()
+            $instances = Instance::query()
                 ->whereKey(array_keys($attachmentIssues))
                 ->get()
                 ->keyBy('id');
 
             foreach ($attachmentIssues as $instanceId => $found) {
                 $instance = $instances->get($instanceId);
-                if (! $instance instanceof AppInstance || $instance->status === AppInstanceState::Removing) {
+                if (! $instance instanceof Instance || $instance->status === AppInstanceState::Removing) {
                     continue;
                 }
 
@@ -84,8 +84,8 @@ final readonly class DatabaseConnectionDoctorProbe implements DoctorFamilyProbe
         return DatabaseConnectionTarget::query()
             ->with(['databaseConnection', 'appInstance'])
             ->whereIn(
-                'app_instance_id',
-                AppInstance::query()
+                'instance_id',
+                Instance::query()
                     ->select('id')
                     ->where('node_id', $node->id)
                     ->where('status', '!=', AppInstanceState::Removing),

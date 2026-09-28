@@ -13,7 +13,7 @@ use App\Domain\Tasks\TaskRunReceipts;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 /**
  * Keeps the run script and receipt in `.git/orbit/`, which Git never tracks.
@@ -26,7 +26,7 @@ final readonly class RemoteTaskRunReceipts implements TaskRunReceipts
 
     public function __construct(private AppDevSshExecutor $ssh) {}
 
-    public function prepare(AppInstance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void
+    public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void
     {
         $script = file_get_contents(resource_path('tasks/run'));
         if ($script === false) {
@@ -63,7 +63,7 @@ final readonly class RemoteTaskRunReceipts implements TaskRunReceipts
             BASH);
     }
 
-    public function read(AppInstance $instance, ?int $actingThreadId = null): ?TaskRunReceipt
+    public function read(Instance $instance, ?int $actingThreadId = null): ?TaskRunReceipt
     {
         $output = $this->run($instance, [], <<<'BASH'
             if [ -f "$dir/run.json" ]; then
@@ -94,7 +94,7 @@ final readonly class RemoteTaskRunReceipts implements TaskRunReceipts
         return $receipt;
     }
 
-    public function hasLegacyTurn(AppInstance $instance): bool
+    public function hasLegacyTurn(Instance $instance): bool
     {
         $output = $this->run($instance, [], <<<'BASH'
             if [ -f "$dir/turn.json" ]; then
@@ -136,7 +136,7 @@ final readonly class RemoteTaskRunReceipts implements TaskRunReceipts
         return [$expected !== null && $expected > 0 ? $expected : null, substr($body, $newline + 1)];
     }
 
-    public function clear(AppInstance $instance, TaskRunReceipt $receipt): void
+    public function clear(Instance $instance, TaskRunReceipt $receipt): void
     {
         $this->run($instance, [$receipt->hash], <<<'BASH'
             if [ -f "$dir/run.json" ] && [ "$(sha256sum -- "$dir/run.json" | cut -d ' ' -f 1)" = "$2" ]; then
@@ -146,7 +146,7 @@ final readonly class RemoteTaskRunReceipts implements TaskRunReceipts
     }
 
     /** @param list<string> $arguments */
-    private function run(AppInstance $instance, array $arguments, string $command): string
+    private function run(Instance $instance, array $arguments, string $command): string
     {
         $instance->loadMissing('node');
         if ($instance->checkout_path === '') {

@@ -27,8 +27,8 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
 use App\Models\AppInstanceTransfer;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 use Closure;
@@ -111,7 +111,7 @@ final class Orb245TransferSource implements AppInstanceTransferSource
 
     public ?string $common = null;
 
-    public function capture(AppInstance $instance): TransferSourceCapture
+    public function capture(Instance $instance): TransferSourceCapture
     {
         $this->calls[] = 'capture';
         ($this->onCall ?? static fn () => null)('capture');
@@ -188,7 +188,7 @@ final class Orb245TransferRuntime implements AppInstanceTransferRuntime
     /** @var list<string> */
     public array $pauseOutcomes = [];
 
-    public function pause(AppInstance $instance): void
+    public function pause(Instance $instance): void
     {
         $this->calls[] = 'pause';
         ($this->onCall ?? static fn () => null)('pause');
@@ -204,13 +204,13 @@ final class Orb245TransferRuntime implements AppInstanceTransferRuntime
         $this->pauseOutcomes[] = 'removed';
     }
 
-    public function restore(AppInstance $instance): void
+    public function restore(Instance $instance): void
     {
         $this->calls[] = 'restore';
     }
 
     public function relocate(
-        AppInstance $instance,
+        Instance $instance,
         Node $destination,
         string $sourcePath,
         string $workingDirectory,
@@ -229,12 +229,12 @@ final class Orb245TransferRuntime implements AppInstanceTransferRuntime
         }
     }
 
-    public function activate(AppInstance $instance): void
+    public function activate(Instance $instance): void
     {
         $this->calls[] = 'activate';
     }
 
-    public function cleanupSourceArtifacts(AppInstance $instance, Node $sourceNode, string $sourcePath): void
+    public function cleanupSourceArtifacts(Instance $instance, Node $sourceNode, string $sourcePath): void
     {
         $this->calls[] = 'cleanup';
     }
@@ -329,7 +329,7 @@ final class Orb245Projection implements AppInstanceTransferRouteProjector, Devel
         }
     }
 
-    public function converge(AppInstance $appInstance, Route $route): void
+    public function converge(Instance $appInstance, Route $route): void
     {
         $this->calls[] = 'converge';
 

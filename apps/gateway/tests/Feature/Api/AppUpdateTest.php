@@ -9,9 +9,9 @@ use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Str;
 use Tests\Support\Orb101AppUpdateFixture;
@@ -80,7 +80,7 @@ describe('app updates', function (): void {
             public function run(array $appInstanceIds, Closure $operation): mixed
             {
                 $result = $operation();
-                $this->runs[] = ['ids' => $appInstanceIds, 'stored' => OrbitApp::query()->findOrFail($this->appId)->task_check];
+                $this->runs[] = ['ids' => $appInstanceIds, 'stored' => Project::query()->findOrFail($this->appId)->task_check];
 
                 return $result;
             }
@@ -110,7 +110,7 @@ describe('app updates', function (): void {
             ->toBe('public')
             ->and($this->fixture->defaultInstance->refresh()->root)
             ->toBeNull()
-            ->and($this->fixture->defaultRoute->targets()->where('app_instance_id', $this->fixture->defaultInstance->id)->exists())
+            ->and($this->fixture->defaultRoute->targets()->where('instance_id', $this->fixture->defaultInstance->id)->exists())
             ->toBeTrue();
     });
 
@@ -129,7 +129,7 @@ describe('app updates', function (): void {
             ->toBe('.')
             ->and($this->fixture->defaultInstance->refresh()->root)
             ->toBe('public')
-            ->and($this->fixture->defaultRoute->targets()->where('app_instance_id', $this->fixture->defaultInstance->id)->exists())
+            ->and($this->fixture->defaultRoute->targets()->where('instance_id', $this->fixture->defaultInstance->id)->exists())
             ->toBeTrue();
     });
 
@@ -156,8 +156,8 @@ describe('app updates', function (): void {
     });
 
     it('switches inheriting default development instances when default_branch changes', function (): void {
-        $explicit = AppInstance::query()->create([
-            'app_id' => $this->fixture->app->id,
+        $explicit = Instance::query()->create([
+            'project_id' => $this->fixture->app->id,
             'node_id' => $this->fixture->node->id,
             'name' => 'release',
             'environment' => 'development',
@@ -215,7 +215,7 @@ describe('app updates', function (): void {
     });
 
     it('refuses a repository identity owned by another App before mutation', function (): void {
-        OrbitApp::query()->create([
+        Project::query()->create([
             'name' => 'Other',
             'slug' => 'other',
             'repository_url' => 'git@github.com:acme/other.git',
@@ -237,8 +237,8 @@ describe('app updates', function (): void {
     });
 
     it('retains production branch commit source and deployment ownership', function (): void {
-        $production = AppInstance::query()->create([
-            'app_id' => $this->fixture->app->id,
+        $production = Instance::query()->create([
+            'project_id' => $this->fixture->app->id,
             'node_id' => $this->fixture->node->id,
             'name' => 'prod',
             'environment' => 'production',
@@ -323,7 +323,7 @@ describe('app updates', function (): void {
             ->assertOk()
             ->assertJsonPath('data.slug', 'shop');
 
-        $route = Route::query()->where('app_id', $this->fixture->app->id)->sole();
+        $route = Route::query()->where('project_id', $this->fixture->app->id)->sole();
 
         expect($route->id)
             ->not

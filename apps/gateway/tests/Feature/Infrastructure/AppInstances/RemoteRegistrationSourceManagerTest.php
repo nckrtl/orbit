@@ -19,9 +19,9 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process as SymfonyProcess;
@@ -190,8 +190,8 @@ it('resumes a partially renamed included worktree set from retained evidence', f
 
         $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], true);
         $requestId = $fixture['instance']->registration_request_id;
-        $linked = AppInstance::query()->create([
-            'app_id' => $fixture['instance']->app_id,
+        $linked = Instance::query()->create([
+            'project_id' => $fixture['instance']->project_id,
             'node_id' => $fixture['node']->id,
             'name' => 'feature',
             'source_layout' => 'worktree',
@@ -334,7 +334,7 @@ it('persists relocation checkpoints without publishing dirty migration fields', 
 
     try {
         $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
-        AppInstance::query()
+        Instance::query()
             ->whereKey($fixture['instance']->id)
             ->update([
                 'name' => 'main',
@@ -564,15 +564,7 @@ it('refuses an incomplete Laravel rollback receipt without replacing it', functi
 });
 
 /**
- * @return array{
- *     manager: RemoteRegistrationSourceManager,
- *     node: Node,
- *     instance: AppInstance,
- *     source_root: string,
- *     destination_root: string,
- *     source: string,
- *     destination: string
- * }
+ * @return array{manager: RemoteRegistrationSourceManager, node: Node, instance: Instance, source_root: string, destination_root: string, source: string, destination: string}
  */
 function orb105_relocation_fixture(bool $crossFilesystem = true): array
 {
@@ -622,15 +614,15 @@ function orb105_relocation_fixture(bool $crossFilesystem = true): array
         'user' => get_current_user(),
         'settings' => ['apps' => ['path' => $destinationRoot.'/managed']],
     ]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
         'default_branch' => 'main',
         'root' => null,
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'default',
         'source_layout' => 'checkout',

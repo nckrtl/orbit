@@ -16,9 +16,9 @@ use App\Domain\Tasks\TaskRunReceipts;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Models\AgentThread;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskGroup;
@@ -42,7 +42,7 @@ function cancel_subtask_in_baseline(int $suffix): array
         'wireguard_ip' => '10.44.1.'.$suffix,
     ]);
     app(TaskExtensionState::class)->enable();
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Cancel baseline',
         'slug' => 'cancel-baseline-'.$suffix,
         'repository_url' => 'git@example.test:cancel-baseline.git',
@@ -55,15 +55,15 @@ function cancel_subtask_in_baseline(int $suffix): array
         'public_ssh_host' => '192.0.3.'.$suffix,
         'wireguard_ip' => '10.44.2.'.$suffix,
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'task-workspace',
         'checkout_path' => '/srv/orbit/apps/cancel-baseline/task-workspace',
         'status' => 'source_resolved',
     ]);
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Cancel during baseline',
         'brief' => 'Stop the baseline check.',
         'status' => TaskGroupStatus::Running,
@@ -99,17 +99,17 @@ function cancel_subtask_in_baseline(int $suffix): array
     app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
     app()->instance(TaskWorkspaceStateReader::class, new class implements TaskWorkspaceStateReader
     {
-        public function headCommit(AppInstance $instance): ?string
+        public function headCommit(Instance $instance): ?string
         {
             return 'baseline-head';
         }
 
-        public function currentBranch(AppInstance $instance): ?string
+        public function currentBranch(Instance $instance): ?string
         {
             return 'task-test';
         }
 
-        public function definesComposerCheckScript(AppInstance $instance): bool
+        public function definesComposerCheckScript(Instance $instance): bool
         {
             return true;
         }
@@ -148,7 +148,7 @@ it('cancel running subtask preserves its group and Instance', function (): void 
     $this->markAsGateway($gateway);
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
     app(TaskExtensionState::class)->enable();
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Cancel subtask',
         'slug' => 'cancel-subtask',
         'repository_url' => 'git@example.test:cancel-subtask.git',
@@ -161,15 +161,15 @@ it('cancel running subtask preserves its group and Instance', function (): void 
         'public_ssh_host' => '192.0.2.98',
         'wireguard_ip' => '10.44.0.98',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'task-workspace',
         'checkout_path' => '/srv/orbit/apps/cancel-subtask/task-workspace',
         'status' => 'source_resolved',
     ]);
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Cancel one subtask',
         'brief' => 'Keep the group workspace.',
         'status' => TaskGroupStatus::Running,
@@ -222,17 +222,17 @@ it('cancel running subtask preserves its group and Instance', function (): void 
     app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
     app()->instance(TaskWorkspaceStateReader::class, new class implements TaskWorkspaceStateReader
     {
-        public function headCommit(AppInstance $instance): ?string
+        public function headCommit(Instance $instance): ?string
         {
             return 'test-head';
         }
 
-        public function currentBranch(AppInstance $instance): ?string
+        public function currentBranch(Instance $instance): ?string
         {
             return 'task-test';
         }
 
-        public function definesComposerCheckScript(AppInstance $instance): bool
+        public function definesComposerCheckScript(Instance $instance): bool
         {
             return false;
         }
@@ -248,7 +248,7 @@ it('cancel running subtask preserves its group and Instance', function (): void 
         {
             $group = $task->taskGroup;
             $instance = $group->taskable;
-            if (! $instance instanceof AppInstance) {
+            if (! $instance instanceof Instance) {
                 return null;
             }
 
@@ -279,7 +279,7 @@ it('cancel running subtask preserves its group and Instance', function (): void 
         ->and($completed->fresh()->status)->toBe(TaskStatus::Completed)
         ->and($group->fresh()->status)->toBe(TaskGroupStatus::Running)
         ->and($group->fresh()->taskable_id)->toBe($instance->id)
-        ->and(AppInstance::query()->find($instance->id))->not->toBeNull()
+        ->and(Instance::query()->find($instance->id))->not->toBeNull()
         ->and($driver->calls)->toBe([['operation' => 'interrupt', 'thread' => 'implementer-session']]);
 });
 
@@ -294,14 +294,14 @@ it('cancels a running subtask through the generated MCP tool', function (): void
     $this->markAsGateway($gateway);
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
     app(TaskExtensionState::class)->enable();
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Cancel via MCP',
         'slug' => 'cancel-via-mcp',
         'repository_url' => 'git@example.test:cancel-via-mcp.git',
         'default_branch' => 'main',
     ]);
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Cancel via MCP',
         'brief' => 'Use the generated tool.',
         'status' => TaskGroupStatus::Running,
@@ -343,14 +343,14 @@ it('retries after an interrupt failure and settles when cancelling the last subt
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
     app(TaskExtensionState::class)->enable();
     app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Cancel retry',
         'slug' => 'cancel-retry',
         'repository_url' => 'git@example.test:cancel-retry.git',
         'default_branch' => 'main',
     ]);
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Cancel final subtask',
         'brief' => 'Retry and settle.',
         'status' => TaskGroupStatus::Running,
@@ -405,14 +405,14 @@ it('returns a conflict when the subtask is neither todo nor running', function (
     $this->markAsGateway($gateway);
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
     app(TaskExtensionState::class)->enable();
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Cancel idle subtask',
         'slug' => 'cancel-idle-subtask',
         'repository_url' => 'git@example.test:cancel-idle-subtask.git',
         'default_branch' => 'main',
     ]);
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Not running',
         'brief' => 'Reject cancellation.',
         'status' => TaskGroupStatus::Running,

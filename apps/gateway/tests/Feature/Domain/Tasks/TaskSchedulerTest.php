@@ -66,9 +66,9 @@ use App\Infrastructure\Tasks\T3\NullT3ThreadReader;
 use App\Infrastructure\Tasks\T3\T3Dispatcher;
 use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Models\AgentThread;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
 use App\Models\Task;
 use App\Models\TaskCheck;
@@ -86,9 +86,9 @@ beforeEach(function (): void {
     app()->instance(TaskWorkspaceMcp::class, new AcceptingTaskWorkspaceMcp);
 });
 
-function scheduler_app(string $slug): OrbitApp
+function scheduler_app(string $slug): Project
 {
-    return OrbitApp::query()->create([
+    return Project::query()->create([
         'name' => $slug,
         'slug' => $slug,
         'repository_url' => "git@example.test:{$slug}.git",
@@ -107,10 +107,10 @@ function scheduler_node(string $name, string $ip): Node
     ]);
 }
 
-function scheduler_instance(OrbitApp $app, Node $node, string $name): AppInstance
+function scheduler_instance(Project $app, Node $node, string $name): Instance
 {
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => $name,
         'checkout_path' => "/tmp/tasks-{$app->slug}-{$name}",
@@ -118,10 +118,10 @@ function scheduler_instance(OrbitApp $app, Node $node, string $name): AppInstanc
     ]);
 }
 
-function queued_group(OrbitApp $app, string $title, ?AppInstance $instance = null): TaskGroup
+function queued_group(Project $app, string $title, ?Instance $instance = null): TaskGroup
 {
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => $title,
         'brief' => "{$title} brief",
         'status' => TaskGroupStatus::Todo,
@@ -135,7 +135,7 @@ function queued_group(OrbitApp $app, string $title, ?AppInstance $instance = nul
         'status' => TaskStatus::Todo,
     ]);
 
-    if ($instance instanceof AppInstance) {
+    if ($instance instanceof Instance) {
         $group->taskable()->associate($instance);
         $group->save();
     }
@@ -184,13 +184,13 @@ function scheduler_recording_spawner(): AgentSpawner
     };
 }
 
-function scheduler_bind_claim(AppInstance $instance, AgentSpawner $spawner): void
+function scheduler_bind_claim(Instance $instance, AgentSpawner $spawner): void
 {
     app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
     {
-        public function __construct(private AppInstance $instance) {}
+        public function __construct(private Instance $instance) {}
 
-        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        public function provision(InstanceProvisionIntent $intent): ?Instance
         {
             return $this->instance;
         }
@@ -222,7 +222,7 @@ it('reserves queued groups without a per-Project ceiling', function (): void {
 it('does not count completed groups toward the App ceiling', function (): void {
     $app = scheduler_app('completed-app');
     TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Done',
         'brief' => 'Already settled',
         'status' => TaskGroupStatus::Completed,
@@ -237,7 +237,7 @@ it('claims another group when three reserved groups already occupy the App', fun
     $app = scheduler_app('full-app');
     foreach (['A', 'B', 'C'] as $title) {
         TaskGroup::query()->create([
-            'app_id' => $app->id,
+            'project_id' => $app->id,
             'title' => $title,
             'brief' => $title,
             'status' => TaskGroupStatus::Reserved,
@@ -258,7 +258,7 @@ it('applies the Node ceiling only after an App instance is assigned', function (
         $owner = scheduler_app("node-owner-{$index}");
         $placed = scheduler_instance($owner, $node, "slot-{$index}");
         $group = TaskGroup::query()->create([
-            'app_id' => $owner->id,
+            'project_id' => $owner->id,
             'title' => "Active {$index}",
             'brief' => 'Occupies the node',
             'status' => TaskGroupStatus::Running,
@@ -282,9 +282,9 @@ it('starts a group when provisioning assigns an instance under both ceilings', f
 
     app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
     {
-        public function __construct(private AppInstance $instance) {}
+        public function __construct(private Instance $instance) {}
 
-        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        public function provision(InstanceProvisionIntent $intent): ?Instance
         {
             expect($intent->visitable)->toBeFalse();
 
@@ -328,9 +328,9 @@ it('fails a group and its first task when the run script cannot be installed', f
     $group = queued_group($app, 'Wire T3');
     app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
     {
-        public function __construct(private AppInstance $instance) {}
+        public function __construct(private Instance $instance) {}
 
-        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        public function provision(InstanceProvisionIntent $intent): ?Instance
         {
             return $this->instance;
         }
@@ -373,9 +373,9 @@ it('keeps the task in review and counts a communication failure when the reviewe
 
     app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
     {
-        public function __construct(private AppInstance $instance) {}
+        public function __construct(private Instance $instance) {}
 
-        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        public function provision(InstanceProvisionIntent $intent): ?Instance
         {
             return $this->instance;
         }
@@ -415,9 +415,9 @@ it('fails a group and its first task when the implementer spawn returns no threa
 
     app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
     {
-        public function __construct(private AppInstance $instance) {}
+        public function __construct(private Instance $instance) {}
 
-        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        public function provision(InstanceProvisionIntent $intent): ?Instance
         {
             return $this->instance;
         }
@@ -464,9 +464,9 @@ it('fails the group when a later implementer spawn returns no thread id', functi
 
     app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
     {
-        public function __construct(private AppInstance $instance) {}
+        public function __construct(private Instance $instance) {}
 
-        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        public function provision(InstanceProvisionIntent $intent): ?Instance
         {
             return $this->instance;
         }
@@ -507,7 +507,7 @@ it('returns a provisioned group to todo on its Instance when the Node is already
         $owner = scheduler_app("fill-owner-{$index}");
         $placed = scheduler_instance($owner, $node, "fill-{$index}");
         $group = TaskGroup::query()->create([
-            'app_id' => $owner->id,
+            'project_id' => $owner->id,
             'title' => "Fill {$index}",
             'brief' => 'Fills the node',
             'status' => TaskGroupStatus::Reviewing,
@@ -519,9 +519,9 @@ it('returns a provisioned group to todo on its Instance when the Node is already
     $queued = queued_group($app, 'Wait');
     app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
     {
-        public function __construct(private AppInstance $instance) {}
+        public function __construct(private Instance $instance) {}
 
-        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        public function provision(InstanceProvisionIntent $intent): ?Instance
         {
             return $this->instance;
         }
@@ -569,16 +569,16 @@ it('advances a claimed Orbit group to running when the real provisioner and T3 s
     });
     app()->instance(DevelopmentAppInstanceSourceLifecycle::class, new class implements DevelopmentAppInstanceSourceLifecycle
     {
-        public function prepare(AppInstance $appInstance, bool $allowExisting): void {}
+        public function prepare(Instance $appInstance, bool $allowExisting): void {}
 
-        public function inspectPrepared(AppInstance $appInstance): void {}
+        public function inspectPrepared(Instance $appInstance): void {}
 
-        public function resolve(AppInstance $appInstance): DevelopmentSourceResolution
+        public function resolve(Instance $appInstance): DevelopmentSourceResolution
         {
             return new DevelopmentSourceResolution($appInstance->name, str_repeat('c', 40));
         }
 
-        public function inspectResolved(AppInstance $appInstance): DevelopmentSourceResolution
+        public function inspectResolved(Instance $appInstance): DevelopmentSourceResolution
         {
             return new DevelopmentSourceResolution((string) $appInstance->branch, (string) $appInstance->starting_commit);
         }
@@ -594,7 +594,7 @@ it('advances a claimed Orbit group to running when the real provisioner and T3 s
     });
     app()->instance(TaskWorkspaceSigner::class, new class implements TaskWorkspaceSigner
     {
-        public function commit(AppInstance $instance, string $message): ?string
+        public function commit(Instance $instance, string $message): ?string
         {
             return str_repeat('d', 40);
         }
@@ -607,7 +607,7 @@ it('advances a claimed Orbit group to running when the real provisioner and T3 s
     expect($claimed?->id)->toBe($group->id)
         ->and($claimed?->status)->toBe(TaskGroupStatus::Running)
         ->and($claimed?->taskable_id)->not->toBeNull()
-        ->and($claimed?->taskable)->toBeInstanceOf(AppInstance::class)
+        ->and($claimed?->taskable)->toBeInstanceOf(Instance::class)
         ->and($claimed?->taskable?->status)->toBe(AppInstanceState::SourceResolved)
         ->and($claimed?->taskable?->routes()->count())->toBe(0)
         ->and($claimed?->reviewer_agent_thread_id)->toBeNull()
@@ -729,9 +729,9 @@ it('starts a reviewer at each subtask handoff and starts the next implementer af
 
     app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
     {
-        public function __construct(private AppInstance $instance) {}
+        public function __construct(private Instance $instance) {}
 
-        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        public function provision(InstanceProvisionIntent $intent): ?Instance
         {
             return $this->instance;
         }
@@ -782,7 +782,7 @@ it('retries a review when the diff cannot be read instead of sending an empty ch
     $node = scheduler_node('unread-diff-node', '10.44.0.78');
     $instance = scheduler_instance($app, $node, 'unread');
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Unread diff',
         'brief' => 'The diff read fails.',
         'status' => TaskGroupStatus::Running,
@@ -800,7 +800,7 @@ it('retries a review when the diff cannot be read instead of sending an empty ch
     $driver = new FakeAgentDriver('t3');
     app()->instance(TaskReviewDiff::class, new class implements TaskReviewDiff
     {
-        public function read(AppInstance $instance, string $startCommit): array
+        public function read(Instance $instance, string $startCommit): array
         {
             throw new TaskReviewDiffException('The review diff could not be read.');
         }
@@ -822,7 +822,7 @@ it('holds a review resolution when diff reads fail on a reserved reviewer and re
     $node = scheduler_node('reserved-review-node', '10.44.0.79');
     $instance = scheduler_instance($app, $node, 'reserved');
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Reserved review',
         'brief' => 'The diff read fails until the operator answers.',
         'status' => TaskGroupStatus::Running,
@@ -842,7 +842,7 @@ it('holds a review resolution when diff reads fail on a reserved reviewer and re
     {
         public bool $fail = true;
 
-        public function read(AppInstance $instance, string $startCommit): array
+        public function read(Instance $instance, string $startCommit): array
         {
             if ($this->fail) {
                 throw new TaskReviewDiffException('The review diff could not be read.');
@@ -941,7 +941,7 @@ it('records a missing start commit on a later tick', function (): void {
     $app = scheduler_app('retry-start');
     $instance = scheduler_instance($app, scheduler_node('retry-start-node', '10.44.0.71'), 'retry');
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Retry start',
         'brief' => 'The start read failed.',
         'status' => TaskGroupStatus::Running,
@@ -963,17 +963,17 @@ it('records a missing start commit on a later tick', function (): void {
     {
         public function __construct(private string $head) {}
 
-        public function headCommit(AppInstance $instance): ?string
+        public function headCommit(Instance $instance): ?string
         {
             return $this->head;
         }
 
-        public function currentBranch(AppInstance $instance): ?string
+        public function currentBranch(Instance $instance): ?string
         {
             return 'task-retry';
         }
 
-        public function definesComposerCheckScript(AppInstance $instance): bool
+        public function definesComposerCheckScript(Instance $instance): bool
         {
             return true;
         }
@@ -989,7 +989,7 @@ it('keeps a migrated continuation on its source subtask start after the source c
     $app = scheduler_app('continuation-start');
     $instance = scheduler_instance($app, scheduler_node('continuation-start-node', '10.44.0.74'), 'continuation');
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Continuation start',
         'brief' => 'Overflow deliverables preserve the source boundary.',
         'status' => TaskGroupStatus::Running,
@@ -1021,17 +1021,17 @@ it('keeps a migrated continuation on its source subtask start after the source c
     {
         public function __construct(private string $head) {}
 
-        public function headCommit(AppInstance $instance): ?string
+        public function headCommit(Instance $instance): ?string
         {
             return $this->head;
         }
 
-        public function currentBranch(AppInstance $instance): ?string
+        public function currentBranch(Instance $instance): ?string
         {
             return 'task-continuation';
         }
 
-        public function definesComposerCheckScript(AppInstance $instance): bool
+        public function definesComposerCheckScript(Instance $instance): bool
         {
             return true;
         }
@@ -1047,7 +1047,7 @@ it('does not record a later head after the implementer starts and commits', func
     $app = scheduler_app('late-start');
     $instance = scheduler_instance($app, scheduler_node('late-start-node', '10.44.0.72'), 'late');
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Late start',
         'brief' => 'The start read failed until the implementer had committed.',
         'status' => TaskGroupStatus::Running,
@@ -1070,19 +1070,19 @@ it('does not record a later head after the implementer starts and commits', func
     {
         public function __construct(private string $later, private int &$reads) {}
 
-        public function headCommit(AppInstance $instance): ?string
+        public function headCommit(Instance $instance): ?string
         {
             $this->reads++;
 
             return $this->reads === 1 ? null : $this->later;
         }
 
-        public function currentBranch(AppInstance $instance): ?string
+        public function currentBranch(Instance $instance): ?string
         {
             return 'task-late';
         }
 
-        public function definesComposerCheckScript(AppInstance $instance): bool
+        public function definesComposerCheckScript(Instance $instance): bool
         {
             return true;
         }
@@ -1105,7 +1105,7 @@ it('records a start commit on a later tick while the implementer is only reserve
     $app = scheduler_app('reserved-start');
     $instance = scheduler_instance($app, scheduler_node('reserved-start-node', '10.44.0.73'), 'reserved');
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Reserved start',
         'brief' => 'The implementer row is not a turn yet.',
         'status' => TaskGroupStatus::Running,
@@ -1128,19 +1128,19 @@ it('records a start commit on a later tick while the implementer is only reserve
     {
         public function __construct(private string $later, private int &$reads) {}
 
-        public function headCommit(AppInstance $instance): ?string
+        public function headCommit(Instance $instance): ?string
         {
             $this->reads++;
 
             return $this->reads === 1 ? null : $this->later;
         }
 
-        public function currentBranch(AppInstance $instance): ?string
+        public function currentBranch(Instance $instance): ?string
         {
             return 'task-reserved';
         }
 
-        public function definesComposerCheckScript(AppInstance $instance): bool
+        public function definesComposerCheckScript(Instance $instance): bool
         {
             return true;
         }
@@ -1219,7 +1219,7 @@ function scheduler_missing_start_review(?string $approvedCommit, string $startin
     $instance = scheduler_instance($app, scheduler_node($app->slug.'-node', '10.44.3.'.$octet), 'missing');
     $instance->update(['starting_commit' => $startingCommit]);
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Missing start',
         'brief' => 'Review without a recorded start.',
         'status' => TaskGroupStatus::Running,
@@ -1254,7 +1254,7 @@ function scheduler_missing_start_review(?string $approvedCommit, string $startin
     $driver = new FakeAgentDriver('t3');
     app()->instance(TaskReviewDiff::class, new class implements TaskReviewDiff
     {
-        public function read(AppInstance $instance, string $startCommit): array
+        public function read(Instance $instance, string $startCommit): array
         {
             if (preg_match('/\A[0-9a-f]{7,64}\z/i', $startCommit) !== 1) {
                 throw new TaskReviewDiffException('The review diff could not be read.');
@@ -1285,7 +1285,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
     $node = scheduler_node('fresh-reviewer-node', '10.44.0.77');
     $instance = scheduler_instance($app, $node, 'fresh');
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Fresh reviewers',
         'brief' => 'Each subtask gets its own reviewer.',
         'status' => TaskGroupStatus::Running,
@@ -1339,7 +1339,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
     $driver = new FakeAgentDriver('t3');
     app()->instance(TaskReviewDiff::class, new class implements TaskReviewDiff
     {
-        public function read(AppInstance $instance, string $startCommit): array
+        public function read(Instance $instance, string $startCommit): array
         {
             return [
                 'files' => [['path' => 'apps/gateway/app/Domain/Tasks/TaskScheduler.php', 'insertions' => 4, 'deletions' => 1]],
@@ -1493,9 +1493,9 @@ it('keeps the reviewed pull request, writes settle metrics, and notifies Coder a
 
     app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
     {
-        public function __construct(private AppInstance $instance) {}
+        public function __construct(private Instance $instance) {}
 
-        public function provision(InstanceProvisionIntent $intent): ?AppInstance
+        public function provision(InstanceProvisionIntent $intent): ?Instance
         {
             return $this->instance;
         }
@@ -1538,7 +1538,7 @@ it('runs the Project setup steps and check on the fresh workspace before the fir
     $app->update(['task_check' => 'composer check']);
     $instance = scheduler_instance($app, scheduler_node('baseline-node', '10.44.0.94'), 'baseline');
     $group = queued_group($app, 'Baseline', $instance);
-    ProjectLifecycleStep::query()->create(['app_id' => $app->id, 'phase' => 'setup', 'name' => 'Install', 'command' => 'composer install', 'timeout_seconds' => 600, 'position' => 1]);
+    ProjectLifecycleStep::query()->create(['project_id' => $app->id, 'phase' => 'setup', 'name' => 'Install', 'command' => 'composer install', 'timeout_seconds' => 600, 'position' => 1]);
     $spawner = scheduler_recording_spawner();
     scheduler_bind_claim($instance, $spawner);
     $checks = new FakeTaskCheckRunner([TaskCheckReading::running(), FakeTaskCheckRunner::passed()]);
@@ -1684,17 +1684,17 @@ function scheduler_approved_subtask(string $slug, bool $last = false, ?string $r
     {
         public function __construct(private string $branch) {}
 
-        public function headCommit(AppInstance $instance): ?string
+        public function headCommit(Instance $instance): ?string
         {
             return null;
         }
 
-        public function currentBranch(AppInstance $instance): ?string
+        public function currentBranch(Instance $instance): ?string
         {
             return $this->branch;
         }
 
-        public function definesComposerCheckScript(AppInstance $instance): bool
+        public function definesComposerCheckScript(Instance $instance): bool
         {
             return true;
         }
@@ -1707,7 +1707,7 @@ function scheduler_approved_subtask(string $slug, bool $last = false, ?string $r
         /** @var list<string> */
         public array $messages = [];
 
-        public function commit(AppInstance $instance, string $message): ?string
+        public function commit(Instance $instance, string $message): ?string
         {
             $this->messages[] = $message;
             $sha = str_repeat('c', 40);
@@ -2182,17 +2182,17 @@ function scheduler_review(array $receipts, bool $notified = true): array
     {
         public function __construct(private int $groupId) {}
 
-        public function headCommit(AppInstance $instance): ?string
+        public function headCommit(Instance $instance): ?string
         {
             return str_repeat('a', 40);
         }
 
-        public function currentBranch(AppInstance $instance): ?string
+        public function currentBranch(Instance $instance): ?string
         {
             return 'task-'.$this->groupId;
         }
 
-        public function definesComposerCheckScript(AppInstance $instance): bool
+        public function definesComposerCheckScript(Instance $instance): bool
         {
             return true;
         }
@@ -2258,7 +2258,7 @@ function scheduler_review(array $receipts, bool $notified = true): array
         /** @var list<string> */
         public array $messages = [];
 
-        public function commit(AppInstance $instance, string $message): ?string
+        public function commit(Instance $instance, string $message): ?string
         {
             $this->messages[] = $message;
 
@@ -2507,7 +2507,7 @@ it('accepts a lost commit response as the stored commit without a reminder or a 
     {
         public int $calls = 0;
 
-        public function commit(AppInstance $instance, string $message): ?string
+        public function commit(Instance $instance, string $message): ?string
         {
             $this->calls++;
 
@@ -2571,7 +2571,7 @@ it('stores the commit when its response is lost and pushes that stored commit wi
 
         public function __construct(private string $sha) {}
 
-        public function commit(AppInstance $instance, string $message): ?string
+        public function commit(Instance $instance, string $message): ?string
         {
             $this->calls++;
             $checks = app(TaskCheckRunner::class);

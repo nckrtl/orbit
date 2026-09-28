@@ -15,9 +15,9 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 
 it('returns bound development source evidence from a valid inspection receipt', function (): void {
     $candidate = orb198_clone_candidate();
@@ -204,28 +204,28 @@ it('refuses invalid local candidate and Node identities before SSH', function (C
         ->toThrow(ResourceOperationException::class)
         ->and($ssh->commands)->toBeEmpty();
 })->with([
-    'candidate inactive' => function (AppInstance $candidate): void {
+    'candidate inactive' => function (Instance $candidate): void {
         $candidate->status = AppInstanceState::SourceResolved;
     },
-    'candidate lifecycle incomplete' => function (AppInstance $candidate): void {
+    'candidate lifecycle incomplete' => function (Instance $candidate): void {
         $candidate->provisioning_step = 'source-resolved';
     },
-    'Node inactive' => function (AppInstance $candidate): void {
+    'Node inactive' => function (Instance $candidate): void {
         $candidate->node->update(['status' => LifecycleStatus::Failed]);
     },
-    'Node platform unsupported' => function (AppInstance $candidate): void {
+    'Node platform unsupported' => function (Instance $candidate): void {
         $candidate->node->update(['platform' => 'darwin']);
     },
-    'Node address missing' => function (AppInstance $candidate): void {
+    'Node address missing' => function (Instance $candidate): void {
         $candidate->node->update(['wireguard_ip' => null]);
     },
-    'runtime user invalid' => function (AppInstance $candidate): void {
+    'runtime user invalid' => function (Instance $candidate): void {
         $candidate->node->update(['user' => 'Invalid User']);
     },
-    'configured branch missing' => function (AppInstance $candidate): void {
+    'configured branch missing' => function (Instance $candidate): void {
         $candidate->branch = null;
     },
-    'source path relative' => function (AppInstance $candidate): void {
+    'source path relative' => function (Instance $candidate): void {
         $candidate->checkout_path = 'relative/source';
     },
 ]);
@@ -256,25 +256,25 @@ it('refuses production candidates without complete selected release identity', f
         ->toThrow(ResourceOperationException::class)
         ->and($ssh->commands)->toBeEmpty();
 })->with([
-    'release layout missing' => function (AppInstance $candidate): void {
+    'release layout missing' => function (Instance $candidate): void {
         $candidate->checkout_path = '/home/orbit-app-1';
     },
-    'production home missing' => function (AppInstance $candidate): void {
+    'production home missing' => function (Instance $candidate): void {
         $candidate->production_home = null;
     },
-    'production runtime user missing' => function (AppInstance $candidate): void {
+    'production runtime user missing' => function (Instance $candidate): void {
         $candidate->production_user = null;
     },
-    'production runtime user invalid' => function (AppInstance $candidate): void {
+    'production runtime user invalid' => function (Instance $candidate): void {
         $candidate->production_user = 'Invalid User';
     },
-    'configured branch missing' => function (AppInstance $candidate): void {
+    'configured branch missing' => function (Instance $candidate): void {
         $candidate->branch = null;
         $candidate->deployment_branch = null;
     },
 ]);
 
-function orb198_clone_candidate(string $environment = 'development'): AppInstance
+function orb198_clone_candidate(string $environment = 'development'): Instance
 {
     $node = Node::query()->create([
         'name' => "clone-candidate-{$environment}",
@@ -288,7 +288,7 @@ function orb198_clone_candidate(string $environment = 'development'): AppInstanc
         'role' => $environment === 'production' ? RoleName::AppProd : RoleName::AppDev,
         'status' => LifecycleStatus::Active,
     ]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme clone candidate',
         'slug' => 'acme-clone-candidate',
         'repository_url' => 'ssh://git@example.test/acme.git',
@@ -297,8 +297,8 @@ function orb198_clone_candidate(string $environment = 'development'): AppInstanc
     ]);
     $production = $environment === 'production';
 
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'candidate',
         'environment' => $environment,

@@ -7,7 +7,7 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use Tests\Support\AppDevFakeSshExecutor;
@@ -51,14 +51,14 @@ it('does not probe the Vite port for a queue Process', function (): void {
     expect($ssh->commands)->toBe([]);
 });
 
-function readiness_instance(): AppInstance
+function readiness_instance(): Instance
 {
     $node = new Node([
         'name' => 'app-dev',
         'user' => 'orbit',
         'wireguard_ip' => '10.44.0.3',
     ]);
-    $instance = new AppInstance([
+    $instance = new Instance([
         'name' => 'main',
         'environment' => 'development',
     ]);
@@ -67,7 +67,7 @@ function readiness_instance(): AppInstance
     return $instance;
 }
 
-function readiness_process(AppInstance $instance, string $name): Process
+function readiness_process(Instance $instance, string $name): Process
 {
     $process = new Process([
         'name' => $name,

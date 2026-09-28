@@ -9,10 +9,10 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Http\Controllers\Api\AppInstancesController;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Routing\Route as IlluminateRoute;
@@ -29,6 +29,10 @@ function remove_legacy_application_schema_migration(): object
 
 function restore_legacy_application_tables(): void
 {
+    if (Schema::hasTable('projects') && ! Schema::hasTable('apps')) {
+        (require database_path('migrations/2026_10_04_000000_rename_app_domain_to_project_and_instance.php'))->renameSchema(false);
+    }
+
     Schema::create('instances', static function (Blueprint $table): void {
         $table->id();
         $table->foreignId('app_id')->constrained()->restrictOnDelete();
@@ -64,7 +68,7 @@ function restore_legacy_application_tables(): void
     });
 }
 
-/** @return array{OrbitApp, Node, AppInstance, Route, Process, array<string, mixed>} */
+/** @return array{Project, Node, Instance, Route, Process, array<string, mixed>} */
 function operator_prepared_supported_graph(): array
 {
     $node = Node::query()->create([
@@ -75,15 +79,15 @@ function operator_prepared_supported_graph(): array
         'user' => 'orbit',
         'wireguard_ip' => '10.44.0.3',
     ]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'git@github.com:acme/site.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    $appInstance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $appInstance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'default',
         'checkout_path' => '/home/orbit/apps/acme/default',
@@ -91,7 +95,7 @@ function operator_prepared_supported_graph(): array
         'status' => AppInstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'generation_basis_node_id' => $node->id,
         'domain' => 'acme.app-dev.orbit',
@@ -100,13 +104,13 @@ function operator_prepared_supported_graph(): array
         'provenance' => RouteProvenance::Generated,
     ]);
     $route->targets()->create([
-        'app_instance_id' => $appInstance->id,
+        'instance_id' => $appInstance->id,
         'position' => 0,
     ]);
     $route->update(['status' => RouteStatus::Active]);
     $route = $route->refresh();
     $process = Process::query()->create([
-        'owner_type' => AppInstance::MorphAlias,
+        'owner_type' => Instance::MorphAlias,
         'owner_id' => $appInstance->id,
         'name' => 'queue',
         'runtime' => ProcessRuntime::Systemd,
@@ -122,9 +126,9 @@ function operator_prepared_supported_graph(): array
 
 /** @return array<string, mixed> */
 function supported_legacy_schema_snapshot(
-    OrbitApp $app,
+    Project $app,
     Node $node,
-    AppInstance $appInstance,
+    Instance $appInstance,
     Route $route,
     Process $process,
 ): array {
@@ -133,37 +137,33 @@ function supported_legacy_schema_snapshot(
         'node' => $node->fresh()->only(['id', 'name', 'tld', 'status', 'user', 'wireguard_ip']),
         'app_instance' => $appInstance->fresh()->only([
             'id',
-            'app_id',
+            'project_id',
             'node_id',
             'name',
             'checkout_path',
             'source_layout',
             'status',
         ]),
-        'route' => $route->fresh()->only(['id', 'app_id', 'node_id', 'domain', 'status']),
-        'route_targets' => $route->targets()->orderBy('position')->pluck('app_instance_id')->all(),
+        'route' => $route->fresh()->only(['id', 'project_id', 'node_id', 'domain', 'status']),
+        'route_targets' => $route->targets()->orderBy('position')->pluck('instance_id')->all(),
         'process' => $process->fresh()->only(['id', 'owner_type', 'owner_id', 'name', 'runtime', 'status']),
     ];
 }
 
 it('leaves a fresh Gateway schema without leftover Instance or Workspace tables or columns', function (): void {
-    expect(Schema::hasTable('instances'))
+    expect(Schema::hasTable('workspaces'))
         ->toBeFalse()
-        ->and(Schema::hasTable('workspaces'))
-        ->toBeFalse()
-        ->and(Schema::hasTable('apps'))
+        ->and(Schema::hasTable('projects'))
         ->toBeTrue()
-        ->and(Schema::hasTable('app_instances'))
+        ->and(Schema::hasTable('instances'))
         ->toBeTrue()
         ->and(Schema::hasTable('routes'))
         ->toBeTrue()
         ->and(Schema::hasTable('processes'))
         ->toBeTrue();
 
-    foreach (['apps', 'app_instances', 'nodes', 'routes', 'route_targets', 'processes'] as $table) {
-        expect(Schema::hasColumn($table, 'instance_id'))
-            ->toBeFalse()
-            ->and(Schema::hasColumn($table, 'workspace_id'))
+    foreach (['projects', 'instances', 'nodes', 'routes', 'route_targets', 'processes'] as $table) {
+        expect(Schema::hasColumn($table, 'workspace_id'))
             ->toBeFalse()
             ->and(Schema::hasColumn($table, 'certificate_mode'))
             ->toBeFalse()
@@ -208,9 +208,12 @@ it('drops leftover tables on an ordinary update and keeps supported records unch
         ->toBeTrue();
 
     remove_legacy_application_schema_migration()->up();
+    if (Schema::hasTable('apps') && ! Schema::hasTable('projects')) {
+        (require database_path('migrations/2026_10_04_000000_rename_app_domain_to_project_and_instance.php'))->renameSchema(true);
+    }
 
     expect(Schema::hasTable('instances'))
-        ->toBeFalse()
+        ->toBeTrue()
         ->and(Schema::hasTable('workspaces'))
         ->toBeFalse()
         ->and(supported_legacy_schema_snapshot($app, $node, $appInstance, $route, $process))

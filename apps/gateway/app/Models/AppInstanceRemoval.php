@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * @property string $id
- * @property int $requested_app_instance_id
+ * @property int $requested_instance_id
  * @property string $requested_name
  * @property bool $force
  * @property string $inventory_digest
@@ -26,6 +26,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 final class AppInstanceRemoval extends Model
 {
     #[\Override]
+    protected $table = 'instance_removals';
+
+    #[\Override]
     public $incrementing = false;
 
     #[\Override]
@@ -35,7 +38,7 @@ final class AppInstanceRemoval extends Model
     #[\Override]
     protected $fillable = [
         'id',
-        'requested_app_instance_id',
+        'requested_instance_id',
         'requested_name',
         'force',
         'inventory_digest',
@@ -49,7 +52,7 @@ final class AppInstanceRemoval extends Model
     /** @return HasMany<AppInstanceRemovalMember, $this> */
     public function members(): HasMany
     {
-        return $this->hasMany(AppInstanceRemovalMember::class)->orderBy('position');
+        return $this->hasMany(AppInstanceRemovalMember::class, 'instance_removal_id')->orderBy('position');
     }
 
     /** @return array<string, string> */

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Tasks\TaskPullRequestCheck;
 use App\Infrastructure\Tasks\HttpTaskPullRequestWatcher;
-use App\Models\App as OrbitApp;
+use App\Models\Project;
 use App\Models\TaskGroup;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -12,13 +12,13 @@ use Tests\Feature\GitHub\GitHubTestSupport;
 
 function watcher_group(string $url = 'https://github.com/acme/orbit/pull/42'): TaskGroup
 {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Watcher App', 'slug' => 'watcher-app',
         'repository_url' => 'https://github.com/acme/orbit.git', 'default_branch' => 'main',
     ]);
 
     return TaskGroup::query()->create([
-        'app_id' => $app->id, 'title' => 'Watch PR', 'brief' => 'Verify PR state',
+        'project_id' => $app->id, 'title' => 'Watch PR', 'brief' => 'Verify PR state',
         'status' => 'settling', 'pr_url' => $url,
     ])->load('app');
 }

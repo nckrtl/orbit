@@ -37,7 +37,7 @@ final readonly class RemoteAppInstanceDestinationGuard implements AppInstanceDes
         } catch (RuntimeConvergenceException $exception) {
             throw new ResourceOperationException(
                 errorCode: 'instance.migration_conflict',
-                message: "AppInstance destination [{$destination->value}] is occupied by unmanaged data.",
+                message: "Instance destination [{$destination->value}] is occupied by unmanaged data.",
                 status: 409,
                 previous: $exception,
             );

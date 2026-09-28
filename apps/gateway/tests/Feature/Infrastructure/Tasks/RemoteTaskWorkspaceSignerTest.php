@@ -10,17 +10,17 @@ use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceSigner;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\LocalShellSshExecutor;
 
-function task_signer_instance(string $checkout = '/srv/orbit/apps/orbit/task-9'): AppInstance
+function task_signer_instance(string $checkout = '/srv/orbit/apps/orbit/task-9'): Instance
 {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'orbit',
         'slug' => 'orbit',
         'repository_url' => 'git@example.test:orbit.git',
@@ -35,8 +35,8 @@ function task_signer_instance(string $checkout = '/srv/orbit/apps/orbit/task-9')
         'user' => 'orbit',
     ]);
 
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'task-9',
         'checkout_path' => $checkout,

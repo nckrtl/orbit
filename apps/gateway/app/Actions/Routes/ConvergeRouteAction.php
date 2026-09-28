@@ -22,8 +22,8 @@ use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -195,7 +195,7 @@ final readonly class ConvergeRouteAction
     /** @return list<int> */
     private function trackingInstanceIds(Route $route): array
     {
-        $instanceId = $route->analyticsTracking()->value('app_instance_id');
+        $instanceId = $route->analyticsTracking()->value('instance_id');
 
         return $instanceId === null ? [] : [StoredInteger::from($instanceId)];
     }
@@ -226,8 +226,8 @@ final readonly class ConvergeRouteAction
         return array_values($route
             ->targets()
             ->orderBy('position')
-            ->orderBy('app_instance_id')
-            ->pluck('app_instance_id')
+            ->orderBy('instance_id')
+            ->pluck('instance_id')
             ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->all());
     }
@@ -513,7 +513,7 @@ final readonly class ConvergeRouteAction
 
             $production = array_values(array_filter(
                 $targets,
-                static fn (AppInstance $instance): bool => $instance->placedOnAppProd(),
+                static fn (Instance $instance): bool => $instance->placedOnAppProd(),
             ));
 
             if ($production !== []) {
@@ -612,7 +612,7 @@ final readonly class ConvergeRouteAction
     {
         $currentTargetIds = $route
             ->targets
-            ->pluck('app_instance_id')
+            ->pluck('instance_id')
             ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->sort()
             ->values()
@@ -623,13 +623,13 @@ final readonly class ConvergeRouteAction
         if ($currentTargetIds !== $expectedSorted) {
             throw new ResourceOperationException(
                 errorCode: 'env.owner_changed',
-                message: 'The AppInstance environment owner changed during the operation.',
+                message: 'The Instance environment owner changed during the operation.',
                 status: 409,
             );
         }
     }
 
-    /** @return list<AppInstance> */
+    /** @return list<Instance> */
     private function eligibleTargets(
         Route $route,
         bool $allowRetiring = false,
@@ -638,7 +638,7 @@ final readonly class ConvergeRouteAction
     ): array {
         $targets = array_values($route->targets
             ->map(static fn ($row) => $row->appInstance)
-            ->filter(static fn ($instance): bool => $instance instanceof AppInstance)
+            ->filter(static fn ($instance): bool => $instance instanceof Instance)
             ->all());
 
         if ($targets === []) {
@@ -646,7 +646,7 @@ final readonly class ConvergeRouteAction
         }
 
         $environments = array_values(array_unique(array_map(
-            static fn (AppInstance $instance): string => $instance->defaultAppEnv(),
+            static fn (Instance $instance): string => $instance->defaultAppEnv(),
             $targets,
         )));
 
@@ -744,7 +744,7 @@ final readonly class ConvergeRouteAction
             }
 
             $replacement = Route::query()->create([
-                'app_id' => $locked->app_id,
+                'project_id' => $locked->project_id,
                 'node_id' => $placement instanceof RoutePlacement ? $placement->nodeId : $locked->node_id,
                 'cluster_id' => $placement instanceof RoutePlacement ? $placement->clusterId : $locked->cluster_id,
                 'generation_basis_node_id' => $locked->generation_basis_node_id,
@@ -760,7 +760,7 @@ final readonly class ConvergeRouteAction
 
             foreach ($locked->targets as $target) {
                 $replacement->targets()->create([
-                    'app_instance_id' => $target->app_instance_id,
+                    'instance_id' => $target->instance_id,
                     'position' => $target->position,
                 ]);
             }
@@ -781,7 +781,7 @@ final readonly class ConvergeRouteAction
         $this->checkpoint($route, $step);
     }
 
-    /** @param list<AppInstance> $targets */
+    /** @param list<Instance> $targets */
     private function convergePlacement(Route $route, RoutePlacement $placement, array $targets): Route
     {
         $retired = $this->candidateWithPlacement($route, new RoutePlacement(
@@ -872,7 +872,7 @@ final readonly class ConvergeRouteAction
 
             $production = array_values(array_filter(
                 $targets,
-                static fn (AppInstance $instance): bool => $instance->placedOnAppProd(),
+                static fn (Instance $instance): bool => $instance->placedOnAppProd(),
             ));
 
             if ($production !== []) {
@@ -1006,7 +1006,7 @@ final readonly class ConvergeRouteAction
      * withdraws it. A failure before the `cleanup` step keeps both placements serving. The
      * transition columns stay until the end, so a retry still knows the old placement.
      *
-     * @param  list<AppInstance>  $targets
+     * @param  list<Instance>  $targets
      */
     private function cleanupPlacement(Route $route, Route $candidate, array $targets): Route
     {
@@ -1035,7 +1035,7 @@ final readonly class ConvergeRouteAction
      * Stores the `cleanup` step so builds render the live scopes and no second placement, builds,
      * and removes the staging and old certificates. It clears the transition columns last.
      *
-     * @param  list<AppInstance>  $targets
+     * @param  list<Instance>  $targets
      */
     private function withdrawPlacement(Route $route, Route $candidate, array $targets): Route
     {
@@ -1092,7 +1092,7 @@ final readonly class ConvergeRouteAction
      * and `execute()` waits outside the owners for those answers to expire before the
      * withdrawal. When that publication fails, both placements keep serving until a retry.
      *
-     * @param  list<AppInstance>  $targets
+     * @param  list<Instance>  $targets
      */
     private function failBeforeCutoverPlacement(
         Route $route,
@@ -1116,7 +1116,7 @@ final readonly class ConvergeRouteAction
         $this->withdrawCandidatePlacement($route, $retired, $candidate, $targets);
     }
 
-    /** @param list<AppInstance> $targets */
+    /** @param list<Instance> $targets */
     private function withdrawCandidatePlacement(Route $route, Route $retired, Route $candidate, array $targets): void
     {
         // The rollback removes the candidate certificates, so a retry restarts from the first step.
@@ -1190,7 +1190,7 @@ final readonly class ConvergeRouteAction
      * Cleanup issues the live certificates for the replacement, stores the `cleanup` step so builds
      * render the live scopes, and then builds and removes the staging certificates.
      *
-     * @param  list<AppInstance>  $targets
+     * @param  list<Instance>  $targets
      */
     private function cleanup(Route $replacement, Route $current, array $targets): Route
     {
@@ -1247,7 +1247,7 @@ final readonly class ConvergeRouteAction
         return $replacement->refresh()->load('targets');
     }
 
-    /** @param list<AppInstance> $targets */
+    /** @param list<Instance> $targets */
     private function failBeforeCutover(Route $replacement, array $targets): void
     {
         $replacement->refresh();

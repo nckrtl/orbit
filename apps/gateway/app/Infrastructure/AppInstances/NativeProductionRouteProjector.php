@@ -19,7 +19,7 @@ use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 
@@ -37,7 +37,7 @@ final readonly class NativeProductionRouteProjector implements ProductionCloneRo
         private PublicRouteEligibility $eligibility = new PublicRouteEligibility,
     ) {}
 
-    public function prepareRuntime(AppInstance $appInstance, Route $route): void
+    public function prepareRuntime(Instance $appInstance, Route $route): void
     {
         $appInstance->loadMissing('node');
         if (! is_string($appInstance->production_php_service) || $appInstance->production_php_service === '') {
@@ -51,18 +51,18 @@ final readonly class NativeProductionRouteProjector implements ProductionCloneRo
         $this->productionPhp->converge($appInstance);
     }
 
-    public function prepareCertificate(AppInstance $appInstance, Route $route): void
+    public function prepareCertificate(Instance $appInstance, Route $route): void
     {
         $this->certificates->convergeAppInstance($appInstance, $route);
     }
 
-    public function prepareFirewall(AppInstance $appInstance): void
+    public function prepareFirewall(Instance $appInstance): void
     {
         $appInstance->loadMissing('node');
         $this->firewall->converge($appInstance->node, RoleName::AppProd, $appInstance->node->user);
     }
 
-    public function publish(AppInstance $appInstance, Route $route): void
+    public function publish(Instance $appInstance, Route $route): void
     {
         $this->releaseLayout->validateCurrent($appInstance);
 
@@ -85,7 +85,7 @@ final readonly class NativeProductionRouteProjector implements ProductionCloneRo
         $edge->prepareIngressFirewall($route);
     }
 
-    public function prepareWorkloadCaddy(AppInstance $appInstance, Route $route): void
+    public function prepareWorkloadCaddy(Instance $appInstance, Route $route): void
     {
         $appInstance->loadMissing('node');
         // `prepareCertificate` has issued the certificate the site names.
@@ -93,7 +93,7 @@ final readonly class NativeProductionRouteProjector implements ProductionCloneRo
         $this->caddy->build($appInstance->node);
     }
 
-    public function prepareRouterCertificate(AppInstance $appInstance, Route $route): void
+    public function prepareRouterCertificate(Instance $appInstance, Route $route): void
     {
         $router = $this->router($appInstance, $route);
 
@@ -102,7 +102,7 @@ final readonly class NativeProductionRouteProjector implements ProductionCloneRo
         }
     }
 
-    public function prepareRouteFirewall(AppInstance $appInstance, Route $route): void
+    public function prepareRouteFirewall(Instance $appInstance, Route $route): void
     {
         $router = $this->router($appInstance, $route);
 
@@ -149,7 +149,7 @@ final readonly class NativeProductionRouteProjector implements ProductionCloneRo
         );
     }
 
-    public function verifyWorkload(AppInstance $appInstance, Route $route): void
+    public function verifyWorkload(Instance $appInstance, Route $route): void
     {
         $router = $this->router($appInstance, $route);
 
@@ -191,7 +191,7 @@ final readonly class NativeProductionRouteProjector implements ProductionCloneRo
         );
     }
 
-    public function prepareRouterCaddy(AppInstance $appInstance, Route $route): void
+    public function prepareRouterCaddy(Instance $appInstance, Route $route): void
     {
         $router = $this->router($appInstance, $route);
 
@@ -205,7 +205,7 @@ final readonly class NativeProductionRouteProjector implements ProductionCloneRo
         $this->dns->converge();
     }
 
-    private function router(AppInstance $appInstance, Route $route): ?Node
+    private function router(Instance $appInstance, Route $route): ?Node
     {
         $appInstance->loadMissing('node');
         $route->loadMissing('cluster.routerAssignment.node');

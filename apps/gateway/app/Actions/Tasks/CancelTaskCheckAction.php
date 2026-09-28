@@ -9,7 +9,8 @@ use App\Domain\Tasks\TaskBroadcasts;
 use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
-use App\Models\AppInstance;
+use App\Models\Instance;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskGroup;
@@ -31,7 +32,7 @@ final readonly class CancelTaskCheckAction
         $this->requireExtension->execute();
         $check = $task->checks()->where('status', TaskCheckStatus::Running->value)->latest('id')->first();
         $instance = $group->taskable;
-        if (! $check instanceof TaskCheck || ! $instance instanceof AppInstance) {
+        if (! $check instanceof TaskCheck || ! $instance instanceof Instance) {
             throw new ResourceOperationException(
                 errorCode: 'tasks.check_not_running',
                 message: __('The task has no running check.'),

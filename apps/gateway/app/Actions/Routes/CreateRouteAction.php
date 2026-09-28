@@ -28,10 +28,10 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetWebRoot;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Route;
 use App\Models\RouteCustomProxy;
 use App\Models\RouteTarget;
@@ -80,11 +80,11 @@ final readonly class CreateRouteAction
     /** @return array{route: Route, created: bool} */
     private function activateExplicitRoute(CreateRouteData $data): array
     {
-        $instance = AppInstance::query()->with(['app', 'node'])->findOrFail($data->appInstanceId);
+        $instance = Instance::query()->with(['app', 'node'])->findOrFail($data->appInstanceId);
         $result = $this->run(new CreateRouteData(
             domain: $data->domain,
             publication: $data->publication,
-            appId: $instance->app_id,
+            appId: $instance->project_id,
             appInstanceId: $instance->id,
         ), activating: true);
 
@@ -150,7 +150,7 @@ final readonly class CreateRouteAction
         return $result;
     }
 
-    public function ensureForAppInstance(AppInstance $appInstance, ?string $domain): Route
+    public function ensureForAppInstance(Instance $appInstance, ?string $domain): Route
     {
         $appInstance->refresh()->loadMissing(['app', 'node']);
 
@@ -172,7 +172,7 @@ final readonly class CreateRouteAction
         }
 
         $existing = Route::query()
-            ->whereHas('targets', static fn ($query) => $query->where('app_instance_id', $appInstance->id))
+            ->whereHas('targets', static fn ($query) => $query->where('instance_id', $appInstance->id))
             ->first();
 
         if ($existing instanceof Route) {
@@ -210,7 +210,7 @@ final readonly class CreateRouteAction
             : RouteDomain::validate($domain);
 
         return $this->create(
-            appId: $appInstance->app_id,
+            appId: $appInstance->project_id,
             domain: $resolvedHostname,
             publication: RoutePublication::Private,
             provenance: $provenance,
@@ -293,7 +293,7 @@ final readonly class CreateRouteAction
             $route = DB::transaction(function () use ($domain, $node, $process, $upstream): Route {
                 $route = Route::query()->create([
                     'kind' => RouteKind::CustomProxy,
-                    'app_id' => null,
+                    'project_id' => null,
                     'node_id' => $node->id,
                     'cluster_id' => null,
                     'generation_basis_node_id' => null,
@@ -370,12 +370,12 @@ final readonly class CreateRouteAction
             );
         }
 
-        OrbitApp::query()->findOrFail($data->appId);
+        Project::query()->findOrFail($data->appId);
         if ($data->appInstanceId === null || $data->nodeId !== null || $data->clusterId !== null) {
             throw new ResourceOperationException('route.scope_required', 'An app Route requires an Instance and derives its scope from it.');
         }
 
-        $target = AppInstance::query()->with('node')->findOrFail($data->appInstanceId);
+        $target = Instance::query()->with('node')->findOrFail($data->appInstanceId);
         $this->assertTarget($target, $data->appId);
         RouteTargetWebRoot::assertSupported($target);
         $placement = $this->state->forNode($target->node);
@@ -418,7 +418,7 @@ final readonly class CreateRouteAction
         ?int $nodeId,
         ?int $clusterId,
         ?int $generationBasisNodeId,
-        AppInstance $appInstance,
+        Instance $appInstance,
         RouteStatus $initialStatus = RouteStatus::Pending,
     ): Route {
         RouteTargetWebRoot::assertSupported($appInstance);
@@ -439,7 +439,7 @@ final readonly class CreateRouteAction
 
                 $route = Route::query()->create([
                     'kind' => RouteKind::App,
-                    'app_id' => $appId,
+                    'project_id' => $appId,
                     'node_id' => $nodeId,
                     'cluster_id' => $clusterId,
                     'generation_basis_node_id' => $generationBasisNodeId,
@@ -454,7 +454,7 @@ final readonly class CreateRouteAction
                 $route
                     ->targets()
                     ->create([
-                        'app_instance_id' => $appInstance->id,
+                        'instance_id' => $appInstance->id,
                         'position' => 0,
                     ]);
 
@@ -471,9 +471,9 @@ final readonly class CreateRouteAction
         }
     }
 
-    private function assertTarget(AppInstance $target, int $appId): void
+    private function assertTarget(Instance $target, int $appId): void
     {
-        if ($target->app_id !== $appId) {
+        if ($target->project_id !== $appId) {
             throw new ResourceOperationException(
                 errorCode: 'route.target_app_conflict',
                 message: 'The Route target must belong to the Route Project.',
@@ -495,10 +495,10 @@ final readonly class CreateRouteAction
         CreateRouteData $data,
         ?int $nodeId,
         ?int $clusterId,
-        ?AppInstance $target,
+        ?Instance $target,
     ): void {
         $existing->load('targets');
-        $existingTargetId = $existing->targets->first()?->app_instance_id;
+        $existingTargetId = $existing->targets->first()?->instance_id;
 
         if (! $existing->isApp()) {
             throw new ResourceOperationException(
@@ -509,7 +509,7 @@ final readonly class CreateRouteAction
         }
 
         if (
-            $existing->app_id !== $data->appId
+            $existing->project_id !== $data->appId
             || $existing->publication !== $data->publication
             || $existing->provenance !== RouteProvenance::Explicit
             || $existing->node_id !== $nodeId
@@ -526,15 +526,15 @@ final readonly class CreateRouteAction
 
     private function conflictFromCreateFailure(
         string $domain,
-        ?AppInstance $appInstance,
+        ?Instance $appInstance,
         QueryException $exception,
     ): ResourceOperationException {
         if (
-            $appInstance instanceof AppInstance
+            $appInstance instanceof Instance
             && ! Route::query()->where('domain', $domain)->exists()
         ) {
             $association = RouteTarget::query()
-                ->where('app_instance_id', $appInstance->id)
+                ->where('instance_id', $appInstance->id)
                 ->first();
 
             if ($association instanceof RouteTarget) {

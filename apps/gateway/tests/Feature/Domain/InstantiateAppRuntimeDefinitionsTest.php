@@ -22,11 +22,11 @@ use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\ProcessDefinition;
+use App\Models\Project;
 use App\Models\Schedule;
 use App\Models\ScheduleDefinition;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
@@ -50,7 +50,7 @@ beforeEach(function (): void {
         'user' => 'orbit',
     ]);
     $this->developmentNode->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
-    $this->orbitApp = OrbitApp::query()->create([
+    $this->orbitApp = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'git@example.test:acme.git',
@@ -81,11 +81,11 @@ it('selects App production definitions instead of development or candidate overr
     $this->action->execute($this->target);
 
     $copy = Process::query()
-        ->whereIn('owner_type', AppInstance::morphTypes())
+        ->whereIn('owner_type', Instance::morphTypes())
         ->where('owner_id', $this->target->id)
         ->sole();
     $schedule = Schedule::query()
-        ->whereIn('target_type', AppInstance::morphTypes())
+        ->whereIn('target_type', Instance::morphTypes())
         ->where('target_id', $this->target->id)
         ->sole();
 
@@ -126,7 +126,7 @@ it('creates independent stopped copies for both Process backends and a disabled 
     $this->action->execute($this->target);
 
     $copies = Process::query()
-        ->whereIn('owner_type', AppInstance::morphTypes())
+        ->whereIn('owner_type', Instance::morphTypes())
         ->where('owner_id', $this->target->id)
         ->orderBy('name')
         ->get()
@@ -342,12 +342,12 @@ function orb225_action(
     );
 }
 
-function orb225_instance(OrbitApp $app, Node $node, string $name, string $environment): AppInstance
+function orb225_instance(Project $app, Node $node, string $name, string $environment): Instance
 {
     $production = $environment === 'production';
 
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => $name,
         'environment' => $environment,
@@ -363,10 +363,10 @@ function orb225_instance(OrbitApp $app, Node $node, string $name, string $enviro
 }
 
 /** @param list<string> $command */
-function orb225_process(AppInstance $instance, string $name, array $command): Process
+function orb225_process(Instance $instance, string $name, array $command): Process
 {
     return Process::query()->create([
-        'owner_type' => AppInstance::MorphAlias,
+        'owner_type' => Instance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => $name,
         'runtime' => ProcessRuntime::Systemd,
@@ -383,7 +383,7 @@ function orb225_process(AppInstance $instance, string $name, array $command): Pr
  * @param  array<string, mixed>  $specification
  */
 function orb225_process_definition(
-    OrbitApp $app,
+    Project $app,
     string $name,
     array $environments,
     array $specification,
@@ -395,7 +395,7 @@ function orb225_process_definition(
     ]);
 }
 
-function orb225_schedule_definition(OrbitApp $app, string $name): ScheduleDefinition
+function orb225_schedule_definition(Project $app, string $name): ScheduleDefinition
 {
     return $app->scheduleDefinitions()->create([
         'name' => $name,
@@ -408,10 +408,10 @@ function orb225_schedule_definition(OrbitApp $app, string $name): ScheduleDefini
     ]);
 }
 
-function orb225_schedule(AppInstance $instance, string $name): Schedule
+function orb225_schedule(Instance $instance, string $name): Schedule
 {
     return Schedule::query()->create([
-        'target_type' => AppInstance::MorphAlias,
+        'target_type' => Instance::MorphAlias,
         'target_id' => $instance->id,
         'host_node_id' => $instance->node_id,
         'name' => $name,

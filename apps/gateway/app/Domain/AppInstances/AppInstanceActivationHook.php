@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\AppInstances;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 interface AppInstanceActivationHook
 {
-    public function complete(AppInstance $appInstance, ?string $requestedName): void;
+    public function complete(Instance $appInstance, ?string $requestedName): void;
 }

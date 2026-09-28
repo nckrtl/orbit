@@ -16,7 +16,7 @@ use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskType;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Models\Annotation;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskGroup;
 use Illuminate\Support\Facades\DB;
@@ -24,10 +24,10 @@ use Illuminate\Support\Str;
 
 final readonly class AnnotationStoreAction
 {
-    public function create(AppInstance $instance, AnnotationInput $input): Annotation
+    public function create(Instance $instance, AnnotationInput $input): Annotation
     {
         return DB::transaction(function () use ($instance, $input): Annotation {
-            $instance = AppInstance::query()->lockForUpdate()->findOrFail($instance->id);
+            $instance = Instance::query()->lockForUpdate()->findOrFail($instance->id);
             if ($instance->status === AppInstanceState::Removing) {
                 throw new ResourceOperationException('annotation.instance_removing', 'Cannot annotate an Instance that is being removed.', 409);
             }
@@ -39,7 +39,7 @@ final readonly class AnnotationStoreAction
             }
             $existing = Annotation::query()->find($id);
             if ($existing !== null) {
-                if ($existing->app_instance_id !== $instance->id || $existing->context !== $context) {
+                if ($existing->instance_id !== $instance->id || $existing->context !== $context) {
                     throw new ResourceOperationException('annotation.conflict', 'This annotation was already submitted. Create a new annotation for a changed instruction.', 409);
                 }
 
@@ -47,7 +47,7 @@ final readonly class AnnotationStoreAction
             }
             $thread = $context['threadId'] ?? null;
             $group = TaskGroup::query()->create([
-                'app_id' => $instance->app_id, 'taskable_type' => $instance->getMorphClass(), 'taskable_id' => $instance->id,
+                'project_id' => $instance->project_id, 'taskable_type' => $instance->getMorphClass(), 'taskable_id' => $instance->id,
                 'execution_mode' => TaskExecutionMode::ExistingThread, 'implementer_agent_driver' => 't3', 'reviewer_agent_driver' => 't3',
                 'title' => mb_substr($comment, 0, 200), 'brief' => $comment,
                 'status' => TaskGroupStatus::Todo,
@@ -58,7 +58,7 @@ final readonly class AnnotationStoreAction
                 'target_thread_id' => $thread,
             ]);
             $annotation = Annotation::query()->create([
-                'id' => $id, 'app_instance_id' => $instance->id, 'task_id' => $task->id,
+                'id' => $id, 'instance_id' => $instance->id, 'task_id' => $task->id,
                 'context' => $context, 'delivery' => $thread ? 'queued' : 'error',
                 'error' => $thread ? null : 'Select a T3 thread and retry delivery.',
                 'submission_order' => 0, 'command_id' => (string) Str::uuid(), 'message_id' => (string) Str::uuid(),
@@ -132,7 +132,7 @@ final readonly class AnnotationStoreAction
     public function record(Annotation $annotation): Annotation
     {
         $sequence = DB::table('annotation_events')->insertGetId([
-            'app_instance_id' => $annotation->app_instance_id, 'payload' => '{}',
+            'instance_id' => $annotation->instance_id, 'payload' => '{}',
             'created_at' => now(), 'updated_at' => now(),
         ]);
         $annotation->revision = $sequence;
@@ -145,7 +145,7 @@ final readonly class AnnotationStoreAction
         ]);
 
         $id = $annotation->id;
-        $data = ['id' => $id, 'instanceId' => $annotation->app_instance_id, 'revision' => $sequence];
+        $data = ['id' => $id, 'instanceId' => $annotation->instance_id, 'revision' => $sequence];
         DB::afterCommit(fn () => app(RecordEventBroadcaster::class)->broadcast(RecordEventType::AnnotationUpdated, $id, $data));
 
         return $annotation;

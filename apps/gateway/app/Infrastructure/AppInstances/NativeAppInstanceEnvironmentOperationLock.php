@@ -50,13 +50,13 @@ final class NativeAppInstanceEnvironmentOperationLock implements AppInstanceEnvi
         }
 
         if (array_any($ids, static fn (int $id): bool => $id < 1)) {
-            throw new LogicException('An AppInstance environment lock requires positive identifiers.');
+            throw new LogicException('An Instance environment lock requires positive identifiers.');
         }
 
         $newIds = array_values(array_filter($ids, fn (int $id): bool => ! array_key_exists($id, $this->depths)));
 
         if ($this->depths !== [] && $newIds !== []) {
-            throw new LogicException('A nested AppInstance environment operation cannot acquire another owner.');
+            throw new LogicException('A nested Instance environment operation cannot acquire another owner.');
         }
 
         if ($newIds === []) {
@@ -82,13 +82,13 @@ final class NativeAppInstanceEnvironmentOperationLock implements AppInstanceEnvi
                 $handle = fopen(filename: $path, mode: 'c+');
 
                 if ($handle === false) {
-                    throw new RuntimeException("Could not open AppInstance environment lock [{$path}].");
+                    throw new RuntimeException("Could not open Instance environment lock [{$path}].");
                 }
 
                 $handles[$id] = $handle;
 
                 if (! chmod(filename: $path, permissions: 0o600)) {
-                    throw new RuntimeException("Could not protect AppInstance environment lock [{$path}].");
+                    throw new RuntimeException("Could not protect Instance environment lock [{$path}].");
                 }
 
                 $this->acquire($handle);
@@ -108,7 +108,7 @@ final class NativeAppInstanceEnvironmentOperationLock implements AppInstanceEnvi
     private function prepareDirectory(): void
     {
         if ($this->directory === '') {
-            throw new RuntimeException('The AppInstance environment lock directory is not configured.');
+            throw new RuntimeException('The Instance environment lock directory is not configured.');
         }
 
         if (
@@ -116,12 +116,12 @@ final class NativeAppInstanceEnvironmentOperationLock implements AppInstanceEnvi
             && ! mkdir(directory: $this->directory, permissions: 0o700, recursive: true)
             && ! is_dir($this->directory)
         ) {
-            throw new RuntimeException("Could not create AppInstance environment lock directory [{$this->directory}].");
+            throw new RuntimeException("Could not create Instance environment lock directory [{$this->directory}].");
         }
 
         if (! chmod(filename: $this->directory, permissions: 0o700)) {
             throw new RuntimeException(
-                "Could not protect AppInstance environment lock directory [{$this->directory}].",
+                "Could not protect Instance environment lock directory [{$this->directory}].",
             );
         }
     }
@@ -160,7 +160,7 @@ final class NativeAppInstanceEnvironmentOperationLock implements AppInstanceEnvi
     {
         return new ResourceOperationException(
             errorCode: 'env.operation_busy',
-            message: 'Another AppInstance environment operation is active. Retry the request.',
+            message: 'Another Instance environment operation is active. Retry the request.',
             status: 409,
         );
     }

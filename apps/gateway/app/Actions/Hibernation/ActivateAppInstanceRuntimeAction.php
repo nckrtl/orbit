@@ -15,7 +15,7 @@ use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Process;
 use SensitiveParameter;
 
@@ -30,14 +30,14 @@ final readonly class ActivateAppInstanceRuntimeAction
         private AppInstanceCheckoutInspector $checkouts,
     ) {}
 
-    public function execute(#[SensitiveParameter] AppInstance $instance): void
+    public function execute(#[SensitiveParameter] Instance $instance): void
     {
         $instance->loadMissing('node');
 
         if (! $this->policy->appliesToInstance($instance)) {
             throw new HibernationException(
                 errorCode: 'hibernation.target_ineligible',
-                message: "AppInstance [{$instance->name}] is not an app-dev development target.",
+                message: "Instance [{$instance->name}] is not an app-dev development target.",
                 status: 404,
             );
         }
@@ -76,7 +76,7 @@ final readonly class ActivateAppInstanceRuntimeAction
     }
 
     /** @return list<Process> */
-    private function desiredRunning(AppInstance $instance): array
+    private function desiredRunning(Instance $instance): array
     {
         return array_values($instance->processes
             ->filter(static fn (Process $process): bool => $process->desired_state === DesiredProcessState::Running)

@@ -16,10 +16,10 @@ describe('cluster and node network migration', function (): void {
         $ingressMigration = require base_path('database/migrations/2026_09_01_120814_add_cluster_ingress_role.php');
         $productionRoutesMigration = orb183_production_route_migration();
 
-        $productionRoutesMigration->down();
-        $obsoleteMigration->down();
-        $ingressMigration->down();
-        $migration->down();
+        run_legacy_schema_migration($productionRoutesMigration, 'down');
+        run_legacy_schema_migration($obsoleteMigration, 'down');
+        run_legacy_schema_migration($ingressMigration, 'down');
+        run_legacy_schema_migration($migration, 'down');
 
         $timestamp = now();
         DB::table('nodes')->insert([
@@ -31,10 +31,10 @@ describe('cluster and node network migration', function (): void {
             ], JSON_THROW_ON_ERROR),
         ]);
 
-        $migration->up();
-        $ingressMigration->up();
-        $obsoleteMigration->up();
-        $productionRoutesMigration->up();
+        run_legacy_schema_migration($migration, 'up');
+        run_legacy_schema_migration($ingressMigration, 'up');
+        run_legacy_schema_migration($obsoleteMigration, 'up');
+        run_legacy_schema_migration($productionRoutesMigration, 'up');
 
         $node = DB::table('nodes')->where('name', 'legacy-node')->first();
 
@@ -65,9 +65,9 @@ describe('cluster and node network migration', function (): void {
         $ingressMigration = require base_path('database/migrations/2026_09_01_120814_add_cluster_ingress_role.php');
         $productionRoutesMigration = orb183_production_route_migration();
 
-        $productionRoutesMigration->down();
-        $obsoleteMigration->down();
-        $ingressMigration->down();
+        run_legacy_schema_migration($productionRoutesMigration, 'down');
+        run_legacy_schema_migration($obsoleteMigration, 'down');
+        run_legacy_schema_migration($ingressMigration, 'down');
 
         expect(
             DB::table('sqlite_master')
@@ -90,7 +90,7 @@ describe('cluster and node network migration', function (): void {
             )
             ->toBe(2);
 
-        $migration->down();
+        run_legacy_schema_migration($migration, 'down');
 
         expect(Schema::hasTable('clusters'))
             ->toBeFalse()
@@ -99,10 +99,10 @@ describe('cluster and node network migration', function (): void {
             ->and(Schema::hasColumn('node_roles', 'cluster_id'))
             ->toBeFalse();
 
-        $migration->up();
-        $ingressMigration->up();
-        $obsoleteMigration->up();
-        $productionRoutesMigration->up();
+        run_legacy_schema_migration($migration, 'up');
+        run_legacy_schema_migration($ingressMigration, 'up');
+        run_legacy_schema_migration($obsoleteMigration, 'up');
+        run_legacy_schema_migration($productionRoutesMigration, 'up');
     });
 
     it('enforces Cluster-scoped LAN and Router ownership constraints', function (): void {

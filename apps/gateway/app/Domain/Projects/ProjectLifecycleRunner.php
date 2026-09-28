@@ -10,7 +10,7 @@ use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
@@ -22,7 +22,7 @@ final readonly class ProjectLifecycleRunner
         private CommandDeadline $deadline,
     ) {}
 
-    public function run(AppInstance $instance, LifecyclePhase $phase): bool
+    public function run(Instance $instance, LifecyclePhase $phase): bool
     {
         if ($instance->placedOnAppProd()) {
             return false;

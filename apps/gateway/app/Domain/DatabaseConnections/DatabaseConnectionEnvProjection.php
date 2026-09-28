@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\DatabaseConnections;
 
 use App\Domain\Processes\ProcessRuntime;
-use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 
@@ -33,7 +33,7 @@ final readonly class DatabaseConnectionEnvProjection
      */
     public function project(
         DatabaseConnection $connection,
-        AppInstance $instance,
+        Instance $instance,
         string $prefix,
     ): array {
         $managed = $this->managedKeys($prefix);
@@ -152,7 +152,7 @@ final readonly class DatabaseConnectionEnvProjection
     }
 
     /** @return array{string, int} */
-    private function resolveEndpoint(DatabaseConnection $connection, AppInstance $instance): array
+    private function resolveEndpoint(DatabaseConnection $connection, Instance $instance): array
     {
         $host = (string) $connection->host;
         $port = (int) $connection->port;

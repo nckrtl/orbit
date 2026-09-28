@@ -14,10 +14,10 @@ it('reports every duplicate identity before changing the App schema or rows', fu
     $migration = require base_path(
         'database/migrations/2026_09_06_000000_add_repository_identity_to_apps.php',
     );
-    $removalMigration->down();
+    run_legacy_schema_migration($removalMigration, 'down');
 
     try {
-        $migration->down();
+        run_legacy_schema_migration($migration, 'down');
 
         $first = app_repository_identity_legacy_app('first', 'git@github.com:acme/site.git');
         $second = app_repository_identity_legacy_app('second', 'https://github.com/acme/site.git/');
@@ -27,7 +27,7 @@ it('reports every duplicate identity before changing the App schema or rows', fu
         $schemaBefore = app_repository_identity_schema();
         $rowsBefore = app_repository_identity_rows();
 
-        expect(fn () => $migration->up())
+        expect(fn () => run_legacy_schema_migration($migration, 'up'))
             ->toThrow(
                 RuntimeException::class,
                 "Cannot enforce one App per repository while duplicate identities exist: {$first}, {$second}, {$third}, {$fourth}",
@@ -38,9 +38,9 @@ it('reports every duplicate identity before changing the App schema or rows', fu
             ->and(app_repository_identity_rows())
             ->toBe($rowsBefore);
     } finally {
-        DB::table('apps')->delete();
-        $migration->up();
-        $removalMigration->up();
+        DB::table('projects')->delete();
+        run_legacy_schema_migration($migration, 'up');
+        run_legacy_schema_migration($removalMigration, 'up');
     }
 });
 
@@ -49,22 +49,22 @@ it('backfills required unique identities and rolls back only the added boundary'
     $migration = require base_path(
         'database/migrations/2026_09_06_000000_add_repository_identity_to_apps.php',
     );
-    $removalMigration->down();
+    run_legacy_schema_migration($removalMigration, 'down');
 
     try {
-        $migration->down();
+        run_legacy_schema_migration($migration, 'down');
 
         $first = app_repository_identity_legacy_app('first', 'git@github.com:acme/site.git');
         $second = app_repository_identity_legacy_app('second', 'https://gitlab.com/acme/api.git');
         $legacyRows = app_repository_identity_rows();
 
-        $migration->up();
+        run_legacy_schema_migration($migration, 'up');
 
-        $identities = DB::table('apps')
+        $identities = DB::table('projects')
             ->orderBy('id')
             ->pluck('repository_identity', 'id')
             ->all();
-        $identityColumn = collect(DB::select("PRAGMA table_info('apps')"))
+        $identityColumn = collect(DB::select("PRAGMA table_info('projects')"))
             ->first(static fn (object $column): bool => $column->name === 'repository_identity');
 
         expect($identities)
@@ -72,14 +72,14 @@ it('backfills required unique identities and rolls back only the added boundary'
                 $first => 'github.com/acme/site',
                 $second => 'gitlab.com/acme/api',
             ])
-            ->and(Schema::hasColumn('apps', 'repository_identity'))
+            ->and(Schema::hasColumn('projects', 'repository_identity'))
             ->toBeTrue()
             ->and($identityColumn)
             ->not
             ->toBeNull()
             ->and((int) $identityColumn->notnull)
             ->toBe(1)
-            ->and(fn () => DB::table('apps')->insert([
+            ->and(fn () => DB::table('projects')->insert([
                 'name' => 'Duplicate',
                 'code' => 'DUP',
                 'slug' => 'duplicate',
@@ -90,18 +90,18 @@ it('backfills required unique identities and rolls back only the added boundary'
             ]))
             ->toThrow(QueryException::class);
 
-        $migration->down();
+        run_legacy_schema_migration($migration, 'down');
 
-        expect(Schema::hasColumn('apps', 'repository_identity'))
+        expect(Schema::hasColumn('projects', 'repository_identity'))
             ->toBeFalse()
             ->and(app_repository_identity_rows())
             ->toBe($legacyRows);
     } finally {
-        if (! Schema::hasColumn('apps', 'repository_identity')) {
-            $migration->up();
+        if (! Schema::hasColumn('projects', 'repository_identity')) {
+            run_legacy_schema_migration($migration, 'up');
         }
 
-        $removalMigration->up();
+        run_legacy_schema_migration($removalMigration, 'up');
     }
 });
 
@@ -112,7 +112,7 @@ function app_repository_identity_removal_migration(): object
 
 function app_repository_identity_legacy_app(string $slug, string $repository): int
 {
-    return DB::table('apps')->insertGetId([
+    return DB::table('projects')->insertGetId([
         'name' => ucfirst($slug),
         'code' => strtoupper(substr($slug, 0, 3)),
         'slug' => $slug,
@@ -130,7 +130,7 @@ function app_repository_identity_schema(): array
     return collect(DB::select(<<<'SQL'
         SELECT type, name, tbl_name, sql
         FROM sqlite_master
-        WHERE type IN ('table', 'index', 'trigger') AND tbl_name = 'apps'
+        WHERE type IN ('table', 'index', 'trigger') AND tbl_name = 'projects'
         ORDER BY type, name
         SQL))
         ->map(static fn (object $entry): array => (array) $entry)
@@ -140,7 +140,7 @@ function app_repository_identity_schema(): array
 /** @return list<array<string, mixed>> */
 function app_repository_identity_rows(): array
 {
-    return DB::table('apps')
+    return DB::table('projects')
         ->orderBy('id')
         ->get()
         ->map(static fn (object $row): array => (array) $row)

@@ -6,8 +6,8 @@ covers:
   - apps/gateway/app/Actions/AppInstances/{Import,Update,Synchronize}AppInstanceEnvironmentAction.php
   - apps/gateway/app/Http/Controllers/Api/AppInstanceEnvironment*Controller.php
   - apps/gateway/app/Infrastructure/AppInstances/{RemoteAppInstanceEnvironmentAccess,NativeAppInstanceEnvironmentOperationLock}.php
-  - apps/gateway/app/Models/{AppInstance,AppInstanceEnvironmentValue}.php
-  - apps/gateway/database/migrations/2026_09_30_*.php
+  - apps/gateway/app/Models/{Instance,AppInstanceEnvironmentValue}.php
+  - apps/gateway/database/migrations/{2026_09_30_*,*rename_app_domain_to_project_and_instance}.php
   - apps/cli/app/Commands/Environment/**
   - packages/php-sdk/src/{Requests,Responses}/Environment/**
 ---

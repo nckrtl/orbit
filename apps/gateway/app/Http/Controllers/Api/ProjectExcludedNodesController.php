@@ -10,8 +10,8 @@ use App\Domain\Projects\DevelopmentNodeExclusion;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
-use App\Models\App as OrbitApp;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\ProjectNodeExclusion;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -21,7 +21,7 @@ final class ProjectExcludedNodesController extends Controller
     public function __construct(private readonly DevelopmentNodeExclusion $exclusions) {}
 
     #[RequiresNodeAccess(ServingNode::AppOwning)]
-    public function index(Request $request, OrbitApp $app): JsonResponse
+    public function index(Request $request, Project $app): JsonResponse
     {
         return response()->json([
             'data' => $this->exclusions->forProject($app)
@@ -33,7 +33,7 @@ final class ProjectExcludedNodesController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::AppOwning)]
-    public function store(Request $request, OrbitApp $app, Node $node): JsonResponse
+    public function store(Request $request, Project $app, Node $node): JsonResponse
     {
         $result = $this->exclusions->add($app, $node);
 
@@ -44,7 +44,7 @@ final class ProjectExcludedNodesController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::AppOwning)]
-    public function destroy(Request $request, OrbitApp $app, Node $node): JsonResponse
+    public function destroy(Request $request, Project $app, Node $node): JsonResponse
     {
         return response()->json([
             'data' => DevelopmentNodeExclusionData::fromModel($this->exclusions->remove($app, $node))->toArray(),

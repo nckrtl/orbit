@@ -22,7 +22,7 @@ final class RouteTargetData extends Data
     {
         return new self(
             id: $target->id,
-            appInstanceId: $target->app_instance_id,
+            appInstanceId: $target->instance_id,
             position: $target->position,
         );
     }

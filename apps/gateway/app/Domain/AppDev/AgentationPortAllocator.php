@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace App\Domain\AppDev;
 
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class AgentationPortAllocator
 {
-    public function assign(AppInstance $instance): int
+    public function assign(Instance $instance): int
     {
         if (is_int($instance->agentation_port) && $instance->agentation_port >= self::minimum()) {
             return $instance->agentation_port;
@@ -23,7 +23,7 @@ final readonly class AgentationPortAllocator
 
     public function nextAvailable(int $nodeId, int $ignoreInstanceId): int
     {
-        $used = AppInstance::query()
+        $used = Instance::query()
             ->where('node_id', $nodeId)
             ->whereNotNull('agentation_port')
             ->where('id', '!=', $ignoreInstanceId)
@@ -46,7 +46,7 @@ final readonly class AgentationPortAllocator
         return $port;
     }
 
-    public function release(AppInstance $instance): void
+    public function release(Instance $instance): void
     {
         if ($instance->agentation_port === null) {
             return;

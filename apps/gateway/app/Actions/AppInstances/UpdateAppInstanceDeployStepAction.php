@@ -11,7 +11,7 @@ use App\Domain\AppInstances\Deployment\DeploymentStep;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class UpdateAppInstanceDeployStepAction
 {
@@ -23,7 +23,7 @@ final readonly class UpdateAppInstanceDeployStepAction
     ) {}
 
     public function execute(
-        AppInstance $instance,
+        Instance $instance,
         string $name,
         ?string $command,
         ?DeploymentPhase $phase,
@@ -46,7 +46,7 @@ final readonly class UpdateAppInstanceDeployStepAction
             $hasPhase,
             $hasTimeout,
         ): DeploymentStep {
-            $locked = AppInstance::query()->lockForUpdate()->findOrFail($instance->id);
+            $locked = Instance::query()->lockForUpdate()->findOrFail($instance->id);
             $this->resolver->assertAvailable($locked);
 
             return $this->steps->update(

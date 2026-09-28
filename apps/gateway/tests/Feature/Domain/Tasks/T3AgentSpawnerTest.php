@@ -27,9 +27,9 @@ use App\Infrastructure\Tasks\T3\T3Dispatcher;
 use App\Infrastructure\Tasks\T3\T3DispatchException;
 use App\Infrastructure\Tasks\T3\T3ModelSelection;
 use App\Models\AgentThread;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskGroup;
@@ -48,7 +48,7 @@ beforeEach(function (): void {
 
 function t3_spawner_group(): TaskGroup
 {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'orbit',
         'slug' => 'orbit',
         'repository_url' => 'git@example.test:orbit.git',
@@ -61,8 +61,8 @@ function t3_spawner_group(): TaskGroup
         'public_ssh_host' => '10.44.0.110',
         'wireguard_ip' => '10.44.0.110',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'task-1',
         'checkout_path' => '/srv/orbit/apps/orbit/task-1',
@@ -71,7 +71,7 @@ function t3_spawner_group(): TaskGroup
         'starting_commit' => str_repeat('b', 40),
     ]);
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Wire T3',
         'brief' => 'Spawn reviewer and implementer.',
         'status' => TaskGroupStatus::Running,
@@ -352,7 +352,7 @@ it('resolves the reviewer spawner through the container with the production diff
 it('uses the container diff reader when the reviewer spawner is resolved', function (): void {
     $diff = new class implements TaskReviewDiff
     {
-        public function read(AppInstance $instance, string $startCommit): array
+        public function read(Instance $instance, string $startCommit): array
         {
             return [
                 'files' => [['path' => 'wired.php', 'insertions' => 3, 'deletions' => 1]],
@@ -381,7 +381,7 @@ it('uses the container diff reader when the reviewer spawner is resolved', funct
 it('does not open a review when the bound diff reader fails', function (): void {
     app()->instance(TaskReviewDiff::class, new class implements TaskReviewDiff
     {
-        public function read(AppInstance $instance, string $startCommit): array
+        public function read(Instance $instance, string $startCommit): array
         {
             throw new TaskReviewDiffException('The review diff could not be read.');
         }
@@ -411,7 +411,7 @@ it('does not open a review when the bound diff reader fails', function (): void 
 it('deletes a reserved reviewer when creating the conversation throws', function (): void {
     app()->instance(TaskReviewDiff::class, new class implements TaskReviewDiff
     {
-        public function read(AppInstance $instance, string $startCommit): array
+        public function read(Instance $instance, string $startCommit): array
         {
             return [
                 'files' => [],
@@ -453,19 +453,19 @@ it('does not start a replacement reviewer when the turn file cannot be written',
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->instance(TaskRunReceipts::class, new class implements TaskRunReceipts
     {
-        public function prepare(AppInstance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void
+        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void
         {
             throw new TaskRunReceiptException('The turn file could not be written.');
         }
 
-        public function read(AppInstance $instance, ?int $actingThreadId = null): ?TaskRunReceipt
+        public function read(Instance $instance, ?int $actingThreadId = null): ?TaskRunReceipt
         {
             return null;
         }
 
-        public function clear(AppInstance $instance, TaskRunReceipt $receipt): void {}
+        public function clear(Instance $instance, TaskRunReceipt $receipt): void {}
 
-        public function hasLegacyTurn(AppInstance $instance): bool
+        public function hasLegacyTurn(Instance $instance): bool
         {
             return false;
         }
@@ -488,19 +488,19 @@ it('deletes a reserved reviewer when preparing the turn throws', function (): vo
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->instance(TaskRunReceipts::class, new class implements TaskRunReceipts
     {
-        public function prepare(AppInstance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void
+        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void
         {
             throw new RuntimeException('The turn file could not be written.');
         }
 
-        public function read(AppInstance $instance, ?int $actingThreadId = null): ?TaskRunReceipt
+        public function read(Instance $instance, ?int $actingThreadId = null): ?TaskRunReceipt
         {
             return null;
         }
 
-        public function clear(AppInstance $instance, TaskRunReceipt $receipt): void {}
+        public function clear(Instance $instance, TaskRunReceipt $receipt): void {}
 
-        public function hasLegacyTurn(AppInstance $instance): bool
+        public function hasLegacyTurn(Instance $instance): bool
         {
             return false;
         }
@@ -520,7 +520,7 @@ it('leaves run commands in the diff unchanged and keeps the driver prompt within
     {
         public function __construct(private string $command) {}
 
-        public function read(AppInstance $instance, string $startCommit): array
+        public function read(Instance $instance, string $startCommit): array
         {
             return [
                 'files' => [['path' => 'docs/reference/tasks.md', 'insertions' => 400, 'deletions' => 0]],
@@ -606,7 +606,7 @@ it('writes the search endpoint file before it starts a reviewer', function (): v
     {
         public int $missing = 0;
 
-        public function installWhenMissing(AppInstance $instance): bool
+        public function installWhenMissing(Instance $instance): bool
         {
             $this->missing++;
 
@@ -624,7 +624,7 @@ it('does not start a reviewer when the search endpoint file cannot be written', 
     $group = t3_spawner_group();
     $mcp = new class implements TaskWorkspaceMcp
     {
-        public function installWhenMissing(AppInstance $instance): bool
+        public function installWhenMissing(Instance $instance): bool
         {
             return false;
         }
@@ -697,11 +697,11 @@ it('imports legacy thread links using the instance morph alias', function (strin
             // Archive backoff alters agent_threads, which this legacy import creates.
             && ! str_contains($path, 'add_archive_backoff_to_agent_threads')));
         Artisan::call('migrate', ['--database' => 'agent_migration', '--path' => $paths, '--realpath' => true, '--force' => true]);
-        $appId = DB::table('apps')->insertGetId(['name' => 'legacy', 'slug' => 'legacy', 'code' => 'LEG', 'repository_url' => 'git@example.test:legacy.git', 'repository_identity' => 'example.test/legacy']);
+        $appId = DB::table('projects')->insertGetId(['name' => 'legacy', 'slug' => 'legacy', 'code' => 'LEG', 'repository_url' => 'git@example.test:legacy.git', 'repository_identity' => 'example.test/legacy']);
         $nodeId = DB::table('nodes')->insertGetId(['name' => 'legacy-node', 'public_ssh_host' => '10.44.0.110', 'status' => 'active', 'platform' => 'linux']);
-        $instanceId = DB::table('app_instances')->insertGetId(['app_id' => $appId, 'node_id' => $nodeId, 'name' => 'task', 'checkout_path' => '/srv/legacy', 'status' => 'source_resolved']);
+        $instanceId = DB::table('instances')->insertGetId(['project_id' => $appId, 'node_id' => $nodeId, 'name' => 'task', 'checkout_path' => '/srv/legacy', 'status' => 'source_resolved']);
         $groupId = DB::table('task_groups')->insertGetId([
-            'app_id' => $appId, 'title' => 'Legacy', 'brief' => 'Legacy links',
+            'project_id' => $appId, 'title' => 'Legacy', 'brief' => 'Legacy links',
             'taskable_type' => 'instance', 'taskable_id' => $instanceId,
             'reviewer_thread_id' => 'legacy-review', 'reviewer_model' => 'claude-opus-5', 'implementer_model' => 'gpt-5.6-luna',
         ]);
@@ -715,12 +715,12 @@ it('imports legacy thread links using the instance morph alias', function (strin
         }
         $migration = require glob(database_path('migrations/*create_agent_threads_from_task_agent_sessions.php'))[0];
         if ($scenario === 'conflict') {
-            expect(fn () => $migration->up())->toThrow(RuntimeException::class, 'ownership is ambiguous');
+            expect(fn () => run_legacy_schema_migration($migration, 'up'))->toThrow(RuntimeException::class, 'ownership is ambiguous');
             expect(Schema::hasTable('task_agent_sessions'))->toBeTrue()
                 ->and(Schema::hasTable('agent_threads'))->toBeFalse();
             DB::table('task_agent_sessions')->where('id', 42)->update(['role' => 'reviewer']);
         }
-        $migration->up();
+        run_legacy_schema_migration($migration, 'up');
         $links = AgentThread::query()->orderBy('id')->get();
         expect($links)->toHaveCount(2)
             ->and($links[0]->node_id)->toBe($nodeId)

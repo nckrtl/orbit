@@ -18,9 +18,9 @@ use App\Infrastructure\AppProd\AppProdSshExecutor;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Schema;
@@ -29,7 +29,7 @@ use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\HostBinary;
 
 it('records a canonical dedicated PHP runtime identity without converting existing placements', function (): void {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Dedicated PHP',
         'slug' => 'dedicated-php',
         'repository_url' => 'https://example.test/dedicated-php.git',
@@ -43,8 +43,8 @@ it('records a canonical dedicated PHP runtime identity without converting existi
         'public_ssh_host' => '192.0.2.214',
     ]);
     $node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'primary',
         'environment' => 'production',
@@ -55,7 +55,7 @@ it('records a canonical dedicated PHP runtime identity without converting existi
         'selected_php_version' => '8.5',
     ]);
 
-    expect(Schema::hasColumns('app_instances', [
+    expect(Schema::hasColumns('instances', [
         'production_php_service',
         'production_php_pool',
         'production_php_socket',
@@ -84,7 +84,7 @@ it('records a canonical dedicated PHP runtime identity without converting existi
 });
 
 it('refuses a stored runtime association that differs from its production identity', function (): void {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Conflicting PHP',
         'slug' => 'conflicting-php',
         'repository_url' => 'https://example.test/conflicting-php.git',
@@ -97,8 +97,8 @@ it('refuses a stored runtime association that differs from its production identi
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.215',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'primary',
         'environment' => 'production',
@@ -602,7 +602,7 @@ it('keeps a dedicated production route in Caddy and out of shared FPM publicatio
         'status' => AppInstanceState::SourceResolved,
     ]);
     $dedicatedRoute = Route::query()->create([
-        'app_id' => $dedicated->app_id,
+        'project_id' => $dedicated->project_id,
         'node_id' => $node->id,
         'generation_basis_node_id' => $node->id,
         'domain' => 'dedicated.example.test',
@@ -610,18 +610,18 @@ it('keeps a dedicated production route in Caddy and out of shared FPM publicatio
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $dedicatedRoute->targets()->create(['app_instance_id' => $dedicated->id, 'position' => 0]);
+    $dedicatedRoute->targets()->create(['instance_id' => $dedicated->id, 'position' => 0]);
     $dedicatedRoute->update(['status' => RouteStatus::Active]);
 
-    $sharedApp = OrbitApp::query()->create([
+    $sharedApp = Project::query()->create([
         'name' => 'Shared PHP',
         'slug' => 'shared-php',
         'repository_url' => 'https://example.test/shared-php.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    $shared = AppInstance::query()->create([
-        'app_id' => $sharedApp->id,
+    $shared = Instance::query()->create([
+        'project_id' => $sharedApp->id,
         'node_id' => $node->id,
         'name' => 'primary',
         'environment' => 'production',
@@ -633,7 +633,7 @@ it('keeps a dedicated production route in Caddy and out of shared FPM publicatio
         'status' => AppInstanceState::SourceResolved,
     ]);
     $sharedRoute = Route::query()->create([
-        'app_id' => $shared->app_id,
+        'project_id' => $shared->project_id,
         'node_id' => $node->id,
         'generation_basis_node_id' => $node->id,
         'domain' => 'shared.example.test',
@@ -641,7 +641,7 @@ it('keeps a dedicated production route in Caddy and out of shared FPM publicatio
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $sharedRoute->targets()->create(['app_instance_id' => $shared->id, 'position' => 0]);
+    $sharedRoute->targets()->create(['instance_id' => $shared->id, 'position' => 0]);
     $sharedRoute->update(['status' => RouteStatus::Active]);
 
     $sites = new AppDevSiteRepository()->forNode($node);
@@ -666,10 +666,10 @@ it('keeps a dedicated production route in Caddy and out of shared FPM publicatio
         );
 });
 
-/** @return array{AppInstance, Node} */
+/** @return array{Instance, Node} */
 function orb214_runtime_instance(): array
 {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Runtime fixture',
         'slug' => 'runtime-fixture',
         'repository_url' => 'https://example.test/runtime-fixture.git',
@@ -688,8 +688,8 @@ function orb214_runtime_instance(): array
     $user = "orbit-app-{$app->id}";
 
     return [
-        AppInstance::query()->create([
-            'app_id' => $app->id,
+        Instance::query()->create([
+            'project_id' => $app->id,
             'node_id' => $node->id,
             'name' => 'primary',
             'environment' => 'production',

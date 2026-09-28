@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Logs;
 
+use App\Models\Instance;
+
 /**
  * One open live log stream: one viewer following one Instance or Process log (ADR 0153).
  *

@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\AppDev;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 interface AgentationSiteProjection
 {
-    public function project(AppInstance $instance): void;
+    public function project(Instance $instance): void;
 }

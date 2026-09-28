@@ -18,10 +18,10 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use App\Models\RouteCustomProxy;
 
@@ -316,7 +316,7 @@ function route_doctor_custom_proxy(Node $node, string $domain): RouteCustomProxy
 {
     $route = Route::query()->create([
         'kind' => RouteKind::CustomProxy,
-        'app_id' => null,
+        'project_id' => null,
         'node_id' => $node->id,
         'cluster_id' => null,
         'generation_basis_node_id' => null,
@@ -339,15 +339,15 @@ function route_doctor_custom_proxy(Node $node, string $domain): RouteCustomProxy
 
 function route_doctor_app_route(Node $node): Route
 {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Doctor App '.$node->id,
         'slug' => 'doctor-app-'.$node->id,
         'repository_url' => 'https://example.test/doctor-app.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'main',
         'checkout_path' => '/srv/doctor/main',
@@ -355,14 +355,14 @@ function route_doctor_app_route(Node $node): Route
     ]);
     $route = Route::query()->create([
         'kind' => RouteKind::App,
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'domain' => 'app-'.$node->id.'.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
 
     return $route->refresh();

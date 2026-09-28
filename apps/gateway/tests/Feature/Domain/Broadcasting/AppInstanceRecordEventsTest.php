@@ -6,7 +6,7 @@ use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
 use Illuminate\Support\Facades\Event;
 
-describe('AppInstance record events', function (): void {
+describe('Instance record events', function (): void {
     it('broadcasts instance.updated when the deployment branch changes', function (): void {
         [$caller, $owner, $orbitApp, $instance] = deployment_api_fixture();
 

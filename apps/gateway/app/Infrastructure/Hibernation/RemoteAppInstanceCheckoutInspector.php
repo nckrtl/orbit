@@ -16,7 +16,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 
 final readonly class RemoteAppInstanceCheckoutInspector implements AppInstanceCheckoutInspector
@@ -29,7 +29,7 @@ final readonly class RemoteAppInstanceCheckoutInspector implements AppInstanceCh
         private int $restoreTimeoutSeconds = RuntimeHibernation::DefaultColdWakeTimeoutSeconds,
     ) {}
 
-    public function inspect(AppInstance $instance): RuntimeDependencyState
+    public function inspect(Instance $instance): RuntimeDependencyState
     {
         $checkout = $this->checkout($instance);
         $result = $this->ssh->execute(
@@ -43,14 +43,14 @@ final readonly class RemoteAppInstanceCheckoutInspector implements AppInstanceCh
         if (! $result->succeeded()) {
             throw new HibernationException(
                 errorCode: 'hibernation.checkout_inspect_failed',
-                message: "Checkout inspection failed on AppInstance [{$instance->name}].",
+                message: "Checkout inspection failed on Instance [{$instance->name}].",
             );
         }
 
         return $this->parseInspection($result->stdout);
     }
 
-    public function prune(AppInstance $instance, RuntimeDependencyState $state): void
+    public function prune(Instance $instance, RuntimeDependencyState $state): void
     {
         $checkout = $this->checkout($instance);
         $targets = [];
@@ -81,11 +81,11 @@ final readonly class RemoteAppInstanceCheckoutInspector implements AppInstanceCh
 
         throw new HibernationException(
             errorCode: 'hibernation.checkout_prune_failed',
-            message: "Checkout dependency prune failed on AppInstance [{$instance->name}].",
+            message: "Checkout dependency prune failed on Instance [{$instance->name}].",
         );
     }
 
-    public function restore(AppInstance $instance, RuntimeDependencyState $state): void
+    public function restore(Instance $instance, RuntimeDependencyState $state): void
     {
         $checkout = $this->checkout($instance);
         $account = $this->accounts->resolve($instance->node);
@@ -132,14 +132,14 @@ final readonly class RemoteAppInstanceCheckoutInspector implements AppInstanceCh
         }
     }
 
-    private function checkout(AppInstance $instance): string
+    private function checkout(Instance $instance): string
     {
         $path = StoragePath::tryParse($instance->checkout_path);
 
         if ($path === null) {
             throw new HibernationException(
                 errorCode: 'hibernation.checkout_path_invalid',
-                message: "AppInstance [{$instance->name}] has an invalid checkout path.",
+                message: "Instance [{$instance->name}] has an invalid checkout path.",
             );
         }
 
@@ -182,7 +182,7 @@ final readonly class RemoteAppInstanceCheckoutInspector implements AppInstanceCh
     }
 
     /** @param non-empty-list<string> $arguments */
-    private function runRestore(AppInstance $instance, string $step, array $arguments, ?string $input = null): void
+    private function runRestore(Instance $instance, string $step, array $arguments, ?string $input = null): void
     {
         $result = $this->ssh->execute(
             $this->connection($instance->node, $this->restoreTimeoutSeconds),
@@ -195,7 +195,7 @@ final readonly class RemoteAppInstanceCheckoutInspector implements AppInstanceCh
 
         throw new HibernationException(
             errorCode: 'hibernation.checkout_restore_failed',
-            message: "Checkout dependency restore step [{$step}] failed on AppInstance [{$instance->name}].",
+            message: "Checkout dependency restore step [{$step}] failed on Instance [{$instance->name}].",
         );
     }
 

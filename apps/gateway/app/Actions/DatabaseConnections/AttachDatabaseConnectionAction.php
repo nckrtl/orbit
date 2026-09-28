@@ -10,9 +10,9 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentStore;
 use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
 use App\Domain\DatabaseConnections\DatabaseConnectionPrefix;
-use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\Instance;
 use Illuminate\Support\Facades\DB;
 use SensitiveParameter;
 
@@ -26,7 +26,7 @@ final readonly class AttachDatabaseConnectionAction
     ) {}
 
     public function execute(
-        AppInstance $instance,
+        Instance $instance,
         DatabaseConnection $connection,
         #[SensitiveParameter]
         ?string $prefix,
@@ -50,7 +50,7 @@ final readonly class AttachDatabaseConnectionAction
             ): DatabaseConnectionAttachmentData {
                 DatabaseConnectionTarget::query()->updateOrCreate(
                     [
-                        'app_instance_id' => $instance->id,
+                        'instance_id' => $instance->id,
                         'prefix' => $normalizedPrefix,
                     ],
                     ['database_connection_id' => $connection->id],

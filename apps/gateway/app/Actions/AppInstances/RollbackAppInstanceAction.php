@@ -16,7 +16,7 @@ use App\Domain\AppInstances\ProductionPhpRuntimeManager;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\ProcessCancelledException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
@@ -31,7 +31,7 @@ final readonly class RollbackAppInstanceAction
     ) {}
 
     public function execute(
-        AppInstance $appInstance,
+        Instance $appInstance,
         string $releaseName,
         ?DeploymentRequest $request = null,
     ): DeploymentResult {
@@ -55,7 +55,7 @@ final readonly class RollbackAppInstanceAction
     }
 
     private function rollback(
-        AppInstance $appInstance,
+        Instance $appInstance,
         string $releaseName,
         DeploymentRequest $request,
     ): DeploymentResult {
@@ -95,7 +95,7 @@ final readonly class RollbackAppInstanceAction
     }
 
     private function selectionAfterActivationFailure(
-        AppInstance $appInstance,
+        Instance $appInstance,
         ?DeploymentRelease $lastKnownSelection,
     ): ?DeploymentRelease {
         try {

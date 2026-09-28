@@ -9,7 +9,7 @@ use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\Shared\StoredValue;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -21,12 +21,12 @@ final readonly class RemoteTaskWorkspaceMcp implements TaskWorkspaceMcp
 {
     public function __construct(private AppDevSshExecutor $ssh) {}
 
-    public function installWhenMissing(AppInstance $instance): bool
+    public function installWhenMissing(Instance $instance): bool
     {
         return $this->place($instance);
     }
 
-    private function place(AppInstance $instance): bool
+    private function place(Instance $instance): bool
     {
         $instance->loadMissing('node');
 
@@ -71,7 +71,7 @@ final readonly class RemoteTaskWorkspaceMcp implements TaskWorkspaceMcp
         }
 
         if (trim($result->stdout) === 'tracked') {
-            Log::info('The task workspace tracks its own .mcp.json; Orbit left it unchanged.', ['app_instance_id' => $instance->id]);
+            Log::info('The task workspace tracks its own .mcp.json; Orbit left it unchanged.', ['instance_id' => $instance->id]);
         }
 
         return in_array(trim($result->stdout), ['installed', 'tracked', 'present'], true);

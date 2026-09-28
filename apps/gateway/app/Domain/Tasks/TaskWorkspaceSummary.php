@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\TaskGroup;
 
 /**
@@ -22,7 +22,7 @@ final readonly class TaskWorkspaceSummary
      */
     public function apply(int $nodeId, array $workspace): void
     {
-        if (! AppInstance::query()->whereKey($workspace['instance_id'])->where('node_id', $nodeId)->exists()) {
+        if (! Instance::query()->whereKey($workspace['instance_id'])->where('node_id', $nodeId)->exists()) {
             return;
         }
 

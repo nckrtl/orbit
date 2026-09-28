@@ -8,9 +8,9 @@ use App\Data\Apps\AppIdentityData;
 use App\Data\Nodes\NodeIdentityData;
 use App\Data\Routes\RouteData;
 use App\Domain\AppInstances\Deployment\AppInstanceDeployStepStore;
-use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
 use App\Models\AppInstanceTransfer;
+use App\Models\Instance;
 use App\Models\Route;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
@@ -47,21 +47,21 @@ final class AppInstanceData extends Data
         public ?int $vitePort = null,
     ) {}
 
-    public static function fromModel(AppInstance $appInstance): self
+    public static function fromModel(Instance $appInstance): self
     {
         $appInstance->loadMissing(['app', 'node', 'routes.targets', 'deploySteps']);
         $route = $appInstance->authoritativeRoute() ?? $appInstance->routes->first();
         $removal = AppInstanceRemoval::query()
             ->with('members')
             ->whereHas('members', static fn ($query) => $query
-                ->where('app_instance_id', $appInstance->id)
+                ->where('instance_id', $appInstance->id)
                 ->whereNull('row_deleted_at'))
             ->latest('created_at')
             ->first();
 
         return new self(
             id: $appInstance->id,
-            projectId: $appInstance->app_id,
+            projectId: $appInstance->project_id,
             nodeId: $appInstance->node_id,
             project: AppIdentityData::fromModel($appInstance->app),
             node: NodeIdentityData::fromModel($appInstance->node),
@@ -92,10 +92,10 @@ final class AppInstanceData extends Data
         );
     }
 
-    private static function transfer(AppInstance $appInstance): ?AppInstanceTransferData
+    private static function transfer(Instance $appInstance): ?AppInstanceTransferData
     {
         $transfer = AppInstanceTransfer::query()
-            ->where('app_instance_id', $appInstance->id)
+            ->where('instance_id', $appInstance->id)
             ->latest('created_at')
             ->first();
 

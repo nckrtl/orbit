@@ -9,7 +9,7 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AppInstances\ImportAppInstanceEnvironmentRequest;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use Illuminate\Http\JsonResponse;
 
 final class AppInstanceEnvironmentImportsController extends Controller
@@ -20,7 +20,7 @@ final class AppInstanceEnvironmentImportsController extends Controller
         ImportAppInstanceEnvironmentAction $action,
     ): JsonResponse {
         $instance = $request->route('instance');
-        assert($instance instanceof AppInstance);
+        assert($instance instanceof Instance);
 
         return response()->json([
             'data' => $action->execute($instance, $request->shouldReplace())->toArray(),

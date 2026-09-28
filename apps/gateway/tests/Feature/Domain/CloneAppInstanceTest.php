@@ -58,19 +58,19 @@ use App\Infrastructure\Schedules\RemoteScheduleRuntimeManager;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Route;
 use App\Models\Schedule;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 
 beforeEach(function (): void {
-    $this->orbitApp = OrbitApp::query()->create([
+    $this->orbitApp = Project::query()->create([
         'name' => 'Clone domain',
         'slug' => 'clone-domain',
         'repository_url' => 'https://example.test/clone-domain.git',
@@ -87,8 +87,8 @@ beforeEach(function (): void {
         'role' => RoleName::AppProd,
         'status' => LifecycleStatus::Active,
     ]);
-    $this->candidate = AppInstance::query()->create([
-        'app_id' => $this->orbitApp->id,
+    $this->candidate = Instance::query()->create([
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->candidateNode->id,
         'name' => 'candidate',
         'environment' => 'development',
@@ -100,7 +100,7 @@ beforeEach(function (): void {
         'status' => AppInstanceState::Active,
     ]);
     $candidateRoute = Route::query()->create([
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->candidateNode->id,
         'domain' => 'candidate.dev.orbit',
         'provenance' => RouteProvenance::Explicit,
@@ -108,7 +108,7 @@ beforeEach(function (): void {
         'status' => RouteStatus::Pending,
     ]);
     $candidateRoute->targets()->create([
-        'app_instance_id' => $this->candidate->id,
+        'instance_id' => $this->candidate->id,
         'position' => 0,
     ]);
     $candidateRoute->update(['status' => RouteStatus::Active]);
@@ -118,7 +118,7 @@ beforeEach(function (): void {
     ]);
     $this->candidate->environmentValues()->create([
         'env_key' => 'APP_URL',
-        'env_value' => 'https://{{app_instance.domain}}/{{app_instance.environment}}',
+        'env_value' => 'https://{{instance.domain}}/{{instance.environment}}',
     ]);
     $this->lock = new Orb198EnvironmentLock;
     $this->sourceLock = new Orb198SourceLock;
@@ -182,7 +182,7 @@ it('publishes a public clone and reconciles once after all clone locks release',
     expect(fn () => $this->action->execute($this->candidate, $this->data))
         ->toThrow(RuntimeException::class, 'metrics unavailable');
 
-    $target = AppInstance::query()->where('name', 'preview')->sole();
+    $target = Instance::query()->where('name', 'preview')->sole();
     expect($target->status)->toBe(AppInstanceState::Active)
         ->and($target->clone_completed_at)->not->toBeNull()
         ->and($target->failed_step)->toBeNull()
@@ -436,7 +436,7 @@ it('prepares a Cluster-scoped preview with the production Node TLD', function ()
         ->and($route->domain)->toBe('shop.com.prod.orbit')
         ->and($route->publication)->toBe(RoutePublication::Private)
         ->and($route->targets)->toHaveCount(1)
-        ->and($route->targets->sole()->app_instance_id)->toBe($target->id)
+        ->and($route->targets->sole()->instance_id)->toBe($target->id)
         ->and($this->sqlite->calls)->toHaveCount(1)
         ->and($this->writer->contents)
         ->toBe("APP_DEBUG=\"false\"\nAPP_ENV=\"production\"\nAPP_KEY=\"base64:literal-candidate-key\"\nAPP_URL=\"https://shop.com.prod.orbit/production\"\n");
@@ -455,7 +455,7 @@ it('refuses a Cluster-scoped destination without an active Router before reserva
             expect($exception->errorCode)->toBe('route.router_required');
         });
 
-    expect(AppInstance::query()->where('name', 'preview')->exists())->toBeFalse()
+    expect(Instance::query()->where('name', 'preview')->exists())->toBeFalse()
         ->and(Route::query()->where('domain', 'shop.com.prod.orbit')->exists())->toBeFalse()
         ->and($this->source->calls)->toBeEmpty()
         ->and($this->writer->contents)->toBeNull();
@@ -480,7 +480,7 @@ it('resumes one Cluster-scoped target without duplicate Route state', function (
     expect(fn () => $this->action->execute($this->candidate, $this->data))
         ->toThrow(ResourceOperationException::class);
 
-    $targetId = AppInstance::query()->where('name', 'preview')->sole()->id;
+    $targetId = Instance::query()->where('name', 'preview')->sole()->id;
     $this->cloneProjection->fail = null;
     $result = $this->action->execute($this->candidate, $this->data);
     $route = $result['appInstance']->routes->sole();
@@ -489,7 +489,7 @@ it('resumes one Cluster-scoped target without duplicate Route state', function (
         ->and($result['appInstance']->id)->toBe($targetId)
         ->and($route->cluster_id)->toBe($cluster->id)
         ->and($route->node_id)->toBeNull()
-        ->and(AppInstance::query()->where('name', 'preview')->count())->toBe(1)
+        ->and(Instance::query()->where('name', 'preview')->count())->toBe(1)
         ->and(Route::query()->where('domain', 'shop.com.prod.orbit')->count())->toBe(1)
         ->and($route->targets()->count())->toBe(1);
 });
@@ -531,7 +531,7 @@ it('keeps every failed production projection inactive at its last completed chec
     expect(fn () => $this->action->execute($this->candidate, $this->data))
         ->toThrow(ResourceOperationException::class);
 
-    $target = AppInstance::query()->where('name', 'preview')->sole();
+    $target = Instance::query()->where('name', 'preview')->sole();
     $route = $target->routes()->sole();
     expect($target->status)->toBe(AppInstanceState::SourceResolved)
         ->and($target->provisioning_step)->toBe($checkpoint)
@@ -555,7 +555,7 @@ it('keeps DNS unpublished when the locked second projection pass fails', functio
     expect(fn () => $this->action->execute($this->candidate, $this->data))
         ->toThrow(ResourceOperationException::class);
 
-    $target = AppInstance::query()->where('name', 'preview')->sole();
+    $target = Instance::query()->where('name', 'preview')->sole();
     $route = $target->routes()->sole();
     expect($target->status)->toBe(AppInstanceState::SourceResolved)
         ->and($target->provisioning_step)->toBe('clone-router-caddy-published')
@@ -571,7 +571,7 @@ it('resumes one owned target and makes the completed identical retry terminal', 
     expect(fn () => $this->action->execute($this->candidate, $this->data))
         ->toThrow(ResourceOperationException::class);
 
-    $target = AppInstance::query()->where('name', 'preview')->sole();
+    $target = Instance::query()->where('name', 'preview')->sole();
     $targetId = $target->id;
     $this->cloneProjection->fail = null;
     $resumed = $this->action->execute($this->candidate, $this->data);
@@ -579,14 +579,14 @@ it('resumes one owned target and makes the completed identical retry terminal', 
     expect($resumed['created'])->toBeFalse()
         ->and($resumed['appInstance']->id)->toBe($targetId)
         ->and($resumed['appInstance']->status)->toBe(AppInstanceState::Active)
-        ->and(AppInstance::query()->where('name', 'preview')->count())->toBe(1);
+        ->and(Instance::query()->where('name', 'preview')->count())->toBe(1);
 
     $resumed['appInstance']->environmentValues()->where('env_key', 'APP_KEY')->sole()->update([
         'env_value' => 'base64:target-edited-key',
     ]);
     $route = $resumed['appInstance']->routes()->sole();
     $replacement = Route::query()->create([
-        'app_id' => $route->app_id,
+        'project_id' => $route->project_id,
         'node_id' => $route->node_id,
         'cluster_id' => $route->cluster_id,
         'domain' => 'final.example.test',
@@ -597,7 +597,7 @@ it('resumes one owned target and makes the completed identical retry terminal', 
         'replacement_step' => RouteReplacementStep::Reserved,
     ]);
     $replacement->targets()->create([
-        'app_instance_id' => $resumed['appInstance']->id,
+        'instance_id' => $resumed['appInstance']->id,
         'position' => 0,
     ]);
     $route->update(['replaced_by_route_id' => $replacement->id]);
@@ -639,7 +639,7 @@ it('resumes an interrupted target after the candidate commit advances', function
     expect(fn () => $this->action->execute($this->candidate, $this->data))
         ->toThrow(ResourceOperationException::class);
 
-    $target = AppInstance::query()->where('name', 'preview')->sole();
+    $target = Instance::query()->where('name', 'preview')->sole();
     $this->inspector->commit = str_repeat('c', 40);
     $this->cloneProjection->fail = null;
 
@@ -656,7 +656,7 @@ it('refuses an invalid or occupied destination preview before target reservation
         $this->targetNode->update(['tld' => null]);
     } else {
         Route::query()->create([
-            'app_id' => $this->orbitApp->id,
+            'project_id' => $this->orbitApp->id,
             'node_id' => $this->targetNode->id,
             'domain' => 'shop.com.prod.orbit',
             'provenance' => RouteProvenance::Explicit,
@@ -668,7 +668,7 @@ it('refuses an invalid or occupied destination preview before target reservation
     expect(fn () => $this->action->execute($this->candidate, $this->data))
         ->toThrow(ResourceOperationException::class);
 
-    expect(AppInstance::query()->where('name', 'preview')->exists())->toBeFalse()
+    expect(Instance::query()->where('name', 'preview')->exists())->toBeFalse()
         ->and($this->source->calls)->toBeEmpty()
         ->and($this->writer->contents)->toBeNull();
 })->with(['missing TLD', 'occupied hostname']);
@@ -684,7 +684,7 @@ it('refuses a route publication step when the Project no longer requires a Route
     expect(fn () => $this->action->execute($this->candidate, $this->data))
         ->toThrow(ResourceOperationException::class, 'The clone preview Route changed.');
 
-    $target = AppInstance::query()->where('name', 'preview')->sole();
+    $target = Instance::query()->where('name', 'preview')->sole();
     expect($target->provisioning_step)->toBe('clone-runtime-prepared')
         ->and($target->error_code)->toBe('instance.lifecycle_conflict');
 });
@@ -700,7 +700,7 @@ it('refuses candidate removal while an incomplete clone retains its source depen
         });
 
     expect($this->candidate->refresh()->status)->toBe(AppInstanceState::Active)
-        ->and(AppInstance::query()->where('name', 'preview')->sole()->clone_completed_at)->toBeNull();
+        ->and(Instance::query()->where('name', 'preview')->sole()->clone_completed_at)->toBeNull();
 });
 
 function orb198_clone_node(string $name, string $address, ?string $tld = null): Node
@@ -724,7 +724,7 @@ final class Orb198CandidateInspector implements AppInstanceCloneCandidateInspect
 
     public string $commit = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
-    public function inspect(AppInstance $candidate, string $targetBranch): CloneCandidateSource
+    public function inspect(Instance $candidate, string $targetBranch): CloneCandidateSource
     {
         $this->calls++;
 
@@ -755,31 +755,31 @@ final class Orb198ProductionSource implements ProductionAppInstanceSourceLifecyc
 
     public bool $laravel = true;
 
-    public function prepareUser(AppInstance $appInstance): void
+    public function prepareUser(Instance $appInstance): void
     {
         $this->calls[] = 'user';
     }
 
-    public function prepareSource(AppInstance $appInstance, bool $allowExisting): void
+    public function prepareSource(Instance $appInstance, bool $allowExisting): void
     {
         $this->calls[] = 'source';
     }
 
-    public function resolve(AppInstance $appInstance): DevelopmentSourceResolution
+    public function resolve(Instance $appInstance): DevelopmentSourceResolution
     {
         $this->calls[] = 'resolve';
 
         return new DevelopmentSourceResolution((string) $appInstance->branch, str_repeat('b', 40));
     }
 
-    public function inspectProfile(AppInstance $appInstance): DevelopmentSourceProfile
+    public function inspectProfile(Instance $appInstance): DevelopmentSourceProfile
     {
         $this->calls[] = 'profile';
 
         return new DevelopmentSourceProfile($this->phpVersion, $this->laravel);
     }
 
-    public function prepareCaddyAccess(AppInstance $appInstance): void
+    public function prepareCaddyAccess(Instance $appInstance): void
     {
         $this->calls[] = 'caddy-access';
     }
@@ -842,7 +842,7 @@ final class Orb198DomainCloneEnvironmentWriter implements AppInstanceEnvironment
     {
         $this->contents = $contents;
         $this->observedRouteStatus = Route::query()->findOrFail($context->routeId)->status;
-        $this->observedTargetStatus = AppInstance::query()->findOrFail($context->appInstanceId)->status;
+        $this->observedTargetStatus = Instance::query()->findOrFail($context->appInstanceId)->status;
 
         return AppInstanceEnvironmentWriteResult::changed();
     }
@@ -868,22 +868,22 @@ final class Orb198ProductionProjection implements ProductionRouteProjector
 
     public ?string $fail = null;
 
-    public function prepareRuntime(AppInstance $appInstance, Route $route): void
+    public function prepareRuntime(Instance $appInstance, Route $route): void
     {
         $this->record('runtime');
     }
 
-    public function prepareCertificate(AppInstance $appInstance, Route $route): void
+    public function prepareCertificate(Instance $appInstance, Route $route): void
     {
         $this->record('certificate');
     }
 
-    public function prepareFirewall(AppInstance $appInstance): void
+    public function prepareFirewall(Instance $appInstance): void
     {
         $this->record('firewall');
     }
 
-    public function publish(AppInstance $appInstance, Route $route): void
+    public function publish(Instance $appInstance, Route $route): void
     {
         throw new LogicException('Clone publication must use the split projector.');
     }
@@ -910,27 +910,27 @@ final class Orb198CloneProjection implements ProductionCloneRouteProjector
     /** @var array<string, positive-int> */
     public array $failOnOccurrence = [];
 
-    public function prepareWorkloadCaddy(AppInstance $appInstance, Route $route): void
+    public function prepareWorkloadCaddy(Instance $appInstance, Route $route): void
     {
         $this->record('workload-caddy');
     }
 
-    public function prepareRouterCertificate(AppInstance $appInstance, Route $route): void
+    public function prepareRouterCertificate(Instance $appInstance, Route $route): void
     {
         $this->record('router-certificate');
     }
 
-    public function prepareRouteFirewall(AppInstance $appInstance, Route $route): void
+    public function prepareRouteFirewall(Instance $appInstance, Route $route): void
     {
         $this->record('route-firewall');
     }
 
-    public function verifyWorkload(AppInstance $appInstance, Route $route): void
+    public function verifyWorkload(Instance $appInstance, Route $route): void
     {
         $this->record('workload');
     }
 
-    public function prepareRouterCaddy(AppInstance $appInstance, Route $route): void
+    public function prepareRouterCaddy(Instance $appInstance, Route $route): void
     {
         $this->record('router-caddy');
     }

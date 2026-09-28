@@ -47,12 +47,12 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceTransfer;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Event;
@@ -142,13 +142,13 @@ it('retires a transferred generated Route without inventing an old Router certif
     ]);
     $destination->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $replacement = Route::query()->create([
-        'app_id' => $instance->app_id, 'cluster_id' => $source->cluster_id,
+        'project_id' => $instance->project_id, 'cluster_id' => $source->cluster_id,
         'generation_basis_node_id' => $destination->id,
         'domain' => 'transferred.acme.test', 'provenance' => RouteProvenance::Generated,
         'publication' => RoutePublication::Private, 'status' => RouteStatus::Pending,
         'replaces_route_id' => $sourceRoute->id, 'replacement_step' => RouteReplacementStep::DatabaseCutover,
     ]);
-    $replacement->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $replacement->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $replacement->update(['status' => RouteStatus::Active]);
     $sourceRoute->update([
         'status' => RouteStatus::Retiring, 'replaced_by_route_id' => $replacement->id,
@@ -274,7 +274,7 @@ it('preserves the ready hostname candidate across an interrupted DNS publication
         ->toBe(['feature.acme.test']);
 
     $replacement = Route::query()->create([
-        'app_id' => $route->app_id,
+        'project_id' => $route->project_id,
         'cluster_id' => $route->cluster_id,
         'domain' => 'next.acme.test',
         'provenance' => $route->provenance,
@@ -284,7 +284,7 @@ it('preserves the ready hostname candidate across an interrupted DNS publication
         'replacement_step' => RouteReplacementStep::LaravelUrl,
     ]);
     $replacement->targets()->create([
-        'app_instance_id' => $appInstance->id,
+        'instance_id' => $appInstance->id,
         'position' => 0,
     ]);
     $route->update(['replaced_by_route_id' => $replacement->id]);
@@ -332,7 +332,7 @@ it('serves every hostname-change site from a certificate the flow wrote for that
     $route->update(['status' => RouteStatus::Active]);
     $appInstance->update(['status' => AppInstanceState::Active, 'source_is_laravel' => false]);
     $replacement = Route::query()->create([
-        'app_id' => $route->app_id,
+        'project_id' => $route->project_id,
         'cluster_id' => $route->cluster_id,
         'domain' => 'next.acme.test',
         'provenance' => $route->provenance,
@@ -341,7 +341,7 @@ it('serves every hostname-change site from a certificate the flow wrote for that
         'replaces_route_id' => $route->id,
         'replacement_step' => RouteReplacementStep::Reserved,
     ]);
-    $replacement->targets()->create(['app_instance_id' => $appInstance->id, 'position' => 0]);
+    $replacement->targets()->create(['instance_id' => $appInstance->id, 'position' => 0]);
     $route->update(['replaced_by_route_id' => $replacement->id]);
     [$projector, $ssh, $processes, $home] = orb127_route_projector();
 
@@ -465,8 +465,8 @@ it('serves a composed Router pool from the staging Router certificate during a d
         'source_is_laravel' => false,
     ];
     $remote->update($production('feature'));
-    $local = AppInstance::query()->create([
-        'app_id' => $route->app_id,
+    $local = Instance::query()->create([
+        'project_id' => $route->project_id,
         'node_id' => $router->id,
         'name' => 'local',
         'checkout_path' => '/srv/acme/local',
@@ -477,13 +477,13 @@ it('serves a composed Router pool from the staging Router certificate during a d
     ]);
     // The target on the Router comes first, so its cleanup publishes the composed pool first.
     $route->targets()->delete();
-    $route->targets()->create(['app_instance_id' => $local->id, 'position' => 0]);
-    $route->targets()->create(['app_instance_id' => $remote->id, 'position' => 1]);
+    $route->targets()->create(['instance_id' => $local->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $remote->id, 'position' => 1]);
     $route->update(['status' => RouteStatus::Active]);
     $remote->update(['status' => AppInstanceState::Active]);
     $local->update(['status' => AppInstanceState::Active]);
     $replacement = orb_pending_domain_change($route, $local, RouteReplacementStep::Reserved);
-    $replacement->targets()->create(['app_instance_id' => $remote->id, 'position' => 1]);
+    $replacement->targets()->create(['instance_id' => $remote->id, 'position' => 1]);
     $targets = [$local->refresh(), $remote->refresh()];
     [$projector, $ssh, $processes, $home] = orb127_route_projector();
     $step = static function (RouteReplacementStep $step, Closure $operation) use ($targets, $replacement): void {
@@ -497,10 +497,10 @@ it('serves a composed Router pool from the staging Router certificate during a d
     try {
         $current = $route->refresh();
         $candidate = $replacement->refresh();
-        $step(RouteReplacementStep::WorkloadCertificate, fn (AppInstance $target) => $projector->prepareWorkloadCertificate($target, $current, $candidate));
-        $step(RouteReplacementStep::WorkloadCaddy, fn (AppInstance $target) => $projector->prepareWorkloadCaddy($target, $current, $candidate));
-        $step(RouteReplacementStep::RouterCertificate, fn (AppInstance $target) => $projector->prepareRouterCertificate($target, $current, $candidate));
-        $step(RouteReplacementStep::RouterCaddy, fn (AppInstance $target) => $projector->prepareRouterCaddy($target, $current, $candidate));
+        $step(RouteReplacementStep::WorkloadCertificate, fn (Instance $target) => $projector->prepareWorkloadCertificate($target, $current, $candidate));
+        $step(RouteReplacementStep::WorkloadCaddy, fn (Instance $target) => $projector->prepareWorkloadCaddy($target, $current, $candidate));
+        $step(RouteReplacementStep::RouterCertificate, fn (Instance $target) => $projector->prepareRouterCertificate($target, $current, $candidate));
+        $step(RouteReplacementStep::RouterCaddy, fn (Instance $target) => $projector->prepareRouterCaddy($target, $current, $candidate));
         $routerDuringChange = new AppDevSiteRepository()->forNode($router)->firstWhere('domain', 'next.acme.test');
         $route->update(['status' => RouteStatus::Retiring]);
         $replacement->update(['status' => RouteStatus::Activating, 'replacement_step' => RouteReplacementStep::DatabaseCutover]);
@@ -726,7 +726,7 @@ it('preserves production release sites at the environment synchronization checkp
     $workload->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $appInstance->unsetRelation('node');
     $replacement = Route::query()->create([
-        'app_id' => $route->app_id,
+        'project_id' => $route->project_id,
         'cluster_id' => $route->cluster_id,
         'domain' => 'next.acme.test',
         'provenance' => $route->provenance,
@@ -736,7 +736,7 @@ it('preserves production release sites at the environment synchronization checkp
         'replacement_step' => RouteReplacementStep::EnvironmentSynchronized,
     ]);
     $replacement->targets()->create([
-        'app_instance_id' => $appInstance->id,
+        'instance_id' => $appInstance->id,
         'position' => 0,
     ]);
     $route->update(['replaced_by_route_id' => $replacement->id]);
@@ -757,8 +757,8 @@ it('preserves production release sites at the environment synchronization checkp
 
 it('hydrates only requested workload and Router routes while global inventory stays complete', function (): void {
     [$pendingInstance, $pendingRoute, $workload, $router] = orb127_route_projection_models();
-    $activeInstance = AppInstance::query()->create([
-        'app_id' => $pendingInstance->app_id,
+    $activeInstance = Instance::query()->create([
+        'project_id' => $pendingInstance->project_id,
         'node_id' => $workload->id,
         'name' => 'active',
         'checkout_path' => '/home/orbit/apps/acme/active',
@@ -767,18 +767,18 @@ it('hydrates only requested workload and Router routes while global inventory st
         'status' => 'source_resolved',
     ]);
     $activeRoute = Route::query()->create([
-        'app_id' => $pendingInstance->app_id,
+        'project_id' => $pendingInstance->project_id,
         'cluster_id' => $pendingRoute->cluster_id,
         'domain' => 'active.acme.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $activeRoute->targets()->create(['app_instance_id' => $activeInstance->id, 'position' => 0]);
+    $activeRoute->targets()->create(['instance_id' => $activeInstance->id, 'position' => 0]);
     $activeRoute->update(['status' => RouteStatus::Active]);
     $activeInstance->update(['status' => 'active']);
-    $failedInstance = AppInstance::query()->create([
-        'app_id' => $pendingInstance->app_id,
+    $failedInstance = Instance::query()->create([
+        'project_id' => $pendingInstance->project_id,
         'node_id' => $workload->id,
         'name' => 'failed',
         'checkout_path' => '/home/orbit/apps/acme/failed',
@@ -787,14 +787,14 @@ it('hydrates only requested workload and Router routes while global inventory st
         'status' => 'source_resolved',
     ]);
     $failedRoute = Route::query()->create([
-        'app_id' => $pendingInstance->app_id,
+        'project_id' => $pendingInstance->project_id,
         'cluster_id' => $pendingRoute->cluster_id,
         'domain' => 'failed.acme.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $failedRoute->targets()->create(['app_instance_id' => $failedInstance->id, 'position' => 0]);
+    $failedRoute->targets()->create(['instance_id' => $failedInstance->id, 'position' => 0]);
     $failedRoute->update([
         'status' => RouteStatus::Failed,
         'failed_step' => 'runtime',
@@ -809,8 +809,8 @@ it('hydrates only requested workload and Router routes while global inventory st
         'user' => 'orbit',
     ]);
     $unrelatedNode->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
-    $unrelatedInstance = AppInstance::query()->create([
-        'app_id' => $pendingInstance->app_id,
+    $unrelatedInstance = Instance::query()->create([
+        'project_id' => $pendingInstance->project_id,
         'node_id' => $unrelatedNode->id,
         'name' => 'unrelated',
         'checkout_path' => '/home/orbit/apps/acme/unrelated',
@@ -819,14 +819,14 @@ it('hydrates only requested workload and Router routes while global inventory st
         'status' => 'source_resolved',
     ]);
     $unrelatedRoute = Route::query()->create([
-        'app_id' => $pendingInstance->app_id,
+        'project_id' => $pendingInstance->project_id,
         'node_id' => $unrelatedNode->id,
         'domain' => 'unrelated.acme.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $unrelatedRoute->targets()->create(['app_instance_id' => $unrelatedInstance->id, 'position' => 0]);
+    $unrelatedRoute->targets()->create(['instance_id' => $unrelatedInstance->id, 'position' => 0]);
     $unrelatedRoute->update(['status' => RouteStatus::Active]);
     $unrelatedInstance->update(['status' => 'active']);
     $sites = new AppDevSiteRepository;
@@ -842,8 +842,8 @@ it('hydrates only requested workload and Router routes while global inventory st
         },
     );
     Event::listen(
-        'eloquent.retrieved: '.AppInstance::class,
-        static function (AppInstance $retrieved) use ($retrievedInstances): void {
+        'eloquent.retrieved: '.Instance::class,
+        static function (Instance $retrieved) use ($retrievedInstances): void {
             $retrievedInstances->push($retrieved->id);
         },
     );
@@ -966,8 +966,8 @@ it('retains active workload and Router sites while publishing a second Route on 
     [$firstInstance, $firstRoute, $workload, $router] = orb127_route_projection_models(phpVersion: '8.5');
     $firstRoute->update(['status' => RouteStatus::Active]);
     $firstInstance->update(['status' => AppInstanceState::Active]);
-    $secondInstance = AppInstance::query()->create([
-        'app_id' => $firstInstance->app_id,
+    $secondInstance = Instance::query()->create([
+        'project_id' => $firstInstance->project_id,
         'node_id' => $workload->id,
         'name' => 'second',
         'checkout_path' => '/home/orbit/apps/acme/second',
@@ -978,7 +978,7 @@ it('retains active workload and Router sites while publishing a second Route on 
         'status' => AppInstanceState::SourceResolved,
     ]);
     $secondRoute = Route::query()->create([
-        'app_id' => $firstRoute->app_id,
+        'project_id' => $firstRoute->project_id,
         'cluster_id' => $firstRoute->cluster_id,
         'domain' => 'second.acme.test',
         'provenance' => RouteProvenance::Explicit,
@@ -988,7 +988,7 @@ it('retains active workload and Router sites while publishing a second Route on 
     $secondRoute
         ->targets()
         ->create([
-            'app_instance_id' => $secondInstance->id,
+            'instance_id' => $secondInstance->id,
             'position' => 0,
         ]);
     [$projector, $ssh, , $home] = orb127_route_projector();
@@ -1150,7 +1150,7 @@ it('reports runtime certificate firewall and DNS publication boundaries before a
     'publication' => ['dns', 'private-dns', 'app-dev.dns_config_failed'],
 ]);
 
-/** @return array{AppInstance, Route, Node, Node} */
+/** @return array{Instance, Route, Node, Node} */
 function orb127_route_projection_models(
     bool $coLocated = false,
     ?string $workloadLan = null,
@@ -1196,14 +1196,14 @@ function orb127_route_projection_models(
             'role' => RoleName::Router,
             'status' => LifecycleStatus::Active,
         ]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme-'.Str::lower(Str::random(8)),
         'repository_url' => 'https://example.test/acme.git',
         'root' => 'public',
     ]);
-    $appInstance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $appInstance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $workload->id,
         'name' => 'feature',
         'checkout_path' => '/home/orbit/apps/acme/feature',
@@ -1214,7 +1214,7 @@ function orb127_route_projection_models(
         'status' => 'source_resolved',
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'cluster_id' => $cluster->id,
         'domain' => 'feature.acme.test',
         'provenance' => RouteProvenance::Explicit,
@@ -1224,7 +1224,7 @@ function orb127_route_projection_models(
     $route
         ->targets()
         ->create([
-            'app_instance_id' => $appInstance->id,
+            'instance_id' => $appInstance->id,
             'position' => 0,
         ]);
 
@@ -1341,7 +1341,7 @@ function orb_router_replacement_action(): SetClusterRouterAction
  * Cleanup issues the live certificates, stores the `cleanup` step, and then builds and removes the
  * staging certificates, as `ConvergeRouteAction` does.
  *
- * @param  list<AppInstance>  $targets
+ * @param  list<Instance>  $targets
  */
 function orb_domain_change_cleanup(NativeDevelopmentRouteProjector $projector, array $targets, Route $replacement): void
 {
@@ -1356,10 +1356,10 @@ function orb_domain_change_cleanup(NativeDevelopmentRouteProjector $projector, a
     }
 }
 
-function orb_pending_domain_change(Route $route, AppInstance $appInstance, RouteReplacementStep $step): Route
+function orb_pending_domain_change(Route $route, Instance $appInstance, RouteReplacementStep $step): Route
 {
     $replacement = Route::query()->create([
-        'app_id' => $route->app_id,
+        'project_id' => $route->project_id,
         'cluster_id' => $route->cluster_id,
         'domain' => 'next.acme.test',
         'provenance' => $route->provenance,
@@ -1368,7 +1368,7 @@ function orb_pending_domain_change(Route $route, AppInstance $appInstance, Route
         'replaces_route_id' => $route->id,
         'replacement_step' => $step,
     ]);
-    $replacement->targets()->create(['app_instance_id' => $appInstance->id, 'position' => 0]);
+    $replacement->targets()->create(['instance_id' => $appInstance->id, 'position' => 0]);
     $route->update(['replaced_by_route_id' => $replacement->id]);
 
     return $replacement;
@@ -1459,7 +1459,7 @@ function orb127_route_projector(?Closure $failSsh = null, bool $failDns = false)
 }
 
 function orb368_projection_transfer(
-    AppInstance $instance,
+    Instance $instance,
     Route $sourceRoute,
     Route $destinationRoute,
     Node $source,
@@ -1467,7 +1467,7 @@ function orb368_projection_transfer(
     Node $sourceRouter,
 ): AppInstanceTransfer {
     $transfer = AppInstanceTransfer::query()->create([
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'source_node_id' => $source->id,
         'source_router_node_id' => $sourceRouter->id,
         'destination_node_id' => $destination->id,

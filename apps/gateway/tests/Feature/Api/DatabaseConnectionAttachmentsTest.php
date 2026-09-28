@@ -15,13 +15,13 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Route;
 
 const DATABASE_ATTACHMENT_SECRET = 'db-attach-secret-7c21';
@@ -34,7 +34,7 @@ beforeEach(function (): void {
     app()->instance(AppInstanceEnvironmentWriter::class, new DatabaseAttachmentAccess);
 });
 
-it('attaches mysql keys into stored AppInstance env and redacts the password', function (): void {
+it('attaches mysql keys into stored Instance env and redacts the password', function (): void {
     $this->postJson('/api/v1/database-connections', [
         'slug' => 'app',
         'driver' => 'mysql',
@@ -198,8 +198,8 @@ it('rewrites same-node Docker Process host and port and keeps remote registry va
         'user' => 'orbit',
     ]);
     orbit_test_set_app_placement_role($remote, false);
-    $remoteInstance = AppInstance::query()->create([
-        'app_id' => $this->instance->app_id,
+    $remoteInstance = Instance::query()->create([
+        'project_id' => $this->instance->project_id,
         'node_id' => $remote->id,
         'name' => 'remote',
         'environment' => 'development',
@@ -208,14 +208,14 @@ it('rewrites same-node Docker Process host and port and keeps remote registry va
         'provisioning_step' => 'active',
     ]);
     $remoteRoute = Route::query()->create([
-        'app_id' => $this->instance->app_id,
+        'project_id' => $this->instance->project_id,
         'node_id' => $remote->id,
         'domain' => 'environment-api-remote.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $remoteRoute->targets()->create(['app_instance_id' => $remoteInstance->id, 'position' => 0]);
+    $remoteRoute->targets()->create(['instance_id' => $remoteInstance->id, 'position' => 0]);
     $remoteRoute->update(['status' => RouteStatus::Active]);
     $remoteInstance->update(['status' => 'active']);
 
@@ -301,7 +301,7 @@ it('refuses an unsupported attach key and an invalid prefix', function (): void 
 });
 
 /**
- * @return array{0: Node, 1: AppInstance, 2: Route}
+ * @return array{0: Node, 1: Instance, 2: Route}
  */
 function database_attachment_fixture(): array
 {
@@ -323,15 +323,15 @@ function database_attachment_fixture(): array
         'user' => 'orbit',
     ]);
     orbit_test_set_app_placement_role($node, false);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Environment API',
         'slug' => 'environment-api',
         'repository_url' => 'https://example.test/environment-api.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'default',
         'environment' => 'development',
@@ -340,14 +340,14 @@ function database_attachment_fixture(): array
         'provisioning_step' => 'active',
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'domain' => 'environment-api.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
     $instance->update(['status' => 'active']);
 
@@ -355,10 +355,10 @@ function database_attachment_fixture(): array
 }
 
 /** @return array<string, string> */
-function stored_env(AppInstance $instance): array
+function stored_env(Instance $instance): array
 {
     return AppInstanceEnvironmentValue::query()
-        ->where('app_instance_id', $instance->id)
+        ->where('instance_id', $instance->id)
         ->orderBy('env_key')
         ->get()
         ->mapWithKeys(static fn (AppInstanceEnvironmentValue $row): array => [$row->env_key => $row->env_value])

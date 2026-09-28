@@ -34,9 +34,9 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Domain\SourceControl\ProjectRoot;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -60,7 +60,7 @@ final readonly class RegisterAppInstanceAction
         private ?RunInstanceSetupAction $setup = null,
     ) {}
 
-    /** @return array{app: OrbitApp, primary: AppInstance, instances: list<AppInstance>, created: bool} */
+    /** @return array{app: Project, primary: Instance, instances: list<Instance>, created: bool} */
     public function execute(Node $caller, RegisterAppInstanceData $data): array
     {
         $result = $this->performRegistration($caller, $data);
@@ -80,7 +80,7 @@ final readonly class RegisterAppInstanceAction
         return $result;
     }
 
-    /** @return array{app: OrbitApp, primary: AppInstance, instances: list<AppInstance>, created: bool} */
+    /** @return array{app: Project, primary: Instance, instances: list<Instance>, created: bool} */
     private function performRegistration(Node $caller, RegisterAppInstanceData $data): array
     {
         $this->assertPlacement($caller);
@@ -93,7 +93,7 @@ final readonly class RegisterAppInstanceAction
             $retainedMember = $this->retainedMember($caller, $data);
 
             if (
-                $retainedMember instanceof AppInstance
+                $retainedMember instanceof Instance
                 && ! $retainedMember->registration_primary
             ) {
                 throw $this->conflict(
@@ -103,7 +103,7 @@ final readonly class RegisterAppInstanceAction
             }
 
             $retainedPrimary = $retainedMember;
-            $facts = $retainedPrimary instanceof AppInstance
+            $facts = $retainedPrimary instanceof Instance
                 ? $this->retainedFacts($retainedPrimary, $data)
                 : $this->sources->inspect(
                     $caller,
@@ -111,11 +111,11 @@ final readonly class RegisterAppInstanceAction
                     $data->includeWorktrees,
                 );
 
-            if (! $retainedPrimary instanceof AppInstance) {
+            if (! $retainedPrimary instanceof Instance) {
                 $this->assertSourcesNotRetained($caller, $facts);
             }
 
-            $primaryFacts = $retainedPrimary instanceof AppInstance
+            $primaryFacts = $retainedPrimary instanceof Instance
                 ? $facts[0]
                 : $this->primaryFacts($facts, $data->sourcePath);
             [$app, $appCreated] = $this->resolveApp($primaryFacts, $data);
@@ -157,8 +157,8 @@ final readonly class RegisterAppInstanceAction
                     throw new ResourceOperationException(
                         errorCode: 'instance.registration_incomplete',
                         message: $appCreated
-                            ? "App [{$app->slug}] was retained; AppInstance registration is incomplete and can be retried."
-                            : 'AppInstance registration is incomplete and can be retried.',
+                            ? "App [{$app->slug}] was retained; Instance registration is incomplete and can be retried."
+                            : 'Instance registration is incomplete and can be retried.',
                         status: 502,
                         previous: $exception,
                     );
@@ -168,11 +168,11 @@ final readonly class RegisterAppInstanceAction
             });
 
             $primary = collect($instances)->first(
-                static fn (AppInstance $instance): bool => (
+                static fn (Instance $instance): bool => (
                     $instance->registration_original_path === $primaryFacts->path
                 ),
             );
-            assert($primary instanceof AppInstance);
+            assert($primary instanceof Instance);
 
             return [
                 'app' => $app->refresh(),
@@ -183,9 +183,9 @@ final readonly class RegisterAppInstanceAction
         });
     }
 
-    private function retainedMember(Node $node, RegisterAppInstanceData $data): ?AppInstance
+    private function retainedMember(Node $node, RegisterAppInstanceData $data): ?Instance
     {
-        $matches = AppInstance::query()
+        $matches = Instance::query()
             ->where('node_id', $node->id)
             ->whereNotNull('registration_request_id')
             ->where(static function ($query) use ($data): void {
@@ -204,7 +204,7 @@ final readonly class RegisterAppInstanceAction
 
         $member = $matches->first();
 
-        if (! $member instanceof AppInstance) {
+        if (! $member instanceof Instance) {
             return null;
         }
 
@@ -220,7 +220,7 @@ final readonly class RegisterAppInstanceAction
         return $member;
     }
 
-    private function assertRetainedEntryPath(AppInstance $instance, string $submittedPath): void
+    private function assertRetainedEntryPath(Instance $instance, string $submittedPath): void
     {
         if ($submittedPath === $instance->registration_original_path) {
             return;
@@ -258,7 +258,7 @@ final readonly class RegisterAppInstanceAction
     /** @param list<RegistrationSourceFacts> $facts */
     private function assertSourcesNotRetained(Node $node, array $facts): void
     {
-        $retained = AppInstance::query()
+        $retained = Instance::query()
             ->where('node_id', $node->id)
             ->whereNotNull('registration_request_id')
             ->where(static function ($query) use ($facts): void {
@@ -283,20 +283,20 @@ final readonly class RegisterAppInstanceAction
     /** @param list<RegistrationSourceFacts> $facts */
     private function preflightSources(
         Node $node,
-        OrbitApp $app,
+        Project $app,
         array $facts,
-        ?AppInstance $retainedPrimary,
+        ?Instance $retainedPrimary,
         string $submittedPath,
     ): void {
         foreach ($facts as $fact) {
-            $instance = AppInstance::query()
+            $instance = Instance::query()
                 ->where('node_id', $node->id)
                 ->where('registration_original_path', $fact->path)
                 ->first();
             $path = $this->authoritativeSourcePath($instance, $fact);
 
-            if ($retainedPrimary instanceof AppInstance) {
-                if ($instance instanceof AppInstance && $instance->registration_relocation_state === 'relocating') {
+            if ($retainedPrimary instanceof Instance) {
+                if ($instance instanceof Instance && $instance->registration_relocation_state === 'relocating') {
                     $path = $this->relocatingSourcePath(
                         $node,
                         $instance,
@@ -310,8 +310,8 @@ final readonly class RegisterAppInstanceAction
                 }
             }
 
-            $candidate = new AppInstance([
-                'app_id' => $app->id,
+            $candidate = new Instance([
+                'project_id' => $app->id,
                 'node_id' => $node->id,
                 'checkout_path' => $path,
             ]);
@@ -322,10 +322,10 @@ final readonly class RegisterAppInstanceAction
     }
 
     private function authoritativeSourcePath(
-        ?AppInstance $instance,
+        ?Instance $instance,
         RegistrationSourceFacts $facts,
     ): string {
-        if (! $instance instanceof AppInstance) {
+        if (! $instance instanceof Instance) {
             return $facts->path;
         }
 
@@ -350,7 +350,7 @@ final readonly class RegisterAppInstanceAction
 
     private function relocatingSourcePath(
         Node $node,
-        AppInstance $instance,
+        Instance $instance,
         RegistrationSourceFacts $facts,
         ?string $submittedPath,
     ): string {
@@ -396,7 +396,7 @@ final readonly class RegisterAppInstanceAction
     /**
      * @return list<RegistrationSourceFacts>
      */
-    private function retainedFacts(AppInstance $primary, RegisterAppInstanceData $data): array
+    private function retainedFacts(Instance $primary, RegisterAppInstanceData $data): array
     {
         if (
             $primary->registration_request_id === null
@@ -408,7 +408,7 @@ final readonly class RegisterAppInstanceAction
             );
         }
 
-        $instances = AppInstance::query()
+        $instances = Instance::query()
             ->where('registration_request_id', $primary->registration_request_id)
             ->orderByDesc('registration_primary')
             ->orderBy('id')
@@ -454,7 +454,7 @@ final readonly class RegisterAppInstanceAction
             || $this->sortedPaths($retainedPaths) !== $this->sortedPaths($expectedPaths)
             || $instances->where('registration_primary', true)->count() !== 1
             || $instances->contains(
-                static fn (AppInstance $instance): bool => (
+                static fn (Instance $instance): bool => (
                     $instance->registration_include_worktrees !== $data->includeWorktrees
                 ),
             )
@@ -474,7 +474,7 @@ final readonly class RegisterAppInstanceAction
         return $facts;
     }
 
-    private function retainedFact(AppInstance $instance): RegistrationSourceFacts
+    private function retainedFact(Instance $instance): RegistrationSourceFacts
     {
         $layout = AppInstanceSourceLayout::tryFrom($instance->source_layout);
         $worktreePaths = $instance->getAttribute('registration_worktree_paths');
@@ -514,10 +514,10 @@ final readonly class RegisterAppInstanceAction
         );
     }
 
-    /** @return array{OrbitApp, bool} */
+    /** @return array{Project, bool} */
     private function resolveApp(RegistrationSourceFacts $facts, RegisterAppInstanceData $data): array
     {
-        $byRepository = OrbitApp::query()
+        $byRepository = Project::query()
             ->where('repository_identity', $facts->repositoryIdentity)
             ->get();
 
@@ -528,23 +528,23 @@ final readonly class RegisterAppInstanceAction
             );
         }
 
-        $explicit = $data->appId === null ? null : OrbitApp::query()->findOrFail($data->appId);
+        $explicit = $data->appId === null ? null : Project::query()->findOrFail($data->appId);
         $resolved = $byRepository->first();
 
-        if ($explicit instanceof OrbitApp && $explicit->repository_identity !== $facts->repositoryIdentity) {
+        if ($explicit instanceof Project && $explicit->repository_identity !== $facts->repositoryIdentity) {
             throw $this->conflict(
                 'app.repository_identity_conflict',
                 'The selected App owns a different repository identity.',
             );
         }
 
-        if ($explicit instanceof OrbitApp && $resolved instanceof OrbitApp && ! $explicit->is($resolved)) {
+        if ($explicit instanceof Project && $resolved instanceof Project && ! $explicit->is($resolved)) {
             throw $this->conflict('app.repository_identity_conflict', 'The repository is owned by a different App.');
         }
 
         $app = $explicit ?? $resolved;
 
-        if ($app instanceof OrbitApp) {
+        if ($app instanceof Project) {
             $this->assertExistingAppInput($app, $data);
             $root = $data->root ?? $app->root;
 
@@ -607,7 +607,7 @@ final readonly class RegisterAppInstanceAction
         return [$result['app'], $result['created']];
     }
 
-    private function assertExistingAppInput(OrbitApp $app, RegisterAppInstanceData $data): void
+    private function assertExistingAppInput(Project $app, RegisterAppInstanceData $data): void
     {
         if (
             $data->appSlug !== null
@@ -623,11 +623,11 @@ final readonly class RegisterAppInstanceAction
 
     /**
      * @param  list<RegistrationSourceFacts>  $facts
-     * @return list<array{appInstance: AppInstance, facts: RegistrationSourceFacts, routeDomain: string|null}>
+     * @return list<array{appInstance: Instance, facts: RegistrationSourceFacts, routeDomain: string|null}>
      */
     private function reserveMembers(
         Node $node,
-        OrbitApp $app,
+        Project $app,
         array $facts,
         RegistrationSourceFacts $primary,
         RegisterAppInstanceData $data,
@@ -638,7 +638,7 @@ final readonly class RegisterAppInstanceAction
             $account,
         );
         $rootOverride = $data->root !== null && $data->root !== $app->root ? $data->root : null;
-        $retainedRequestId = AppInstance::query()
+        $retainedRequestId = Instance::query()
             ->where('node_id', $node->id)
             ->where('registration_original_path', $primary->path)
             ->value('registration_request_id');
@@ -648,13 +648,13 @@ final readonly class RegisterAppInstanceAction
         $destinations = [];
 
         foreach ($facts as $fact) {
-            $instance = AppInstance::query()
+            $instance = Instance::query()
                 ->where('node_id', $node->id)
                 ->where('registration_original_path', $fact->path)
                 ->first();
 
             $explicitName = $fact === $primary ? $data->instanceName : null;
-            $name = $instance instanceof AppInstance && $instance->registration_request_id !== null
+            $name = $instance instanceof Instance && $instance->registration_request_id !== null
                 ? $this->retainedInstanceName($instance, $explicitName)
                 : $this->instanceName($app, $fact, $explicitName);
             $destination = $roots->append($app->slug, $name);
@@ -662,13 +662,13 @@ final readonly class RegisterAppInstanceAction
             if (isset($names[$name]) || isset($destinations[$destination->value])) {
                 throw $this->conflict(
                     'instance.identity_conflict',
-                    'The requested source set contains conflicting AppInstance identities or placements.',
+                    'The requested source set contains conflicting Instance identities or placements.',
                 );
             }
 
             $names[$name] = true;
             $destinations[$destination->value] = true;
-            $sourcePath = $instance instanceof AppInstance
+            $sourcePath = $instance instanceof Instance
             && in_array(
                 $instance->registration_relocation_state,
                 ['destination_verified', 'original_cleanup', 'relocated'],
@@ -683,7 +683,7 @@ final readonly class RegisterAppInstanceAction
                 ignoreAppInstanceId: $instance?->id,
             );
 
-            if (! $instance instanceof AppInstance) {
+            if (! $instance instanceof Instance) {
                 $this->checkoutOverlap->assertAvailable($node->id, $destination, 'instance.path_taken');
                 if ($fact->path !== $destination->value) {
                     $this->destinationGuard->assertUnoccupied($node, $destination);
@@ -727,7 +727,7 @@ final readonly class RegisterAppInstanceAction
                 $fact = $proposal['facts'];
                 $instance = $proposal['instance'];
 
-                if ($instance instanceof AppInstance) {
+                if ($instance instanceof Instance) {
                     if ($proposal['backfillRouteIntent']) {
                         $instance->update([
                             'registration_route_domain' => $proposal['routeDomain'],
@@ -746,8 +746,8 @@ final readonly class RegisterAppInstanceAction
                 }
 
                 app(DevelopmentNodeExclusion::class)->assertAvailable($app, $node);
-                $instance = AppInstance::query()->create([
-                    'app_id' => $app->id,
+                $instance = Instance::query()->create([
+                    'project_id' => $app->id,
                     'node_id' => $node->id,
                     'name' => $proposal['name'],
                     'source_layout' => $fact->layout,
@@ -781,7 +781,7 @@ final readonly class RegisterAppInstanceAction
     }
 
     /**
-     * @param  list<array{appInstance: AppInstance, facts: RegistrationSourceFacts, routeDomain: string|null}>  $members
+     * @param  list<array{appInstance: Instance, facts: RegistrationSourceFacts, routeDomain: string|null}>  $members
      */
     private function needsRelocation(array $members): bool
     {
@@ -842,7 +842,7 @@ final readonly class RegisterAppInstanceAction
         ];
     }
 
-    private function instanceName(OrbitApp $app, RegistrationSourceFacts $facts, ?string $explicit): string
+    private function instanceName(Project $app, RegistrationSourceFacts $facts, ?string $explicit): string
     {
         $derived = basename($facts->path);
 
@@ -854,7 +854,7 @@ final readonly class RegisterAppInstanceAction
             if ($explicit !== null && $explicit !== 'default') {
                 throw $this->conflict(
                     'instance.identity_conflict',
-                    'This source has the reserved default AppInstance identity.',
+                    'This source has the reserved default Instance identity.',
                 );
             }
 
@@ -866,7 +866,7 @@ final readonly class RegisterAppInstanceAction
         if (preg_match('/\A[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\z/D', $name) !== 1 || strlen($name) > 63) {
             throw new ResourceOperationException(
                 'instance.name_invalid',
-                'The AppInstance name must be confirmed as a lowercase DNS label.',
+                'The Instance name must be confirmed as a lowercase DNS label.',
                 422,
             );
         }
@@ -874,12 +874,12 @@ final readonly class RegisterAppInstanceAction
         return $name;
     }
 
-    private function retainedInstanceName(AppInstance $instance, ?string $explicit): string
+    private function retainedInstanceName(Instance $instance, ?string $explicit): string
     {
         if ($explicit !== null && $explicit !== $instance->name) {
             throw $this->conflict(
                 'instance.registration_conflict',
-                'Registration retry input conflicts with retained AppInstance identity.',
+                'Registration retry input conflicts with retained Instance identity.',
             );
         }
 
@@ -893,13 +893,13 @@ final readonly class RegisterAppInstanceAction
      *     backfill: bool
      * }
      */
-    private function registrationRouteIntent(?AppInstance $instance, ?string $requestedHostname): array
+    private function registrationRouteIntent(?Instance $instance, ?string $requestedHostname): array
     {
         $requestedHostname = $requestedHostname === null
             ? null
             : RouteDomain::validate($requestedHostname);
 
-        if (! $instance instanceof AppInstance) {
+        if (! $instance instanceof Instance) {
             return [
                 'domain' => $requestedHostname,
                 'provenance' => $requestedHostname === null
@@ -947,7 +947,7 @@ final readonly class RegisterAppInstanceAction
         ];
     }
 
-    private function currentRouteIsAuthoritative(AppInstance $instance): bool
+    private function currentRouteIsAuthoritative(Instance $instance): bool
     {
         return $instance->registration_completed_at !== null
             || $instance->status === AppInstanceState::Active
@@ -960,7 +960,7 @@ final readonly class RegisterAppInstanceAction
      *     provenance: string
      * }
      */
-    private function currentRegistrationRouteIntent(AppInstance $instance): array
+    private function currentRegistrationRouteIntent(Instance $instance): array
     {
         $routes = $instance->routes()->get();
 
@@ -981,7 +981,7 @@ final readonly class RegisterAppInstanceAction
     }
 
     private function assertPrePublicationRegistrationRouteIntent(
-        AppInstance $instance,
+        Instance $instance,
         ?string $domain,
         string $provenance,
     ): void {
@@ -1056,7 +1056,7 @@ final readonly class RegisterAppInstanceAction
     }
 
     /** @return array{domain: string|null, provenance: string} */
-    private function legacyRegistrationRouteIntent(AppInstance $instance): array
+    private function legacyRegistrationRouteIntent(Instance $instance): array
     {
         if ($instance->routes()->count() !== 1) {
             throw $this->invalidRegistrationRouteIntent();
@@ -1105,14 +1105,14 @@ final readonly class RegisterAppInstanceAction
     }
 
     private function assertRetry(
-        AppInstance $instance,
-        OrbitApp $app,
+        Instance $instance,
+        Project $app,
         RegistrationSourceFacts $facts,
         StoragePath $destination,
         ?string $requestedRoot,
     ): void {
         if (
-            $instance->app_id !== $app->id
+            $instance->project_id !== $app->id
             || $instance->source_layout !== $facts->layout->value
             || $instance->registration_repository_identity !== null
             && $instance->registration_repository_identity !== $facts->repositoryIdentity
@@ -1130,7 +1130,7 @@ final readonly class RegisterAppInstanceAction
     }
 
     private function assertRetryRequest(
-        AppInstance $instance,
+        Instance $instance,
         bool $primary,
         bool $includeWorktrees,
     ): void {
@@ -1147,10 +1147,10 @@ final readonly class RegisterAppInstanceAction
     }
 
     private function completeMember(
-        AppInstance $instance,
+        Instance $instance,
         RegistrationSourceFacts $facts,
         ?string $domain,
-    ): AppInstance {
+    ): Instance {
         if ($instance->registration_completed_at !== null && $instance->status === AppInstanceState::Active) {
             $retryHostname = $this->retainedRouteDomain($instance, $domain);
             $this->provisioner->reserve($instance, $retryHostname);
@@ -1174,7 +1174,7 @@ final readonly class RegisterAppInstanceAction
         }
 
         DB::transaction(static function () use ($instance, $facts): void {
-            $locked = AppInstance::query()->lockForUpdate()->findOrFail($instance->id);
+            $locked = Instance::query()->lockForUpdate()->findOrFail($instance->id);
             $locked->update([
                 'name' => $instance->name,
                 'source_layout' => $facts->layout,
@@ -1207,7 +1207,7 @@ final readonly class RegisterAppInstanceAction
         return $this->finishPublishedRegistration($completed);
     }
 
-    private function retainedRouteDomain(AppInstance $instance, ?string $domain): ?string
+    private function retainedRouteDomain(Instance $instance, ?string $domain): ?string
     {
         if ($domain !== null) {
             return $domain;
@@ -1218,7 +1218,7 @@ final readonly class RegisterAppInstanceAction
         return $route->provenance === RouteProvenance::Explicit ? $route->domain : null;
     }
 
-    private function finishPublishedRegistration(AppInstance $completed): AppInstance
+    private function finishPublishedRegistration(Instance $completed): Instance
     {
         $completed->update([
             'registration_completed_at' => now(),
@@ -1245,12 +1245,12 @@ final readonly class RegisterAppInstanceAction
         }
     }
 
-    private function recordFailure(AppInstance $instance, Throwable $exception): void
+    private function recordFailure(Instance $instance, Throwable $exception): void
     {
         $errorCode = property_exists($exception, 'errorCode') && is_string($exception->errorCode)
             ? $exception->errorCode
             : 'instance.registration_incomplete';
-        AppInstance::query()
+        Instance::query()
             ->whereKey($instance->id)
             ->update([
                 'failed_step' => 'registration',

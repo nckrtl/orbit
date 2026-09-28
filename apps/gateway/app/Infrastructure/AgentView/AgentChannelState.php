@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AgentView;
 
+use App\Models\Instance;
+
 /**
  * What the agent view subscriber knows about one Node's agent, built from the events on
  * `presence-node.{id}` with the rules in the Realtime events reference.

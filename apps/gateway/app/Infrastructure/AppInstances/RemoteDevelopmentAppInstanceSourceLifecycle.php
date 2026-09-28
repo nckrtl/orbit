@@ -17,7 +17,7 @@ use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements DevelopmentAppInstanceSourceLifecycle
 {
@@ -28,7 +28,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
         private RepositoryReadAccess $access,
     ) {}
 
-    public function prepare(AppInstance $appInstance, bool $allowExisting): void
+    public function prepare(Instance $appInstance, bool $allowExisting): void
     {
         $context = $this->context($appInstance);
         $script = GitReadScript::for($this->access->for($context['repository']), self::preparedRepositoryGuard().<<<'BASH'
@@ -65,7 +65,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
         );
     }
 
-    public function inspectPrepared(AppInstance $appInstance): void
+    public function inspectPrepared(Instance $appInstance): void
     {
         $context = $this->context($appInstance);
         $this->ssh->execute(
@@ -89,7 +89,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
         );
     }
 
-    public function resolve(AppInstance $appInstance): DevelopmentSourceResolution
+    public function resolve(Instance $appInstance): DevelopmentSourceResolution
     {
         $context = $this->context($appInstance);
         $defaultBranch = $this->defaultBranch($appInstance);
@@ -155,7 +155,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
         return $this->resolution($result->stdout, $appInstance);
     }
 
-    public function inspectResolved(AppInstance $appInstance): DevelopmentSourceResolution
+    public function inspectResolved(Instance $appInstance): DevelopmentSourceResolution
     {
         $context = $this->context($appInstance);
         $result = $this->ssh->execute(
@@ -188,7 +188,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
      * @param  array{repository: string, allowedRoot: string, root: StoragePath, managedUser: string, managedGroup: string}  $context
      * @return non-empty-list<string>
      */
-    private function arguments(AppInstance $appInstance, array $context): array
+    private function arguments(Instance $appInstance, array $context): array
     {
         return [
             'bash',
@@ -202,7 +202,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
         ];
     }
 
-    private function defaultBranch(AppInstance $appInstance): string
+    private function defaultBranch(Instance $appInstance): string
     {
         $defaultBranch = $appInstance->app->default_branch;
 
@@ -210,7 +210,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
             throw new RuntimeConvergenceException(
                 step: 'app-instance-source-resolve',
                 errorCode: 'instance.branch_resolution_failed',
-                message: "AppInstance [{$appInstance->name}] has incomplete App source defaults.",
+                message: "Instance [{$appInstance->name}] has incomplete App source defaults.",
             );
         }
 
@@ -218,7 +218,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
     }
 
     /** @return array{repository: string, allowedRoot: string, root: StoragePath, managedUser: string, managedGroup: string} */
-    private function context(AppInstance $appInstance): array
+    private function context(Instance $appInstance): array
     {
         $appInstance->loadMissing(['app', 'node']);
 
@@ -226,7 +226,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
             throw new RuntimeConvergenceException(
                 step: 'app-instance-source-layout',
                 errorCode: 'instance.source_layout_conflict',
-                message: "AppInstance [{$appInstance->name}] does not own an independent checkout.",
+                message: "Instance [{$appInstance->name}] does not own an independent checkout.",
             );
         }
 
@@ -242,7 +242,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
         ];
     }
 
-    private function resolution(string $stdout, AppInstance $appInstance): DevelopmentSourceResolution
+    private function resolution(string $stdout, Instance $appInstance): DevelopmentSourceResolution
     {
         $lines = preg_split('/\R/', trim($stdout));
 
@@ -255,14 +255,14 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
             throw new RuntimeConvergenceException(
                 step: 'app-instance-source-result',
                 errorCode: 'instance.source_identity_invalid',
-                message: "AppInstance [{$appInstance->name}] returned invalid source evidence.",
+                message: "Instance [{$appInstance->name}] returned invalid source evidence.",
             );
         }
 
         return new DevelopmentSourceResolution($lines[0], $lines[1]);
     }
 
-    private function selectedBranch(AppInstance $appInstance): string
+    private function selectedBranch(Instance $appInstance): string
     {
         $branch = is_string($appInstance->branch_override)
             ? $appInstance->branch_override
@@ -272,7 +272,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceLifecycle implements Deve
             throw new RuntimeConvergenceException(
                 step: 'app-instance-source-resolve',
                 errorCode: 'instance.branch_resolution_failed',
-                message: "AppInstance [{$appInstance->name}] has an invalid branch selection.",
+                message: "Instance [{$appInstance->name}] has an invalid branch selection.",
             );
         }
 

@@ -6,10 +6,10 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\AppInstances\ProductionReleaseLayout;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppInstances\RecordedProductionAppInstanceContentRetention;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceRemovalMember;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 
@@ -28,7 +28,7 @@ afterEach(function (): void {
 });
 
 it('records retained production identity without changing content bytes or ownership', function (): void {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Retained',
         'slug' => 'retained',
         'repository_url' => 'https://example.test/retained.git',
@@ -43,9 +43,9 @@ it('records retained production identity without changing content bytes or owner
         'wireguard_ip' => '10.44.0.81',
     ]);
     $node->roles()->create(['role' => 'app-prod', 'status' => LifecycleStatus::Active]);
-    $instance = AppInstance::query()
+    $instance = Instance::query()
         ->create([
-            'app_id' => $app->id,
+            'project_id' => $app->id,
             'node_id' => $node->id,
             'name' => 'production',
             'environment' => 'production',
@@ -62,9 +62,9 @@ it('records retained production identity without changing content bytes or owner
         /** @var list<int> */
         public array $cleared = [];
 
-        public function validateCurrent(AppInstance $appInstance): void {}
+        public function validateCurrent(Instance $appInstance): void {}
 
-        public function clearCurrent(AppInstance $appInstance): void
+        public function clearCurrent(Instance $appInstance): void
         {
             $this->cleared[] = $appInstance->id;
         }
@@ -72,8 +72,8 @@ it('records retained production identity without changing content bytes or owner
     $retention = new RecordedProductionAppInstanceContentRetention($layout);
     $inventory = $retention->inventory($instance);
     $member = new AppInstanceRemovalMember([
-        'app_instance_id' => $instance->id,
-        'app_id' => $instance->app_id,
+        'instance_id' => $instance->id,
+        'project_id' => $instance->project_id,
         'node_id' => $instance->node_id,
         'name' => $instance->name,
         'environment' => $instance->defaultAppEnv(),

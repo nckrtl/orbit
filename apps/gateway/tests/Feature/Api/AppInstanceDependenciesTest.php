@@ -23,24 +23,24 @@ use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Activity;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 
 use function Pest\Laravel\mock;
 
-/** @return array{Node, AppInstance} */
+/** @return array{Node, Instance} */
 function dependency_api_fixture(): array
 {
     $caller = Node::query()->create(['public_ssh_host' => '192.0.2.80', 'user' => 'orbit', 'name' => 'inventory-caller', 'wireguard_ip' => '10.44.0.80', 'status' => 'active']);
     $owner = Node::query()->create(['public_ssh_host' => '192.0.2.81', 'name' => 'inventory-owner', 'wireguard_ip' => '10.44.0.81', 'user' => 'orbit', 'status' => 'active']);
     orbit_test_set_app_placement_role($owner, false);
     $caller->accessibleNodes()->attach($owner);
-    $app = OrbitApp::query()->create(['name' => 'Inventory', 'slug' => 'inventory', 'repository_url' => 'https://example.test/inventory.git']);
+    $app = Project::query()->create(['name' => 'Inventory', 'slug' => 'inventory', 'repository_url' => 'https://example.test/inventory.git']);
     $instance = $app->appInstances()->create(['node_id' => $owner->id, 'name' => 'development', 'environment' => 'development', 'status' => 'active', 'source_layout' => 'checkout', 'checkout_path' => '/home/orbit/project']);
 
     return [$caller, $instance];
@@ -65,7 +65,7 @@ function dependency_api_remote(Closure $receipt): void
     mock(SshExecutor::class)->shouldReceive('execute')->andReturnUsing(fn (): CommandResult => new CommandResult(0, json_encode($receipt(), JSON_THROW_ON_ERROR), '', 1, false));
 }
 
-function dependency_api_seed(AppInstance $instance): void
+function dependency_api_seed(Instance $instance): void
 {
     $graph = app(ReadNpmDependencyGraphAction::class)->execute(
         file_get_contents(base_path('tests/Fixtures/Dependencies/Npm/manifest.json')),
@@ -76,16 +76,16 @@ function dependency_api_seed(AppInstance $instance): void
     )));
 }
 
-function dependency_api_removing(AppInstance $instance, bool $markedRemoving): void
+function dependency_api_removing(Instance $instance, bool $markedRemoving): void
 {
     $instance->app->update(['repository_identity' => 'example.test/inventory']);
     $instance->update(['root' => 'public', 'branch' => 'main', 'starting_commit' => str_repeat('a', 40)]);
-    $route = Route::query()->create(['app_id' => $instance->app_id, 'node_id' => $instance->node_id, 'generation_basis_node_id' => $instance->node_id, 'domain' => 'inventory.test', 'provenance' => 'generated', 'publication' => 'private', 'status' => 'pending']);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route = Route::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id, 'generation_basis_node_id' => $instance->node_id, 'domain' => 'inventory.test', 'provenance' => 'generated', 'publication' => 'private', 'status' => 'pending']);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => 'active']);
-    $removal = AppInstanceRemoval::query()->create(['id' => (string) Str::uuid(), 'requested_app_instance_id' => $instance->id, 'requested_name' => $instance->name, 'force' => false, 'inventory_digest' => str_repeat('d', 64), 'total' => 1, 'status' => 'removing', 'current_step' => 'source_preparation']);
+    $removal = AppInstanceRemoval::query()->create(['id' => (string) Str::uuid(), 'requested_instance_id' => $instance->id, 'requested_name' => $instance->name, 'force' => false, 'inventory_digest' => str_repeat('d', 64), 'total' => 1, 'status' => 'removing', 'current_step' => 'source_preparation']);
     $removal->members()->create([
-        'position' => 0, 'app_instance_id' => $instance->id, 'app_id' => $instance->app_id, 'node_id' => $instance->node_id,
+        'position' => 0, 'instance_id' => $instance->id, 'project_id' => $instance->project_id, 'node_id' => $instance->node_id,
         'name' => $instance->name, 'environment' => $instance->defaultAppEnv(), 'source_layout' => $instance->source_layout,
         'checkout_path' => $instance->checkout_path, 'linked_worktree_paths' => [], 'source_digest' => str_repeat('d', 64),
         'route_id' => $route->id, 'repository_identity' => 'example.test/inventory', 'root' => 'public', 'branch' => 'main',
@@ -112,7 +112,7 @@ describe('single-instance dependency API', function (): void {
                 'javascript' => ['ecosystem' => 'npm', 'state' => 'unknown', 'succeeded' => null, 'attempted_at' => null, 'error_code' => null, 'snapshot' => null]],
             'meta' => ['request_id' => $response->headers->get('X-Orbit-Request-Id')],
         ]);
-        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 0);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 0);
     });
 
     it('scans and reads complete graphs with safe provenance and independent scopes', function (): void {
@@ -140,7 +140,7 @@ describe('single-instance dependency API', function (): void {
         expect($read->json('data.javascript.snapshot.source.project_root'))->toBe('/home/orbit/project');
         expect($read->getContent())->not->toContain('fixture-secret', 'fixture-user', 'never-fetch', 'must-never-execute', 'hasInstallScript');
         expect(Activity::query()->get()->toJson())->not->toContain('fixture-secret', 'fixture-user', 'never-fetch', 'must-never-execute');
-        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 2);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 2);
     });
 
     it('returns partial failure with the authoritative stale snapshot and original time', function (): void {
@@ -163,7 +163,7 @@ describe('single-instance dependency API', function (): void {
             ->assertJsonPath('data.javascript.snapshot', $first->json('data.javascript.snapshot'));
         expect($response->json('data.javascript.attempted_at'))->not->toBe($first->json('data.javascript.attempted_at'));
         $this->get("/api/v1/instances/{$instance->id}/dependencies", ['Accept' => 'application/json'])->assertJsonPath('data', $response->json('data'));
-        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 4);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 4);
     });
 
     it('distinguishes a failed first attempt from a present empty project', function (): void {
@@ -194,7 +194,7 @@ describe('single-instance dependency API', function (): void {
 
         $response->assertForbidden()->assertJsonPath('error.code', $known ? 'node_access.required' : 'peer.identity_unknown')->assertJsonMissingPath('data');
         expect($response->getContent())->not->toContain('shared', 'snapshot', 'fixture-secret');
-        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 1);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 1);
     })->with([['GET', '', true], ['POST', '/scan', true], ['GET', '', false], ['POST', '/scan', false]]);
 
     it('returns 404 for missing and nonnumeric IDs without collection', function (string $method, string $suffix, string $id): void {
@@ -203,7 +203,7 @@ describe('single-instance dependency API', function (): void {
 
         $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->call($method, "/api/v1/instances/{$id}/dependencies{$suffix}", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: $method === 'POST' ? '{}' : '')
             ->assertNotFound()->assertJsonMissingPath('data');
-        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 0);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 0);
     })->with([['GET', '', '999999'], ['POST', '/scan', '999999'], ['GET', '', 'other.test'], ['POST', '/scan', 'other.test']]);
 
     it('rejects unsupported input before scanning', function (string $method, string $suffix, string $body): void {
@@ -212,7 +212,7 @@ describe('single-instance dependency API', function (): void {
 
         $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->call($method, "/api/v1/instances/{$instance->id}/dependencies{$suffix}", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: $body)
             ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed')->assertJsonMissingPath('data');
-        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 0);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 0);
     })->with([['POST', '/scan', ''], ['POST', '/scan', '[]'], ['POST', '/scan', '{'], ['POST', '/scan', '{"command":"fixture-secret"}'], ['POST', '/scan?all=1', '{}'], ['GET', '?all=1', ''], ['GET', '', '{}']]);
 
     it('refuses removing and retained-removal targets without disclosing stored inventory', function (string $method, string $suffix, bool $markedRemoving): void {
@@ -223,7 +223,7 @@ describe('single-instance dependency API', function (): void {
 
         $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->call($method, "/api/v1/instances/{$instance->id}/dependencies{$suffix}", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: $method === 'POST' ? '{}' : '')
             ->assertConflict()->assertJsonPath('error.code', 'dependencies.instance_unavailable')->assertJsonMissingPath('data');
-        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 1);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 1);
     })->with([['GET', '', true], ['POST', '/scan', true], ['GET', '', false], ['POST', '/scan', false]]);
 
     it('rechecks authorization after collection before returning a graph', function (): void {
@@ -254,22 +254,22 @@ describe('single-instance dependency API', function (): void {
 
         $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->call('POST', "/api/v1/instances/{$instance->id}/dependencies/scan", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')
             ->assertConflict()->assertJsonPath('error.code', 'dependencies.instance_unavailable')->assertJsonMissingPath('data');
-        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 0);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 0);
     })->with([[['status' => 'reserved']]]);
 
     it('does not return inventory when the instance disappears during collection', function (): void {
         [$caller, $instance] = dependency_api_fixture();
         dependency_api_seed($instance);
         dependency_api_remote(function () use ($instance): array {
-            AppInstance::query()->whereKey($instance->id)->delete();
+            Instance::query()->whereKey($instance->id)->delete();
 
             return dependency_api_receipt();
         });
 
         $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->call('POST', "/api/v1/instances/{$instance->id}/dependencies/scan", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')
             ->assertNotFound()->assertJsonMissingPath('data');
-        $this->assertDatabaseCount('app_instance_dependency_observations', 0);
-        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 0);
+        $this->assertDatabaseCount('instance_dependency_observations', 0);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 0);
     });
 
     it('does not return retained inventory when removal begins during collection', function (): void {
@@ -286,7 +286,7 @@ describe('single-instance dependency API', function (): void {
 
         $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->call('POST', "/api/v1/instances/{$instance->id}/dependencies/scan", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')
             ->assertConflict()->assertJsonPath('error.code', 'dependencies.instance_unavailable')->assertJsonMissingPath('data');
-        $this->assertDatabaseCount('app_instance_dependency_resolutions', 8);
+        $this->assertDatabaseCount('instance_dependency_resolutions', 8);
     });
 
     it('maps lifecycle lock contention to a stable 409 without attempts', function (): void {
@@ -305,7 +305,7 @@ describe('single-instance dependency API', function (): void {
         try {
             $response = $owner->run([$instance->id], fn () => $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->call('POST', "/api/v1/instances/{$instance->id}/dependencies/scan", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}'));
             $response->assertConflict()->assertJsonPath('error.code', 'dependencies.operation_busy')->assertJsonMissingPath('data');
-            $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 0);
+            $this->assertDatabaseCount('instance_dependency_scan_attempts', 0);
         } finally {
             new Filesystem()->deleteDirectory($directory);
         }
@@ -378,7 +378,7 @@ describe('single-instance dependency update API', function (): void {
             ->assertJsonPath('data.composer.status', 'not_run')
             ->assertJsonPath('data.javascript.status', 'not_run')
             ->assertJsonPath('data.may_have_mutated', false);
-        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 0);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 0);
     });
 
     it('rejects unauthorized update callers without mutation', function (): void {
@@ -389,7 +389,7 @@ describe('single-instance dependency update API', function (): void {
         $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
             ->call('POST', "/api/v1/instances/{$instance->id}/dependencies/update", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')
             ->assertForbidden()->assertJsonPath('error.code', 'node_access.required')->assertJsonMissingPath('data');
-        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 0);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 0);
     });
 
     it('rejects unsupported update input before mutation', function (string $body): void {

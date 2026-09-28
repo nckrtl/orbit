@@ -10,7 +10,7 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AppInstances\TransferAppInstanceRequest;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use Illuminate\Http\JsonResponse;
 
 final class AppInstanceTransfersController extends Controller
@@ -18,7 +18,7 @@ final class AppInstanceTransfersController extends Controller
     #[RequiresNodeAccess(ServingNode::InstanceTransfer)]
     public function store(
         TransferAppInstanceRequest $request,
-        AppInstance $instance,
+        Instance $instance,
         TransferAppInstanceAction $action,
     ): JsonResponse {
         $result = $action->execute($instance, $request->payload());

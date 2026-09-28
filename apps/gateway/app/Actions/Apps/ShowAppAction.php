@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Actions\Apps;
 
-use App\Models\App as OrbitApp;
+use App\Models\Project;
 
 final readonly class ShowAppAction
 {
-    public function handle(OrbitApp $app): OrbitApp
+    public function handle(Project $app): Project
     {
         return $app;
     }

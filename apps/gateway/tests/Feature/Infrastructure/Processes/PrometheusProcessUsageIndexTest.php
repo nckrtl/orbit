@@ -7,7 +7,7 @@ use App\Domain\Metrics\MetricsCredentialManager;
 use App\Domain\Processes\ProcessRuntime;
 use App\Infrastructure\Metrics\PrometheusProcessMetricsQueries;
 use App\Infrastructure\Processes\PrometheusProcessUsageIndex;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Http\Client\Request;
@@ -117,7 +117,7 @@ function usage_index_process(int $id, string $name, ProcessRuntime $runtime = Pr
     $process->id = $id;
     $process->name = $name;
     $process->runtime = $runtime;
-    $process->owner_type = AppInstance::class;
+    $process->owner_type = Instance::class;
     $process->owner_id = 1;
 
     return $process;

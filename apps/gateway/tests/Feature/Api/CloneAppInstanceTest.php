@@ -27,10 +27,10 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 
 beforeEach(function (): void {
@@ -39,14 +39,14 @@ beforeEach(function (): void {
     $this->candidateNode = clone_api_node('clone-api-candidate');
     $this->candidateNode->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $this->destinationNode = clone_api_node('clone-api-destination');
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Clone API',
         'slug' => 'clone-api',
         'repository_url' => 'https://example.test/clone-api.git',
         'default_branch' => 'main',
     ]);
-    $this->candidate = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $this->candidate = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $this->candidateNode->id,
         'name' => 'candidate',
         'environment' => 'development',
@@ -80,7 +80,7 @@ it('returns 422 for malformed duplicate unknown or forbidden clone input before 
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation.failed');
 
-    expect(AppInstance::query()->count())
+    expect(Instance::query()->count())
         ->toBe(1)
         ->and(json_encode(Activity::query()->sole()->toArray(), JSON_THROW_ON_ERROR))
         ->not->toContain($sentinel);
@@ -89,7 +89,7 @@ it('returns 422 for malformed duplicate unknown or forbidden clone input before 
     'array body' => ['[]'],
     'duplicate member' => ['{"node_id":1,"node_id":2,"name":"target","preview_name":"preview"}'],
     'unknown member' => ['{"node_id":1,"name":"target","preview_name":"preview","unknown":"__SENTINEL__"}'],
-    'target App' => ['{"node_id":1,"name":"target","preview_name":"preview","app_id":"__SENTINEL__"}'],
+    'target App' => ['{"node_id":1,"name":"target","preview_name":"preview","project_id":"__SENTINEL__"}'],
     'commit SHA' => ['{"node_id":1,"name":"target","preview_name":"preview","commit_sha":"__SENTINEL__"}'],
     'production user' => ['{"node_id":1,"name":"target","preview_name":"preview","user":"__SENTINEL__"}'],
     'destination path' => ['{"node_id":1,"name":"target","preview_name":"preview","destination_path":"__SENTINEL__"}'],
@@ -119,7 +119,7 @@ it('returns 403 for malformed destination input when the caller lacks candidate 
         ->assertJsonPath('error.code', 'node_access.required')
         ->assertJsonPath('error.details.serving_node.id', $this->candidateNode->id);
 
-    expect(AppInstance::query()->count())->toBe(1);
+    expect(Instance::query()->count())->toBe(1);
 })->with([
     'signed integer string' => '+3',
     'boolean' => true,
@@ -144,7 +144,7 @@ it('returns 403 before cloning when the caller lacks destination Node access', f
         ->assertJsonPath('error.details.serving_node.id', $this->destinationNode->id);
 
     $activity = Activity::query()->where('command', 'instance:clone')->sole();
-    expect(AppInstance::query()->count())
+    expect(Instance::query()->count())
         ->toBe(1)
         ->and($activity->properties?->get('input'))
         ->toBe([
@@ -169,17 +169,17 @@ it('returns 404 for a missing candidate before clone execution', function (): vo
         ->assertNotFound()
         ->assertJsonPath('error.code', 'http.404');
 
-    expect(AppInstance::query()->count())->toBe(1);
+    expect(Instance::query()->count())->toBe(1);
 });
 
-it('returns the ordinary created AppInstance and records the target without SQLite path disclosure', function (): void {
+it('returns the ordinary created Instance and records the target without SQLite path disclosure', function (): void {
     $this->destinationNode->update(['tld' => 'prod.orbit']);
     $this->destinationNode->roles()->create([
         'role' => RoleName::AppProd,
         'status' => LifecycleStatus::Active,
     ]);
     $candidateRoute = Route::query()->create([
-        'app_id' => $this->candidate->app_id,
+        'project_id' => $this->candidate->project_id,
         'node_id' => $this->candidateNode->id,
         'domain' => 'candidate.clone-api.test',
         'provenance' => RouteProvenance::Explicit,
@@ -187,7 +187,7 @@ it('returns the ordinary created AppInstance and records the target without SQLi
         'status' => RouteStatus::Pending,
     ]);
     $candidateRoute->targets()->create([
-        'app_instance_id' => $this->candidate->id,
+        'instance_id' => $this->candidate->id,
         'position' => 0,
     ]);
     $candidateRoute->update(['status' => RouteStatus::Active]);
@@ -212,7 +212,7 @@ it('returns the ordinary created AppInstance and records the target without SQLi
             'preview_name' => 'shop.com',
         ]);
 
-    $target = AppInstance::query()->where('name', 'target')->sole();
+    $target = Instance::query()->where('name', 'target')->sole();
     $response
         ->assertCreated()
         ->assertJsonPath('data.id', $target->id)
@@ -254,7 +254,7 @@ it('returns an active Cluster-scoped clone with the production Node TLD', functi
         'status' => LifecycleStatus::Active,
     ]);
     $candidateRoute = Route::query()->create([
-        'app_id' => $this->candidate->app_id,
+        'project_id' => $this->candidate->project_id,
         'node_id' => $this->candidateNode->id,
         'domain' => 'candidate.clone-api.test',
         'provenance' => RouteProvenance::Explicit,
@@ -262,7 +262,7 @@ it('returns an active Cluster-scoped clone with the production Node TLD', functi
         'status' => RouteStatus::Pending,
     ]);
     $candidateRoute->targets()->create([
-        'app_instance_id' => $this->candidate->id,
+        'instance_id' => $this->candidate->id,
         'position' => 0,
     ]);
     $candidateRoute->update(['status' => RouteStatus::Active]);
@@ -286,7 +286,7 @@ it('returns an active Cluster-scoped clone with the production Node TLD', functi
             'preview_name' => 'shop.com',
         ]);
 
-    $target = AppInstance::query()->where('name', 'target')->sole();
+    $target = Instance::query()->where('name', 'target')->sole();
     $route = $target->routes->sole();
     $response
         ->assertCreated()
@@ -313,7 +313,7 @@ function clone_api_node(string $name): Node
 
 final class Orb198ApiCandidateInspector implements AppInstanceCloneCandidateInspector
 {
-    public function inspect(AppInstance $candidate, string $targetBranch): CloneCandidateSource
+    public function inspect(Instance $candidate, string $targetBranch): CloneCandidateSource
     {
         $candidate->loadMissing('node');
 
@@ -347,21 +347,21 @@ final class Orb198ApiSourceLock implements AppDevSourceOperationLock
 
 final class Orb198ApiProductionSource implements ProductionAppInstanceSourceLifecycle
 {
-    public function prepareUser(AppInstance $appInstance): void {}
+    public function prepareUser(Instance $appInstance): void {}
 
-    public function prepareSource(AppInstance $appInstance, bool $allowExisting): void {}
+    public function prepareSource(Instance $appInstance, bool $allowExisting): void {}
 
-    public function resolve(AppInstance $appInstance): DevelopmentSourceResolution
+    public function resolve(Instance $appInstance): DevelopmentSourceResolution
     {
         return new DevelopmentSourceResolution((string) $appInstance->branch, str_repeat('b', 40));
     }
 
-    public function inspectProfile(AppInstance $appInstance): DevelopmentSourceProfile
+    public function inspectProfile(Instance $appInstance): DevelopmentSourceProfile
     {
         return new DevelopmentSourceProfile(null, false);
     }
 
-    public function prepareCaddyAccess(AppInstance $appInstance): void {}
+    public function prepareCaddyAccess(Instance $appInstance): void {}
 }
 
 final class Orb198ApiEnvironmentPreflight implements AppInstanceOperationPreflight
@@ -389,13 +389,13 @@ final class Orb198ApiSqliteSeeder implements AppInstanceSqliteSeeder
 
 final class Orb198ApiProductionProjection implements ProductionRouteProjector
 {
-    public function prepareRuntime(AppInstance $appInstance, Route $route): void {}
+    public function prepareRuntime(Instance $appInstance, Route $route): void {}
 
-    public function prepareCertificate(AppInstance $appInstance, Route $route): void {}
+    public function prepareCertificate(Instance $appInstance, Route $route): void {}
 
-    public function prepareFirewall(AppInstance $appInstance): void {}
+    public function prepareFirewall(Instance $appInstance): void {}
 
-    public function publish(AppInstance $appInstance, Route $route): void
+    public function publish(Instance $appInstance, Route $route): void
     {
         throw new LogicException('Clone publication must use the split projector.');
     }
@@ -403,15 +403,15 @@ final class Orb198ApiProductionProjection implements ProductionRouteProjector
 
 final class Orb198ApiCloneProjection implements ProductionCloneRouteProjector
 {
-    public function prepareWorkloadCaddy(AppInstance $appInstance, Route $route): void {}
+    public function prepareWorkloadCaddy(Instance $appInstance, Route $route): void {}
 
-    public function prepareRouterCertificate(AppInstance $appInstance, Route $route): void {}
+    public function prepareRouterCertificate(Instance $appInstance, Route $route): void {}
 
-    public function prepareRouteFirewall(AppInstance $appInstance, Route $route): void {}
+    public function prepareRouteFirewall(Instance $appInstance, Route $route): void {}
 
-    public function verifyWorkload(AppInstance $appInstance, Route $route): void {}
+    public function verifyWorkload(Instance $appInstance, Route $route): void {}
 
-    public function prepareRouterCaddy(AppInstance $appInstance, Route $route): void {}
+    public function prepareRouterCaddy(Instance $appInstance, Route $route): void {}
 
     public function prepareDns(Route $route): void {}
 }

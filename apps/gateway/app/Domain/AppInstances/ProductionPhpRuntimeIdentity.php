@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\AppInstances;
 
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class ProductionPhpRuntimeIdentity
 {
@@ -35,7 +35,7 @@ final readonly class ProductionPhpRuntimeIdentity
         $this->markerPath = "{$this->runtimeDirectory}/orbit.identity";
     }
 
-    public static function forProvisioning(AppInstance $appInstance, string $version): self
+    public static function forProvisioning(Instance $appInstance, string $version): self
     {
         $user = $appInstance->production_user;
         $home = $appInstance->production_home;
@@ -65,7 +65,7 @@ final readonly class ProductionPhpRuntimeIdentity
         );
     }
 
-    public static function isAbsent(AppInstance $appInstance): bool
+    public static function isAbsent(Instance $appInstance): bool
     {
         $appInstance->loadMissing('app');
 
@@ -80,7 +80,7 @@ final readonly class ProductionPhpRuntimeIdentity
         return $appInstance->selected_php_version === null && $associationIsAbsent;
     }
 
-    public static function from(AppInstance $appInstance): self
+    public static function from(Instance $appInstance): self
     {
         $version = $appInstance->selected_php_version;
 

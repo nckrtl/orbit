@@ -20,7 +20,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use Closure;
 use Illuminate\Contracts\Cache\Lock;
@@ -117,7 +117,7 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
             return;
         }
 
-        $checkouts = AppInstance::query()
+        $checkouts = Instance::query()
             ->where('node_id', $node->getKey())
             ->orderBy('id')
             ->pluck('checkout_path')

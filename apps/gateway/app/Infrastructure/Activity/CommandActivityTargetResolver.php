@@ -8,11 +8,11 @@ use App\Domain\Processes\ProcessTargetType;
 use App\Domain\Schedules\ScheduleTargetType;
 use App\Domain\Tools\ToolOperationException;
 use App\Infrastructure\Shared\StoredValue;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\FirewallRule;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
+use App\Models\Project;
 use App\Models\Route;
 use App\Models\Schedule;
 use App\Models\Tool;
@@ -145,20 +145,20 @@ final readonly class CommandActivityTargetResolver
     {
         $clone = $request->attributes->get('orbit.app_instance_clone');
 
-        if ($clone instanceof AppInstance) {
+        if ($clone instanceof Instance) {
             return $clone;
         }
 
         $registration = $request->attributes->get('orbit.app_instance_registration');
 
-        if ($registration instanceof AppInstance) {
+        if ($registration instanceof Instance) {
             return $registration;
         }
 
         if (str_contains($request->path(), '-definitions')) {
             $app = $request->route('app');
 
-            return $app instanceof OrbitApp ? $app : null;
+            return $app instanceof Project ? $app : null;
         }
 
         if (str_starts_with((string) $request->route()?->getName(), 'process:')) {
@@ -196,9 +196,9 @@ final readonly class CommandActivityTargetResolver
         return match ($request->route()?->getName()) {
             'node:add' => Node::query()->where('name', $request->input('name'))->first(),
             'doctor' => $this->doctorNode($request),
-            'project:create' => OrbitApp::query()->where('slug', $request->input('slug'))->first(),
-            'instance:create' => AppInstance::query()
-                ->where('app_id', $request->integer('project_id'))
+            'project:create' => Project::query()->where('slug', $request->input('slug'))->first(),
+            'instance:create' => Instance::query()
+                ->where('project_id', $request->integer('project_id'))
                 ->where('name', $request->input('name'))
                 ->first(),
             'route:create' => Route::query()
@@ -256,7 +256,7 @@ final readonly class CommandActivityTargetResolver
             ->first();
     }
 
-    private function processOwner(Request $request): Node|AppInstance|null
+    private function processOwner(Request $request): Node|Instance|null
     {
         $process = $request->route('process');
 
@@ -266,7 +266,7 @@ final readonly class CommandActivityTargetResolver
 
         if ($process instanceof OrbitProcess) {
             return match (true) {
-                AppInstance::isMorphType($process->owner_type) => AppInstance::query()->find($process->owner_id),
+                Instance::isMorphType($process->owner_type) => Instance::query()->find($process->owner_id),
                 $process->owner_type === Node::class => Node::query()->find($process->owner_id),
                 default => null,
             };
@@ -282,13 +282,13 @@ final readonly class CommandActivityTargetResolver
         $targetId = $request->integer('target_id');
 
         return match ($type) {
-            ProcessTargetType::AppInstance => AppInstance::query()->find($targetId),
+            ProcessTargetType::Instance => Instance::query()->find($targetId),
             ProcessTargetType::Node => Node::query()->find($targetId),
             default => null,
         };
     }
 
-    private function scheduleTarget(Request $request): Node|AppInstance|null
+    private function scheduleTarget(Request $request): Node|Instance|null
     {
         $schedule = $request->attributes->get('orbit.schedule_activity');
 
@@ -299,7 +299,7 @@ final readonly class CommandActivityTargetResolver
         if ($schedule instanceof Schedule) {
             return match (true) {
                 $schedule->target_type === Node::class => Node::query()->find($schedule->target_id),
-                AppInstance::isMorphType($schedule->target_type) => AppInstance::query()->find($schedule->target_id),
+                Instance::isMorphType($schedule->target_type) => Instance::query()->find($schedule->target_id),
                 default => null,
             };
         }
@@ -317,7 +317,7 @@ final readonly class CommandActivityTargetResolver
 
         return match (ScheduleTargetType::tryFrom($type)) {
             ScheduleTargetType::Node => Node::query()->find($targetId),
-            ScheduleTargetType::AppInstance => AppInstance::query()->find($targetId),
+            ScheduleTargetType::Instance => Instance::query()->find($targetId),
             default => null,
         };
     }
@@ -328,7 +328,7 @@ final readonly class CommandActivityTargetResolver
             return $subject->exists ? $subject->id : null;
         }
 
-        if ($subject instanceof AppInstance) {
+        if ($subject instanceof Instance) {
             return $subject->node_id;
         }
 

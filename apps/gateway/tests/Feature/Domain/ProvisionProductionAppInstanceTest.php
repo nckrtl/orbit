@@ -12,13 +12,13 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppInstances\NativeProductionAppInstanceProvisioner;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 
 beforeEach(function (): void {
-    $this->orbitApp = OrbitApp::query()->create([
+    $this->orbitApp = Project::query()->create([
         'name' => 'Production app',
         'slug' => 'production-app',
         'repository_url' => 'https://example.test/production.git',
@@ -57,7 +57,7 @@ it('refuses new production placement before user home source environment or Rout
                 ->toBe('New production AppInstances require a candidate. Use instance:clone.');
         });
 
-    expect(AppInstance::query()->exists())
+    expect(Instance::query()->exists())
         ->toBeFalse()
         ->and(Route::query()->exists())
         ->toBeFalse();
@@ -80,8 +80,8 @@ it('refuses a repeat for an existing production Instance before mutation', funct
 });
 
 it('refuses an incomplete production record without resuming retired creation', function (): void {
-    $instance = AppInstance::query()->create([
-        'app_id' => $this->orbitApp->id,
+    $instance = Instance::query()->create([
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'live',
         'environment' => 'production',
@@ -114,12 +114,12 @@ it('refuses production creation outside the recorded home release boundary', fun
     expect($instance->refresh()->getAttributes())->toBe($before);
 })->with(['/releases/../foreign', '/releases/two/nested', '/releases/.hidden', '/other/release']);
 
-function provision_production_active_instance(OrbitApp $app, Node $node, string $name): AppInstance
+function provision_production_active_instance(Project $app, Node $node, string $name): Instance
 {
     $user = "orbit-app-{$app->id}";
     $home = "/home/{$user}";
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => $name,
         'environment' => 'production',
@@ -137,7 +137,7 @@ function provision_production_active_instance(OrbitApp $app, Node $node, string 
         'status' => AppInstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'generation_basis_node_id' => $node->id,
         'domain' => "{$name}.{$app->slug}.{$node->tld}",
@@ -146,7 +146,7 @@ function provision_production_active_instance(OrbitApp $app, Node $node, string 
         'status' => RouteStatus::Pending,
     ]);
     $route->targets()->create([
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'position' => 0,
     ]);
     $route->update(['status' => RouteStatus::Active]);

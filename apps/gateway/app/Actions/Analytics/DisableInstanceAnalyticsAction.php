@@ -8,7 +8,7 @@ use App\Actions\Routes\PublishPublicRouteAction;
 use App\Actions\Routes\RemoveRouteAction;
 use App\Data\Analytics\InstanceAnalyticsData;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Route;
 
 final readonly class DisableInstanceAnalyticsAction
@@ -20,7 +20,7 @@ final readonly class DisableInstanceAnalyticsAction
         private AppInstanceEnvironmentOperationLock $operations,
     ) {}
 
-    public function execute(AppInstance $instance): InstanceAnalyticsData
+    public function execute(Instance $instance): InstanceAnalyticsData
     {
         return $this->operations->run([$instance->id], function () use ($instance): InstanceAnalyticsData {
             foreach ($this->show->trackingRoutes($instance) as $route) {

@@ -19,10 +19,10 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 
 it('inspects an owned systemd unit with exact read-only commands on the selected node', function (): void {
     $deadline = new CommandDeadline(static fn (): float => 100.0);
@@ -230,13 +230,13 @@ function native_process_inspector(
         'wireguard_ip' => '10.44.0.51',
     ]);
     orbit_test_set_app_placement_role($node, false);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => fake()->word(),
         'slug' => fake()->unique()->slug(),
         'repository_url' => 'git@example.test:app.git',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => fake()->word(),
         'environment' => 'development',
@@ -246,7 +246,7 @@ function native_process_inspector(
         'status' => 'active',
     ]);
     $process = Process::query()->create([
-        'owner_type' => AppInstance::MorphAlias,
+        'owner_type' => Instance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => fake()->unique()->slug(2),
         'runtime' => $runtime,

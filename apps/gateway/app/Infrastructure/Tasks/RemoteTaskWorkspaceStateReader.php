@@ -8,19 +8,19 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use JsonException;
 
 final readonly class RemoteTaskWorkspaceStateReader implements TaskWorkspaceStateReader
 {
     public function __construct(private AppDevSshExecutor $ssh) {}
 
-    public function headCommit(AppInstance $instance): ?string
+    public function headCommit(Instance $instance): ?string
     {
         return $this->run($instance, 'git -C "$checkout" rev-parse HEAD');
     }
 
-    public function currentBranch(AppInstance $instance): ?string
+    public function currentBranch(Instance $instance): ?string
     {
         return $this->run($instance, 'git -C "$checkout" rev-parse --abbrev-ref HEAD');
     }
@@ -29,7 +29,7 @@ final readonly class RemoteTaskWorkspaceStateReader implements TaskWorkspaceStat
      * Composer resolves an abbreviated command name, so `composer check` runs the built-in
      * `check-platform-reqs` command when the project defines no `check` script.
      */
-    public function definesComposerCheckScript(AppInstance $instance): bool
+    public function definesComposerCheckScript(Instance $instance): bool
     {
         $manifest = $this->run($instance, 'cat "$checkout/composer.json"');
         if ($manifest === null || $manifest === '') {
@@ -48,7 +48,7 @@ final readonly class RemoteTaskWorkspaceStateReader implements TaskWorkspaceStat
         return (is_string($check) && trim($check) !== '') || (is_array($check) && $check !== []);
     }
 
-    private function run(AppInstance $instance, string $command): ?string
+    private function run(Instance $instance, string $command): ?string
     {
         $instance->loadMissing('node');
         if ($instance->checkout_path === '') {

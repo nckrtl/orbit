@@ -33,7 +33,7 @@ final class AppInstanceRemovalData extends Data
 
         return new self(
             operationId: $removal->id,
-            id: $removal->requested_app_instance_id,
+            id: $removal->requested_instance_id,
             name: $removal->requested_name,
             force: $removal->force,
             status: $removal->status->value,

@@ -14,7 +14,7 @@ use Illuminate\Support\Str;
 
 /**
  * @property string $id
- * @property int|null $app_instance_id
+ * @property int|null $instance_id
  * @property int $source_node_id
  * @property int|null $source_router_node_id
  * @property int $destination_node_id
@@ -36,12 +36,15 @@ use Illuminate\Support\Str;
  * @property list<string>|null $imported_environment_keys
  * @property Carbon|null $cutover_at
  * @property Carbon|null $completed_at
- * @property-read AppInstance $appInstance
+ * @property-read Instance $appInstance
  * @property-read Node $sourceNode
  * @property-read Node $destinationNode
  */
 final class AppInstanceTransfer extends Model
 {
+    #[\Override]
+    protected $table = 'instance_transfers';
+
     #[\Override]
     public $incrementing = false;
 
@@ -52,7 +55,7 @@ final class AppInstanceTransfer extends Model
     #[\Override]
     protected $fillable = [
         'id',
-        'app_instance_id',
+        'instance_id',
         'source_node_id',
         'source_router_node_id',
         'destination_node_id',
@@ -84,10 +87,10 @@ final class AppInstanceTransfer extends Model
         });
     }
 
-    /** @return BelongsTo<AppInstance, $this> */
+    /** @return BelongsTo<Instance, $this> */
     public function appInstance(): BelongsTo
     {
-        return $this->belongsTo(AppInstance::class);
+        return $this->belongsTo(Instance::class, 'instance_id');
     }
 
     /** @return BelongsTo<Node, $this> */

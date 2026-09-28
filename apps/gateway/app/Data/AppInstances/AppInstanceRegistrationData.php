@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Data\AppInstances;
 
 use App\Data\Apps\AppData;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
+use App\Models\Project;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
@@ -24,8 +24,8 @@ final class AppInstanceRegistrationData extends Data
         public int $completedCount,
     ) {}
 
-    /** @param list<AppInstance> $sourceInstances */
-    public static function fromModels(OrbitApp $app, AppInstance $primary, array $sourceInstances): self
+    /** @param list<Instance> $sourceInstances */
+    public static function fromModels(Project $app, Instance $primary, array $sourceInstances): self
     {
         return new self(
             app: AppData::fromModel($app),

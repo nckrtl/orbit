@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\AppInstances;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 interface DevelopmentAppInstanceConfigurator
 {
-    public function inspect(AppInstance $appInstance): DevelopmentSourceProfile;
+    public function inspect(Instance $appInstance): DevelopmentSourceProfile;
 
-    public function configureLaravelUrl(AppInstance $appInstance, string $url): void;
+    public function configureLaravelUrl(Instance $appInstance, string $url): void;
 }

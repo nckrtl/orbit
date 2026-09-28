@@ -8,8 +8,8 @@ use App\Domain\AppInstances\ProductionReleaseLayout;
 use App\Domain\AppInstances\Removal\AppInstanceSourceInventory;
 use App\Domain\AppInstances\Removal\ProductionAppInstanceContentRetention;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
 use App\Models\AppInstanceRemovalMember;
+use App\Models\Instance;
 
 final readonly class RecordedProductionAppInstanceContentRetention implements ProductionAppInstanceContentRetention
 {
@@ -17,7 +17,7 @@ final readonly class RecordedProductionAppInstanceContentRetention implements Pr
         private ProductionReleaseLayout $releaseLayout,
     ) {}
 
-    public function inventory(AppInstance $appInstance): AppInstanceSourceInventory
+    public function inventory(Instance $appInstance): AppInstanceSourceInventory
     {
         $appInstance->loadMissing('app');
         $root = $appInstance->root ?? $appInstance->app->root;
@@ -36,7 +36,7 @@ final readonly class RecordedProductionAppInstanceContentRetention implements Pr
         $sourceIdentity = "production:{$appInstance->id}:{$appInstance->node_id}";
         $digest = $this->digest(
             appInstanceId: $appInstance->id,
-            appId: $appInstance->app_id,
+            appId: $appInstance->project_id,
             nodeId: $appInstance->node_id,
             checkoutPath: $appInstance->checkout_path,
             root: $root,
@@ -73,7 +73,7 @@ final readonly class RecordedProductionAppInstanceContentRetention implements Pr
     public function finalize(AppInstanceRemovalMember $member): string
     {
         $this->assertRecorded($member);
-        $appInstance = AppInstance::query()->with(['app', 'node'])->findOrFail($member->app_instance_id);
+        $appInstance = Instance::query()->with(['app', 'node'])->findOrFail($member->instance_id);
         $this->releaseLayout->clearCurrent($appInstance);
 
         return hash('sha256', "production-retained\0{$member->source_digest}");
@@ -81,16 +81,16 @@ final readonly class RecordedProductionAppInstanceContentRetention implements Pr
 
     private function assertRecorded(AppInstanceRemovalMember $member): void
     {
-        $appInstance = AppInstance::query()->with('app')->find($member->app_instance_id);
+        $appInstance = Instance::query()->with('app')->find($member->instance_id);
 
-        if (! $appInstance instanceof AppInstance || ! $appInstance->placedOnAppProd()) {
+        if (! $appInstance instanceof Instance || ! $appInstance->placedOnAppProd()) {
             $this->conflict($member->name);
         }
 
         $inventory = $this->inventory($appInstance);
 
         if (
-            $member->app_id !== $appInstance->app_id
+            $member->project_id !== $appInstance->project_id
             || $member->node_id !== $appInstance->node_id
             || $member->source_layout !== $inventory->layout
             || $member->repository_identity !== $inventory->repositoryIdentity
@@ -118,8 +118,8 @@ final readonly class RecordedProductionAppInstanceContentRetention implements Pr
         string $sourceIdentity,
     ): string {
         return hash('sha256', json_encode([
-            'app_instance_id' => $appInstanceId,
-            'app_id' => $appId,
+            'instance_id' => $appInstanceId,
+            'project_id' => $appId,
             'node_id' => $nodeId,
             'checkout_path' => $checkoutPath,
             'root' => $root,
@@ -134,7 +134,7 @@ final readonly class RecordedProductionAppInstanceContentRetention implements Pr
     {
         throw new ResourceOperationException(
             errorCode: 'instance.removal_conflict',
-            message: "Production AppInstance [{$name}] retained-content evidence changed during removal.",
+            message: "Production Instance [{$name}] retained-content evidence changed during removal.",
             status: 409,
         );
     }

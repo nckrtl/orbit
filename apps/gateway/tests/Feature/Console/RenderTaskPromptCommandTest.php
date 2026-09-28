@@ -11,8 +11,8 @@ use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskWorkspaceMcp;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskGroup;
@@ -35,7 +35,7 @@ function render_task_prompt(string $role, array $payload): array
 
 function production_task_prompt_models(): array
 {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Gateway prompts',
         'slug' => 'gateway-prompts',
         'repository_url' => 'git@example.test:gateway-prompts.git',
@@ -43,7 +43,7 @@ function production_task_prompt_models(): array
         'task_check' => 'composer check',
     ]);
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'title' => 'Offline prompts',
         'brief' => 'Render <info>prompts</info> without <error>a workspace</error>.',
         'status' => 'running',
@@ -65,7 +65,7 @@ function production_task_prompt_models(): array
         ])->toArray()],
         'subtask_start_commit' => 'abc1234',
     ]);
-    $instance = new AppInstance;
+    $instance = new Instance;
     $instance->starting_commit = str_repeat('b', 40);
     $group->setRelation('app', $app);
     $group->setRelation('taskable', $instance);
@@ -172,7 +172,7 @@ function production_review_prompt(bool $continued): array
 {
     [$app, $group, $task] = production_task_prompt_models();
     $group->update(['pr_url' => 'https://example.test/pull/1']);
-    $instance = new AppInstance;
+    $instance = new Instance;
     $instance->starting_commit = str_repeat('b', 40);
     $group->setRelation('app', $app);
     $group->setRelation('taskable', $instance);
@@ -196,7 +196,7 @@ function production_review_prompt(bool $continued): array
     {
         public function __construct(private bool $continued) {}
 
-        public function read(AppInstance $instance, string $startCommit): array
+        public function read(Instance $instance, string $startCommit): array
         {
             return [
                 'files' => $this->continued ? [] : [

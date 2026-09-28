@@ -37,7 +37,7 @@ final readonly class ServiceMetricsDashboardRenderer
                 'description' => $kind === 'fpm' && $index === 1 ? 'Cbox can omit unavailable pools. Compare these series with the expected Instances; endpoint health alone does not prove every pool is healthy.' : '',
                 'datasource' => ['type' => 'prometheus', 'uid' => 'orbit-prometheus'],
                 'gridPos' => ['x' => ($index % 2) * 12, 'y' => intdiv($index, 2) * 8, 'w' => 12, 'h' => 8],
-                'targets' => [['refId' => 'A', 'expr' => $expr, 'legendFormat' => $index === 0 ? '{{node}}' : ($kind === 'fpm' ? '{{node}} / instance {{app_instance_id}} / {{pool}}' : '{{node}} {{host}}')]],
+                'targets' => [['refId' => 'A', 'expr' => $expr, 'legendFormat' => $index === 0 ? '{{node}}' : ($kind === 'fpm' ? '{{node}} / instance {{instance_id}} / {{pool}}' : '{{node}} {{host}}')]],
                 'fieldConfig' => ['defaults' => ['unit' => $unit, 'custom' => ['spanNulls' => false]], 'overrides' => []],
                 'options' => ['legend' => ['displayMode' => 'list', 'placement' => 'bottom']],
             ];

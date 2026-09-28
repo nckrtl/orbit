@@ -12,18 +12,21 @@ use InvalidArgumentException;
 
 /**
  * @property int $id
- * @property int $app_instance_id
+ * @property int $instance_id
  * @property DependencyEcosystem $ecosystem
  * @property CarbonImmutable $attempted_at
  * @property string|null $error_code
- * @property-read AppInstance $appInstance
+ * @property-read Instance $appInstance
  */
 final class AppInstanceDependencyScanAttempt extends Model
 {
+    #[\Override]
+    protected $table = 'instance_dependency_scan_attempts';
+
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
-        'app_instance_id',
+        'instance_id',
         'ecosystem',
         'attempted_at',
         'error_code',
@@ -39,10 +42,10 @@ final class AppInstanceDependencyScanAttempt extends Model
         });
     }
 
-    /** @return BelongsTo<AppInstance, $this> */
+    /** @return BelongsTo<Instance, $this> */
     public function appInstance(): BelongsTo
     {
-        return $this->belongsTo(AppInstance::class, 'app_instance_id');
+        return $this->belongsTo(Instance::class, 'instance_id');
     }
 
     /** @return array<string, string> */

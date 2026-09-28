@@ -7,7 +7,7 @@ namespace App\Domain\Schedules;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Schedule;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -29,8 +29,8 @@ final readonly class ScheduleTargetResolver
         try {
             return match ($type) {
                 ScheduleTargetType::Node => $this->node(Node::query()->findOrFail($id)),
-                ScheduleTargetType::AppInstance => $this->appInstance(
-                    AppInstance::query()->with('node')->findOrFail($id),
+                ScheduleTargetType::Instance => $this->appInstance(
+                    Instance::query()->with('node')->findOrFail($id),
                 ),
             };
         } catch (ModelNotFoundException) {
@@ -56,11 +56,11 @@ final readonly class ScheduleTargetResolver
             return $this->forSchedule($schedule);
         }
 
-        if (! AppInstance::isMorphType($schedule->target_type)) {
+        if (! Instance::isMorphType($schedule->target_type)) {
             $this->unavailable();
         }
 
-        $instance = AppInstance::query()
+        $instance = Instance::query()
             ->with('node')
             ->findOrFail($schedule->target_id);
 
@@ -90,8 +90,8 @@ final readonly class ScheduleTargetResolver
                     Node::query()->findOrFail($schedule->target_id),
                     requireActive: false,
                 ),
-                ScheduleTargetType::AppInstance => $this->appInstance(
-                    AppInstance::query()->with('node')->findOrFail($schedule->target_id),
+                ScheduleTargetType::Instance => $this->appInstance(
+                    Instance::query()->with('node')->findOrFail($schedule->target_id),
                     requireActive: false,
                 ),
             };
@@ -117,7 +117,7 @@ final readonly class ScheduleTargetResolver
     {
         return match (true) {
             $model === Node::class => ScheduleTargetType::Node,
-            AppInstance::isMorphType($model) => ScheduleTargetType::AppInstance,
+            Instance::isMorphType($model) => ScheduleTargetType::Instance,
             default => $this->invalid(),
         };
     }
@@ -140,7 +140,7 @@ final readonly class ScheduleTargetResolver
         );
     }
 
-    private function appInstance(AppInstance $instance, bool $requireActive = true): ScheduleTarget
+    private function appInstance(Instance $instance, bool $requireActive = true): ScheduleTarget
     {
         $instance->loadMissing('node');
         $this->assertNode($instance->node, $requireActive);

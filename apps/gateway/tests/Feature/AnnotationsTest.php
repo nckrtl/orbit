@@ -23,21 +23,21 @@ use App\Domain\Tasks\TaskType;
 use App\Infrastructure\Tasks\T3\T3Dispatcher;
 use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Models\Annotation;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 
-function annotationFixture(): AppInstance
+function annotationFixture(): Instance
 {
     $node = Node::query()->create(['name' => 'annotation-node', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.88', 'wireguard_ip' => '10.44.0.88']);
     test()->markAsGateway($node);
     test()->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
-    $app = OrbitApp::query()->create(['name' => 'Annotation', 'slug' => 'annotation', 'repository_url' => 'https://example.test/annotation.git', 'default_branch' => 'main']);
+    $app = Project::query()->create(['name' => 'Annotation', 'slug' => 'annotation', 'repository_url' => 'https://example.test/annotation.git', 'default_branch' => 'main']);
 
-    return AppInstance::query()->create(['app_id' => $app->id, 'node_id' => $node->id, 'name' => 'dev', 'environment' => 'development', 'source_layout' => 'worktree', 'checkout_path' => '/worktree', 'status' => 'active']);
+    return Instance::query()->create(['project_id' => $app->id, 'node_id' => $node->id, 'name' => 'dev', 'environment' => 'development', 'source_layout' => 'worktree', 'checkout_path' => '/worktree', 'status' => 'active']);
 }
 
 /** @return array<string, mixed> */

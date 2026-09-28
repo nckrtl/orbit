@@ -6,7 +6,7 @@ namespace Tests\Support;
 
 use App\Domain\Hibernation\AppInstanceRuntimeReadiness;
 use App\Domain\Hibernation\HibernationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Process;
 
 final class FakeAppInstanceRuntimeReadiness implements AppInstanceRuntimeReadiness
@@ -18,7 +18,7 @@ final class FakeAppInstanceRuntimeReadiness implements AppInstanceRuntimeReadine
     /** @var list<int> */
     public array $processIds = [];
 
-    public function waitUntilReady(AppInstance $instance, array $processes): void
+    public function waitUntilReady(Instance $instance, array $processes): void
     {
         $this->waited = true;
         $this->processIds = array_map(

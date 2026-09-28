@@ -52,12 +52,12 @@ final readonly class ResolveDependencyInstanceAction
                 throw new ResourceOperationException('dependencies.target_ambiguous', 'The domain does not select one instance.', 409);
             }
             $instance = $route->targets->sole()->appInstance;
-            if ($instance->app_id !== $route->app_id || $instance->status !== AppInstanceState::Active
+            if ($instance->project_id !== $route->project_id || $instance->status !== AppInstanceState::Active
                 || $instance->removalMember()->exists()) {
                 throw new ResourceOperationException('dependencies.instance_unavailable', 'The instance is unavailable for dependency inventory.', 409);
             }
 
-            return new ResolvedDependencyInstanceData($domain, $instance->id, $instance->app_id, $instance->node_id, $instance->defaultAppEnv());
+            return new ResolvedDependencyInstanceData($domain, $instance->id, $instance->project_id, $instance->node_id, $instance->defaultAppEnv());
         });
     }
 

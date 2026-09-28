@@ -9,17 +9,20 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * @property int $id
- * @property int $app_instance_id
+ * @property int $instance_id
  * @property string $env_key
  * @property string $env_value
- * @property-read AppInstance $appInstance
+ * @property-read Instance $appInstance
  */
 final class AppInstanceEnvironmentValue extends Model
 {
+    #[\Override]
+    protected $table = 'instance_environment_values';
+
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
-        'app_instance_id',
+        'instance_id',
         'env_key',
         'env_value',
     ];
@@ -36,10 +39,10 @@ final class AppInstanceEnvironmentValue extends Model
         return $this->toArray();
     }
 
-    /** @return BelongsTo<AppInstance, $this> */
+    /** @return BelongsTo<Instance, $this> */
     public function appInstance(): BelongsTo
     {
-        return $this->belongsTo(AppInstance::class);
+        return $this->belongsTo(Instance::class, 'instance_id');
     }
 
     /** @return array<string, string> */

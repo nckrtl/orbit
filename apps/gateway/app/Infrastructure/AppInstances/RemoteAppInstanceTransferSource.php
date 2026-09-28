@@ -18,8 +18,8 @@ use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\AppInstance;
 use App\Models\AppInstanceTransfer;
+use App\Models\Instance;
 use App\Models\Node;
 use Throwable;
 
@@ -32,7 +32,7 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
         private KnownHostsStore $knownHosts,
     ) {}
 
-    public function capture(AppInstance $instance): TransferSourceCapture
+    public function capture(Instance $instance): TransferSourceCapture
     {
         $instance->loadMissing('node');
         $layout = AppInstanceSourceLayout::from($instance->source_layout);
@@ -358,7 +358,7 @@ final readonly class RemoteAppInstanceTransferSource implements AppInstanceTrans
     {
         return new ResourceOperationException(
             errorCode: 'instance.transfer_failed',
-            message: 'The AppInstance source transfer failed safely.',
+            message: 'The Instance source transfer failed safely.',
             status: 409,
         );
     }

@@ -18,10 +18,10 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Tests\Support\FakeNodeCaddyBuilds;
 
 beforeEach(function (): void {
@@ -219,20 +219,20 @@ function service_metrics_runtime_node(string $name, string $address, array $role
     return $node;
 }
 
-function service_metrics_runtime_instance(Node $node): AppInstance
+function service_metrics_runtime_instance(Node $node): Instance
 {
     $node->roles()->firstOrCreate(
         ['role' => RoleName::AppProd],
         ['status' => LifecycleStatus::Active],
     );
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Metrics fixture',
         'slug' => 'metrics-fixture',
         'repository_url' => 'https://example.test/metrics-fixture.git',
     ]);
 
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'production',
         'environment' => 'production',

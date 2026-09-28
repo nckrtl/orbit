@@ -48,7 +48,7 @@ final class RouteData extends Data
         return new self(
             id: $route->id,
             kind: $route->kind->value,
-            appId: $route->app_id,
+            appId: $route->project_id,
             nodeId: $route->node_id,
             clusterId: $route->cluster_id,
             generationBasisNodeId: $route->generation_basis_node_id,
@@ -68,7 +68,7 @@ final class RouteData extends Data
                 ->all()),
             processId: $proxy instanceof RouteCustomProxy ? $proxy->process_id : null,
             upstream: $proxy instanceof RouteCustomProxy ? $proxy->upstream : null,
-            analyticsInstanceId: $route->analyticsTracking?->app_instance_id,
+            analyticsInstanceId: $route->analyticsTracking?->instance_id,
         );
     }
 }

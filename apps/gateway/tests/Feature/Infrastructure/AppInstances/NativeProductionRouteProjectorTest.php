@@ -38,10 +38,10 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Str;
 use Tests\Support\SshNodeCaddyBuilds;
@@ -51,8 +51,8 @@ it('creates an Instance Route with the native production projector on a separate
     $oldRoute->targets()->delete();
     $oldRoute->delete();
     $source->delete();
-    $instance = AppInstance::query()->create([
-        'app_id' => $source->app_id,
+    $instance = Instance::query()->create([
+        'project_id' => $source->project_id,
         'node_id' => $source->node_id,
         'name' => 'created',
         'environment' => 'production',
@@ -82,7 +82,7 @@ it('creates an Instance Route with the native production projector on a separate
     $routerCertificateIndex = $commands->search(static fn (RemoteCommand $command): bool => in_array("route-{$route->id}-router", $command->arguments, true));
     $routerSiteIndex = $commands->search(static fn (RemoteCommand $command): bool => str_contains(SshNodeCaddyBuilds::pushed($command) ?? '', "route-{$route->id}-router/current/cert.pem"));
     expect($route->status)->toBe(RouteStatus::Active)
-        ->and($route->targets->sole()->app_instance_id)->toBe($instance->id)
+        ->and($route->targets->sole()->instance_id)->toBe($instance->id)
         ->and($routerCertificateIndex)->not->toBeFalse()
         ->and($routerSiteIndex)->not->toBeFalse()
         ->and($routerCertificateIndex)->toBeLessThan($routerSiteIndex)
@@ -174,7 +174,7 @@ it('projects a production workload through a remote Router over LAN without publ
             '-verify_return_error',
         ])
         ->and($workloadConfiguration)->toContain(
-            "php_fastcgi unix//run/php/orbit-app-{$appInstance->app_id}.sock",
+            "php_fastcgi unix//run/php/orbit-app-{$appInstance->project_id}.sock",
             'resolve_root_symlink',
             "tls /etc/caddy/orbit-certificates/app-instance-{$appInstance->id}/current/cert.pem",
         )
@@ -277,7 +277,7 @@ it('refuses an invalid workload leaf before Router Caddy and DNS publication', f
         ->and($caddyPublications->sole()['connection']->host)->toBe('10.44.0.10');
 });
 
-/** @return array{AppInstance, Route, Node, Node} */
+/** @return array{Instance, Route, Node, Node} */
 function orb199_production_route_models(
     bool $coLocated = false,
     ?string $workloadLan = null,
@@ -321,14 +321,14 @@ function orb199_production_route_models(
             'status' => LifecycleStatus::Active,
         ]);
     }
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Production route',
         'slug' => 'production-route-'.Str::lower(Str::random(8)),
         'repository_url' => 'https://example.test/production-route.git',
         'root' => 'public',
     ]);
-    $appInstance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $appInstance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $workload->id,
         'name' => 'production',
         'environment' => 'production',
@@ -345,7 +345,7 @@ function orb199_production_route_models(
         'status' => AppInstanceState::SourceResolved,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'cluster_id' => $cluster->id,
         'domain' => 'preview.prod.orbit',
         'provenance' => RouteProvenance::Explicit,
@@ -353,7 +353,7 @@ function orb199_production_route_models(
         'status' => RouteStatus::Pending,
     ]);
     $route->targets()->create([
-        'app_instance_id' => $appInstance->id,
+        'instance_id' => $appInstance->id,
         'position' => 0,
     ]);
 
@@ -474,16 +474,16 @@ final class Orb199ProductionPhpRuntime implements ProductionPhpRuntimeManager
     /** @var list<int> */
     public array $converged = [];
 
-    public function converge(AppInstance $appInstance): void
+    public function converge(Instance $appInstance): void
     {
         $this->converged[] = $appInstance->id;
     }
 
-    public function convergeMonitoring(AppInstance $appInstance, bool $enabled): void {}
+    public function convergeMonitoring(Instance $appInstance, bool $enabled): void {}
 
-    public function refreshCache(AppInstance $appInstance): void {}
+    public function refreshCache(Instance $appInstance): void {}
 
-    public function remove(AppInstance $appInstance): void {}
+    public function remove(Instance $appInstance): void {}
 }
 
 final class Orb199ProductionFirewall implements NodeRoleFirewallManager
@@ -507,7 +507,7 @@ final class Orb199ProductionFirewall implements NodeRoleFirewallManager
 
 final class Orb199ProductionReleaseLayout implements ProductionReleaseLayout
 {
-    public function validateCurrent(AppInstance $appInstance): void {}
+    public function validateCurrent(Instance $appInstance): void {}
 
-    public function clearCurrent(AppInstance $appInstance): void {}
+    public function clearCurrent(Instance $appInstance): void {}
 }

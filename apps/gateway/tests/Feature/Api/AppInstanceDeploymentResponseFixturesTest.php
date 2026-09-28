@@ -3,10 +3,10 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceDeployment;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Support\Carbon;
 use Orbit\Sdk\Requests\Deployments\ListAppInstanceDeploymentsRequest;
 use Orbit\Sdk\Requests\Deployments\ShowAppInstanceDeploymentRequest;
@@ -29,15 +29,15 @@ it('records the deployment list and show responses', function (): void {
         'user' => 'orbit',
     ]);
     $this->markAsGateway($caller);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Charlie Shop',
         'slug' => 'charlie-shop',
         'repository_url' => 'https://example.test/charlie-shop.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $caller->id,
         'name' => 'production',
         'environment' => 'production',
@@ -52,7 +52,7 @@ it('records the deployment list and show responses', function (): void {
     ]);
 
     $deployment = AppInstanceDeployment::query()->create([
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'release' => '20260101000000',
         'branch' => 'main',
         'commit' => str_repeat('a', 40),

@@ -13,10 +13,10 @@ use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Http\Responses\RuntimeActivationPage;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\FakeAppInstanceCheckoutInspector;
 use Tests\Support\FakeAppInstanceRuntimeReadiness;
@@ -70,13 +70,13 @@ beforeEach(function (): void {
         'wireguard_ip' => '10.44.0.3',
     ]);
     $this->node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
     ]);
-    $this->instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $this->instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $this->node->id,
         'name' => 'main',
         'environment' => 'development',
@@ -90,7 +90,7 @@ beforeEach(function (): void {
 
 it('returns the Orbit progress page before it starts Processes', function (): void {
     $running = Process::query()->create([
-        'owner_type' => AppInstance::MorphAlias,
+        'owner_type' => Instance::MorphAlias,
         'owner_id' => $this->instance->id,
         'name' => 'vite',
         'runtime' => 'systemd',
@@ -130,7 +130,7 @@ it('refuses wake from a different Node', function (): void {
     expect($this->runtime->started)->toBe([]);
 });
 
-it('returns an HTML failure page for an ineligible production AppInstance', function (): void {
+it('returns an HTML failure page for an ineligible production Instance', function (): void {
     $this->instance->update(['environment' => 'production', 'production_user' => 'orbit-docs', 'production_home' => '/var/www/docs']);
     $this->node->roles()->where('role', 'app-dev')->delete();
     $this->node->roles()->create(['role' => 'app-prod', 'status' => LifecycleStatus::Active]);
@@ -141,15 +141,15 @@ it('returns an HTML failure page for an ineligible production AppInstance', func
     assert_hibernation_failure_screen($response, '/?orbit-wake-retry=1');
 
     $response
-        ->assertSee('AppInstance [main] is not an app-dev development target.', false)
+        ->assertSee('Instance [main] is not an app-dev development target.', false)
         ->assertDontSee('<script', false);
 });
 
-it('returns an HTML progress page when another wake holds the AppInstance lock', function (): void {
+it('returns an HTML progress page when another wake holds the Instance lock', function (): void {
     $this->mock(ProcessAdmissionLock::class, function ($mock): void {
         $mock->shouldReceive('run')->once()->andThrow(new ResourceOperationException(
             errorCode: 'process.operation_busy',
-            message: 'Another Process operation is active for this AppInstance. Retry the request.',
+            message: 'Another Process operation is active for this Instance. Retry the request.',
             status: 409,
         ));
     });
@@ -161,7 +161,7 @@ it('returns an HTML progress page when another wake holds the AppInstance lock',
 
 it('returns an HTML failure page on the next intercept when Process start fails', function (): void {
     Process::query()->create([
-        'owner_type' => AppInstance::MorphAlias,
+        'owner_type' => Instance::MorphAlias,
         'owner_id' => $this->instance->id,
         'name' => 'vite',
         'runtime' => 'systemd',

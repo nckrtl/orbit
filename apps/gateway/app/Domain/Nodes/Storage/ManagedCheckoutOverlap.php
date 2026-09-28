@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Nodes\Storage;
 
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class ManagedCheckoutOverlap
 {
@@ -15,7 +15,7 @@ final readonly class ManagedCheckoutOverlap
         string $errorCode,
         ?int $ignoreAppInstanceId = null,
     ): void {
-        $appInstances = AppInstance::query()
+        $appInstances = Instance::query()
             ->where('node_id', $nodeId)
             ->when(
                 $ignoreAppInstanceId !== null,

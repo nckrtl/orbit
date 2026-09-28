@@ -12,7 +12,7 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentStore;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter;
 use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class CloneAppInstanceEnvironmentAction
 {
@@ -25,7 +25,7 @@ final readonly class CloneAppInstanceEnvironmentAction
         private AppInstanceEnvironmentWriter $writer,
     ) {}
 
-    public function execute(AppInstance $source, AppInstance $target): AppInstanceEnvironmentResult
+    public function execute(Instance $source, Instance $target): AppInstanceEnvironmentResult
     {
         return $this->operations->run(
             [$source->id, $target->id],
@@ -36,7 +36,7 @@ final readonly class CloneAppInstanceEnvironmentAction
                 if ($target->clone_candidate_id !== $source->id) {
                     throw new ResourceOperationException(
                         errorCode: 'env.owner_changed',
-                        message: 'The AppInstance environment owner changed during the operation.',
+                        message: 'The Instance environment owner changed during the operation.',
                         status: 409,
                     );
                 }
@@ -54,7 +54,7 @@ final readonly class CloneAppInstanceEnvironmentAction
                 if (! $result->confirmed || ! is_bool($result->changed)) {
                     throw new ResourceOperationException(
                         errorCode: 'env.sync_unconfirmed',
-                        message: 'The AppInstance environment synchronization result is unconfirmed. Retry the request.',
+                        message: 'The Instance environment synchronization result is unconfirmed. Retry the request.',
                         status: 409,
                     );
                 }

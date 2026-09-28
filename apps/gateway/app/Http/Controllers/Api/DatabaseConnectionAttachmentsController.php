@@ -11,8 +11,8 @@ use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\DatabaseConnections\AttachDatabaseConnectionRequest;
 use App\Http\Requests\DatabaseConnections\DetachDatabaseConnectionRequest;
-use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
+use App\Models\Instance;
 use Illuminate\Http\JsonResponse;
 
 #[RequiresNodeAccess(ServingNode::EnvironmentInstanceOwning)]
@@ -46,10 +46,10 @@ final class DatabaseConnectionAttachmentsController extends Controller
         ]);
     }
 
-    private function instance(AttachDatabaseConnectionRequest|DetachDatabaseConnectionRequest $request): AppInstance
+    private function instance(AttachDatabaseConnectionRequest|DetachDatabaseConnectionRequest $request): Instance
     {
         $instance = $request->route('instance');
-        assert($instance instanceof AppInstance);
+        assert($instance instanceof Instance);
 
         return $instance;
     }

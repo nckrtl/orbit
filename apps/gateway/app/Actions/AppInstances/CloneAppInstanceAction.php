@@ -29,7 +29,7 @@ use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Database\QueryException;
@@ -53,13 +53,13 @@ final readonly class CloneAppInstanceAction
         private ?MetricsFleetReconciler $metrics = null,
     ) {}
 
-    /** @return array{appInstance: AppInstance, created: bool} */
-    public function execute(AppInstance $candidate, CloneAppInstanceData $data): array
+    /** @return array{appInstance: Instance, created: bool} */
+    public function execute(Instance $candidate, CloneAppInstanceData $data): array
     {
         $candidate->loadMissing(['app', 'node']);
         $existing = $this->existingTarget($candidate, $data);
 
-        if ($existing instanceof AppInstance && $existing->clone_completed_at !== null) {
+        if ($existing instanceof Instance && $existing->clone_completed_at !== null) {
             $this->metrics?->reconcile();
 
             return [
@@ -71,7 +71,7 @@ final readonly class CloneAppInstanceAction
         $node = Node::query()->findOrFail($data->nodeId);
         $branch = $data->branch ?? $this->candidateBranch($candidate);
 
-        if ($existing instanceof AppInstance) {
+        if ($existing instanceof Instance) {
             $source = $this->candidates->inspect($candidate, $branch);
             $target = $existing;
             $created = false;
@@ -91,9 +91,9 @@ final readonly class CloneAppInstanceAction
         try {
             $result = $this->environmentOperations->run(
                 [$candidate->id, $target->id],
-                fn (): AppInstance => $this->sourceLock->synchronized(
+                fn (): Instance => $this->sourceLock->synchronized(
                     $target->node_id,
-                    fn (): AppInstance => $this->resume($candidate, $target, $data, $source, $created),
+                    fn (): Instance => $this->resume($candidate, $target, $data, $source, $created),
                 ),
             );
         } catch (Throwable $exception) {
@@ -107,14 +107,14 @@ final readonly class CloneAppInstanceAction
         return ['appInstance' => $result, 'created' => $created];
     }
 
-    private function existingTarget(AppInstance $candidate, CloneAppInstanceData $data): ?AppInstance
+    private function existingTarget(Instance $candidate, CloneAppInstanceData $data): ?Instance
     {
-        $existing = AppInstance::query()
-            ->where('app_id', $candidate->app_id)
+        $existing = Instance::query()
+            ->where('project_id', $candidate->project_id)
             ->where('name', $data->name)
             ->first();
 
-        if (! $existing instanceof AppInstance) {
+        if (! $existing instanceof Instance) {
             return null;
         }
 
@@ -128,18 +128,18 @@ final readonly class CloneAppInstanceAction
         ) {
             throw $this->conflict(
                 'instance.clone_retry_conflict',
-                'The target AppInstance already exists with different immutable clone input.',
+                'The target Instance already exists with different immutable clone input.',
             );
         }
 
         if ($existing->status === AppInstanceState::Removing) {
-            throw $this->conflict('instance.removal_conflict', 'The target AppInstance is being removed.');
+            throw $this->conflict('instance.removal_conflict', 'The target Instance is being removed.');
         }
 
         return $existing;
     }
 
-    private function candidateBranch(AppInstance $candidate): string
+    private function candidateBranch(Instance $candidate): string
     {
         $branch = $candidate->placedOnAppProd()
             ? $candidate->deployment_branch ?? $candidate->branch
@@ -156,7 +156,7 @@ final readonly class CloneAppInstanceAction
     }
 
     /** @return array{string, RoutePlacement} */
-    private function preflight(AppInstance $candidate, Node $node, CloneAppInstanceData $data): array
+    private function preflight(Instance $candidate, Node $node, CloneAppInstanceData $data): array
     {
         $candidate->refresh()->loadMissing(['app', 'node']);
         $node->refresh();
@@ -174,14 +174,14 @@ final readonly class CloneAppInstanceAction
             throw $this->conflict('route.domain_conflict', "Route domain [{$domain}] is already owned.");
         }
 
-        if (AppInstance::query()->where('app_id', $candidate->app_id)->where('name', $data->name)->exists()) {
-            throw $this->conflict('instance.placement_conflict', 'The target AppInstance name is already owned.');
+        if (Instance::query()->where('project_id', $candidate->project_id)->where('name', $data->name)->exists()) {
+            throw $this->conflict('instance.placement_conflict', 'The target Instance name is already owned.');
         }
 
         return [$domain, $placement];
     }
 
-    private function assertPlacement(AppInstance $candidate, Node $node): RoutePlacement
+    private function assertPlacement(Instance $candidate, Node $node): RoutePlacement
     {
         if ($node->status !== LifecycleStatus::Active || $node->platform !== 'linux') {
             throw $this->conflict('instance.node_inactive', 'The selected app-prod Node is not active.');
@@ -197,8 +197,8 @@ final readonly class CloneAppInstanceAction
             $this->routeState->assertRouter($placement->clusterId);
         }
 
-        if (AppInstance::query()
-            ->where('app_id', $candidate->app_id)
+        if (Instance::query()
+            ->where('project_id', $candidate->project_id)
             ->whereHas('node.roles', static fn ($query) => $query
                 ->where('role', RoleName::AppProd)
                 ->where('status', LifecycleStatus::Active))
@@ -214,14 +214,14 @@ final readonly class CloneAppInstanceAction
     }
 
     private function reserve(
-        AppInstance $candidate,
+        Instance $candidate,
         Node $node,
         CloneAppInstanceData $data,
         CloneCandidateSource $source,
         string $domain,
         RoutePlacement $placement,
-    ): AppInstance {
-        $user = "orbit-app-{$candidate->app_id}";
+    ): Instance {
+        $user = "orbit-app-{$candidate->project_id}";
         $home = "/home/{$user}";
 
         try {
@@ -234,7 +234,7 @@ final readonly class CloneAppInstanceAction
                 $placement,
                 $user,
                 $home,
-            ): AppInstance {
+            ): Instance {
                 if ($domain !== '' && Route::query()->where('domain', $domain)->lockForUpdate()->exists()) {
                     throw $this->conflict(
                         'route.domain_conflict',
@@ -242,8 +242,8 @@ final readonly class CloneAppInstanceAction
                     );
                 }
 
-                $target = AppInstance::query()->create([
-                    'app_id' => $candidate->app_id,
+                $target = Instance::query()->create([
+                    'project_id' => $candidate->project_id,
                     'node_id' => $node->id,
                     'name' => $data->name,
                     'source_layout' => AppInstanceSourceLayout::Checkout,
@@ -265,7 +265,7 @@ final readonly class CloneAppInstanceAction
 
                 if ($domain !== '') {
                     $route = Route::query()->create([
-                        'app_id' => $candidate->app_id,
+                        'project_id' => $candidate->project_id,
                         'node_id' => $placement->nodeId,
                         'cluster_id' => $placement->clusterId,
                         'generation_basis_node_id' => null,
@@ -275,7 +275,7 @@ final readonly class CloneAppInstanceAction
                         'status' => RouteStatus::Pending,
                     ]);
                     $route->targets()->create([
-                        'app_instance_id' => $target->id,
+                        'instance_id' => $target->id,
                         'position' => 0,
                     ]);
                 }
@@ -285,7 +285,7 @@ final readonly class CloneAppInstanceAction
         } catch (QueryException $exception) {
             throw new ResourceOperationException(
                 errorCode: 'instance.clone_reservation_conflict',
-                message: 'The target AppInstance or preview Route is already owned.',
+                message: 'The target Instance or preview Route is already owned.',
                 status: 409,
                 previous: $exception,
             );
@@ -295,12 +295,12 @@ final readonly class CloneAppInstanceAction
     }
 
     private function resume(
-        AppInstance $candidate,
-        AppInstance $target,
+        Instance $candidate,
+        Instance $target,
         CloneAppInstanceData $data,
         CloneCandidateSource $expectedSource,
         bool $created,
-    ): AppInstance {
+    ): Instance {
         $target->refresh()->loadMissing(['app', 'node', 'routes.targets']);
         $route = $target->requiresRoute() ? $this->cloneRoute($target) : null;
 
@@ -452,7 +452,7 @@ final readonly class CloneAppInstanceAction
         return $target->refresh()->load('routes.targets');
     }
 
-    private function cloneRoute(AppInstance $target): Route
+    private function cloneRoute(Instance $target): Route
     {
         $target->loadMissing('node');
         $placement = $this->routeState->forNode($target->node);
@@ -462,7 +462,7 @@ final readonly class CloneAppInstanceAction
         }
 
         $routes = Route::query()
-            ->whereHas('targets', static fn ($query) => $query->where('app_instance_id', $target->id))
+            ->whereHas('targets', static fn ($query) => $query->where('instance_id', $target->id))
             ->orderBy('id')
             ->limit(2)
             ->get();
@@ -508,7 +508,7 @@ final readonly class CloneAppInstanceAction
 
     private function prepareSqlite(
         CloneCandidateSource $source,
-        AppInstance $target,
+        Instance $target,
         CloneAppInstanceData $data,
     ): void {
         if ($data->sqliteSourcePath === null) {
@@ -549,7 +549,7 @@ final readonly class CloneAppInstanceAction
         }
     }
 
-    private function prepareRuntime(AppInstance $target, Route $route): void
+    private function prepareRuntime(Instance $target, Route $route): void
     {
         if ($target->selected_php_version === null || ! $target->servesPhp()) {
             return;
@@ -562,7 +562,7 @@ final readonly class CloneAppInstanceAction
     private function completePublication(int $targetId, int $routeId): void
     {
         $this->projectionOwner->run(function () use ($targetId, $routeId): void {
-            $target = AppInstance::query()->with('node')->findOrFail($targetId);
+            $target = Instance::query()->with('node')->findOrFail($targetId);
             $route = Route::query()->with('targets')->findOrFail($routeId);
             $validatedRoute = $this->cloneRoute($target);
 
@@ -589,7 +589,7 @@ final readonly class CloneAppInstanceAction
             $this->checkpoint($target, 'clone-dns-published');
 
             DB::transaction(function () use ($target, $route): void {
-                $lockedTarget = AppInstance::query()->with('node')->lockForUpdate()->findOrFail($target->id);
+                $lockedTarget = Instance::query()->with('node')->lockForUpdate()->findOrFail($target->id);
                 $lockedRoute = Route::query()->with('targets')->lockForUpdate()->findOrFail($route->id);
                 $placement = $this->routeState->forNode($lockedTarget->node);
 
@@ -603,7 +603,7 @@ final readonly class CloneAppInstanceAction
                     || $lockedTarget->clone_completed_at !== null
                     || $lockedRoute->status !== RouteStatus::Pending
                     || $lockedRoute->targets->count() !== 1
-                    || $lockedRoute->targets->sole()->app_instance_id !== $lockedTarget->id
+                    || $lockedRoute->targets->sole()->instance_id !== $lockedTarget->id
                     || $lockedRoute->domain !== $lockedTarget->clone_preview_domain
                     || $lockedRoute->node_id !== $placement->nodeId
                     || $lockedRoute->cluster_id !== $placement->clusterId
@@ -635,7 +635,7 @@ final readonly class CloneAppInstanceAction
 
     /** @param array<string, mixed> $attributes */
     private function checkpoint(
-        AppInstance $target,
+        Instance $target,
         string $step,
         ?AppInstanceState $status = null,
         array $attributes = [],
@@ -650,7 +650,7 @@ final readonly class CloneAppInstanceAction
         $target->refresh();
     }
 
-    private function recordFailure(AppInstance $target, Throwable $exception): void
+    private function recordFailure(Instance $target, Throwable $exception): void
     {
         $step = property_exists($exception, 'step') && is_string($exception->step)
             ? $exception->step
@@ -660,12 +660,12 @@ final readonly class CloneAppInstanceAction
             : 'instance.clone_failed';
 
         DB::transaction(static function () use ($target, $step, $errorCode): void {
-            AppInstance::query()->whereKey($target->id)->update([
+            Instance::query()->whereKey($target->id)->update([
                 'failed_step' => $step,
                 'error_code' => $errorCode,
             ]);
             Route::query()
-                ->whereHas('targets', static fn ($query) => $query->where('app_instance_id', $target->id))
+                ->whereHas('targets', static fn ($query) => $query->where('instance_id', $target->id))
                 ->where('status', '<>', RouteStatus::Active->value)
                 ->update([
                     'sites_published' => false,

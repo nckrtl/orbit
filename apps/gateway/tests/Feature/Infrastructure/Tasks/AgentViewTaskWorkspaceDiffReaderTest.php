@@ -12,21 +12,21 @@ use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\AgentViewTaskWorkspaceDiffReader;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceDiffReader;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Tests\Support\AppDevFakeSshExecutor;
 
-function view_diff_instance(): AppInstance
+function view_diff_instance(): Instance
 {
-    $app = OrbitApp::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'git@github.com:nckrtl/orbit.git', 'default_branch' => 'main']);
+    $app = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'git@github.com:nckrtl/orbit.git', 'default_branch' => 'main']);
     $node = Node::query()->create([
         'name' => 'view-diff-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
         'public_ssh_host' => '10.44.0.143', 'wireguard_ip' => '10.44.0.143', 'user' => 'orbit',
     ]);
 
-    return AppInstance::query()->create([
-        'app_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-12',
+    return Instance::query()->create([
+        'project_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-12',
         'checkout_path' => '/srv/orbit/apps/orbit/task-12', 'branch' => 'task-12', 'status' => 'source_resolved',
     ]);
 }
@@ -60,7 +60,7 @@ function view_diff_ssh(AppDevFakeSshExecutor $transport): AppDevSshExecutor
 }
 
 /** @param array<string, mixed> $overrides */
-function view_workspace(AppInstance $instance, array $overrides = [], float $ageSeconds = 0.0): void
+function view_workspace(Instance $instance, array $overrides = [], float $ageSeconds = 0.0): void
 {
     app(CacheAgentStateView::class)->putNode($instance->node_id, [], 'available', 3, CacheAgentStateView::now() - $ageSeconds, null, [
         $instance->id => [

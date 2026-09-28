@@ -18,7 +18,7 @@ use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\TaskGroup;
 use SensitiveParameter;
 
@@ -73,7 +73,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
     }
 
     /**
-     * @return array{GitHubRepository, AppInstance, string}
+     * @return array{GitHubRepository, Instance, string}
      *
      * @throws TaskPullRequestException
      */
@@ -85,14 +85,14 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
             throw new TaskPullRequestException('The Project repository is not on github.com.');
         }
         $instance = $group->taskable;
-        if (! $instance instanceof AppInstance || $instance->checkout_path === '') {
+        if (! $instance instanceof Instance || $instance->checkout_path === '') {
             throw new TaskPullRequestException('The task workspace is unavailable.');
         }
 
         return [$repository, $instance, 'task-'.$group->id];
     }
 
-    private function pushBranch(AppInstance $instance, string $branch, #[SensitiveParameter] string $token, string $commit): void
+    private function pushBranch(Instance $instance, string $branch, #[SensitiveParameter] string $token, string $commit): void
     {
         if (preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) !== 1) {
             throw new TaskPullRequestException('The approved commit is not a Git SHA.');

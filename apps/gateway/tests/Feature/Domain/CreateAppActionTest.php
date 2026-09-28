@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\Actions\Apps\CreateAppAction;
 use App\Data\Apps\CreateAppData;
 use App\Domain\Projects\ProjectType;
-use App\Models\App as OrbitApp;
+use App\Models\Project;
 
 it('rejects an unsafe repository origin before app persistence', function (): void {
     $sentinel = 'sentinel-action-password';
@@ -20,5 +20,5 @@ it('rejects an unsafe repository origin before app persistence', function (): vo
 
     expect(fn (): array => app(CreateAppAction::class)->execute($data))
         ->toThrow(InvalidArgumentException::class, 'The Git repository origin is invalid.');
-    expect(OrbitApp::query()->exists())->toBeFalse();
+    expect(Project::query()->exists())->toBeFalse();
 });

@@ -10,7 +10,7 @@ use App\Domain\Metrics\MetricsExporterProjection;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Caddy\Build\CaddySiteRoles;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Route;
@@ -39,7 +39,7 @@ final readonly class ServiceMetricsProjection
         $roles = $node->roles->filter(static fn (NodeRole $role): bool => CaddySiteRoles::serves($role))->pluck('role');
         $caddy = $selected && $roles->contains(RoleName::Ingress);
         $fpm = $selected && $roles->contains(RoleName::AppProd);
-        $instances = array_values(AppInstance::query()->where('node_id', $node->id)
+        $instances = array_values(Instance::query()->where('node_id', $node->id)
             ->whereHas('node.roles', static fn ($query) => $query
                 ->where('role', RoleName::AppProd)
                 ->where('status', LifecycleStatus::Active))

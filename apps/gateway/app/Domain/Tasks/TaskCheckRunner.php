@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
+use App\Models\Project;
 
 /**
  * Runs a Project task check in a workspace as a detached process
@@ -23,13 +24,13 @@ interface TaskCheckRunner
      *
      * @throws TaskCheckException
      */
-    public function start(AppInstance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess;
+    public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess;
 
     /** @throws TaskCheckException */
-    public function read(AppInstance $instance, TaskCheckProcess $process): TaskCheckReading;
+    public function read(Instance $instance, TaskCheckProcess $process): TaskCheckReading;
 
     /** @throws TaskCheckException */
-    public function cancel(AppInstance $instance, TaskCheckProcess $process): void;
+    public function cancel(Instance $instance, TaskCheckProcess $process): void;
 
     /**
      * Reads HEAD and the working-tree hash the check stores, without copying an earlier check row
@@ -37,5 +38,5 @@ interface TaskCheckRunner
      *
      * @throws TaskCheckException
      */
-    public function snapshot(AppInstance $instance): TaskWorkspaceSnapshot;
+    public function snapshot(Instance $instance): TaskWorkspaceSnapshot;
 }

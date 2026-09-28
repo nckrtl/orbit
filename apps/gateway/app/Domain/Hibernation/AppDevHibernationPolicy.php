@@ -6,13 +6,13 @@ namespace App\Domain\Hibernation;
 
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 
 final readonly class AppDevHibernationPolicy
 {
-    public function appliesToInstance(AppInstance $instance): bool
+    public function appliesToInstance(Instance $instance): bool
     {
         $instance->loadMissing('node.roles');
 
@@ -21,16 +21,16 @@ final readonly class AppDevHibernationPolicy
 
     public function appliesToProcess(Process $process): bool
     {
-        if (! AppInstance::isMorphType($process->owner_type)) {
+        if (! Instance::isMorphType($process->owner_type)) {
             return false;
         }
 
         $owner = $process->owner;
 
-        return $owner instanceof AppInstance && $this->appliesToInstance($owner);
+        return $owner instanceof Instance && $this->appliesToInstance($owner);
     }
 
-    public function usesOnDemandHostStart(AppInstance $instance): bool
+    public function usesOnDemandHostStart(Instance $instance): bool
     {
         return $this->appliesToInstance($instance);
     }

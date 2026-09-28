@@ -20,11 +20,11 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Activity;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 
@@ -52,7 +52,7 @@ it('updates missing existing and identical values without contacting the workloa
         ->assertOk()
         ->assertExactJson([
             'data' => [
-                'app_instance_id' => $this->instance->id,
+                'instance_id' => $this->instance->id,
                 'operation' => 'update',
                 'changed' => true,
                 'key_count' => 1,
@@ -136,7 +136,7 @@ it('normalizes Laravel APP_URL while preserving literal APP_KEY', function (): v
     expect($this->instance->environmentValues()->where('env_key', 'APP_KEY')->sole()->env_value)
         ->toBe('base64:synthetic')
         ->and($this->instance->environmentValues()->where('env_key', 'APP_URL')->sole()->env_value)
-        ->toBe('https://{{app_instance.domain}}');
+        ->toBe('https://{{instance.domain}}');
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
@@ -251,8 +251,8 @@ it('enforces peer and owning-Node access before reading configuration or using S
         'wireguard_ip' => '10.44.0.202',
         'user' => 'orbit',
     ]);
-    DB::table('app_instance_environment_values')->insert([
-        'app_instance_id' => $this->instance->id,
+    DB::table('instance_environment_values')->insert([
+        'instance_id' => $this->instance->id,
         'env_key' => 'BROKEN',
         'env_value' => 'not-ciphertext',
         'created_at' => now(),
@@ -306,7 +306,7 @@ it('returns 409 instance.source_profile_missing for env operations without a rec
         ->assertJsonPath('error.code', 'instance.source_profile_missing')
         ->assertJsonPath(
             'error.message',
-            'The AppInstance has no recorded source profile and cannot be used.',
+            'The Instance has no recorded source profile and cannot be used.',
         );
 
     expect(AppInstanceEnvironmentValue::query()->count())
@@ -404,7 +404,7 @@ it('synchronizes by the existing selector with a narrow value-free result', func
         ->environmentValues()
         ->createMany([
             ['env_key' => 'Z_LITERAL', 'env_value' => 'local-$VALUE'],
-            ['env_key' => 'APP_URL', 'env_value' => 'https://{{app_instance.domain}}'],
+            ['env_key' => 'APP_URL', 'env_value' => 'https://{{instance.domain}}'],
             ['env_key' => 'APP_KEY', 'env_value' => 'base64:stored-key'],
         ]);
     $url = "/api/v1/instances/{$this->route->domain}/environment/sync";
@@ -415,7 +415,7 @@ it('synchronizes by the existing selector with a narrow value-free result', func
         ->assertOk()
         ->assertExactJson([
             'data' => [
-                'app_instance_id' => $this->instance->id,
+                'instance_id' => $this->instance->id,
                 'operation' => 'sync',
                 'changed' => true,
                 'key_count' => 3,
@@ -514,8 +514,8 @@ it('refuses missing configuration before remote work', function (): void {
 });
 
 it('preflights from encrypted-size metadata before decrypting or writing', function (): void {
-    DB::table('app_instance_environment_values')->insert([
-        'app_instance_id' => $this->instance->id,
+    DB::table('instance_environment_values')->insert([
+        'instance_id' => $this->instance->id,
         'env_key' => 'BROKEN',
         'env_value' => 'not-ciphertext',
         'created_at' => now(),
@@ -599,7 +599,7 @@ function environment_api_make_public(Route $route): void
     ]);
 }
 
-/** @return array{Node, AppInstance, Route} */
+/** @return array{Node, Instance, Route} */
 function environment_api_fixture(): array
 {
     $caller = Node::query()->create([
@@ -620,15 +620,15 @@ function environment_api_fixture(): array
         'user' => 'orbit',
     ]);
     $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Environment API',
         'slug' => 'environment-api',
         'repository_url' => 'https://example.test/environment-api.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'default',
         'environment' => 'development',
@@ -637,14 +637,14 @@ function environment_api_fixture(): array
         'provisioning_step' => 'active',
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'domain' => 'environment-api.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
     $instance->update(['status' => 'active']);
 
@@ -655,7 +655,7 @@ function environment_api_fixture(): array
 function ambiguous_environment_target(Node $caller): array
 {
     $cluster = Cluster::query()->create(['name' => 'environment-cluster', 'status' => 'active']);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Shared environment',
         'slug' => 'shared-environment',
         'repository_url' => 'https://example.test/shared-environment.git',
@@ -663,7 +663,7 @@ function ambiguous_environment_target(Node $caller): array
         'root' => 'public',
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'cluster_id' => $cluster->id,
         'domain' => 'shared-environment.test',
         'provenance' => RouteProvenance::Explicit,
@@ -682,8 +682,8 @@ function ambiguous_environment_target(Node $caller): array
             'user' => 'orbit',
         ]);
         $node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
-        $instance = AppInstance::query()->create([
-            'app_id' => $app->id,
+        $instance = Instance::query()->create([
+            'project_id' => $app->id,
             'node_id' => $node->id,
             'name' => "production-{$suffix}",
             'environment' => 'production',
@@ -693,11 +693,11 @@ function ambiguous_environment_target(Node $caller): array
             'source_is_laravel' => false,
             'provisioning_step' => 'active',
         ]);
-        $route->targets()->create(['app_instance_id' => $instance->id, 'position' => $suffix - 203]);
+        $route->targets()->create(['instance_id' => $instance->id, 'position' => $suffix - 203]);
     }
 
     $route->update(['status' => RouteStatus::Active]);
-    AppInstance::query()->where('app_id', $app->id)->update(['status' => 'active']);
+    Instance::query()->where('project_id', $app->id)->update(['status' => 'active']);
 
     return [$route->domain];
 }
@@ -746,7 +746,7 @@ final class EnvironmentApiAccess implements AppInstanceEnvironmentReader, AppIns
         if ($this->refuseWritePreflight) {
             throw new ResourceOperationException(
                 errorCode: 'env.write_preflight_failed',
-                message: 'The recorded AppInstance environment file cannot be replaced safely.',
+                message: 'The recorded Instance environment file cannot be replaced safely.',
                 status: 409,
             );
         }

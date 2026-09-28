@@ -10,7 +10,7 @@ use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Database\Eloquent\Builder;
@@ -18,7 +18,7 @@ use Illuminate\Database\Eloquent\Builder;
 final readonly class AppInstanceEnvironmentContextResolver
 {
     public function resolve(
-        AppInstance $instance,
+        Instance $instance,
         bool $requireActiveNode,
         bool $lockRoute = false,
     ): AppInstanceEnvironmentContext {
@@ -45,7 +45,7 @@ final readonly class AppInstanceEnvironmentContextResolver
 
         $routeQuery = Route::query()
             ->whereHas('targets', static fn (Builder $query): Builder => $query
-                ->where('app_instance_id', $instance->id))
+                ->where('instance_id', $instance->id))
             ->orderBy('id')
             ->limit(2);
 
@@ -76,7 +76,7 @@ final readonly class AppInstanceEnvironmentContextResolver
 
         return new AppInstanceEnvironmentContext(
             appInstanceId: $instance->id,
-            appId: $instance->app_id,
+            appId: $instance->project_id,
             nodeId: $instance->node_id,
             environment: $environment,
             path: $path,
@@ -90,7 +90,7 @@ final readonly class AppInstanceEnvironmentContextResolver
     }
 
     public function resolveForClone(
-        AppInstance $instance,
+        Instance $instance,
         bool $requireActiveNode,
         bool $lockRoute = false,
     ): AppInstanceEnvironmentContext {
@@ -120,7 +120,7 @@ final readonly class AppInstanceEnvironmentContextResolver
 
         $routeQuery = Route::query()
             ->whereHas('targets', static fn (Builder $query): Builder => $query
-                ->where('app_instance_id', $instance->id))
+                ->where('instance_id', $instance->id))
             ->orderBy('id')
             ->limit(2);
 
@@ -150,7 +150,7 @@ final readonly class AppInstanceEnvironmentContextResolver
 
         return new AppInstanceEnvironmentContext(
             appInstanceId: $instance->id,
-            appId: $instance->app_id,
+            appId: $instance->project_id,
             nodeId: $instance->node_id,
             environment: $environment,
             path: $path,
@@ -164,7 +164,7 @@ final readonly class AppInstanceEnvironmentContextResolver
     }
 
     public function resolveForRouteTransition(
-        AppInstance $instance,
+        Instance $instance,
         AppInstanceEnvironmentRouteDomain $domain,
         bool $requireActiveNode,
         bool $lockRoute = false,
@@ -189,7 +189,7 @@ final readonly class AppInstanceEnvironmentContextResolver
 
         $routeQuery = Route::query()
             ->whereHas('targets', static fn (Builder $query): Builder => $query
-                ->where('app_instance_id', $instance->id))
+                ->where('instance_id', $instance->id))
             ->orderBy('id')
             ->limit(2);
 
@@ -230,7 +230,7 @@ final readonly class AppInstanceEnvironmentContextResolver
 
         return new AppInstanceEnvironmentContext(
             appInstanceId: $instance->id,
-            appId: $instance->app_id,
+            appId: $instance->project_id,
             nodeId: $instance->node_id,
             environment: $environment,
             path: $path,
@@ -245,7 +245,7 @@ final readonly class AppInstanceEnvironmentContextResolver
     }
 
     /** @return array{string, string} */
-    private function placement(AppInstance $instance, Node $node): array
+    private function placement(Instance $instance, Node $node): array
     {
         if ($instance->placementEnvironment() === 'development') {
             $path = $instance->getAttribute('checkout_path');
@@ -287,7 +287,7 @@ final readonly class AppInstanceEnvironmentContextResolver
     {
         throw new ResourceOperationException(
             errorCode: 'env.owner_unavailable',
-            message: 'The AppInstance environment owner is not available for this operation.',
+            message: 'The Instance environment owner is not available for this operation.',
             status: 409,
         );
     }

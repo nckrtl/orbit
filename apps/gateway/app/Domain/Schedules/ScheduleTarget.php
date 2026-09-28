@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Schedules;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 
 final readonly class ScheduleTarget
@@ -17,7 +17,7 @@ final readonly class ScheduleTarget
         public string $workingDirectory,
         public string $shell,
         public bool $loginShell,
-        public ?AppInstance $appInstance,
+        public ?Instance $appInstance,
     ) {}
 
     public function isProduction(): bool

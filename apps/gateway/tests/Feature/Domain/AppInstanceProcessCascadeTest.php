@@ -8,19 +8,19 @@ use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 
-it('removes every AppInstance-owned Process in stable order and leaves other owners untouched', function (): void {
+it('removes every Instance-owned Process in stable order and leaves other owners untouched', function (): void {
     $target = orb131_cascade_instance('target');
     $other = orb131_cascade_instance('other');
     $first = orb131_cascade_process($target->id, 'first', LifecycleStatus::Active);
     $second = orb131_cascade_process($target->id, 'second', LifecycleStatus::Failed);
     $third = orb131_cascade_process($target->id, 'third', LifecycleStatus::Removing);
     $otherInstance = orb131_cascade_process($other->id, 'other', LifecycleStatus::Active);
-    $legacy = orb131_cascade_process($target->id, 'legacy', LifecycleStatus::Active, 'App\\Models\\Instance');
+    $legacy = orb131_cascade_process($target->id, 'legacy', LifecycleStatus::Active, 'App\\Models\\AppInstance');
     $nodeOwned = orb131_cascade_process($target->node_id, 'postgres', LifecycleStatus::Active, Node::class);
     $runtime = new Orb131CascadeRuntimeManager;
 
@@ -63,19 +63,19 @@ it('retains failed cleanup for retry and repeats only unfinished Process removal
 
     expect($runtime->removed)->toBe([$first->id, $second->id, $second->id, $third->id]);
     $this->assertDatabaseMissing('processes', [
-        'owner_type' => AppInstance::MorphAlias,
+        'owner_type' => Instance::MorphAlias,
         'owner_id' => $target->id,
     ]);
 });
 
-function orb131_cascade_instance(string $suffix): AppInstance
+function orb131_cascade_instance(string $suffix): Instance
 {
     $octet = match ($suffix) {
         'target' => 50,
         'other' => 51,
         'retry' => 52,
     };
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => "Cascade {$suffix}",
         'slug' => "cascade-{$suffix}",
         'repository_url' => "https://example.test/cascade-{$suffix}.git",
@@ -92,8 +92,8 @@ function orb131_cascade_instance(string $suffix): AppInstance
     ]);
     orbit_test_set_app_placement_role($node, false);
 
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => $suffix,
         'environment' => 'development',
@@ -111,7 +111,7 @@ function orb131_cascade_process(
     int $ownerId,
     string $name,
     LifecycleStatus $status,
-    string $ownerType = AppInstance::MorphAlias,
+    string $ownerType = Instance::MorphAlias,
 ): Process {
     return Process::query()->create([
         'owner_type' => $ownerType,

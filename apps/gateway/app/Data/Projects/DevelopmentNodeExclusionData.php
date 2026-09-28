@@ -25,7 +25,7 @@ final class DevelopmentNodeExclusionData extends Data
         $exclusion->loadMissing(['app', 'node']);
 
         return new self(
-            projectId: $exclusion->app_id,
+            projectId: $exclusion->project_id,
             projectSlug: $exclusion->app->slug,
             nodeId: $exclusion->node_id,
             nodeName: $exclusion->node->name,

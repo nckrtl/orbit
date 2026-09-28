@@ -27,7 +27,7 @@ it('records a deployment row on deploy and lists it newest first with its phases
 
     $deployment = AppInstanceDeployment::query()->sole();
 
-    expect($deployment->app_instance_id)->toBe($this->fixture->instance->id)
+    expect($deployment->instance_id)->toBe($this->fixture->instance->id)
         ->and($deployment->status)->toBe('succeeded')
         ->and($deployment->branch)->toBe($this->fixture->instance->branch)
         ->and($deployment->triggered_by)->toBe($this->fixture->caller->name)

@@ -11,7 +11,7 @@ use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AppInstances\RollbackAppInstanceRequest;
 use App\Http\Streaming\DeploymentStreamResponse;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class AppInstanceRollbacksController extends Controller
@@ -19,7 +19,7 @@ final class AppInstanceRollbacksController extends Controller
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]
     public function store(
         RollbackAppInstanceRequest $request,
-        AppInstance $instance,
+        Instance $instance,
         RollbackAppInstanceAction $action,
         DeploymentStreamResponse $stream,
     ): StreamedResponse {

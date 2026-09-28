@@ -18,9 +18,9 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Tests\Support\AppDevFakeSshExecutor;
 
@@ -34,15 +34,15 @@ it('derives production serving paths through current and resolves PHP roots afte
         'user' => 'orbit',
     ]);
     $node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Release layout',
         'slug' => 'release-layout',
         'repository_url' => 'https://example.test/release-layout.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'production',
         'environment' => 'production',
@@ -56,14 +56,14 @@ it('derives production serving paths through current and resolves PHP roots afte
         'status' => AppInstanceState::SourceResolved,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'domain' => 'release-layout.example.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Public,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
 
     $site = new AppDevSiteRepository()
@@ -109,15 +109,15 @@ it('uses the current-release root instead of a flat production home', function (
         'user' => 'orbit',
     ]);
     $node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Flat production',
         'slug' => 'flat-production',
         'repository_url' => 'https://example.test/flat-production.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'production',
         'environment' => 'production',
@@ -130,14 +130,14 @@ it('uses the current-release root instead of a flat production home', function (
         'status' => AppInstanceState::SourceResolved,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'domain' => 'flat-production.example.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Public,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
 
     $site = new AppDevSiteRepository()
@@ -203,7 +203,7 @@ it('leaves legacy flat production layouts outside release validation and cleanup
 
 /**
  * @param  list<CommandResult>  $results
- * @return array{RemoteProductionAppInstanceSourceLifecycle, AppDevFakeSshExecutor, AppInstance}
+ * @return array{RemoteProductionAppInstanceSourceLifecycle, AppDevFakeSshExecutor, Instance}
  */
 function orb216_release_layout_lifecycle(array $results): array
 {
@@ -241,15 +241,15 @@ function orb216_release_layout_lifecycle(array $results): array
         'user' => 'orbit',
     ]);
     $node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Release layout remote',
         'slug' => 'release-layout-remote',
         'repository_url' => 'https://example.test/release-layout.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'production',
         'environment' => 'production',

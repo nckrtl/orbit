@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Projects;
 
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\App as OrbitApp;
+use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -14,10 +14,10 @@ use InvalidArgumentException;
 final readonly class ProjectLifecycleStepStore
 {
     /** @return list<LifecycleStep> */
-    public function ordered(OrbitApp $app, LifecyclePhase $phase): array
+    public function ordered(Project $app, LifecyclePhase $phase): array
     {
         return array_values(ProjectLifecycleStep::query()
-            ->where('app_id', $app->id)
+            ->where('project_id', $app->id)
             ->where('phase', $phase->value)
             ->orderBy('position')
             ->get()
@@ -26,14 +26,14 @@ final readonly class ProjectLifecycleStepStore
     }
 
     public function create(
-        OrbitApp $app,
+        Project $app,
         LifecyclePhase $phase,
         LifecycleStep $step,
         ?string $before,
         ?string $after,
     ): LifecycleStep {
         return DB::transaction(function () use ($app, $phase, $step, $before, $after): LifecycleStep {
-            OrbitApp::query()->lockForUpdate()->findOrFail($app->id);
+            Project::query()->lockForUpdate()->findOrFail($app->id);
             $existing = $this->ordered($app, $phase);
             $placed = $this->insert($existing, $step, $before, $after);
             $this->assertValid($placed, $existing);
@@ -44,7 +44,7 @@ final readonly class ProjectLifecycleStepStore
     }
 
     public function update(
-        OrbitApp $app,
+        Project $app,
         LifecyclePhase $phase,
         string $name,
         ?string $command,
@@ -55,7 +55,7 @@ final readonly class ProjectLifecycleStepStore
         bool $hasTimeout,
     ): LifecycleStep {
         return DB::transaction(function () use ($app, $phase, $name, $command, $timeoutSeconds, $before, $after, $hasCommand, $hasTimeout): LifecycleStep {
-            OrbitApp::query()->lockForUpdate()->findOrFail($app->id);
+            Project::query()->lockForUpdate()->findOrFail($app->id);
             $existing = $this->ordered($app, $phase);
             $previous = $existing;
             $index = $this->indexByName($existing, $name, $phase);
@@ -82,10 +82,10 @@ final readonly class ProjectLifecycleStepStore
         }, 5);
     }
 
-    public function destroy(OrbitApp $app, LifecyclePhase $phase, string $name): LifecycleStep
+    public function destroy(Project $app, LifecyclePhase $phase, string $name): LifecycleStep
     {
         return DB::transaction(function () use ($app, $phase, $name): LifecycleStep {
-            OrbitApp::query()->lockForUpdate()->findOrFail($app->id);
+            Project::query()->lockForUpdate()->findOrFail($app->id);
             $existing = $this->ordered($app, $phase);
             $previous = $existing;
             $index = $this->indexByName($existing, $name, $phase);
@@ -203,16 +203,16 @@ final readonly class ProjectLifecycleStepStore
     }
 
     /** @param list<LifecycleStep> $steps */
-    private function persist(OrbitApp $app, LifecyclePhase $phase, array $steps): void
+    private function persist(Project $app, LifecyclePhase $phase, array $steps): void
     {
         ProjectLifecycleStep::query()
-            ->where('app_id', $app->id)
+            ->where('project_id', $app->id)
             ->where('phase', $phase->value)
             ->delete();
 
         foreach ($steps as $position => $step) {
             ProjectLifecycleStep::query()->create([
-                'app_id' => $app->id,
+                'project_id' => $app->id,
                 'phase' => $phase->value,
                 'name' => $step->name,
                 'command' => $step->command,

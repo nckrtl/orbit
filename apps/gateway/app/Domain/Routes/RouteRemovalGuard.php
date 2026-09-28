@@ -7,15 +7,15 @@ namespace App\Domain\Routes;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\App as OrbitApp;
 use App\Models\Cluster;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use App\Models\RouteTarget;
 
 final readonly class RouteRemovalGuard
 {
-    public function assertAppRemovable(OrbitApp $app): void
+    public function assertAppRemovable(Project $app): void
     {
         if ($app->routes()->exists()) {
             throw new ResourceOperationException(

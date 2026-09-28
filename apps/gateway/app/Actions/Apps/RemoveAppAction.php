@@ -8,7 +8,7 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Routes\RouteRemovalGuard;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\App as OrbitApp;
+use App\Models\Project;
 
 final readonly class RemoveAppAction
 {
@@ -17,7 +17,7 @@ final readonly class RemoveAppAction
         private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
-    public function execute(OrbitApp $app): OrbitApp
+    public function execute(Project $app): Project
     {
         if ($app->appInstances()->exists()) {
             throw new ResourceOperationException(

@@ -6,7 +6,7 @@ namespace App\Data\Tasks;
 
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskGroup;
 use Spatie\LaravelData\Attributes\MapOutputName;
@@ -54,10 +54,10 @@ final class TaskGroupData extends Data
             executionMode: $group->execution_mode,
 
             id: $group->id,
-            appId: $group->app_id,
+            appId: $group->project_id,
             app: $group->app->slug,
             projectCode: $group->app->code,
-            taskableType: $taskable instanceof AppInstance ? 'instance' : $group->taskable_type,
+            taskableType: $taskable instanceof Instance ? 'instance' : $group->taskable_type,
             taskableId: $group->taskable_id,
             title: $group->title,
             brief: $group->brief,

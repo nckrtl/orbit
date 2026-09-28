@@ -6,7 +6,7 @@ namespace App\Actions\AppInstances;
 
 use App\Domain\AppInstances\Queue\AppInstanceQueueReader;
 use App\Domain\Processes\ProcessRuntime;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Process;
 
 final readonly class ShowAppInstanceQueueAction
@@ -19,7 +19,7 @@ final readonly class ShowAppInstanceQueueAction
      * @param  'pending'|'completed'|'failed'  $state
      * @return array<string, mixed>
      */
-    public function execute(AppInstance $instance, string $state, int $limit): array
+    public function execute(Instance $instance, string $state, int $limit): array
     {
         $horizon = $this->horizonProcess($instance);
         $report = $horizon === null ? [] : $this->queues->read($horizon, $state, $limit);
@@ -77,7 +77,7 @@ final readonly class ShowAppInstanceQueueAction
     }
 
     /** The systemd Process of the instance whose command is `artisan horizon`. */
-    private function horizonProcess(AppInstance $instance): ?Process
+    private function horizonProcess(Instance $instance): ?Process
     {
         return $instance->processes
             ->first(static function (Process $process): bool {

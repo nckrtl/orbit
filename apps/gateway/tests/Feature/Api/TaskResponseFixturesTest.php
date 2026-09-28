@@ -10,9 +10,9 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\AgentThread;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskComment;
 use App\Models\TaskGroup;
@@ -53,13 +53,13 @@ describe('task response fixtures', function (): void {
         $this->withHeader('X-Orbit-Request-Id', fixture_request_id());
         app()->instance(InstanceProvisioning::class, new class implements InstanceProvisioning
         {
-            public function provision(InstanceProvisionIntent $intent): ?AppInstance
+            public function provision(InstanceProvisionIntent $intent): ?Instance
             {
                 return null;
             }
         });
         app(TaskExtensionState::class)->enable();
-        $this->project = OrbitApp::query()->create([
+        $this->project = Project::query()->create([
             'name' => 'Orbit',
             'code' => 'ORB',
             'slug' => 'orbit',
@@ -74,7 +74,7 @@ describe('task response fixtures', function (): void {
 
     it('records groups asking for assistance', function (): void {
         TaskGroup::query()->create([
-            'app_id' => $this->project->id,
+            'project_id' => $this->project->id,
             'title' => 'Blocked implementer',
             'brief' => 'Waiting on a decision.',
             'status' => TaskGroupStatus::Running,
@@ -82,7 +82,7 @@ describe('task response fixtures', function (): void {
             'assistance_reason' => 'The implementer is blocked.',
         ]);
         TaskGroup::query()->create([
-            'app_id' => $this->project->id,
+            'project_id' => $this->project->id,
             'title' => 'Settling question',
             'brief' => 'Waiting on review.',
             'status' => TaskGroupStatus::Settling,
@@ -90,7 +90,7 @@ describe('task response fixtures', function (): void {
             'assistance_reason' => 'Which database should this use?',
         ]);
         TaskGroup::query()->create([
-            'app_id' => $this->project->id,
+            'project_id' => $this->project->id,
             'title' => 'Clear',
             'brief' => 'Not waiting.',
             'status' => TaskGroupStatus::Running,
@@ -103,7 +103,7 @@ describe('task response fixtures', function (): void {
 
     it('records a created group and a refused todo create', function (): void {
         record_fixture($this->postJson('/api/v1/task-groups', [
-            'app_id' => $this->project->id,
+            'project_id' => $this->project->id,
             'title' => 'Add the tasks CLI',
             'brief' => "Add tasks:* commands.\nAccept when every route has a command.",
             'tasks' => [
@@ -113,7 +113,7 @@ describe('task response fixtures', function (): void {
         ])->assertCreated(), 'tasks/tasks-create/created', CreateTaskGroupRequest::class, 'POST /api/v1/task-groups');
 
         record_fixture($this->postJson('/api/v1/task-groups', [
-            'app_id' => $this->project->id,
+            'project_id' => $this->project->id,
             'title' => 'Empty',
             'brief' => 'No subtasks.',
             'status' => 'todo',
@@ -125,7 +125,7 @@ describe('task response fixtures', function (): void {
 
         $group = task_fixture_group($this->project);
         $done = TaskGroup::query()->create([
-            'app_id' => $this->project->id,
+            'project_id' => $this->project->id,
             'title' => 'Absorb Commander',
             'brief' => 'Run task groups on the Gateway.',
             'status' => TaskGroupStatus::Completed,
@@ -224,10 +224,10 @@ describe('task response fixtures', function (): void {
     });
 });
 
-function task_fixture_group(OrbitApp $project): TaskGroup
+function task_fixture_group(Project $project): TaskGroup
 {
     $group = TaskGroup::query()->create([
-        'app_id' => $project->id,
+        'project_id' => $project->id,
         'title' => 'Add the tasks CLI',
         'brief' => "Add tasks:* commands.\nAccept when every route has a command.",
     ]);

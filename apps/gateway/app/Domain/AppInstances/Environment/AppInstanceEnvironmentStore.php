@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\AppInstances\Environment;
 
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
+use App\Models\Instance;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\DB;
 
@@ -47,7 +47,7 @@ final readonly class AppInstanceEnvironmentStore
                 }
 
                 AppInstanceEnvironmentValue::query()->updateOrCreate(
-                    ['app_instance_id' => $expected->appInstanceId, 'env_key' => $key],
+                    ['instance_id' => $expected->appInstanceId, 'env_key' => $key],
                     ['env_value' => $value],
                 );
                 $changed = true;
@@ -86,7 +86,7 @@ final readonly class AppInstanceEnvironmentStore
                 }
 
                 AppInstanceEnvironmentValue::query()->updateOrCreate(
-                    ['app_instance_id' => $expected->appInstanceId, 'env_key' => $key],
+                    ['instance_id' => $expected->appInstanceId, 'env_key' => $key],
                     ['env_value' => $value],
                 );
                 $changed = true;
@@ -118,7 +118,7 @@ final readonly class AppInstanceEnvironmentStore
 
             if ($removed !== []) {
                 AppInstanceEnvironmentValue::query()
-                    ->where('app_instance_id', $expected->appInstanceId)
+                    ->where('instance_id', $expected->appInstanceId)
                     ->whereIn('env_key', $removed)
                     ->delete();
             }
@@ -152,7 +152,7 @@ final readonly class AppInstanceEnvironmentStore
 
             if ($changed) {
                 AppInstanceEnvironmentValue::query()->updateOrCreate(
-                    ['app_instance_id' => $expected->appInstanceId, 'env_key' => $key],
+                    ['instance_id' => $expected->appInstanceId, 'env_key' => $key],
                     ['env_value' => $value],
                 );
             }
@@ -172,8 +172,8 @@ final readonly class AppInstanceEnvironmentStore
     {
         $requiredCapacity = DB::transaction(function () use ($expected): int {
             $this->assertCurrent($expected, requireActiveNode: true);
-            $rows = DB::table('app_instance_environment_values')
-                ->where('app_instance_id', $expected->appInstanceId)
+            $rows = DB::table('instance_environment_values')
+                ->where('instance_id', $expected->appInstanceId)
                 ->orderBy('env_key')
                 ->get(['env_key', 'env_value']);
 
@@ -222,7 +222,7 @@ final readonly class AppInstanceEnvironmentStore
             $this->assertCurrent($source, requireActiveNode: true);
             $this->assertCloneCurrent($target, requireActiveNode: true);
             $targetRows = AppInstanceEnvironmentValue::query()
-                ->where('app_instance_id', $target->appInstanceId)
+                ->where('instance_id', $target->appInstanceId)
                 ->lockForUpdate()
                 ->exists();
 
@@ -232,7 +232,7 @@ final readonly class AppInstanceEnvironmentStore
 
             foreach ($this->storedValues($source->appInstanceId) as $key => $value) {
                 AppInstanceEnvironmentValue::query()->create([
-                    'app_instance_id' => $target->appInstanceId,
+                    'instance_id' => $target->appInstanceId,
                     'env_key' => $key,
                     'env_value' => $value,
                 ]);
@@ -240,7 +240,7 @@ final readonly class AppInstanceEnvironmentStore
         });
     }
 
-    public function forceAppProdLaravelMode(AppInstance $target): void
+    public function forceAppProdLaravelMode(Instance $target): void
     {
         $target->loadMissing('node.roles');
 
@@ -250,7 +250,7 @@ final readonly class AppInstanceEnvironmentStore
 
         foreach (['APP_ENV' => 'production', 'APP_DEBUG' => 'false'] as $key => $value) {
             AppInstanceEnvironmentValue::query()->updateOrCreate(
-                ['app_instance_id' => $target->id, 'env_key' => $key],
+                ['instance_id' => $target->id, 'env_key' => $key],
                 ['env_value' => $value],
             );
         }
@@ -260,8 +260,8 @@ final readonly class AppInstanceEnvironmentStore
     {
         $requiredCapacity = DB::transaction(function () use ($expected): int {
             $this->assertCloneCurrent($expected, requireActiveNode: true);
-            $rows = DB::table('app_instance_environment_values')
-                ->where('app_instance_id', $expected->appInstanceId)
+            $rows = DB::table('instance_environment_values')
+                ->where('instance_id', $expected->appInstanceId)
                 ->orderBy('env_key')
                 ->get(['env_key', 'env_value']);
             $encryptedStorageBytes = 0;
@@ -296,9 +296,9 @@ final readonly class AppInstanceEnvironmentStore
 
     private function assertCurrent(AppInstanceEnvironmentContext $expected, bool $requireActiveNode): void
     {
-        $instance = AppInstance::query()->lockForUpdate()->find($expected->appInstanceId);
+        $instance = Instance::query()->lockForUpdate()->find($expected->appInstanceId);
 
-        if (! $instance instanceof AppInstance) {
+        if (! $instance instanceof Instance) {
             $this->conflict();
         }
 
@@ -322,9 +322,9 @@ final readonly class AppInstanceEnvironmentStore
 
     private function assertCloneCurrent(AppInstanceEnvironmentContext $expected, bool $requireActiveNode): void
     {
-        $instance = AppInstance::query()->lockForUpdate()->find($expected->appInstanceId);
+        $instance = Instance::query()->lockForUpdate()->find($expected->appInstanceId);
 
-        if (! $instance instanceof AppInstance) {
+        if (! $instance instanceof Instance) {
             $this->conflict();
         }
 
@@ -344,7 +344,7 @@ final readonly class AppInstanceEnvironmentStore
     {
         try {
             $values = AppInstanceEnvironmentValue::query()
-                ->where('app_instance_id', $appInstanceId)
+                ->where('instance_id', $appInstanceId)
                 ->lockForUpdate()
                 ->orderBy('env_key')
                 ->get()
@@ -361,7 +361,7 @@ final readonly class AppInstanceEnvironmentStore
     {
         throw new ResourceOperationException(
             errorCode: 'env.owner_changed',
-            message: 'The AppInstance environment owner changed during the operation.',
+            message: 'The Instance environment owner changed during the operation.',
             status: 409,
         );
     }
@@ -370,7 +370,7 @@ final readonly class AppInstanceEnvironmentStore
     {
         throw new ResourceOperationException(
             errorCode: 'env.configuration_missing',
-            message: 'The AppInstance has no stored environment configuration.',
+            message: 'The Instance has no stored environment configuration.',
             status: 409,
         );
     }
@@ -379,7 +379,7 @@ final readonly class AppInstanceEnvironmentStore
     {
         throw new ResourceOperationException(
             errorCode: 'env.configuration_unreadable',
-            message: 'The stored AppInstance environment configuration cannot be read.',
+            message: 'The stored Instance environment configuration cannot be read.',
             status: 409,
         );
     }

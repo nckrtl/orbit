@@ -65,7 +65,7 @@ describe(NativeAppInstanceEnvironmentOperationLock::class, function (): void {
                         ->and($exception->status)
                         ->toBe(409)
                         ->and($exception->getMessage())
-                        ->toBe('Another AppInstance environment operation is active. Retry the request.')
+                        ->toBe('Another Instance environment operation is active. Retry the request.')
                         ->not->toContain($directory);
                 });
 

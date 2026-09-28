@@ -20,7 +20,7 @@ final readonly class SystemdProcessRenderer
     public static function viteEnvironmentPath(int $instanceId): string
     {
         if ($instanceId < 1) {
-            throw new InvalidArgumentException('A Vite environment requires a persisted AppInstance.');
+            throw new InvalidArgumentException('A Vite environment requires a persisted Instance.');
         }
 
         return "/etc/orbit/vite/app-instance-{$instanceId}.env";

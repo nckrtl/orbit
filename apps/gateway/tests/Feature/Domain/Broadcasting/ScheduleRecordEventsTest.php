@@ -18,7 +18,7 @@ use App\Domain\Schedules\ScheduleSpecificationValidator;
 use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Domain\Schedules\ScheduleTargetType;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Schedule;
 use Illuminate\Support\Facades\Event;
@@ -80,8 +80,8 @@ describe('Schedule record events', function (): void {
             'desired_timer_state' => DesiredTimerState::Disabled,
             'status' => LifecycleStatus::Active,
         ]);
-        // Activation is only supported for AppInstance-targeted schedules.
-        $schedule->update(['target_type' => AppInstance::MorphAlias, 'target_id' => 1]);
+        // Activation is only supported for Instance-targeted schedules.
+        $schedule->update(['target_type' => Instance::MorphAlias, 'target_id' => 1]);
 
         Event::fake([RecordBroadcast::class]);
 

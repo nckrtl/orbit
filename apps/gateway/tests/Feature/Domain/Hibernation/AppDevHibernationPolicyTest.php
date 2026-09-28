@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 use App\Domain\Hibernation\AppDevHibernationPolicy;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 
-it('applies only to development AppInstance Processes on an active app-dev Node', function (): void {
+it('applies only to development Instance Processes on an active app-dev Node', function (): void {
     $policy = new AppDevHibernationPolicy;
     $appDev = hibernation_policy_node('app-dev', 'app-dev');
     $appProd = hibernation_policy_node('app-prod', 'app-prod');
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
@@ -50,7 +50,7 @@ it('applies only to development AppInstance Processes on an active app-dev Node'
 it('does not treat restart policy as an exemption', function (): void {
     $policy = new AppDevHibernationPolicy;
     $node = hibernation_policy_node('app-dev', 'app-dev');
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
@@ -64,7 +64,7 @@ it('does not treat restart policy as an exemption', function (): void {
 it('still applies to a keep-alive Process so restart policy stays independent', function (): void {
     $policy = new AppDevHibernationPolicy;
     $node = hibernation_policy_node('app-dev', 'app-dev');
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
@@ -91,10 +91,10 @@ function hibernation_policy_node(string $name, string $role): Node
     return $node;
 }
 
-function hibernation_policy_instance(OrbitApp $app, Node $node, string $environment): AppInstance
+function hibernation_policy_instance(Project $app, Node $node, string $environment): Instance
 {
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => $environment,
         'environment' => $environment,
@@ -108,12 +108,12 @@ function hibernation_policy_instance(OrbitApp $app, Node $node, string $environm
 }
 
 function hibernation_policy_process(
-    AppInstance $instance,
+    Instance $instance,
     string $restartPolicy = 'on-failure',
     bool $keepAlive = false,
 ): Process {
     return Process::query()->create([
-        'owner_type' => AppInstance::MorphAlias,
+        'owner_type' => Instance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => 'vite-'.$restartPolicy,
         'runtime' => 'systemd',

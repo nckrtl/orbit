@@ -8,7 +8,7 @@ covers:
   - apps/gateway/app/Infrastructure/SourceControl/NativeRepositoryDefaultBranchResolver.php
   - apps/gateway/app/Http/{Controllers/Api/AppsController.php,Requests/Apps/**}
   - apps/gateway/app/Data/Apps/**
-  - apps/gateway/app/Models/{App,AppUpdate}.php
+  - apps/gateway/app/Models/{Project,AppUpdate}.php
   - apps/cli/app/Commands/Apps/**
 ---
 

@@ -12,9 +12,9 @@ describe('managed node user migrations', function (): void {
         $contract = require base_path('database/migrations/2026_08_28_000001_drop_node_ssh_user.php');
         $expand = require base_path('database/migrations/2026_08_28_000000_add_node_user.php');
 
-        $contract->down();
-        $expand->down();
-        $expand->up();
+        run_legacy_schema_migration($contract, 'down');
+        run_legacy_schema_migration($expand, 'down');
+        run_legacy_schema_migration($expand, 'up');
 
         $timestamp = now();
 
@@ -37,8 +37,8 @@ describe('managed node user migrations', function (): void {
         $contract = require base_path('database/migrations/2026_08_28_000001_drop_node_ssh_user.php');
         $expand = require base_path('database/migrations/2026_08_28_000000_add_node_user.php');
 
-        $contract->down();
-        $expand->down();
+        run_legacy_schema_migration($contract, 'down');
+        run_legacy_schema_migration($expand, 'down');
 
         expect(Schema::hasColumn('nodes', 'ssh_user'))
             ->toBeTrue()
@@ -56,12 +56,12 @@ describe('managed node user migrations', function (): void {
             legacyNode('legacy-nul', '192.0.2.7', "nck\0rtl", $timestamp),
         ]);
 
-        expect(fn () => $expand->up())
+        expect(fn () => run_legacy_schema_migration($expand, 'up'))
             ->toThrow(RuntimeException::class, 'Invalid legacy node user.');
 
         DB::table('nodes')->where('name', 'legacy-whitespace')->delete();
         DB::table('nodes')->where('name', 'legacy-nul')->delete();
-        $expand->up();
+        run_legacy_schema_migration($expand, 'up');
 
         expect(Schema::hasColumn('nodes', 'ssh_user'))
             ->toBeTrue()
@@ -147,7 +147,7 @@ describe('managed node user migrations', function (): void {
             ->and(DB::table('nodes')->where('name', 'managed-root')->value('ssh_user'))
             ->toBe('root');
 
-        $contract->up();
+        run_legacy_schema_migration($contract, 'up');
 
         $columns = collect(Schema::getColumns('nodes'))->keyBy('name');
 
@@ -162,7 +162,7 @@ describe('managed node user migrations', function (): void {
             ->and(DB::table('nodes')->whereNull('user')->orWhere('user', '')->exists())
             ->toBeFalse();
 
-        $contract->down();
+        run_legacy_schema_migration($contract, 'down');
 
         DB::table('nodes')->where('name', 'managed-write')->update(['user' => 'rollback-user']);
 
@@ -191,7 +191,7 @@ describe('managed node user migrations', function (): void {
         expect(DB::table('nodes')->where('name', 'legacy-write')->value('user'))
             ->toBe('nckrtl');
 
-        $expand->down();
+        run_legacy_schema_migration($expand, 'down');
 
         expect(Schema::hasColumn('nodes', 'ssh_user'))
             ->toBeTrue()
@@ -217,9 +217,9 @@ function rollbackClusterNetworkMigration(): void
     $ingressMigration = require base_path('database/migrations/2026_09_01_120814_add_cluster_ingress_role.php');
     $migration = require base_path('database/migrations/2026_08_31_165346_add_clusters_and_node_network_identity.php');
 
-    orb183_production_route_migration()->down();
-    $ingressMigration->down();
-    $migration->down();
+    run_legacy_schema_migration(orb183_production_route_migration(), 'down');
+    run_legacy_schema_migration($ingressMigration, 'down');
+    run_legacy_schema_migration($migration, 'down');
 }
 
 /**

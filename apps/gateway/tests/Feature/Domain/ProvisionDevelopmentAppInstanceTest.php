@@ -13,13 +13,13 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppInstances\NativeDevelopmentAppInstanceProvisioner;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 
 beforeEach(function (): void {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
@@ -34,8 +34,8 @@ beforeEach(function (): void {
         'wireguard_ip' => '10.44.0.10',
         'tld' => 'test',
     ]);
-    $this->instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $this->instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'feature',
         'checkout_path' => '/srv/acme/feature',
@@ -57,7 +57,7 @@ beforeEach(function (): void {
 
         public ?string $phpVersion = '8.5';
 
-        public function inspect(AppInstance $appInstance): DevelopmentSourceProfile
+        public function inspect(Instance $appInstance): DevelopmentSourceProfile
         {
             $this->inspections++;
             if ($this->failInspection) {
@@ -67,7 +67,7 @@ beforeEach(function (): void {
             return new DevelopmentSourceProfile($this->phpVersion, $this->laravel);
         }
 
-        public function configureLaravelUrl(AppInstance $appInstance, string $url): void
+        public function configureLaravelUrl(Instance $appInstance, string $url): void
         {
             $this->configurations++;
             if ($this->failConfiguration) {
@@ -92,7 +92,7 @@ beforeEach(function (): void {
             private readonly ProvisionDevelopmentProjectionOwner $owner,
         ) {}
 
-        public function converge(AppInstance $appInstance, Route $route): void
+        public function converge(Instance $appInstance, Route $route): void
         {
             $this->convergences++;
             $this->ownerWasActive = $this->owner->active;
@@ -111,7 +111,7 @@ beforeEach(function (): void {
     );
 });
 
-it('retains projection ownership through Route and AppInstance activation', function (): void {
+it('retains projection ownership through Route and Instance activation', function (): void {
     $this->provisioner->reserve($this->instance, null);
 
     $result = $this->provisioner->complete($this->instance, null);

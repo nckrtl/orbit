@@ -15,7 +15,7 @@ use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Process;
 use Illuminate\Support\Carbon;
 
@@ -38,7 +38,7 @@ final readonly class SweepIdleAppDevRuntimesAction
         $halted = 0;
         $pruned = 0;
 
-        $instances = AppInstance::query()
+        $instances = Instance::query()
             ->whereHas('node.roles', static function ($query): void {
                 $query
                     ->where('role', RoleName::AppDev)
@@ -87,7 +87,7 @@ final readonly class SweepIdleAppDevRuntimesAction
         return new RuntimeHibernationSweepResult($halted, $pruned);
     }
 
-    private function prune(AppInstance $instance, string $key, Carbon $now, ?int $httpActivity): bool
+    private function prune(Instance $instance, string $key, Carbon $now, ?int $httpActivity): bool
     {
         if ($this->hasKeepAliveDesiredRunning($instance)) {
             return false;
@@ -128,7 +128,7 @@ final readonly class SweepIdleAppDevRuntimesAction
         return $activity === null || ($now->getTimestamp() - $activity) >= $window;
     }
 
-    private function processLifecycleUnix(AppInstance $instance): ?int
+    private function processLifecycleUnix(Instance $instance): ?int
     {
         $times = $instance->processes
             ->map(static fn (Process $process): ?int => $process->updated_at?->getTimestamp())
@@ -138,7 +138,7 @@ final readonly class SweepIdleAppDevRuntimesAction
         return $times === [] ? null : max($times);
     }
 
-    private function hasKeepAliveDesiredRunning(AppInstance $instance): bool
+    private function hasKeepAliveDesiredRunning(Instance $instance): bool
     {
         return $instance->processes->contains(
             static fn (Process $process): bool => $process->desired_state === DesiredProcessState::Running
@@ -147,7 +147,7 @@ final readonly class SweepIdleAppDevRuntimesAction
     }
 
     /** @return list<Process> */
-    private function desiredRunning(AppInstance $instance): array
+    private function desiredRunning(Instance $instance): array
     {
         return array_values($instance->processes
             ->filter(static fn (Process $process): bool => $process->desired_state === DesiredProcessState::Running

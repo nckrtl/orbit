@@ -21,9 +21,9 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 
 final readonly class NativeAppStateInspector implements AppStateInspector
 {
@@ -37,7 +37,7 @@ final readonly class NativeAppStateInspector implements AppStateInspector
         private NodeSettingsNormalizer $nodeSettings,
     ) {}
 
-    public function inspect(App $app, Node $node): AppInspectionData
+    public function inspect(Project $app, Node $node): AppInspectionData
     {
         $host = $node->wireguard_ip;
         if (! is_string($host) || $host === '') {
@@ -59,7 +59,7 @@ final readonly class NativeAppStateInspector implements AppStateInspector
             ->with(['app', 'taskGroups'])
             ->orderBy('id')
             ->get()
-            ->filter(static fn (AppInstance $instance): bool => ! AppInstanceProvisioning::isInFlight(
+            ->filter(static fn (Instance $instance): bool => ! AppInstanceProvisioning::isInFlight(
                 $instance,
                 TaskWorkspaceLifecycle::settledState($instance),
             ));

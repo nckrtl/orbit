@@ -15,7 +15,7 @@ use App\Domain\AppInstances\DevelopmentRouteProjector;
 use App\Domain\AppInstances\DevelopmentSourceProfile;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 
@@ -28,7 +28,7 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
         private ?DevelopmentProjectionOperationLock $projectionOwner = null,
     ) {}
 
-    public function reserve(AppInstance $appInstance, ?string $domain): void
+    public function reserve(Instance $appInstance, ?string $domain): void
     {
         app(VitePortAllocator::class)->assign($appInstance);
 
@@ -44,20 +44,20 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
     }
 
     public function complete(
-        AppInstance $appInstance,
+        Instance $appInstance,
         ?string $domain,
         bool $setupPending = false,
-    ): AppInstance {
+    ): Instance {
         if (! $appInstance->requiresRoute()) {
             return $this->owner()->run(
-                fn (): AppInstance => $this->completeWithoutRoute($appInstance->id, $setupPending),
+                fn (): Instance => $this->completeWithoutRoute($appInstance->id, $setupPending),
             );
         }
 
         $route = $this->routes->ensureForAppInstance($appInstance, $domain);
 
         return $this->owner()->run(
-            fn (): AppInstance => $this->completeOwned(
+            fn (): Instance => $this->completeOwned(
                 $appInstance->id,
                 $route->id,
                 $setupPending,
@@ -65,9 +65,9 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
         );
     }
 
-    private function completeWithoutRoute(int $appInstanceId, bool $setupPending): AppInstance
+    private function completeWithoutRoute(int $appInstanceId, bool $setupPending): Instance
     {
-        $appInstance = AppInstance::query()->with(['app', 'node'])->findOrFail($appInstanceId);
+        $appInstance = Instance::query()->with(['app', 'node'])->findOrFail($appInstanceId);
 
         if ($appInstance->status === AppInstanceState::Active) {
             return $appInstance->load('routes.targets');
@@ -77,7 +77,7 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
         $this->recordProfile($appInstance, $profile);
 
         DB::transaction(static function () use ($appInstance, $setupPending): void {
-            $lockedInstance = AppInstance::query()->lockForUpdate()->findOrFail($appInstance->id);
+            $lockedInstance = Instance::query()->lockForUpdate()->findOrFail($appInstance->id);
             $lockedInstance->update([
                 'status' => AppInstanceState::Active,
                 'provisioning_step' => 'active',
@@ -93,18 +93,18 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
         int $appInstanceId,
         int $routeId,
         bool $setupPending,
-    ): AppInstance {
-        $appInstance = AppInstance::query()->with('node')->findOrFail($appInstanceId);
+    ): Instance {
+        $appInstance = Instance::query()->with('node')->findOrFail($appInstanceId);
         $route = Route::query()
             ->with(['targets.appInstance.node', 'cluster.routerAssignment.node'])
             ->whereKey($routeId)
-            ->whereHas('targets', static fn ($query) => $query->where('app_instance_id', $appInstanceId))
+            ->whereHas('targets', static fn ($query) => $query->where('instance_id', $appInstanceId))
             ->first();
 
         if (! $route instanceof Route) {
             throw new ResourceOperationException(
                 errorCode: 'instance.lifecycle_conflict',
-                message: 'The AppInstance Route changed before development projection began.',
+                message: 'The Instance Route changed before development projection began.',
                 status: 409,
             );
         }
@@ -145,7 +145,7 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
         $this->projection->converge($appInstance->refresh(), $route->refresh());
 
         DB::transaction(static function () use ($appInstance, $route, $setupPending): void {
-            $lockedInstance = AppInstance::query()->lockForUpdate()->findOrFail($appInstance->id);
+            $lockedInstance = Instance::query()->lockForUpdate()->findOrFail($appInstance->id);
             $lockedRoute = Route::query()->lockForUpdate()->findOrFail($route->id);
             $lockedRoute->update([
                 'status' => RouteStatus::Active,
@@ -169,7 +169,7 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
     }
 
     private function recordProfile(
-        AppInstance $appInstance,
+        Instance $appInstance,
         DevelopmentSourceProfile $profile,
     ): void {
         $appInstance->update([

@@ -8,8 +8,8 @@ use App\Domain\AppInstances\Dependencies\DependencyEcosystem;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppInstances\DependencyFilesProgram;
-use App\Models\App as OrbitApp;
 use App\Models\Node;
+use App\Models\Project;
 
 beforeEach(function (): void {
     $this->operator = Node::query()->create([
@@ -67,7 +67,7 @@ it('names the type when the package root is sent for an app Project', function (
 });
 
 it('updates a legacy Project with a null root when root is omitted', function (): void {
-    $project = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'legacy-project',
         'slug' => 'legacy-project',
         'type' => ProjectType::LaravelApp,
@@ -86,7 +86,7 @@ it('updates a legacy Project with a null root when root is omitted', function ()
 });
 
 it('rejects a type change when the stored package root is invalid for that type', function (): void {
-    $project = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'root-package',
         'slug' => 'root-package',
         'type' => ProjectType::NodePackage,
@@ -118,7 +118,7 @@ it('rejects unknown Project types on create and update', function (): void {
         ->assertJsonPath('error.code', 'validation.failed')
         ->assertJsonPath('error.details.type.0', fn (string $message): bool => $message !== '');
 
-    $project = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'known-project',
         'slug' => 'known-project',
         'type' => ProjectType::LaravelPackage,

@@ -14,7 +14,7 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Ssh\SshExecutor;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Tests\Support\AppDevFakeSshExecutor;
@@ -43,8 +43,8 @@ function orb101_repository_data(string $url): UpdateAppData
 
 describe('App repository reconciliation', function (): void {
     it('changes origin once per Orbit-owned checkout and never mutates a worktree common repository', function (): void {
-        $worktree = AppInstance::query()->create([
-            'app_id' => $this->fixture->app->id,
+        $worktree = Instance::query()->create([
+            'project_id' => $this->fixture->app->id,
             'node_id' => $this->fixture->node->id,
             'name' => 'feature',
             'environment' => 'development',
@@ -75,8 +75,8 @@ describe('App repository reconciliation', function (): void {
     });
 
     it('refuses a worktree whose common repository no Orbit-owned checkout owns', function (): void {
-        AppInstance::query()->create([
-            'app_id' => $this->fixture->app->id,
+        Instance::query()->create([
+            'project_id' => $this->fixture->app->id,
             'node_id' => $this->fixture->node->id,
             'name' => 'orphan',
             'environment' => 'development',

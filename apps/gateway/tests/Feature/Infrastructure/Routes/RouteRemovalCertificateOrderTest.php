@@ -33,9 +33,9 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App as OrbitApp;
 use App\Models\Cluster;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
@@ -123,14 +123,14 @@ describe('Route removal certificate order', function (): void {
     it('withdraws a targetless Project Route from its Router before it removes the Router certificate', function (): void {
         $cluster = Cluster::query()->create(['name' => 'lab', 'state' => ClusterState::Active]);
         $router = certificate_order_node('router', 20, RoleName::Router, $cluster);
-        $app = OrbitApp::query()->create([
+        $app = Project::query()->create([
             'name' => 'Acme',
             'slug' => 'acme',
             'repository_url' => 'https://example.test/acme.git',
             'root' => 'public',
         ]);
         $route = Route::query()->create([
-            'app_id' => $app->id,
+            'project_id' => $app->id,
             'cluster_id' => $cluster->id,
             'domain' => 'vacated.acme.test',
             'provenance' => RouteProvenance::Explicit,

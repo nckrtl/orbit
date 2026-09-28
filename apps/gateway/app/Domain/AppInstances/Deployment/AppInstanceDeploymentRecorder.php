@@ -7,14 +7,14 @@ namespace App\Domain\AppInstances\Deployment;
 use App\Data\AppInstances\AppInstanceDeploymentData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
-use App\Models\AppInstance;
 use App\Models\AppInstanceDeployment;
+use App\Models\Instance;
 use Illuminate\Support\Carbon;
 
 /**
  * Records one deployments row per `instance:deploy` or `instance:rollback` run:
  * one write when the run starts, and one write when it finishes. Retains only
- * the most recent rows per AppInstance. Each write broadcasts the row, so a
+ * the most recent rows per Instance. Each write broadcasts the row, so a
  * connected client refreshes the Instance's deployment history without polling.
  */
 final readonly class AppInstanceDeploymentRecorder
@@ -25,10 +25,10 @@ final readonly class AppInstanceDeploymentRecorder
         private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
-    public function start(AppInstance $instance, string $triggeredBy): AppInstanceDeployment
+    public function start(Instance $instance, string $triggeredBy): AppInstanceDeployment
     {
         $deployment = AppInstanceDeployment::query()->create([
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'branch' => $instance->deployment_branch ?? $instance->branch,
             'started_at' => Carbon::now(),
             'status' => 'running',
@@ -58,7 +58,7 @@ final readonly class AppInstanceDeploymentRecorder
             'events' => $events,
         ]);
 
-        $this->prune($deployment->app_instance_id);
+        $this->prune($deployment->instance_id);
         $this->broadcast(RecordEventType::DeploymentUpdated, $deployment);
     }
 
@@ -73,14 +73,14 @@ final readonly class AppInstanceDeploymentRecorder
 
     private function prune(int $appInstanceId): void
     {
-        $total = AppInstanceDeployment::query()->where('app_instance_id', $appInstanceId)->count();
+        $total = AppInstanceDeployment::query()->where('instance_id', $appInstanceId)->count();
 
         if ($total <= self::RETAINED_PER_INSTANCE) {
             return;
         }
 
         $staleIds = AppInstanceDeployment::query()
-            ->where('app_instance_id', $appInstanceId)
+            ->where('instance_id', $appInstanceId)
             ->orderBy('started_at')
             ->orderBy('id')
             ->limit($total - self::RETAINED_PER_INSTANCE)

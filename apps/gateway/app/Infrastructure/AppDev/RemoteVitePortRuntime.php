@@ -10,7 +10,7 @@ use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Processes\ProcessOperationException;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 
@@ -78,7 +78,7 @@ final readonly class RemoteVitePortRuntime implements VitePortRuntime
     }
 
     /** @phpstan-impure */
-    public function ownsListener(Process $process, AppInstance $instance, int $port): bool
+    public function ownsListener(Process $process, Instance $instance, int $port): bool
     {
         $result = $this->ssh->execute($instance->node, new RemoteCommand(arguments: ['sudo', 'python3', '-c', <<<'PY'
             import pathlib, re, subprocess, sys
@@ -111,7 +111,7 @@ final readonly class RemoteVitePortRuntime implements VitePortRuntime
         return trim($result->stdout) === 'owned';
     }
 
-    public function ready(Process $process, AppInstance $instance, int $port): bool
+    public function ready(Process $process, Instance $instance, int $port): bool
     {
         if (! $this->ownsListener($process, $instance, $port)) {
             return false;
@@ -130,12 +130,12 @@ final readonly class RemoteVitePortRuntime implements VitePortRuntime
         return trim($result->stdout) === 'ready' && $this->ownsListener($process, $instance, $port);
     }
 
-    public function suspendTraffic(AppInstance $instance): void
+    public function suspendTraffic(Instance $instance): void
     {
         $this->ssh->execute($instance->node, new RemoteCommand(arguments: ['sudo', 'rm', '-f', '--', RuntimeHibernation::awakePath(RuntimeHibernation::key($instance->id))], timeout: 10), 'vite-suspend-traffic', 'vite.suspend_failed');
     }
 
-    public function markAwake(AppInstance $instance): void
+    public function markAwake(Instance $instance): void
     {
         $marker = RuntimeHibernation::awakePath(RuntimeHibernation::key($instance->id));
         $this->ssh->execute($instance->node, new RemoteCommand(arguments: ['sudo', 'install', '-d', '-o', 'root', '-g', 'caddy', '-m', '0755', '--', RuntimeHibernation::MarkerDirectory], timeout: 10), 'vite-awake-directory', 'vite.awake_failed');
@@ -143,7 +143,7 @@ final readonly class RemoteVitePortRuntime implements VitePortRuntime
         $this->ssh->execute($instance->node, new RemoteCommand(arguments: ['sudo', 'chmod', '0644', '--', $marker], timeout: 10), 'vite-mark-awake-mode', 'vite.awake_failed');
     }
 
-    public function prepare(Process $process, AppInstance $instance): void
+    public function prepare(Process $process, Instance $instance): void
     {
         $path = SystemdProcessRenderer::viteEnvironmentPath($instance->id);
         $marker = RuntimeHibernation::awakePath(RuntimeHibernation::key($instance->id));
@@ -155,15 +155,15 @@ final readonly class RemoteVitePortRuntime implements VitePortRuntime
             sudo install -d -m 0755 /etc/orbit/vite
             test ! -L "$2"
             if sudo test -e "$2"; then
-                sudo grep -Fx -- "# Orbit AppInstance $3" "$2" >/dev/null
+                sudo grep -Fx -- "# Orbit Instance $3" "$2" >/dev/null
             fi
             sudo rm -f -- "$4"
             sudo install -m 0600 /dev/stdin "$2.pending"
             sudo mv -T -- "$2.pending" "$2"
-            BASH, 'orbit-vite-environment', $instance->checkout_path, $path, (string) $instance->id, $marker], input: "# Orbit AppInstance {$instance->id}\nORBIT_DEV_SERVER_PORT={$instance->vite_port}\n", timeout: 15), 'vite-environment', 'vite.environment_failed');
+            BASH, 'orbit-vite-environment', $instance->checkout_path, $path, (string) $instance->id, $marker], input: "# Orbit Instance {$instance->id}\nORBIT_DEV_SERVER_PORT={$instance->vite_port}\n", timeout: 15), 'vite-environment', 'vite.environment_failed');
     }
 
-    public function project(AppInstance $instance): void
+    public function project(Instance $instance): void
     {
         $this->projection->run(function () use ($instance): void {
             $instance->loadMissing('routes');

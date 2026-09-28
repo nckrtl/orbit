@@ -49,14 +49,14 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\Activity;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
 use App\Models\AppInstanceRemovalMember;
 use App\Models\AppInstanceTransfer;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
 use App\Models\Route;
 use App\Models\RouteTarget;
@@ -80,7 +80,7 @@ beforeEach(function (): void {
             if ($this->occupied) {
                 throw new ResourceOperationException(
                     'instance.migration_conflict',
-                    'AppInstance destination is occupied by unmanaged data.',
+                    'Instance destination is occupied by unmanaged data.',
                     409,
                 );
             }
@@ -105,14 +105,14 @@ beforeEach(function (): void {
 
         public bool $laravel = false;
 
-        public function inspect(AppInstance $appInstance): DevelopmentSourceProfile
+        public function inspect(Instance $appInstance): DevelopmentSourceProfile
         {
             $this->inspections++;
 
             return new DevelopmentSourceProfile($this->phpVersion, $this->laravel);
         }
 
-        public function configureLaravelUrl(AppInstance $appInstance, string $url): void
+        public function configureLaravelUrl(Instance $appInstance, string $url): void
         {
             $this->configurations++;
         }
@@ -122,7 +122,7 @@ beforeEach(function (): void {
     {
         public int $convergences = 0;
 
-        public function converge(AppInstance $appInstance, Route $route): void
+        public function converge(Instance $appInstance, Route $route): void
         {
             $this->convergences++;
         }
@@ -154,32 +154,32 @@ beforeEach(function (): void {
             $this->resolution = new DevelopmentSourceResolution('dev', str_repeat('a', 40));
         }
 
-        public function prepare(AppInstance $appInstance, bool $allowExisting): void
+        public function prepare(Instance $appInstance, bool $allowExisting): void
         {
             $this->prepareExisting[] = $allowExisting;
             $this->record('prepare', $appInstance);
         }
 
-        public function inspectPrepared(AppInstance $appInstance): void
+        public function inspectPrepared(Instance $appInstance): void
         {
             $this->record('inspect-prepared', $appInstance);
         }
 
-        public function resolve(AppInstance $appInstance): DevelopmentSourceResolution
+        public function resolve(Instance $appInstance): DevelopmentSourceResolution
         {
             $this->record('resolve', $appInstance);
 
             return $this->resolution;
         }
 
-        public function inspectResolved(AppInstance $appInstance): DevelopmentSourceResolution
+        public function inspectResolved(Instance $appInstance): DevelopmentSourceResolution
         {
             $this->record('inspect-resolved', $appInstance);
 
             return $this->resolution;
         }
 
-        private function record(string $operation, AppInstance $appInstance): void
+        private function record(string $operation, Instance $appInstance): void
         {
             $this->calls[] = "{$operation}:{$appInstance->status->value}";
 
@@ -201,17 +201,17 @@ beforeEach(function (): void {
         /** @var list<string> */
         public array $inspected = [];
 
-        public function prepareUser(AppInstance $appInstance): void
+        public function prepareUser(Instance $appInstance): void
         {
             $this->calls[] = 'user';
         }
 
-        public function prepareSource(AppInstance $appInstance, bool $allowExisting): void
+        public function prepareSource(Instance $appInstance, bool $allowExisting): void
         {
             $this->calls[] = 'source:'.($allowExisting ? 'existing' : 'new');
         }
 
-        public function resolve(AppInstance $appInstance): DevelopmentSourceResolution
+        public function resolve(Instance $appInstance): DevelopmentSourceResolution
         {
             $this->calls[] = 'resolve';
 
@@ -221,7 +221,7 @@ beforeEach(function (): void {
             );
         }
 
-        public function inspectProfile(AppInstance $appInstance): DevelopmentSourceProfile
+        public function inspectProfile(Instance $appInstance): DevelopmentSourceProfile
         {
             $this->calls[] = 'profile';
             $this->inspected[] = $appInstance->checkout_path;
@@ -229,7 +229,7 @@ beforeEach(function (): void {
             return new DevelopmentSourceProfile($this->phpVersion, $this->laravel);
         }
 
-        public function prepareCaddyAccess(AppInstance $appInstance): void
+        public function prepareCaddyAccess(Instance $appInstance): void
         {
             $this->calls[] = 'access';
         }
@@ -237,31 +237,31 @@ beforeEach(function (): void {
     app()->instance(ProductionAppInstanceSourceLifecycle::class, $this->productionSource);
     app()->instance(ProductionReleaseLayout::class, new class implements ProductionReleaseLayout
     {
-        public function validateCurrent(AppInstance $appInstance): void {}
+        public function validateCurrent(Instance $appInstance): void {}
 
-        public function clearCurrent(AppInstance $appInstance): void {}
+        public function clearCurrent(Instance $appInstance): void {}
     });
     $this->productionProjection = new class implements ProductionRouteProjector
     {
         /** @var list<string> */
         public array $calls = [];
 
-        public function prepareRuntime(AppInstance $appInstance, Route $route): void
+        public function prepareRuntime(Instance $appInstance, Route $route): void
         {
             $this->calls[] = 'runtime';
         }
 
-        public function prepareCertificate(AppInstance $appInstance, Route $route): void
+        public function prepareCertificate(Instance $appInstance, Route $route): void
         {
             $this->calls[] = 'certificate';
         }
 
-        public function prepareFirewall(AppInstance $appInstance): void
+        public function prepareFirewall(Instance $appInstance): void
         {
             $this->calls[] = 'firewall';
         }
 
-        public function publish(AppInstance $appInstance, Route $route): void
+        public function publish(Instance $appInstance, Route $route): void
         {
             $this->calls[] = 'route';
         }
@@ -289,7 +289,7 @@ beforeEach(function (): void {
         public array $inspectionFailures = [];
 
         public function inspect(
-            AppInstance $appInstance,
+            Instance $appInstance,
             bool $force,
             bool $inspectContent = true,
         ): AppInstanceSourceInventory {
@@ -299,13 +299,13 @@ beforeEach(function (): void {
                 throw new RuntimeConvergenceException(
                     'app-instance-source-removal-inspect',
                     $this->inspectionFailures[$appInstance->id],
-                    "AppInstance [{$appInstance->name}] source origin does not match the App repository.",
+                    "Instance [{$appInstance->name}] source origin does not match the App repository.",
                 );
             }
 
             $paths = $this->linkedPaths[$appInstance->id] ?? $this->livePaths ?? [$appInstance->checkout_path];
             $payload = [
-                'app_instance_id' => $appInstance->id,
+                'instance_id' => $appInstance->id,
                 'layout' => $appInstance->source_layout,
                 'repository_identity' => $appInstance->app->repository_identity,
                 'checkout_path' => $appInstance->checkout_path,
@@ -335,7 +335,7 @@ beforeEach(function (): void {
         }
 
         public function remove(
-            AppInstance $appInstance,
+            Instance $appInstance,
             AppInstanceSourceInventory $inventory,
             bool $force,
         ): void {
@@ -346,9 +346,9 @@ beforeEach(function (): void {
             AppInstanceRemovalMember $member,
             ?AppInstanceSourceRevalidationExpectation $expectation = null,
         ): void {
-            $this->record('prepare', $member->app_instance_id);
+            $this->record('prepare', $member->instance_id);
 
-            if ($this->failPrepareFor === $member->app_instance_id) {
+            if ($this->failPrepareFor === $member->instance_id) {
                 throw new ResourceOperationException(
                     'instance.source_interrupted',
                     'Source preparation interrupted.',
@@ -361,9 +361,9 @@ beforeEach(function (): void {
             AppInstanceRemovalMember $member,
             ?AppInstanceSourceRevalidationExpectation $expectation = null,
         ): AppInstanceSourceRevalidationState {
-            $this->record('revalidate', $member->app_instance_id);
+            $this->record('revalidate', $member->instance_id);
 
-            $state = $this->states[$member->app_instance_id] ?? AppInstanceSourceRevalidationState::Present;
+            $state = $this->states[$member->instance_id] ?? AppInstanceSourceRevalidationState::Present;
 
             if ($state === AppInstanceSourceRevalidationState::Present && $this->livePaths !== null) {
                 $required = $expectation?->requiredLinkedWorktreePaths ?? $member->linked_worktree_paths;
@@ -386,7 +386,7 @@ beforeEach(function (): void {
             AppInstanceSourceRevalidationState $state,
             ?AppInstanceSourceRevalidationExpectation $expectation = null,
         ): AppInstanceSourceInventory {
-            $appInstance = AppInstance::query()->with('app')->findOrFail($member->app_instance_id);
+            $appInstance = Instance::query()->with('app')->findOrFail($member->instance_id);
 
             return $this->inspect($appInstance, (bool) $member->removal()->firstOrFail()->force);
         }
@@ -395,8 +395,8 @@ beforeEach(function (): void {
             AppInstanceRemovalMember $member,
             ?AppInstanceSourceRevalidationExpectation $expectation = null,
         ): string {
-            $this->record('finalize', $member->app_instance_id);
-            $this->states[$member->app_instance_id] = AppInstanceSourceRevalidationState::Completed;
+            $this->record('finalize', $member->instance_id);
+            $this->states[$member->instance_id] = AppInstanceSourceRevalidationState::Completed;
 
             if ($this->livePaths !== null) {
                 $this->livePaths = array_values(array_diff($this->livePaths, [(string) $member->checkout_path]));
@@ -444,7 +444,7 @@ beforeEach(function (): void {
                 return 'deleted';
             }
 
-            $route->targets()->where('app_instance_id', $member->app_instance_id)->delete();
+            $route->targets()->where('instance_id', $member->instance_id)->delete();
 
             if ($route->targets()->exists()) {
                 $route
@@ -470,7 +470,7 @@ beforeEach(function (): void {
 
         private function record(string $operation, AppInstanceRemovalMember $member): void
         {
-            $this->calls[] = "{$operation}:{$member->app_instance_id}";
+            $this->calls[] = "{$operation}:{$member->instance_id}";
 
             if ($this->fail === $operation) {
                 throw new ResourceOperationException(
@@ -507,7 +507,7 @@ beforeEach(function (): void {
     ]);
     $this->markAsGateway($operator);
     $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
-    $this->orbitApp = OrbitApp::query()->create([
+    $this->orbitApp = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',
@@ -516,10 +516,10 @@ beforeEach(function (): void {
     ]);
 });
 
-/** @return array{AppInstance, Route} */
+/** @return array{Instance, Route} */
 function retain_legacy_source_profile_checkpoint(string $checkpoint): array
 {
-    $instance = AppInstance::query()->sole();
+    $instance = Instance::query()->sole();
     $route = Route::query()->sole();
     $route->update(['status' => RouteStatus::Pending]);
     $instance->update([
@@ -551,9 +551,9 @@ function create_app_prod_node(string $name, ?string $tld = 'test'): Node
     return $node->refresh();
 }
 
-/** @return array{AppInstance, Route} */
+/** @return array{Instance, Route} */
 function seed_active_production_app_instance(
-    OrbitApp $app,
+    Project $app,
     Node $node,
     string $name,
     ?string $domain = null,
@@ -563,8 +563,8 @@ function seed_active_production_app_instance(
 ): array {
     $user = "orbit-app-{$app->id}";
     $home = "/home/{$user}";
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => $name,
         'environment' => 'production',
@@ -587,7 +587,7 @@ function seed_active_production_app_instance(
     $resolvedHostname = $domain ?? "{$name}.{$app->slug}.{$node->tld}";
     $generated = $domain === null;
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'generation_basis_node_id' => $generated ? $node->id : null,
         'domain' => $resolvedHostname,
@@ -596,7 +596,7 @@ function seed_active_production_app_instance(
         'status' => RouteStatus::Pending,
     ]);
     $route->targets()->create([
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'position' => 0,
     ]);
     $route->update(['status' => RouteStatus::Active]);
@@ -604,7 +604,7 @@ function seed_active_production_app_instance(
     return [$instance->refresh(), $route->refresh()];
 }
 
-it('bounds AppInstance response relationship queries for one and several visible rows', function (): void {
+it('bounds Instance response relationship queries for one and several visible rows', function (): void {
     $secondVisibleNode = Node::query()->create([
         'name' => 'second-visible-node',
         'status' => LifecycleStatus::Active,
@@ -625,21 +625,21 @@ it('bounds AppInstance response relationship queries for one and several visible
     ]);
     $consumer->accessibleNodes()->attach([$this->node->id, $secondVisibleNode->id]);
 
-    $first = AppInstance::query()->create([
-        'app_id' => $this->orbitApp->id,
+    $first = Instance::query()->create([
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'first',
         'checkout_path' => '/srv/orbit/apps/acme/first',
     ]);
     $firstRoute = Route::query()->create([
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'generation_basis_node_id' => $this->node->id,
         'domain' => 'first.acme.test',
         'provenance' => RouteProvenance::Generated,
         'publication' => RoutePublication::Private,
     ]);
-    $firstRoute->targets()->create(['app_instance_id' => $first->id, 'position' => 0]);
+    $firstRoute->targets()->create(['instance_id' => $first->id, 'position' => 0]);
     $firstRoute->update(['status' => RouteStatus::Active]);
     $first->update(['status' => AppInstanceState::Active]);
 
@@ -648,7 +648,7 @@ it('bounds AppInstance response relationship queries for one and several visible
     DB::listen(static function (QueryExecuted $query) use (&$relationshipQueries): void {
         $sql = str_replace(['"', '`'], '', mb_strtolower($query->sql));
         $relationship = match (true) {
-            str_contains($sql, ' from apps ') => 'apps',
+            str_contains($sql, ' from projects ') => 'apps',
             str_contains($sql, ' from routes ') => 'routes',
             str_contains($sql, ' from route_targets ') => 'targets',
             default => null,
@@ -668,56 +668,56 @@ it('bounds AppInstance response relationship queries for one and several visible
         ->assertJsonPath('data.0.route.target.app_instance_id', $first->id);
     $oneRowQueryCounts = array_count_values($relationshipQueries);
 
-    $second = AppInstance::query()->create([
-        'app_id' => $this->orbitApp->id,
+    $second = Instance::query()->create([
+        'project_id' => $this->orbitApp->id,
         'node_id' => $secondVisibleNode->id,
         'name' => 'second',
         'checkout_path' => '/srv/orbit/apps/acme/second',
     ]);
     $secondRoute = Route::query()->create([
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $secondVisibleNode->id,
         'generation_basis_node_id' => $secondVisibleNode->id,
         'domain' => 'second.acme.test',
         'provenance' => RouteProvenance::Generated,
         'publication' => RoutePublication::Private,
     ]);
-    $secondRoute->targets()->create(['app_instance_id' => $second->id, 'position' => 0]);
+    $secondRoute->targets()->create(['instance_id' => $second->id, 'position' => 0]);
     $secondRoute->update(['status' => RouteStatus::Active]);
     $second->update(['status' => AppInstanceState::Active]);
-    $unroutedApp = OrbitApp::query()->create([
+    $unroutedApp = Project::query()->create([
         'name' => 'Unrouted',
         'slug' => 'unrouted',
         'repository_url' => 'https://example.test/unrouted.git',
         'root' => 'web',
     ]);
-    $unrouted = AppInstance::query()->create([
-        'app_id' => $unroutedApp->id,
+    $unrouted = Instance::query()->create([
+        'project_id' => $unroutedApp->id,
         'node_id' => $this->node->id,
         'name' => 'reserved',
         'checkout_path' => '/srv/orbit/apps/unrouted/reserved',
     ]);
-    $inaccessibleApp = OrbitApp::query()->create([
+    $inaccessibleApp = Project::query()->create([
         'name' => 'Inaccessible',
         'slug' => 'inaccessible',
         'repository_url' => 'https://example.test/inaccessible.git',
         'root' => 'public',
     ]);
-    $inaccessible = AppInstance::query()->create([
-        'app_id' => $inaccessibleApp->id,
+    $inaccessible = Instance::query()->create([
+        'project_id' => $inaccessibleApp->id,
         'node_id' => $inaccessibleNode->id,
         'name' => 'hidden',
         'checkout_path' => '/srv/orbit/apps/inaccessible/hidden',
     ]);
     $inaccessibleRoute = Route::query()->create([
-        'app_id' => $inaccessibleApp->id,
+        'project_id' => $inaccessibleApp->id,
         'node_id' => $inaccessibleNode->id,
         'generation_basis_node_id' => $inaccessibleNode->id,
         'domain' => 'hidden.inaccessible.test',
         'provenance' => RouteProvenance::Generated,
         'publication' => RoutePublication::Private,
     ]);
-    $inaccessibleRoute->targets()->create(['app_instance_id' => $inaccessible->id, 'position' => 0]);
+    $inaccessibleRoute->targets()->create(['instance_id' => $inaccessible->id, 'position' => 0]);
     $inaccessibleRoute->update(['status' => RouteStatus::Active]);
     $inaccessible->update(['status' => AppInstanceState::Active]);
     $relationshipQueries = [];
@@ -739,25 +739,25 @@ it('bounds AppInstance response relationship queries for one and several visible
         ->toBe($oneRowQueryCounts);
 });
 
-it('loads missing response relations for a single AppInstance DTO caller', function (): void {
-    $instance = AppInstance::query()->create([
-        'app_id' => $this->orbitApp->id,
+it('loads missing response relations for a single Instance DTO caller', function (): void {
+    $instance = Instance::query()->create([
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'single',
         'checkout_path' => '/srv/orbit/apps/acme/single',
     ]);
     $route = Route::query()->create([
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'generation_basis_node_id' => $this->node->id,
         'domain' => 'single.acme.test',
         'provenance' => RouteProvenance::Generated,
         'publication' => RoutePublication::Private,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
     $instance->update(['status' => AppInstanceState::Active]);
-    $instance = AppInstance::query()->findOrFail($instance->id);
+    $instance = Instance::query()->findOrFail($instance->id);
     $instance->preventsLazyLoading = true;
 
     expect($instance->relationLoaded('app'))
@@ -782,7 +782,7 @@ it('loads missing response relations for a single AppInstance DTO caller', funct
         ->toBeTrue();
 });
 
-it('creates an active checkout AppInstance on a standalone Node with inherited root', function (): void {
+it('creates an active checkout Instance on a standalone Node with inherited root', function (): void {
     $requestId = (string) Str::uuid();
     $response = $this->postJson(
         '/api/v1/instances',
@@ -809,7 +809,7 @@ it('creates an active checkout AppInstance on a standalone Node with inherited r
         ->assertJsonPath('data.status', 'active');
     record_fixture($response, 'instances/instance-create/created', CreateAppInstanceRequest::class, 'POST /api/v1/instances');
 
-    expect(AppInstance::query()->count())
+    expect(Instance::query()->count())
         ->toBe(1)
         ->and($this->source->calls)
         ->toBe([
@@ -821,9 +821,9 @@ it('creates an active checkout AppInstance on a standalone Node with inherited r
         ])
         ->and($this->source->prepareExisting)
         ->toBe([false])
-        ->and(AppInstance::query()->sole()->source_layout)
+        ->and(Instance::query()->sole()->source_layout)
         ->toBe(AppInstanceSourceLayout::Checkout->value)
-        ->and(AppInstance::query()->sole()->only(['selected_php_version', 'source_is_laravel']))
+        ->and(Instance::query()->sole()->only(['selected_php_version', 'source_is_laravel']))
         ->toBe(['selected_php_version' => '8.5', 'source_is_laravel' => false])
         ->and(Activity::query()->where('request_id', $requestId)->sole()->command)
         ->toBe('instance:create')
@@ -833,13 +833,13 @@ it('creates an active checkout AppInstance on a standalone Node with inherited r
         ->toBe('checkout')
         ->and(Activity::query()->where('request_id', $requestId)->sole()->properties?->get('branch_override'))
         ->toBeNull()
-        ->and(Schema::hasColumn('app_instances', 'source_layout'))
+        ->and(Schema::hasColumn('instances', 'source_layout'))
         ->toBeTrue()
-        ->and(Schema::hasColumn('app_instances', 'cluster_id'))
+        ->and(Schema::hasColumn('instances', 'cluster_id'))
         ->toBeFalse()
         ->and(Route::query()->sole()->getAttributes())
         ->toMatchArray([
-            'app_id' => $this->orbitApp->id,
+            'project_id' => $this->orbitApp->id,
             'node_id' => $this->node->id,
             'cluster_id' => null,
             'generation_basis_node_id' => $this->node->id,
@@ -850,8 +850,8 @@ it('creates an active checkout AppInstance on a standalone Node with inherited r
             'failed_step' => null,
             'error_code' => null,
         ])
-        ->and(Route::query()->sole()->targets()->sole()->app_instance_id)
-        ->toBe(AppInstance::query()->sole()->id);
+        ->and(Route::query()->sole()->targets()->sole()->instance_id)
+        ->toBe(Instance::query()->sole()->id);
 });
 
 it('creates an Instance from a parsed JSON body without Content-Type using normalized IDs', function (): void {
@@ -869,12 +869,12 @@ it('creates an Instance from a parsed JSON body without Content-Type using norma
     )->assertCreated();
 
     expect($response->json('data.project.id'))->toBe($this->orbitApp->id)
-        ->and(AppInstance::query()->sole()->node_id)->toBe($this->node->id);
+        ->and(Instance::query()->sole()->node_id)->toBe($this->node->id);
 });
 
 it('creates an Instance with a repository-root Project root for each package type', function (): void {
     foreach ([ProjectType::LaravelPackage, ProjectType::NodePackage] as $index => $type) {
-        $project = OrbitApp::query()->create([
+        $project = Project::query()->create([
             'name' => $type->value,
             'slug' => $type->value,
             'type' => $type,
@@ -896,13 +896,13 @@ it('creates an Instance with a repository-root Project root for each package typ
             ->assertJsonPath('data.status', 'active');
 
         expect($response->json('data.project.type'))->toBe($type->value)
-            ->and(Route::query()->where('app_id', $project->id)->exists())->toBeFalse();
+            ->and(Route::query()->where('project_id', $project->id)->exists())->toBeFalse();
     }
 });
 
 it('records the instances of one App among several', function (): void {
-    OrbitApp::query()->create(['name' => 'Bravo docs', 'slug' => 'bravo-docs', 'repository_url' => 'git@github.com:bravo/docs.git', 'default_branch' => 'main', 'root' => 'public']);
-    $shop = OrbitApp::query()->create(['name' => 'Charlie shop', 'slug' => 'charlie-shop', 'repository_url' => 'git@github.com:charlie/shop.git', 'default_branch' => 'release', 'root' => 'web/public']);
+    Project::query()->create(['name' => 'Bravo docs', 'slug' => 'bravo-docs', 'repository_url' => 'git@github.com:bravo/docs.git', 'default_branch' => 'main', 'root' => 'public']);
+    $shop = Project::query()->create(['name' => 'Charlie shop', 'slug' => 'charlie-shop', 'repository_url' => 'git@github.com:charlie/shop.git', 'default_branch' => 'release', 'root' => 'web/public']);
     foreach (['dev', 'staging', 'feature-checkout'] as $name) {
         // The fake source resolves to the branch the placement name selects.
         $this->source->resolution = new DevelopmentSourceResolution($name, str_repeat('a', 40));
@@ -915,13 +915,13 @@ it('records the instances of one App among several', function (): void {
     record_fixture($this->getJson('/api/v1/instances/1')->assertOk()->assertJsonPath('data.name', 'dev'), 'instances/instance-show/charlie-shop-dev', ShowAppInstanceRequest::class, 'GET /api/v1/instances/{instance}');
 });
 
-it('records the list and show responses of an active checkout AppInstance', function (): void {
+it('records the list and show responses of an active checkout Instance', function (): void {
     $this->postJson('/api/v1/instances', [
         'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ])->assertCreated();
-    $instance = AppInstance::query()->sole();
+    $instance = Instance::query()->sole();
 
     record_fixture($this->getJson('/api/v1/instances')->assertOk()->assertJsonCount(1, 'data'), 'instances/instance-list/default', ListAppInstancesRequest::class, 'GET /api/v1/instances');
     record_fixture($this->getJson("/api/v1/instances/{$instance->id}")->assertOk(), 'instances/instance-show/default', ShowAppInstanceRequest::class, 'GET /api/v1/instances/{instance}');
@@ -945,7 +945,7 @@ it('refuses new production placement with a candidate-required error before muta
         );
     record_fixture($refusal, 'instances/instance-create/candidate-required', CreateAppInstanceRequest::class, 'POST /api/v1/instances');
 
-    expect(AppInstance::query()->count())
+    expect(Instance::query()->count())
         ->toBe(0)
         ->and(Route::query()->count())
         ->toBe(0)
@@ -987,7 +987,7 @@ it('refuses a repeat for an existing production Instance with candidate required
         ->toBe([])
         ->and($this->productionProjection->calls)
         ->toBe([])
-        ->and(AppInstance::query()->count())
+        ->and(Instance::query()->count())
         ->toBe(1)
         ->and(Route::query()->count())
         ->toBe(1);
@@ -1006,7 +1006,7 @@ it('refuses new production placement when the standalone Node has no TLD', funct
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.candidate_required');
 
-    expect(AppInstance::query()->count())
+    expect(Instance::query()->count())
         ->toBe(0)
         ->and(Route::query()->count())
         ->toBe(0)
@@ -1038,7 +1038,7 @@ it('refuses new production placement before records or remote work', function ()
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.candidate_required');
 
-    expect(AppInstance::query()->count())
+    expect(Instance::query()->count())
         ->toBe(0)
         ->and(Route::query()->count())
         ->toBe(0)
@@ -1048,7 +1048,7 @@ it('refuses new production placement before records or remote work', function ()
         ->toBe([]);
 });
 
-it('refuses Laravel production creation before reserving an inactive AppInstance', function (): void {
+it('refuses Laravel production creation before reserving an inactive Instance', function (): void {
     $node = create_app_prod_node('laravel-prod');
     $this->productionSource->laravel = true;
 
@@ -1061,7 +1061,7 @@ it('refuses Laravel production creation before reserving an inactive AppInstance
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.candidate_required');
 
-    expect(AppInstance::query()->count())
+    expect(Instance::query()->count())
         ->toBe(0)
         ->and(Route::query()->count())
         ->toBe(0)
@@ -1100,13 +1100,13 @@ it('keeps production identity stable across slug changes and refuses another dir
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.candidate_required');
 
-    expect(AppInstance::query()->count())
+    expect(Instance::query()->count())
         ->toBe(1)
-        ->and(AppInstance::query()->findOrFail($first->id)->only(array_keys($identity)))
+        ->and(Instance::query()->findOrFail($first->id)->only(array_keys($identity)))
         ->toBe($identity);
 });
 
-it('removes an existing production AppInstance through retained-content removal', function (): void {
+it('removes an existing production Instance through retained-content removal', function (): void {
     $node = create_app_prod_node('removal-prod');
     [$instance] = seed_active_production_app_instance($this->orbitApp, $node, 'production');
     $home = $instance->production_home;
@@ -1118,7 +1118,7 @@ it('removes an existing production AppInstance through retained-content removal'
 
     expect($home)
         ->toBe("/home/orbit-app-{$this->orbitApp->id}")
-        ->and(AppInstance::query()->count())
+        ->and(Instance::query()->count())
         ->toBe(0)
         ->and(Route::query()->count())
         ->toBe(0)
@@ -1128,7 +1128,7 @@ it('removes an existing production AppInstance through retained-content removal'
         ->toBe(["route:{$instance->id}", "runtime:{$instance->id}"]);
 });
 
-it('shows and removes an existing production AppInstance through inactive Cluster Node scope', function (): void {
+it('shows and removes an existing production Instance through inactive Cluster Node scope', function (): void {
     $node = create_app_prod_node('inactive-removal-prod');
     $cluster = Cluster::query()->create([
         'name' => 'inactive-production-removal',
@@ -1149,7 +1149,7 @@ it('shows and removes an existing production AppInstance through inactive Cluste
         ->assertOk()
         ->assertJsonPath('data.status', 'completed');
 
-    expect(AppInstance::query()->count())
+    expect(Instance::query()->count())
         ->toBe(0)
         ->and(Route::query()->count())
         ->toBe(0);
@@ -1174,7 +1174,7 @@ it('retries existing production removal without recreating its deleted Route', f
 
     expect(Route::query()->count())
         ->toBe(0)
-        ->and(AppInstance::query()->count())
+        ->and(Instance::query()->count())
         ->toBe(0);
 });
 
@@ -1190,7 +1190,7 @@ it('fails closed for legacy incomplete profile evidence on an ordinary API retry
     [$instance] = retain_legacy_source_profile_checkpoint($checkpoint);
     $before = $instance->only([
         'id',
-        'app_id',
+        'project_id',
         'node_id',
         'checkout_path',
         'branch',
@@ -1264,7 +1264,7 @@ it('rejects invalid branch input before persistence or source work', function ()
         ->assertJsonPath('error.code', 'validation.failed')
         ->assertJsonPath('error.details.branch.0', 'The branch is not a valid Git branch name.');
 
-    expect(AppInstance::query()->count())
+    expect(Instance::query()->count())
         ->toBe(0)
         ->and(Route::query()->count())
         ->toBe(0)
@@ -1286,9 +1286,9 @@ it('reports an absent explicit remote branch without fallback or publication', f
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'instance.branch_resolution_failed');
 
-    expect(AppInstance::query()->sole()->branch_override)
+    expect(Instance::query()->sole()->branch_override)
         ->toBe('missing')
-        ->and(AppInstance::query()->sole()->status)
+        ->and(Instance::query()->sole()->status)
         ->toBe(AppInstanceState::CheckoutPrepared)
         ->and(Route::query()->sole()->status)
         ->toBe(RouteStatus::Failed);
@@ -1310,7 +1310,7 @@ it('rejects added removed or changed branch override on creation retry before mu
     }
 
     $this->postJson('/api/v1/instances', $payload)->assertCreated();
-    $before = AppInstance::query()->sole()->getAttributes();
+    $before = Instance::query()->sole()->getAttributes();
     $this->source->calls = [];
 
     if ($retry === null) {
@@ -1324,7 +1324,7 @@ it('rejects added removed or changed branch override on creation retry before mu
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.placement_conflict');
 
-    expect(AppInstance::query()->sole()->getAttributes())
+    expect(Instance::query()->sole()->getAttributes())
         ->toBe($before)
         ->and($this->source->calls)
         ->toBe([]);
@@ -1377,7 +1377,7 @@ it('refuses unavailable generated naming before source mutation and completes on
         ->assertConflict()
         ->assertJsonPath('error.code', 'route.tld_required');
 
-    $instance = AppInstance::query()->sole();
+    $instance = Instance::query()->sole();
     expect($instance->status)
         ->toBe(AppInstanceState::Reserved)
         ->and($instance->starting_commit)
@@ -1420,10 +1420,10 @@ it('uses the active Cluster TLD before the Node TLD while Cluster membership sel
         ->and(Route::query()->sole()->cluster_id)
         ->toBe($cluster->id);
 
-    AppInstance::query()->sole()->update(['status' => AppInstanceState::SourceResolved]);
+    Instance::query()->sole()->update(['status' => AppInstanceState::SourceResolved]);
     Route::query()->sole()->update(['status' => 'pending']);
     Route::query()->sole()->delete();
-    AppInstance::query()->sole()->delete();
+    Instance::query()->sole()->delete();
     $this->node->update(['tld' => null]);
     $this->source->resolution = new DevelopmentSourceResolution('feature', str_repeat('b', 40));
 
@@ -1470,16 +1470,16 @@ it('creates equivalent source on Nodes in every optional Cluster state', functio
         ->assertJsonPath('data.source_layout', 'checkout')
         ->assertJsonPath('data.status', 'active');
 
-    expect(AppInstance::query()->sole()->getAttributes())->not->toHaveKey('cluster_id');
+    expect(Instance::query()->sole()->getAttributes())->not->toHaveKey('cluster_id');
 })->with(['standalone', 'inactive', 'active-without-tld', 'active-with-tld']);
 
-it('reconciles Cluster activation for an active AppInstance Route without moving placement', function (): void {
+it('reconciles Cluster activation for an active Instance Route without moving placement', function (): void {
     $created = $this->postJson('/api/v1/instances', [
         'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ])->assertCreated();
-    $before = AppInstance::query()->findOrFail($created->json('data.id'))->getAttributes();
+    $before = Instance::query()->findOrFail($created->json('data.id'))->getAttributes();
     $this->source->calls = [];
     $cluster = Cluster::query()->create(['name' => 'routing', 'state' => ClusterState::Inactive]);
     $firstRouter = Node::query()->create([
@@ -1516,7 +1516,7 @@ it('reconciles Cluster activation for an active AppInstance Route without moving
         ->assertOk()
         ->assertJsonPath('data.state', 'active');
 
-    expect(AppInstance::query()->findOrFail($created->json('data.id'))->getAttributes())
+    expect(Instance::query()->findOrFail($created->json('data.id'))->getAttributes())
         ->toBe($before)
         ->and($cluster->refresh()->state)
         ->toBe(ClusterState::Active)
@@ -1544,7 +1544,7 @@ it('renames a Cluster and accepts unchanged placement input despite an unrelated
             'name' => 'failed',
         ])
         ->assertUnprocessable();
-    $instanceBefore = AppInstance::query()->sole()->getAttributes();
+    $instanceBefore = Instance::query()->sole()->getAttributes();
     $routeBefore = Route::query()->sole()->getAttributes();
     $targetBefore = RouteTarget::query()->sole()->getAttributes();
     $cluster = Cluster::query()->create([
@@ -1565,7 +1565,7 @@ it('renames a Cluster and accepts unchanged placement input despite an unrelated
         ->assertOk()
         ->assertJsonPath('data.name', 'renamed');
 
-    expect(AppInstance::query()->sole()->getAttributes())
+    expect(Instance::query()->sole()->getAttributes())
         ->toBe($instanceBefore)
         ->and(Route::query()->sole()->getAttributes())
         ->toBe($routeBefore)
@@ -1598,7 +1598,7 @@ it('fails before mutation when a legacy App has incomplete source defaults', fun
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'app.source_defaults_incomplete');
 
-    expect(AppInstance::query()->count())
+    expect(Instance::query()->count())
         ->toBe(0)
         ->and($this->source->calls)
         ->toBeEmpty();
@@ -1616,14 +1616,14 @@ it('persists each durable state and resumes the next transition', function (
     $this->source->fail = $failure;
 
     $this->postJson('/api/v1/instances', $payload)->assertUnprocessable();
-    expect(AppInstance::query()->sole()->status)->toBe($durableState);
+    expect(Instance::query()->sole()->status)->toBe($durableState);
     $this->source->fail = null;
 
     $this
         ->postJson('/api/v1/instances', $payload)
         ->assertOk()
         ->assertJsonPath('data.status', 'active');
-    expect(AppInstance::query()->count())->toBe(1);
+    expect(Instance::query()->count())->toBe(1);
 
     if ($failure === 'prepare') {
         expect($this->source->prepareExisting)->toBe([false, true]);
@@ -1652,16 +1652,16 @@ it('keeps a failed attempt from overwriting a successful retry after lease relea
             private readonly DevelopmentAppInstanceProvisioner $native,
         ) {}
 
-        public function reserve(AppInstance $appInstance, ?string $domain): void
+        public function reserve(Instance $appInstance, ?string $domain): void
         {
             $this->native->reserve($appInstance, $domain);
         }
 
         public function complete(
-            AppInstance $appInstance,
+            Instance $appInstance,
             ?string $domain,
             bool $setupPending = false,
-        ): AppInstance {
+        ): Instance {
             $this->completions++;
 
             if ($this->completions === 1) {
@@ -1713,7 +1713,7 @@ it('keeps a failed attempt from overwriting a successful retry after lease relea
         ->toBe(2)
         ->and($provisioner->completions)
         ->toBe(2)
-        ->and(AppInstance::query()->sole()->only(['status', 'failed_step', 'error_code']))
+        ->and(Instance::query()->sole()->only(['status', 'failed_step', 'error_code']))
         ->toBe([
             'status' => AppInstanceState::Active,
             'failed_step' => null,
@@ -1735,16 +1735,16 @@ it('persists unexpected provisioning failures before releasing the lease', funct
             private readonly DevelopmentAppInstanceProvisioner $native,
         ) {}
 
-        public function reserve(AppInstance $appInstance, ?string $domain): void
+        public function reserve(Instance $appInstance, ?string $domain): void
         {
             $this->native->reserve($appInstance, $domain);
         }
 
         public function complete(
-            AppInstance $appInstance,
+            Instance $appInstance,
             ?string $domain,
             bool $setupPending = false,
-        ): AppInstance {
+        ): Instance {
             throw new LogicException('Unexpected provisioning failure.');
         }
     });
@@ -1759,7 +1759,7 @@ it('persists unexpected provisioning failures before releasing the lease', funct
     )))
         ->toThrow(LogicException::class, 'Unexpected provisioning failure.');
 
-    expect(AppInstance::query()->sole()->only(['status', 'failed_step', 'error_code']))
+    expect(Instance::query()->sole()->only(['status', 'failed_step', 'error_code']))
         ->toBe([
             'status' => AppInstanceState::SourceResolved,
             'failed_step' => 'provisioning',
@@ -1778,16 +1778,16 @@ it('does not reserve or persist failure evidence when lease acquisition fails', 
     {
         public int $reservations = 0;
 
-        public function reserve(AppInstance $appInstance, ?string $domain): void
+        public function reserve(Instance $appInstance, ?string $domain): void
         {
             $this->reservations++;
         }
 
         public function complete(
-            AppInstance $appInstance,
+            Instance $appInstance,
             ?string $domain,
             bool $setupPending = false,
-        ): AppInstance {
+        ): Instance {
             return $appInstance;
         }
     };
@@ -1814,7 +1814,7 @@ it('does not reserve or persist failure evidence when lease acquisition fails', 
         ->toBe(0)
         ->and(Route::query()->count())
         ->toBe(0)
-        ->and(AppInstance::query()->sole()->only(['status', 'failed_step', 'error_code']))
+        ->and(Instance::query()->sole()->only(['status', 'failed_step', 'error_code']))
         ->toBe([
             'status' => AppInstanceState::Reserved,
             'failed_step' => null,
@@ -1836,7 +1836,7 @@ it('persists reservation conflicts before releasing the lease', function (): voi
             try {
                 return $operation();
             } catch (Throwable $exception) {
-                $instance = AppInstance::query()->sole();
+                $instance = Instance::query()->sole();
                 $this->failurePersistedWhileHeld =
                     $instance->failed_step === 'source-prepare' && $instance->error_code === 'route.hostname_taken';
 
@@ -1854,7 +1854,7 @@ it('persists reservation conflicts before releasing the lease', function (): voi
             private readonly AppDevSourceOperationLock $lock,
         ) {}
 
-        public function reserve(AppInstance $appInstance, ?string $domain): void
+        public function reserve(Instance $appInstance, ?string $domain): void
         {
             $this->reservedWhileHeld = $this->lock->held;
 
@@ -1862,10 +1862,10 @@ it('persists reservation conflicts before releasing the lease', function (): voi
         }
 
         public function complete(
-            AppInstance $appInstance,
+            Instance $appInstance,
             ?string $domain,
             bool $setupPending = false,
-        ): AppInstance {
+        ): Instance {
             return $appInstance;
         }
     };
@@ -1888,7 +1888,7 @@ it('persists reservation conflicts before releasing the lease', function (): voi
         ->toBeTrue()
         ->and($lock->held)
         ->toBeFalse()
-        ->and(AppInstance::query()->sole()->only(['status', 'failed_step', 'error_code']))
+        ->and(Instance::query()->sole()->only(['status', 'failed_step', 'error_code']))
         ->toBe([
             'status' => AppInstanceState::Reserved,
             'failed_step' => 'source-prepare',
@@ -1911,7 +1911,7 @@ it('rejects a retry on another Node before source work or state mutation', funct
         'user' => 'orbit',
     ]);
     $otherNode->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
-    $before = AppInstance::query()->sole()->getAttributes();
+    $before = Instance::query()->sole()->getAttributes();
     $this->source->calls = [];
 
     $this
@@ -1923,7 +1923,7 @@ it('rejects a retry on another Node before source work or state mutation', funct
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.placement_conflict');
 
-    expect(AppInstance::query()->sole()->getAttributes())
+    expect(Instance::query()->sole()->getAttributes())
         ->toBe($before)
         ->and($this->source->calls)
         ->toBeEmpty();
@@ -1946,13 +1946,13 @@ it('rejects inactive Node role and unsupported platform placement before mutatio
         ])
         ->assertUnprocessable();
 
-    expect(AppInstance::query()->count())
+    expect(Instance::query()->count())
         ->toBe(0)
         ->and($this->source->calls)
         ->toBeEmpty();
 })->with(['node', 'role', 'platform']);
 
-it('keeps the first checkout immutable when a later AppInstance uses a changed apps root', function (): void {
+it('keeps the first checkout immutable when a later Instance uses a changed apps root', function (): void {
     $first = $this->postJson('/api/v1/instances', [
         'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
@@ -1971,7 +1971,7 @@ it('keeps the first checkout immutable when a later AppInstance uses a changed a
         ->toBe('/srv/orbit/apps/acme/dev')
         ->and($second->json('data.checkout_path'))
         ->toBe('/mnt/orbit/apps/acme/feature')
-        ->and(AppInstance::query()->findOrFail($first->json('data.id'))->checkout_path)
+        ->and(Instance::query()->findOrFail($first->json('data.id'))->checkout_path)
         ->toBe('/srv/orbit/apps/acme/dev');
 });
 
@@ -1987,22 +1987,22 @@ it('rejects immutable root and source-layout conflicts on retry', function (stri
     if ($conflict === 'root') {
         $payload['root'] = 'other/public';
     } else {
-        AppInstance::query()->sole()->update(['source_layout' => 'worktree']);
+        Instance::query()->sole()->update(['source_layout' => 'worktree']);
     }
-    $before = AppInstance::query()->sole()->getAttributes();
+    $before = Instance::query()->sole()->getAttributes();
 
     $this
         ->postJson('/api/v1/instances', $payload)
         ->assertConflict();
 
-    expect(AppInstance::query()->sole()->getAttributes())->toBe($before);
+    expect(Instance::query()->sole()->getAttributes())->toBe($before);
 
     expect($this->source->calls)->toBeEmpty();
 })->with(['root', 'source layout']);
 
 it('refuses a default path occupied by another managed Instance before mutation', function (): void {
-    AppInstance::query()->create([
-        'app_id' => $this->orbitApp->id,
+    Instance::query()->create([
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'occupied',
         'checkout_path' => '/srv/orbit/apps/acme/default',
@@ -2019,9 +2019,9 @@ it('refuses a default path occupied by another managed Instance before mutation'
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.default_path_occupied');
 
-    expect(AppInstance::query()->count())
+    expect(Instance::query()->count())
         ->toBe(1)
-        ->and(AppInstance::query()->sole()->name)
+        ->and(Instance::query()->sole()->name)
         ->toBe('occupied')
         ->and($this->source->calls)
         ->toBe([]);
@@ -2038,9 +2038,9 @@ it('refuses a default path occupied by an unmanaged directory before mutation', 
         ])
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.default_path_occupied')
-        ->assertJsonPath('error.message', 'AppInstance destination is occupied by unmanaged data.');
+        ->assertJsonPath('error.message', 'Instance destination is occupied by unmanaged data.');
 
-    expect(AppInstance::query()->count())
+    expect(Instance::query()->count())
         ->toBe(0)
         ->and($this->source->calls)
         ->toBe([]);
@@ -2053,7 +2053,7 @@ it('treats active creation evidence as terminal when development HEAD advances',
         'name' => 'dev',
     ];
     $created = $this->postJson('/api/v1/instances', $payload)->assertCreated();
-    $before = AppInstance::query()->sole()->getAttributes();
+    $before = Instance::query()->sole()->getAttributes();
     $this->source->calls = [];
     $this->source->resolution = new DevelopmentSourceResolution('dev', str_repeat('b', 40));
 
@@ -2063,20 +2063,20 @@ it('treats active creation evidence as terminal when development HEAD advances',
         ->assertJsonPath('data.id', $created->json('data.id'))
         ->assertJsonPath('data.starting_commit', str_repeat('a', 40));
 
-    expect(AppInstance::query()->sole()->getAttributes())
+    expect(Instance::query()->sole()->getAttributes())
         ->toBe($before)
         ->and($this->source->calls)
         ->toBe(['inspect-prepared:active']);
 });
 
-it('leaves an active AppInstance row unchanged when a creation retry is refused with route.retry_conflict', function (): void {
+it('leaves an active Instance row unchanged when a creation retry is refused with route.retry_conflict', function (): void {
     $payload = [
         'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
     ];
     $this->postJson('/api/v1/instances', $payload)->assertCreated();
-    $before = AppInstance::query()->sole()->getAttributes();
+    $before = Instance::query()->sole()->getAttributes();
     $routeBefore = Route::query()->sole()->getAttributes();
     $this->travelTo(now()->addMinute());
 
@@ -2085,7 +2085,7 @@ it('leaves an active AppInstance row unchanged when a creation retry is refused 
         ->assertConflict()
         ->assertJsonPath('error.code', 'route.retry_conflict');
 
-    expect(AppInstance::query()->sole()->getAttributes())
+    expect(Instance::query()->sole()->getAttributes())
         ->toBe($before)
         ->and($before['failed_step'])
         ->toBeNull()
@@ -2110,13 +2110,13 @@ it('rejects repository execution and unsupported transport keys', function (): v
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation.failed');
 
-    expect(AppInstance::query()->count())
+    expect(Instance::query()->count())
         ->toBe(0)
         ->and($this->source->calls)
         ->toBeEmpty();
 });
 
-it('removes an active AppInstance through every durable checkpoint', function (bool $force): void {
+it('removes an active Instance through every durable checkpoint', function (bool $force): void {
     $created = $this->postJson('/api/v1/instances', [
         'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
@@ -2141,7 +2141,7 @@ it('removes an active AppInstance through every durable checkpoint', function (b
         ->assertJsonPath('data.error_code', null);
 
     $activity = Activity::query()->where('command', 'instance:destroy')->sole();
-    expect(AppInstance::query()->count())
+    expect(Instance::query()->count())
         ->toBe(0)
         ->and(RouteTarget::query()->count())
         ->toBe(0)
@@ -2193,10 +2193,10 @@ it('answers the refused source identity check with 409 in normal and forced remo
         ->deleteJson("/api/v1/instances/{$created->json('data.id')}", ['force' => $force])
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.source_origin_mismatch')
-        ->assertJsonPath('error.message', 'AppInstance [dev] source origin does not match the App repository.');
+        ->assertJsonPath('error.message', 'Instance [dev] source origin does not match the App repository.');
     expect(AppInstanceRemovalMember::query()->count())
         ->toBe(0)
-        ->and(AppInstance::query()->count())
+        ->and(Instance::query()->count())
         ->toBe(1)
         ->and(Route::query()->count())
         ->toBe(1);
@@ -2213,7 +2213,7 @@ it('refuses normal checkout cascade with force guidance and reports forced bound
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.remove_refused')
         ->assertJsonPath('error.message', 'The checkout has registered linked worktrees; retry with --force.');
-    expect(AppInstance::query()->count())->toBe(3)->and(Route::query()->count())->toBe(3);
+    expect(Instance::query()->count())->toBe(3)->and(Route::query()->count())->toBe(3);
 
     $this
         ->deleteJson("/api/v1/instances/{$checkout->id}", ['force' => true])
@@ -2225,11 +2225,11 @@ it('refuses normal checkout cascade with force guidance and reports forced bound
         ->assertJsonPath('data.completed', 3)
         ->assertJsonPath('data.remaining', 0);
     $members = AppInstanceRemovalMember::query()->orderBy('position')->get();
-    expect($members->pluck('app_instance_id')->all())
+    expect($members->pluck('instance_id')->all())
         ->toBe([$first->id, $second->id, $checkout->id])
         ->and($members->every(fn (AppInstanceRemovalMember $member): bool => $member->linked_worktree_paths === $paths))
         ->toBeTrue()
-        ->and(AppInstance::query()->count())
+        ->and(Instance::query()->count())
         ->toBe(0)
         ->and(Route::query()->count())
         ->toBe(0);
@@ -2248,11 +2248,11 @@ it('refuses unregistered checkout inventory in normal and forced modes without m
         ->assertJsonPath('error.code', 'instance.remove_refused')
         ->assertJsonPath(
             'error.message',
-            'Every linked worktree must be a registered AppInstance before removal.',
+            'Every linked worktree must be a registered Instance before removal.',
         );
     expect(AppInstanceRemovalMember::query()->count())
         ->toBe(0)
-        ->and(AppInstance::query()->count())
+        ->and(Instance::query()->count())
         ->toBe(3)
         ->and(Route::query()->count())
         ->toBe(3);
@@ -2270,7 +2270,7 @@ it('reports retained fixed-set progress and refuses a new source before retry ad
         ->assertJsonPath('error.details.removal.remaining', 2)
         ->assertJsonPath('error.details.removal.current_step', 'source_preparation');
     $operation = $checkout->refresh()->removalMember?->removal;
-    $secondMember = $operation?->members()->where('app_instance_id', $second->id)->sole();
+    $secondMember = $operation?->members()->where('instance_id', $second->id)->sole();
     $paths[] = '/srv/orbit/apps/acme/new-worktree';
     sort($paths, SORT_STRING);
     $this->removalSource->livePaths = $paths;
@@ -2290,7 +2290,7 @@ it('reports retained fixed-set progress and refuses a new source before retry ad
         ->and(
             Route::query()
                 ->whereHas('targets', fn ($query) => $query->where(
-                    'app_instance_id',
+                    'instance_id',
                     $second->id,
                 ))
                 ->exists(),
@@ -2303,7 +2303,7 @@ it('removes one target from a public clustered production Route and reports reta
         'name' => 'production-removal',
         'state' => ClusterState::Active,
     ]);
-    $instances = collect(['one', 'two'])->map(function (string $name) use ($cluster): AppInstance {
+    $instances = collect(['one', 'two'])->map(function (string $name) use ($cluster): Instance {
         $suffix = $name === 'one' ? '91' : '92';
         $node = Node::query()->create([
             'cluster_id' => $cluster->id,
@@ -2318,8 +2318,8 @@ it('removes one target from a public clustered production Route and reports reta
             'status' => LifecycleStatus::Active,
         ]);
 
-        return AppInstance::query()->create([
-            'app_id' => $this->orbitApp->id,
+        return Instance::query()->create([
+            'project_id' => $this->orbitApp->id,
             'node_id' => $node->id,
             'name' => $name,
             'environment' => 'production',
@@ -2330,17 +2330,17 @@ it('removes one target from a public clustered production Route and reports reta
         ]);
     });
     $route = Route::query()->create([
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'cluster_id' => $cluster->id,
         'domain' => 'production.example.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Public,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instances[0]->id, 'position' => 0]);
-    $route->targets()->create(['app_instance_id' => $instances[1]->id, 'position' => 1]);
+    $route->targets()->create(['instance_id' => $instances[0]->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instances[1]->id, 'position' => 1]);
     $route->update(['status' => RouteStatus::Active]);
-    $instances->each(static fn (AppInstance $instance) => $instance->update([
+    $instances->each(static fn (Instance $instance) => $instance->update([
         'status' => AppInstanceState::Active,
     ]));
 
@@ -2354,11 +2354,11 @@ it('removes one target from a public clustered production Route and reports reta
         ->assertJsonPath('data.completed', 1)
         ->assertJsonPath('data.remaining', 0);
 
-    expect(AppInstance::query()->pluck('id')->all())
+    expect(Instance::query()->pluck('id')->all())
         ->toBe([$instances[1]->id])
         ->and($route->refresh()->status)
         ->toBe(RouteStatus::Active)
-        ->and($route->targets()->sole()->app_instance_id)
+        ->and($route->targets()->sole()->instance_id)
         ->toBe($instances[1]->id)
         ->and($route->targets()->sole()->position)
         ->toBe(0)
@@ -2384,9 +2384,9 @@ it('keeps preflight refusals free of Route source and lifecycle mutation', funct
         ->assertStatus(502)
         ->assertJsonPath('error.code', 'instance.source_interrupted')
         ->assertJsonPath('error.details', []);
-    expect(AppInstance::query()->count())
+    expect(Instance::query()->count())
         ->toBe(1)
-        ->and(AppInstance::query()->sole()->status)
+        ->and(Instance::query()->sole()->status)
         ->toBe(AppInstanceState::Active)
         ->and(RouteTarget::query()->count())
         ->toBe(1)
@@ -2403,7 +2403,7 @@ it('retains completed transfer history without leaving an instance reference', f
     $instanceId = $created->json('data.id');
 
     AppInstanceTransfer::query()->create([
-        'app_instance_id' => $instanceId,
+        'instance_id' => $instanceId,
         'source_node_id' => $this->node->id,
         'destination_node_id' => $this->node->id,
         'destination_name' => 'dev',
@@ -2419,8 +2419,8 @@ it('retains completed transfer history without leaving an instance reference', f
 
     $this->deleteJson("/api/v1/instances/{$instanceId}")->assertOk();
 
-    expect(AppInstance::query()->whereKey($instanceId)->exists())->toBeFalse()
-        ->and(AppInstanceTransfer::query()->sole()->app_instance_id)->toBeNull();
+    expect(Instance::query()->whereKey($instanceId)->exists())->toBeFalse()
+        ->and(AppInstanceTransfer::query()->sole()->instance_id)->toBeNull();
 });
 
 it('refuses removal while transfer history is incomplete', function (): void {
@@ -2432,7 +2432,7 @@ it('refuses removal while transfer history is incomplete', function (): void {
     $instanceId = $created->json('data.id');
 
     AppInstanceTransfer::query()->create([
-        'app_instance_id' => $instanceId,
+        'instance_id' => $instanceId,
         'source_node_id' => $this->node->id,
         'destination_node_id' => $this->node->id,
         'destination_name' => 'dev',
@@ -2451,7 +2451,7 @@ it('refuses removal while transfer history is incomplete', function (): void {
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.transfer_incomplete');
 
-    expect(AppInstance::query()->whereKey($instanceId)->firstOrFail()->status)
+    expect(Instance::query()->whereKey($instanceId)->firstOrFail()->status)
         ->toBe(AppInstanceState::Active);
 });
 
@@ -2478,9 +2478,9 @@ it('retains bounded failed progress and resumes without recreating a deleted Rou
         ->assertJsonPath('error.details.removal.failed_step', 'runtime_cleanup')
         ->assertJsonPath('error.details.removal.error_code', 'instance.runtime_interrupted');
 
-    expect(AppInstance::query()->count())
+    expect(Instance::query()->count())
         ->toBe(1)
-        ->and(AppInstance::query()->sole()->status)
+        ->and(Instance::query()->sole()->status)
         ->toBe(AppInstanceState::Removing)
         ->and(Route::query()->count())
         ->toBe(0);
@@ -2543,7 +2543,7 @@ it('atomically completes final row deletion or preserves the public retry target
     $id = $created->json('data.id');
     DB::unprepared(<<<'SQL'
         CREATE TRIGGER orb124_fail_final_completion
-        BEFORE UPDATE OF status ON app_instance_removals
+        BEFORE UPDATE OF status ON instance_removals
         WHEN NEW.status = 'completed'
         BEGIN
             SELECT RAISE(ABORT, 'Injected final completion failure.');
@@ -2566,7 +2566,7 @@ it('atomically completes final row deletion or preserves the public retry target
     }
 
     $member = AppInstanceRemovalMember::query()->sole();
-    expect(AppInstance::query()->whereKey($id)->sole()->status)
+    expect(Instance::query()->whereKey($id)->sole()->status)
         ->toBe(AppInstanceState::Removing)
         ->and($member->row_deleted_at)
         ->toBeNull()
@@ -2584,7 +2584,7 @@ it('atomically completes final row deletion or preserves the public retry target
         ->assertJsonPath('data.completed', 1)
         ->assertJsonPath('data.remaining', 0);
 
-    expect(AppInstance::query()->whereKey($id)->exists())
+    expect(Instance::query()->whereKey($id)->exists())
         ->toBeFalse()
         ->and($member->refresh()->row_deleted_at)
         ->not
@@ -2614,7 +2614,7 @@ it('returns current bounded progress when retry source revalidation is refused',
 
     $route = Route::query()->sole();
     $this
-        ->putJson("/api/v1/routes/{$route->id}/target", ['app_instance_id' => $id])
+        ->putJson("/api/v1/routes/{$route->id}/target", ['instance_id' => $id])
         ->assertOk()
         ->assertJsonPath('data.target.app_instance_id', $id);
 
@@ -2633,9 +2633,9 @@ it('returns current bounded progress when retry source revalidation is refused',
         ->assertJsonPath('error.details.removal.failed_step', 'route_target_clear')
         ->assertJsonPath('error.details.removal.error_code', 'instance.removal_conflict');
 
-    $operation = AppInstance::query()->findOrFail($id)->removalMember?->removal;
+    $operation = Instance::query()->findOrFail($id)->removalMember?->removal;
     $activity = Activity::query()->where('command', 'instance:destroy')->latest('id')->firstOrFail();
-    expect(AppInstance::query()->findOrFail($id)->status)
+    expect(Instance::query()->findOrFail($id)->status)
         ->toBe(AppInstanceState::Removing)
         ->and($operation?->current_step?->value)
         ->toBe('route_target_clear')
@@ -2672,7 +2672,7 @@ it('rejects a non-empty JSON array from the removal transport', function (): voi
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation.failed');
 
-    expect(AppInstance::query()->count())
+    expect(Instance::query()->count())
         ->toBe(1)
         ->and($this->source->calls)
         ->toBeEmpty();
@@ -2692,7 +2692,7 @@ it('rejects the removed compatibility key', function (): void {
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation.failed');
 
-    expect(AppInstance::query()->sole()->status)->toBe(AppInstanceState::Active);
+    expect(Instance::query()->sole()->status)->toBe(AppInstanceState::Active);
 });
 
 it('updates the production deployment branch without changing deploy steps', function (): void {
@@ -2721,15 +2721,15 @@ it('updates the production deployment branch without changing deploy steps', fun
 });
 
 /**
- * @return array{AppInstance, AppInstance, AppInstance, list<string>}
+ * @return array{Instance, Instance, Instance, list<string>}
  */
 function orb182_api_removal_graph(TestCase $test): array
 {
     $instances = [];
 
     foreach (['default', 'worktree-a', 'worktree-b'] as $position => $name) {
-        $instance = AppInstance::query()->create([
-            'app_id' => $test->orbitApp->id,
+        $instance = Instance::query()->create([
+            'project_id' => $test->orbitApp->id,
             'node_id' => $test->node->id,
             'name' => $name,
             'environment' => 'development',
@@ -2742,7 +2742,7 @@ function orb182_api_removal_graph(TestCase $test): array
             'status' => AppInstanceState::SourceResolved,
         ]);
         $route = Route::query()->create([
-            'app_id' => $test->orbitApp->id,
+            'project_id' => $test->orbitApp->id,
             'node_id' => $test->node->id,
             'generation_basis_node_id' => $test->node->id,
             'domain' => "{$name}.acme.test",
@@ -2750,7 +2750,7 @@ function orb182_api_removal_graph(TestCase $test): array
             'publication' => RoutePublication::Private,
             'status' => RouteStatus::Pending,
         ]);
-        $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+        $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
         $route->update(['status' => RouteStatus::Active]);
         $instance->update(['status' => AppInstanceState::Active]);
         $instances[] = $instance->load(['app', 'node', 'routes.targets']);
@@ -2794,7 +2794,7 @@ final class RecoveredSourceProfileEnvironmentAccess implements AppInstanceEnviro
 }
 
 it('runs setup once on create and skips it for an already active instance', function (): void {
-    ProjectLifecycleStep::query()->create(['app_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'install', 'timeout_seconds' => 30, 'position' => 0]);
+    ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'install', 'timeout_seconds' => 30, 'position' => 0]);
     $transport = new LifecycleSshExecutor;
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
     $input = ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'setup', 'branch' => 'dev'];
@@ -2804,8 +2804,8 @@ it('runs setup once on create and skips it for an already active instance', func
 });
 
 it('busy setup retry points to instance:setup instead of treating the Instance as complete', function (): void {
-    ProjectLifecycleStep::query()->create(['app_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'install', 'timeout_seconds' => 30, 'position' => 0]);
-    ProjectLifecycleStep::query()->create(['app_id' => $this->orbitApp->id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
+    ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'install', 'timeout_seconds' => 30, 'position' => 0]);
+    ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
     $transport = new LifecycleSshExecutor(result: static fn (): int => 75);
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
 
@@ -2813,7 +2813,7 @@ it('busy setup retry points to instance:setup instead of treating the Instance a
         ->assertConflict()->assertJsonPath('error.code', 'instance.lifecycle_busy')
         ->assertJsonPath('error.details.outcome', 'busy');
 
-    $instance = AppInstance::query()->where('name', 'busy')->sole();
+    $instance = Instance::query()->where('name', 'busy')->sole();
     expect($instance->failed_step)->toBe('setup')
         ->and($instance->error_code)->toBe('instance.lifecycle_busy')
         ->and(Route::query()->count())->toBe(1)
@@ -2828,22 +2828,22 @@ it('busy setup retry points to instance:setup instead of treating the Instance a
 });
 
 it('keeps setup pending when create is interrupted after activation before the busy result is saved', function (): void {
-    ProjectLifecycleStep::query()->create(['app_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'install', 'timeout_seconds' => 30, 'position' => 0]);
+    ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'install', 'timeout_seconds' => 30, 'position' => 0]);
     $native = app(DevelopmentAppInstanceProvisioner::class);
     app()->instance(DevelopmentAppInstanceProvisioner::class, new class($native) implements DevelopmentAppInstanceProvisioner
     {
         public function __construct(private readonly DevelopmentAppInstanceProvisioner $native) {}
 
-        public function reserve(AppInstance $appInstance, ?string $domain): void
+        public function reserve(Instance $appInstance, ?string $domain): void
         {
             $this->native->reserve($appInstance, $domain);
         }
 
         public function complete(
-            AppInstance $appInstance,
+            Instance $appInstance,
             ?string $domain,
             bool $setupPending = false,
-        ): AppInstance {
+        ): Instance {
             $this->native->complete($appInstance, $domain, setupPending: $setupPending);
 
             throw new RuntimeException('Simulated interruption before setup result persistence.');
@@ -2863,7 +2863,7 @@ it('keeps setup pending when create is interrupted after activation before the b
     expect(fn () => app(CreateAppInstanceAction::class)->execute($data))
         ->toThrow(RuntimeException::class, 'Simulated interruption before setup result persistence.');
 
-    $instance = AppInstance::query()->where('name', 'interrupted-setup')->sole();
+    $instance = Instance::query()->where('name', 'interrupted-setup')->sole();
     expect($instance->status)->toBe(AppInstanceState::Active)
         ->and($instance->failed_step)->toBe('setup')
         ->and($instance->error_code)->toBeNull();
@@ -2882,7 +2882,7 @@ it('keeps setup pending when create is interrupted after activation before the b
 
 it('keeps the Instance when rollback teardown encounters a busy lifecycle lock', function (): void {
     foreach (['setup', 'teardown'] as $position => $phase) {
-        ProjectLifecycleStep::query()->create(['app_id' => $this->orbitApp->id, 'phase' => $phase, 'name' => $phase, 'command' => $phase, 'timeout_seconds' => 30, 'position' => $position]);
+        ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => $phase, 'name' => $phase, 'command' => $phase, 'timeout_seconds' => 30, 'position' => $position]);
     }
     $transport = new LifecycleSshExecutor(result: static fn (array $input): int => $input['command'] === 'setup' ? 1 : 75);
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
@@ -2891,7 +2891,7 @@ it('keeps the Instance when rollback teardown encounters a busy lifecycle lock',
         ->assertConflict()->assertJsonPath('error.code', 'instance.lifecycle_busy')
         ->assertJsonPath('error.details.outcome', 'busy');
 
-    $instance = AppInstance::query()->where('name', 'busy-rollback')->sole();
+    $instance = Instance::query()->where('name', 'busy-rollback')->sole();
     expect($instance->failed_step)->toBe('setup')
         ->and(Route::query()->count())->toBe(1)
         ->and(AppInstanceRemoval::query()->count())->toBe(0)
@@ -2900,23 +2900,23 @@ it('keeps the Instance when rollback teardown encounters a busy lifecycle lock',
 
 it('tears down and removes a newly created instance after confirmed setup failure', function (int $teardownExit): void {
     $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'preserve', 'branch' => 'dev'])->assertCreated();
-    $preservedId = AppInstance::query()->sole()->id;
+    $preservedId = Instance::query()->sole()->id;
 
     foreach (['setup', 'teardown'] as $phase) {
-        ProjectLifecycleStep::query()->create(['app_id' => $this->orbitApp->id, 'phase' => $phase, 'name' => $phase, 'command' => $phase, 'timeout_seconds' => 30, 'position' => 0]);
+        ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => $phase, 'name' => $phase, 'command' => $phase, 'timeout_seconds' => 30, 'position' => 0]);
     }
     $transport = new LifecycleSshExecutor(result: static fn (array $input): int => $input['command'] === 'setup' ? 1 : $teardownExit);
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
     $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'failed-setup', 'branch' => 'dev'])
         ->assertUnprocessable()->assertJsonPath('error.code', 'instance.setup_step_failed');
     expect(array_column($transport->inputs, 'command'))->toBe(['setup', 'teardown'])
-        ->and(AppInstance::query()->sole()->id)->toBe($preservedId)
+        ->and(Instance::query()->sole()->id)->toBe($preservedId)
         ->and(Route::query()->count())->toBe(1);
 })->with([0, 1]);
 
 it('stops setup early enough in a create that the rollback still fits the request deadline', function (): void {
     foreach (['setup', 'teardown'] as $phase) {
-        ProjectLifecycleStep::query()->create(['app_id' => $this->orbitApp->id, 'phase' => $phase, 'name' => $phase, 'command' => $phase, 'timeout_seconds' => 540, 'position' => 0]);
+        ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => $phase, 'name' => $phase, 'command' => $phase, 'timeout_seconds' => 540, 'position' => 0]);
     }
     $now = 0.0;
     $deadline = new CommandDeadline(static function () use (&$now): float {
@@ -2945,23 +2945,23 @@ it('stops setup early enough in a create that the rollback still fits the reques
     expect(array_column($transport->inputs, 'command'))->toBe(['setup', 'teardown'])
         ->and(array_column($transport->inputs, 'timeout'))->toBe([95, 80])
         ->and(570.0 - $now)->toBeGreaterThanOrEqual(CreateAppInstanceAction::RollbackRemovalSeconds)
-        ->and(AppInstance::query()->count())->toBe(0);
+        ->and(Instance::query()->count())->toBe(0);
 });
 
 it('names the forced destroy that finishes a create rollback whose removal did not complete', function (): void {
     foreach (['setup', 'teardown'] as $phase) {
-        ProjectLifecycleStep::query()->create(['app_id' => $this->orbitApp->id, 'phase' => $phase, 'name' => $phase, 'command' => $phase, 'timeout_seconds' => 30, 'position' => 0]);
+        ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => $phase, 'name' => $phase, 'command' => $phase, 'timeout_seconds' => 30, 'position' => 0]);
     }
     $transport = new LifecycleSshExecutor(result: static fn (array $input): int => $input['command'] === 'setup' ? 1 : 0);
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
     // The Instance this create makes is the next id; its source removal is interrupted.
-    $this->removalSource->failPrepareFor = (int) AppInstance::query()->max('id') + 1;
+    $this->removalSource->failPrepareFor = (int) Instance::query()->max('id') + 1;
 
     $response = $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'stuck-rollback', 'branch' => 'dev'])
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'instance.setup_step_failed')
         ->assertJsonPath('error.details.cleanup', 'incomplete');
-    $instance = AppInstance::query()->where('name', 'stuck-rollback')->sole();
+    $instance = Instance::query()->where('name', 'stuck-rollback')->sole();
 
     expect($instance->id)->toBe($this->removalSource->failPrepareFor)
         ->and($response->json('error.message'))->toBe(
@@ -2973,22 +2973,22 @@ it('names the forced destroy that finishes a create rollback whose removal did n
     $this->deleteJson("/api/v1/instances/{$instance->id}")->assertConflict()->assertJsonPath('error.code', 'instance.removal_conflict');
     $this->deleteJson("/api/v1/instances/{$instance->id}", ['force' => true])->assertOk();
 
-    expect(AppInstance::query()->whereKey($instance->id)->exists())->toBeFalse();
+    expect(Instance::query()->whereKey($instance->id)->exists())->toBeFalse();
 });
 
 it('retains the checkout when setup execution cannot be confirmed', function (): void {
-    ProjectLifecycleStep::query()->create(['app_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'install', 'timeout_seconds' => 30, 'position' => 0]);
+    ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'install', 'timeout_seconds' => 30, 'position' => 0]);
     $transport = new LifecycleSshExecutor(result: static fn (): int => 255);
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
     $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'unconfirmed', 'branch' => 'dev'])
         ->assertUnprocessable()->assertJsonPath('error.code', 'instance.setup_step_failed');
-    expect(AppInstance::query()->count())->toBe(1)
+    expect(Instance::query()->count())->toBe(1)
         ->and(Route::query()->count())->toBe(1)
         ->and($transport->inputs)->toHaveCount(1);
     $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'unconfirmed', 'branch' => 'dev'])
         ->assertConflict()->assertJsonPath('error.code', 'instance.setup_step_failed');
     $transport->result = static fn (): int => 0;
-    $instance = AppInstance::query()->sole();
+    $instance = Instance::query()->sole();
     $this->postJson('/api/v1/instances/'.$instance->id.'/setup')->assertOk();
     expect($instance->refresh()->failed_step)->toBeNull();
 

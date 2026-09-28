@@ -9,7 +9,7 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AppInstances\UpdateAppInstanceEnvironmentRequest;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use Illuminate\Http\JsonResponse;
 
 final class AppInstanceEnvironmentValuesController extends Controller
@@ -21,7 +21,7 @@ final class AppInstanceEnvironmentValuesController extends Controller
     ): JsonResponse {
         $instance = $request->route('instance');
         $key = $request->route('key');
-        assert($instance instanceof AppInstance);
+        assert($instance instanceof Instance);
         assert(is_string($key));
 
         return response()->json([

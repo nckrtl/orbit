@@ -15,7 +15,7 @@ use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AppInstances\StoreAppInstanceDeployStepRequest;
 use App\Http\Requests\AppInstances\UpdateAppInstanceDeployStepRequest;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -24,7 +24,7 @@ final class AppInstanceDeployStepsController extends Controller
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]
     public function index(
         Request $request,
-        AppInstance $instance,
+        Instance $instance,
         ListAppInstanceDeployStepsAction $action,
     ): JsonResponse {
         return response()->json([
@@ -39,7 +39,7 @@ final class AppInstanceDeployStepsController extends Controller
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]
     public function store(
         StoreAppInstanceDeployStepRequest $request,
-        AppInstance $instance,
+        Instance $instance,
         CreateAppInstanceDeployStepAction $action,
     ): JsonResponse {
         return response()->json([
@@ -53,7 +53,7 @@ final class AppInstanceDeployStepsController extends Controller
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]
     public function update(
         UpdateAppInstanceDeployStepRequest $request,
-        AppInstance $instance,
+        Instance $instance,
         string $step,
         UpdateAppInstanceDeployStepAction $action,
     ): JsonResponse {
@@ -79,7 +79,7 @@ final class AppInstanceDeployStepsController extends Controller
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]
     public function destroy(
         Request $request,
-        AppInstance $instance,
+        Instance $instance,
         string $step,
         DestroyAppInstanceDeployStepAction $action,
     ): JsonResponse {

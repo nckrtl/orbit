@@ -10,8 +10,8 @@ use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
 use App\Infrastructure\AppInstances\ProductionPhpRuntimeConfigRenderer;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Metrics\ServiceMetricsProjection;
-use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
+use App\Models\Instance;
 
 final readonly class ProductionInstanceInspectionExpectationFactory
 {
@@ -23,12 +23,12 @@ final readonly class ProductionInstanceInspectionExpectationFactory
         private ?NodeCaddyfileRenderer $builds = null,
     ) {}
 
-    public function make(AppInstance $instance): ProductionInstanceInspectionExpectation
+    public function make(Instance $instance): ProductionInstanceInspectionExpectation
     {
         $instance->loadMissing(['app', 'node']);
         $context = $this->contexts->resolve($instance, requireActiveNode: false);
         $values = AppInstanceEnvironmentValue::query()
-            ->where('app_instance_id', $instance->id)
+            ->where('instance_id', $instance->id)
             ->orderBy('env_key')
             ->get()
             ->mapWithKeys(static fn (AppInstanceEnvironmentValue $value): array => [

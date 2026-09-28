@@ -28,10 +28,10 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Schedule;
 use Illuminate\Support\Carbon;
 use Tests\Support\FakeAppInstanceCheckoutInspector;
@@ -61,13 +61,13 @@ beforeEach(function (): void {
         'wireguard_ip' => '10.44.0.3',
     ]);
     $this->node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
     ]);
-    $this->instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $this->instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $this->node->id,
         'name' => 'main',
         'environment' => 'development',
@@ -89,7 +89,7 @@ it('defaults the soft idle window to one hour and the dependency idle window to 
         ->toBe(1_800);
 });
 
-it('does not converge PHP-FPM when it wakes or halts AppInstance Processes', function (): void {
+it('does not converge PHP-FPM when it wakes or halts Instance Processes', function (): void {
     $fpm = new HibernationRecordingPhpFpmManager;
     app()->instance(AppDevPhpFpmManager::class, $fpm);
     $running = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
@@ -106,7 +106,7 @@ it('does not converge PHP-FPM when it wakes or halts AppInstance Processes', fun
         ->toBe([$running->id]);
 });
 
-it('wakes desired-running AppInstance Processes and writes the awake marker', function (): void {
+it('wakes desired-running Instance Processes and writes the awake marker', function (): void {
     $running = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
     $stopped = hibernation_action_process($this->instance, 'queue', DesiredProcessState::Stopped);
 
@@ -197,7 +197,7 @@ it('halts idle desired-running Processes without changing desired state or Sched
     $running = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running, 'always');
     hibernation_action_process($this->instance, 'queue', DesiredProcessState::Stopped);
     $schedule = Schedule::query()->create([
-        'target_type' => AppInstance::MorphAlias,
+        'target_type' => Instance::MorphAlias,
         'target_id' => $this->instance->id,
         'host_node_id' => $this->node->id,
         'name' => 'hourly',
@@ -268,7 +268,7 @@ it('leaves keep-alive Processes running while it hibernates the rest of the grou
         ->toBe([RuntimeHibernation::key((int) $this->instance->id)]);
 });
 
-it('does not mark an AppInstance asleep when every desired-running Process is keep-alive', function (): void {
+it('does not mark an Instance asleep when every desired-running Process is keep-alive', function (): void {
     hibernation_action_process($this->instance, 'queue', DesiredProcessState::Running, keepAlive: true);
 
     $halted = app(SweepIdleAppDevRuntimesAction::class)->execute(Carbon::now());
@@ -281,7 +281,7 @@ it('does not mark an AppInstance asleep when every desired-running Process is ke
         ->toBe([]);
 });
 
-it('stops and starts an Antigravity watcher with AppInstance hibernation', function (): void {
+it('stops and starts an Antigravity watcher with Instance hibernation', function (): void {
     $http = hibernation_action_process($this->instance, 'agentation', DesiredProcessState::Running);
     $http->forceFill([
         'runtime_config' => ['preset' => 'agentation-mcp', 'command' => ['/usr/local/bin/agentation-mcp', 'server']],
@@ -348,9 +348,9 @@ it('leaves recent HTTP activity and Node or production Processes running', funct
         'wireguard_ip' => '10.44.0.4',
     ]);
     $prodNode->roles()->create(['role' => 'app-prod', 'status' => LifecycleStatus::Active]);
-    $app = OrbitApp::query()->findOrFail($this->instance->app_id);
-    $production = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $app = Project::query()->findOrFail($this->instance->project_id);
+    $production = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $prodNode->id,
         'name' => 'prod',
         'environment' => 'production',
@@ -402,7 +402,7 @@ it('prunes reconstructable checkout dependencies after the dependency idle windo
         ->toBe([RuntimeHibernation::key((int) $this->instance->id)]);
 });
 
-it('skips prune while the AppInstance is still awake', function (): void {
+it('skips prune while the Instance is still awake', function (): void {
     $process = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
     hibernation_age_process($process);
     $key = RuntimeHibernation::key((int) $this->instance->id);
@@ -427,7 +427,7 @@ it('skips prune while the AppInstance is still awake', function (): void {
         ->toBe([]);
 });
 
-it('skips prune when the AppInstance is already cold or still inside an activity window', function (string $reason): void {
+it('skips prune when the Instance is already cold or still inside an activity window', function (string $reason): void {
     $process = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
     hibernation_age_process($process);
     $key = RuntimeHibernation::key((int) $this->instance->id);
@@ -476,7 +476,7 @@ it('skips prune when any keep-alive desired-running Process exists', function ()
         ->toBe([]);
 });
 
-it('wakes a soft AppInstance without restoring checkout dependencies', function (): void {
+it('wakes a soft Instance without restoring checkout dependencies', function (): void {
     $running = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
 
     app(ActivateAppInstanceRuntimeAction::class)->execute($this->instance);
@@ -532,14 +532,14 @@ it('keeps the cold marker and skips the awake marker when restore fails', functi
 });
 
 function hibernation_action_process(
-    AppInstance $instance,
+    Instance $instance,
     string $name,
     DesiredProcessState $desired,
     string $restartPolicy = 'on-failure',
     bool $keepAlive = false,
 ): Process {
     return Process::query()->create([
-        'owner_type' => AppInstance::MorphAlias,
+        'owner_type' => Instance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => $name,
         'runtime' => 'systemd',

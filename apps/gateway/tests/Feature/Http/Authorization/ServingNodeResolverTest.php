@@ -13,10 +13,10 @@ use App\Domain\Tools\ToolStatus;
 use App\Http\Authorization\ActiveGatewayMissing;
 use App\Http\Authorization\ServingNode;
 use App\Http\Authorization\ServingNodeResolver;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Schedule;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
@@ -88,7 +88,7 @@ it('resolves an app-owning node from raw app input', function (): void {
     resolver_app_instance($app, $node, name: 'raw-app-instance');
 
     expect(resolver_node_ids(resolver()->resolve(
-        resolver_request(input: ['app_id' => $app->id]),
+        resolver_request(input: ['project_id' => $app->id]),
         ServingNode::AppOwning,
     )))->toBe([$node->id]);
 });
@@ -314,11 +314,11 @@ it('resolves the recorded Schedule host and leaves deleted callbacks unresolved'
         ->toBeEmpty();
 });
 
-it('resolves the AppInstance host for runtime activation', function (): void {
+it('resolves the Instance host for runtime activation', function (): void {
     $node = resolver_node('activation-host');
     $app = resolver_app('activation-app');
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'main',
         'environment' => 'development',
@@ -351,7 +351,7 @@ it('rejects a bound leftover Workspace Process owner', function (): void {
         resolver_request(['process' => $process]),
         ServingNode::ProcessOwning,
     );
-})->throws(ResourceOperationException::class, 'not a supported AppInstance or Node');
+})->throws(ResourceOperationException::class, 'not a supported Instance or Node');
 
 it('returns no concrete nodes for a collection', function (): void {
     expect(resolver()->resolve(resolver_request(), ServingNode::Collection))->toBeEmpty();
@@ -364,7 +364,7 @@ it('leaves malformed or absent raw identifiers to validation', function (string 
     expect(resolver()->resolve(resolver_request(input: $input), $scope))->toBeEmpty();
 })->with([
     'missing app' => ['AppOwning', []],
-    'malformed app' => ['AppOwning', ['app_id' => 'not-a-number']],
+    'malformed app' => ['AppOwning', ['project_id' => 'not-a-number']],
     'missing instance node' => ['InstanceOwning', []],
     'malformed instance node' => ['InstanceOwning', ['node_id' => 'not-a-number']],
     'missing process target' => ['ProcessOwning', []],
@@ -380,7 +380,7 @@ it('throws for syntactically valid missing raw identifiers', function (string $s
 
     resolver()->resolve(resolver_request(input: $input), $scope);
 })->with([
-    'app' => ['AppOwning', ['app_id' => 999_999]],
+    'app' => ['AppOwning', ['project_id' => 999_999]],
     'instance node' => ['InstanceOwning', ['node_id' => 999_999]],
     'process instance' => ['ProcessOwning', ['target_type' => 'instance', 'target_id' => 999_999]],
     'tool node' => ['ToolOwning', ['node_id' => 999_999]],
@@ -422,19 +422,19 @@ function resolver_node(string $name, LifecycleStatus $status = LifecycleStatus::
     ]);
 }
 
-function resolver_app(string $slug): OrbitApp
+function resolver_app(string $slug): Project
 {
-    return OrbitApp::query()->create([
+    return Project::query()->create([
         'name' => $slug,
         'slug' => $slug,
         'repository_url' => 'https://example.test/'.$slug.'.git',
     ]);
 }
 
-function resolver_app_instance(OrbitApp $app, Node $node, string $name): AppInstance
+function resolver_app_instance(Project $app, Node $node, string $name): Instance
 {
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => $name,
         'environment' => 'development',
@@ -445,7 +445,7 @@ function resolver_app_instance(OrbitApp $app, Node $node, string $name): AppInst
     ]);
 }
 
-function resolver_process(AppInstance|Node $owner): Process
+function resolver_process(Instance|Node $owner): Process
 {
     return $owner
         ->processes()

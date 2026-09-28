@@ -16,7 +16,7 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter;
 use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
 use App\Domain\AppInstances\Environment\AppInstanceRouteEnvironmentSynchronizer;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class SynchronizeAppInstanceEnvironmentAction implements AppInstanceEnvironmentSynchronizer, AppInstanceRouteEnvironmentSynchronizer
 {
@@ -29,7 +29,7 @@ final readonly class SynchronizeAppInstanceEnvironmentAction implements AppInsta
         private AppInstanceEnvironmentWriter $writer,
     ) {}
 
-    public function execute(AppInstance $instance): AppInstanceEnvironmentResult
+    public function execute(Instance $instance): AppInstanceEnvironmentResult
     {
         return $this->operations->run(
             [$instance->id],
@@ -40,7 +40,7 @@ final readonly class SynchronizeAppInstanceEnvironmentAction implements AppInsta
     }
 
     public function synchronizeRouteDomain(
-        AppInstance $instance,
+        Instance $instance,
         AppInstanceEnvironmentRouteDomain $domain,
     ): AppInstanceEnvironmentResult {
         return $this->operations->run(
@@ -66,7 +66,7 @@ final readonly class SynchronizeAppInstanceEnvironmentAction implements AppInsta
         if (! $result->confirmed || ! is_bool($result->changed)) {
             throw new ResourceOperationException(
                 errorCode: 'env.sync_unconfirmed',
-                message: 'The AppInstance environment synchronization result is unconfirmed. Retry the request.',
+                message: 'The Instance environment synchronization result is unconfirmed. Retry the request.',
                 status: 409,
             );
         }

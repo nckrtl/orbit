@@ -284,7 +284,7 @@ final readonly class RemoteAppInstanceEnvironmentAccess implements AppInstanceEn
         if ($result->exitCode === 41 && $result->stdout === "MISSING\n" && $result->stderr === '') {
             throw new ResourceOperationException(
                 errorCode: 'env.import_source_missing',
-                message: 'The recorded AppInstance environment file does not exist.',
+                message: 'The recorded Instance environment file does not exist.',
                 status: 404,
             );
         }
@@ -365,7 +365,7 @@ final readonly class RemoteAppInstanceEnvironmentAccess implements AppInstanceEn
                 $this->failWritePreflight();
             }
 
-            throw new \RuntimeException('The recorded AppInstance host is unavailable.');
+            throw new \RuntimeException('The recorded Instance host is unavailable.');
         }
 
         try {
@@ -415,7 +415,7 @@ final readonly class RemoteAppInstanceEnvironmentAccess implements AppInstanceEn
     {
         throw new ResourceOperationException(
             errorCode: 'env.import_preflight_failed',
-            message: 'The recorded AppInstance environment file cannot be read safely.',
+            message: 'The recorded Instance environment file cannot be read safely.',
             status: 409,
         );
     }
@@ -424,7 +424,7 @@ final readonly class RemoteAppInstanceEnvironmentAccess implements AppInstanceEn
     {
         throw new ResourceOperationException(
             errorCode: 'env.write_preflight_failed',
-            message: 'The recorded AppInstance environment file cannot be replaced safely.',
+            message: 'The recorded Instance environment file cannot be replaced safely.',
             status: 409,
         );
     }
@@ -433,7 +433,7 @@ final readonly class RemoteAppInstanceEnvironmentAccess implements AppInstanceEn
     {
         throw new ResourceOperationException(
             errorCode: 'env.write_failed',
-            message: 'The AppInstance environment file replacement failed safely.',
+            message: 'The Instance environment file replacement failed safely.',
             status: 409,
         );
     }

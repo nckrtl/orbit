@@ -10,10 +10,10 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -22,16 +22,16 @@ use Illuminate\Support\Str;
 
 beforeEach(function (): void {
     roll_back_app_instance_environment_for_migration_test();
-    orb183_production_route_migration()->down();
+    run_legacy_schema_migration(orb183_production_route_migration(), 'down');
 });
 
 afterEach(fn () => restore_app_instance_environment_schema_for_migration_test());
 
-it('preserves populated AppInstance and Route state while adding empty removal storage', function (): void {
+it('preserves populated Instance and Route state while adding empty removal storage', function (): void {
     $migration = orb179_removal_migration();
-    $migration->down();
+    run_legacy_schema_migration($migration, 'down');
     $timestamp = '2026-09-08 12:00:00';
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Upgrade',
         'slug' => 'upgrade',
         'repository_url' => 'https://example.test/acme/upgrade.git',
@@ -54,8 +54,8 @@ it('preserves populated AppInstance and Route state while adding empty removal s
     $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
 
     foreach (['reserved', 'checkout_prepared', 'source_resolved'] as $position => $status) {
-        AppInstance::query()->create([
-            'app_id' => $app->id,
+        Instance::query()->create([
+            'project_id' => $app->id,
             'node_id' => $node->id,
             'name' => $status,
             'environment' => 'development',
@@ -75,7 +75,7 @@ it('preserves populated AppInstance and Route state while adding empty removal s
     [$active, $route] = orb179_removal_fixture('upgrade-active', $app, $node, $timestamp);
     $before = orb179_control_plane_rows();
 
-    $migration->up();
+    run_legacy_schema_migration($migration, 'up');
 
     expect(orb179_control_plane_rows())
         ->toBe($before)
@@ -83,15 +83,15 @@ it('preserves populated AppInstance and Route state while adding empty removal s
         ->toBe(AppInstanceState::Active)
         ->and($active->app->repository_identity)
         ->toBe('example.test/acme/upgrade')
-        ->and($route->refresh()->targets()->pluck('app_instance_id')->all())
+        ->and($route->refresh()->targets()->pluck('instance_id')->all())
         ->toBe([$active->id])
-        ->and(Schema::hasTable('app_instance_removals'))
+        ->and(Schema::hasTable('instance_removals'))
         ->toBeTrue()
-        ->and(Schema::hasTable('app_instance_removal_members'))
+        ->and(Schema::hasTable('instance_removal_members'))
         ->toBeTrue()
-        ->and(DB::table('app_instance_removals')->count())
+        ->and(DB::table('instance_removals')->count())
         ->toBe(0)
-        ->and(DB::table('app_instance_removal_members')->count())
+        ->and(DB::table('instance_removal_members')->count())
         ->toBe(0)
         ->and(Schema::hasTable('active_app_prod_nodes'))
         ->toBeFalse();
@@ -100,9 +100,9 @@ it('preserves populated AppInstance and Route state while adding empty removal s
 it('rejects a removal operation without its initial step', function (): void {
     [$instance] = orb179_removal_fixture('missing-step');
 
-    expect(fn () => DB::table('app_instance_removals')->insert([
+    expect(fn () => DB::table('instance_removals')->insert([
         'id' => (string) Str::uuid(),
-        'requested_app_instance_id' => $instance->id,
+        'requested_instance_id' => $instance->id,
         'requested_name' => $instance->name,
         'force' => false,
         'inventory_digest' => str_repeat('d', 64),
@@ -154,7 +154,7 @@ it('records immutable requested identity, force choice, and ordered member inven
         ->toThrow(QueryException::class)
         ->and(fn () => $duplicate->members()->create(orb179_removal_member($first, $firstRoute, 0)))
         ->toThrow(QueryException::class)
-        ->and(fn () => DB::table('app_instance_removals')
+        ->and(fn () => DB::table('instance_removals')
             ->where('id', $removal->id)
             ->update([
                 'status' => 'queued',
@@ -193,7 +193,7 @@ it('records immutable requested identity, force choice, and ordered member inven
 
 it('backfills historical source commits and preserves distinct observed evidence', function (): void {
     $migration = orb182_source_commit_migration();
-    $migration->down();
+    run_legacy_schema_migration($migration, 'down');
     [$historical, $historicalRoute] = orb179_removal_fixture('source-backfill');
     $historicalRemoval = orb179_removal_operation($historical);
     $historicalAttributes = orb179_removal_member($historical, $historicalRoute, 0);
@@ -221,17 +221,17 @@ it('backfills historical source commits and preserves distinct observed evidence
         'current_step' => null,
     ]);
 
-    expect(Schema::hasColumn('app_instance_removal_members', 'source_commit'))->toBeFalse();
+    expect(Schema::hasColumn('instance_removal_members', 'source_commit'))->toBeFalse();
 
-    $migration->up();
+    run_legacy_schema_migration($migration, 'up');
 
     expect($historicalMember->refresh()->source_commit)
         ->toBe($historical->starting_commit)
         ->and($completedMember->refresh()->source_commit)
         ->toBe($completed->starting_commit)
-        ->and(Schema::hasColumn('app_instance_removal_members', 'source_commit'))
+        ->and(Schema::hasColumn('instance_removal_members', 'source_commit'))
         ->toBeTrue()
-        ->and(fn () => DB::table('app_instance_removal_members')
+        ->and(fn () => DB::table('instance_removal_members')
             ->where('id', $completedMember->id)
             ->update(['updated_at' => now()->addSecond()]))
         ->toThrow(QueryException::class)
@@ -253,7 +253,7 @@ it('backfills historical source commits and preserves distinct observed evidence
         ->toBe(str_repeat('b', 40))
         ->and($currentMember->starting_commit)
         ->toBe(str_repeat('a', 40))
-        ->and(fn () => $migration->down())
+        ->and(fn () => run_legacy_schema_migration($migration, 'down'))
         ->toThrow(
             RuntimeException::class,
             "Cannot roll back distinct AppInstance removal source commits: {$currentMember->id}",
@@ -262,7 +262,7 @@ it('backfills historical source commits and preserves distinct observed evidence
 
 it('persists nullable detached branches without weakening recorded branch identity', function (): void {
     $migration = orb105_nullable_removal_branch_migration();
-    $migration->down();
+    run_legacy_schema_migration($migration, 'down');
     [$detached, $detachedRoute] = orb179_removal_fixture('detached-removal');
     $detached->update(['branch' => null]);
     $detachedRemoval = orb179_removal_operation($detached);
@@ -272,7 +272,7 @@ it('persists nullable detached branches without weakening recorded branch identi
     expect(fn () => $detachedRemoval->members()->create($detachedAttributes))
         ->toThrow(QueryException::class);
 
-    $migration->up();
+    run_legacy_schema_migration($migration, 'up');
     $detachedMember = $detachedRemoval->members()->create($detachedAttributes);
     [$named, $namedRoute] = orb179_removal_fixture('named-removal');
     $namedRemoval = orb179_removal_operation($named);
@@ -283,7 +283,7 @@ it('persists nullable detached branches without weakening recorded branch identi
         ->toBeNull()
         ->and(fn () => $namedRemoval->members()->create($mismatchedAttributes))
         ->toThrow(QueryException::class)
-        ->and(fn () => $migration->down())
+        ->and(fn () => run_legacy_schema_migration($migration, 'down'))
         ->toThrow(
             RuntimeException::class,
             "Cannot roll back detached AppInstance removal evidence: {$detachedMember->id}",
@@ -324,16 +324,16 @@ it('rolls back the development source column while retaining production removal 
         );
     $migration = orb182_source_commit_migration();
 
-    $migration->down();
+    run_legacy_schema_migration($migration, 'down');
 
-    expect(Schema::hasColumn('app_instance_removal_members', 'source_commit'))
+    expect(Schema::hasColumn('instance_removal_members', 'source_commit'))
         ->toBeFalse()
         ->and($productionMember->refresh()->starting_commit)
         ->toBe(str_repeat('a', 40))
         ->and($developmentMember->refresh()->starting_commit)
         ->toBe(str_repeat('a', 40));
 
-    $migration->up();
+    run_legacy_schema_migration($migration, 'up');
 
     expect($productionMember->refresh()->source_commit)
         ->toBeNull()
@@ -412,7 +412,7 @@ it('refuses rollback before discarding unfinished removal evidence', function ()
     $migration = orb179_removal_migration();
     $schema = orb179_removal_schema();
 
-    expect(fn () => $migration->down())
+    expect(fn () => run_legacy_schema_migration($migration, 'down'))
         ->toThrow(RuntimeException::class, 'Cannot roll back while AppInstance removal evidence exists.')
         ->and(orb179_removal_schema())
         ->toBe($schema);
@@ -437,7 +437,7 @@ it('refuses rollback before discarding completed removal evidence', function ():
     $migration = orb179_removal_migration();
     $schema = orb179_removal_schema();
 
-    expect(fn () => $migration->down())
+    expect(fn () => run_legacy_schema_migration($migration, 'down'))
         ->toThrow(RuntimeException::class, 'Cannot roll back while AppInstance removal evidence exists.')
         ->and(orb179_removal_schema())
         ->toBe($schema);
@@ -445,12 +445,12 @@ it('refuses rollback before discarding completed removal evidence', function ():
 
 it('refuses rollback before narrowing an incompatible removing lifecycle', function (): void {
     [$instance] = orb179_removal_fixture('incompatible');
-    DB::statement('DROP TRIGGER app_instances_removal_status_update');
+    DB::statement('DROP TRIGGER instances_removal_status_update');
     $instance->update(['status' => AppInstanceState::Removing]);
     $migration = orb179_removal_migration();
     $schema = orb179_removal_schema();
 
-    expect(fn () => $migration->down())
+    expect(fn () => run_legacy_schema_migration($migration, 'down'))
         ->toThrow(
             RuntimeException::class,
             "Cannot roll back while AppInstances are removing: {$instance->id}",
@@ -459,27 +459,27 @@ it('refuses rollback before narrowing an incompatible removing lifecycle', funct
         ->toBe($schema);
 
     $instance->update(['status' => AppInstanceState::Active]);
-    $migration->down();
-    $migration->up();
+    run_legacy_schema_migration($migration, 'down');
+    run_legacy_schema_migration($migration, 'up');
 });
 
 it('restores the prior schema when no removal evidence or removing lifecycle exists', function (): void {
     $migration = orb179_removal_migration();
-    $migration->down();
+    run_legacy_schema_migration($migration, 'down');
     $priorSchema = orb179_route_schema();
 
-    expect(Schema::hasTable('app_instance_removals'))
+    expect(Schema::hasTable('instance_removals'))
         ->toBeFalse()
-        ->and(Schema::hasTable('app_instance_removal_members'))
+        ->and(Schema::hasTable('instance_removal_members'))
         ->toBeFalse();
 
-    $migration->up();
-    $migration->down();
+    run_legacy_schema_migration($migration, 'up');
+    run_legacy_schema_migration($migration, 'down');
 
     expect(orb179_route_schema())
         ->toBe($priorSchema)
-        ->and(fn () => DB::table('app_instances')->insert([
-            'app_id' => 1,
+        ->and(fn () => DB::table('instances')->insert([
+            'project_id' => 1,
             'node_id' => 1,
             'name' => 'invalid',
             'checkout_path' => '/srv/invalid',
@@ -489,7 +489,7 @@ it('restores the prior schema when no removal evidence or removing lifecycle exi
         ]))
         ->toThrow(QueryException::class);
 
-    $migration->up();
+    run_legacy_schema_migration($migration, 'up');
 });
 
 function orb179_removal_migration(): object
@@ -513,15 +513,15 @@ function orb105_nullable_removal_branch_migration(): object
     );
 }
 
-/** @return array{AppInstance, Route} */
+/** @return array{Instance, Route} */
 function orb179_removal_fixture(
     string $suffix,
-    ?OrbitApp $app = null,
+    ?Project $app = null,
     ?Node $node = null,
     ?string $timestamp = null,
     string $environment = 'development',
 ): array {
-    $app ??= OrbitApp::query()->create([
+    $app ??= Project::query()->create([
         'name' => "Removal {$suffix}",
         'slug' => "removal-{$suffix}",
         'repository_url' => "https://example.test/acme/{$suffix}.git",
@@ -542,7 +542,7 @@ function orb179_removal_fixture(
         ['status' => LifecycleStatus::Active],
     );
     $attributes = [
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => $suffix,
         'environment' => $environment,
@@ -559,10 +559,10 @@ function orb179_removal_fixture(
         $attributes['updated_at'] = $timestamp;
     }
 
-    $instance = AppInstance::query()->create($attributes);
-    DB::table('app_instances')->where('id', $instance->id)->update(['environment' => $environment]);
+    $instance = Instance::query()->create($attributes);
+    DB::table('instances')->where('id', $instance->id)->update(['environment' => $environment]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'generation_basis_node_id' => $node->id,
         'domain' => "{$suffix}.{$app->slug}.test",
@@ -574,7 +574,7 @@ function orb179_removal_fixture(
     $route
         ->targets()
         ->create([
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'position' => 0,
             ...($timestamp === null ? [] : ['created_at' => $timestamp, 'updated_at' => $timestamp]),
         ]);
@@ -585,13 +585,13 @@ function orb179_removal_fixture(
 }
 
 function orb179_removal_operation(
-    AppInstance $instance,
+    Instance $instance,
     int $total = 1,
     bool $force = false,
 ): AppInstanceRemoval {
     return AppInstanceRemoval::query()->create([
         'id' => (string) Str::uuid(),
-        'requested_app_instance_id' => $instance->id,
+        'requested_instance_id' => $instance->id,
         'requested_name' => $instance->name,
         'force' => $force,
         'inventory_digest' => str_repeat('d', 64),
@@ -602,12 +602,12 @@ function orb179_removal_operation(
 }
 
 /** @return array<string, mixed> */
-function orb179_removal_member(AppInstance $instance, Route $route, int $position): array
+function orb179_removal_member(Instance $instance, Route $route, int $position): array
 {
     return [
         'position' => $position,
-        'app_instance_id' => $instance->id,
-        'app_id' => $instance->app_id,
+        'instance_id' => $instance->id,
+        'project_id' => $instance->project_id,
         'node_id' => $instance->node_id,
         'route_id' => $route->id,
         'name' => $instance->name,
@@ -631,7 +631,7 @@ function orb179_control_plane_rows(): array
 {
     $rows = [];
 
-    foreach (['apps', 'app_instances', 'routes', 'route_targets'] as $table) {
+    foreach (['projects', 'instances', 'routes', 'route_targets'] as $table) {
         $rows[$table] = DB::table($table)
             ->orderBy('id')
             ->get()
@@ -651,9 +651,9 @@ function orb179_removal_schema(): array
         WHERE type IN ('table', 'index', 'trigger')
             AND (
                 tbl_name IN (
-                    'app_instances',
-                    'app_instance_removals',
-                    'app_instance_removal_members',
+                    'instances',
+                    'instance_removals',
+                    'instance_removal_members',
                     'routes',
                     'route_targets'
                 )
@@ -672,7 +672,7 @@ function orb179_route_schema(): array
         SELECT type, name, tbl_name, sql
         FROM sqlite_master
         WHERE type IN ('table', 'index', 'trigger')
-            AND tbl_name IN ('app_instances', 'routes', 'route_targets')
+            AND tbl_name IN ('instances', 'routes', 'route_targets')
         ORDER BY type, name
         SQL))
         ->map(static fn (object $entry): array => (array) $entry)

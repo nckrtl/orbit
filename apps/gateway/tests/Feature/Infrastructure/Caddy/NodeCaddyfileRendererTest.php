@@ -32,10 +32,10 @@ use App\Infrastructure\Gateway\GatewayCaddyConfigRenderer;
 use App\Infrastructure\Metrics\MetricsPublicationRenderer;
 use App\Infrastructure\Metrics\ServiceMetricsConfigRenderer;
 use App\Infrastructure\WebSocket\WebSocketCaddySiteRenderer;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Symfony\Component\Process\ExecutableFinder;
 use Tests\Support\CaddySiteCertificateFixtures;
@@ -147,9 +147,9 @@ describe('site sources', function (): void {
         $ingress->update(['cluster_id' => $cluster->id, 'ssh_host_fingerprint' => 'SHA256:ingress']);
         $ingress->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
         $ingress->roles()->create(['role' => RoleName::Ingress, 'status' => LifecycleStatus::Active, 'cluster_id' => $cluster->id]);
-        $app = OrbitApp::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'https://example.test/shop.git', 'root' => 'public']);
-        $instance = AppInstance::query()->create([
-            'app_id' => $app->id,
+        $app = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'https://example.test/shop.git', 'root' => 'public']);
+        $instance = Instance::query()->create([
+            'project_id' => $app->id,
             'node_id' => $ingress->id,
             'name' => 'default',
             'environment' => 'production',
@@ -158,14 +158,14 @@ describe('site sources', function (): void {
             'status' => AppInstanceState::Active,
         ]);
         $route = Route::query()->create([
-            'app_id' => $app->id,
+            'project_id' => $app->id,
             'cluster_id' => $cluster->id,
             'domain' => 'shop.example.test',
             'provenance' => RouteProvenance::Explicit,
             'publication' => RoutePublication::Private,
             'status' => RouteStatus::Pending,
         ]);
-        $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+        $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
         $route->update(['publication' => RoutePublication::Public, 'status' => RouteStatus::Active]);
         $renderer = new NodeCaddyfileRenderer([app(ServiceMetricsCaddySiteSource::class)]);
 
@@ -545,7 +545,7 @@ function caddy_build_node(string $name, ?string $wireguardIp): Node
     ]);
 }
 
-/** @return array{AppInstance, Route} */
+/** @return array{Instance, Route} */
 function caddy_build_private_route(Node $router, string $domain): array
 {
     $cluster = Cluster::query()->create(['name' => "{$domain}-cluster", 'state' => ClusterState::Active]);
@@ -554,9 +554,9 @@ function caddy_build_private_route(Node $router, string $domain): array
     $workload = caddy_build_node("{$domain}-workload", '10.44.0.30');
     $workload->update(['cluster_id' => $cluster->id]);
     $workload->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
-    $app = OrbitApp::query()->create(['name' => $domain, 'slug' => str_replace('.', '-', $domain), 'repository_url' => "https://example.test/{$domain}.git", 'root' => 'public']);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $app = Project::query()->create(['name' => $domain, 'slug' => str_replace('.', '-', $domain), 'repository_url' => "https://example.test/{$domain}.git", 'root' => 'public']);
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $workload->id,
         'name' => 'default',
         'checkout_path' => "/home/orbit/apps/{$domain}",
@@ -565,14 +565,14 @@ function caddy_build_private_route(Node $router, string $domain): array
         'status' => AppInstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'cluster_id' => $cluster->id,
         'domain' => $domain,
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
 
     return [$instance->fresh('node') ?? $instance, $route];

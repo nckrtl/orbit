@@ -16,7 +16,7 @@ final readonly class AgentationEndpoint
 
     public const string PORT_KEY = 'ORBIT_AGENTATION_PORT';
 
-    public const string STORED_URL = 'https://{{app_instance.domain}}'.self::PATH;
+    public const string STORED_URL = 'https://{{instance.domain}}'.self::PATH;
 
     public static function origin(string $domain): string
     {

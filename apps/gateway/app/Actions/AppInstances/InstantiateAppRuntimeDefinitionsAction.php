@@ -21,7 +21,7 @@ use App\Domain\Schedules\ScheduleOperationException;
 use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Process;
 use App\Models\ProcessDefinition;
 use App\Models\Schedule;
@@ -40,33 +40,33 @@ final readonly class InstantiateAppRuntimeDefinitionsAction
         private ScheduleRuntimeManager $scheduleRuntime,
     ) {}
 
-    public function captureForClone(AppInstance $appInstance): AppInstance
+    public function captureForClone(Instance $appInstance): Instance
     {
         $appInstanceId = $appInstance->id;
 
         return $this->admissions->run(
             [$appInstanceId],
-            fn (): AppInstance => $this->capture($appInstanceId),
+            fn (): Instance => $this->capture($appInstanceId),
         );
     }
 
-    public function installCaptured(AppInstance $appInstance): AppInstance
+    public function installCaptured(Instance $appInstance): Instance
     {
         $appInstanceId = $appInstance->id;
 
         return $this->admissions->run(
             [$appInstanceId],
-            fn (): AppInstance => $this->installCapturedOwned($appInstanceId),
+            fn (): Instance => $this->installCapturedOwned($appInstanceId),
         );
     }
 
-    public function execute(AppInstance $appInstance): AppInstance
+    public function execute(Instance $appInstance): Instance
     {
         $appInstanceId = $appInstance->id;
 
         return $this->admissions->run(
             [$appInstanceId],
-            function () use ($appInstanceId): AppInstance {
+            function () use ($appInstanceId): Instance {
                 $this->capture($appInstanceId);
 
                 return $this->installCapturedOwned($appInstanceId);
@@ -74,16 +74,16 @@ final readonly class InstantiateAppRuntimeDefinitionsAction
         );
     }
 
-    private function installCapturedOwned(int $appInstanceId): AppInstance
+    private function installCapturedOwned(int $appInstanceId): Instance
     {
-        $appInstance = AppInstance::query()->with(['app', 'node'])->findOrFail($appInstanceId);
+        $appInstance = Instance::query()->with(['app', 'node'])->findOrFail($appInstanceId);
 
         if ($appInstance->runtime_definitions_captured_at === null) {
             return $appInstance;
         }
 
         Process::query()
-            ->whereIn('owner_type', AppInstance::morphTypes())
+            ->whereIn('owner_type', Instance::morphTypes())
             ->where('owner_id', $appInstanceId)
             ->whereNotNull('source_definition_id')
             ->orderBy('id')
@@ -91,7 +91,7 @@ final readonly class InstantiateAppRuntimeDefinitionsAction
             ->each(fn (Process $process) => $this->installProcess($process));
 
         Schedule::query()
-            ->whereIn('target_type', AppInstance::morphTypes())
+            ->whereIn('target_type', Instance::morphTypes())
             ->where('target_id', $appInstanceId)
             ->whereNotNull('source_definition_id')
             ->orderBy('id')
@@ -101,10 +101,10 @@ final readonly class InstantiateAppRuntimeDefinitionsAction
         return $appInstance->refresh();
     }
 
-    private function capture(int $appInstanceId): AppInstance
+    private function capture(int $appInstanceId): Instance
     {
-        return DB::transaction(function () use ($appInstanceId): AppInstance {
-            $appInstance = AppInstance::query()
+        return DB::transaction(function () use ($appInstanceId): Instance {
+            $appInstance = Instance::query()
                 ->with(['app', 'node'])
                 ->lockForUpdate()
                 ->findOrFail($appInstanceId);
@@ -116,14 +116,14 @@ final readonly class InstantiateAppRuntimeDefinitionsAction
             }
 
             $processDefinitions = ProcessDefinition::query()
-                ->where('app_id', $appInstance->app_id)
+                ->where('project_id', $appInstance->project_id)
                 ->orderBy('name')
                 ->orderBy('id')
                 ->lockForUpdate()
                 ->get()
                 ->filter($this->isForProduction(...));
             $scheduleDefinitions = ScheduleDefinition::query()
-                ->where('app_id', $appInstance->app_id)
+                ->where('project_id', $appInstance->project_id)
                 ->orderBy('name')
                 ->orderBy('id')
                 ->lockForUpdate()
@@ -144,7 +144,7 @@ final readonly class InstantiateAppRuntimeDefinitionsAction
         });
     }
 
-    private function assertProductionTarget(AppInstance $appInstance): void
+    private function assertProductionTarget(Instance $appInstance): void
     {
         if ($appInstance->placedOnAppProd()) {
             return;
@@ -152,7 +152,7 @@ final readonly class InstantiateAppRuntimeDefinitionsAction
 
         throw new ResourceOperationException(
             errorCode: 'instance.runtime_definitions_target_invalid',
-            message: 'Runtime definitions can be instantiated only for a production AppInstance.',
+            message: 'Runtime definitions can be instantiated only for a production Instance.',
             status: 409,
         );
     }
@@ -163,7 +163,7 @@ final readonly class InstantiateAppRuntimeDefinitionsAction
     }
 
     private function captureProcess(
-        AppInstance $appInstance,
+        Instance $appInstance,
         #[SensitiveParameter]
         ProcessDefinition $definition,
         ProcessTarget $target,
@@ -172,7 +172,7 @@ final readonly class InstantiateAppRuntimeDefinitionsAction
         $attributes = $this->processSpecifications->attributes($data, $target);
 
         if (Process::query()
-            ->whereIn('owner_type', AppInstance::morphTypes())
+            ->whereIn('owner_type', Instance::morphTypes())
             ->where('owner_id', $appInstance->id)
             ->where('name', $definition->name)
             ->exists()) {
@@ -185,7 +185,7 @@ final readonly class InstantiateAppRuntimeDefinitionsAction
 
         try {
             Process::query()->create([
-                'owner_type' => AppInstance::MorphAlias,
+                'owner_type' => Instance::MorphAlias,
                 'owner_id' => $appInstance->id,
                 'source_definition_id' => $definition->id,
                 'name' => $definition->name,
@@ -204,14 +204,14 @@ final readonly class InstantiateAppRuntimeDefinitionsAction
     }
 
     private function captureSchedule(
-        AppInstance $appInstance,
+        Instance $appInstance,
         #[SensitiveParameter]
         ScheduleDefinition $definition,
     ): void {
         $specification = $definition->spec;
 
         if (Schedule::query()
-            ->whereIn('target_type', AppInstance::morphTypes())
+            ->whereIn('target_type', Instance::morphTypes())
             ->where('target_id', $appInstance->id)
             ->where('name', $definition->name)
             ->exists()) {
@@ -224,7 +224,7 @@ final readonly class InstantiateAppRuntimeDefinitionsAction
 
         try {
             Schedule::query()->create([
-                'target_type' => AppInstance::MorphAlias,
+                'target_type' => Instance::MorphAlias,
                 'target_id' => $appInstance->id,
                 'source_definition_id' => $definition->id,
                 'host_node_id' => $appInstance->node_id,
@@ -246,7 +246,7 @@ final readonly class InstantiateAppRuntimeDefinitionsAction
     }
 
     private function processData(
-        AppInstance $appInstance,
+        Instance $appInstance,
         #[SensitiveParameter]
         ProcessDefinition $definition,
     ): AddProcessData {
@@ -271,7 +271,7 @@ final readonly class InstantiateAppRuntimeDefinitionsAction
         $volumes = $this->volumes($specification['volumes'] ?? []);
 
         return new AddProcessData(
-            targetType: ProcessTargetType::AppInstance,
+            targetType: ProcessTargetType::Instance,
             targetId: $appInstance->id,
             name: $definition->name,
             runtime: ProcessRuntime::from($runtime),

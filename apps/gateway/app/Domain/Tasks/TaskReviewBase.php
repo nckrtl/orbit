@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskComment;
 use App\Models\TaskGroup;
@@ -37,7 +37,7 @@ final class TaskReviewBase
             return $previous;
         }
         $instance = $group->taskable;
-        $starting = $instance instanceof AppInstance ? $instance->starting_commit : null;
+        $starting = $instance instanceof Instance ? $instance->starting_commit : null;
 
         return self::isCommit($starting) ? $starting : '';
     }
@@ -47,7 +47,7 @@ final class TaskReviewBase
     {
         $group->loadMissing('taskable');
         $instance = $group->taskable;
-        $starting = $instance instanceof AppInstance ? $instance->starting_commit : null;
+        $starting = $instance instanceof Instance ? $instance->starting_commit : null;
 
         return is_string($starting) ? $starting : '';
     }

@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace App\Domain\AppInstances;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 interface DevelopmentAppInstanceProvisioner
 {
-    public function reserve(AppInstance $appInstance, ?string $domain): void;
+    public function reserve(Instance $appInstance, ?string $domain): void;
 
     public function complete(
-        AppInstance $appInstance,
+        Instance $appInstance,
         ?string $domain,
         bool $setupPending = false,
-    ): AppInstance;
+    ): Instance;
 }

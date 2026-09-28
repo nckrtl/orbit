@@ -21,7 +21,7 @@ use App\Http\Requests\AppInstances\RegisterAppInstanceRequest;
 use App\Http\Requests\AppInstances\RemoveAppInstanceRequest;
 use App\Http\Requests\AppInstances\StoreAppInstanceRequest;
 use App\Http\Requests\AppInstances\UpdateAppInstanceRequest;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -37,7 +37,7 @@ final class AppInstancesController extends Controller
         return response()->json([
             'data' => $action
                 ->handle($consumer)
-                ->map(static fn (AppInstance $row): array => AppInstanceData::fromModel($row)->toArray())
+                ->map(static fn (Instance $row): array => AppInstanceData::fromModel($row)->toArray())
                 ->values()
                 ->all(),
             'meta' => $this->meta($request),
@@ -81,7 +81,7 @@ final class AppInstancesController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]
-    public function show(Request $request, AppInstance $instance, ShowAppInstanceAction $action): JsonResponse
+    public function show(Request $request, Instance $instance, ShowAppInstanceAction $action): JsonResponse
     {
         return response()->json([
             'data' => AppInstanceData::fromModel($action->handle($instance))->toArray(),
@@ -92,7 +92,7 @@ final class AppInstancesController extends Controller
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]
     public function update(
         UpdateAppInstanceRequest $request,
-        AppInstance $instance,
+        Instance $instance,
         UpdateAppInstanceAction $action,
     ): JsonResponse {
         return response()->json([
@@ -102,7 +102,7 @@ final class AppInstancesController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]
-    public function setup(Request $request, AppInstance $instance, RunInstanceSetupAction $action): JsonResponse
+    public function setup(Request $request, Instance $instance, RunInstanceSetupAction $action): JsonResponse
     {
         return response()->json([
             'data' => AppInstanceData::fromModel($action->execute($instance))->toArray(),
@@ -113,7 +113,7 @@ final class AppInstancesController extends Controller
     #[RequiresNodeAccess(ServingNode::InstanceOwning)]
     public function destroy(
         RemoveAppInstanceRequest $request,
-        AppInstance $instance,
+        Instance $instance,
         RemoveAppInstanceAction $action,
     ): JsonResponse {
         return response()->json([

@@ -12,9 +12,9 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Tests\Support\AppDevFakeSshExecutor;
 
 it('prepares the recorded user and home and resolves only the App default branch', function (): void {
@@ -343,7 +343,7 @@ it('refuses to inspect a recorded production checkout outside the home or its re
 
 /**
  * @param  list<CommandResult>  $results
- * @return array{RemoteProductionAppInstanceSourceLifecycle, AppDevFakeSshExecutor, AppInstance}
+ * @return array{RemoteProductionAppInstanceSourceLifecycle, AppDevFakeSshExecutor, Instance}
  */
 function production_source_lifecycle(array $results, ?string $branch = null): array
 {
@@ -380,15 +380,15 @@ function production_source_lifecycle(array $results, ?string $branch = null): ar
         'wireguard_ip' => '10.44.0.60',
         'user' => 'orbit',
     ]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Application',
         'slug' => 'application',
         'repository_url' => 'https://example.test/application.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'matching-remote-name',
         'environment' => 'production',

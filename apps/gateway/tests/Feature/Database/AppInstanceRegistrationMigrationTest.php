@@ -3,9 +3,9 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -26,30 +26,30 @@ it('refuses to discard base registration evidence while an operation is incomple
         'registration_completed_at',
     ];
 
-    $recovery->down();
-    $cleanup->down();
+    run_legacy_schema_migration($recovery, 'down');
+    run_legacy_schema_migration($cleanup, 'down');
 
     try {
-        expect(fn () => $migration->down())
+        expect(fn () => run_legacy_schema_migration($migration, 'down'))
             ->toThrow(
                 RuntimeException::class,
                 "Cannot roll back while AppInstance registrations are incomplete: {$instance->id}",
             )
-            ->and(Schema::hasColumns('app_instances', $columns))
+            ->and(Schema::hasColumns('instances', $columns))
             ->toBeTrue()
-            ->and(DB::table('app_instances')->where('id', $instance->id)->value('registration_request_id'))
+            ->and(DB::table('instances')->where('id', $instance->id)->value('registration_request_id'))
             ->not->toBeNull();
     } finally {
-        DB::table('app_instances')
+        DB::table('instances')
             ->where('id', $instance->id)
             ->update([
                 'registration_completed_at' => now(),
                 'registration_relocation_state' => 'relocated',
             ]);
-        $migration->down();
-        $migration->up();
-        $cleanup->up();
-        $recovery->up();
+        run_legacy_schema_migration($migration, 'down');
+        run_legacy_schema_migration($migration, 'up');
+        run_legacy_schema_migration($cleanup, 'up');
+        run_legacy_schema_migration($recovery, 'up');
     }
 });
 
@@ -61,12 +61,12 @@ it('refuses to discard source identity while verified original cleanup is incomp
     $columns = ['registration_source_device', 'registration_source_inode'];
 
     try {
-        expect(fn () => $migration->down())
+        expect(fn () => run_legacy_schema_migration($migration, 'down'))
             ->toThrow(
                 RuntimeException::class,
                 "Cannot roll back while AppInstance source cleanup is incomplete: {$instance->id}",
             )
-            ->and(Schema::hasColumns('app_instances', $columns))
+            ->and(Schema::hasColumns('instances', $columns))
             ->toBeTrue()
             ->and($instance->refresh()->registration_source_device)
             ->toBe(41)
@@ -74,14 +74,14 @@ it('refuses to discard source identity while verified original cleanup is incomp
             ->toBe(42);
     } finally {
         $instance->update(['registration_relocation_state' => 'relocated']);
-        $migration->down();
-        $migration->up();
+        run_legacy_schema_migration($migration, 'down');
+        run_legacy_schema_migration($migration, 'up');
     }
 })->with(['destination verified' => 'destination_verified', 'original cleanup' => 'original_cleanup']);
 
 it('refuses to discard durable manual migration recovery', function (): void {
     $instance = orb105_registration_migration_instance('relocated');
-    DB::table('app_instances')->where('id', $instance->id)->update([
+    DB::table('instances')->where('id', $instance->id)->update([
         'registration_migration_recovery' => json_encode([
             'app_instance' => ['name' => '13.x'],
             'route' => ['id' => 41, 'domain' => 'preserved.test', 'provenance' => 'explicit'],
@@ -90,25 +90,25 @@ it('refuses to discard durable manual migration recovery', function (): void {
     $migration = orb105_migration_recovery_migration();
 
     try {
-        expect(fn () => $migration->down())
+        expect(fn () => run_legacy_schema_migration($migration, 'down'))
             ->toThrow(
                 RuntimeException::class,
                 "Cannot roll back while AppInstance migration recovery is incomplete: {$instance->id}",
             )
-            ->and(Schema::hasColumn('app_instances', 'registration_migration_recovery'))
+            ->and(Schema::hasColumn('instances', 'registration_migration_recovery'))
             ->toBeTrue()
             ->and($instance->refresh()->registration_migration_recovery)
             ->not->toBeNull();
     } finally {
-        DB::table('app_instances')->where('id', $instance->id)->update([
+        DB::table('instances')->where('id', $instance->id)->update([
             'registration_migration_recovery' => null,
         ]);
-        $migration->down();
-        $migration->up();
+        run_legacy_schema_migration($migration, 'down');
+        run_legacy_schema_migration($migration, 'up');
     }
 });
 
-function orb105_registration_migration_instance(string $checkpoint): AppInstance
+function orb105_registration_migration_instance(string $checkpoint): Instance
 {
     $node = Node::query()->create([
         'name' => 'app-dev',
@@ -118,7 +118,7 @@ function orb105_registration_migration_instance(string $checkpoint): AppInstance
         'wireguard_ip' => '10.44.0.105',
         'user' => 'orbit',
     ]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
@@ -126,8 +126,8 @@ function orb105_registration_migration_instance(string $checkpoint): AppInstance
         'root' => 'public',
     ]);
 
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'default',
         'checkout_path' => '/srv/orbit/apps/acme/default',

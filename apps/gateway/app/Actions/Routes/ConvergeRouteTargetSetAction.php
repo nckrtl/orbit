@@ -17,7 +17,7 @@ use App\Domain\Routes\RouteTargetSetGuard;
 use App\Domain\Routes\RouteTargetSetStep;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Route;
 use App\Models\RouteTarget;
 use Illuminate\Support\Facades\DB;
@@ -56,7 +56,7 @@ final readonly class ConvergeRouteTargetSetAction
         if ($this->ownerIds($route, $proposal) !== $expectedOwnerIds) {
             throw new ResourceOperationException(
                 errorCode: 'env.owner_changed',
-                message: 'The AppInstance environment owner changed during the operation.',
+                message: 'The Instance environment owner changed during the operation.',
                 status: 409,
             );
         }
@@ -147,7 +147,7 @@ final readonly class ConvergeRouteTargetSetAction
         $current = $route
             ->targets()
             ->orderBy('position')
-            ->pluck('app_instance_id')
+            ->pluck('instance_id')
             ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->values()
             ->all();
@@ -217,7 +217,7 @@ final readonly class ConvergeRouteTargetSetAction
     private function associateOnRoute(Route $route, int $appInstanceId): void
     {
         $existing = RouteTarget::query()
-            ->where('app_instance_id', $appInstanceId)
+            ->where('instance_id', $appInstanceId)
             ->lockForUpdate()
             ->first();
 
@@ -238,7 +238,7 @@ final readonly class ConvergeRouteTargetSetAction
 
         RouteTarget::query()->create([
             'route_id' => $route->id,
-            'app_instance_id' => $appInstanceId,
+            'instance_id' => $appInstanceId,
             'position' => $position,
         ]);
     }
@@ -246,7 +246,7 @@ final readonly class ConvergeRouteTargetSetAction
     private function reassignToRoute(int $appInstanceId, int $destinationId): void
     {
         $existing = RouteTarget::query()
-            ->where('app_instance_id', $appInstanceId)
+            ->where('instance_id', $appInstanceId)
             ->lockForUpdate()
             ->first();
 
@@ -273,7 +273,7 @@ final readonly class ConvergeRouteTargetSetAction
                 ->where('route_id', $routeId)
                 ->lockForUpdate()
                 ->get()
-                ->keyBy('app_instance_id');
+                ->keyBy('instance_id');
             $position = 0;
 
             foreach ($orderedInstanceIds as $appInstanceId) {
@@ -324,9 +324,9 @@ final readonly class ConvergeRouteTargetSetAction
 
         if ($instances->isEmpty()) {
             $probeId = $proposal->dispositions[0]->appInstanceId ?? null;
-            $probe = is_int($probeId) ? AppInstance::query()->find($probeId) : null;
+            $probe = is_int($probeId) ? Instance::query()->find($probeId) : null;
 
-            if ($probe instanceof AppInstance) {
+            if ($probe instanceof Instance) {
                 $this->projection->prepareRouterCaddy($probe, $route, $route);
             }
 
@@ -366,9 +366,9 @@ final readonly class ConvergeRouteTargetSetAction
             $firstTarget = $destination->targets->first();
             $target = $firstTarget instanceof RouteTarget
                 ? $firstTarget->appInstance
-                : AppInstance::query()->find($proposal->dispositions[0]->appInstanceId ?? 0);
+                : Instance::query()->find($proposal->dispositions[0]->appInstanceId ?? 0);
 
-            if ($target instanceof AppInstance) {
+            if ($target instanceof Instance) {
                 $this->projection->prepareRouterCaddy($target, $destination, $destination);
             }
         }
@@ -381,7 +381,7 @@ final readonly class ConvergeRouteTargetSetAction
 
         foreach ($proposal->targetIds as $appInstanceId) {
             $association = RouteTarget::query()
-                ->where('app_instance_id', $appInstanceId)
+                ->where('instance_id', $appInstanceId)
                 ->where('route_id', '!=', $route->id)
                 ->first();
 
@@ -400,9 +400,9 @@ final readonly class ConvergeRouteTargetSetAction
                 continue;
             }
 
-            $instance = AppInstance::query()->find($disposition->appInstanceId);
+            $instance = Instance::query()->find($disposition->appInstanceId);
 
-            if (! $instance instanceof AppInstance) {
+            if (! $instance instanceof Instance) {
                 continue;
             }
 
@@ -419,7 +419,7 @@ final readonly class ConvergeRouteTargetSetAction
     }
 
     /**
-     * @return list<array{0: AppInstance, 1: Route}>
+     * @return list<array{0: Instance, 1: Route}>
      */
     private function preparedInstances(Route $route, SetRouteTargetsData $proposal): array
     {
@@ -437,7 +437,7 @@ final readonly class ConvergeRouteTargetSetAction
             $instance = $this->guard->instances([$disposition->appInstanceId])->first();
             $destination = Route::query()->findOrFail($disposition->routeId);
 
-            if ($instance instanceof AppInstance) {
+            if ($instance instanceof Instance) {
                 $prepared[] = [$instance, $destination];
             }
         }
@@ -445,7 +445,7 @@ final readonly class ConvergeRouteTargetSetAction
         return $prepared;
     }
 
-    /** @return list<AppInstance> */
+    /** @return list<Instance> */
     private function synchronizedInstances(Route $route, SetRouteTargetsData $proposal): array
     {
         $ids = $proposal->targetIds;
@@ -514,7 +514,7 @@ final readonly class ConvergeRouteTargetSetAction
     private function ownerIds(Route $route, SetRouteTargetsData $proposal): array
     {
         $ids = [
-            ...$route->targets->pluck('app_instance_id')->map(static fn (mixed $id): int => StoredInteger::from($id))->all(),
+            ...$route->targets->pluck('instance_id')->map(static fn (mixed $id): int => StoredInteger::from($id))->all(),
             ...$proposal->targetIds,
             ...array_map(
                 static fn (RouteTargetDispositionData $disposition): int => $disposition->appInstanceId,

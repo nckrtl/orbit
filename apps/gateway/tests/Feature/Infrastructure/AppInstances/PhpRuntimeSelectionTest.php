@@ -17,13 +17,13 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Support\Str;
 use Tests\Support\AppDevFakeSshExecutor;
 
-it('owns a finite descending AppInstance PHP candidate catalog', function (): void {
+it('owns a finite descending Instance PHP candidate catalog', function (): void {
     expect(new AppInstancePhpVersionCatalog()->versions())->toBe(['8.5', '8.4']);
 });
 
@@ -148,7 +148,7 @@ it('renders only the selected production PHP site with its recorded user home po
         );
 });
 
-/** @return array{RemoteDevelopmentAppInstanceConfigurator, AppInstance} */
+/** @return array{RemoteDevelopmentAppInstanceConfigurator, Instance} */
 function orb170_source_configurator(ProjectType $type, string $composer, string $wireguardIp): array
 {
     $node = Node::query()->create([
@@ -160,14 +160,14 @@ function orb170_source_configurator(ProjectType $type, string $composer, string 
         'user' => 'orbit',
     ]);
     $suffix = Str::lower(Str::random(8));
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme '.$suffix,
         'slug' => 'acme-'.$suffix,
         'type' => $type,
         'repository_url' => 'https://example.test/acme-'.$suffix.'.git',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'feature',
         'checkout_path' => '/home/orbit/checkout',

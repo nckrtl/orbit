@@ -7,12 +7,12 @@ namespace App\Http\Authorization;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceDeployment;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Route;
 use App\Models\Schedule;
 use App\Models\TaskGroup;
@@ -65,7 +65,7 @@ final readonly class ServingNodeResolver
 
         $instance = $group?->taskable;
 
-        return $instance instanceof AppInstance ? [Node::query()->findOrFail($instance->node_id)] : $this->gateway();
+        return $instance instanceof Instance ? [Node::query()->findOrFail($instance->node_id)] : $this->gateway();
     }
 
     /** @return list<Node> */
@@ -116,14 +116,14 @@ final readonly class ServingNodeResolver
     {
         $app = $request->route('app');
 
-        if (! $app instanceof OrbitApp) {
-            $appId = $this->positiveInteger($request->input('app_id'));
+        if (! $app instanceof Project) {
+            $appId = $this->positiveInteger($request->input('project_id'));
 
             if ($appId === null) {
                 return [];
             }
 
-            $app = OrbitApp::query()->findOrFail($appId);
+            $app = Project::query()->findOrFail($appId);
         }
 
         $nodes = Node::query()
@@ -146,7 +146,7 @@ final readonly class ServingNodeResolver
     {
         $instance = $request->route('instance');
 
-        if ($instance instanceof AppInstance) {
+        if ($instance instanceof Instance) {
             return [Node::query()->findOrFail($instance->node_id)];
         }
 
@@ -176,7 +176,7 @@ final readonly class ServingNodeResolver
     {
         $candidate = $request->route('candidate');
 
-        if (! $candidate instanceof AppInstance) {
+        if (! $candidate instanceof Instance) {
             return [];
         }
 
@@ -201,7 +201,7 @@ final readonly class ServingNodeResolver
     {
         $instance = $request->route('instance');
 
-        if (! $instance instanceof AppInstance) {
+        if (! $instance instanceof Instance) {
             return [];
         }
 
@@ -226,7 +226,7 @@ final readonly class ServingNodeResolver
     {
         $target = $request->route('instance');
 
-        if ($target instanceof AppInstance) {
+        if ($target instanceof Instance) {
             return [Node::query()->findOrFail($target->node_id)];
         }
 
@@ -237,9 +237,9 @@ final readonly class ServingNodeResolver
         $numeric = $this->positiveInteger($target);
 
         if ($numeric !== null) {
-            $instances = AppInstance::query()->whereKey($numeric)->limit(2)->get();
+            $instances = Instance::query()->whereKey($numeric)->limit(2)->get();
         } else {
-            $instances = AppInstance::query()
+            $instances = Instance::query()
                 ->whereHas('routes', static fn ($query) => $query->where('domain', $target))
                 ->orderBy('id')
                 ->limit(2)
@@ -255,7 +255,7 @@ final readonly class ServingNodeResolver
         }
 
         if ($instances->isEmpty()) {
-            throw new ModelNotFoundException()->setModel(AppInstance::class, [$target]);
+            throw new ModelNotFoundException()->setModel(Instance::class, [$target]);
         }
 
         $instance = $instances->sole();
@@ -273,13 +273,13 @@ final readonly class ServingNodeResolver
 
         if ($process instanceof Process) {
             return match (true) {
-                AppInstance::isMorphType($process->owner_type) => [Node::query()->findOrFail(
-                    AppInstance::query()->findOrFail($process->owner_id)->node_id,
+                Instance::isMorphType($process->owner_type) => [Node::query()->findOrFail(
+                    Instance::query()->findOrFail($process->owner_id)->node_id,
                 )],
                 $process->owner_type === Node::class => [Node::query()->findOrFail($process->owner_id)],
                 default => throw new ResourceOperationException(
                     errorCode: 'process.target_unsupported',
-                    message: 'The Process owner is not a supported AppInstance or Node.',
+                    message: 'The Process owner is not a supported Instance or Node.',
                     status: 409,
                 ),
             };
@@ -289,7 +289,7 @@ final readonly class ServingNodeResolver
         $targetId = $this->positiveInteger($request->input('target_id'));
         $selector = $request->input('target_id');
         if ($targetType === 'instance' && $targetId === null && is_string($selector) && preg_match('/\A[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z0-9-]+\z/D', $selector) === 1) {
-            $instances = AppInstance::query()
+            $instances = Instance::query()
                 ->whereHas('node.roles', static fn ($query) => $query
                     ->where('role', RoleName::AppDev)
                     ->where('status', LifecycleStatus::Active))
@@ -300,7 +300,7 @@ final readonly class ServingNodeResolver
                 throw new ResourceOperationException('process.target_ambiguous', 'The Route matches multiple development AppInstances.', 409);
             }
             if ($instances->isEmpty()) {
-                throw new ModelNotFoundException()->setModel(AppInstance::class);
+                throw new ModelNotFoundException()->setModel(Instance::class);
             }
             $targetId = $instances->sole()->id;
             $request->merge(['target_id' => $targetId]);
@@ -312,7 +312,7 @@ final readonly class ServingNodeResolver
 
         return match ($targetType) {
             'instance' => [Node::query()->findOrFail(
-                AppInstance::query()->findOrFail($targetId)->node_id,
+                Instance::query()->findOrFail($targetId)->node_id,
             )],
             'node' => [Node::query()->findOrFail($targetId)],
             default => [],
@@ -324,7 +324,7 @@ final readonly class ServingNodeResolver
     {
         $instance = $request->route('instance');
 
-        if ($instance instanceof AppInstance) {
+        if ($instance instanceof Instance) {
             return [Node::query()->findOrFail($instance->node_id)];
         }
 
@@ -334,9 +334,9 @@ final readonly class ServingNodeResolver
             return [];
         }
 
-        $instance = AppInstance::query()->find($instanceId);
+        $instance = Instance::query()->find($instanceId);
 
-        return $instance instanceof AppInstance
+        return $instance instanceof Instance
             ? [Node::query()->findOrFail($instance->node_id)]
             : [];
     }
@@ -371,8 +371,8 @@ final readonly class ServingNodeResolver
         if ($schedule instanceof Schedule) {
             return match (true) {
                 $schedule->target_type === Node::class => [Node::query()->findOrFail($schedule->target_id)],
-                AppInstance::isMorphType($schedule->target_type) => [Node::query()->findOrFail(
-                    AppInstance::query()->findOrFail($schedule->target_id)->node_id,
+                Instance::isMorphType($schedule->target_type) => [Node::query()->findOrFail(
+                    Instance::query()->findOrFail($schedule->target_id)->node_id,
                 )],
                 default => [],
             };
@@ -387,7 +387,7 @@ final readonly class ServingNodeResolver
         return match ($request->input('target_type')) {
             'node' => [Node::query()->findOrFail($targetId)],
             'instance' => [Node::query()->findOrFail(
-                AppInstance::query()->findOrFail($targetId)->node_id,
+                Instance::query()->findOrFail($targetId)->node_id,
             )],
             default => [],
         };
@@ -438,10 +438,10 @@ final readonly class ServingNodeResolver
             return $this->clusterNodes((int) $route->cluster_id);
         }
 
-        $appInstanceId = $this->positiveInteger($request->input('app_instance_id'));
+        $appInstanceId = $this->positiveInteger($request->input('instance_id'));
 
         if ($appInstanceId !== null) {
-            $appInstance = AppInstance::query()->findOrFail($appInstanceId);
+            $appInstance = Instance::query()->findOrFail($appInstanceId);
 
             return [Node::query()->findOrFail($appInstance->node_id)];
         }

@@ -22,10 +22,10 @@ use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceRemovalMember;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -60,7 +60,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
     ) {}
 
     public function inspect(
-        AppInstance $appInstance,
+        Instance $appInstance,
         bool $force,
         bool $inspectContent = true,
     ): AppInstanceSourceInventory {
@@ -71,7 +71,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
     }
 
     private function inspectLocked(
-        AppInstance $appInstance,
+        Instance $appInstance,
         bool $force,
         bool $inspectContent,
     ): AppInstanceSourceInventory {
@@ -96,7 +96,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
      * @param  array<string, string>  $quarantineMappings
      */
     private function inspectPathLocked(
-        AppInstance $appInstance,
+        Instance $appInstance,
         string $physicalCheckout,
         string $logicalCheckout,
         StoragePath $root,
@@ -196,7 +196,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             $quarantineMappings,
         );
         $payload = [
-            'app_instance_id' => $appInstance->id,
+            'instance_id' => $appInstance->id,
             'layout' => $layout,
             'repository_identity' => $repositoryIdentity,
             'checkout_path' => $checkout->value,
@@ -226,7 +226,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
     }
 
     public function remove(
-        AppInstance $appInstance,
+        Instance $appInstance,
         AppInstanceSourceInventory $inventory,
         bool $force,
     ): void {
@@ -237,7 +237,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
     }
 
     private function removeLocked(
-        AppInstance $appInstance,
+        Instance $appInstance,
         AppInstanceSourceInventory $inventory,
         bool $force,
     ): void {
@@ -306,7 +306,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                         '-seu',
                         '--',
                         $root->value,
-                        $member->app_instance_removal_id,
+                        $member->instance_removal_id,
                         (string) $member->id,
                         $member->source_digest,
                         $user,
@@ -418,7 +418,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                         (string) $member->common_repository_path,
                         $member->source_layout,
                         $member->branch ?? '',
-                        $member->app_instance_removal_id,
+                        $member->instance_removal_id,
                         (string) $member->id,
                         $member->source_digest,
                         $receipt,
@@ -442,7 +442,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                 throw new RuntimeConvergenceException(
                     step: 'app-instance-source-finalization',
                     errorCode: 'instance.finalization_evidence_invalid',
-                    message: 'AppInstance removal returned invalid finalization evidence.',
+                    message: 'Instance removal returned invalid finalization evidence.',
                 );
             }
 
@@ -461,10 +461,10 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
         }
 
         $this->assertDevelopmentMember($member);
-        $appInstance = AppInstance::query()->with(['app', 'node'])->find($member->app_instance_id);
+        $appInstance = Instance::query()->with(['app', 'node'])->find($member->instance_id);
 
-        if (! $appInstance instanceof AppInstance) {
-            $this->recordedConflict($member, 'The recorded AppInstance removal member is unavailable.');
+        if (! $appInstance instanceof Instance) {
+            $this->recordedConflict($member, 'The recorded Instance removal member is unavailable.');
         }
 
         $this->assertRecordedOwnership($member, $appInstance);
@@ -504,7 +504,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
         ) {
             $this->recordedConflict(
                 $member,
-                "AppInstance [{$member->name}] source identity changed after removal acceptance.",
+                "Instance [{$member->name}] source identity changed after removal acceptance.",
             );
         }
 
@@ -517,7 +517,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
         ) {
             $this->recordedConflict(
                 $member,
-                "AppInstance [{$member->name}] checkout has linked worktrees.",
+                "Instance [{$member->name}] checkout has linked worktrees.",
             );
         }
 
@@ -538,7 +538,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
         AppInstanceSourceInventory $inventory,
     ): string {
         return hash('sha256', json_encode([
-            'app_instance_id' => $inventory->appInstanceId,
+            'instance_id' => $inventory->appInstanceId,
             'layout' => $inventory->layout,
             'repository_identity' => $inventory->repositoryIdentity,
             'checkout_path' => $inventory->checkoutPath,
@@ -588,7 +588,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                     $root->value,
                     (string) $member->common_repository_path,
                     $member->source_layout,
-                    $member->app_instance_removal_id,
+                    $member->instance_removal_id,
                     (string) $member->id,
                     $member->source_digest,
                     $receipt,
@@ -607,7 +607,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             throw new RuntimeConvergenceException(
                 step: 'app-instance-source-finalization',
                 errorCode: 'instance.finalization_evidence_invalid',
-                message: 'AppInstance removal returned invalid finalization evidence.',
+                message: 'Instance removal returned invalid finalization evidence.',
             );
         }
 
@@ -628,7 +628,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                     $root->value,
                     (string) $member->common_repository_path,
                     $member->source_layout,
-                    $member->app_instance_removal_id,
+                    $member->instance_removal_id,
                     (string) $member->id,
                     $member->source_digest,
                     $this->receipt($member),
@@ -646,7 +646,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             'complete', 'incomplete', 'intact' => trim($result->stdout),
             default => $this->recordedConflict(
                 $member,
-                'AppInstance removal returned invalid receipt-recovery evidence.',
+                'Instance removal returned invalid receipt-recovery evidence.',
             ),
         };
     }
@@ -665,7 +665,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
                     '--',
                     (string) $member->checkout_path,
                     $root->value,
-                    $member->app_instance_removal_id,
+                    $member->instance_removal_id,
                     (string) $member->id,
                     $member->source_digest,
                     $this->receipt($member),
@@ -681,7 +681,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
         $state = AppInstanceSourceRevalidationState::tryFrom(trim($result->stdout));
 
         if (! $state instanceof AppInstanceSourceRevalidationState) {
-            $this->recordedConflict($member, 'AppInstance removal returned invalid source-presence evidence.');
+            $this->recordedConflict($member, 'Instance removal returned invalid source-presence evidence.');
         }
 
         if (
@@ -704,9 +704,9 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
     /** @return array{0: Node, 1: string, 2: string, 3: StoragePath, 4: string} */
     private function memberContext(AppInstanceRemovalMember $member): array
     {
-        $appInstance = AppInstance::query()->with(['app', 'node'])->find($member->app_instance_id);
+        $appInstance = Instance::query()->with(['app', 'node'])->find($member->instance_id);
 
-        if (! $appInstance instanceof AppInstance) {
+        if (! $appInstance instanceof Instance) {
             $appInstance = $this->deletedMemberContext($member);
         }
 
@@ -725,10 +725,10 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
 
     private function assertRecordedOwnership(
         AppInstanceRemovalMember $member,
-        AppInstance $appInstance,
+        Instance $appInstance,
     ): void {
         if (
-            $member->app_id !== $appInstance->app_id
+            $member->project_id !== $appInstance->project_id
             || $member->node_id !== $appInstance->node_id
             || $member->name !== $appInstance->name
             || $member->environment !== $appInstance->defaultAppEnv()
@@ -739,26 +739,26 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             || $member->starting_commit !== $appInstance->starting_commit
             || $member->repository_identity !== $appInstance->app->repository_identity
         ) {
-            $this->recordedConflict($member, 'The recorded AppInstance removal ownership changed.');
+            $this->recordedConflict($member, 'The recorded Instance removal ownership changed.');
         }
     }
 
-    private function deletedMemberContext(AppInstanceRemovalMember $member): AppInstance
+    private function deletedMemberContext(AppInstanceRemovalMember $member): Instance
     {
-        $app = OrbitApp::query()->find($member->app_id);
+        $app = Project::query()->find($member->project_id);
         $node = Node::query()->find($member->node_id);
 
         if (
             $member->row_deleted_at === null
-            || ! $app instanceof OrbitApp
+            || ! $app instanceof Project
             || ! $node instanceof Node
         ) {
-            $this->recordedConflict($member, 'The recorded AppInstance removal member is unavailable.');
+            $this->recordedConflict($member, 'The recorded Instance removal member is unavailable.');
         }
 
-        $appInstance = new AppInstance;
+        $appInstance = new Instance;
         $appInstance->forceFill([
-            'app_id' => $member->app_id,
+            'project_id' => $member->project_id,
             'node_id' => $member->node_id,
             'name' => $member->name,
             'environment' => $member->environment,
@@ -768,7 +768,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             'branch' => $member->branch,
             'starting_commit' => $member->starting_commit,
         ]);
-        $appInstance->setAttribute('id', $member->app_instance_id);
+        $appInstance->setAttribute('id', $member->instance_id);
         $appInstance->setRelation('app', $app);
         $appInstance->setRelation('node', $node);
 
@@ -793,12 +793,12 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             || ! is_string($member->common_repository_path)
             || ! is_string($member->source_identity)
             || ! is_string($member->repository_identity)
-            || ! Str::isUuid($member->app_instance_removal_id)
+            || ! Str::isUuid($member->instance_removal_id)
             || $member->id < 1
             || preg_match('/\A[0-9a-f]{64}\z/D', $member->source_digest) !== 1
             || preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $member->source_commit) !== 1
         ) {
-            $this->recordedConflict($member, 'The recorded AppInstance removal source evidence is incomplete.');
+            $this->recordedConflict($member, 'The recorded Instance removal source evidence is incomplete.');
         }
     }
 
@@ -815,7 +815,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
     {
         return hash(
             'sha256',
-            "{$member->app_instance_removal_id}\0{$member->id}\0{$member->source_digest}\0finalized",
+            "{$member->instance_removal_id}\0{$member->id}\0{$member->source_digest}\0finalized",
         );
     }
 
@@ -860,13 +860,13 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
         return sprintf(
             '%s/.orbit-removals/%s.%d.quarantine',
             $root->value,
-            $member->app_instance_removal_id,
+            $member->instance_removal_id,
             $member->id,
         );
     }
 
     /** @return array{root: StoragePath, user: string, group: string, branch: ?string, repositoryIdentity: string} */
-    private function context(AppInstance $appInstance): array
+    private function context(Instance $appInstance): array
     {
         $appInstance->loadMissing(['app', 'node']);
 
@@ -878,7 +878,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             throw new RuntimeConvergenceException(
                 step: 'app-instance-source-layout',
                 errorCode: 'instance.source_layout_conflict',
-                message: "AppInstance [{$appInstance->name}] has an invalid source layout.",
+                message: "Instance [{$appInstance->name}] has an invalid source layout.",
             );
         }
 
@@ -911,7 +911,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
      */
     private function worktreePaths(
         string $inventory,
-        AppInstance $appInstance,
+        Instance $appInstance,
         string $expectedCheckout,
         bool $force,
         array $quarantineMappings = [],
@@ -979,7 +979,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
         return $paths;
     }
 
-    private function isPublished(AppInstance $appInstance, string $origin, string $commit): bool
+    private function isPublished(Instance $appInstance, string $origin, string $commit): bool
     {
         $script = GitReadScript::for($this->access->for($origin), self::publicationScript());
         $result = $this->ssh->execute(
@@ -998,7 +998,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
 
     private function decode(
         string $value,
-        AppInstance $appInstance,
+        Instance $appInstance,
         bool $force,
     ): string {
         $decoded = base64_decode($value, true);
@@ -1014,7 +1014,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
      * Run a guest script that refuses with a named exit status, and translate that status into its error code.
      */
     private function executeRefusable(
-        AppInstance $appInstance,
+        Instance $appInstance,
         RemoteCommand $command,
         string $step,
         bool $force,
@@ -1031,7 +1031,7 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
         }
     }
 
-    private function refuse(AppInstance $appInstance, bool $force, RuntimeConvergenceException $exception): never
+    private function refuse(Instance $appInstance, bool $force, RuntimeConvergenceException $exception): never
     {
         if (
             $exception->errorCode !== $this->failureCode($force)
@@ -1052,14 +1052,14 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
             self::ChangedSourceStatus => throw new RuntimeConvergenceException(
                 step: $exception->step,
                 errorCode: 'instance.removal_conflict',
-                message: "AppInstance [{$appInstance->name}] source changed after inspection.",
+                message: "Instance [{$appInstance->name}] source changed after inspection.",
             ),
             default => throw $exception,
         };
     }
 
     private function mismatch(
-        AppInstance $appInstance,
+        Instance $appInstance,
         AppInstanceSourceMismatch $mismatch,
         string $step = 'app-instance-source-removal-inspect',
     ): never {
@@ -1071,22 +1071,22 @@ final readonly class RemoteDevelopmentAppInstanceSourceRemoval implements Develo
     }
 
     private function unsafeContent(
-        AppInstance $appInstance,
+        Instance $appInstance,
         string $step = 'app-instance-source-removal-inspect',
     ): never {
         throw new RuntimeConvergenceException(
             step: $step,
             errorCode: 'instance.remove_refused',
-            message: "AppInstance [{$appInstance->name}] has dirty or unpublished source.",
+            message: "Instance [{$appInstance->name}] has dirty or unpublished source.",
         );
     }
 
-    private function invalidEvidence(AppInstance $appInstance, bool $force): never
+    private function invalidEvidence(Instance $appInstance, bool $force): never
     {
         throw new RuntimeConvergenceException(
             step: 'app-instance-source-removal-inspect',
             errorCode: $this->failureCode($force),
-            message: "AppInstance [{$appInstance->name}] has invalid source evidence.",
+            message: "Instance [{$appInstance->name}] has invalid source evidence.",
         );
     }
 

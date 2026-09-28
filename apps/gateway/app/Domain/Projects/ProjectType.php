@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Projects;
 
+use App\Models\Project;
+
 enum ProjectType: string
 {
     case Monorepo = 'monorepo';

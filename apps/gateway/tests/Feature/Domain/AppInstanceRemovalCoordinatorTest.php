@@ -42,13 +42,13 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
 use App\Models\AppInstanceRemovalMember;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
 use App\Models\Route;
 use App\Models\Schedule;
@@ -87,7 +87,7 @@ beforeEach(function (): void {
 
 it('refuses newly dirty teardown before acceptance and requires an explicit force retry', function (): void {
     $instance = orb181_coordinator_instance();
-    ProjectLifecycleStep::query()->create(['app_id' => $instance->app_id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
+    ProjectLifecycleStep::query()->create(['project_id' => $instance->project_id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
     $transport = new LifecycleSshExecutor(result: function () use ($instance): int {
         expect($this->orb181Inspector->calls)->not->toBeEmpty();
         $this->orb181Inspector->normalUnsafeIds[] = $instance->id;
@@ -103,7 +103,7 @@ it('refuses newly dirty teardown before acceptance and requires an explicit forc
 
 it('refuses source identity changes made by teardown', function (): void {
     $instance = orb181_coordinator_instance();
-    ProjectLifecycleStep::query()->create(['app_id' => $instance->app_id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
+    ProjectLifecycleStep::query()->create(['project_id' => $instance->project_id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
     $transport = new LifecycleSshExecutor(result: function () use ($instance): int {
         $this->orb181Inspector->observedCommits[$instance->id] = str_repeat('b', 40);
 
@@ -111,17 +111,17 @@ it('refuses source identity changes made by teardown', function (): void {
     });
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
     expect(fn () => $this->orb181Coordinator->execute($instance, false))->toThrow(ResourceOperationException::class)
-        ->and(AppInstance::query()->whereKey($instance->id)->exists())->toBeTrue()
+        ->and(Instance::query()->whereKey($instance->id)->exists())->toBeTrue()
         ->and(AppInstanceRemoval::query()->count())->toBe(0);
 });
 
 it('keeps the route and checkout after a teardown command fails', function (): void {
     $instance = orb181_coordinator_instance();
-    ProjectLifecycleStep::query()->create(['app_id' => $instance->app_id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
+    ProjectLifecycleStep::query()->create(['project_id' => $instance->project_id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
     $transport = new LifecycleSshExecutor(result: static fn (): int => 1);
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
     expect(fn () => $this->orb181Coordinator->execute($instance, false))->toThrow(ResourceOperationException::class)
-        ->and(AppInstance::query()->whereKey($instance->id)->exists())->toBeTrue()
+        ->and(Instance::query()->whereKey($instance->id)->exists())->toBeTrue()
         ->and($instance->routes()->count())->toBe(1)
         ->and(AppInstanceRemoval::query()->count())->toBe(0);
 });
@@ -129,7 +129,7 @@ it('keeps the route and checkout after a teardown command fails', function (): v
 it('accepts exactly one independent checkout and completes every durable step', function (bool $force): void {
     $instance = orb181_coordinator_instance();
     $process = Process::query()->create([
-        'owner_type' => AppInstance::MorphAlias,
+        'owner_type' => Instance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => 'queue',
         'runtime' => 'systemd',
@@ -150,8 +150,8 @@ it('accepts exactly one independent checkout and completes every durable step', 
         ->toBe(1)
         ->and($member->only([
             'position',
-            'app_instance_id',
-            'app_id',
+            'instance_id',
+            'project_id',
             'node_id',
             'route_id',
             'name',
@@ -170,8 +170,8 @@ it('accepts exactly one independent checkout and completes every durable step', 
         ]))
         ->toMatchArray([
             'position' => 0,
-            'app_instance_id' => $instance->id,
-            'app_id' => $instance->app_id,
+            'instance_id' => $instance->id,
+            'project_id' => $instance->project_id,
             'node_id' => $instance->node_id,
             'route_id' => $instance->routes->sole()->id,
             'name' => 'dev',
@@ -192,7 +192,7 @@ it('accepts exactly one independent checkout and completes every durable step', 
         ->not->toBeNull()->and($member->source_finalized_at)
         ->not->toBeNull()->and($member->runtime_cleaned_at)
         ->not->toBeNull()->and($member->row_deleted_at)
-        ->not->toBeNull()->and(AppInstance::query()->whereKey($instance->id)->exists())->toBeFalse()->and(
+        ->not->toBeNull()->and(Instance::query()->whereKey($instance->id)->exists())->toBeFalse()->and(
             Route::query()->count(),
         )->toBe(0)->and($this->orb181Finalizer->calls)->toBe([
             "prepare:{$instance->id}",
@@ -206,12 +206,12 @@ it('accepts exactly one independent checkout and completes every durable step', 
         )->toBe([$process->id])->and($this->orb181Lock->acceptedWhileHeld)->toBeTrue();
 })->with([false, true]);
 
-it('cascades owned Schedules before successful AppInstance row deletion', function (): void {
+it('cascades owned Schedules before successful Instance row deletion', function (): void {
     $runtime = new FakeScheduleRuntimeManager;
     app()->instance(ScheduleRuntimeManager::class, $runtime);
     $instance = orb181_coordinator_instance();
     $schedule = Schedule::query()->create([
-        'target_type' => AppInstance::MorphAlias,
+        'target_type' => Instance::MorphAlias,
         'target_id' => $instance->id,
         'host_node_id' => $instance->node_id,
         'name' => 'daily',
@@ -258,7 +258,7 @@ it('blocks new Schedules for every member after forced removal accepts its fixed
         ->and($runtime->installed)->toBeEmpty();
 });
 
-it('cascades every forced-set Schedule and preserves another AppInstance Schedule on the same Node', function (): void {
+it('cascades every forced-set Schedule and preserves another Instance Schedule on the same Node', function (): void {
     $runtime = new FakeScheduleRuntimeManager;
     app()->instance(ScheduleRuntimeManager::class, $runtime);
     [$checkout, $first, $second] = orb182_coordinator_graph();
@@ -267,17 +267,17 @@ it('cascades every forced-set Schedule and preserves another AppInstance Schedul
     $this->orb181Inspector->linkedPaths = $paths;
     $this->orb181Inspector->commonRepositoryPath = $checkout->checkout_path;
     $owned = collect([$checkout, $first, $second])->map(
-        static fn (AppInstance $member): Schedule => orb72_coordinator_schedule($member, "daily-{$member->id}"),
+        static fn (Instance $member): Schedule => orb72_coordinator_schedule($member, "daily-{$member->id}"),
     );
-    $otherApp = OrbitApp::query()->create([
+    $otherApp = Project::query()->create([
         'name' => 'Other',
         'slug' => 'other',
         'repository_url' => 'https://example.test/other.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    $otherInstance = AppInstance::query()->create([
-        'app_id' => $otherApp->id,
+    $otherInstance = Instance::query()->create([
+        'project_id' => $otherApp->id,
         'node_id' => $checkout->node_id,
         'name' => 'other',
         'environment' => 'development',
@@ -345,14 +345,14 @@ it('removes one worktree in either mode while preserving its siblings', function
         ->toBe(1)
         ->and($removal->status->value)
         ->toBe('completed')
-        ->and($removal->members->sole()->app_instance_id)
+        ->and($removal->members->sole()->instance_id)
         ->toBe($first->id)
-        ->and(AppInstance::query()->whereKey([$checkout->id, $second->id])->count())
+        ->and(Instance::query()->whereKey([$checkout->id, $second->id])->count())
         ->toBe(2)
         ->and(
             Route::query()
                 ->whereHas('targets', fn ($query) => $query->whereIn(
-                    'app_instance_id',
+                    'instance_id',
                     [$checkout->id, $second->id],
                 ))
                 ->count(),
@@ -374,12 +374,12 @@ it('refuses normal checkout cascade then removes the immutable worktree-first se
 
     expect(fn () => $this->orb181Coordinator->execute($checkout, false))
         ->toThrow(ResourceOperationException::class, 'retry with --force');
-    expect(AppInstance::query()->count())->toBe(3)->and(Route::query()->count())->toBe(3);
+    expect(Instance::query()->count())->toBe(3)->and(Route::query()->count())->toBe(3);
 
     $removal = $this->orb181Coordinator->execute($checkout->refresh(), true);
     $members = $removal->members()->orderBy('position')->get();
 
-    expect($members->pluck('app_instance_id')->all())
+    expect($members->pluck('instance_id')->all())
         ->toBe([$first->id, $second->id, $checkout->id])
         ->and($this->orb212EnvironmentLock->owners)
         ->toBe([[$checkout->id], [$checkout->id, $first->id, $second->id]])
@@ -402,7 +402,7 @@ it('refuses normal checkout cascade then removes the immutable worktree-first se
             "route:{$checkout->id}",
             "runtime:{$checkout->id}",
         ])
-        ->and(AppInstance::query()->count())
+        ->and(Instance::query()->count())
         ->toBe(0)
         ->and(Route::query()->count())
         ->toBe(0);
@@ -422,14 +422,14 @@ it('returns force guidance before inspecting unsafe checkout content', function 
         ->toBe(["inspect:{$checkout->id}:normal"])
         ->and(AppInstanceRemovalMember::query()->count())
         ->toBe(0)
-        ->and(AppInstance::query()->where('status', AppInstanceState::Active->value)->count())
+        ->and(Instance::query()->where('status', AppInstanceState::Active->value)->count())
         ->toBe(3);
 });
 
 it('leaves an owned running Process unchanged when source preflight refuses removal', function (): void {
     $instance = orb181_coordinator_instance();
     $process = Process::query()->create([
-        'owner_type' => AppInstance::MorphAlias,
+        'owner_type' => Instance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => 'queue',
         'runtime' => 'systemd',
@@ -510,10 +510,10 @@ it('refuses an unregistered checkout member before accepting either mode', funct
     $this->orb181Inspector->commonRepositoryPath = $checkout->checkout_path;
 
     expect(fn () => $this->orb181Coordinator->execute($checkout, $force))
-        ->toThrow(ResourceOperationException::class, 'Every linked worktree must be a registered AppInstance');
+        ->toThrow(ResourceOperationException::class, 'Every linked worktree must be a registered Instance');
     expect(AppInstanceRemovalMember::query()->count())
         ->toBe(0)
-        ->and(AppInstance::query()->count())
+        ->and(Instance::query()->count())
         ->toBe(3)
         ->and(Route::query()->count())
         ->toBe(3)
@@ -551,7 +551,7 @@ it('refuses a new source on retry before the next member changes', function (): 
         ->and(
             Route::query()
                 ->whereHas('targets', fn ($query) => $query->where(
-                    'app_instance_id',
+                    'instance_id',
                     $second->id,
                 ))
                 ->exists(),
@@ -584,7 +584,7 @@ it('refuses a replacement at a completed member path before the next member chan
         ->toBeNull()
         ->and(
             Route::query()
-                ->whereHas('targets', fn ($query) => $query->where('app_instance_id', $second->id))
+                ->whereHas('targets', fn ($query) => $query->where('instance_id', $second->id))
                 ->exists(),
         )
         ->toBeTrue();
@@ -602,7 +602,7 @@ it('finishes receipt-backed cleanup before advancing the remaining fixed members
         ->toThrow(AppInstanceRemovalException::class);
     $operation = $checkout->refresh()->removalMember?->removal;
     $firstMember = $operation?->members()->orderBy('position')->firstOrFail();
-    expect($firstMember?->app_instance_id)
+    expect($firstMember?->instance_id)
         ->toBe($first->id)
         ->and($firstMember?->source_finalized_at)
         ->toBeNull()
@@ -640,7 +640,7 @@ it('retains the requested checkout and completed member evidence when final comp
     $this->orb181Inspector->commonRepositoryPath = $checkout->checkout_path;
     DB::unprepared(<<<'SQL'
         CREATE TRIGGER orb182_fail_final_cascade_completion
-        BEFORE UPDATE OF status ON app_instance_removals
+        BEFORE UPDATE OF status ON instance_removals
         WHEN NEW.status = 'completed'
         BEGIN
             SELECT RAISE(ABORT, 'Injected final cascade completion failure.');
@@ -663,7 +663,7 @@ it('retains the requested checkout and completed member evidence when final comp
         ->and($members?->get(0)?->row_deleted_at)
         ->not->toBeNull()->and($members?->get(1)?->row_deleted_at)
         ->not->toBeNull()->and($members?->get(2)?->row_deleted_at)->toBeNull()->and(
-            AppInstance::query()->whereKey($checkout->id)->sole()->status,
+            Instance::query()->whereKey($checkout->id)->sole()->status,
         )->toBe(AppInstanceState::Removing);
 
     $removal = $this->orb181Coordinator->execute($checkout->refresh(), true);
@@ -703,7 +703,7 @@ it('completes one production removal with retained-content evidence and no devel
         ->toBe(hash('sha256', "production-retained\0{$member->source_digest}"))
         ->and(Route::query()->find($routeId))
         ->toBeNull()
-        ->and(AppInstance::query()->find($instance->id))
+        ->and(Instance::query()->find($instance->id))
         ->toBeNull()
         ->and($this->orb181Inspector->calls)
         ->toBeEmpty()
@@ -751,7 +751,7 @@ it('recovers a completed source receipt after its checkpoint transaction fails',
     $instance = orb181_coordinator_instance();
     DB::unprepared(<<<'SQL'
         CREATE TRIGGER orb181_fail_source_finalized_checkpoint
-        BEFORE UPDATE OF source_finalized_at ON app_instance_removal_members
+        BEFORE UPDATE OF source_finalized_at ON instance_removal_members
         WHEN NEW.source_finalized_at IS NOT NULL
         BEGIN
             SELECT RAISE(ABORT, 'Injected source checkpoint failure.');
@@ -779,7 +779,7 @@ it('recovers a completed source receipt after its checkpoint transaction fails',
 
     expect($removal->status->value)
         ->toBe('completed')
-        ->and(AppInstance::query()->whereKey($instance->id)->exists())
+        ->and(Instance::query()->whereKey($instance->id)->exists())
         ->toBeFalse()
         ->and($this->orb181Finalizer->inspectRecordedCalls)
         ->toBe(0)
@@ -812,7 +812,7 @@ it('recovers authenticated receipt cleanup without re-inspecting partial source 
 
     expect($removal->status->value)
         ->toBe('completed')
-        ->and(AppInstance::query()->whereKey($instance->id)->exists())
+        ->and(Instance::query()->whereKey($instance->id)->exists())
         ->toBeFalse()
         ->and($this->orb181Finalizer->inspectRecordedCalls)
         ->toBe(0)
@@ -853,7 +853,7 @@ it('closes a public Route handler before deleting its identity and leaves unrela
         ->toBe(RoutePublication::Public)
         ->and($this->orb181Projector->calls)
         ->toContain('remove-public-edge:'.$removed->id)
-        ->and(AppInstance::query()->whereKey($removed->id)->exists())
+        ->and(Instance::query()->whereKey($removed->id)->exists())
         ->toBeFalse();
 });
 
@@ -872,7 +872,7 @@ it('removes an Instance that has no Route without touching Route projections', f
         ->not->toBeNull()
         ->and($member->row_deleted_at)
         ->not->toBeNull()
-        ->and(AppInstance::query()->whereKey($instance->id)->exists())
+        ->and(Instance::query()->whereKey($instance->id)->exists())
         ->toBeFalse()
         ->and($this->orb181Projector->calls)
         ->toBe(["runtime:{$instance->id}"]);
@@ -895,7 +895,7 @@ it('removes a source-resolved task workspace that never received a Route', funct
         ->toBeFalse()
         ->and($this->orb181Projector->calls)
         ->toBe([])
-        ->and(AppInstance::query()->whereKey($instance->id)->exists())
+        ->and(Instance::query()->whereKey($instance->id)->exists())
         ->toBeFalse();
 });
 
@@ -929,9 +929,9 @@ it('removes the Route an operator set on a monorepo Instance', function (): void
 it('refuses removal evidence that hides a Route target or claims no Route for a routed Instance', function (): void {
     $routed = orb181_coordinator_instance();
     $routeless = orb181_coordinator_instance(withRoute: false);
-    $removal = fn (AppInstance $instance): AppInstanceRemoval => AppInstanceRemoval::query()->create([
+    $removal = fn (Instance $instance): AppInstanceRemoval => AppInstanceRemoval::query()->create([
         'id' => (string) Str::uuid(),
-        'requested_app_instance_id' => $instance->id,
+        'requested_instance_id' => $instance->id,
         'requested_name' => $instance->name,
         'force' => false,
         'inventory_digest' => str_repeat('d', 64),
@@ -939,10 +939,10 @@ it('refuses removal evidence that hides a Route target or claims no Route for a 
         'status' => 'removing',
         'current_step' => 'source_preparation',
     ]);
-    $member = static fn (AppInstanceRemoval $operation, AppInstance $instance, ?int $routeId): AppInstanceRemovalMember => $operation->members()->create([
+    $member = static fn (AppInstanceRemoval $operation, Instance $instance, ?int $routeId): AppInstanceRemovalMember => $operation->members()->create([
         'position' => 0,
-        'app_instance_id' => $instance->id,
-        'app_id' => $instance->app_id,
+        'instance_id' => $instance->id,
+        'project_id' => $instance->project_id,
         'node_id' => $instance->node_id,
         'route_id' => $routeId,
         'name' => $instance->name,
@@ -979,11 +979,11 @@ function orb181_coordinator_instance(
     string $environment = 'development',
     string $layout = AppInstanceSourceLayout::Checkout->value,
     bool $withRoute = true,
-): AppInstance {
+): Instance {
     static $sequence = 0;
     $sequence++;
     $slug = "acme-{$sequence}";
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => "Acme {$sequence}",
         'slug' => $slug,
         'repository_url' => "https://example.test/{$slug}.git",
@@ -1006,8 +1006,8 @@ function orb181_coordinator_instance(
         'role' => $environment === 'production' ? RoleName::AppProd : RoleName::AppDev,
         'status' => LifecycleStatus::Active,
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'dev',
         'environment' => $environment,
@@ -1024,7 +1024,7 @@ function orb181_coordinator_instance(
     }
 
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'node_id' => $environment === 'production' ? null : $node->id,
         'cluster_id' => $cluster?->id,
         'generation_basis_node_id' => $environment === 'production' ? null : $node->id,
@@ -1033,17 +1033,17 @@ function orb181_coordinator_instance(
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
     $instance->update(['status' => AppInstanceState::Active]);
 
     return $instance->load(['app', 'node', 'routes.targets']);
 }
 
-function orb72_coordinator_schedule_data(AppInstance $instance): AddScheduleData
+function orb72_coordinator_schedule_data(Instance $instance): AddScheduleData
 {
     return new AddScheduleData(
-        ScheduleTargetType::AppInstance,
+        ScheduleTargetType::Instance,
         $instance->id,
         'new-daily',
         'daily',
@@ -1053,10 +1053,10 @@ function orb72_coordinator_schedule_data(AppInstance $instance): AddScheduleData
     );
 }
 
-function orb72_coordinator_schedule(AppInstance $instance, string $name): Schedule
+function orb72_coordinator_schedule(Instance $instance, string $name): Schedule
 {
     return Schedule::query()->create([
-        'target_type' => AppInstance::MorphAlias,
+        'target_type' => Instance::MorphAlias,
         'target_id' => $instance->id,
         'host_node_id' => $instance->node_id,
         'name' => $name,
@@ -1068,7 +1068,7 @@ function orb72_coordinator_schedule(AppInstance $instance, string $name): Schedu
     ]);
 }
 
-/** @return array{AppInstance, AppInstance, AppInstance} */
+/** @return array{Instance, Instance, Instance} */
 function orb182_coordinator_graph(): array
 {
     $checkout = orb181_coordinator_instance();
@@ -1080,10 +1080,10 @@ function orb182_coordinator_graph(): array
     ];
 }
 
-function orb182_coordinator_member(AppInstance $checkout, string $name): AppInstance
+function orb182_coordinator_member(Instance $checkout, string $name): Instance
 {
-    $instance = AppInstance::query()->create([
-        'app_id' => $checkout->app_id,
+    $instance = Instance::query()->create([
+        'project_id' => $checkout->project_id,
         'node_id' => $checkout->node_id,
         'name' => $name,
         'environment' => 'development',
@@ -1094,7 +1094,7 @@ function orb182_coordinator_member(AppInstance $checkout, string $name): AppInst
         'status' => AppInstanceState::SourceResolved,
     ]);
     $route = Route::query()->create([
-        'app_id' => $checkout->app_id,
+        'project_id' => $checkout->project_id,
         'node_id' => $checkout->node_id,
         'generation_basis_node_id' => $checkout->node_id,
         'domain' => "{$name}.acme.test",
@@ -1102,7 +1102,7 @@ function orb182_coordinator_member(AppInstance $checkout, string $name): AppInst
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
     $instance->update(['status' => AppInstanceState::Active]);
 
@@ -1131,7 +1131,7 @@ final class Orb181CoordinatorInspector implements DevelopmentAppInstanceSourceRe
     public array $observedCommits = [];
 
     public function inspect(
-        AppInstance $appInstance,
+        Instance $appInstance,
         bool $force,
         bool $inspectContent = true,
     ): AppInstanceSourceInventory {
@@ -1158,7 +1158,7 @@ final class Orb181CoordinatorInspector implements DevelopmentAppInstanceSourceRe
         $commonRepositoryPath = $this->commonRepositoryPath ?? $appInstance->checkout_path;
         $observedCommit = $this->observedCommits[$appInstance->id] ?? (string) $appInstance->starting_commit;
         $payload = [
-            'app_instance_id' => $appInstance->id,
+            'instance_id' => $appInstance->id,
             'layout' => $appInstance->source_layout,
             'repository_identity' => $appInstance->app->repository_identity,
             'checkout_path' => $appInstance->checkout_path,
@@ -1185,7 +1185,7 @@ final class Orb181CoordinatorInspector implements DevelopmentAppInstanceSourceRe
         );
     }
 
-    public function remove(AppInstance $appInstance, AppInstanceSourceInventory $inventory, bool $force): void
+    public function remove(Instance $appInstance, AppInstanceSourceInventory $inventory, bool $force): void
     {
         throw new LogicException('The durable coordinator does not call legacy source removal.');
     }
@@ -1219,9 +1219,9 @@ final class Orb181CoordinatorFinalizer implements DevelopmentAppInstanceSourceFi
         AppInstanceRemovalMember $member,
         ?AppInstanceSourceRevalidationExpectation $expectation = null,
     ): void {
-        $this->calls[] = "prepare:{$member->app_instance_id}";
+        $this->calls[] = "prepare:{$member->instance_id}";
 
-        if ($this->failPrepareFor === $member->app_instance_id) {
+        if ($this->failPrepareFor === $member->instance_id) {
             throw new ResourceOperationException(
                 'instance.source_interrupted',
                 'Source preparation interrupted.',
@@ -1234,8 +1234,8 @@ final class Orb181CoordinatorFinalizer implements DevelopmentAppInstanceSourceFi
         AppInstanceRemovalMember $member,
         ?AppInstanceSourceRevalidationExpectation $expectation = null,
     ): AppInstanceSourceRevalidationState {
-        $state = $this->states[$member->app_instance_id] ?? AppInstanceSourceRevalidationState::Present;
-        $this->calls[] = "revalidate:{$member->app_instance_id}:{$state->value}";
+        $state = $this->states[$member->instance_id] ?? AppInstanceSourceRevalidationState::Present;
+        $this->calls[] = "revalidate:{$member->instance_id}:{$state->value}";
 
         if (in_array($member->checkout_path, $this->replacementPaths, true)) {
             throw new ResourceOperationException(
@@ -1250,11 +1250,11 @@ final class Orb181CoordinatorFinalizer implements DevelopmentAppInstanceSourceFi
             [AppInstanceSourceRevalidationState::Present, AppInstanceSourceRevalidationState::Quarantined],
             true,
         )) {
-            $instance = AppInstance::query()->find($member->app_instance_id);
+            $instance = Instance::query()->find($member->instance_id);
 
             if (
-                ! $instance instanceof AppInstance
-                || $instance->app_id !== $member->app_id
+                ! $instance instanceof Instance
+                || $instance->project_id !== $member->project_id
                 || $instance->node_id !== $member->node_id
                 || $instance->checkout_path !== $member->checkout_path
                 || $instance->source_layout !== $member->source_layout
@@ -1295,13 +1295,13 @@ final class Orb181CoordinatorFinalizer implements DevelopmentAppInstanceSourceFi
         AppInstanceRemovalMember $member,
         ?AppInstanceSourceRevalidationExpectation $expectation = null,
     ): string {
-        $state = $this->states[$member->app_instance_id] ?? AppInstanceSourceRevalidationState::Present;
-        $this->calls[] = "finalize:{$member->app_instance_id}:{$state->value}";
-        $this->finalizeExpectations[$member->app_instance_id] =
+        $state = $this->states[$member->instance_id] ?? AppInstanceSourceRevalidationState::Present;
+        $this->calls[] = "finalize:{$member->instance_id}:{$state->value}";
+        $this->finalizeExpectations[$member->instance_id] =
             $expectation?->permittedLinkedWorktreePaths ?? $member->linked_worktree_paths;
 
         if ($this->failAfterPartialReceipt && $state === AppInstanceSourceRevalidationState::Present) {
-            $this->states[$member->app_instance_id] = AppInstanceSourceRevalidationState::ReceiptPendingCleanup;
+            $this->states[$member->instance_id] = AppInstanceSourceRevalidationState::ReceiptPendingCleanup;
             $this->inspector->linkedPaths = array_values(array_diff(
                 $this->inspector->linkedPaths ?? [],
                 [(string) $member->checkout_path],
@@ -1314,7 +1314,7 @@ final class Orb181CoordinatorFinalizer implements DevelopmentAppInstanceSourceFi
             );
         }
 
-        $this->states[$member->app_instance_id] = AppInstanceSourceRevalidationState::Completed;
+        $this->states[$member->instance_id] = AppInstanceSourceRevalidationState::Completed;
         $this->inspector->linkedPaths = array_values(array_diff(
             $this->inspector->linkedPaths ?? [],
             [(string) $member->checkout_path],
@@ -1329,7 +1329,7 @@ final class Orb183CoordinatorContentRetention implements ProductionAppInstanceCo
     /** @var list<string> */
     public array $calls = [];
 
-    public function inventory(AppInstance $appInstance): AppInstanceSourceInventory
+    public function inventory(Instance $appInstance): AppInstanceSourceInventory
     {
         $this->calls[] = "inventory:{$appInstance->id}";
 
@@ -1350,17 +1350,17 @@ final class Orb183CoordinatorContentRetention implements ProductionAppInstanceCo
 
     public function prepare(AppInstanceRemovalMember $member): void
     {
-        $this->calls[] = "prepare:{$member->app_instance_id}";
+        $this->calls[] = "prepare:{$member->instance_id}";
     }
 
     public function revalidate(AppInstanceRemovalMember $member): void
     {
-        $this->calls[] = "revalidate:{$member->app_instance_id}";
+        $this->calls[] = "revalidate:{$member->instance_id}";
     }
 
     public function finalize(AppInstanceRemovalMember $member): string
     {
-        $this->calls[] = "finalize:{$member->app_instance_id}";
+        $this->calls[] = "finalize:{$member->instance_id}";
 
         return hash('sha256', "production-retained\0{$member->source_digest}");
     }
@@ -1375,14 +1375,14 @@ final class Orb181CoordinatorProjector implements AppInstanceRemovalProjector
 
     public function clearRouteTarget(AppInstanceRemovalMember $member): string
     {
-        $this->calls[] = "route:{$member->app_instance_id}";
+        $this->calls[] = "route:{$member->instance_id}";
         $route = Route::query()->find($member->route_id);
 
         if (! $route instanceof Route) {
             return 'deleted';
         }
 
-        $route->targets()->where('app_instance_id', $member->app_instance_id)->delete();
+        $route->targets()->where('instance_id', $member->instance_id)->delete();
 
         if ($route->targets()->exists()) {
             return 'retained';
@@ -1393,7 +1393,7 @@ final class Orb181CoordinatorProjector implements AppInstanceRemovalProjector
                 'status' => RouteStatus::Retiring,
                 'publication' => RoutePublication::Private,
             ]);
-            $this->calls[] = "remove-public-edge:{$member->app_instance_id}";
+            $this->calls[] = "remove-public-edge:{$member->instance_id}";
         }
 
         $route->delete();
@@ -1403,7 +1403,7 @@ final class Orb181CoordinatorProjector implements AppInstanceRemovalProjector
 
     public function cleanupRuntime(AppInstanceRemovalMember $member): void
     {
-        $this->calls[] = "runtime:{$member->app_instance_id}";
+        $this->calls[] = "runtime:{$member->instance_id}";
 
         if ($this->failRuntime) {
             throw new ResourceOperationException(
@@ -1433,10 +1433,10 @@ final class Orb181CoordinatorLock implements AppDevSourceOperationLock
             $result = $operation();
 
             if ($result instanceof AppInstanceRemoval) {
-                $this->acceptedWhileHeld = AppInstance::query()
-                    ->whereKey($result->members->pluck('app_instance_id'))
+                $this->acceptedWhileHeld = Instance::query()
+                    ->whereKey($result->members->pluck('instance_id'))
                     ->get()
-                    ->every(static fn (AppInstance $member): bool => $member->status === AppInstanceState::Removing);
+                    ->every(static fn (Instance $member): bool => $member->status === AppInstanceState::Removing);
             }
 
             return $result;
@@ -1515,7 +1515,7 @@ it('refuses to cascade create rollback into another registered instance', functi
     $this->orb181Inspector->commonRepositoryPath = $checkout->checkout_path;
     expect(fn () => $this->orb181Coordinator->execute($checkout, force: true, runTeardown: false, allowCascade: false))
         ->toThrow(ResourceOperationException::class, 'Create rollback cannot remove other Instances.')
-        ->and(AppInstance::query()->count())->toBe(3)
+        ->and(Instance::query()->count())->toBe(3)
         ->and(AppInstanceRemoval::query()->count())->toBe(0);
 });
 
@@ -1523,7 +1523,7 @@ it('cancels unfinished annotation tasks on Instance removal and preserves comple
     $instance = orb181_coordinator_instance();
     $other = orb181_coordinator_instance();
     $store = app(AnnotationStoreAction::class);
-    $create = fn (AppInstance $owner, string $id) => $store->create($owner, new AnnotationInput(['id' => $id, 'comment' => 'Adjust heading', 'threadId' => 'annotation-thread']));
+    $create = fn (Instance $owner, string $id) => $store->create($owner, new AnnotationInput(['id' => $id, 'comment' => 'Adjust heading', 'threadId' => 'annotation-thread']));
     $pending = $create($instance, 'pending-annotation');
     $running = $create($instance, 'running-annotation');
     $store->transition($running, 'in_progress', null);

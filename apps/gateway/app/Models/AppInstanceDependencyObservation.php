@@ -14,7 +14,7 @@ use InvalidArgumentException;
 
 /**
  * @property int $id
- * @property int $app_instance_id
+ * @property int $instance_id
  * @property DependencyEcosystem $ecosystem
  * @property bool $present
  * @property CarbonImmutable $observed_at
@@ -22,16 +22,19 @@ use InvalidArgumentException;
  * @property string|null $source_reference
  * @property array<string, string|null> $file_hashes
  * @property string|null $format
- * @property-read AppInstance $appInstance
+ * @property-read Instance $appInstance
  * @property-read Collection<int, AppInstanceDependencyResolution> $resolutions
  * @property-read Collection<int, AppInstanceDependencyEdge> $edges
  */
 final class AppInstanceDependencyObservation extends Model
 {
+    #[\Override]
+    protected $table = 'instance_dependency_observations';
+
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
-        'app_instance_id',
+        'instance_id',
         'ecosystem',
         'present',
         'observed_at',
@@ -62,10 +65,10 @@ final class AppInstanceDependencyObservation extends Model
         });
     }
 
-    /** @return BelongsTo<AppInstance, $this> */
+    /** @return BelongsTo<Instance, $this> */
     public function appInstance(): BelongsTo
     {
-        return $this->belongsTo(AppInstance::class, 'app_instance_id');
+        return $this->belongsTo(Instance::class, 'instance_id');
     }
 
     /** @return HasMany<AppInstanceDependencyResolution, $this> */

@@ -12,9 +12,9 @@ use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\App as OrbitApp;
 use App\Models\Cluster;
 use App\Models\Node;
+use App\Models\Project;
 use Tests\Support\FakeAnalyticsStatsDriver;
 use Tests\Support\FakeAnalyticsTrackingRouteProjector;
 use Tests\Support\FakePublicRouteEdgeProjector;
@@ -37,7 +37,7 @@ beforeEach(function (): void {
     $this->markAsGateway($this->gateway);
     $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.1']);
 
-    $this->orbitApp = OrbitApp::query()->create([
+    $this->orbitApp = Project::query()->create([
         'name' => 'Shop',
         'slug' => 'shop',
         'repository_url' => 'https://example.test/shop.git',

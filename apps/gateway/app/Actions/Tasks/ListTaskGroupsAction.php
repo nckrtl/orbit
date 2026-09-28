@@ -21,7 +21,7 @@ final readonly class ListTaskGroupsAction
 
         return TaskGroup::query()
             ->with(['app', 'tasks', 'taskable'])
-            ->when($appId !== null, static fn ($query) => $query->where('app_id', $appId))
+            ->when($appId !== null, static fn ($query) => $query->where('project_id', $appId))
             ->when($status instanceof TaskGroupStatus, static fn ($query) => $query->where('status', $status))
             ->orderByDesc('id')
             ->get();

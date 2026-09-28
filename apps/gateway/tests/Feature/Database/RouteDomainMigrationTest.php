@@ -6,10 +6,10 @@ use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\QueryException;
@@ -34,8 +34,8 @@ function route_domain_migration_schema(): array
             'route_targets',
             'instances',
             'workspaces',
-            'app_instances',
-            'app_instance_environment_values'
+            'instances',
+            'instance_environment_values'
         )
         ORDER BY type, name
         SQL))
@@ -55,7 +55,7 @@ it('preserves populated application endpoints and migrates them to domain', func
         ]))
         ->toBeFalse();
 
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Shop',
         'slug' => 'shop',
         'repository_url' => 'https://example.test/shop.git',
@@ -66,8 +66,8 @@ it('preserves populated application endpoints and migrates them to domain', func
         'public_ssh_host' => 'shop-node.test',
         'wireguard_ip' => '10.44.0.80',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'default',
         'environment' => 'development',
@@ -77,7 +77,7 @@ it('preserves populated application endpoints and migrates them to domain', func
         'status' => AppInstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'domain' => 'shop.test',
         'provenance' => RouteProvenance::Generated,
@@ -85,7 +85,7 @@ it('preserves populated application endpoints and migrates them to domain', func
         'generation_basis_node_id' => $node->id,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
 
     expect($route->refresh()->domain)
@@ -105,7 +105,7 @@ it('refuses before schema mutation when a Route hostname change is incomplete', 
             $table->string('hostname_change_target', 253)->nullable();
         });
     }
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Refuse',
         'slug' => 'refuse',
         'repository_url' => 'https://example.test/refuse.git',
@@ -117,7 +117,7 @@ it('refuses before schema mutation when a Route hostname change is incomplete', 
         'wireguard_ip' => '10.44.0.81',
     ]);
     $routeId = DB::table('routes')->insertGetId([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'domain' => 'refuse.test',
         'provenance' => 'explicit',
@@ -132,7 +132,7 @@ it('refuses before schema mutation when a Route hostname change is incomplete', 
     $schemaBefore = route_domain_migration_schema();
     $domainBefore = DB::table('routes')->where('id', $routeId)->value('domain');
 
-    expect(fn () => $migration->up())
+    expect(fn () => run_legacy_schema_migration($migration, 'up'))
         ->toThrow(
             RuntimeException::class,
             "Cannot migrate application hostnames to domains while a Route hostname change is incomplete: {$routeId}.",
@@ -149,18 +149,18 @@ it('refuses before schema mutation when a Route hostname change is incomplete', 
 
 it('skips leftover Instance and Workspace endpoint columns after schema retirement', function (): void {
     expect(Schema::hasTable('instances'))
-        ->toBeFalse()
+        ->toBeTrue()
         ->and(Schema::hasTable('workspaces'))
         ->toBeFalse()
-        ->and(class_exists('App\\Models\\Instance'))
+        ->and(class_exists('App\\Models\\AppInstance', false))
         ->toBeFalse()
         ->and(class_exists('App\\Models\\Workspace'))
         ->toBeFalse();
 
-    route_domain_migration()->up();
+    run_legacy_schema_migration(route_domain_migration(), 'up');
 
     expect(Schema::hasTable('instances'))
-        ->toBeFalse()
+        ->toBeTrue()
         ->and(Schema::hasTable('workspaces'))
         ->toBeFalse()
         ->and(Schema::hasColumn('routes', 'domain'))
@@ -170,7 +170,7 @@ it('skips leftover Instance and Workspace endpoint columns after schema retireme
 });
 
 it('rewrites encrypted environment references to the domain placeholder', function (): void {
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Env',
         'slug' => 'env',
         'repository_url' => 'https://example.test/env.git',
@@ -181,25 +181,25 @@ it('rewrites encrypted environment references to the domain placeholder', functi
         'public_ssh_host' => 'env-node.test',
         'wireguard_ip' => '10.44.0.83',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'default',
         'checkout_path' => '/srv/env',
         'status' => AppInstanceState::Reserved,
     ]);
     $row = AppInstanceEnvironmentValue::query()->create([
-        'app_instance_id' => $instance->id,
+        'instance_id' => $instance->id,
         'env_key' => 'APP_URL',
-        'env_value' => 'https://{{app_instance.domain}}',
+        'env_value' => 'https://{{instance.domain}}',
     ]);
 
-    expect($row->refresh()->env_value)->toBe('https://{{app_instance.domain}}');
+    expect($row->refresh()->env_value)->toBe('https://{{instance.domain}}');
 });
 
 it('repairs after an injected failure and retries the domain migration forward', function (): void {
     $migration = route_domain_migration();
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Retry',
         'slug' => 'retry',
         'repository_url' => 'https://example.test/retry.git',
@@ -210,17 +210,17 @@ it('repairs after an injected failure and retries the domain migration forward',
         'public_ssh_host' => 'retry-node.test',
         'wireguard_ip' => '10.44.0.84',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'default',
         'checkout_path' => '/srv/retry',
         'status' => AppInstanceState::Reserved,
     ]);
-    DB::table('app_instance_environment_values')->insert([
-        'app_instance_id' => $instance->id,
+    DB::table('instance_environment_values')->insert([
+        'instance_id' => $instance->id,
         'env_key' => 'APP_URL',
-        'env_value' => Crypt::encryptString('https://{{app_instance.domain}}'),
+        'env_value' => Crypt::encryptString('https://{{instance.domain}}'),
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -229,7 +229,7 @@ it('repairs after an injected failure and retries the domain migration forward',
         throw new RuntimeException('injected domain migration failure');
     };
 
-    expect(fn () => $migration->up())
+    expect(fn () => run_legacy_schema_migration($migration, 'up'))
         ->toThrow(RuntimeException::class, 'injected domain migration failure');
 
     expect(Schema::hasColumn('routes', 'domain'))
@@ -237,22 +237,22 @@ it('repairs after an injected failure and retries the domain migration forward',
         ->and(Schema::hasColumn('routes', 'hostname'))
         ->toBeFalse();
 
-    $stored = DB::table('app_instance_environment_values')
-        ->where('app_instance_id', $instance->id)
+    $stored = DB::table('instance_environment_values')
+        ->where('instance_id', $instance->id)
         ->where('env_key', 'APP_URL')
         ->value('env_value');
-    expect(Crypt::decryptString((string) $stored))->toBe('https://{{app_instance.domain}}');
+    expect(Crypt::decryptString((string) $stored))->toBe('https://{{instance.domain}}');
 
-    $migration->up();
+    run_legacy_schema_migration($migration, 'up');
 
-    $repaired = DB::table('app_instance_environment_values')
-        ->where('app_instance_id', $instance->id)
+    $repaired = DB::table('instance_environment_values')
+        ->where('instance_id', $instance->id)
         ->where('env_key', 'APP_URL')
         ->value('env_value');
-    expect(Crypt::decryptString((string) $repaired))->toBe('https://{{app_instance.domain}}');
+    expect(Crypt::decryptString((string) $repaired))->toBe('https://{{instance.domain}}');
 });
 
 it('exposes no schema rollback for the domain migration', function (): void {
-    expect(fn () => route_domain_migration()->down())
+    expect(fn () => run_legacy_schema_migration(route_domain_migration(), 'down'))
         ->toThrow(RuntimeException::class, 'cannot roll back');
 });

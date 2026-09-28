@@ -15,7 +15,7 @@ use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use Throwable;
 
 final readonly class NativeInstanceStateInspector implements InstanceStateInspector
@@ -28,7 +28,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
         private ProductionInstanceInspectionExpectationFactory $productionExpectations,
     ) {}
 
-    public function inspect(AppInstance $appInstance): InstanceInspectionData
+    public function inspect(Instance $appInstance): InstanceInspectionData
     {
         $appInstance->loadMissing(['app', 'node']);
 
@@ -75,7 +75,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
         );
     }
 
-    private function inspectProduction(AppInstance $appInstance): InstanceInspectionData
+    private function inspectProduction(Instance $appInstance): InstanceInspectionData
     {
         try {
             $expectation = $this->productionExpectations->make($appInstance);

@@ -46,7 +46,7 @@ final readonly class CreateTaskGroupAction
         }
 
         $group = TaskGroup::query()->create([
-            'app_id' => $data->appId,
+            'project_id' => $data->appId,
             'implementer_agent_driver' => $implementerDriver,
             'reviewer_agent_driver' => $reviewerDriver,
             'title' => $data->title,

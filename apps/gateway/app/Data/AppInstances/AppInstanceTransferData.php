@@ -36,7 +36,7 @@ final class AppInstanceTransferData extends Data
 
     public static function fromModel(AppInstanceTransfer $transfer): self
     {
-        $instanceId = $transfer->app_instance_id;
+        $instanceId = $transfer->instance_id;
         if (! is_int($instanceId)) {
             throw new InvalidArgumentException('An Instance transfer has no Instance.');
         }

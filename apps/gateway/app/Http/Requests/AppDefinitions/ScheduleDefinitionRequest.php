@@ -64,7 +64,7 @@ final class ScheduleDefinitionRequest extends FormRequest
 
             try {
                 app(ScheduleSpecificationValidator::class)->validate(new AddScheduleData(
-                    targetType: ScheduleTargetType::AppInstance,
+                    targetType: ScheduleTargetType::Instance,
                     targetId: 1,
                     name: $name,
                     calendar: $calendar,

@@ -8,7 +8,7 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Routes\IngressSite;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\PublicRoutePrivateOverride;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 
@@ -58,7 +58,7 @@ final readonly class IngressSiteRepository
             );
         }
 
-        if (! $router instanceof Node || ! $target instanceof AppInstance) {
+        if (! $router instanceof Node || ! $target instanceof Instance) {
             throw new RuntimeConvergenceException(
                 step: 'route-address',
                 errorCode: 'route.private_override_unavailable',

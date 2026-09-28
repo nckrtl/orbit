@@ -42,10 +42,10 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Schema;
@@ -187,7 +187,7 @@ it('keeps the default resolver policy during an app development TLD convergence'
     }
 });
 
-it('renders isolated pools and private Caddy listeners for every active AppInstance Route', function (): void {
+it('renders isolated pools and private Caddy listeners for every active Instance Route', function (): void {
     [$node, $app] = app_dev_runtime_models();
     $appInstance = app_dev_supported_app_instance($node, $app->id);
     $route = app_dev_supported_route($appInstance, 'acme.app-dev.orbit');
@@ -244,7 +244,7 @@ it('stops rendering a Route once another Route has replaced it', function (): vo
     $appInstance = app_dev_supported_app_instance($node, $app->id);
     $retired = app_dev_supported_route($appInstance, 'before.app-dev.orbit');
     $replacement = Route::query()->create([
-        'app_id' => $retired->app_id,
+        'project_id' => $retired->project_id,
         'node_id' => $retired->node_id,
         'domain' => 'after.app-dev.orbit',
         'provenance' => RouteProvenance::Explicit,
@@ -254,7 +254,7 @@ it('stops rendering a Route once another Route has replaced it', function (): vo
         'replacement_step' => RouteReplacementStep::Reserved,
     ]);
     $retired->update(['replaced_by_route_id' => $replacement->id]);
-    $replacement->targets()->create(['app_instance_id' => $appInstance->id, 'position' => 0]);
+    $replacement->targets()->create(['instance_id' => $appInstance->id, 'position' => 0]);
     $replacement->update(['status' => RouteStatus::Activating, 'replacement_step' => RouteReplacementStep::DatabaseCutover]);
     $retired->update(['status' => RouteStatus::Retiring]);
 
@@ -267,7 +267,7 @@ it('stops rendering a Route once another Route has replaced it', function (): vo
         ->not->toContain('https://before.app-dev.orbit');
 });
 
-it('hydrates only AppInstance Route sites and never reads leftover Instance or Workspace rows', function (): void {
+it('hydrates only Instance Route sites and never reads leftover Instance or Workspace rows', function (): void {
     [$node, $app] = app_dev_runtime_models();
     $appInstance = app_dev_supported_app_instance($node, $app->id);
     $route = app_dev_supported_route($appInstance, 'acme.app-dev.orbit');
@@ -300,7 +300,7 @@ it('hydrates only AppInstance Route sites and never reads leftover Instance or W
         ->and($nodeSites->sole()->phpVersion)
         ->toBe($appInstance->selected_php_version)
         ->and(Schema::hasTable('instances'))
-        ->toBeFalse()
+        ->toBeTrue()
         ->and(Schema::hasTable('workspaces'))
         ->toBeFalse()
         ->and($globalDns)
@@ -1260,7 +1260,7 @@ it('keeps the live DNS fragment untouched when effective validation fails', func
         );
 });
 
-/** @return array{Node, OrbitApp} */
+/** @return array{Node, Project} */
 function app_dev_runtime_models(
     ManagedUserAccount $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
 ): array {
@@ -1273,7 +1273,7 @@ function app_dev_runtime_models(
         'user' => $account->user,
     ]);
     $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'git@github.com:acme/site.git',
@@ -1295,9 +1295,9 @@ function app_dev_supported_app_instance(
     int $appId,
     string $name = 'default',
     string $phpVersion = '8.5',
-): AppInstance {
-    return AppInstance::query()->create([
-        'app_id' => $appId,
+): Instance {
+    return Instance::query()->create([
+        'project_id' => $appId,
         'node_id' => $node->id,
         'name' => $name,
         'checkout_path' => "/home/orbit/apps/acme/{$name}",
@@ -1307,10 +1307,10 @@ function app_dev_supported_app_instance(
     ]);
 }
 
-function app_dev_supported_route(AppInstance $appInstance, string $domain): Route
+function app_dev_supported_route(Instance $appInstance, string $domain): Route
 {
     $route = Route::query()->create([
-        'app_id' => $appInstance->app_id,
+        'project_id' => $appInstance->project_id,
         'node_id' => $appInstance->node_id,
         'domain' => $domain,
         'provenance' => RouteProvenance::Explicit,
@@ -1318,7 +1318,7 @@ function app_dev_supported_route(AppInstance $appInstance, string $domain): Rout
         'status' => RouteStatus::Pending,
     ]);
     $route->targets()->create([
-        'app_instance_id' => $appInstance->id,
+        'instance_id' => $appInstance->id,
         'position' => 0,
     ]);
     $route->update(['status' => RouteStatus::Active]);
@@ -1368,14 +1368,14 @@ function orb173_dns_projection_route(
             'role' => RoleName::Router,
             'status' => LifecycleStatus::Active,
         ]);
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => ucfirst($name),
         'slug' => $name,
         'repository_url' => "https://example.test/{$name}.git",
         'root' => 'public',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $workload->id,
         'name' => 'default',
         'checkout_path' => "/home/orbit/apps/{$name}",
@@ -1388,7 +1388,7 @@ function orb173_dns_projection_route(
             : AppInstanceState::SourceResolved,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'cluster_id' => $cluster->id,
         'domain' => "{$name}.app.test",
         'provenance' => RouteProvenance::Explicit,
@@ -1398,7 +1398,7 @@ function orb173_dns_projection_route(
     $route
         ->targets()
         ->create([
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
             'position' => 0,
         ]);
 

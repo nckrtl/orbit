@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Hibernation;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Process;
 
 interface AppInstanceRuntimeReadiness
@@ -12,5 +12,5 @@ interface AppInstanceRuntimeReadiness
     /**
      * @param  list<Process>  $processes
      */
-    public function waitUntilReady(AppInstance $instance, array $processes): void;
+    public function waitUntilReady(Instance $instance, array $processes): void;
 }

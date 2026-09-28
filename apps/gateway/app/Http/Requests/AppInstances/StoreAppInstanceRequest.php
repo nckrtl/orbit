@@ -10,8 +10,8 @@ use App\Domain\Routes\RouteDomain;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\ProjectRoot;
 use App\Http\Requests\TopLevelJsonObjectInspector;
-use App\Models\App as OrbitApp;
 use App\Models\Node;
+use App\Models\Project;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -25,7 +25,7 @@ final class StoreAppInstanceRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'project_id' => ['required', 'integer', Rule::exists(new OrbitApp()->getTable(), 'id')],
+            'project_id' => ['required', 'integer', Rule::exists(new Project()->getTable(), 'id')],
             'node_id' => ['required', 'integer', Rule::exists(new Node()->getTable(), 'id')],
             'name' => [
                 'required',
@@ -60,9 +60,9 @@ final class StoreAppInstanceRequest extends FormRequest
             $root = $data['root'] ?? null;
 
             $projectId = self::integerId($data['project_id'] ?? null);
-            $project = $projectId === null ? null : OrbitApp::query()->find($projectId);
+            $project = $projectId === null ? null : Project::query()->find($projectId);
 
-            if (is_string($root) && ! ProjectRoot::isValid($root, $project instanceof OrbitApp ? $project->type : ProjectType::LaravelApp)) {
+            if (is_string($root) && ! ProjectRoot::isValid($root, $project instanceof Project ? $project->type : ProjectType::LaravelApp)) {
                 $validator->errors()->add('root', 'The root must be a normalized relative Project path.');
             }
 

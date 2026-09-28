@@ -87,7 +87,7 @@ final readonly class AppInstanceEnvironmentImporter
     {
         throw new ResourceOperationException(
             errorCode: 'env.import_invalid',
-            message: 'The AppInstance environment file is invalid.',
+            message: 'The Instance environment file is invalid.',
         );
     }
 }

@@ -37,8 +37,8 @@ final readonly class ClearRouteTargetAction
 
         $expectedTargetIds = $route
             ->targets()
-            ->orderBy('app_instance_id')
-            ->pluck('app_instance_id')
+            ->orderBy('instance_id')
+            ->pluck('instance_id')
             ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->values()
             ->all();
@@ -66,8 +66,8 @@ final readonly class ClearRouteTargetAction
             $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
             $currentTargetIds = $locked
                 ->targets()
-                ->orderBy('app_instance_id')
-                ->pluck('app_instance_id')
+                ->orderBy('instance_id')
+                ->pluck('instance_id')
                 ->map(static fn (mixed $id): int => StoredInteger::from($id))
                 ->values()
                 ->all();

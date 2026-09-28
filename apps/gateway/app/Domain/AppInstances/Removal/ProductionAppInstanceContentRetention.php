@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace App\Domain\AppInstances\Removal;
 
-use App\Models\AppInstance;
 use App\Models\AppInstanceRemovalMember;
+use App\Models\Instance;
 
 interface ProductionAppInstanceContentRetention
 {
-    public function inventory(AppInstance $appInstance): AppInstanceSourceInventory;
+    public function inventory(Instance $appInstance): AppInstanceSourceInventory;
 
     public function prepare(AppInstanceRemovalMember $member): void;
 

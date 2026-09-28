@@ -10,9 +10,9 @@ use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Projects\ProjectLifecycleStepStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
@@ -21,10 +21,10 @@ use Tests\Support\LifecycleSshExecutor;
 beforeEach(function (): void {
     $this->sandbox = sys_get_temp_dir().'/orbit-lifecycle-'.Str::uuid();
     mkdir($this->sandbox, 0700);
-    $project = OrbitApp::query()->create(['name' => 'Lifecycle', 'slug' => 'lifecycle', 'repository_url' => 'https://example.test/lifecycle.git']);
+    $project = Project::query()->create(['name' => 'Lifecycle', 'slug' => 'lifecycle', 'repository_url' => 'https://example.test/lifecycle.git']);
     $node = Node::query()->create(['name' => 'lifecycle', 'public_ssh_host' => '192.0.2.8', 'wireguard_ip' => '192.0.2.8']);
-    $this->instance = AppInstance::query()->create([
-        'app_id' => $project->id, 'node_id' => $node->id, 'name' => 'dev',
+    $this->instance = Instance::query()->create([
+        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'dev',
         'checkout_path' => $this->sandbox, 'status' => AppInstanceState::Active,
     ]);
     $this->steps = new ProjectLifecycleStepStore;
@@ -68,7 +68,7 @@ it('stops after a failed step and preserves the instance on explicit setup', fun
             ->and($exception->details)->toBe(['step' => 'broken', 'outcome' => 'failed'])
             ->and((string) $exception)->not->toContain('secret-output');
     }
-    expect(AppInstance::query()->whereKey($this->instance->id)->exists())->toBeTrue()
+    expect(Instance::query()->whereKey($this->instance->id)->exists())->toBeTrue()
         ->and(file_exists($this->sandbox.'/later'))->toBeFalse()
         ->and($this->transport->inputs)->toHaveCount(1);
 });
@@ -110,7 +110,7 @@ it('keeps remote cleanup time inside the remaining request deadline', function (
 it('stops a stored list over the total limit cleanly when the request deadline runs out', function (): void {
     foreach (['first', 'second', 'third'] as $position => $name) {
         ProjectLifecycleStep::query()->create([
-            'app_id' => $this->instance->app_id,
+            'project_id' => $this->instance->project_id,
             'phase' => 'setup',
             'name' => $name,
             'command' => 'true',
@@ -148,7 +148,7 @@ it('stops a stored list over the total limit cleanly when the request deadline r
 it('reports a step the request deadline stopped mid-run apart from a step that timed out on its own', function (int $stepTimeout, string $code, array $details, string $message): void {
     foreach (['first', 'second'] as $position => $name) {
         ProjectLifecycleStep::query()->create([
-            'app_id' => $this->instance->app_id,
+            'project_id' => $this->instance->project_id,
             'phase' => 'teardown',
             'name' => $name,
             'command' => 'sleep 1000',

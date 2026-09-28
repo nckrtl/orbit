@@ -7,7 +7,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\App as OrbitApp;
+use App\Models\Project;
 
 describe(AnalyticsStorageProcessGuard::class, function (): void {
     it('returns the two Processes when both are supported servers on an active database Node', function (): void {
@@ -56,8 +56,8 @@ describe(AnalyticsStorageProcessGuard::class, function (): void {
 
     it('refuses a Process that no Node owns', function (): void {
         $storage = analytics_storage_processes();
-        $app = OrbitApp::query()->create(['name' => 'shop', 'slug' => 'shop', 'repository_url' => 'git@example.test:shop.git']);
-        $storage['postgres']->update(['owner_type' => OrbitApp::class, 'owner_id' => $app->id]);
+        $app = Project::query()->create(['name' => 'shop', 'slug' => 'shop', 'repository_url' => 'git@example.test:shop.git']);
+        $storage['postgres']->update(['owner_type' => Project::class, 'owner_id' => $app->id]);
 
         expect(fn () => new AnalyticsStorageProcessGuard()->assert($storage['postgres']->id, $storage['clickhouse']->id))
             ->toThrow(

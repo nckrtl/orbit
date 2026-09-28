@@ -11,7 +11,7 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentReader;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentResult;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentStore;
 use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class ImportAppInstanceEnvironmentAction
 {
@@ -24,7 +24,7 @@ final readonly class ImportAppInstanceEnvironmentAction
         private AppInstanceEnvironmentStore $store,
     ) {}
 
-    public function execute(AppInstance $instance, bool $replace): AppInstanceEnvironmentResult
+    public function execute(Instance $instance, bool $replace): AppInstanceEnvironmentResult
     {
         return $this->operations->run([$instance->id], function () use (
             $instance,
@@ -35,7 +35,7 @@ final readonly class ImportAppInstanceEnvironmentAction
             $values = $this->importer->parse($this->reader->read($context));
 
             if ($context->laravel) {
-                $values['APP_URL'] = 'https://{{app_instance.domain}}';
+                $values['APP_URL'] = 'https://{{instance.domain}}';
             }
 
             return $this->store->import($context, $values, $replace);

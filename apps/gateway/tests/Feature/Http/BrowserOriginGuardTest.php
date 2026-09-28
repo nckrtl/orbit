@@ -9,17 +9,17 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 
 function browserOriginRoute(string $domain, bool $activate = true): Route
 {
     static $sequence = 0;
     $sequence++;
-    $app = OrbitApp::query()->create([
+    $app = Project::query()->create([
         'name' => "Shop {$sequence}",
         'slug' => "shop-{$sequence}",
         'repository_url' => "https://example.test/shop-{$sequence}.git",
@@ -30,8 +30,8 @@ function browserOriginRoute(string $domain, bool $activate = true): Route
         'public_ssh_host' => "workload-{$sequence}.test",
         'wireguard_ip' => '10.44.0.'.(100 + $sequence),
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'dev',
         'environment' => 'development',
@@ -40,14 +40,14 @@ function browserOriginRoute(string $domain, bool $activate = true): Route
         'status' => AppInstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $app->id,
         'node_id' => $node->id,
         'domain' => $domain,
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
 
     if ($activate) {
         $route->update(['status' => RouteStatus::Active]);

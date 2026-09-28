@@ -26,7 +26,7 @@ use SensitiveParameter;
  * @property string|null $task_check
  * @property-read Collection<int, TaskGroup> $taskGroups
  */
-final class App extends Model
+final class Project extends Model
 {
     /** @var array<string, mixed> */
     #[\Override]
@@ -59,10 +59,10 @@ final class App extends Model
             ->first();
     }
 
-    /** @return HasMany<AppInstance, $this> */
+    /** @return HasMany<Instance, $this> */
     public function appInstances(): HasMany
     {
-        return $this->hasMany(AppInstance::class);
+        return $this->hasMany(Instance::class);
     }
 
     /** @return HasMany<Route, $this> */

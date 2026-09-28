@@ -25,6 +25,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 final class AppInstanceDependencyEdge extends Model
 {
+    #[\Override]
+    protected $table = 'instance_dependency_edges';
+
     /** @var list<string> */
     #[\Override]
     protected $fillable = [

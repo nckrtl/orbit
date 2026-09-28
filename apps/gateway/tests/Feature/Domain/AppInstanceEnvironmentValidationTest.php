@@ -8,8 +8,8 @@ use App\Domain\Shared\ResourceOperationException;
 it('accepts bounded keys values and the closed placeholder vocabulary', function (): void {
     app(AppInstanceEnvironmentValidator::class)->validate([
         '_EMPTY' => '',
-        'HOST' => 'prefix-{{app_instance.domain}}',
-        'ENVIRONMENT' => '{{app_instance.environment}}',
+        'HOST' => 'prefix-{{instance.domain}}',
+        'ENVIRONMENT' => '{{instance.environment}}',
         'UNICODE' => 'hallo-wereld',
     ]);
 

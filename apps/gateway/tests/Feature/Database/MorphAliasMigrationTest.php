@@ -6,7 +6,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-it('rewrites legacy AppInstance morph types so alias only identities remain', function (): void {
+it('rewrites legacy Instance morph types so alias only identities remain', function (): void {
     $original = DB::getDefaultConnection();
     config(['database.connections.morph_alias_migration' => [
         'driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '', 'foreign_key_constraints' => true,
@@ -49,7 +49,7 @@ it('rewrites legacy AppInstance morph types so alias only identities remain', fu
             ]);
         }
 
-        (require database_path('migrations/2026_09_30_090000_rewrite_app_instance_morph_types_to_alias.php'))->up();
+        run_legacy_schema_migration(require database_path('migrations/2026_09_30_090000_rewrite_app_instance_morph_types_to_alias.php'), 'up');
 
         foreach ([
             ['processes', 'owner_type'],

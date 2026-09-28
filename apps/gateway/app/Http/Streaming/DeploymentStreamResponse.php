@@ -12,7 +12,7 @@ use App\Domain\AppInstances\Deployment\DeploymentFailureBoundary;
 use App\Domain\AppInstances\Deployment\DeploymentProgressPhase;
 use App\Domain\AppInstances\Deployment\DeploymentRequest;
 use App\Domain\AppInstances\Deployment\DeploymentResult;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -26,7 +26,7 @@ final readonly class DeploymentStreamResponse
     ) {}
 
     /** @param Closure(DeploymentRequest): DeploymentResult $operation */
-    public function make(Request $request, AppInstance $instance, string $triggeredBy, Closure $operation): StreamedResponse
+    public function make(Request $request, Instance $instance, string $triggeredBy, Closure $operation): StreamedResponse
     {
         $requestId = $request->attributes->getString('orbit.request_id');
 

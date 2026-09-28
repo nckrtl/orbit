@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Models\AgentThread;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskComment;
 use App\Models\TaskGroup;
@@ -148,7 +148,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
     {
         $group = $task->taskGroup;
         $instance = $group->taskable;
-        if (! $instance instanceof AppInstance) {
+        if (! $instance instanceof Instance) {
             return true;
         }
         if ($this->mcp->installWhenMissing($instance)) {
@@ -156,7 +156,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         }
         Log::error('The reviewer MCP file could not be written.', [
             'task_group_id' => $group->id,
-            'app_instance_id' => $instance->id,
+            'instance_id' => $instance->id,
         ]);
 
         return false;
@@ -179,7 +179,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
     {
         $group->loadMissing('taskable');
         $instance = $group->taskable;
-        if (! $instance instanceof AppInstance) {
+        if (! $instance instanceof Instance) {
             return null;
         }
         $reviewer = $role === TaskThreadRole::Reviewer;
@@ -202,7 +202,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         $group = TaskGroup::query()->with(['taskable', 'app'])->find($thread->task_group_id);
         $instance = $group?->taskable;
         $role = TaskThreadRole::tryFrom((string) $thread->role);
-        if (! $group instanceof TaskGroup || ! $instance instanceof AppInstance || $role === null) {
+        if (! $group instanceof TaskGroup || ! $instance instanceof Instance || $role === null) {
             return;
         }
         $task = is_numeric($thread->task_id) ? Task::query()->find((int) $thread->task_id) : null;
@@ -233,7 +233,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
     {
         $group = TaskGroup::query()->with('taskable')->find($thread->task_group_id);
         $instance = $group?->taskable;
-        if (! $group instanceof TaskGroup || ! $instance instanceof AppInstance) {
+        if (! $group instanceof TaskGroup || ! $instance instanceof Instance) {
             $thread->delete();
 
             return null;
@@ -320,7 +320,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
                 title: $group->title,
                 brief: $group->brief,
                 projectSlug: $group->app->slug,
-                projectId: $group->app_id,
+                projectId: $group->project_id,
                 defaultBranch: is_string($group->app->default_branch) ? $group->app->default_branch : null,
                 taskCheck: $group->app->taskCheckCommand(),
                 startCommit: TaskReviewBase::groupStartCommit($group),

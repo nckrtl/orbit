@@ -26,9 +26,9 @@ final readonly class AppInstanceEnvironmentValidator
 
     public const string RuleLaravelAppUrl = 'laravel_app_url';
 
-    private const string DomainPlaceholder = '{{app_instance.domain}}';
+    private const string DomainPlaceholder = '{{instance.domain}}';
 
-    private const string EnvironmentPlaceholder = '{{app_instance.environment}}';
+    private const string EnvironmentPlaceholder = '{{instance.environment}}';
 
     /** @param array<string, string> $values */
     public function validate(#[\SensitiveParameter] array $values): void
@@ -82,7 +82,7 @@ final readonly class AppInstanceEnvironmentValidator
     {
         throw new ResourceOperationException(
             errorCode: 'env.configuration_invalid',
-            message: 'The complete AppInstance environment configuration is invalid.',
+            message: 'The complete Instance environment configuration is invalid.',
             details: $details,
         );
     }

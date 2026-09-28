@@ -13,10 +13,10 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -103,15 +103,15 @@ describe('Cluster lifecycle', function (): void {
             'public_ssh_host' => '192.0.2.10',
             'wireguard_ip' => '10.44.0.10',
         ]);
-        $app = OrbitApp::query()->create([
+        $app = Project::query()->create([
             'name' => 'Acme',
             'slug' => 'acme',
             'repository_url' => 'https://example.test/acme.git',
             'default_branch' => 'main',
             'root' => 'public',
         ]);
-        $instance = AppInstance::query()->create([
-            'app_id' => $app->id,
+        $instance = Instance::query()->create([
+            'project_id' => $app->id,
             'node_id' => $member->id,
             'name' => 'dev',
             'checkout_path' => '/srv/orbit/apps/acme/dev',
@@ -120,13 +120,13 @@ describe('Cluster lifecycle', function (): void {
             'status' => AppInstanceState::Active,
         ]);
         $route = Route::query()->create([
-            'app_id' => $app->id,
+            'project_id' => $app->id,
             'cluster_id' => $cluster->id,
             'domain' => 'acme.example.test',
             'provenance' => RouteProvenance::Explicit,
             'publication' => RoutePublication::Private,
         ]);
-        $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+        $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
         $route->update(['status' => RouteStatus::Active]);
 
         $this

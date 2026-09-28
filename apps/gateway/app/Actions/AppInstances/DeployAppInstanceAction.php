@@ -21,7 +21,7 @@ use App\Domain\AppInstances\ProductionPhpRuntimeManager;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\ProcessCancelledException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
@@ -37,7 +37,7 @@ final readonly class DeployAppInstanceAction
         private CommandDeadline $deadline,
     ) {}
 
-    public function execute(AppInstance $appInstance, ?DeploymentRequest $request = null): DeploymentResult
+    public function execute(Instance $appInstance, ?DeploymentRequest $request = null): DeploymentResult
     {
         $request ??= DeploymentRequest::withoutOutput();
 
@@ -68,7 +68,7 @@ final readonly class DeployAppInstanceAction
     }
 
     private function deploy(
-        AppInstance $appInstance,
+        Instance $appInstance,
         DeploymentConfig $config,
         DeploymentRequest $request,
     ): DeploymentResult {
@@ -125,7 +125,7 @@ final readonly class DeployAppInstanceAction
     }
 
     private function selectionAfterActivationFailure(
-        AppInstance $appInstance,
+        Instance $appInstance,
         ?DeploymentRelease $lastKnownSelection,
     ): ?DeploymentRelease {
         try {
@@ -149,7 +149,7 @@ final readonly class DeployAppInstanceAction
      * @param  list<DeploymentCommandResult>  $commands
      */
     private function executeSteps(
-        AppInstance $appInstance,
+        Instance $appInstance,
         DeploymentRelease $release,
         DeploymentConfig $config,
         DeploymentPhase $phase,

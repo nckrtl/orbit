@@ -20,7 +20,7 @@ use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 
@@ -44,10 +44,10 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
                 $query
                     ->where(function ($query) use ($context): void {
                         $query
-                            ->whereIn('owner_type', AppInstance::morphTypes())
+                            ->whereIn('owner_type', Instance::morphTypes())
                             ->whereIn(
                                 'owner_id',
-                                AppInstance::query()
+                                Instance::query()
                                     ->select('id')
                                     ->where('node_id', $context->node->id)
                                     ->where('status', '!=', AppInstanceState::Removing),
@@ -123,7 +123,7 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
                 continue;
             }
 
-            if (in_array($process->owner_type, AppInstance::morphTypes(), strict: true)) {
+            if (in_array($process->owner_type, Instance::morphTypes(), strict: true)) {
                 $instanceIssues[(int) $process->owner_id][] = $issue;
             } else {
                 $issues[] = $issue;
@@ -132,14 +132,14 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
         }
 
         if ($instanceIssues !== []) {
-            $instances = AppInstance::query()
+            $instances = Instance::query()
                 ->whereKey(array_keys($instanceIssues))
                 ->get()
                 ->keyBy('id');
 
             foreach ($instanceIssues as $instanceId => $ownedIssues) {
                 $instance = $instances->get($instanceId);
-                if (! $instance instanceof AppInstance || $instance->status === AppInstanceState::Removing) {
+                if (! $instance instanceof Instance || $instance->status === AppInstanceState::Removing) {
                     continue;
                 }
 
@@ -187,7 +187,7 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
 
         $owner = $process->owner;
 
-        if (! $owner instanceof AppInstance) {
+        if (! $owner instanceof Instance) {
             return false;
         }
 

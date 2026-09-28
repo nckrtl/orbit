@@ -17,10 +17,10 @@ use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Processes\ProcessTargetType;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use Illuminate\Support\Facades\Event;
 
 final class ProcessRecordEventsFakeRuntime implements ProcessRuntimeManager
@@ -63,13 +63,13 @@ beforeEach(function (): void {
         'wireguard_ip' => '10.44.0.3',
     ]);
     $this->node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
-    $this->orbitApp = OrbitApp::query()->create([
+    $this->orbitApp = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
     ]);
-    $this->instance = AppInstance::query()->create([
-        'app_id' => $this->orbitApp->id,
+    $this->instance = Instance::query()->create([
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'name' => 'main',
         'environment' => 'development',
@@ -85,7 +85,7 @@ describe('Process record events', function (): void {
         Event::fake([RecordBroadcast::class]);
 
         $data = new AddProcessData(
-            targetType: ProcessTargetType::AppInstance,
+            targetType: ProcessTargetType::Instance,
             targetId: $this->instance->id,
             name: 'queue',
             runtime: ProcessRuntime::Systemd,
@@ -113,7 +113,7 @@ describe('Process record events', function (): void {
 
     it('does not broadcast when re-asserting an existing process with identical configuration', function (): void {
         $data = new AddProcessData(
-            targetType: ProcessTargetType::AppInstance,
+            targetType: ProcessTargetType::Instance,
             targetId: $this->instance->id,
             name: 'queue',
             runtime: ProcessRuntime::Systemd,
@@ -139,7 +139,7 @@ describe('Process record events', function (): void {
 
     it('broadcasts process.status when a process is started', function (): void {
         $process = Process::query()->create([
-            'owner_type' => AppInstance::MorphAlias,
+            'owner_type' => Instance::MorphAlias,
             'owner_id' => $this->instance->id,
             'name' => 'web',
             'runtime' => ProcessRuntime::Systemd,
@@ -164,7 +164,7 @@ describe('Process record events', function (): void {
 
     it('broadcasts process.status when a process is stopped', function (): void {
         $process = Process::query()->create([
-            'owner_type' => AppInstance::MorphAlias,
+            'owner_type' => Instance::MorphAlias,
             'owner_id' => $this->instance->id,
             'name' => 'web',
             'runtime' => ProcessRuntime::Systemd,
@@ -188,7 +188,7 @@ describe('Process record events', function (): void {
 
     it('broadcasts process.deleted with a minimal snapshot when a process is removed', function (): void {
         $process = Process::query()->create([
-            'owner_type' => AppInstance::MorphAlias,
+            'owner_type' => Instance::MorphAlias,
             'owner_id' => $this->instance->id,
             'name' => 'web',
             'runtime' => ProcessRuntime::Systemd,
