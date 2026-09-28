@@ -59,10 +59,40 @@ final readonly class VerificationReport
      */
     public function toArray(): array
     {
-        /** @var array<string, array{passed:bool,checked_at:string,expected:string,observed:string,evidence_ref:string}> $probes */
-        $probes = $this->probes;
 
-        return ['passed' => $this->passed, 'probes' => $probes];
+        return ['passed' => $this->passed, 'probes' => $this->normalizedProbes()];
+    }
+
+    /**
+     * @return array<string, array{passed: bool, checked_at: string, expected: string, observed: string, evidence_ref: string}>
+     */
+    private function normalizedProbes(): array
+    {
+        $probes = [];
+        foreach ($this->probes as $name => $probe) {
+            if (! is_string($name) || ! is_array($probe)) {
+                throw new InvalidArgumentException('A verification probe is invalid.');
+            }
+            $probe = SerializedArrays::stringKeyed($probe);
+            if (
+                ! is_bool($probe['passed'] ?? null)
+                || ! is_string($probe['checked_at'] ?? null)
+                || ! is_string($probe['expected'] ?? null)
+                || ! is_string($probe['observed'] ?? null)
+                || ! is_string($probe['evidence_ref'] ?? null)
+            ) {
+                throw new InvalidArgumentException('A verification probe is invalid.');
+            }
+            $probes[$name] = [
+                'passed' => $probe['passed'],
+                'checked_at' => $probe['checked_at'],
+                'expected' => $probe['expected'],
+                'observed' => $probe['observed'],
+                'evidence_ref' => $probe['evidence_ref'],
+            ];
+        }
+
+        return $probes;
     }
 
     /** @param array<array-key, mixed> $value */

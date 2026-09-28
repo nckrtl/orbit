@@ -154,14 +154,13 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
             $query->where('registration_common_repository_path', $requested->registration_common_repository_path);
         }
 
-        /** @var list<int> $ids */
         $ids = $query
             ->orderBy('id')
             ->pluck('id')
             ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->values()
             ->all();
-
+        $ids = array_values($ids);
         if (! in_array($requested->id, $ids, true)) {
             $ids[] = $requested->id;
             sort($ids, SORT_NUMERIC);
@@ -255,7 +254,6 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
 
         $digest = $this->inventoryDigest($snapshot->id, $force, $inventories);
 
-        /** @var AppInstanceRemoval $operation */
         $operation = $this->processAdmissions->run(
             array_values($members->pluck('id')->map(static fn (mixed $id): int => StoredInteger::from($id))->all()),
             fn (): AppInstanceRemoval => DB::transaction(function () use (
@@ -381,7 +379,6 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         $route = $this->productionRoute($snapshot);
         $inventory = $this->productionContent->inventory($snapshot);
 
-        /** @var AppInstanceRemoval $operation */
         $operation = $this->processAdmissions->run([$snapshot->id], fn (): AppInstanceRemoval => DB::transaction(function () use ($snapshot, $route, $inventory, $force): AppInstanceRemoval {
             $locked = AppInstance::query()->lockForUpdate()->findOrFail($snapshot->id);
             $lockedRoute = $route === null ? null : Route::query()
@@ -525,7 +522,6 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
             inspectContent: $requested->source_layout !== AppInstanceSourceLayout::Checkout->value,
         );
         $this->assertMemberPathAvailable($requested);
-        /** @var Collection<int, AppInstance> $members */
         $members = collect([$requested]);
 
         if ($requested->source_layout === AppInstanceSourceLayout::Checkout->value) {
@@ -583,7 +579,6 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
             }
         }
 
-        /** @var array<int, AppInstanceSourceInventory> $inventories */
         $inventories = [];
 
         foreach ($members as $member) {
@@ -996,7 +991,6 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
         Collection $members,
         AppInstanceRemovalMember $current,
     ): AppInstanceSourceRevalidationExpectation {
-        /** @var array<int, AppInstanceSourceRevalidationState> $states */
         $states = [];
 
         foreach ($members as $member) {

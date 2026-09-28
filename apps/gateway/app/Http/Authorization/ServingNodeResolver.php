@@ -126,7 +126,6 @@ final readonly class ServingNodeResolver
             $app = OrbitApp::query()->findOrFail($appId);
         }
 
-        /** @var list<Node> $nodes */
         $nodes = Node::query()
             ->where(function ($query) use ($app): void {
                 $query->whereIn('id', $app->appInstances()->select('node_id'));
@@ -136,7 +135,7 @@ final readonly class ServingNodeResolver
             ->all();
 
         if ($nodes !== []) {
-            return $nodes;
+            return array_values($nodes);
         }
 
         return $this->gateway();
@@ -421,10 +420,9 @@ final readonly class ServingNodeResolver
             return [];
         }
 
-        /** @var list<Node> $nodes */
         $nodes = $cluster->nodes()->orderBy('id')->get()->all();
 
-        return $nodes !== [] ? $nodes : $this->gateway();
+        return $nodes !== [] ? array_values($nodes) : $this->gateway();
     }
 
     /** @return list<Node> */
@@ -463,10 +461,9 @@ final readonly class ServingNodeResolver
     private function clusterNodes(int $clusterId): array
     {
         $cluster = Cluster::query()->findOrFail($clusterId);
-        /** @var list<Node> $nodes */
         $nodes = $cluster->nodes()->orderBy('id')->get()->all();
 
-        return $nodes !== [] ? $nodes : $this->gateway();
+        return $nodes !== [] ? array_values($nodes) : $this->gateway();
     }
 
     /**

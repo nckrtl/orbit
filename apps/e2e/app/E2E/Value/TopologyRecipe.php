@@ -112,7 +112,6 @@ final readonly class TopologyRecipe
                 || ! is_int($node['address'])
                 || ! is_bool($node['checkout'])
                 || ! is_array($node['roles'])
-                || ! array_all($node['roles'], static fn (mixed $role): bool => is_string($role))
             ) {
                 throw new InvalidArgumentException('A topology recipe Node schema is invalid.');
             }
@@ -120,8 +119,8 @@ final readonly class TopologyRecipe
             if ($purpose === null) {
                 throw new InvalidArgumentException('A topology recipe Node purpose is invalid.');
             }
-            /** @var list<string> $roles */
-            $roles = $node['roles'];
+
+            $roles = SerializedArrays::stringList($node['roles']);
             $nodes[] = new TopologyNode(
                 $node['key'],
                 $node['image'],

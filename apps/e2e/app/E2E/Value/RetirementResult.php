@@ -50,9 +50,9 @@ final readonly class RetirementResult
         ) {
             throw new InvalidArgumentException('The retirement result is invalid.');
         }
-        /** @var list<array<string, mixed>> $deleted */ $deleted = $value['deleted'];
-        /** @var list<array<string, mixed>> $remaining */ $remaining = $value['remaining'];
-        /** @var array<string, list<array<string, mixed>>> $preserved */ $preserved = $value['preserved'];
+        $deleted = SerializedArrays::recordList($value['deleted']);
+        $remaining = SerializedArrays::recordList($value['remaining']);
+        $preserved = SerializedArrays::recordGroups($value['preserved']);
 
         return new self($value['successful'], $deleted, $remaining, $preserved, $value['quarantine_sha256']);
     }

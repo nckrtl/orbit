@@ -39,8 +39,7 @@ final readonly class ConvergenceReport
             throw new InvalidArgumentException('The convergence report schema is invalid.');
         }
 
-        /** @var array<string, bool> $steps */
-        $steps = $value['steps'];
+        $steps = SerializedArrays::boolMap($value['steps']);
 
         return new self($value['converged'], $steps);
     }

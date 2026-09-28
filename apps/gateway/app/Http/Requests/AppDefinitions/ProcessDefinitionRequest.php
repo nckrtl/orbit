@@ -7,6 +7,7 @@ namespace App\Http\Requests\AppDefinitions;
 use App\Data\AppDefinitions\AppDefinitionInputData;
 use App\Domain\AppDefinitions\DefinitionEnvironment;
 use App\Domain\Processes\ProcessRuntime;
+use App\Support\ValidatedData;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -103,10 +104,8 @@ final class ProcessDefinitionRequest extends FormRequest
 
     public function payload(): AppDefinitionInputData
     {
-        /** @var array{name: string, environments: list<string>, spec: array<string, mixed>} $validated */
         $validated = $this->validated();
-
-        $spec = $validated['spec'];
+        $spec = ValidatedData::object($validated['spec'] ?? null);
         if (is_array($spec['volumes'] ?? null)) {
             foreach ($spec['volumes'] as &$volume) {
                 if (is_array($volume)) {
@@ -117,8 +116,8 @@ final class ProcessDefinitionRequest extends FormRequest
         }
 
         return new AppDefinitionInputData(
-            name: $validated['name'],
-            environments: $validated['environments'],
+            name: ValidatedData::string($validated['name'] ?? null),
+            environments: ValidatedData::stringList($validated['environments'] ?? null),
             spec: $spec,
         );
     }

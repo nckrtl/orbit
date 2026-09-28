@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Tasks\T3;
 
+use App\Support\ValidatedData;
+
 /**
  * Tokens and line diff observed on one T3 thread snapshot.
  *
@@ -41,8 +43,8 @@ final readonly class T3ThreadMetrics
         if (! is_array($thread)) {
             return new self(null, null);
         }
+        $thread = ValidatedData::object($thread);
 
-        /** @var array<string, mixed> $thread */
         $sequence ??= self::sequence($snapshot);
         $split = $checkpoint === null
             ? self::split($thread, $sequence)
@@ -74,7 +76,7 @@ final readonly class T3ThreadMetrics
         if (! is_array($thread)) {
             return new self(null, null, checkpoint: $checkpoint);
         }
-        /** @var array<string, mixed> $thread */
+        $thread = ValidatedData::object($thread);
         $fresh = $checkpoint === null;
         $checkpoint ??= [];
         $observed = self::checkpointInt($checkpoint, 't3_observed_total_processed_tokens');
@@ -154,7 +156,7 @@ final readonly class T3ThreadMetrics
         if (! is_array($thread)) {
             return new self(null, null, checkpoint: $checkpoint);
         }
-        /** @var array<string, mixed> $thread */
+        $thread = ValidatedData::object($thread);
         $calls = self::checkpointInt($checkpoint ?? [], 't3_model_calls') ?? 0;
         $partial = ($checkpoint['t3_metrics_partial'] ?? false) === true;
         $tokens = self::tokens($thread);
@@ -437,8 +439,13 @@ final readonly class T3ThreadMetrics
     private static function walk(array $node, callable $visitor): void
     {
         if (self::isMap($node)) {
-            /** @var array<string, mixed> $node */
-            $visitor($node);
+            $object = [];
+            foreach ($node as $key => $value) {
+                if (is_string($key)) {
+                    $object[$key] = $value;
+                }
+            }
+            $visitor($object);
         }
         foreach ($node as $child) {
             if (is_array($child)) {

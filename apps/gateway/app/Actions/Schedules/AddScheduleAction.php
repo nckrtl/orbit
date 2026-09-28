@@ -70,7 +70,6 @@ final readonly class AddScheduleAction
             return $this->targets->resolve($data->targetType, $model->id);
         });
 
-        /** @var array{schedule: Schedule, created: bool} $admission */
         $admission = DB::transaction(function () use ($data, $target): array {
             $schedule = Schedule::query()
                 ->whereIn('target_type', $data->targetType->storedTypes())

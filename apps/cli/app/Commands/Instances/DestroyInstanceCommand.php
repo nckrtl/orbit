@@ -102,8 +102,14 @@ final class DestroyInstanceCommand extends GatewayCommand
         $progress = null;
 
         if (is_array($value)) {
-            /** @var array<string, mixed> $value */
-            $progress = AppInstanceRemovalProgressResponse::fromGatewayData($value);
+            $removalData = [];
+            foreach ($value as $key => $item) {
+                if (is_string($key)) {
+                    $removalData[$key] = $item;
+                }
+            }
+
+            $progress = AppInstanceRemovalProgressResponse::fromGatewayData($removalData);
         }
 
         $code = $exception->errorCode() ?? 'gateway.request_failed';

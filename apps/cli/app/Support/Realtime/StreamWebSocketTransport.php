@@ -137,8 +137,16 @@ final class StreamWebSocketTransport implements WebSocketTransport
                 throw new RealtimeProtocolException('The realtime socket returned a frame that is not valid JSON.');
             }
 
-            /** @var array<string, mixed> $decoded */
-            return $decoded;
+            $message = [];
+            foreach ($decoded as $key => $value) {
+                if (! is_string($key)) {
+                    throw new RealtimeProtocolException('The realtime socket returned a frame that is not an object.');
+                }
+
+                $message[$key] = $value;
+            }
+
+            return $message;
         }
     }
 
@@ -310,7 +318,6 @@ final class StreamWebSocketTransport implements WebSocketTransport
                 return null;
             }
 
-            /** @var array<int, int> $unpacked */
             $unpacked = unpack('n', substr($this->buffer, $offset, 2)) ?: [];
             $payloadLength = $unpacked[1] ?? 0;
             $offset += 2;
@@ -319,7 +326,6 @@ final class StreamWebSocketTransport implements WebSocketTransport
                 return null;
             }
 
-            /** @var array<int, int> $unpacked */
             $unpacked = unpack('N2', substr($this->buffer, $offset, 8)) ?: [];
             $payloadLength = (($unpacked[1] ?? 0) << 32) + ($unpacked[2] ?? 0);
             $offset += 8;

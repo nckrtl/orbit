@@ -81,7 +81,6 @@ final readonly class JevBriefCoverageLabeler implements BriefCoverageLabeler
 
                         return;
                     }
-                    /** @var list<int|string> $taskIds */
                     $labels = [];
                     $questionLabels = [];
                     $expectedAnswerKeys = array_map(static fn (int|string $taskId): string => 'subtask_'.$taskId, $taskIds);

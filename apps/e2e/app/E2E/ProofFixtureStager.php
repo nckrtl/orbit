@@ -307,7 +307,9 @@ final readonly class ProofFixtureStager
                 \RecursiveIteratorIterator::CHILD_FIRST,
             );
             foreach ($entries as $entry) {
-                /** @var \SplFileInfo $entry */
+                if (! $entry instanceof \SplFileInfo) {
+                    continue;
+                }
                 if ($entry->isDir()) {
                     rmdir($entry->getPathname());
                 } else {

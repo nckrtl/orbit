@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Mcp;
 
+use App\Support\ValidatedData;
 use InvalidArgumentException;
 
 /** One entry of resources/mcp/tools.json: the API operation an MCP tool calls. */
@@ -46,7 +47,6 @@ final readonly class ToolDefinition
             throw new InvalidArgumentException('The MCP tool manifest has a malformed entry.');
         }
 
-        /** @var array<string, mixed> $inputSchema */
         return new self(
             name: $name,
             title: $title,
@@ -56,7 +56,7 @@ final readonly class ToolDefinition
             pathInputs: array_values(array_filter($pathInputs, is_string(...))),
             queryInputs: array_values(array_filter($queryInputs, is_string(...))),
             streams: ($entry['streams'] ?? false) === true,
-            inputSchema: $inputSchema,
+            inputSchema: ValidatedData::object($inputSchema),
         );
     }
 

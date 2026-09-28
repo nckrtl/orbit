@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Domain\Projects\ProjectCode;
 use App\Domain\Projects\ProjectType;
 use App\Domain\SourceControl\GitRepositoryIdentity;
+use App\Support\ValidatedData;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -45,8 +46,8 @@ final class App extends Model
     protected static function booted(): void
     {
         self::creating(static function (self $app): void {
-            /** @var list<string> $used */
-            $used = self::query()->pluck('code')->all();
+
+            $used = ValidatedData::stringList(self::query()->pluck('code')->all());
             $app->code = ProjectCode::validate($app->code ?? ProjectCode::suggest($app->slug, $used));
             $app->repository_identity = GitRepositoryIdentity::derive($app->repository_url);
         });

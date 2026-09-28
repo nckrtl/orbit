@@ -142,7 +142,11 @@ final readonly class CreateAppInstanceAction
                         $this->provisioner->reserve($appInstance, $data->domain);
                         $resolved = $this->resumeSource($appInstance, ! $created);
 
-                        $result = $this->provisioner->complete($resolved, $data->domain);
+                        $result = $this->provisioner->complete(
+                            $resolved,
+                            $data->domain,
+                            setupPending: ! $wasActive,
+                        );
 
                     } catch (Throwable $exception) {
                         $this->recordFailure($appInstance, $exception);
@@ -174,7 +178,14 @@ final readonly class CreateAppInstanceAction
                 self::RollbackTeardownSeconds + self::RollbackRemovalSeconds,
                 fn (): bool => $runner->run($instance, LifecyclePhase::Setup),
             );
+            $instance->update(['failed_step' => null, 'error_code' => null]);
         } catch (ResourceOperationException $setupFailure) {
+            if (($setupFailure->details['outcome'] ?? null) === 'busy') {
+                $instance->update(['failed_step' => 'setup', 'error_code' => 'instance.lifecycle_busy']);
+
+                throw $setupFailure;
+            }
+
             $details = $setupFailure->details;
             // A step the request deadline stopped keeps that code, so it reads apart from a failed command.
             $deadlineCut = $setupFailure->errorCode === 'command.deadline_exceeded';
@@ -193,6 +204,10 @@ final readonly class CreateAppInstanceAction
                     fn (): bool => $runner->run($instance->fresh() ?? $instance, LifecyclePhase::Teardown),
                 );
             } catch (ResourceOperationException $teardownFailure) {
+                if (($teardownFailure->details['outcome'] ?? null) === 'busy') {
+                    throw $teardownFailure;
+                }
+
                 if (($teardownFailure->details['outcome'] ?? null) === 'unconfirmed') {
                     throw new ResourceOperationException(
                         errorCode: $code,

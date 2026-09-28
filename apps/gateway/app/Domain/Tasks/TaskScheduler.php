@@ -339,7 +339,6 @@ final readonly class TaskScheduler
 
             return;
         }
-        /** @var TaskCheck|null $check */
         $check = TaskCheck::query()->where('task_comment_id', $receipt->id)->latest('id')->first();
         if ($check instanceof TaskCheck && $check->status === TaskCheckStatus::Running) {
             try {
@@ -1002,7 +1001,6 @@ final readonly class TaskScheduler
     private function pendingReceipt(Task $task, TaskThreadRole $role): ?TaskComment
     {
         $implementer = $role === TaskThreadRole::Implementer;
-        /** @var TaskComment|null $receipt */
         $receipt = $task->comments()
             ->whereNotNull('receipt_hash')
             ->where('author', $role->value)
@@ -2160,7 +2158,6 @@ final readonly class TaskScheduler
 
         $stop($candidate);
 
-        /** @var Task|null $next */
         $next = null;
         $group = DB::transaction(function () use ($taskGroup, $task, &$next): TaskGroup {
             $locked = Task::query()->where('task_group_id', $taskGroup->id)->lockForUpdate()->findOrFail($task->id);
@@ -2213,7 +2210,6 @@ final readonly class TaskScheduler
     public function acceptReview(Task $task): TaskGroup
     {
         $task->taskGroup->requireManagedExecution();
-        /** @var Task|null $next */
         $next = null;
         $group = DB::transaction(function () use ($task, &$next): TaskGroup {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
@@ -2886,7 +2882,6 @@ final readonly class TaskScheduler
      */
     private function handleBaseline(TaskGroup $group, Task $task): void
     {
-        /** @var TaskCheck|null $check */
         $check = TaskCheck::query()->where('task_id', $task->id)->where('kind', TaskCheckKind::Baseline->value)->latest('id')->first();
         $instance = $group->taskable;
         if ($check instanceof TaskCheck && $check->status === TaskCheckStatus::Running && $instance instanceof AppInstance) {

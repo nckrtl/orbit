@@ -448,7 +448,7 @@ final class Orb225ProcessRuntimeManager implements ProcessRuntimeManager
         }
     }
 
-    public function start(Process $process): void {}
+    public function start(Process $process, bool $explicit = false): void {}
 
     public function stop(Process $process): void {}
 

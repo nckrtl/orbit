@@ -7,6 +7,7 @@ namespace App\Http\Requests\AppInstances;
 use App\Data\AppInstances\TransferAppInstanceData;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\Node;
+use App\Support\ValidatedData;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -50,11 +51,10 @@ final class TransferAppInstanceRequest extends FormRequest
 
     public function payload(): TransferAppInstanceData
     {
-        /** @var array{node_id: int, name?: string, sqlite_source_path?: string} $validated */
         $validated = $this->validated();
 
         return new TransferAppInstanceData(
-            nodeId: $validated['node_id'],
+            nodeId: ValidatedData::integer($validated['node_id'] ?? null),
             name: is_string($validated['name'] ?? null) ? $validated['name'] : null,
             sqliteSourcePath: is_string($validated['sqlite_source_path'] ?? null)
                 ? $validated['sqlite_source_path']

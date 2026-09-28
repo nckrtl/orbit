@@ -9,6 +9,7 @@ use App\Domain\AppInstances\ComposerSourceClassifier;
 use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
 use App\Domain\AppInstances\DevelopmentSourceProfile;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Projects\ProjectType;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -59,7 +60,7 @@ final readonly class RemoteDevelopmentAppInstanceConfigurator implements Develop
             errorCode: 'app-dev.source_classification_failed',
         );
 
-        return $this->profile(trim($result->stdout));
+        return $this->profile(trim($result->stdout), $appInstance->app->type);
     }
 
     public function configureLaravelUrl(AppInstance $appInstance, string $url): void
@@ -138,7 +139,7 @@ final readonly class RemoteDevelopmentAppInstanceConfigurator implements Develop
         );
     }
 
-    private function profile(string $result): DevelopmentSourceProfile
+    private function profile(string $result, ProjectType $projectType): DevelopmentSourceProfile
     {
         if ($result === 'NONE') {
             return new DevelopmentSourceProfile(null, false);
@@ -155,7 +156,7 @@ final readonly class RemoteDevelopmentAppInstanceConfigurator implements Develop
             throw $this->invalid('app-dev.php_version_unsupported');
         }
 
-        return $this->classifier->classify($json, $parts[1]);
+        return $this->classifier->classify($json, $projectType, $parts[1]);
     }
 
     private function invalid(string $errorCode, ?\Throwable $previous = null): RuntimeConvergenceException

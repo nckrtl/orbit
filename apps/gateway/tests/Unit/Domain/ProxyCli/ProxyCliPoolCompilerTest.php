@@ -7,6 +7,7 @@ use App\Domain\ProxyCli\ProxyCliPoolCompiler;
 use App\Domain\ProxyCli\ProxyCliQuotaParser;
 use App\Domain\ProxyCli\ProxyCliQuotaStats;
 use App\Domain\ProxyCli\ProxyCliWindow;
+use Illuminate\Support\Carbon;
 
 describe('proxycli pooling', function (): void {
     it('orders windows longer first and never labels them Primary or Secondary', function (): void {
@@ -22,6 +23,42 @@ describe('proxycli pooling', function (): void {
             ->toBe(['7d', '5h'])
             ->and($windows[0]->usedPercent)->toBe(40.0)
             ->and($windows[1]->usedPercent)->toBe(10.0);
+    });
+
+    it('labels resets around the Codex fallback threshold and preserves past signed time', function (): void {
+        Carbon::setTestNow('2026-09-20T12:00:00+00:00');
+
+        try {
+            $windows = (new ProxyCliQuotaParser)->parse('codex', [
+                'rate_limit' => [
+                    'primary_window' => [
+                        'used_percent' => 15,
+                        'reset_at' => Carbon::now()->addHours(12)->toAtomString(),
+                    ],
+                    'secondary_window' => [
+                        'used_percent' => 35,
+                        'reset_at' => Carbon::now()->addDays(7)->toAtomString(),
+                    ],
+                ],
+            ]);
+
+            expect(array_map(static fn (ProxyCliWindow $window): string => $window->label, $windows))
+                ->toBe(['7d', '5h']);
+
+            $pastWindows = (new ProxyCliQuotaParser)->parse('codex', [
+                'rate_limit' => [
+                    'primary_window' => [
+                        'used_percent' => 15,
+                        'reset_at' => Carbon::now()->subDays(7)->toAtomString(),
+                    ],
+                ],
+            ]);
+
+            expect(array_map(static fn (ProxyCliWindow $window): string => $window->label, $pastWindows))
+                ->toBe(['5h']);
+        } finally {
+            Carbon::setTestNow();
+        }
     });
 
     it('omits a window the provider did not return instead of showing zero', function (): void {

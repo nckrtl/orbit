@@ -60,7 +60,7 @@ final class ProcessesApiFakeRuntimeManager implements ProcessRuntimeManager
         }
     }
 
-    public function start(#[SensitiveParameter] Process $process): void
+    public function start(#[SensitiveParameter] Process $process, bool $explicit = false): void
     {
         if ($this->failStartDuringCall) {
             throw new ProcessOperationException(

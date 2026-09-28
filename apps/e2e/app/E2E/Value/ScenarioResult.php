@@ -125,18 +125,15 @@ final readonly class ScenarioResult
         if ($primary === null || $status === null) {
             throw new InvalidArgumentException('The scenario result status is invalid.');
         }
-        /** @var array<string, mixed> $definition */
-        $definition = $value['definition'];
-        /** @var list<array<string, mixed>> $actions */
-        $actions = $value['actions'];
-        /** @var array<string, array<string, mixed>> $phaseTimings */
-        $phaseTimings = $value['phase_timings'];
-        /** @var array<string, mixed>|null $verification */
-        $verification = $value['verification'];
-        /** @var list<string> $diagnostics */
-        $diagnostics = $value['diagnostics'];
-        /** @var array<string, mixed> $cleanup */
-        $cleanup = $value['cleanup'];
+
+        $definition = SerializedArrays::stringKeyed($value['definition']);
+        $actions = SerializedArrays::recordList($value['actions']);
+        $phaseTimings = SerializedArrays::maps($value['phase_timings']);
+        $verification = $value['verification'] === null
+            ? null
+            : SerializedArrays::stringKeyed($value['verification']);
+        $diagnostics = SerializedArrays::stringList($value['diagnostics']);
+        $cleanup = SerializedArrays::stringKeyed($value['cleanup']);
 
         return new self(
             $candidateSha,

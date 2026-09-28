@@ -130,6 +130,7 @@ Environment operations return these codes in the Orbit error envelope. None of t
 | `env.owner_unavailable` | 409 | The Instance is not active or not fully placed, or it lacks exactly one healthy Route. |
 | `app_instance.placement_unavailable` | 409 | The owning Node does not have exactly one active `app-dev` or `app-prod` role. |
 | `env.import_conflict` | 409 | Import without `replace` found a key that is already stored. |
+| `env.import_source_missing` | 404 | The recorded source `.env` file does not exist; fix or restore the file before importing. |
 | `env.configuration_invalid` | 422 | A key, value, placeholder, count, size, or Laravel `APP_URL` rule failed. |
 | `env.reference_unavailable` | 409 | A placeholder is left over after rendering. |
 | `env.operation_busy` | 409 | Another operation holds the Instance's lock. |

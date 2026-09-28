@@ -14,22 +14,7 @@ return new class extends Migration
     public function up(): void
     {
         DB::transaction(function (): void {
-            /** @var list<object{id: int|string}> $unplaced */
-            $unplaced = DB::select(<<<'SQL'
-            SELECT app_instances.id
-            FROM app_instances
-            WHERE NOT EXISTS (
-                SELECT 1
-                FROM node_roles
-                WHERE node_roles.node_id = app_instances.node_id
-                    AND node_roles.role = CASE app_instances.environment
-                        WHEN 'production' THEN 'app-prod'
-                        WHEN 'development' THEN 'app-dev'
-                    END
-                    AND node_roles.status IN ('active', 'removing')
-            )
-            ORDER BY app_instances.id
-            SQL);
+            $unplaced = $this->unplacedInstances();
 
             if ($unplaced !== []) {
                 $ids = implode(', ', array_map(static fn (object $row): string => (string) $row->id, $unplaced));
@@ -74,10 +59,41 @@ return new class extends Migration
         });
     }
 
+    /** @return array<int, object{id: int|string}> */
+    private function unplacedInstances(): array
+    {
+        return DB::select(<<<'SQL'
+            SELECT app_instances.id
+            FROM app_instances
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM node_roles
+                WHERE node_roles.node_id = app_instances.node_id
+                    AND node_roles.role = CASE app_instances.environment
+                        WHEN 'production' THEN 'app-prod'
+                        WHEN 'development' THEN 'app-dev'
+                    END
+                    AND node_roles.status IN ('active', 'removing')
+            )
+            ORDER BY app_instances.id
+            SQL);
+    }
+
+    /** @return array<int, object{name: string, sql: string}> */
+    private function existingTriggers(): array
+    {
+        return DB::select("SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND name IN ('app_instances_production_placement_insert', 'app_instances_production_placement_update', 'routes_contract_update', 'route_targets_contract_insert', 'route_targets_contract_update', 'production_route_target_instances_update', 'app_instance_removal_members_insert')");
+    }
+
+    /** @return array<int, object{name: string}> */
+    private function remainingTriggerReferences(): array
+    {
+        return DB::select("SELECT name FROM sqlite_master WHERE type = 'trigger' AND (sql LIKE '%app_instances.environment%' OR sql LIKE '%environment FROM app_instances%' OR sql LIKE '%existing_instance.environment%' OR sql LIKE '%UPDATE OF app_id, node_id, environment ON app_instances%' OR sql LIKE '%NEW.environment <> ''production''%')");
+    }
+
     private function rewriteTriggersToNodeRoles(): void
     {
-        /** @var list<object{name: string, sql: string}> $triggers */
-        $triggers = DB::select("SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND name IN ('app_instances_production_placement_insert', 'app_instances_production_placement_update', 'routes_contract_update', 'route_targets_contract_insert', 'route_targets_contract_update', 'production_route_target_instances_update', 'app_instance_removal_members_insert')");
+        $triggers = $this->existingTriggers();
 
         foreach ($triggers as $trigger) {
             $sql = $trigger->sql;
@@ -127,8 +143,7 @@ return new class extends Migration
 
         $this->createProductionPlacementTriggers(true);
 
-        /** @var list<object{name: string}> $remainingReferences */
-        $remainingReferences = DB::select("SELECT name FROM sqlite_master WHERE type = 'trigger' AND (sql LIKE '%app_instances.environment%' OR sql LIKE '%environment FROM app_instances%' OR sql LIKE '%existing_instance.environment%' OR sql LIKE '%UPDATE OF app_id, node_id, environment ON app_instances%' OR sql LIKE '%NEW.environment <> ''production''%')");
+        $remainingReferences = $this->remainingTriggerReferences();
 
         if ($remainingReferences !== []) {
             $names = implode(', ', array_map(static fn (object $trigger): string => $trigger->name, $remainingReferences));
@@ -140,8 +155,7 @@ return new class extends Migration
     {
         $this->createProductionPlacementTriggers(false);
 
-        /** @var list<object{name: string, sql: string}> $triggers */
-        $triggers = DB::select("SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND name IN ('app_instances_production_placement_insert', 'app_instances_production_placement_update', 'routes_contract_update', 'route_targets_contract_insert', 'route_targets_contract_update', 'production_route_target_instances_update', 'app_instance_removal_members_insert')");
+        $triggers = $this->existingTriggers();
 
         foreach ($triggers as $trigger) {
             if (str_starts_with($trigger->name, 'app_instances_production_placement_')) {

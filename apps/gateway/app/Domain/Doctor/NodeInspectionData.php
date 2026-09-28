@@ -17,5 +17,7 @@ final readonly class NodeInspectionData
         public ?bool $agentChecksumMatches = null,
         /** The SHA-256 hash of the agent secret file, or null when the file is absent (ADR 0155). */
         public ?string $agentSecretChecksum = null,
+        /** @var list<NodeDiskFilesystemData> */
+        public array $diskFilesystems = [],
     ) {}
 }

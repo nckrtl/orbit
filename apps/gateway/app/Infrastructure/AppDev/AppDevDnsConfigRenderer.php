@@ -225,7 +225,10 @@ final readonly class AppDevDnsConfigRenderer
             ?? $current->first()
             ?? $sites->first();
 
-        /** @var AppDevSite $site */
+        if (! $site instanceof AppDevSite) {
+            return '';
+        }
+
         return "host-record={$site->domain},{$site->nodeAddress}";
     }
 

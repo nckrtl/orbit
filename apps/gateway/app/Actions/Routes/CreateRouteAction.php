@@ -290,7 +290,6 @@ final readonly class CreateRouteAction
         }
 
         try {
-            /** @var Route $route */
             $route = DB::transaction(function () use ($domain, $node, $process, $upstream): Route {
                 $route = Route::query()->create([
                     'kind' => RouteKind::CustomProxy,
@@ -425,7 +424,6 @@ final readonly class CreateRouteAction
         RouteTargetWebRoot::assertSupported($appInstance);
 
         try {
-            /** @var Route $route */
             $route = DB::transaction(function () use (
                 $appId,
                 $domain,

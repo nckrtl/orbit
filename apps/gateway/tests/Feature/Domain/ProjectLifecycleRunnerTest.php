@@ -37,6 +37,18 @@ afterEach(function (): void {
     (new Filesystem)->deleteDirectory($this->sandbox);
 });
 
+it('reports a busy lifecycle lock as a busy result', function (): void {
+    $this->steps->create($this->instance->app, LifecyclePhase::Setup, new LifecycleStep('install', 'true'), null, null);
+    $transport = new LifecycleSshExecutor(result: static fn (): int => 75);
+
+    expect(fn () => $transport->runner()->run($this->instance, LifecyclePhase::Setup))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('instance.lifecycle_busy')
+                ->and($exception->status)->toBe(409)
+                ->and($exception->details)->toBe(['step' => 'install', 'outcome' => 'busy']);
+        });
+});
+
 it('runs an ordered snapshot from the checkout and keeps commands out of argv', function (): void {
     $this->steps->create($this->instance->app, LifecyclePhase::Setup, new LifecycleStep('first', 'printf first > result'), null, null);
     $this->steps->create($this->instance->app, LifecyclePhase::Setup, new LifecycleStep('second', 'printf second >> result'), null, null);

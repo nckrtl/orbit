@@ -51,7 +51,6 @@ final readonly class NativeAppStateInspector implements AppStateInspector
             throw new DoctorInspectionException;
         }
 
-        /** @var list<array{instance_id: int, path: string, root: string, user: string, slug: string, instance: string, mode: string, expected_root: string}> $checkouts */
         $checkouts = [];
         $appInstances = $app
             ->appInstances()

@@ -21,19 +21,18 @@ use Closure;
 
 final class LifecycleSshExecutor implements SshExecutor
 {
-    /** @var list<array{checkout: string, command: string, timeout: float}> */
+    /** @var list<array{checkout: string, command: string, timeout: int|float}> */
     public array $inputs = [];
 
     /** @var list<string> */
     public array $shells = [];
 
-    /** @param (Closure(array{checkout: string, command: string, timeout: float}): int)|null $result */
+    /** @param (Closure(array{checkout: string, command: string, timeout: int|float}): int)|null $result */
     public function __construct(public ?Closure $result = null, public bool $local = false) {}
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
-        /** @var array{checkout: string, command: string, timeout: float} $payload */
-        $payload = json_decode(stream_get_contents($command->protectedInput->stream()), true, flags: JSON_THROW_ON_ERROR);
+        $payload = $this->decodePayload(stream_get_contents($command->protectedInput->stream()));
         $this->inputs[] = $payload;
         $this->shells[] = $command->shellCommand();
 
@@ -52,6 +51,28 @@ final class LifecycleSshExecutor implements SshExecutor
         }
 
         return new CommandResult($this->result === null ? 0 : ($this->result)($payload), '', '', 1, false);
+    }
+
+    /** @return array{checkout: string, command: string, timeout: int|float} */
+    private function decodePayload(string $input): array
+    {
+        $payload = json_decode($input, true, flags: JSON_THROW_ON_ERROR);
+        $timeout = is_array($payload) ? ($payload['timeout'] ?? null) : null;
+
+        if (
+            ! is_array($payload)
+            || ! is_string($payload['checkout'] ?? null)
+            || ! is_string($payload['command'] ?? null)
+            || (! is_float($timeout) && ! is_int($timeout))
+        ) {
+            throw new \UnexpectedValueException('The lifecycle command payload is invalid.');
+        }
+
+        return [
+            'checkout' => $payload['checkout'],
+            'command' => $payload['command'],
+            'timeout' => $timeout,
+        ];
     }
 
     public function runner(?CommandDeadline $deadline = null): ProjectLifecycleRunner

@@ -69,12 +69,12 @@ final readonly class QuarantineManifest
         }
 
         $inventorySha256 = $value['inventory_sha256'];
-        /** @var array{path: string, content_sha256: string, mode: int, filesystem_type: string} $freezeEvidence */
-        $freezeEvidence = $value['freeze_evidence'];
+
+        $freezeEvidence = SerializedArrays::freezeEvidence($value['freeze_evidence']);
         $quarantinedAt = $value['quarantined_at'];
         $deleteAfter = $value['delete_after'];
-        /** @var list<array<string, mixed>> $targets */ $targets = $value['targets'];
-        /** @var array<string, list<array<string, mixed>>> $preserved */ $preserved = $value['preserved'];
+        $targets = SerializedArrays::recordList($value['targets']);
+        $preserved = SerializedArrays::recordGroups($value['preserved']);
 
         return new self(
             $inventorySha256,

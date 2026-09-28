@@ -93,15 +93,29 @@ final readonly class MetricsStatusResponse
         if ($value === null) {
             return null;
         }
+        if (! is_array($value)) {
+            throw new GatewayApiException(
+                'Gateway response contains invalid metrics assignment.',
+                requestId: $requestId,
+            );
+        }
+        $id = $value['id'] ?? null;
+        $nodeId = $value['node_id'] ?? null;
+        $nodeName = $value['node_name'] ?? null;
+        $status = $value['status'] ?? null;
+        $failedStep = $value['failed_step'] ?? null;
         if (
-            ! is_array($value)
-            || ! self::positiveId($value['id'] ?? null)
-            || ! self::positiveId($value['node_id'] ?? null)
-            || ! is_string($value['node_name'] ?? null)
-            || $value['node_name'] === ''
-            || strlen($value['node_name']) > 255
-            || ! self::validAssignmentStatus($value['status'] ?? null)
-            || ! self::nullableText($value['failed_step'] ?? null)
+            ! is_int($id)
+            || ! self::positiveId($id)
+            || ! is_int($nodeId)
+            || ! self::positiveId($nodeId)
+            || ! is_string($nodeName)
+            || $nodeName === ''
+            || strlen($nodeName) > 255
+            || ! is_string($status)
+            || ! self::validAssignmentStatus($status)
+            || ($failedStep !== null && ! is_string($failedStep))
+            || ! self::nullableText($failedStep)
         ) {
             throw new GatewayApiException(
                 'Gateway response contains invalid metrics assignment.',
@@ -109,13 +123,12 @@ final readonly class MetricsStatusResponse
             );
         }
 
-        /** @var array{id:int,node_id:int,node_name:string,status:string,failed_step:?string,error_code:?string} $assignment */
         $assignment = [
-            'id' => $value['id'],
-            'node_id' => $value['node_id'],
-            'node_name' => $value['node_name'],
-            'status' => $value['status'],
-            'failed_step' => $value['failed_step'] ?? null,
+            'id' => $id,
+            'node_id' => $nodeId,
+            'node_name' => $nodeName,
+            'status' => $status,
+            'failed_step' => $failedStep,
             'error_code' => GatewayErrorCode::fromTransport($value['error_code'] ?? null),
         ];
 
@@ -167,6 +180,7 @@ final readonly class MetricsStatusResponse
 
             if (
                 ! is_array($row)
+                || ! is_int($id)
                 || ! self::positiveId($id)
                 || ! is_string($name)
                 || $name === ''
@@ -176,6 +190,7 @@ final readonly class MetricsStatusResponse
                 || ! self::validActual($actual)
                 || ! is_string($reason)
                 || ! self::validReason($reason)
+                || ($degradedReason !== null && ! is_string($degradedReason))
                 || ! self::validDegradedReason($degradedReason)
             ) {
                 throw new GatewayApiException(
@@ -184,8 +199,6 @@ final readonly class MetricsStatusResponse
                 );
             }
 
-            /** @var int $id */
-            /** @var ?string $degradedReason */
             $rows[] = [
                 'id' => $id,
                 'name' => $name,

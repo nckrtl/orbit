@@ -50,7 +50,6 @@ final readonly class AppDevSiteRepository
     /** @return Collection<int, AppDevSite> */
     private function sites(?Node $node): Collection
     {
-        /** @var Collection<int, AppDevSite> $sites */
         $sites = collect();
         $secondRouters = $this->routerTransitions->secondRouters();
 
@@ -134,7 +133,6 @@ final readonly class AppDevSiteRepository
         });
 
         $routes = $routeQuery->orderBy('id')->get();
-        /** @var Collection<int, Route> $routes */
         foreach ($routes as $route) {
             if ($route->kind === RouteKind::CustomProxy) {
                 $site = $this->customProxySite($route);
@@ -506,8 +504,7 @@ final readonly class AppDevSiteRepository
             ->filter(static fn (?string $address): bool => is_string($address) && $address !== '')
             ->values()
             ->all();
-
-        /** @var list<string> $addresses */
+        $addresses = array_values($addresses);
 
         return new AppDevSite(
             nodeId: $router->id,
@@ -542,9 +539,8 @@ final readonly class AppDevSiteRepository
             ->filter(static fn (?string $address): bool => is_string($address) && $address !== '')
             ->values()
             ->all();
+        $addresses = array_values($addresses);
         $localInstance = $local[0];
-
-        /** @var list<string> $addresses */
 
         return new AppDevSite(
             nodeId: $router->id,

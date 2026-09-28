@@ -6,6 +6,7 @@ namespace App\Data\Processes;
 
 use App\Domain\Processes\ProcessTargetType;
 use App\Models\Process;
+use App\Support\ValidatedData;
 use SensitiveParameter;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
@@ -42,9 +43,7 @@ final class ProcessData extends Data
         ?float $cpu = null,
         ?int $memoryBytes = null,
     ): self {
-        /** @var ?string $failedStep */
         $failedStep = $process->getAttribute('failed_step');
-        /** @var ?string $errorCode */
         $errorCode = $process->getAttribute('error_code');
 
         return new self(
@@ -60,8 +59,8 @@ final class ProcessData extends Data
             desiredState: $process->desired_state->value,
             status: $process->status->value,
             runtimeStatus: $runtimeStatus,
-            failedStep: $failedStep,
-            errorCode: $errorCode,
+            failedStep: ValidatedData::nullableString($failedStep),
+            errorCode: ValidatedData::nullableString($errorCode),
             cpu: $cpu,
             memoryBytes: $memoryBytes,
         );

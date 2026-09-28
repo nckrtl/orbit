@@ -23,7 +23,6 @@ final class ApiOperationTool extends Tool
 
     public function handle(Request $request, HttpRequest $caller): Response
     {
-        /** @var array<string, mixed> $arguments */
         $arguments = $request->all();
         $result = $this->dispatcher->dispatch($this->definition, $arguments, $caller);
         $json = $result->json();

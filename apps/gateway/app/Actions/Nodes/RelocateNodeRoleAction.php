@@ -399,9 +399,7 @@ final readonly class RelocateNodeRoleAction
 
     private function transfer(Node $target, Node $source, RoleName $role): NodeRole
     {
-        /**
-         * @var NodeRole $assignment
-         */
+
         $assignment = DB::transaction(function () use ($target, $source, $role): NodeRole {
             $this->lockRoleClaims();
             $current = NodeRole::query()

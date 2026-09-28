@@ -28,8 +28,8 @@ final class AppInstanceDependenciesController extends Controller
 
     public function update(InstanceDependenciesRequest $request, AppInstance $instance, AccessInstanceDependenciesAction $action): JsonResponse
     {
-        /** @var Node $consumer */
         $consumer = $request->user();
+        abort_unless($consumer instanceof Node, 401);
         $data = $action->update($instance, $consumer);
 
         return response()->json([
@@ -40,8 +40,8 @@ final class AppInstanceDependenciesController extends Controller
 
     private function respond(InstanceDependenciesRequest $request, AppInstance $instance, AccessInstanceDependenciesAction $action, bool $scan): JsonResponse
     {
-        /** @var Node $consumer */
         $consumer = $request->user();
+        abort_unless($consumer instanceof Node, 401);
         $data = $action->execute($instance, $consumer, $scan);
 
         return response()->json([

@@ -13,6 +13,7 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -282,6 +283,21 @@ it('skips PHP cleanup but removes Caddy and certificate state for non-PHP produc
                 'rm -rf -- "$managed_home/.orbit/certificates/$scope"',
             ) && in_array("app-instance-{$instance->id}", $command->arguments, strict: true),
         ))->toBeTrue();
+});
+
+it('skips PHP-FPM cleanup for a Laravel package with a selected PHP version but no runtime identity', function (): void {
+    [$member, , $instance] = orb183_projector_production_member(shared: false);
+    $instance->app->update(['type' => ProjectType::LaravelPackage]);
+    $instance->update([
+        'production_php_service' => null,
+        'production_php_pool' => null,
+        'production_php_socket' => null,
+    ]);
+    [$projector] = orb181_removal_projector($this, $phpRuntime = new Orb214RemovalPhpRuntimeManager);
+
+    $projector->cleanupRuntime($member);
+
+    expect($phpRuntime->removed)->toBeEmpty();
 });
 
 it('refuses PHP production runtime cleanup without its dedicated PHP-FPM service', function (): void {

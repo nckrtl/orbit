@@ -58,7 +58,6 @@ final readonly class CacheAgentStateView implements AgentStateView
 
         $receivedAt = (float) $entry['received_at'];
         $fresh = self::now() - $receivedAt <= self::FreshSeconds;
-        /** @var array<string, string> $units */
         $units = array_filter($entry['units'], is_string(...));
         $docker = is_string($entry['docker'] ?? null) ? $entry['docker'] : null;
         $workspaces = [];

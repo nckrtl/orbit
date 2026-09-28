@@ -90,9 +90,6 @@ final readonly class UpdateClusterAction
                 $this->convergeActivePrivateRoutes($current, $proposedState, $proposedTld);
             }
 
-            /**
-             * @var Cluster $updated
-             */
             $updated = DB::transaction(function () use ($clusterId, $data): Cluster {
                 $locked = Cluster::query()->lockForUpdate()->findOrFail($clusterId);
                 $proposedTld = $data->tldProvided ? $data->tld : $locked->tld;
