@@ -25,8 +25,8 @@ it('renders a generic command deliverable and its base-run requirement in prompt
     ]);
 
     expect($deliverable->line())->toContain('command:')
-        ->toContain('paths apps/gateway/tests/Feature/HomeScreenTest.php are overlaid on the start commit')
-        ->toContain('passing on the working tree')
+        ->toContain('must fail on the start commit and pass on the working tree')
+        ->toContain('paths apps/gateway/tests/Feature/HomeScreenTest.php')
         ->and($deliverable->toArray())->toBe([
             'id' => 'layout-repro',
             'type' => 'command',

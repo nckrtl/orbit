@@ -7,6 +7,23 @@ use App\Domain\Tasks\TaskDeliverableEvidence;
 use App\Domain\Tasks\TaskReviewPacket;
 use App\Domain\Tasks\TaskRunInstructions;
 
+it('keeps the fails-on-base requirement intact before a long command is capped', function (): void {
+    $path = 'apps/gateway/tests/Feature/HomeScreenTest.php';
+    $packet = review_packet([
+        'deliverables' => [TaskDeliverable::fromArray([
+            'id' => 'layout-repro', 'type' => 'command', 'description' => 'The regression fails before the fix.',
+            'command' => 'vendor/bin/pest '.str_repeat('very-long-command-argument ', 30), 'directory' => 'apps/gateway',
+            'fails_on_base' => true, 'paths' => [$path],
+        ])],
+    ]);
+    $deliverables = packet_section($packet, 'Deliverables');
+    $line = collect(explode("\n", $deliverables))->first(fn (string $line): bool => str_contains($line, 'layout-repro'));
+
+    expect($line)->toContain('must fail on the start commit and pass on the working tree')
+        ->and(substr_count($line, $path))->toBe(1)
+        ->and(mb_strlen($line))->toBeLessThanOrEqual(TaskReviewPacket::DeliverableLineLimit);
+});
+
 it('names the feature contract on the opening packet and leaves it off a continued turn', function (): void {
     $contract = 'The ADRs and documentation that this branch changes against `origin/develop` are the feature\'s contract.';
     $opening = review_packet(['contract' => $contract]);
@@ -41,7 +58,7 @@ it('renders a review packet with the group brief, subtask brief, deliverables, a
         ->and(packet_section($packet, 'Subtask brief'))->toBe('Return the packet as text within the size limits.')
         ->and(packet_section($packet, 'Deliverables'))->toBe(implode("\n", [
             '- reference-page (file: docs/reference/tasks.md, modified): Document the export',
-            '- layout-repro (command: `vendor/bin/pest tests/Feature/HomeScreenTest.php --filter=\'home screen layout\'` in apps/gateway; paths apps/gateway/tests/Feature/HomeScreenTest.php are overlaid on the start commit, where it must fail before passi',
+            '- layout-repro (command: must fail on the start commit and pass on the working tree; paths apps/gateway/tests/Feature/HomeScreenTest.php; `vendor/bin/pest tests/Feature/HomeScreenTest.php --filter=\'home screen layout\'` in apps/gateway): The',
             '- web-tests (command: `bun test` in apps/web): The web app tests pass',
             '- error-copy (review: confirmed by the reviewer): Error messages name the failing subtask',
             'tasks-show returns every field.',

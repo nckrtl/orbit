@@ -11,6 +11,38 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 
+it('fails loudly when a legacy test deliverable does not name one exact test file', function (): void {
+    $default = DB::getDefaultConnection();
+    try {
+        config()->set('database.connections.test_deliverables_migration', [
+            'driver' => 'sqlite', 'database' => ':memory:', 'foreign_key_constraints' => true,
+        ]);
+        DB::setDefaultConnection('test_deliverables_migration');
+        $paths = glob(database_path('migrations/*.php')) ?: [];
+        Artisan::call('migrate', ['--database' => 'test_deliverables_migration', '--path' => $paths, '--realpath' => true, '--force' => true]);
+
+        $appId = DB::table('apps')->insertGetId([
+            'name' => 'Migration fixture', 'slug' => 'migration-fixture', 'code' => 'MIG',
+            'repository_url' => 'git@example.test:migration.git', 'repository_identity' => 'example.test/migration',
+            'task_check' => 'cd apps/gateway && composer test',
+        ]);
+        $groupId = DB::table('task_groups')->insertGetId(['app_id' => $appId, 'title' => 'Open', 'brief' => 'Brief', 'status' => 'todo']);
+        DB::table('tasks')->insert([
+            'task_group_id' => $groupId, 'position' => 1, 'title' => 'Glob test', 'brief' => 'Brief', 'status' => 'todo',
+            'deliverables' => json_encode([[
+                'id' => 'glob-test', 'type' => 'test', 'description' => 'Do not convert a glob.',
+                'project' => '.', 'file' => 'tests/Feature/**/*.php', 'name' => 'the test',
+            ]], JSON_THROW_ON_ERROR),
+        ]);
+
+        $migration = require database_path('migrations/2026_09_29_130000_convert_test_deliverables_to_commands.php');
+        expect(fn () => $migration->up())->toThrow(RuntimeException::class, 'unsafe project, file, or test name');
+    } finally {
+        DB::setDefaultConnection($default);
+        DB::purge('test_deliverables_migration');
+    }
+});
+
 it('converts stored test deliverables with the explicit legacy Pest mapping', function (): void {
     $default = DB::getDefaultConnection();
     try {
@@ -74,7 +106,7 @@ it('converts stored test deliverables with the explicit legacy Pest mapping', fu
             'id' => 'repro',
             'type' => 'command',
             'description' => 'Reproduce it',
-            'command' => "cd 'apps/gateway' && vendor/bin/pest 'tests/Feature/LayoutTest.php' --filter='/layout regression/'",
+            'command' => "cd 'apps/gateway' && vendor/bin/pest 'tests/Feature/LayoutTest.php' --filter='/layout regression/' --colors=never",
             'directory' => '.',
             'fails_on_base' => true,
             'paths' => ['apps/gateway/tests/Feature/LayoutTest.php'],

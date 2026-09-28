@@ -52,7 +52,7 @@ return new class extends Migration
                             $project = $this->normalizeLegacyPath($deliverable['project'] ?? '.', allowRoot: true);
                             $file = $this->normalizeLegacyPath($deliverable['file'] ?? null, allowRoot: false);
                             $name = is_string($deliverable['name'] ?? null) ? trim($deliverable['name']) : '';
-                            if ($project === null || $file === null || ! str_ends_with($file, '.php') || $name === '') {
+                            if ($project === null || $file === null || ! str_ends_with($file, '.php') || strpbrk($file, '*?[]{}') !== false || $name === '') {
                                 throw new RuntimeException("Task {$task->id} has a legacy test deliverable with an unsafe project, file, or test name.");
                             }
 
@@ -61,7 +61,7 @@ return new class extends Migration
                             $filter = '/'.preg_quote($name, '/').'/';
                             $command = 'cd '.escapeshellarg($project)
                                 .' && vendor/bin/pest '.escapeshellarg($file)
-                                .' --filter='.escapeshellarg($filter);
+                                .' --filter='.escapeshellarg($filter).' --colors=never';
                             $deliverableId = is_string($deliverable['id'] ?? null) && $deliverable['id'] !== ''
                                 ? $deliverable['id']
                                 : 'converted-test';

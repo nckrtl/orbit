@@ -91,12 +91,12 @@ final readonly class TaskDeliverable
     /** Render command and base-run behavior in implementer and reviewer prompts. */
     private function commandLine(): string
     {
-        $detail = "`{$this->command}` in ".(self::relative($this->directory) ?: '.');
+        $detail = '';
         if ($this->fails_on_base) {
-            $detail .= '; paths '.implode(', ', $this->paths).' are overlaid on the start commit, where it must fail before passing on the working tree';
+            $detail = 'must fail on the start commit and pass on the working tree; paths '.implode(', ', $this->paths).'; ';
         }
 
-        return $detail;
+        return $detail."`{$this->command}` in ".(self::relative($this->directory) ?: '.');
     }
 
     /** Joins a directory and a path from it into one path from the workspace root. */
