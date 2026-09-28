@@ -110,6 +110,56 @@ describe(GatewayAddCommand::class, function (): void {
             ->toBe('https://10.80.0.1');
     });
 
+    it('refuses a changed CA for an existing profile unless explicitly accepted', function (): void {
+        expect(Artisan::call('gateway:add', [
+            'gateway' => 'https://10.70.0.1',
+            '--name' => 'prod',
+        ]))->toBe(0);
+
+        $repository = app(GatewayConfigRepository::class);
+        $originalPin = $repository->find('prod')?->caPath;
+        $originalCertificate = file_get_contents($originalPin);
+        $changedCertificate = gateway_add_test_certificate($this->orbitHome.'/changed-ca');
+        $changedFingerprint = openssl_x509_fingerprint($changedCertificate, digest_algo: 'sha256');
+
+        expect($originalPin)->not->toBeNull()
+            ->and($changedFingerprint)->not->toBe($this->fingerprint)
+            ->and($repository->find('prod')?->caPath)->toBe($originalPin);
+
+        MockClient::destroyGlobal();
+        MockClient::global([
+            FetchRootCaCertificateRequest::class => MockResponse::make([
+                'data' => [
+                    'root_ca' => $changedCertificate,
+                    'sha256' => $changedFingerprint,
+                ],
+                'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+            ]),
+        ]);
+
+        $this
+            ->artisan('gateway:add', [
+                'gateway' => 'https://10.70.0.1',
+                '--name' => 'prod',
+                '--json' => true,
+            ])
+            ->expectsOutputToContain('"code":"gateway.ca_changed"')
+            ->assertExitCode(1);
+
+        expect(file_get_contents($originalPin))->toBe($originalCertificate);
+
+        $this
+            ->artisan('gateway:add', [
+                'gateway' => 'https://10.70.0.1',
+                '--name' => 'prod',
+                '--accept-ca-change' => true,
+                '--json' => true,
+            ])
+            ->assertExitCode(0);
+
+        expect(file_get_contents($repository->find('prod')?->caPath))->toBe($changedCertificate);
+    });
+
     it('adds and reloads a gateway with the numeric profile name zero', function (): void {
         $exitCode = Artisan::call('gateway:add', [
             'gateway' => '10.70.0.1',

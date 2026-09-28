@@ -40,6 +40,9 @@ final readonly class RemoteAppInstanceEnvironmentAccess implements AppInstanceEn
         class BoundaryError(Exception):
             pass
 
+        class MissingEnvironment(Exception):
+            pass
+
         def open_base():
             opened = []
             current = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
@@ -117,7 +120,11 @@ final readonly class RemoteAppInstanceEnvironmentAccess implements AppInstanceEn
             destination_identity = None if metadata is None else (metadata.st_dev, metadata.st_ino)
 
             if mode in ("read-check", "read"):
-                if metadata_descriptor is None or metadata is None or metadata.st_size > maximum:
+                if metadata_descriptor is None or metadata is None:
+                    if mode == "read":
+                        raise MissingEnvironment
+                    raise BoundaryError
+                if metadata.st_size > maximum:
                     raise BoundaryError
                 value = os.open(f"/proc/self/fd/{metadata_descriptor}", os.O_RDONLY | os.O_NONBLOCK)
                 descriptors.append(value)
@@ -205,6 +212,9 @@ final readonly class RemoteAppInstanceEnvironmentAccess implements AppInstanceEn
                     print("CHANGED")
             else:
                 raise BoundaryError
+        except MissingEnvironment:
+            print("MISSING")
+            raise SystemExit(41)
         except BoundaryError:
             if "current" in locals():
                 cleanup_candidate(current)
@@ -270,6 +280,14 @@ final readonly class RemoteAppInstanceEnvironmentAccess implements AppInstanceEn
     public function read(AppInstanceEnvironmentContext $context): string
     {
         $result = $this->execute($context, 'read', maximumOutputBytes: 1_398_104);
+
+        if ($result->exitCode === 41 && $result->stdout === "MISSING\n" && $result->stderr === '') {
+            throw new ResourceOperationException(
+                errorCode: 'env.import_source_missing',
+                message: 'The recorded AppInstance environment file does not exist.',
+                status: 404,
+            );
+        }
 
         if (! $result->succeeded() || $result->truncated || $result->stderr !== '') {
             $this->failRead();

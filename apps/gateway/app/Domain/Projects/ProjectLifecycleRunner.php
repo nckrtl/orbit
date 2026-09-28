@@ -91,6 +91,16 @@ final readonly class ProjectLifecycleRunner
 
                 $result = $exception instanceof RuntimeConvergenceException ? $exception->result : null;
 
+                if ($result?->exitCode === 75) {
+                    throw new ResourceOperationException(
+                        errorCode: 'instance.lifecycle_busy',
+                        message: 'The Instance is busy with another lifecycle operation.',
+                        status: 409,
+                        previous: $exception,
+                        details: ['step' => $step->name, 'outcome' => 'busy'],
+                    );
+                }
+
                 // The step ran out of the time the request had left, not out of its own timeout.
                 $timedOut = $result?->exitCode === 124
                     || $exception instanceof ProcessTimedOutException

@@ -15,6 +15,12 @@ final class FakeVitePortRuntime implements VitePortRuntime
     /** @var array<int, list<int>> */
     public array $occupied = [];
 
+    /** @var list<int> */
+    public array $awakeInstances = [];
+
+    /** @var list<string> */
+    public array $events = [];
+
     public function selectPort(Node $node, int $preferred, array $excluded): int
     {
         for ($port = $preferred; $port <= 65535; $port++) {
@@ -32,10 +38,17 @@ final class FakeVitePortRuntime implements VitePortRuntime
 
     public function ready(Process $process, AppInstance $instance, int $port): bool
     {
+        $this->events[] = 'vite-ready';
+
         return true;
     }
 
     public function suspendTraffic(AppInstance $instance): void {}
+
+    public function markAwake(AppInstance $instance): void
+    {
+        $this->awakeInstances[] = $instance->id;
+    }
 
     public function prepare(Process $process, AppInstance $instance): void {}
 

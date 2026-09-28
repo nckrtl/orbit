@@ -155,8 +155,11 @@ function bind_task_workspace_fakes(): object
             $this->reserves++;
         }
 
-        public function complete(AppInstance $appInstance, ?string $domain): AppInstance
-        {
+        public function complete(
+            AppInstance $appInstance,
+            ?string $domain,
+            bool $setupPending = false,
+        ): AppInstance {
             $this->completes++;
 
             return $appInstance->refresh();

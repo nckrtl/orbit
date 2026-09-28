@@ -65,7 +65,7 @@ final readonly class StartProcessAction
     {
         return $this->lease->run($process, function (Process $fresh): Process {
             try {
-                $this->runtime->start($fresh);
+                $this->runtime->start($fresh, explicit: true);
             } catch (ProcessOperationException $exception) {
                 $this->markRuntimeFailed($fresh, $exception);
 

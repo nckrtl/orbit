@@ -9,6 +9,7 @@ use App\Domain\AppInstances\AppInstancePhpVersionCatalog;
 use App\Domain\AppInstances\ComposerSourceClassifier;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppInstances\RemoteDevelopmentAppInstanceConfigurator;
@@ -30,7 +31,7 @@ it('requires one Composer Laravel declaration and one regular Artisan marker', f
     $classifier = new ComposerSourceClassifier(new AppInstancePhpVersionCatalog);
     $composer = json_encode(['require' => ['php' => '^8.4', 'laravel/framework' => '^13.0']], JSON_THROW_ON_ERROR);
 
-    expect($classifier->classify($composer, 'regular'))
+    expect($classifier->classify($composer, ProjectType::LaravelApp, 'regular'))
         ->phpVersion->toBe('8.5')
         ->laravel->toBeTrue();
 });
@@ -38,7 +39,7 @@ it('requires one Composer Laravel declaration and one regular Artisan marker', f
 it('refuses partial conflicting and unsafe Laravel markers', function (array $composer, string $artisan): void {
     $classifier = new ComposerSourceClassifier(new AppInstancePhpVersionCatalog);
 
-    expect(fn () => $classifier->classify(json_encode($composer, JSON_THROW_ON_ERROR), $artisan))
+    expect(fn () => $classifier->classify(json_encode($composer, JSON_THROW_ON_ERROR), ProjectType::LaravelApp, $artisan))
         ->toThrow(function (RuntimeConvergenceException $exception): void {
             expect($exception->errorCode)->toBe('app-dev.laravel_source_invalid');
         });
@@ -57,7 +58,7 @@ it('refuses partial conflicting and unsafe Laravel markers', function (array $co
 
 it('leaves a Composer non-Laravel source classified as PHP only', function (): void {
     $profile = new ComposerSourceClassifier(new AppInstancePhpVersionCatalog)
-        ->classify('{"require":{"php":"~8.4.0"}}', 'absent');
+        ->classify('{"require":{"php":"~8.4.0"}}', ProjectType::LaravelApp, 'absent');
 
     expect($profile->phpVersion)->toBe('8.4')->and($profile->laravel)->toBeFalse();
 });
@@ -89,14 +90,14 @@ it('emits a source preflight that rejects foreign-owned Composer metadata', func
 it('refuses malformed Composer metadata and conflicting Laravel declarations', function (): void {
     $classifier = new ComposerSourceClassifier(new AppInstancePhpVersionCatalog);
 
-    expect(fn () => $classifier->classify('{', 'regular'))
+    expect(fn () => $classifier->classify('{', ProjectType::LaravelApp, 'regular'))
         ->toThrow(function (RuntimeConvergenceException $exception): void {
             expect($exception->errorCode)->toBe('app-dev.php_version_unsupported');
         })
         ->and(fn () => $classifier->classify(json_encode([
             'require' => ['laravel/framework' => '^13.0'],
             'require-dev' => ['laravel/framework' => '^12.0'],
-        ], JSON_THROW_ON_ERROR), 'regular'))
+        ], JSON_THROW_ON_ERROR), ProjectType::LaravelApp, 'regular'))
         ->toThrow(function (RuntimeConvergenceException $exception): void {
             expect($exception->errorCode)->toBe('app-dev.laravel_source_invalid');
         });
@@ -349,7 +350,7 @@ it('restores Laravel URL environment on a failed slug update and ignores applica
     $fixture->projections->failSlugPrepare = false;
     $fixture->projections->applicationErrorOnUrl = true;
 
-    app(UpdateAppAction::class)->execute(
+    expect(fn () => app(UpdateAppAction::class)->execute(
         $fixture->app->refresh(),
         new UpdateAppData(
             typeProvided: false,
@@ -363,9 +364,9 @@ it('restores Laravel URL environment on a failed slug update and ignores applica
             rootProvided: false,
             root: null,
         ),
-    );
+    ))->toThrow(ResourceOperationException::class);
 
-    expect($fixture->app->refresh()->slug)->toBe('shop');
+    expect($fixture->app->refresh()->slug)->toBe('acme');
 });
 
 /** @return array{RemoteDevelopmentAppInstanceConfigurator, AppDevFakeSshExecutor, AppInstance} */

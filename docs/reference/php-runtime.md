@@ -2,7 +2,7 @@
 title: "PHP runtimes"
 description: "How Orbit selects a PHP version for an Instance, runs shared development and dedicated production PHP-FPM services, and refreshes production OPcache."
 covers:
-  - apps/gateway/app/Domain/AppInstances/{AppInstancePhpVersionCatalog,ProductionPhpRuntimeIdentity,ProductionPhpRuntimeManager}.php
+  - apps/gateway/app/Domain/AppInstances/{AppInstancePhpVersionCatalog,ComposerSourceClassifier,ProductionPhpRuntimeIdentity,ProductionPhpRuntimeManager}.php
   - apps/gateway/app/Infrastructure/AppInstances/{RemoteProductionPhpRuntimeManager,RemoteProductionAppInstanceSourceLifecycle,ProductionPhpRuntimeConfigRenderer,ProductionPhpRuntimeConfiguration}.php
   - apps/gateway/app/Infrastructure/AppProd/{RemoteAppProdPhpFpmManager,RemoteAppProdSourceManager}.php
   - apps/gateway/app/Infrastructure/Nodes/{PhpFpmRuntimeIniRenderer,RemotePhpPackageManager}.php
@@ -63,7 +63,7 @@ A failed start restores the generated files and service state from before the ch
 
 The shared `/etc/orbit` directory stays `root:root` with mode `0711`, so production users can reach their Schedule scripts without listing the directory. `/etc/orbit/php-fpm` stays closed to application users.
 
-A `laravel-app` Instance serves PHP. A `monorepo` Instance serves PHP only when it has a Route and a Laravel source. Other types start no PHP-FPM master.
+A `laravel-app` Instance serves PHP. A `monorepo` Instance serves PHP only when it has a Route and a Laravel source. A `laravel-package` can select a PHP version from its Composer constraint but is not classified as a Laravel application or served through PHP-FPM. Other types start no PHP-FPM master. Production source inspection applies the Instance's project type when it classifies the Composer and Artisan metadata.
 
 ## OPcache settings
 

@@ -11,6 +11,7 @@ use App\Domain\AppInstances\DevelopmentSourceResolution;
 use App\Domain\AppInstances\ProductionAppInstanceSourceLifecycle;
 use App\Domain\AppInstances\ProductionReleaseLayout;
 use App\Domain\GitHub\RepositoryReadAccess;
+use App\Domain\Projects\ProjectType;
 use App\Infrastructure\AppProd\AppProdSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -328,7 +329,9 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
             errorCode: 'app-prod.source_classification_failed',
         );
 
-        return $this->profile(trim($result->stdout));
+        $appInstance->loadMissing('app');
+
+        return $this->profile(trim($result->stdout), $appInstance->app->type);
     }
 
     public function prepareCaddyAccess(AppInstance $appInstance): void
@@ -549,7 +552,7 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
             || preg_match('#\A'.preg_quote("{$home}/releases/", '#').'(?!\.\.?\z)[^/]+\z#D', $checkout) === 1;
     }
 
-    private function profile(string $result): DevelopmentSourceProfile
+    private function profile(string $result, ProjectType $projectType): DevelopmentSourceProfile
     {
         if ($result === 'NONE') {
             return new DevelopmentSourceProfile(null, false);
@@ -567,7 +570,7 @@ final readonly class RemoteProductionAppInstanceSourceLifecycle implements Produ
         }
 
         try {
-            return $this->classifier->classify($json, $parts[1]);
+            return $this->classifier->classify($json, $projectType, $parts[1]);
         } catch (RuntimeConvergenceException $exception) {
             throw $this->failure(
                 'production-source-classification',

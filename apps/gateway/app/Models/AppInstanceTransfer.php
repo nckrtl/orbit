@@ -33,6 +33,7 @@ use Illuminate\Support\Str;
  * @property AppInstanceTransferStep|null $failed_step
  * @property string|null $error_code
  * @property array<string, mixed>|null $recovery_evidence
+ * @property list<string>|null $imported_environment_keys
  * @property Carbon|null $cutover_at
  * @property Carbon|null $completed_at
  * @property-read AppInstance $appInstance
@@ -70,6 +71,7 @@ final class AppInstanceTransfer extends Model
         'failed_step',
         'error_code',
         'recovery_evidence',
+        'imported_environment_keys',
         'cutover_at',
         'completed_at',
     ];
@@ -110,6 +112,7 @@ final class AppInstanceTransfer extends Model
             'current_step' => AppInstanceTransferStep::class,
             'failed_step' => AppInstanceTransferStep::class,
             'recovery_evidence' => 'array',
+            'imported_environment_keys' => 'array',
             'cutover_at' => 'immutable_datetime',
             'completed_at' => 'immutable_datetime',
         ];

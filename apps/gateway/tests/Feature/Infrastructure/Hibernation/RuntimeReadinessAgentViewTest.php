@@ -25,7 +25,7 @@ final class CountingStatusRuntimeManager implements ProcessRuntimeManager
 
     public function converge(Process $process): void {}
 
-    public function start(Process $process): void {}
+    public function start(Process $process, bool $explicit = false): void {}
 
     public function stop(Process $process): void {}
 
