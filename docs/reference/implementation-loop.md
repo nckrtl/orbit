@@ -213,6 +213,10 @@ Waiting for every refresh before a new worktree or a merge would serialize deliv
 
 A clean bootstrap on main already ran every check, so its results can warm later worktrees without another run. Advancing the primary checkout to warm caches is a rejected alternative, because that checkout can run the Gateway, and its updates belong to deployment. A separate cache service is also rejected, because linked worktrees already share one store.
 
+### Clones find the store through a registration
+
+The Gateway provisions a task workspace as an independent clone, and it runs checks for every Project without knowing one repository's cache layout. So the repository's own scripts find the store through a link in the user's state directory. Setting `ORBIT_MAIN_CACHE_STORE` in the Gateway or in Project setup steps is a rejected alternative, because a fixed path breaks when the primary checkout moves. A global Git setting is also rejected, because it needs a manual step on every machine and goes stale without notice.
+
 ### CI caches stay separate
 
 Hosted CI keeps its caches in GitHub Actions cache, keyed by branch and inputs. Each run starts from a fresh runner, so it cannot read the repository store. The Rector cache is shared only in CI, because Rector keys its cache on absolute file paths, and CI always uses the same checkout path.
