@@ -30,7 +30,6 @@ final readonly class TaskReviewPacketBuilder
         $filesComplete = $diff['files_complete'];
         $diffAvailable = $diff['diff_available'];
         $handoff = $this->handoff($task);
-        $branch = $group->app->default_branch;
 
         return new TaskReviewPacket(
             groupBrief: $group->brief,
@@ -48,12 +47,12 @@ final readonly class TaskReviewPacketBuilder
             startCommit: $start,
             continued: $continued,
             opensPullRequest: $task->opensPullRequest(),
-            contract: TaskRunInstructions::contract(is_string($branch) ? $branch : null),
             diffFilesComplete: $filesComplete,
             diffAvailable: $diffAvailable,
             diffCounts: $diff['summary'],
             resolution: $continued ? '' : $this->pendingResolution($task),
             threadId: $threadId,
+            groupStartCommit: TaskReviewBase::groupStartCommit($group),
         )->render();
     }
 

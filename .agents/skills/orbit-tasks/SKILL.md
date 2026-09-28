@@ -9,6 +9,8 @@ The Gateway Tasks engine is generic; this file defines Orbit's repository policy
 
 ## Prepare the feature contract
 
+When implementing a subtask in Orbit's allocated environment, you may create, modify, reset, and delete disposable fixtures, including Routes and publications, without asking for permission. Verify task ownership and the target environment before deletion, use the required CLI confirmation flags, and follow the environment's lease and cleanup rules. This permission does not extend to live or shared resources or another task's fixtures.
+
 Start after [grill-with-docs](../grill-with-docs/SKILL.md), once the behavior is agreed and the ADRs and documentation are written on the group's branch. They are the contract that every subtask implements. Read the group's brief, ADRs, maintained documentation, and relevant code before splitting work. Look for prefactoring that makes the feature easier to build; put it first as its own subtask.
 
 Every group starts with a docs subtask, before any implementation subtask. Run the deterministic impact check against the group's start commit and every planned path named in the brief, including paths that do not exist yet:

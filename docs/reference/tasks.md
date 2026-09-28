@@ -16,7 +16,7 @@ covers:
 
 Tasks is an optional Gateway extension. It runs planned work with coding agents. A task group is one feature or bug fix, delivered as one pull request. Its Tasks run in order in one shared task workspace. A fresh implementer builds each Task, the Project's task check verifies the handoff, and a fresh reviewer approves it. Orbit commits and pushes each approved Task. After the last approval, Orbit opens the pull request and watches it until it merges.
 
-The engine is generic. Your agentic development environment (ADE) plans and steers the work. Orbit runs it. Each Project keeps its own task policy in its repository, as an `orbit-tasks` skill under `.agents/skills/`, and enforces it through its own task check. The Orbit repository keeps its policy in the [orbit-tasks skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) and the [contributor guide](/contributor-guide).
+The engine is generic. Your agentic development environment (ADE) plans and steers the work. Orbit runs it. Each Project keeps its own task policy in its repository, as an `orbit-tasks` skill under `.agents/skills/` and in its other instructions, and enforces it through its own task check. Agents read that policy from the repository, not from the shared prompts. The Orbit repository keeps its policy in the [orbit-tasks skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) and the [contributor guide](/contributor-guide).
 
 Agents use the Tasks tools of the [MCP server](/reference/mcp). The [`tasks` CLI family](/cli/tasks) runs the same operations from a terminal. There is no web UI to create or change a group. The API, the CLI, and the web app call a Task in a group a "subtask".
 
@@ -234,7 +234,9 @@ Prepare a group in Backlog before any agent runs. A Backlog group has no workspa
 3. Add the ordered Tasks with their deliverables, following the Project's task policy.
 4. Move the group to `todo` with `tasks:update`.
 
-The Gateway does not check the branch contents. When `origin/task-{group id}` exists, the workspace checks it out. Otherwise the workspace starts a new branch from the default branch. The implementer and reviewer prompts name the documentation and decision records that this branch changes against the default branch as the feature's contract.
+The Gateway does not check the branch contents. When `origin/task-{group id}` exists, the workspace checks it out. Otherwise the workspace starts a new branch from the default branch. The implementer and reviewer prompts are project-neutral. They do not add an ADR contract sentence or Orbit-specific policy such as Incus or lease instructions. A prompt names the Project task-check command only when one is configured.
+
+When the workspace starting commit is 40 or 64 hexadecimal characters, both prompts add `The group started at <sha>.` and `git diff --stat <sha>..HEAD`. The review packet places those lines after its stat and diff commands. The lines name no Project, branch, or policy. Any other value is left out.
 
 ## Scheduler
 
@@ -279,6 +281,8 @@ A Task starts in this order:
 1. Orbit records its start commit.
 2. When no implementer has started in the group, Orbit runs the [baseline check](#baseline-check). The first implementer starts only after it passes.
 3. Orbit reserves an [agent thread](#agent-threads) row, writes the turn file, and starts the implementer with its opening prompt.
+
+The opening prompt tells the implementer to finish the assigned work on its own. It may change disposable fixtures in its allocated environment, and it resolves routine test prerequisites. It does not name Orbit lease, Route, or publication rules. It ends with `Follow this repository's task instructions.`
 
 When the implementer cannot start, the Task and the group become `failed`, and the Gateway logs which spawn failed. A group created in `todo` can therefore answer create as `failed`.
 
@@ -421,7 +425,7 @@ The Gateway installs `.git/orbit/check` and starts it over SSH as a detached pro
 | `lost` | The process was killed from outside and left no result. The check runs again once. A second loss asks for assistance. |
 | `cancelled` | An operator cancelled it. The reminder says so. |
 
-The scheduler identifies the process by its id and its start time, so a reused process id does not count. Without a task check, a handoff runs no command, but still compares the tree and verifies the deliverables. The implementer's instructions and the pull request description name the configured command.
+The scheduler identifies the process by its id and its start time, so a reused process id does not count. Without a task check, a handoff runs no command, but still compares the tree and verifies the deliverables. When a task check is configured, the implementer's instructions and the pull request description name that command. With no task check, both omit it.
 
 `tasks:check:cancel` stops a running check. A Task without one answers HTTP 409 `tasks.check_not_running`. When Orbit marks the check cancelled but cannot stop its process, the call answers HTTP 502 `tasks.check_unreachable`. Each run is stored with its receipt, kind, status, process, HEAD and trees, times, exit code, changed paths, and the last 16 KiB of output.
 
@@ -450,7 +454,7 @@ The opening turn is a review packet of at most 16,000 characters, about 4,000 to
 
 | Part | Cap | When it does not fit |
 | --- | --- | --- |
-| Retrieval commands | 1,000, reserved first | Never cut |
+| Retrieval block | 1,000, reserved first | Never cut |
 | Held resolution | 2,000 | The end is cut. `tasks-comment-list` returns it |
 | Group brief | 2,000 | The end is cut. `tasks-show` returns it |
 | Task brief | 2,000 | The end is cut. `tasks-show` returns it |
@@ -460,7 +464,7 @@ The opening turn is a review packet of at most 16,000 characters, about 4,000 to
 | Handoff result | 2,000 | One line per command the check ran, with the command cut to 160 characters. `.git/orbit/check.log` holds the rest |
 | Diff body | The rest, and at most 16,384 bytes | Cut from the end |
 
-Dropped lines leave one line that says how many were omitted. The diff and the stat replace bytes that are not valid UTF-8. The packet names the feature contract: the documentation and decision records that the branch changes against the default branch. A continued turn keeps the review rules, the Task brief, the new diff stat, the new handoff result, the diff body, the retrieval commands, and the closing instructions. It leaves out the group brief, the deliverables, the earlier approvals, the held resolution, and the contract line.
+Dropped lines leave one line that says how many were omitted. The diff and the stat replace bytes that are not valid UTF-8. The packet does not name a feature contract. A continued turn keeps the review rules, the Task brief, the new diff stat, the new handoff result, the diff body, the retrieval block, and the closing instructions. It leaves out the group brief, the deliverables, the earlier approvals, and the held resolution.
 
 The retrieval commands print what the caps cut, including untracked files, without updating the index. The packet puts the Task's start commit in place of `START`:
 
@@ -472,9 +476,11 @@ git diff --stat START; git ls-files --others --exclude-standard -z | while IFS= 
 git diff START; git ls-files --others --exclude-standard -z | while IFS= read -r -d '' path; do git diff --no-index -- /dev/null "$path" || true; done
 ```
 
-The reviewer prompt says the turn is read-only. It says not to run the task check or the deliverable tests and commands again, because the handoff result already reports them. It says to confirm framework and library usage against the documentation for the Project's versions.
+When the workspace starting commit is 40 or 64 hexadecimal characters, the retrieval block adds `The group started at <sha>.` and `git diff --stat <sha>..HEAD` after those commands. A continued turn includes them too. The lines name no Project, branch, or policy.
 
-`php artisan tasks:render-prompt {role}` renders the implementer prompt, the opening review packet (`reviewer`), or a continued review turn (`reviewer-continue`) from one JSON object on standard input. It prints `{"role", "prompt", "source_commit"}`, where `source_commit` is the Gateway's `APP_VERSION`, or `dev`. It uses the production prompt code and reads no database, workspace, or network, so an offline evaluation can render frozen cases. It rejects unknown input fields.
+The reviewer prompt says the turn is read-only. It says not to re-run the Project task check or the deliverable tests and commands the handoff already passed. When a task check is configured, it names that command, and it cuts a command past 160 characters. It says to run another command only for evidence the handoff result does not give, and to say why in the summary. It says to confirm framework and library usage against the documentation for the Project's versions. A continued turn repeats these rules. The shared prompt adds no Project policy.
+
+`php artisan tasks:render-prompt {role}` renders the implementer prompt, the opening review packet (`reviewer`), or a continued review turn (`reviewer-continue`) from one JSON object on standard input. It prints `{"role", "prompt", "source_commit"}`, where `source_commit` is the Gateway's `APP_VERSION`, or `dev`. It uses the production prompt code and reads no database, workspace, or network, so an offline evaluation can render frozen cases. It rejects unknown input fields. `group.start_commit` is the workspace starting commit, or null when none was recorded. The prompts name it only when it is 40 or 64 hexadecimal characters.
 
 ### Reviewer outcomes
 
@@ -692,6 +698,8 @@ These reasons explain the design. Check them before you propose a change.
 ### An optional, generic extension
 
 Tasks is an extension, so an operator can switch it off without a Gateway downgrade. The engine knows groups, Tasks, deliverables, one task check, and a lifecycle. The goal is that each Project's own policy and task check decide how it plans and verifies work. The engine still holds some [Project-specific behavior](#project-specific-behavior-in-the-engine), such as a `composer check` deliverable on every fixup, so a Project without Composer does not yet fit without changes. The ADE plans, because planning needs the conversation with you. A web form to create groups would be a second path beside MCP and the API.
+
+Shared prompts stay free of Project policy. They do not name a feature contract or an Orbit lease rule. The repository's instructions and `orbit-tasks` skill carry that policy.
 
 ### Backlog before Todo
 
