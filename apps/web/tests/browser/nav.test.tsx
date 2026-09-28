@@ -1,5 +1,6 @@
 import { afterEach, expect, it } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
+import { queryClient } from "../../src/api/queryClient";
 import { openApp } from "./app";
 
 afterEach(async () => {
@@ -20,6 +21,24 @@ function desktopNav(): HTMLElement {
 
     return nav;
 }
+
+it("hides disabled extensions from both desktop and phone navigation", async () => {
+    await page.viewport(390, 800);
+    const app = await openApp("/", { tasks: false });
+    await expect
+        .poll(() => queryClient.getQueryData(["extensions"]))
+        .toEqual({
+            tasks: false,
+            proxycli: false,
+        });
+    expect(desktopNav().textContent).not.toContain("Tasks");
+    await page.getByTestId("nav-menu").click();
+    const menu = document.querySelector("[data-mobile-menu]");
+    expect(menu?.textContent).not.toContain("Tasks");
+    expect(menu?.textContent).not.toContain("Quota");
+    await page.getByTestId("nav-close").click();
+    await expect.poll(app.url).toBe("/");
+});
 
 it("follows one mapped nav selector from the phone menu", async () => {
     await page.viewport(390, 800);

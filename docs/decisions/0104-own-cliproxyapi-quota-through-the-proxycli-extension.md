@@ -12,7 +12,7 @@ Orbit treats CLIProxyAPI quota collection as an optional extension named `proxyc
 
 Proposed.
 
-This decision extends [ADR 0069](/reference/app-processes-and-schedules#owners) for the collector Process, [ADR 0070](/reference/database-role) for Valkey placement, and [ADR 0080](/reference/routes#custom-proxy-routes) for the reserved private hostname shape. It does not add a Node role. [ADR 0109](/decisions/0109-publish-the-proxycli-collector-on-a-subdomain) amends the reserved hostname to `collector.proxycli.orbit` and leaves apex `proxycli.orbit` free for a management Route. [ADR 0150](/decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop) amends the disable path: `extension:disable proxycli` changes only the local gate, and `proxycli:disable` needs explicit consent.
+This decision extends [Processes and schedules](/reference/app-processes-and-schedules#owners) for the collector Process, [Database role](/reference/database-role) for Valkey placement, and [Routes](/reference/routes#custom-proxy-routes) for the reserved private hostname shape. It does not add a Node role. [ADR 0109](/decisions/0109-publish-the-proxycli-collector-on-a-subdomain) amends the reserved hostname to `collector.proxycli.orbit` and leaves apex `proxycli.orbit` free for a management Route. [ADR 0179](/cli/extension#why-it-works-this-way) supersedes [ADR 0150](/cli/extension#why-it-works-this-way): the Gateway owns the `proxycli` switch, `proxycli:setup` and `proxycli:teardown` own fleet setup and teardown, and disabling the extension does not tear down an existing collector.
 
 ## Context
 
@@ -26,7 +26,7 @@ Quota collection is optional fleet infrastructure, not a Node capability, and no
 
 ## Decision
 
-- Add `proxycli` as a fleet extension that the Gateway owns. Local CLI `extension:enable proxycli` reveals the `proxycli:*` family. `proxycli:enable` deploys the fleet feature. `proxycli:disable` and `extension:disable proxycli` stop the collector, withdraw publication, and hide the web UI.
+- Add `proxycli` as a fleet extension that the Gateway owns. `extension:enable proxycli` reveals the `proxycli:*` family, MCP tools, API routes, and web navigation for every client. `proxycli:setup` deploys the fleet feature. `proxycli:teardown` stops it; `extension:disable proxycli` hides and refuses the extension without tearing down an existing setup.
 - Enable requires an active Linux Node, a CLIProxyAPI Management API URL and key, and a registered Redis Database connection that points at the shared Valkey. If that connection names a fleet Node, the Node must hold an active `database` role. Enable fails closed when the connection is missing, is not Redis, or the named Node lacks `database`.
 - Enable creates one Node-targeted systemd Process named `proxycli` on the chosen Node. The Process binds loopback, runs `/usr/bin/python3` plus the Orbit-written collector, and is the only upstream poller. Enable persists `PROXYCLI_*` on the Process specification; [ADR 0108](/reference/app-processes-and-schedules#environment-of-a-systemd-process) projects that map into the unit. The collector writes raw account snapshots, compiled pools, per-target backoff, and a distributed lock into the shared Valkey. Disable stops and removes that Process.
 - The collector reads Valkey through one RESP stream so a large snapshot bulk reply returns. CodexBar `GET /v1/quota-stats` uses that snapshot. The Gateway list and status actions use the PHP Valkey client and do not share that Python read path.

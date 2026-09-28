@@ -30,7 +30,7 @@ These are the terms every part of Orbit shares. Each domain page defines the ter
 - **Doctor**: The check that compares the state the Gateway expects with each Node's actual state. It reports every difference and changes nothing. See [Doctor](/cli/doctor).
 - **Activity**: The Gateway's record of requests. It keeps every change and every failed request, plus a sample of successful reads. See [Activity](/cli/activity).
 - **Node agent**: The program on every Node that reports presence and Process state. It never changes a Node. See [Node agent](/reference/node-agent).
-- **Extension**: An optional Gateway feature that you enable explicitly. For example, `tasks:enable` turns on Tasks.
+- **Extension**: An optional Gateway feature with one switch shared by the CLI, MCP, API, and web app. For example, `extension:enable tasks` turns on Tasks. See [ADR 0179](/cli/extension#why-it-works-this-way).
 
 ## Tasks
 

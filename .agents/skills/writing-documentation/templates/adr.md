@@ -4,7 +4,9 @@
 
 ## Status
 
-Proposed.
+In progress.
+
+Principle: <Name the mission principle this decision serves, with a link to docs/mission.md#principles. If the decision needs an exception to a principle, name the principle and state the exception and its reason here.>
 
 ## Context
 
@@ -12,7 +14,7 @@ Proposed.
 
 ## Decision
 
-<State the chosen behavior and who owns it. Explain any decision this extends or supersedes.>
+<State the chosen behavior and who owns it. Name any decision this changes.>
 
 ## Rejected alternatives
 
@@ -26,6 +28,6 @@ Proposed.
 ## Affects
 
 - Components: <apps/cli, apps/docs, apps/e2e, apps/gateway, apps/web, packages/php-sdk, or none>
-- ADRs: <Links to decisions this extends or supersedes, or none>
-- Detail: <Documentation page path, or none>
+- ADRs: <Links to in-progress decisions this changes, or none>
+- Detail: <The documentation page section that receives this decision when it is built>
 - Verify: <Tests or commands that verify the decision>

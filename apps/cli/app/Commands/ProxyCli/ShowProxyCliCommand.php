@@ -24,10 +24,6 @@ final class ShowProxyCliCommand extends ProxyCliCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $factory): int
     {
-        if (($blocked = $this->guardExtension()) !== null) {
-            return $blocked;
-        }
-
         $provider = $this->stringArgument('provider', 'Provider slug', 'proxycli.provider_required');
 
         if ($provider === null) {

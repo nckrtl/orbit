@@ -7,15 +7,6 @@ use App\Domain\Tasks\TaskDeliverableEvidence;
 use App\Domain\Tasks\TaskReviewPacket;
 use App\Domain\Tasks\TaskRunInstructions;
 
-it('names the feature contract on the opening packet and leaves it off a continued turn', function (): void {
-    $contract = 'The ADRs and documentation that this branch changes against `origin/develop` are the feature\'s contract.';
-    $opening = review_packet(['contract' => $contract]);
-    $continued = review_packet(['contract' => $contract, 'continued' => true]);
-
-    expect($opening)->toContain($contract)
-        ->and($continued)->not->toContain('feature\'s contract');
-});
-
 it('keeps the full diff counts when the path list was cut and does not show a partial diff as complete', function (): void {
     $packet = review_packet([
         'diffFiles' => [['path' => 'only-the-tail.php', 'insertions' => 1, 'deletions' => 0]],
@@ -327,14 +318,14 @@ it('tells the packet reviewer not to re-run passed checks and that the turn is r
     $other = review_packet(['taskCheck' => 'vp run check']);
     $none = review_packet(['taskCheck' => null, 'handoffExitCode' => null]);
 
-    expect($composer)->toContain('Do not re-run the Project task check or the deliverable tests and commands the handoff already passed. That includes `composer check`.')
+    expect($composer)->toContain('Do not re-run the Project task check or the deliverable tests and commands the handoff already passed. The Project task check is `composer check`.')
         ->and($composer)->toContain('The implementer works with a minimal toolset and has no web access.')
         ->and($composer)->toContain('current documentation for the versions this Project uses.')
         ->and($composer)->toContain('This review is read-only. Do not create, edit, reset, or delete workspace files')
         ->and($composer)->toContain('--outcome=approved')
         ->and($composer)->toContain('--outcome=changes_requested')
         ->and($other)->toContain('The Project task check is `vp run check`.')
-        ->and($other)->not->toContain('That includes `composer check`.')
+        ->and($other)->not->toContain('The Project task check is `composer check`.')
         ->and($none)->not->toContain('`composer check`')
         ->and($none)->toContain('Do not re-run the Project task check');
 });
@@ -363,6 +354,7 @@ it('keeps a review packet within 16000 characters when the task check and every 
         $files[] = ['path' => sprintf('src/file-%02d-%s.php', $index, str_repeat('f', 80)), 'insertions' => 20, 'deletions' => 5];
     }
     $start = str_repeat('a', 40);
+    $groupStart = str_repeat('b', 64);
     $packet = review_packet([
         'groupBrief' => str_repeat('g', 8_000),
         'subtaskTitle' => str_repeat('T', 160),
@@ -374,12 +366,15 @@ it('keeps a review packet within 16000 characters when the task check and every 
         'taskCheck' => $taskCheck,
         'evidence' => TaskDeliverableEvidence::fromArray(['diff' => [], 'tests' => [], 'commands' => $commands]),
         'startCommit' => $start,
+        'groupStartCommit' => $groupStart,
         'opensPullRequest' => true,
     ]);
     $shown = mb_substr($taskCheck, 0, TaskReviewPacket::CommandLimit);
     $retrieval = <<<BASH
         git diff --stat {$start}; git ls-files --others --exclude-standard -z | while IFS= read -r -d '' path; do git diff --no-index --stat -- /dev/null "\$path" || true; done
         git diff {$start}; git ls-files --others --exclude-standard -z | while IFS= read -r -d '' path; do git diff --no-index -- /dev/null "\$path" || true; done
+        The group started at {$groupStart}.
+        git diff --stat {$groupStart}..HEAD
         BASH;
 
     expect(mb_strlen($packet))->toBeLessThanOrEqual(TaskReviewPacket::Limit)
@@ -400,18 +395,52 @@ it('keeps a review packet within 16000 characters when the task check and every 
 
 it('keeps the packet retrieval commands and closing instructions when earlier text would pass 16000 characters', function (): void {
     $start = str_repeat('a', 40);
+    $groupStart = str_repeat('c', 40);
     $packet = review_packet([
         'subtaskTitle' => str_repeat('T', 20_000),
         'deliverables' => [],
         'taskCheck' => null,
         'handoffExitCode' => null,
         'startCommit' => $start,
+        'groupStartCommit' => $groupStart,
         'opensPullRequest' => true,
     ]);
 
     expect(mb_strlen($packet))->toBeLessThanOrEqual(TaskReviewPacket::Limit)
         ->and($packet)->toEndWith(TaskRunInstructions::reviewer(final: true))
-        ->and($packet)->toContain('git diff '.$start.'; git ls-files --others --exclude-standard -z | while IFS= read -r -d \'\' path; do git diff --no-index -- /dev/null "$path" || true; done');
+        ->and($packet)->toContain('git diff '.$start.'; git ls-files --others --exclude-standard -z | while IFS= read -r -d \'\' path; do git diff --no-index -- /dev/null "$path" || true; done')
+        ->and($packet)->toContain("The group started at {$groupStart}.\ngit diff --stat {$groupStart}..HEAD");
+});
+
+it('names the group start commit beside the subtask stat and diff commands', function (): void {
+    $subtask = str_repeat('a', 40);
+    $group = str_repeat('b', 40);
+    $retrieval = packet_section(review_packet([
+        'startCommit' => $subtask,
+        'groupStartCommit' => $group,
+        'continued' => true,
+    ]), 'Retrieval');
+
+    expect($retrieval)->toBe(implode("\n", [
+        'git diff --stat '.$subtask.'; git ls-files --others --exclude-standard -z | while IFS= read -r -d \'\' path; do git diff --no-index --stat -- /dev/null "$path" || true; done',
+        'git diff '.$subtask.'; git ls-files --others --exclude-standard -z | while IFS= read -r -d \'\' path; do git diff --no-index -- /dev/null "$path" || true; done',
+        'The group started at '.$group.'.',
+        'git diff --stat '.$group.'..HEAD',
+    ]))
+        ->and($retrieval)->not->toContain('Orbit')
+        ->and($retrieval)->not->toContain('ADR')
+        ->and($retrieval)->not->toContain('contract')
+        ->and($retrieval)->not->toContain('origin/');
+});
+
+it('omits the group start lines when that commit is missing or not a recorded sha', function (): void {
+    $missing = packet_section(review_packet(['groupStartCommit' => '']), 'Retrieval');
+    $short = packet_section(review_packet(['groupStartCommit' => 'abc1234']), 'Retrieval');
+
+    expect($missing)->not->toContain('The group started at')
+        ->and($missing)->not->toContain('..HEAD')
+        ->and($short)->not->toContain('The group started at')
+        ->and($short)->toContain('git diff --stat '.str_repeat('a', 40));
 });
 
 it('turns invalid UTF-8 in a diff and its stat into a packet the driver can encode', function (): void {
@@ -474,9 +503,9 @@ function review_packet(array $overrides = []): string
         'handoffExitCode' => 0,
         'evidence' => handoff_evidence(),
         'startCommit' => str_repeat('a', 40),
+        'groupStartCommit' => '',
         'continued' => false,
         'opensPullRequest' => false,
-        'contract' => '',
         'diffFilesComplete' => true,
         'diffAvailable' => true,
         'diffCounts' => null,
@@ -499,9 +528,9 @@ function review_packet(array $overrides = []): string
         handoffExitCode: $values['handoffExitCode'],
         evidence: $values['evidence'],
         startCommit: $values['startCommit'],
+        groupStartCommit: $values['groupStartCommit'],
         continued: $values['continued'],
         opensPullRequest: $values['opensPullRequest'],
-        contract: $values['contract'],
         diffFilesComplete: $values['diffFilesComplete'],
         diffAvailable: $values['diffAvailable'],
         diffCounts: $values['diffCounts'],

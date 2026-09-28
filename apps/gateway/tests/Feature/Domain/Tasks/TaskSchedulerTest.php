@@ -1308,7 +1308,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
         ->and($driver->calls[0]['operation'])->toBe('create')
         ->and($opening)->toContain('Review subtask #'.$first->id.': First review')
         ->and($opening)->toContain('Do not re-run the Project task check or the deliverable tests and commands the handoff already passed.')
-        ->and($opening)->toContain('That includes `composer check`.')
+        ->and($opening)->toContain('The Project task check is `composer check`.')
         ->and($opening)->toContain('Group brief')
         ->and($opening)->toContain($group->brief)
         ->and($opening)->toContain('Review the scheduler.')

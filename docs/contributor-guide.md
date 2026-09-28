@@ -30,9 +30,9 @@ Read the [mission](/mission), the [architecture](/architecture), and the [concep
 
 Find the pages for a component with `composer docs-context -- --component=apps/cli`. `--concept=Cluster` selects pages by concept. The command returns an ordered reading list. It does not decide what the feature must do.
 
-When the feature makes a significant architecture decision, draft an architecture decision record (ADR) on the same branch. A decision is significant when it sets a contract between components, an architecture boundary, a security or ownership model, or a choice that is costly to reverse. Explain the alternatives and the consequences, and name any record it extends, amends, or supersedes. Implementation details stay in code and tests.
+When the feature makes a significant architecture decision, draft an architecture decision record (ADR) on the same branch. A decision is significant when it sets a contract between components, an architecture boundary, a security or ownership model, or a choice that is costly to reverse. Explain the alternatives and the consequences, and name the mission principle it serves. Implementation details stay in code and tests.
 
-Mark the draft `Proposed.` Reviewers assess it with the implementation and the documentation. The maintainer accepts it by approving and merging the pull request. The [ADR guide](https://github.com/nckrtl/orbit/blob/main/docs/decisions/README.md) covers numbering, format, and status.
+Mark the draft `In progress.` Reviewers assess it with the implementation and the documentation. The pull request that completes the decision absorbs it into the owning page and retires the record, so the documentation stays the single source of truth. The [ADR guide](https://github.com/nckrtl/orbit/blob/main/docs/decisions/README.md) covers the steps, numbering, and format.
 
 ## 2. Write the documentation
 
@@ -50,7 +50,9 @@ bin/docs-impact --base <start-commit> --paths <planned-path>
 
 The start commit is the merge base with `origin/main`; repeat `--paths` for every planned path in the brief, including paths that do not exist yet. Every Orbit group starts with this docs subtask, as required by the [Orbit Tasks policy](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md). A `docs_required` report means the subtask updates each impacted page or runs its named generator. A `no_docs_change` report is the fast path: hand off the complete JSON report as evidence. The reviewer confirms the planned paths and report are complete before implementation starts. The report, not an agent's opinion, is the evidence.
 
-At every subtask handoff, Orbit's own task check runs the impact check against the candidate diff from the group's start commit. An impacted page missing from that diff fails with the list of pages unless the candidate adds a matching `page: reason` line to `docs/.docs-unaffected` and the reviewer confirms it. Required generator checks still apply. This policy runs through Orbit's `composer check` and `bin/review-check`; the generic Gateway task engine does not know about docs-first or documentation conventions. Jev is out of scope for this version.
+At every subtask handoff, Orbit's own task check runs the impact check against the candidate diff from the group's start commit. An impacted page missing from that diff fails with the list of pages.
+
+A reviewer-confirmed waiver needs a matching `page: reason` line in `docs/.docs-unaffected` that the branch under check adds against its base commit. Lines already in the base do not count, even when they match an impacted page, so lines left on `main` are inert. Required generator checks still apply. This policy runs through Orbit's `composer check` and `bin/review-check`; the generic Gateway task engine does not know about docs-first or documentation conventions. Jev is out of scope for this version.
 
 Run from the repository root:
 
@@ -63,11 +65,11 @@ Commit `docs/generated/context.json` when `docs-build` changes it. For Mintlify 
 
 ## 3. Implement and verify
 
-Build the feature and its tests against the documented behavior. Keep the proposed ADRs and the documentation in line with what the implementation delivers. Explain any change of direction in the pull request.
+Build the feature and its tests against the documented behavior. Keep the in-progress ADRs and the documentation in line with what the implementation delivers. Explain any change of direction in the pull request.
 
 `composer test:affected` selects tests with Pest test-impact analysis (TIA), which needs PCOV or Xdebug. Without a coverage driver, TIA is skipped and every test runs. On macOS, install PCOV with `brew install shivammathur/extensions/pcov@8.5`. Every project sets Composer's `process-timeout` to `0`, so Composer never stops a long test or check run.
 
-CI uses different test selection for pull requests and pushes to `main`. Pull requests run the TIA-selected tests plus every architecture test, so TIA cannot omit architecture checks when a new file has no coverage links yet. A push to `main` runs the full test suite without TIA and refreshes the TIA graph for later pull-request selections. Orbit's task gate, `bin/review-check`, also runs every architecture test in addition to its affected-test checks.
+CI uses different test selection for pull requests and pushes to `main`. Pull requests run the TIA-selected tests plus every architecture test, so TIA cannot omit architecture checks when a new file has no coverage links yet. A push to `main` runs the full test suite without TIA and refreshes the TIA graph for later pull-request selections. Orbit's task gate, `bin/review-check`, also runs the architecture tests of each project that the candidate changes. The [feature delivery reference](/reference/implementation-loop#the-candidate-gate) lists its steps.
 
 The `test` and `test:affected` scripts in each PHP project, and root `bin/test`, pass `--colors=never` to Pest. `bin/pest-plain` strips any ANSI control sequences that remain. The output has no ANSI escape codes and still ends with the `Tests:` summary. The scripts do not pass `--no-progress`, because parallel Pest then omits that summary. Keep the flag on the scripts. `phpunit.xml` is a TIA input, and a change to it rebuilds the test impact graph.
 
@@ -86,7 +88,7 @@ Each test process copies `apps/gateway` to the host with rsync once and reuses t
 
 Add regression tests for behavior changes and their important failure modes. Confirm that the tests that exercise the new behavior ran.
 
-GitHub CI runs quality checks and affected tests for all five projects, including documentation lint. Root `composer check` runs `bin/review-check`. It runs `composer validate --strict`, `composer check`, and `composer test:affected` in each of the five projects. It checks the working tree as it is, uncommitted changes included, and writes a report under `<git-common-dir>/orbit-checks/<HEAD>/`.
+GitHub CI runs quality checks and affected tests for all five projects, including documentation lint. Root `composer check` runs `bin/review-check`. It runs `composer validate --strict`, `composer check`, and `composer test:affected` in each of the five projects. It checks the working tree as it is, uncommitted changes included, and writes a report under `<git-common-dir>/orbit-checks/<HEAD>/`. For changed paths it also runs the web and Pi server CI profiles, every changed Pest file that the affected selection missed, and a PHP finding pack. [ADR 0174](/decisions/0174-match-the-task-gate-to-ci-and-repeated-findings) records these gate rules. Orbit's Project task check runs this gate at every task handoff.
 
 ## Static analysis
 
@@ -139,7 +141,7 @@ These reasons explain the process. Check them before you propose a change.
 
 ### Decisions ship with their feature
 
-A pull request carries the proposed ADR, the implementation, and the documentation together. The maintainer then reviews a decision with the code that shows its consequences. Merging ADRs before their implementation is a rejected alternative, because it separates the decision from the evidence. A required plan in every pull request is also rejected, because the implementation, the documentation, and the decisions already describe the feature.
+A pull request carries the ADR, the implementation, and the documentation together, and absorbs the ADR when it completes the decision. The maintainer then reviews a decision with the code that shows its consequences. Merging ADRs before their implementation is a rejected alternative, because it separates the decision from the evidence. A required plan in every pull request is also rejected, because the implementation, the documentation, and the decisions already describe the feature.
 
 ### Review reproduces on a discovery topology
 
@@ -153,7 +155,11 @@ All maintained documentation lives under the root `docs/` directory, for humans 
 
 ### Checks that need no network
 
-`composer docs-lint` checks structure, links, ADR format, blocked wording, and the freshness of the committed context index. It reads the repository only, with no network, external service, or Incus topology. Live behavior is proved on Incus, separately. A lint rule earns its place only when it protects a current invariant and has tests for a valid and an invalid case.
+`composer docs-lint` checks structure, links, ADR format, blocked wording, and the freshness of the committed context index. It also enforces the ADR lifecycle. A number in the retirement table on the [decisions overview](/decisions/overview) must have no matching file in `docs/decisions`. Matching uses the full slug recorded in `apps/docs/config/adr-retired-slugs.php`, so the Tasks 0114 slug clash is allowed. Every row in that table must have a redirect from that exact ADR path.
+
+Every ADR numbered 0180 or higher must say `In progress.` in its Status section and include a `Principle:` line. Older ADRs still in Records with other statuses are listed in a committed allowlist that can only shrink.
+
+The lint command reads the repository only, with no network, external service, or Incus topology. Live behavior is proved on Incus, separately. A lint rule earns its place only when it protects a current invariant and has tests for a valid and an invalid case.
 
 ### A committed context index
 

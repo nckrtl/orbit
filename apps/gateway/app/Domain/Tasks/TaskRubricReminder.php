@@ -18,7 +18,7 @@ final readonly class TaskRubricReminder
      * @param  list<TaskDeliverable>  $deliverables
      * @param  string|null  $check  the Project task check command, or null when the Project has none
      */
-    public static function compose(TaskThreadRole $role, array $failures, bool $final = false, array $deliverables = [], ?string $check = 'composer check', ?int $threadId = null): string
+    public static function compose(TaskThreadRole $role, array $failures, bool $final = false, array $deliverables = [], ?string $check = null, ?int $threadId = null): string
     {
         $sentences = array_values(array_filter(
             array_map(static fn (TaskRubricItem $item): string => $item->reminder, $failures),

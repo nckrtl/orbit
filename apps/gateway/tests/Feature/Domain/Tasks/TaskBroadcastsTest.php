@@ -213,8 +213,8 @@ describe('task broadcasts', function (): void {
         ]));
         $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
 
-        $this->postJson('/api/v1/tasks/enable')->assertOk();
-        $this->postJson('/api/v1/tasks/disable')->assertOk();
+        $this->postJson('/api/v1/extensions/tasks/enable')->assertOk();
+        $this->postJson('/api/v1/extensions/tasks/disable')->assertOk();
 
         $events = live_broadcasts(RecordEventType::TasksUpdated);
         expect(array_map(static fn (RecordBroadcast $event): array => $event->data, $events))->toBe([['enabled' => true], ['enabled' => false]]);

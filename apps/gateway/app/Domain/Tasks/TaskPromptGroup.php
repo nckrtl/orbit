@@ -17,5 +17,6 @@ final readonly class TaskPromptGroup
         public int $projectId,
         public ?string $defaultBranch,
         public ?string $taskCheck,
+        public ?string $startCommit,
     ) {}
 }
