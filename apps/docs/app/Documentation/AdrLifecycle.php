@@ -81,24 +81,21 @@ final readonly class AdrLifecycle
                 $findings[] = $this->error($allowlistPath, "Legacy ADR allowlist cannot add {$number}.");
             }
         }
-        // Walk one ancestry chain, not git log's interleaved commits from sibling branches.
-        // Only a number still allowed today can violate the ratchet; a later correction clears it.
-        $history = $this->git(['log', '--first-parent', '--format=%H', 'HEAD', '--', $allowlistPath]);
-        $previous = $allowed;
-        $added = [];
+        // Check every reachable committed allowance, including merged branches. Log order is
+        // not ancestry order: compare each historical set with today, never with its neighbor.
+        // A later correction passes once the number is absent from today's allowance.
+        $history = $this->git(['log', '--full-history', '--format=%H', 'HEAD', '--', $allowlistPath]);
+        $restored = [];
         foreach (explode("\n", trim($history ?? '')) as $commit) {
             if ($commit === '') {
                 continue;
             }
             $contents = $this->git(['show', $commit.':'.$allowlistPath]);
-            if ($contents === null) {
-                continue;
+            if ($contents !== null) {
+                array_push($restored, ...array_diff($allowed, $this->parseAllowlist($contents)));
             }
-            $older = $this->parseAllowlist($contents);
-            array_push($added, ...array_diff($previous, $older));
-            $previous = $older;
         }
-        foreach (array_unique(array_intersect($allowed, $added)) as $number) {
+        foreach (array_unique($restored) as $number) {
             $findings[] = $this->error($allowlistPath, "Legacy ADR allowlist cannot add {$number}.");
         }
 

@@ -109,6 +109,27 @@ it('adr lifecycle accepts independent allowlist removals merged from sibling bra
     );
 });
 
+it('adr lifecycle rejects a committed side-branch restoration merged into an unchanged allowance', function (): void {
+    $root = adrLifecycleFixture();
+    exec('git -C '.escapeshellarg($root).' checkout -q -b side');
+    file_put_contents($root.'/apps/docs/config/adr-legacy-allowlist.php', "<?php return [];\n");
+    exec('git -C '.escapeshellarg($root).' add .');
+    exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm shrink');
+    file_put_contents($root.'/apps/docs/config/adr-legacy-allowlist.php', "<?php return ['0114'];\n");
+    exec('git -C '.escapeshellarg($root).' add .');
+    exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm restore');
+    exec('git -C '.escapeshellarg($root).' checkout -q main');
+    exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test merge -q --no-ff -m merged side > /dev/null');
+    exec('git -C '.escapeshellarg($root).' rev-list --parents -n 1 HEAD', $parents);
+    expect(explode(' ', $parents[0]))->toHaveCount(3);
+
+    expectAdrLifecycleLintFailure($root, 'Legacy ADR allowlist cannot add 0114.');
+    file_put_contents($root.'/apps/docs/config/adr-legacy-allowlist.php', "<?php return [];\n");
+    exec('git -C '.escapeshellarg($root).' add .');
+    exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm corrected');
+    expect(collect(new AdrLifecycle($root)->findings())->pluck('message'))->not->toContain('Legacy ADR allowlist cannot add 0114.');
+});
+
 it('adr lifecycle refuses to restore an entry removed from the committed allowlist', function (): void {
     $root = adrLifecycleFixture();
     file_put_contents($root.'/apps/docs/config/adr-legacy-allowlist.php', "<?php return [];\n");
