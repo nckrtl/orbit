@@ -136,4 +136,5 @@ return [
     '0159' => '0159-push-activity-changes-to-the-web-app',
     '0161' => '0161-set-a-stale-caddyfile-aside-when-caddy-is-absent',
     '0162' => '0162-verify-web-ui-changes-with-bin-web-verify',
+    '0180' => '0180-absorb-built-decisions-into-the-docs',
 ];

@@ -591,8 +591,7 @@
               "decisions/0173-record-and-label-jev-decisions",
               "decisions/0174-match-the-task-gate-to-ci-and-repeated-findings",
               "decisions/0175-docs-impact-check-in-orbit-repo",
-              "decisions/0178-run-project-agnostic-tasks-without-a-planner",
-              "decisions/0180-absorb-built-decisions-into-the-docs"
+              "decisions/0178-run-project-agnostic-tasks-without-a-planner"
             ]
           }
         ]
@@ -1178,6 +1177,10 @@
     {
       "source": "/decisions/0147-retire-orbit-top",
       "destination": "/reference/web-app#one-live-fleet-view"
+    },
+    {
+      "source": "/decisions/0180-absorb-built-decisions-into-the-docs",
+      "destination": "/decisions/overview#why-it-works-this-way"
     }
   ]
 }
