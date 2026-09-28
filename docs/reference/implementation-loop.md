@@ -22,7 +22,7 @@ The review records enough evidence for another maintainer to assess the result.
 | Revision | The exact pull request head and the source revision that ran on the machines |
 | Environment | Node roles, operating system, configuration, and resource identity |
 | Acceptance | Actions, expected and observed outcomes, exit codes, and state changes |
-| CI | Passing required checks for the reviewed change |
+| CI | A passing `Required checks` job for the reviewed change |
 | Limitations | Unverified behavior, failed checks, and open findings |
 | Verdict | Whether the complete feature is ready for maintainer approval |
 
@@ -45,11 +45,12 @@ GitHub CI runs on every pull request, on every push to `main`, and on manual dis
 | One job per Composer project: CLI, Docs, Gateway, E2E, PHP SDK | `composer validate --strict`, `composer check`, the classification-fakes check, and the tests |
 | API reference | `bin/docs-openapi --check` and `bin/mcp-tools --check` |
 | Web | Generated API types, formatting, lint, types, tests, and build |
-| Pi server, Agent annotation | Formatting, lint, tests, and build |
+| Pi server | Formatting, lint, types, tests, and build |
+| Agent annotation | Formatting, lint, tests, and build |
 | Rust agent | `cargo fmt`, `cargo clippy`, tests, and static builds for x86_64 and aarch64 |
 | Required checks | Passes only when every other job passes |
 
-Branch protection requires `Required checks` and maintainer review. The workflow files define the checks, and the GitHub repository settings enforce them. The [contributor guide](/contributor-guide#3-implement-and-verify) describes how pull requests and pushes select tests.
+On `main`, GitHub enforces two rules: the branch cannot be deleted, and it accepts no force pushes. GitHub requires no status check and no review, so the merge rules in [Merge and cleanup](#merge-and-cleanup) are delivery policy that the person who merges applies. The [contributor guide](/contributor-guide#3-implement-and-verify) describes how pull requests and pushes select tests.
 
 Each Composer project job checks out the branch by name with full history, so Pest can write its test-impact graph. On a detached HEAD, Pest does not save the graph. The Docs job's `composer check` also runs `composer docs-lint`. The E2E job runs `bin/bootstrap --skip-checks` to install every project, because its integration tests use the other projects. The Gateway job installs the Linux tools that the Gateway tests need and creates the `caddy` user.
 
@@ -59,7 +60,7 @@ Each Composer project job caches three sets of files in GitHub Actions cache.
 | --- | --- |
 | PHPStan result cache, `vendor/phpstan/cache/resultCache.php` | `composer.lock`, `phpstan.neon` |
 | Pint and Rector caches, `vendor/pint.cache` and `vendor/rector/cache` | `composer.lock`, `pint.json`, `rector.php` |
-| Test-impact graph, `.orbit-tia` | `composer.lock`, `tests/Pest.php`, `phpunit.xml` |
+| Test-impact graph, `.orbit-tia` | `composer.lock`, `tests/Pest.php`, `phpunit.xml`, `phpunit.xml.dist` |
 
 A job restores the newest cache for its branch, then for `main`, then any cache for the project. It saves each cache only after its checks succeed. These caches are separate from the [main caches](#main-caches), and CI never calls `bin/tia-cache`.
 
@@ -79,7 +80,7 @@ Run these commands in each changed project directory, such as `apps/gateway` or 
 
 In `apps/docs`, `composer check` also runs the documentation lint and the API fixture check. `guidance:check` runs the project's guidance tests with a fresh graph in `vendor/.orbit-guidance-tia`, so it never replaces the graph that `test:affected` reads. The [contributor guide](/contributor-guide#static-analysis) sets the PHPStan level and the rules for fixing findings.
 
-TIA needs PCOV or Xdebug. The first run, or a run without a usable graph, runs the full suite. Later runs select the tests that the changes affect. An explicit path or a partial-selection option such as `--filter`, `--group`, or `--testsuite` turns TIA off for that run. Confirm that the tests of the feature ran. Zero selected tests is not acceptance evidence. Every `tests/Pest.php` stores its graph in the directory that `ORBIT_TIA_DIRECTORY` names, and in `.orbit-tia` by default.
+TIA needs PCOV or Xdebug. The first run, or a run without a usable graph, runs the full suite. Later runs select the tests that the changes affect. An explicit path or a partial-selection option such as `--filter`, `--group`, or `--testsuite` turns TIA off for that run. Confirm that the tests of the feature ran. Zero selected tests is not acceptance evidence. Every `tests/Pest.php` stores its graph in the directory that `ORBIT_TIA_DIRECTORY` names, and in `.orbit-tia` by default. E2E scenario runs use the directory in `ORBIT_SCENARIO_TIA_DIRECTORY` instead, which must be under the primary checkout's `.e2e/scenarios/runs/`.
 
 Each project requires the `nckrtl/pestphp-monorepo` Pest fork from its lock file. The fork adds the monorepo and test-impact fixes. To adopt a new release, update the dependency and the lock file in every project, then run the project checks. A runner change invalidates the published graphs, so the first run after it records a fresh graph.
 
@@ -87,17 +88,17 @@ Root `bin/test` runs all five project suites in parallel and splits the availabl
 
 ### The candidate gate
 
-Root `composer check` runs `bin/review-check`. It checks the working tree as it is, including uncommitted and untracked files. The Orbit Project uses it as its task check, so it also runs at every Task handoff. It works in this order.
+Root `composer check` runs `bin/review-check`. It checks the working tree as it is, including uncommitted and untracked files. The Orbit Project uses it as its task check, so it also runs at every Task handoff. It runs these checks.
 
-1. It runs `bin/docs-impact --gate` against the merge base with `origin/main`. Without a merge base, this check fails.
+1. It runs `bin/docs-impact --gate` against the merge base with `origin/main`. The fallback is the merge base with local `main`. Without a merge base, this check fails.
 2. It seeds absent quality and test caches with `bin/worktree-cache` and `bin/tia-cache seed`.
-3. In each of the five Composer projects, it runs `composer validate --strict`, `composer check`, and `composer test:affected`. Each affected-test run records into its own copy of the project graph.
-4. In each Composer project that the candidate changes, it runs the project's architecture tests.
-5. When the candidate changes a test file that TIA did not select, it lists that file's tests and runs the file without TIA. A file without tests fails.
-6. When the candidate changes test sources, it runs `bin/check-classification-fakes` on them.
-7. When the candidate changes `apps/web`, `docs/openapi.json`, or `apps/pi-server`, it adds the matching checks.
+3. It checks each of the five Composer projects in turn, as the next paragraph describes.
+4. When the candidate changes `apps/web`, `docs/openapi.json`, or `apps/pi-server`, it adds the matching checks.
+5. Last, when the candidate changes test sources, it runs `bin/check-classification-fakes` on them.
 
-The gate writes a receipt, `result.json`, and one log per command under `orbit-checks/<HEAD>/` in the Git common directory. The receipt passes only when every command passed and the commit and the working tree did not change during the run. It records a warning when `test:affected` selected no tests in a project that the candidate changes.
+For each Composer project, the gate runs `composer validate --strict`, `composer check`, and `composer test:affected`. Each affected-test run records into its own copy of the project graph. When the candidate changes the project, the gate then runs the project's architecture tests. When `test:affected` passed, the gate looks for changed test files that TIA did not select. It lists the tests of each such file and runs the file without TIA. A file without tests fails.
+
+The gate writes a receipt, `result.json`, and one log per command in a new `review-*` directory under `orbit-checks/<HEAD>/` in the Git common directory. The receipt passes only when every command passed and the commit and the working tree did not change during the run. It records a warning when `test:affected` selected no tests in a project that the candidate changes.
 
 ### Gateway test databases
 
@@ -108,6 +109,7 @@ The Gateway test bootstrap keeps tests away from real databases. Before Laravel 
 | No `ORBIT_TEST_DATABASE` | In-memory SQLite |
 | Inherited `DB_DATABASE`, `DB_URL`, or `DB_CONNECTION` | The test value replaces it |
 | `ORBIT_TEST_DATABASE` set to an absolute path of an `orbit-gateway-test-*` file in the system temporary directory | That disposable SQLite file |
+| `ORBIT_TEST_DATABASE` set to any other path, or to a symbolic link | The test bootstrap stops with a message that names the rule |
 | Any other driver, database, or application environment | The run stops before migrations with a database safety refusal |
 
 Allocate a new temporary file for each run that needs a file-backed database. Never point `ORBIT_TEST_DATABASE` at a Gateway runtime database, another application's database, or a backup.
@@ -116,11 +118,23 @@ An unexpected refusal usually means that Laravel loaded a stale cached configura
 
 ## Worktrees
 
-`bin/worktree-create ISSUE` creates a linked worktree for a local feature. For `ORB-217`, it creates branch `orb-217` at `/fast/worktrees/orbit/orb-217`, based on the freshly fetched `origin/main`. It does not change the primary checkout. Set another absolute base directory with `git config orbit.worktreeRoot PATH`. The base must be outside the primary checkout. When the branch already has a clean registered worktree, the command reuses it. Then it runs `bin/bootstrap` in the worktree.
+`bin/worktree-create ISSUE` creates a linked worktree for a local feature. For `ORB-217`, it uses branch `orb-217` and the directory `/fast/worktrees/orbit/orb-217`. It fetches `origin` first and does not change the primary checkout. Set another absolute base directory with `git config orbit.worktreeRoot PATH`. The base must be outside the primary checkout.
+
+The command reuses what already exists.
+
+| State | Result |
+| --- | --- |
+| The branch has a clean registered worktree | The command reuses that worktree |
+| That worktree is dirty or on another branch | The command refuses |
+| Only the local branch exists | The command adds a worktree for it |
+| Only `origin/orb-217` exists | The command creates a local branch that tracks it |
+| No branch exists | The command creates the branch from `origin/main` |
+
+It refuses a path that exists but is not a registered worktree. Then it runs `bin/bootstrap` in the worktree.
 
 `bin/bootstrap` installs all five Composer projects, seeds the caches, and validates each project's guidance. Then it runs `composer test:affected` and `composer check` in each project. Any failed check fails bootstrap. `bin/bootstrap --skip-checks` stops after the guidance validation.
 
-`bin/worktree-remove ISSUE` refuses a dirty worktree and a branch that `origin/main` does not contain. It queues a background cache refresh, releases the worktree's discovery topology, and removes the worktree. Then it deletes the merged branch.
+`bin/worktree-remove ISSUE` refuses a dirty worktree, a branch that `origin/main` does not contain, and a path that exists but is not a registered worktree. It queues a background cache refresh, releases the worktree's discovery topology, and removes the worktree. Then it deletes the merged branch.
 
 ## Main caches
 
@@ -132,7 +146,9 @@ Main caches let a new checkout start with warm test-impact graphs and warm Pint 
 | `quality/<project>/<tool>.json` | One Pint or PHPStan result cache per project |
 | `requests.json` | Pending refresh requests, the last result per project, and open correctness failures |
 | `refresh.log`, `run-*/` | The worker log and the per-check logs |
-| `checkout/` | The private maintenance checkout of `main` |
+| `checkout/`, `repository/` | The private maintenance checkout of `main` and its separate Git directory |
+| `runners/` | The frozen worker scripts |
+| `requests.lock`, `refresh.lock` | The queue lock and the worker lock |
 
 Only a successful run on a clean `main` publishes. Each publication records the tested commit, a checksum, and the inputs it is valid for. A new publication must descend from the one it replaces, so older results never replace newer ones.
 
@@ -147,11 +163,7 @@ Seeding copies a publication into an absent private cache and never replaces an 
 
 When no quality publication fits, `bin/worktree-cache` copies the cache from the primary checkout when that checkout is clean on `main` and has the same lock file and configuration. Feature worktrees are never a source.
 
-A checkout seeds from the first of these stores that has publications:
-
-1. The store in `ORBIT_MAIN_CACHE_STORE`. Bootstrap uses it only while seeding, and never publishes into it.
-2. The checkout's own store.
-3. The store registered for the checkout's origin on the same machine.
+When `ORBIT_MAIN_CACHE_STORE` is set, a checkout seeds only from that store, even when it has no publications, and `bin/worktree-cache` skips the primary-checkout fallback. Bootstrap uses this variable only while seeding, and never publishes into it. When the variable is unset, a checkout seeds from its own store when that store has publications, and otherwise from the store registered for its origin on the same machine.
 
 The registration is a link at `$XDG_STATE_HOME/orbit/main-cache-stores/<key>`, and `$XDG_STATE_HOME` defaults to `~/.local/state`. The key comes from the origin URL, so the HTTPS and SSH URLs of one repository share it. Each publication registers its store unless another live store already holds the registration. `bin/tia-cache register` takes the registration for the current repository.
 
@@ -159,15 +171,15 @@ Task workspaces are independent clones, so they start without publications of th
 
 ### Publish from bootstrap
 
-After all checks pass, bootstrap publishes its caches when the checkout is clean, `HEAD` equals the fetched `origin/main`, `ORBIT_MAIN_CACHE_STORE` is unset, and the default TIA directory is in use. It turns the branch's Pest results into a main graph and keeps the graph's recorded commit. It skips a project with an open correctness failure, a graph with working-edit history, or a graph with results from other branches. When a refresh worker is running, the caches stay private. A publication error is reported, and bootstrap still succeeds.
+After all checks pass, bootstrap publishes its caches when the checkout is clean, `HEAD` equals the fetched `origin/main`, `ORBIT_MAIN_CACHE_STORE` is unset, and the default TIA directory is in use. It turns the branch's Pest results into a main graph and keeps the graph's recorded commit. It skips a project with an open correctness failure, a graph with working-edit history, a graph with results from other branches, or a branch result that is not complete at the checked commit. When a refresh worker is running, the caches stay private. A publication error is reported, and bootstrap still succeeds.
 
 ### Refresh in the background
 
-`bin/tia-cache refresh --background` records a request and starts one worker when none runs. It returns at once. `bin/worktree-remove` queues it after each merge. Cache freshness never holds worktree creation, a merge, or cleanup.
+`bin/tia-cache refresh --background` records a request and starts one worker when none runs. It returns at once. `bin/worktree-remove` queues it when it removes a merged worktree. A merge without that cleanup, such as a task group's pull request, queues nothing. The next seed from the registered store queues the refresh instead. Cache freshness never holds worktree creation, a merge, or cleanup.
 
 The worker takes the repository refresh lock, fetches `main`, and fast-forwards the private maintenance checkout. It works through one project at a time. It skips a project whose publications are current at that commit. Otherwise it installs the dependencies and runs `composer test:affected`, `composer format:check`, and `composer analyse`. Each tool publishes after its own check succeeds, and a failure keeps the previous publication. The test run needs PCOV or Xdebug, and each command stops after 30 minutes.
 
-Requests stay in `requests.json` until the worker records their outcome, so an interrupted worker leaves them pending. Repeated requests for the same target combine. The worker copies its own script into the store and runs at reduced CPU priority, so removing the calling worktree does not stop it. After each batch, it deletes the run logs that no recorded result names.
+Requests stay in `requests.json` until the worker records their outcome, so an interrupted worker leaves them pending. Repeated requests for the same target combine. The worker runs a copy of its own script from the store in a new session, so removing the calling worktree does not stop it. It runs at reduced CPU priority. After each batch, it deletes the run logs that no recorded result names.
 
 The worker removes these variables from its environment and from every command, so setup settings cannot select a project runtime:
 
@@ -190,18 +202,34 @@ Every cache command accepts `--repository=PATH`. `seed` and `refresh` accept rep
 
 ### Recover a failed refresh
 
-`bin/tia-cache status --json --remote` reports the remote `main`, whether a worker holds the lock, the pending requests, which projects are current, each project's command results with log paths, the open correctness failures, and `refresh_log`. A successful status command reports state. It does not mean that the checks passed.
+`bin/tia-cache status --json --remote` reports the remote `main`, whether a worker holds the lock, the pending requests, which projects are current, each project's command results with log paths, the failed projects in `failures`, the open correctness failures, whether a refresh is `needed`, and `refresh_log`. A successful status command reports state. It does not mean that the checks passed.
 
 The worker sorts failures into two kinds.
 
 | Kind | Cause | Effect |
 | --- | --- | --- |
 | Check failure | A nonzero exit of the tests, Pint, or PHPStan | A correctness signal on main. It stays open until that tool passes on a later refresh. |
-| Maintenance failure | A failed install, fetch, or setup | Checkouts keep using the previous publications or run cold. It never clears a check failure. |
+| Maintenance failure | Any other error, as the list below shows | Checkouts keep using the previous publications or run cold. It never clears a check failure. |
 
-While a test-impact failure is open, the next refresh runs `composer test:affected -- --fresh` on the checked commit. The failure clears only when the new graph records that commit, and the project result then shows `recovery: executed`. A run that executed no tests shows `recovery: not_executed` and keeps the failure. Diagnose a check failure on the exact failed commit, and fix it in a separate worktree through a reviewed pull request.
+These errors are maintenance failures:
+
+- a failed install, fetch, or setup;
+- a command that hits the 30-minute limit;
+- a missing coverage driver;
+- a checkout that changed during the run;
+- a recovery that executed no tests.
+
+While a test-impact failure is open, the next refresh runs `composer test:affected -- --fresh` on the checked commit. The failure clears only when the new graph records that commit, and the project result then shows `recovery: executed`. A run that executed no tests shows `recovery: not_executed` and keeps the failure. Diagnose a check failure on the exact failed commit. Fix it, or revert the change that caused it, in a separate worktree through a reviewed pull request.
 
 ## Why it works this way
+
+### The maintainer approves every merge
+
+The maintainer decides whether a feature belongs in Orbit, so an agent's review cannot replace maintainer approval. The cost is that a contributor can spend effort on a direction that the maintainer rejects.
+
+### Every project passes the gate at each handoff
+
+The gate runs all five Composer projects whatever the candidate changes. Focused tests of the changed project alone are a rejected alternative, because the other projects would then have no quality check before review. The gate runs at each handoff, before review. Running it only in the independent review is also rejected, because each deterministic failure would then cost a reviewer turn and a correction round before it reached the implementer.
 
 ### Main caches come only from clean main
 
@@ -210,6 +238,8 @@ A feature graph can hold unmerged code, failed tests, or working edits, so it ca
 ### Maintenance runs in the background
 
 Waiting for every refresh before a new worktree or a merge would serialize delivery behind maintenance. A checkout starts from the newest compatible publication while the worker catches up. The cost is that a failure on main can surface after another feature merges. One worker per repository covers all five projects, because separate owners would compete for the same checkout and processors. A cache failure is not a source regression, so only check failures count as correctness signals.
+
+The maintainer assigns one owner to recover failures across the monorepo, and routine refreshes run from the repository scripts. An owner per project or per merge is a rejected alternative, because several owners would compete for the same checkout and processors.
 
 ### Bootstrap publishes, the primary checkout stays put
 
@@ -225,4 +255,4 @@ Hosted CI keeps its caches in GitHub Actions cache, keyed by branch and inputs. 
 
 ### Findings are fixed, not silenced
 
-A PHPStan ignore, a baseline, or a silencing cast keeps the wrong type in the code, and new code can repeat it. Fixing the value at its source lets CI catch these errors before review, so a reviewer spends the review on behavior.
+A PHPStan ignore, a baseline, or a silencing cast keeps the wrong type in the code, and new code can repeat it. Fixing the value at its source lets CI catch these errors before review, so a reviewer spends the review on behavior. The [contributor guide](/contributor-guide#static-analysis) lists the rules.
