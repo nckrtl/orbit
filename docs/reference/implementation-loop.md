@@ -1,6 +1,8 @@
 ---
 title: "Feature delivery"
 description: "Prepare architecture and documentation, implement a complete PR, and verify it through CI and Orbit review."
+covers:
+  - apps/docs/app/Documentation/AdrLifecycle.php
 ---
 
 # Feature delivery
@@ -17,7 +19,7 @@ The job restores that project's `.orbit-tia` directory from GitHub Actions cache
 
 When a push or pull request targets `main`, a separate `Orbit CLI Binary` workflow builds the linux-x64 toolbox binary on hosted GitHub Actions. macos-arm64 builds on mini when the runner variable is set. Its artifacts, dest paths, and hosts are the [CLI binaries](/reference/cli-binaries) contract. That workflow is not part of `Required checks`.
 
-Lint establishes document structure, language, links, and generated context consistency. Independent review assesses the architectural proposal and checks that code implements the documented behavior.
+Lint establishes document structure, language, links, and generated context consistency. Docs-lint also checks the ADR lifecycle: entries in the decisions overview retirement table have no matching file and have a redirect; ADRs from 0180 onward have an `In progress.` Status and a `Principle:` line; the committed allowlist of older live ADRs can only shrink. The [contributor guide](/contributor-guide#checks-that-need-no-network) explains these checks. Independent review assesses the architectural proposal and checks that code implements the documented behavior.
 
 Run checks in each changed project during development. Root `composer check` runs checks across all projects on a clean commit and saves logs under `orbit-checks` in the Git common directory.
 
