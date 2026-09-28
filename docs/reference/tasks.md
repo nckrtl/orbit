@@ -62,6 +62,8 @@ Typed comments record the workflow. A stored run receipt is a comment whose type
 
 ### Group lifecycle
 
+A group moves through these statuses from preparation to its end.
+
 | Status | Meaning |
 | --- | --- |
 | `backlog` | Being prepared. It has no workspace, and the scheduler never claims it. |
@@ -126,13 +128,19 @@ A `todo` Task appended to a `settling` group returns the group to `running` on t
 `tasks:subtask:cancel` cancels a `todo` or a `running` Task.
 
 - A `todo` Task in a `todo`, `running`, `reviewing`, or `settling` group becomes `cancelled`. Nothing starts, and nobody is asked for assistance.
-- A `running` Task stops first. Orbit interrupts its implementer, then stops its running [task check](#project-check). It holds no database lock while it waits. When either stop fails, the call returns HTTP 502 `tasks.subtask_interrupt_failed`, and the Task stays `running`. Retry, or cancel the group.
-- After both stops, Orbit cancels the Task only while it is still `running`. When a tick moved it on in the meantime, its new state stands, and the call returns `tasks.subtask_not_running`.
-- The lowest `todo` Task then starts. When no Task is open, the group moves to `settling` as after an approval.
+- A `running` Task stops first. Orbit interrupts its implementer, then stops its running [task check](#project-check).
+
+Orbit holds no database lock while it stops a `running` Task. When a stop fails, the call returns HTTP 502 `tasks.subtask_interrupt_failed`. The Task then stays `running`, so retry, or cancel the group.
+
+After both stops, Orbit cancels the Task only while it is still `running`. A tick can move the Task on in the meantime. Its new state then stands, and the call returns `tasks.subtask_not_running`.
+
+The lowest `todo` Task then starts. When no Task is open, the group moves to `settling` as after an approval.
 
 Cancel does not reset the workspace. Uncommitted edits of the cancelled implementer stay, and the next approval commits them.
 
 ### Errors
+
+The group and subtask operations return these errors.
 
 | Error | HTTP | When |
 | --- | --- | --- |
@@ -157,7 +165,7 @@ Each deliverable has an `id`, a `type`, a `description`, and the fields of its t
 | Type | Fields | Orbit checks |
 | --- | --- | --- |
 | `file` | `path`: a path or glob from the workspace root. `change`: `created`, `modified`, or `any` | A matching path in the Task's diff, added for `created`, modified for `modified`, either for `any` |
-| `test` | `project`: a directory, or `.`. `file`: one Pest test file in that project. `name`: a test-name substring. Optional `fails_on_base` | The file is added or modified in the diff. At least one test whose name contains `name` exists, and every such test passes |
+| `test` | `project`: a directory, or `.`. `file`: one Pest test file in that project. `name`: a test-name substring | The file is added or modified in the diff, and every test whose name contains `name` passes. At least one such test exists |
 | `command` | `command`. `directory`, relative to the workspace root, default `.` | Orbit's run of the command exits with 0 |
 | `review` | none | The reviewer confirms it in its approval |
 
@@ -197,7 +205,7 @@ A `test` deliverable with `fails_on_base: true` proves that the test reproduces 
 
 The base run extracts an archive of the start commit into a directory under the workspace's `.git/orbit/`. It copies the test file there, shares the installed `vendor/` as a copy, and runs `vendor/bin/pest FILE --log-junit=...`. It does not change the workspace and registers no Git worktree. The check removes the directory when the run ends, and the next check removes a directory that a killed run left behind.
 
-A JUnit `error`, such as a missing class, counts as a failure. The base run stops after 600 seconds, and a timed-out run counts as failing. When no matching test fails, the deliverable fails, and the reminder says why: the test passed and does not reproduce the bug, the test was skipped, no test name contains `name`, or the file could not be placed on the start commit. Orbit reports misses in the diff, on the base, and on the working tree together.
+A JUnit `error`, such as a missing class, counts as a failure. The base run stops after 600 seconds, and a timed-out run counts as failing. When no matching test fails on the base, the deliverable fails. The reminder names the cause: the test passed, the test was skipped, no test name contains `name`, or the file could not be placed on the start commit. Orbit reports misses in the diff, on the base, and on the working tree together.
 
 The review request lists each failed base case with its kind and the tail of its message, at most 4,096 characters, and says when the run timed out.
 
@@ -378,7 +386,9 @@ Each observation also reports whether the workspace has commits since its starti
 
 A Task that asks for assistance keeps its status and its Node slot. The flag and the reason show on the Task and on the group. Orbit posts the Coder `task_group.assistance_requested` webhook once. An operator can also post an `assistance_requested` comment, which flags the Task and the group at once.
 
-A `resolution` comment with a non-empty body resumes a Task that asks for assistance. Orbit sends the body to the blocked thread at once: the implementer while the Task is `running`, and that Task's reviewer while it is `reviewing`. It then clears the flag on the Task and the group, clears the communication failures, and starts a new attempt. A resolution to a reviewer counts as that reviewer's next review request. When the Task has no started reviewer yet, Orbit clears the flag and holds the resolution. The next tick starts a fresh reviewer whose opening packet includes it. A failed send keeps the Task flagged. A resolution posted while nothing is asked is stored and not sent. Every comment stays as history.
+A `resolution` comment with a non-empty body resumes a Task that asks for assistance. Orbit sends the body to the blocked thread at once: the implementer while the Task is `running`, and that Task's reviewer while it is `reviewing`. It then clears the flag on the Task and the group, clears the communication failures, and starts a new attempt. A resolution to a reviewer counts as that reviewer's next review request.
+
+When the Task has no started reviewer yet, Orbit clears the flag and holds the resolution. The next tick starts a fresh reviewer whose opening packet includes it. A failed send keeps the Task flagged. A resolution posted while nothing is asked is stored and not sent. Every comment stays as history.
 
 ### Recover a Pi server restart
 
@@ -391,7 +401,11 @@ A turn that failed only because its agent server restarted is not a failed Task.
 
 One Task gets at most two resumes, shared by its implementer and reviewer. A resolution does not reset that count. The third restart asks for assistance with `The implementer thread failed.` or `The reviewer thread failed.` Any other error, and a restart error without a turn id, asks for assistance at once.
 
-The tick reserves each resume before it sends. The reservation stores a new send key, the acting thread, the interrupted turn id, and the thread's `session.updatedAt`, and it counts the resume. The Pi driver sends that key. On T3, the key is the command id and the message id. The tick repeats the same key only while the reservation is pending and the thread still shows the interrupted turn. A repeated key starts no second turn. A Pi thread whose turn id is the key has accepted the reservation. On T3, a message with that id means T3 accepted the command, and the tick sends nothing more. When T3's `session.updatedAt` then differs from the stored value, T3 reported a new error, and the tick counts a new interruption. A thread that shows another turn supersedes the reservation. A reservation made for one role is never sent to the other.
+The tick reserves each resume before it sends. The reservation stores a new send key, the acting thread, the interrupted turn id, and the thread's `session.updatedAt`, and it counts the resume. The Pi driver sends that key. On T3, the key is the command id and the message id.
+
+The tick repeats the same key only while the reservation is pending and the thread still shows the interrupted turn. A repeated key starts no second turn.
+
+A Pi thread whose turn id is the key has accepted the reservation. On T3, a message with that id means T3 accepted the command, and the tick sends nothing more. When T3's `session.updatedAt` then differs from the stored value, T3 reported a new error, and the tick counts a new interruption. A thread that shows another turn supersedes the reservation. A reservation made for one role is never sent to the other.
 
 ## Project check
 
@@ -416,10 +430,10 @@ The scheduler identifies the process by its id and its start time, so a reused p
 
 Before the first implementer of a group starts, the check runs on the fresh workspace, with `kind` `baseline`. It first runs the Project's [setup steps](/reference/instance-setup) with their own timeouts. Then it prepares dependencies:
 
-- When the task check runs `composer` or names `vendor/`, it runs `composer install --no-interaction --prefer-dist` for each tracked `composer.json` without `vendor/autoload.php`, at the root or next to a lockfile. It removes a `composer.lock` that a root install without a lockfile wrote.
+- When the task check runs `composer` or names `vendor/`, it runs `composer install --no-interaction --prefer-dist` where a tracked `composer.json` has no `vendor/autoload.php`.
 - When the task check names Bun, npm, pnpm, Yarn, Node, Vite+, or `node_modules`, it runs `vp install --frozen-lockfile` for each tracked `package.json` with a lockfile and without `node_modules`.
 
-Each install step times out after 600 seconds. Handoff checks install nothing. The Orbit repository's own check seeds its caches from a registered main cache store, as [Feature delivery](/reference/implementation-loop#seed-a-checkout) describes. A failed setup step, install, or check asks for assistance with the step, the exit code, and the output. When the output shows missing `vendor/` or `node_modules` files, the reason says that Project dependencies appear to be missing. Fix the cause, then cancel and create the group again.
+The Composer step skips a nested `composer.json` without a lockfile. After a root install without a lockfile, it removes the new `composer.lock`. Each install step times out after 600 seconds. Handoff checks install nothing. The Orbit repository's own check seeds its caches from a registered main cache store, as [Feature delivery](/reference/implementation-loop#seed-a-checkout) describes. A failed setup step, install, or check asks for assistance with the step, the exit code, and the output. When the output shows missing `vendor/` or `node_modules` files, the reason says that Project dependencies appear to be missing. Fix the cause, then cancel and create the group again.
 
 ## Review a subtask
 
@@ -464,9 +478,9 @@ The reviewer prompt says the turn is read-only. It says not to run the task chec
 When the Gateway sends the review request, it records the workspace HEAD and the working-tree hash. When the reviewer's receipt arrives, it reads them again.
 
 - **Unchanged.** The Gateway applies the outcome.
-- **A newer implementer turn changed it,** for example because an operator talked to the implementer. That is a new handoff. The Gateway waits until the implementer stops, then needs a new receipt and a passing check before it asks the reviewer again.
-- **Orbit's own commit changed it,** after a lost commit response: HEAD's parent is the recorded HEAD, and HEAD's tree is the recorded tree. The Gateway stores that commit on the approval and publishes it.
-- **The reviewer changed it.** `workspace_unchanged` fails, and the outcome is not applied. The reminder says to revert the changes and request them from the implementer. When a newer reviewer turn still leaves the workspace changed, the Task asks for assistance.
+- **A newer implementer turn changed it.** That is a new handoff, for example after an operator talked to the implementer. The Gateway waits for a new receipt and a passing check.
+- **Orbit's own commit changed it.** HEAD's parent is the recorded HEAD, and HEAD's tree is the recorded tree. The Gateway stores that commit on the approval and publishes it.
+- **The reviewer changed it.** `workspace_unchanged` fails, and the outcome is not applied. The reminder asks the reviewer to revert and to request the changes. A second change asks for assistance.
 
 `changes_requested` sends the findings to the implementer and returns the Task to `running`, once the implementer has stopped. The implementer then needs a new receipt and a passing check.
 
@@ -603,10 +617,12 @@ Every body holds `event`, `task_group_id`, and `title`. The Gateway signs `{unix
 
 Cancel removes the group's workspace, then marks the group and its open Tasks `cancelled`. Tasks, comments, and thread links stay as history. Cancel does not stop the agent conversations. Cancelling again is safe, and it retries a removal that failed.
 
-- **Settling without a pull request.** When the Node answers, cancel first pushes the latest approved commit to `task-{group id}`, so you can open a pull request from it. A failed push returns HTTP 502 `tasks.push_failed` and keeps the group. Uncommitted changes are not pushed. Git refuses the push when `origin` holds an unrelated `task-{group id}` branch, for example after a Gateway rebuild reused the id. Rename that branch on `origin`, then cancel again.
+- **Settling without a pull request.** Cancel first pushes the latest approved commit to `task-{group id}`, so you can open a pull request from it. A failed push returns HTTP 502 `tasks.push_failed` and keeps the group.
 - **Node unreachable.** Cancel still ends the group and keeps the Instance attached. The group asks for assistance with `Workspace removal failed: The Node is unreachable.` The sweep removes the workspace later.
-- **Removal refused while the Node answers.** Cancel returns the error, keeps the group, and asks for assistance with `Workspace removal failed: `.
+- **Removal refused.** Cancel returns the error and keeps the group. The group asks for assistance with `Workspace removal failed: `.
 - **Claim in flight.** A group `reserved` within `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` becomes `cancelled`, and the claim removes the workspace it provisions.
+
+Uncommitted changes are never pushed. Git refuses the push when `origin` holds an unrelated `task-{group id}` branch, for example after a Gateway rebuild reused the id. Rename that branch on `origin`, then cancel again.
 
 After a successful removal, cancel clears the assistance flags on the group and its Tasks and keeps the last reasons.
 
@@ -620,12 +636,14 @@ When a manual complete cannot remove the workspace, the group still becomes `com
 
 Each tick sweeps workspaces that still exist:
 
-- of a `cancelled` or `completed` group, attached or found by the `task-{group id}` name and branch, except while a claim can still own it;
+- of a `cancelled` or `completed` group, attached or found by the `task-{group id}` name and branch. A workspace that a live claim still owns waits.
 - of a `settling` group whose merged pull request cleanup failed.
 
 For a cancelled group, the sweep first pushes the latest approved commit. A failed removal asks for assistance and waits for that Instance only: 1 minute, then 2, 5, 10, and 30 minutes, and then every 30 minutes. A tick starts no removal after 60 seconds of removals. A success clears only a reason that starts with `Workspace removal failed: ` or `Merged pull request cleanup failed: `. The sweep never removes the workspace of an active group. When the Gateway cannot read or write a retry delay in its cache, it logs a warning and tries at once.
 
 ## Configuration
+
+These Gateway environment keys configure the extension.
 
 | Environment key | Meaning |
 | --- | --- |
@@ -696,7 +714,9 @@ Orbit holds the branch, the receipts, and the GitHub App, so it commits after ap
 
 ### Fixups are bounded
 
-The workspace and a reviewer can repair a conflict or a failed check, so the first problem gets a fixup instead of a person. Each fixup is a normal Task on the same pull request, never a rebase or a force push, because the open pull request is the review. The caps stop a loop: two per problem, three per group, and a new window only after a person's Task completes. A problem's identity ignores the check URL and the base commit, so a moving `main` does not look like a new problem. Infrastructure failures get no fixup, because the branch did not cause them.
+The workspace and a reviewer can repair a conflict or a failed check, so the first problem gets a fixup instead of a person. Each fixup is a normal Task on the same pull request, never a rebase or a force push, because the open pull request is the review.
+
+The caps stop a loop: two per problem, three per group, and a new window only after a person's Task completes. A problem's identity ignores the check URL and the base commit, so a moving `main` does not look like a new problem. Infrastructure failures get no fixup, because the branch did not cause them.
 
 ### Resume a restarted turn
 
