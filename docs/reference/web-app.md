@@ -12,7 +12,9 @@ covers:
 
 # Web app
 
-The web app is Orbit's live view of the fleet. It is a static single-page app that reads the Gateway API and follows [realtime events](/reference/events). The Gateway serves it from its own origin. Its TypeScript API schema is generated from `docs/openapi.json` with `bun run types` in `apps/web` and checked in with the app. The Route create request type distinguishes an app Route with `app_instance_id` from a custom proxy Route with `node_id` and an upstream or Process; it has no app Route creation form with `app_id` or a targetless scope.
+The web app is Orbit's live view of the fleet. It is a static single-page app that reads the Gateway API and follows [realtime events](/reference/events). Its TypeScript API schema is generated from the Gateway OpenAPI document (`docs/openapi.json`) with `bun run types` in `apps/web` and checked in with the app. The Gateway serves it from its own origin.
+
+Extension navigation follows the Gateway's enabled set: Tasks and ProxyCLI links and routes are absent while their extension is disabled. The Gateway API remains authoritative, so a stale direct request still receives `extension.disabled` rather than granting access. The Route create request type distinguishes an app Route with `app_instance_id` from a custom proxy Route with `node_id` and an upstream or Process; it has no app Route creation form with `app_id` or a targetless scope.
 
 ## Open the app
 
@@ -50,7 +52,7 @@ CPU and memory come from [`process.usage`](/reference/events#process-usage) even
 
 ## Live tasks
 
-The app keeps the task board, each task group, its agent threads, its comments, and the extension status current from [task events](/reference/events#tasks).
+When the Gateway reports Tasks enabled, the app keeps the task board, each task group, its agent threads, its comments, and the extension status current from [task events](/reference/events#tasks). When disabled, it hides task navigation and task routes; enabling the extension makes those views available again without removing stored task records.
 
 | Event | The app refetches |
 | --- | --- |

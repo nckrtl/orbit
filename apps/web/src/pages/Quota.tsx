@@ -2,22 +2,40 @@ import { useQuery } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
-import {
-    proxycliProviderQuery,
-    proxycliProvidersQuery,
-    proxycliStatusQuery,
-    tasksStatusQuery,
-} from "../api/queries";
+import { extensionsQuery } from "../api/extensions";
+import { proxycliProviderQuery, proxycliProvidersQuery, proxycliStatusQuery } from "../api/queries";
 import { queryClient } from "../api/queryClient";
 import type { QuotaAccount, QuotaProvider, QuotaWindow } from "../api/types";
 import { quotaPace } from "../quota/pace";
-import { useTaskPoll } from "../realtime/polling";
 import { Frame, Note } from "../ui/Frame";
 import { useGo } from "../ui/go";
 import { PageHeader } from "../ui/PageHeader";
 import { type Column, Pane } from "../ui/Pane";
 import { Properties } from "../ui/Properties";
 import { Status } from "../ui/Status";
+
+function useQuotaAvailability() {
+    const extensions = useQuery(extensionsQuery);
+    const proxycliEnabled = extensions.data?.proxycli === true;
+    const tasksEnabled = extensions.data?.tasks === true;
+    const status = useQuery({ ...proxycliStatusQuery, enabled: proxycliEnabled });
+    let message: string | null = null;
+
+    if (extensions.isPending) {
+        message = "Loading Gateway extension state…";
+    } else if (extensions.data?.proxycli !== true) {
+        message =
+            "Quota belongs to the disabled proxycli extension. Enable it with orbit extension:enable proxycli.";
+    } else if (status.data?.enabled !== true) {
+        message =
+            "The CLIProxyAPI collector is not configured. Run orbit proxycli:setup to configure Quota.";
+    } else if (!tasksEnabled) {
+        message =
+            "Provider quota and token spend require both the CLIProxyAPI collector and the tasks extension. Enable both to view this data.";
+    }
+
+    return { extensions, status, available: message === null, message };
+}
 
 const providerNames: Record<string, string> = {
     antigravity: "Antigravity",
@@ -197,21 +215,18 @@ const providerColumns: Column<QuotaProvider>[] = [
 /** Provider pools from the snapshot. Hidden from the sidebar until the fleet feature is enabled. */
 export function QuotaList() {
     const go = useGo();
-    const status = useQuery(proxycliStatusQuery);
-    const tasks = useQuery({ ...tasksStatusQuery, refetchInterval: useTaskPoll() });
+    const availability = useQuotaAvailability();
+    const status = availability.status;
     const providers = useQuery({
         ...proxycliProvidersQuery,
-        enabled: status.data?.enabled === true && tasks.data?.enabled === true,
+        enabled: availability.available,
     });
 
-    if (status.data?.enabled !== true || tasks.data?.enabled !== true) {
+    if (!availability.available) {
         return (
             <Frame title="Quota" testId="section-list" state="warn">
                 <Note>
-                    <span data-testid="quota-unavailable">
-                        Provider quota and token spend require both the CLIProxyAPI collector and
-                        the tasks extension. Enable both to view this data.
-                    </span>
+                    <span data-testid="quota-unavailable">{availability.message}</span>
                 </Note>
             </Frame>
         );
@@ -236,7 +251,7 @@ export function QuotaList() {
                     row.accounts.some((account) => !account.disabled && account.error !== null)
                 }
                 bottomLeft={
-                    status.data.collected_at
+                    status.data?.collected_at
                         ? `Cache updated ${new Date(status.data.collected_at).toLocaleString()}`
                         : "Waiting for first collection"
                 }
@@ -255,11 +270,11 @@ export function QuotaList() {
 
 export function QuotaProviderPage() {
     const { id } = useParams({ from: "/$section/$id" });
-    const status = useQuery(proxycliStatusQuery);
-    const tasks = useQuery({ ...tasksStatusQuery, refetchInterval: useTaskPoll() });
+    const availability = useQuotaAvailability();
+    const status = availability.status;
     const provider = useQuery({
         ...proxycliProviderQuery(id),
-        enabled: status.data?.enabled === true && tasks.data?.enabled === true,
+        enabled: availability.available,
     });
     const [toggleError, setToggleError] = useState<string | null>(null);
     useEffect(() => setToggleError(null), [id]);
@@ -324,13 +339,10 @@ export function QuotaProviderPage() {
         [],
     );
 
-    if (status.data?.enabled !== true || tasks.data?.enabled !== true) {
+    if (!availability.available) {
         return (
             <Frame title="Quota" testId="quota-unavailable" state="warn">
-                <Note>
-                    Provider quota and token spend require both the CLIProxyAPI collector and the
-                    tasks extension.
-                </Note>
+                <Note>{availability.message}</Note>
             </Frame>
         );
     }
@@ -366,7 +378,7 @@ export function QuotaProviderPage() {
                     { name: "Provider", value: providerName(pool.provider) },
                     {
                         name: "Cache updated",
-                        value: status.data.collected_at
+                        value: status.data?.collected_at
                             ? new Date(status.data.collected_at).toLocaleString()
                             : null,
                     },

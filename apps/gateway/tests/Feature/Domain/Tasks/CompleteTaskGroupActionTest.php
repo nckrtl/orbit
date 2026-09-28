@@ -159,12 +159,12 @@ it('returns 409 tasks.not_settling when the group is still running', function ()
         });
 });
 
-it('returns 409 tasks.disabled while the extension is off', function (): void {
+it('returns 409 extension.disabled while the extension is off', function (): void {
     $group = complete_group();
 
     expect(fn () => app(CompleteTaskGroupAction::class)->execute($group))
         ->toThrow(function (ResourceOperationException $exception): void {
-            expect($exception->errorCode)->toBe('tasks.disabled')
+            expect($exception->errorCode)->toBe('extension.disabled')
                 ->and($exception->status)->toBe(409);
         });
 });

@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Outlet, useLocation } from "@tanstack/react-router";
 import { useEffect, useLayoutEffect, useState, useSyncExternalStore } from "react";
 import { transportLabel } from "../api/client";
+import { extensionsQuery } from "../api/extensions";
 import { queryClient } from "../api/queryClient";
 import { useFleet } from "../api/queries";
 import { taskGroupsQuery } from "../api/tasks";
@@ -12,6 +13,7 @@ import { useTaskPoll } from "../realtime/polling";
 import { Frame } from "./Frame";
 import {
     FILTERED_SECTIONS,
+    extensionSectionVisible,
     navFor,
     useNav,
     SECTION_TITLES,
@@ -119,8 +121,13 @@ function Navigation({
     const nav = useNav();
     const hovered = useUi((state) => state.hover === "nav" && state.focus === null);
     const totals = counts(fleet);
-    const taskCount =
-        useQuery({ ...taskGroupsQuery, refetchInterval: useTaskPoll() }).data?.length ?? null;
+    const tasksEnabled = nav.includes("tasks");
+    const taskGroups = useQuery({
+        ...taskGroupsQuery,
+        enabled: tasksEnabled,
+        refetchInterval: useTaskPoll(),
+    });
+    const taskCount = tasksEnabled ? (taskGroups.data?.length ?? null) : null;
     const active = navFor(section, id, fleet);
 
     return (
@@ -204,6 +211,7 @@ export function Shell() {
     const liveness = useLiveness();
     const pollingReason = usePollingReason();
     const nav = useNav();
+    const extensions = useQuery(extensionsQuery).data;
     const { pathname } = useLocation();
     const [first, second] = pathname.split("/").filter(Boolean);
     const section = (SECTIONS as readonly string[]).includes(first ?? "")
@@ -215,8 +223,13 @@ export function Shell() {
     const go = useGo();
     const fleet = useFleet();
     const totals = counts(fleet);
-    const taskCount =
-        useQuery({ ...taskGroupsQuery, refetchInterval: useTaskPoll() }).data?.length ?? null;
+    const tasksEnabled = extensions?.tasks === true;
+    const taskGroups = useQuery({
+        ...taskGroupsQuery,
+        enabled: tasksEnabled,
+        refetchInterval: useTaskPoll(),
+    });
+    const taskCount = tasksEnabled ? (taskGroups.data?.length ?? null) : null;
     const activeNav = navFor(section, second, fleet);
 
     useUi((state) => `${state.focus}|${state.menu === null}|${state.menu?.confirm}`);
@@ -367,7 +380,11 @@ export function Shell() {
                                     <div className="mt-[12px] border-t border-line pt-[8px] pb-[4px] text-xs font-bold tracking-wider text-dim uppercase">
                                         Other Sections
                                     </div>
-                                    {SECTIONS.filter((sec) => !nav.includes(sec)).map((sec) => {
+                                    {SECTIONS.filter(
+                                        (sec) =>
+                                            extensionSectionVisible(sec, extensions) &&
+                                            !nav.includes(sec),
+                                    ).map((sec) => {
                                         const isSelected = sec === section;
 
                                         return (

@@ -1,6 +1,6 @@
 ---
 title: "tasks"
-description: "Turn the Gateway tasks extension on or off, and create, prepare, inspect, cancel, and complete task groups, their subtasks, and their comments."
+description: "Create, prepare, inspect, cancel, and complete task groups, their subtasks, and their comments through the Gateway tasks extension."
 covers:
   - "apps/cli/app/Commands/Tasks/**"
 ---
@@ -13,8 +13,6 @@ A task group is one feature. A subtask is one ordered step of it. The [tasks ref
 
 | Command | Result |
 | --- | --- |
-| [`tasks:enable`](#orbit-tasksenable) | Turn the tasks extension on. |
-| [`tasks:disable`](#orbit-tasksdisable) | Turn the tasks extension off. Existing groups stay. |
 | [`tasks:status`](#orbit-tasksstatus) | Show whether the tasks extension is on, and list groups asking for assistance. |
 | [`tasks:list`](#orbit-taskslist) | List task groups, optionally for one Project or status. |
 | [`tasks:show`](#orbit-tasksshow) | Show one task group with its brief and subtasks. |
@@ -32,7 +30,7 @@ A task group is one feature. A subtask is one ordered step of it. The [tasks ref
 
 Every command accepts `--json`. JSON output is the Gateway record with `request_id` beside its fields. A list holds its records under `task_groups`, `comments`, or `agents`.
 
-`tasks:list` and `tasks:show` accept any authorized peer. `tasks:update` and the `tasks:subtask:*` commands need access to the Node that holds the group's Instance, or to the Gateway for a group without one. The other commands need Gateway access: run them on the Gateway, or on a Node with an access grant to the Gateway. Other callers receive `node_access.required`. While the extension is off, every command except enable, disable, and status fails with `tasks.disabled`.
+`tasks:list` and `tasks:show` accept any authorized peer. `tasks:update` and the `tasks:subtask:*` commands need access to the Node that holds the group's Instance, or to the Gateway for a group without one. The other commands need Gateway access: run them on the Gateway, or on a Node with an access grant to the Gateway. Other callers receive `node_access.required`. While the extension is off, every command except enable, disable, and status fails with `extension.disabled`.
 
 ## Select a group or subtask
 
@@ -43,22 +41,6 @@ With `--json` or `-n`, an omitted group fails with `tasks.group_required` and an
 Human output names a group by its Project code and ID, such as `ORB-13`, as the web task board does. The CLI accepts only the numeric ID. Human output shows times to the minute in the Gateway's time zone; JSON keeps the full timestamps.
 
 The CLI checks prompted text when you submit it. A title holds 1 to 160 characters, and a brief holds 1 to 8,000 characters. The brief prompt is a multiline text area. Pressing Ctrl-C or reaching the end of input at a prompt stops the command before any change.
-
-## orbit tasks:enable
-
-Turn the tasks extension on. Enabling an enabled extension succeeds and changes nothing.
-
-```bash
-orbit tasks:enable [--json]
-```
-
-## orbit tasks:disable
-
-Turn the tasks extension off. Existing groups, subtasks, and comments stay, and the scheduler stops claiming and routing work.
-
-```bash
-orbit tasks:disable [--json]
-```
 
 ## orbit tasks:status
 

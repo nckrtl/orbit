@@ -136,7 +136,8 @@ export function createDemoGateway() {
             accounts: quotaAccounts,
         },
     ];
-    let proxycliEnabled = false;
+    let proxycliExtensionEnabled = false;
+    let proxycliConfigured = false;
     let tasksEnabled = true;
     const rules = (node: string) =>
         list<FirewallRule>("GET /api/v1/nodes/{node}/firewall-rules", node);
@@ -224,14 +225,19 @@ export function createDemoGateway() {
         [
             [
                 "GET",
+                /^\/api\/v1\/extensions$/,
+                () => ok({ tasks: tasksEnabled, proxycli: proxycliExtensionEnabled }),
+            ],
+            [
+                "GET",
                 /^\/api\/v1\/proxycli$/,
                 () =>
                     ok({
-                        enabled: proxycliEnabled,
+                        enabled: proxycliConfigured,
                         hostname: "collector.cli-proxy-api.orbit",
-                        node_id: proxycliEnabled ? 2 : null,
-                        cache_connection: proxycliEnabled ? "valkey" : null,
-                        collected_at: proxycliEnabled ? "2026-09-20T12:00:00Z" : null,
+                        node_id: proxycliConfigured ? 2 : null,
+                        cache_connection: proxycliConfigured ? "valkey" : null,
+                        collected_at: proxycliConfigured ? "2026-09-20T12:00:00Z" : null,
                     }),
             ],
             ["GET", /^\/api\/v1\/tasks\/status$/, () => ok({ enabled: tasksEnabled })],
@@ -239,15 +245,19 @@ export function createDemoGateway() {
                 "GET",
                 /^\/api\/v1\/proxycli\/providers$/,
                 () =>
-                    proxycliEnabled
+                    proxycliExtensionEnabled && proxycliConfigured
                         ? ok(quotaProviders())
-                        : failure(409, "proxycli.disabled", "The proxycli extension is disabled."),
+                        : failure(
+                              409,
+                              "proxycli.disabled",
+                              "The proxycli extension is disabled or unconfigured.",
+                          ),
             ],
             [
                 "GET",
                 /^\/api\/v1\/proxycli\/providers\/([^/]+)$/,
                 ([provider = ""]) => {
-                    if (!proxycliEnabled) {
+                    if (!proxycliExtensionEnabled || !proxycliConfigured) {
                         return failure(
                             409,
                             "proxycli.disabled",
@@ -264,7 +274,7 @@ export function createDemoGateway() {
                 "PATCH",
                 /^\/api\/v1\/proxycli\/accounts\/([^/]+)$/,
                 ([account = ""], body) => {
-                    if (!proxycliEnabled) {
+                    if (!proxycliExtensionEnabled || !proxycliConfigured) {
                         return failure(
                             409,
                             "proxycli.disabled",
@@ -676,7 +686,17 @@ export function createDemoGateway() {
         transport,
         requests,
         enableProxyCli(): void {
-            proxycliEnabled = true;
+            proxycliExtensionEnabled = true;
+            proxycliConfigured = true;
+        },
+        enableProxyCliExtension(): void {
+            proxycliExtensionEnabled = true;
+        },
+        teardownProxyCli(): void {
+            proxycliConfigured = false;
+        },
+        disableProxyCliExtension(): void {
+            proxycliExtensionEnabled = false;
         },
         disableTasks(): void {
             tasksEnabled = false;

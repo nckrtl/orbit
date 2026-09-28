@@ -20,19 +20,17 @@ The engine is generic. Your agentic development environment (ADE) plans and stee
 
 Agents use the Tasks tools of the [MCP server](/reference/mcp). The [`tasks` CLI family](/cli/tasks) runs the same operations from a terminal. There is no web UI to create or change a group. The API, the CLI, and the web app call a Task in a group a "subtask".
 
-## Enable the extension
+## Extension switch and status
 
-Enable and disable require Gateway access: the active Gateway peer, or a Node with a grant to the Gateway.
+Enable and disable the extension with `orbit extension:enable tasks` and `orbit extension:disable tasks`; both require Gateway access. Those commands are the only switch. The Gateway keeps API routes registered, but task operations refuse with HTTP 409 `extension.disabled` when the switch is off. CLI command listing, MCP tools, and web navigation omit the disabled extension. Existing task records remain stored.
 
-| Operation | Route | Effect |
+| Error code | HTTP status | Meaning |
 | --- | --- | --- |
-| `tasks:enable` | `POST /api/v1/tasks/enable` | Turns the extension on. Idempotent. |
-| `tasks:disable` | `POST /api/v1/tasks/disable` | Turns the extension off. Existing rows stay. Further group and subtask operations return `tasks.disabled`. |
-| `tasks:status` | `GET /api/v1/tasks/status` | Returns whether the extension is enabled, and every group currently asking for assistance. |
+| `extension.disabled` | 409 | The Gateway's Tasks extension is off. Task API operations remain registered but refuse without changing state; stale CLI, MCP, and web calls cannot use the disabled surface. |
 
-`tasks:status` returns `enabled` and `assistance`. `assistance` lists every group whose `assistance_requested` is true, in ascending group id order. Each entry has `id`, `app_id`, `app`, `project_code`, `title`, `status`, and `assistance_reason`. A group that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its group unless the group itself is asking. The list is present while the extension is off. `tasks:enable` and `tasks:disable` return only `enabled`.
+The migration stores `tasks` as enabled only when the old `tasks.enabled` setting was `1`. It stores `proxycli` as enabled only when the old switch was on and its collector Process was still running. It then deletes the old Tasks switch. The migration's `down` method removes the new extension switches and does not reconstruct the old setting, so back up the Gateway database before upgrading and restore that backup to roll back.
 
-Every group and subtask operation below refuses with `tasks.disabled` and HTTP 409 while the extension is off.
+`tasks:status` remains an assistance and status view, not a switch. Its route returns `enabled` and `assistance`. `assistance` lists every group whose `assistance_requested` is true, in ascending group id order. Each entry has `id`, `app_id`, `app`, `project_code`, `title`, `status`, and `assistance_reason`. A group that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its group unless the group itself is asking. The view remains available while tasks is disabled.
 
 ## Model
 

@@ -6,6 +6,7 @@ use App\Commands\Tasks\Concerns\ConfirmsTaskChanges;
 use App\Commands\Tasks\TaskCommand;
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use App\Services\Extensions\GatewayExtensionState;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\CommandPrompts;
 use App\Support\Console\ConsoleMode;
@@ -38,12 +39,18 @@ beforeEach(function (): void {
     MockClient::destroyGlobal();
     $this->orbitHome = sys_get_temp_dir().'/orbit-tasks-'.Str::uuid();
     config()->set('orbit.home', $this->orbitHome);
+    app()->forgetInstance(GatewayConfigRepository::class);
     app(GatewayConfigRepository::class)->add(new GatewayProfile('test', 'https://10.44.0.1', '/tmp/test-ca.pem'));
+
+    MockClient::global(gateway_fixture_mock());
+    app(GatewayExtensionState::class)->discover();
+    MockClient::destroyGlobal();
 });
 
 afterEach(function (): void {
     MockClient::destroyGlobal();
     new Filesystem()->deleteDirectory($this->orbitHome);
+    app()->forgetInstance(GatewayConfigRepository::class);
 });
 
 describe('omitted and invalid input', function (): void {

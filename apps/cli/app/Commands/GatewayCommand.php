@@ -7,6 +7,7 @@ namespace App\Commands;
 use App\Data\GatewayProfile;
 use App\Exceptions\GatewayConfigException;
 use App\Repositories\GatewayConfigRepository;
+use App\Services\Extensions\ExtensionDiscoveryResult;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\CommandPrompts;
 use App\Support\Console\ConsoleInterrupted;
@@ -511,7 +512,37 @@ abstract class GatewayCommand extends Command
         );
     }
 
-    /** @param array<string,mixed> $details */
+    protected function renderRequestFailure(Throwable $exception, string $fallbackMessage): int
+    {
+        if (! $exception instanceof GatewayApiException) {
+            return $this->renderGatewayFailure('gateway.request_failed', $fallbackMessage);
+        }
+
+        $code = $exception->errorCode() ?? 'gateway.request_failed';
+
+        return $this->renderGatewayFailure(
+            $code,
+            $exception->getMessage(),
+            $exception->requestId(),
+            details: GatewayFailureRenderer::safeDetails($code, $exception->details()),
+        );
+    }
+
+    protected function failUnknownExtensionState(string $extension, ExtensionDiscoveryResult $state): int
+    {
+        $detail = $state->stateDetail();
+        $code = $detail['code'] ?? 'gateway.request_failed';
+        $message = $detail['message'] ?? 'Could not determine extension state.';
+
+        return $this->renderGatewayFailure(
+            'extension.state_unknown',
+            "Cannot use the {$extension} extension while Gateway state is unknown ({$code}). {$message}",
+            $state->requestId,
+            details: GatewayFailureRenderer::safeDetails('extension.state_unknown', ['error_code' => $code]),
+        );
+    }
+
+    /** @param array<string, mixed> $details Details safe for machine-readable output. */
     protected function renderGatewayFailure(
         string $code,
         string $message,

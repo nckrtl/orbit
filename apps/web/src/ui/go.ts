@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
 import { useMemo } from "react";
-import { proxycliStatusQuery } from "../api/queries";
+import { extensionsQuery, type ExtensionState } from "../api/extensions";
 import type { AnyRecord, Deployment, Kind } from "../api/types";
 import { ui } from "./store";
 
@@ -20,7 +20,7 @@ export const SECTIONS = [
 ] as const;
 export type Section = (typeof SECTIONS)[number];
 
-/** The sections the sidebar lists while proxycli is disabled. Quota is appended only after fleet enable. */
+/** The core sections; extension sections are added from the Gateway-owned enabled set. */
 export const NAV = [
     "dashboard",
     "nodes",
@@ -30,11 +30,29 @@ export const NAV = [
     "activity",
 ] as const satisfies readonly Section[];
 
-/** Sidebar entries for this Gateway: the standard sections, plus Quota while the fleet feature is on. */
-export function useNav(): readonly Section[] {
-    const enabled = useQuery(proxycliStatusQuery).data?.enabled === true;
+export function extensionSectionVisible(
+    section: Section,
+    extensions: ExtensionState | undefined,
+): boolean {
+    if (section === "tasks") {
+        return extensions?.tasks === true;
+    }
+    if (section === "quota") {
+        return extensions?.proxycli === true;
+    }
 
-    return enabled ? [...NAV, "quota"] : NAV;
+    return true;
+}
+
+/** Every navigation surface uses the same Gateway-owned extension set. Unknown switches stay hidden. */
+export function useNav(): readonly Section[] {
+    const extensions = useQuery(extensionsQuery).data;
+
+    return useMemo(() => {
+        const sections = NAV.filter((section) => extensionSectionVisible(section, extensions));
+
+        return extensions?.proxycli === true ? [...sections, "quota"] : sections;
+    }, [extensions]);
 }
 
 type Owned = { id: number | string; target_type: string };

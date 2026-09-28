@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
-use App\Services\Extensions\LocalExtensionState;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\Extensions\ListExtensionsRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
-use Orbit\Sdk\Requests\ProxyCli\DisableProxyCliRequest;
-use Orbit\Sdk\Requests\ProxyCli\EnableProxyCliRequest;
 use Orbit\Sdk\Requests\ProxyCli\ListProxyCliProvidersRequest;
+use Orbit\Sdk\Requests\ProxyCli\SetupProxyCliRequest;
 use Orbit\Sdk\Requests\ProxyCli\ShowProxyCliProviderRequest;
 use Orbit\Sdk\Requests\ProxyCli\ShowProxyCliStatusRequest;
+use Orbit\Sdk\Requests\ProxyCli\TeardownProxyCliRequest;
 use Orbit\Sdk\Requests\ProxyCli\UpdateProxyCliAccountRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -22,11 +22,11 @@ use Symfony\Component\Console\Tester\CommandTester;
 beforeEach(function (): void {
     MockClient::destroyGlobal();
     $this->previousColumns = getenv('COLUMNS');
+    $this->callerOrbitHome = config('orbit.home');
     putenv('COLUMNS=200');
     $this->orbitHome = sys_get_temp_dir().'/orbit-cli-proxycli-'.Str::uuid();
     config()->set('orbit.home', $this->orbitHome);
-    app()->forgetInstance(LocalExtensionState::class);
-    app(LocalExtensionState::class)->enable('proxycli');
+    app()->forgetInstance(GatewayConfigRepository::class);
     app(GatewayConfigRepository::class)->add(new GatewayProfile(
         name: 'test',
         url: 'https://10.44.0.1',
@@ -37,6 +37,8 @@ beforeEach(function (): void {
 afterEach(function (): void {
     MockClient::destroyGlobal();
     new Filesystem()->deleteDirectory($this->orbitHome);
+    config()->set('orbit.home', $this->callerOrbitHome);
+    app()->forgetInstance(GatewayConfigRepository::class);
     if ($this->previousColumns === false) {
         putenv('COLUMNS');
     } else {
@@ -44,17 +46,21 @@ afterEach(function (): void {
     }
 });
 
-it('enables the fleet collector from a key file and never prints the key', function (): void {
+it('sets up the fleet collector from a key file and never prints the key', function (): void {
+    if (! is_dir($this->orbitHome)) {
+        mkdir($this->orbitHome, 0700, true);
+    }
     $keyFile = $this->orbitHome.'/management.key';
     file_put_contents($keyFile, "management-key\n");
     chmod($keyFile, 0600);
 
     $mock = MockClient::global([
+        ListExtensionsRequest::class => proxycli_cli_extensions_response(),
         ListNodesRequest::class => proxycli_cli_nodes_response(),
-        EnableProxyCliRequest::class => proxycli_cli_status_response(),
+        SetupProxyCliRequest::class => proxycli_cli_status_response(),
     ]);
 
-    [$exit, $output] = proxycli_cli_display('proxycli:enable', [
+    [$exit, $output] = proxycli_cli_display('proxycli:setup', [
         '--node' => 'beast',
         '--cache-connection' => 'valkey',
         '--cliproxy-url' => 'http://127.0.0.1:8317',
@@ -69,7 +75,7 @@ it('enables the fleet collector from a key file and never prints the key', funct
 });
 
 it('refuses a management key on the command line by requiring a file', function (): void {
-    [$exit, $output] = proxycli_cli_display('proxycli:enable', [
+    [$exit, $output] = proxycli_cli_display('proxycli:setup', [
         '--node' => '4',
         '--cache-connection' => 'valkey',
         '--cliproxy-url' => 'http://127.0.0.1:8317',
@@ -83,6 +89,7 @@ it('refuses a management key on the command line by requiring a file', function 
 
 it('lists provider windows from the snapshot without Primary or Secondary labels', function (): void {
     MockClient::global([
+        ListExtensionsRequest::class => proxycli_cli_extensions_response(),
         ListProxyCliProvidersRequest::class => MockResponse::make([
             'data' => [proxycli_cli_provider_payload()],
             'meta' => ['request_id' => proxycli_cli_request_id()],
@@ -98,6 +105,7 @@ it('lists provider windows from the snapshot without Primary or Secondary labels
 
 it('shows one provider and omits a window the snapshot did not return', function (): void {
     MockClient::global([
+        ListExtensionsRequest::class => proxycli_cli_extensions_response(),
         ShowProxyCliProviderRequest::class => MockResponse::make([
             'data' => proxycli_cli_provider_payload(windows: [
                 ['label' => '7d', 'used_percent' => 40.0, 'remaining_percent' => 60.0, 'resets_at' => '2026-09-27T00:00:00Z'],
@@ -115,6 +123,7 @@ it('shows one provider and omits a window the snapshot did not return', function
 
 it('updates an account from cache after the status patch', function (): void {
     $mock = MockClient::global([
+        ListExtensionsRequest::class => proxycli_cli_extensions_response(),
         UpdateProxyCliAccountRequest::class => MockResponse::make([
             'data' => [
                 ...proxycli_cli_account_payload(),
@@ -135,36 +144,38 @@ it('updates an account from cache after the status patch', function (): void {
         ->and($mock->getLastPendingRequest()->body()->all())->toBe(['disabled' => true]);
 });
 
-it('disables the fleet collector with explicit consent', function (): void {
+it('tears down the fleet collector with explicit consent', function (): void {
     $mock = MockClient::global([
-        DisableProxyCliRequest::class => proxycli_cli_status_response(payload: [
+        ListExtensionsRequest::class => proxycli_cli_extensions_response(),
+        TeardownProxyCliRequest::class => proxycli_cli_status_response(payload: [
             'enabled' => false,
             'collected_at' => null,
         ]),
     ]);
 
-    [$exit, $output] = proxycli_cli_display('proxycli:disable', ['--yes' => true, '--json' => true]);
+    [$exit, $output] = proxycli_cli_display('proxycli:teardown', ['--yes' => true, '--json' => true]);
 
     expect($exit)->toBe(0)
         ->and(json_decode($output, true)['enabled'])->toBeFalse()
         ->and($mock->getLastPendingRequest())->not->toBeNull();
 });
 
-it('refuses to disable the fleet collector without --yes when it cannot prompt', function (array $options, string $expected): void {
+it('refuses teardown without --yes when it cannot prompt', function (array $options, string $expected): void {
     $mock = MockClient::global();
 
-    [$exit, $output] = proxycli_cli_display('proxycli:disable', $options);
+    [$exit, $output] = proxycli_cli_display('proxycli:teardown', $options);
 
     expect($exit)->toBe(1)
         ->and($output)->toContain($expected)
         ->and($mock->getLastPendingRequest())->toBeNull();
 })->with([
     'json' => [['--json' => true], '"code":"input.confirmation_required"'],
-    'noninteractive human' => [[], 'Non-interactive ProxyCli disable requires --yes.'],
+    'noninteractive human' => [[], 'Non-interactive ProxyCli teardown requires --yes.'],
 ]);
 
 it('shows fleet status including a null collected_at', function (): void {
     MockClient::global([
+        ListExtensionsRequest::class => proxycli_cli_extensions_response(),
         ShowProxyCliStatusRequest::class => proxycli_cli_status_response(payload: [
             'collected_at' => null,
         ]),
@@ -196,6 +207,14 @@ function proxycli_cli_display(string $command, array $arguments = []): array
     $tester = new CommandTester(app(Kernel::class)->all()[$command]);
 
     return [$tester->execute($arguments, ['interactive' => false]), $tester->getDisplay(true)];
+}
+
+function proxycli_cli_extensions_response(): MockResponse
+{
+    return MockResponse::make([
+        'data' => ['tasks' => true, 'proxycli' => true],
+        'meta' => ['request_id' => proxycli_cli_request_id()],
+    ]);
 }
 
 function proxycli_cli_nodes_response(): MockResponse

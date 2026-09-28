@@ -18,7 +18,7 @@ final readonly class RequireTasksExtensionAction
         }
 
         throw new ResourceOperationException(
-            errorCode: 'tasks.disabled',
+            errorCode: 'extension.disabled',
             message: __('The tasks extension is disabled.'),
             status: 409,
         );

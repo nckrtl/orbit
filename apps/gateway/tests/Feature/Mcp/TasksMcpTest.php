@@ -93,20 +93,15 @@ it('creates and lists a task group through MCP after the extension is enabled', 
         ->and($showDocument['data']['brief'])->toBe('Create through the generated tool.');
 });
 
-it('returns tasks.disabled when MCP create runs before enable', function (): void {
-    $created = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [
-        'name' => 'tasks-create',
-        'arguments' => [
-            'app_id' => $this->appRecord->id,
-            'title' => 'Too soon',
-            'brief' => 'Must refuse.',
-        ],
-    ]));
-    $error = json_decode($created['result']['content'][0]['text'], true);
+it('hides the tasks MCP tools before the extension is enabled', function (): void {
+    $names = array_column(tasks_mcp_message(tasks_mcp_call($this, 'tools/list'))['result']['tools'], 'name');
 
-    expect($created['result']['isError'])->toBeTrue()
-        ->and($error['status'])->toBe(409)
-        ->and($error['error']['code'])->toBe('tasks.disabled');
+    expect($names)->not->toContain('tasks-create');
+    $this->postJson('/api/v1/task-groups', [
+        'app_id' => $this->appRecord->id,
+        'title' => 'Too soon',
+        'brief' => 'Must refuse.',
+    ])->assertStatus(409)->assertJsonPath('error.code', 'extension.disabled');
 });
 
 it('cancels a running or queued group through MCP and removes its shared Instance', function (TaskGroupStatus $status): void {

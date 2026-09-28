@@ -1,10 +1,11 @@
+import { extensionsQuery } from "../api/extensions";
 import { taskGroupsQuery, tasksForInstance } from "../api/tasks";
 import { useTaskPoll } from "../realtime/polling";
 import { TasksBoard } from "./Tasks";
 import { ProjectCodeEditor } from "../ui/ProjectCodeEditor";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
     databaseTablesQuery,
     databaseUsersQuery,
@@ -421,9 +422,23 @@ function analyticsProperties(analytics: InstanceAnalytics | undefined): Property
 }
 
 function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance }) {
-    const [tab, setTab] = useState<"overview" | "tasks">("overview");
-    const groups = useQuery({ ...taskGroupsQuery, refetchInterval: useTaskPoll() });
-    const taskCount = tasksForInstance(groups.data ?? [], instance.id).length;
+    const tasksEnabled = useQuery(extensionsQuery).data?.tasks === true;
+    const [requestedTab, setRequestedTab] = useState<"overview" | "tasks">("overview");
+    const tab = requestedTab === "tasks" && tasksEnabled ? "tasks" : "overview";
+    const sections = tasksEnabled ? (["overview", "tasks"] as const) : (["overview"] as const);
+    const groups = useQuery({
+        ...taskGroupsQuery,
+        enabled: tasksEnabled,
+        refetchInterval: useTaskPoll(),
+    });
+    const taskCount = tasksEnabled ? tasksForInstance(groups.data ?? [], instance.id).length : 0;
+
+    useEffect(() => {
+        if (!tasksEnabled) {
+            setRequestedTab("overview");
+        }
+    }, [tasksEnabled]);
+
     return (
         <div className={`flex h-full min-h-0 min-w-0 flex-row ${GAPS}`}>
             <Frame
@@ -437,7 +452,7 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
                     aria-orientation="vertical"
                     className="flex flex-col gap-1"
                 >
-                    {(["overview", "tasks"] as const).map((section, index) => (
+                    {sections.map((section, index) => (
                         <button
                             key={section}
                             id={`instance-${instance.id}-${section}-tab`}
@@ -454,15 +469,23 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
                             data-link=""
                             data-selected={tab === section ? "" : undefined}
                             data-focused=""
-                            onClick={() => setTab(section)}
+                            onClick={() => setRequestedTab(section)}
                             onKeyDown={(event) => {
                                 if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key))
                                     return;
                                 event.preventDefault();
                                 event.stopPropagation();
                                 const next =
-                                    event.key === "Home" ? 0 : event.key === "End" ? 1 : 1 - index;
-                                setTab(next === 0 ? "overview" : "tasks");
+                                    event.key === "Home"
+                                        ? 0
+                                        : event.key === "End"
+                                          ? sections.length - 1
+                                          : sections.length === 1
+                                            ? 0
+                                            : 1 - index;
+                                const nextSection = sections[next];
+                                if (nextSection === undefined) return;
+                                setRequestedTab(nextSection);
                                 event.currentTarget.parentElement
                                     ?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
                                     [next]?.focus();
@@ -476,7 +499,7 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
                     ))}
                 </div>
             </Frame>
-            {(["overview", "tasks"] as const).map((section) => (
+            {sections.map((section) => (
                 <div
                     key={section}
                     id={`instance-${instance.id}-${section}-panel`}

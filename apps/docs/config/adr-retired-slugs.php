@@ -162,6 +162,7 @@ return [
     '0161' => ['0161-set-a-stale-caddyfile-aside-when-caddy-is-absent'],
     '0162' => ['0162-verify-web-ui-changes-with-bin-web-verify'],
     '0163' => ['0163-prove-a-failing-test-on-the-start-commit'],
+    '0150' => ['0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop'],
     '0164' => ['0164-heal-a-settling-pull-request-with-a-fixup-subtask'],
     '0165' => ['0165-record-per-thread-token-metrics'],
     '0166' => ['0166-raise-phpstan-one-level-at-a-time'],
@@ -173,4 +174,5 @@ return [
     '0172' => ['0172-count-every-t3-model-call-in-thread-metrics'],
     '0173' => ['0173-record-and-label-jev-decisions'],
     '0180' => ['0180-absorb-built-decisions-into-the-docs'],
+    '0179' => ['0179-gate-all-extension-surfaces-with-one-gateway-switch'],
 ];

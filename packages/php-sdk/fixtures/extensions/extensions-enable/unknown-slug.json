@@ -1,0 +1,17 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Extensions\\EnableExtensionRequest",
+    "route": "POST /api/v1/extensions/{extension}/enable",
+    "status": 422,
+    "body": {
+        "error": {
+            "code": "validation.failed",
+            "message": "The request data is invalid.",
+            "details": {
+                "extension": [
+                    "The selected extension is invalid."
+                ]
+            }
+        }
+    }
+}

@@ -185,7 +185,7 @@ Streams and prompt flows have no recorded canonical rendering yet. The `design:n
 
 ## Verification and adoption
 
-Each supported public command has an adoption record with its source identity, supported modes, applicable rules, contract-backed exceptions, checks, terminal artifacts, and verdict. Include extension-provided commands with the extension enabled. Account separately for internal commands that share input or output infrastructure.
+Each supported public command has an adoption record with its source identity, supported modes, applicable rules, contract-backed exceptions, checks, terminal artifacts, and verdict. Include extension-provided commands with the extension enabled. Extension command discovery reads the enabled set from the active Gateway; do not assume an extension command appears in the default command list when that Gateway has it disabled or its state is unknown. Account separately for internal commands that share input or output infrastructure.
 
 Check success, empty results, invalid and missing input, cancellation, consent, warnings, partial results, and failures wherever the command supports them. Check human, JSON, streaming, noninteractive, piped, and decorated paths that exist for that command. Expected command failures are successful verification only when a verifier asserts the exact intended result and absence of forbidden side effects.
 

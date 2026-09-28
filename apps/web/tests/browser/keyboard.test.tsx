@@ -1,6 +1,8 @@
 import { expect, it } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
+import { queryClient } from "../../src/api/queryClient";
 import { footer, openApp, pane, row } from "./app";
+import { screenText } from "./screen";
 
 it("jumps to a section with its digit and walks the sidebar with the arrows", async () => {
     const app = await openApp("/");
@@ -14,6 +16,32 @@ it("jumps to a section with its digit and walks the sidebar with the arrows", as
 
     await userEvent.keyboard("{ArrowUp}{ArrowUp}");
     await expect.poll(app.url).toBe("/");
+});
+
+it("uses the Gateway-filtered section list for digit shortcuts", async () => {
+    const app = await openApp("/", { tasks: false });
+    await expect
+        .poll(() => queryClient.getQueryData(["extensions"]))
+        .toEqual({
+            tasks: false,
+            proxycli: false,
+        });
+    await expect.poll(() => screenText()).toContain("1-5 jump");
+
+    await userEvent.keyboard("5");
+    await expect.poll(app.url).toBe("/activity");
+});
+
+it("skips disabled extension sections when moving through the nav with arrows", async () => {
+    const app = await openApp("/databases", { tasks: false });
+    await expect
+        .poll(() => queryClient.getQueryData(["extensions"]))
+        .toEqual({
+            tasks: false,
+            proxycli: false,
+        });
+    await userEvent.keyboard("{ArrowDown}");
+    await expect.poll(app.url).toBe("/activity");
 });
 
 it("hovers a pane, focuses it, moves the selection, and opens the row", async () => {

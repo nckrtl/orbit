@@ -1,5 +1,6 @@
 import { expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
+import { queryClient } from "../../src/api/queryClient";
 import { openApp, pane, row } from "./app";
 import { screenText } from "./screen";
 
@@ -16,6 +17,46 @@ it("shows an explicit disabled state when tasks are disabled", async () => {
     await expect
         .poll(() => screenText())
         .toContain("require both the CLIProxyAPI collector and the tasks extension");
+});
+
+it("shows Quota as unconfigured while the proxycli extension is enabled without collector setup", async () => {
+    const app = await openApp("/quota", { proxycliExtension: true });
+    await expect
+        .poll(() => queryClient.getQueryData(["extensions"]))
+        .toEqual({
+            tasks: true,
+            proxycli: true,
+        });
+
+    await expect.element(page.getByTestId("nav-quota")).toBeVisible();
+    await expect
+        .element(page.getByTestId("quota-unavailable"))
+        .toHaveTextContent("CLIProxyAPI collector is not configured");
+    expect(
+        app.gateway.requests.some((request) => request.path === "/api/v1/proxycli/providers"),
+    ).toBe(false);
+});
+
+it("keeps Quota visible after the collector is torn down until the extension is disabled", async () => {
+    const app = await openApp("/quota", { proxycli: true });
+    await expect.element(row("Quota", "Codex")).toBeVisible();
+    app.gateway.teardownProxyCli();
+    await queryClient.invalidateQueries({ queryKey: ["proxycli-status"] });
+
+    await expect.element(page.getByTestId("nav-quota")).toBeVisible();
+    await expect
+        .element(page.getByTestId("quota-unavailable"))
+        .toHaveTextContent("CLIProxyAPI collector is not configured");
+
+    app.gateway.disableProxyCliExtension();
+    await queryClient.invalidateQueries({ queryKey: ["extensions"] });
+    await expect
+        .poll(() => queryClient.getQueryData(["extensions"]))
+        .toEqual({
+            tasks: true,
+            proxycli: false,
+        });
+    await expect.poll(() => document.querySelector('[data-testid="nav-quota"]')).toBeNull();
 });
 
 it("lists provider windows from the snapshot without Primary or Secondary labels", async () => {

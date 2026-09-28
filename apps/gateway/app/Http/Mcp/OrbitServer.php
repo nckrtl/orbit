@@ -41,6 +41,7 @@ class OrbitServer extends Server
     #[\Override]
     protected function boot(): void
     {
+        $this->methods['tools/call'] = ExtensionAwareCallTool::class;
         $this->tools = $this->catalogue();
     }
 

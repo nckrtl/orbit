@@ -22,10 +22,6 @@ final class ListProxyCliCommand extends ProxyCliCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $factory): int
     {
-        if (($blocked = $this->guardExtension()) !== null) {
-            return $blocked;
-        }
-
         $connector = $this->gatewayConnector($repository, $factory);
 
         if ($connector === null) {

@@ -4,33 +4,26 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Domain\Settings\SettingRepository;
-use App\Domain\Settings\SettingScope;
-use App\Domain\Settings\SettingScopeType;
+use App\Domain\Extensions\ExtensionStore;
 
 final readonly class TaskExtensionState
 {
-    public const string Key = 'tasks.enabled';
+    public const string Key = 'extension.tasks.enabled';
 
-    public function __construct(private SettingRepository $settings) {}
+    public function __construct(private ExtensionStore $extensions) {}
 
     public function enabled(): bool
     {
-        return $this->settings->get($this->scope(), self::Key) === '1';
+        return $this->extensions->enabled('tasks');
     }
 
     public function enable(): void
     {
-        $this->settings->put($this->scope(), self::Key, '1');
+        $this->extensions->set('tasks', true);
     }
 
     public function disable(): void
     {
-        $this->settings->delete($this->scope(), self::Key);
-    }
-
-    private function scope(): SettingScope
-    {
-        return new SettingScope(SettingScopeType::Gateway);
+        $this->extensions->set('tasks', false);
     }
 }

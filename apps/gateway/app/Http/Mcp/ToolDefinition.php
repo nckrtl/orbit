@@ -25,12 +25,14 @@ final readonly class ToolDefinition
         public array $queryInputs,
         public bool $streams,
         public array $inputSchema,
+        public ?string $extension = null,
     ) {}
 
     /** @param array<array-key, mixed> $entry */
     public static function fromArray(array $entry): self
     {
         $name = $entry['name'] ?? null;
+        $extension = $entry['extension'] ?? null;
         $title = $entry['title'] ?? null;
         $description = $entry['description'] ?? null;
         $method = $entry['method'] ?? null;
@@ -40,7 +42,7 @@ final readonly class ToolDefinition
         $inputSchema = $entry['input_schema'] ?? null;
 
         if (
-            ! is_string($name) || ! is_string($title) || ! is_string($description)
+            ! is_string($name) || ($extension !== null && ! is_string($extension)) || ! is_string($title) || ! is_string($description)
             || ! is_string($method) || ! is_string($path)
             || ! is_array($pathInputs) || ! is_array($queryInputs) || ! is_array($inputSchema)
         ) {
@@ -49,6 +51,7 @@ final readonly class ToolDefinition
 
         return new self(
             name: $name,
+            extension: $extension,
             title: $title,
             description: $description,
             method: $method,
