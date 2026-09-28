@@ -5,7 +5,7 @@ covers:
   - "apps/cli/app/Commands/Tasks/**"
 ---
 
-The `tasks` family runs the operations of the Gateway [tasks extension](/reference/tasks) from the command line. Agents usually use the [MCP server](/reference/mcp); the CLI offers the same operations when MCP is unavailable. Each command name equals its Gateway route name, and its MCP tool name uses hyphens instead of colons, so `tasks:subtask:create` is the MCP tool `tasks-subtask-create`. Only `tasks:check:cancel` has no CLI command: use the MCP tool `tasks-check-cancel` to stop a running task check.
+The `tasks` family runs the operations of the Gateway [tasks extension](/reference/tasks) from the command line. Agents usually use the [MCP server](/reference/mcp); the CLI offers the same operations when MCP is unavailable. Each command name equals its Gateway route name, and its MCP tool name uses hyphens instead of colons, so `tasks:subtask:create` is the MCP tool `tasks-subtask-create`. Two operations have no CLI command. Use the MCP tool `tasks-check-cancel` to stop a running task check. The agent thread stream, `GET /api/v1/task-groups/{group}/agents/{session}/stream`, serves the web app.
 
 A task group is one feature. A subtask is one ordered step of it. The [tasks reference](/reference/tasks) owns the lifecycle, the scheduler, and every Gateway rule that these commands reach.
 
