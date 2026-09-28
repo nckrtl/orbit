@@ -35,7 +35,6 @@ return new class extends Migration
                             }
                         }
 
-                        /** @var list<list<array<string, mixed>>> $units */
                         $units = [];
                         $changed = false;
                         foreach ($deliverables as $deliverable) {
