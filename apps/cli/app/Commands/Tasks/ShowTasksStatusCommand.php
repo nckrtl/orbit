@@ -18,11 +18,22 @@ final class ShowTasksStatusCommand extends TaskCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
+    public function isHidden(): bool
+    {
+        return false;
+    }
+
+    public function extensionSlug(): ?string
+    {
+        return null;
+    }
+
+    #[\Override]
     protected $description = 'Show whether the Gateway tasks extension is on and which groups are asking for assistance.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
-        $connector = $this->gatewayConnector($repository, $connectors);
+        $connector = $this->coreGatewayConnector($repository, $connectors);
 
         if ($connector === null) {
             return self::FAILURE;

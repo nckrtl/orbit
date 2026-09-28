@@ -20,6 +20,7 @@ export async function openApp(
     path = "/",
     options: {
         proxycli?: boolean;
+        proxycliExtension?: boolean;
         tasks?: boolean;
         wrapTransport?: (inner: Transport) => Transport;
     } = {},
@@ -43,6 +44,8 @@ export async function openApp(
 
     if (options.proxycli === true) {
         gateway.enableProxyCli();
+    } else if (options.proxycliExtension === true) {
+        gateway.enableProxyCliExtension();
     }
     if (options.tasks === false) {
         gateway.disableTasks();

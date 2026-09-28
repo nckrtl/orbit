@@ -323,6 +323,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
                 projectId: $group->app_id,
                 defaultBranch: is_string($group->app->default_branch) ? $group->app->default_branch : null,
                 taskCheck: $group->app->taskCheckCommand(),
+                startCommit: TaskReviewBase::groupStartCommit($group),
             ),
             new TaskPromptSubtask(
                 id: $task->id,

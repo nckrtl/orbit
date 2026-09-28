@@ -68,6 +68,7 @@ function t3_spawner_group(): TaskGroup
         'checkout_path' => '/srv/orbit/apps/orbit/task-1',
         'branch' => 'task-1',
         'status' => 'source_resolved',
+        'starting_commit' => str_repeat('b', 40),
     ]);
     $group = TaskGroup::query()->create([
         'app_id' => $app->id,
@@ -177,14 +178,15 @@ it('spawns the group reviewer with its first review and a fresh implementer on t
         ->and($dispatcher->commands[2]['message']['text'])->toContain('Do not re-run the Project task check or deliverable commands the handoff already passed.')
         ->and($dispatcher->commands[2]['message']['text'])->toContain('use your web and documentation tools to confirm that framework and library usage matches current documentation')
         ->and($dispatcher->commands[2]['message']['text'])->toContain('Review subtask #'.$task->id.': '.$task->title)
-        ->and($dispatcher->commands[2]['message']['text'])->toContain('The ADRs and documentation that this branch changes against `origin/main` are the feature\'s contract.')
         ->and($dispatcher->commands[2]['message']['text'])->toContain('Group brief')
         ->and($dispatcher->commands[2]['message']['text'])->toContain($group->brief)
         ->and($dispatcher->commands[2]['modelSelection'])->toBe($reviewerSelection)
         ->and($dispatcher->commands[2]['runtimeMode'])->toBe('full-access')
         ->and($dispatcher->commands[2]['interactionMode'])->toBe('default')
+        ->and($dispatcher->commands[2]['message']['text'])->toContain('The group started at '.str_repeat('b', 40).".\ngit diff --stat ".str_repeat('b', 40).'..HEAD')
         ->and($dispatcher->commands[5]['message']['text'])->toContain('Implement this subtask')
-        ->and($dispatcher->commands[5]['message']['text'])->toContain('The ADRs and documentation that this branch changes against `origin/main` are the feature\'s contract. Build to them.')
+        ->and($dispatcher->commands[5]['message']['text'])->toContain('The group started at '.str_repeat('b', 40).".\ngit diff --stat ".str_repeat('b', 40).'..HEAD')
+        ->and($dispatcher->commands[5]['message']['text'])->toContain('Follow this repository\'s task instructions.')
         ->and($dispatcher->commands[5]['modelSelection'])->toBe($implementerSelection)
         ->and($dispatcher->commands[5]['runtimeMode'])->toBe('full-access')
         ->and($dispatcher->commands[5]['interactionMode'])->toBe('default')
@@ -330,7 +332,7 @@ it('names a non-main project default branch in the opening review packet', funct
 
     $spawner->spawnReviewer($group->tasks->first());
 
-    expect($dispatcher->commands[2]['message']['text'])->toContain('The ADRs and documentation that this branch changes against `origin/develop` are the feature\'s contract.');
+    expect($dispatcher->commands[2]['message']['text'])->not->toContain('feature\'s contract');
 });
 
 it('resolves the reviewer spawner through the container with the production diff reader', function (): void {

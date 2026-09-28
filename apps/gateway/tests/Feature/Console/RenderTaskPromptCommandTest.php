@@ -65,8 +65,10 @@ function production_task_prompt_models(): array
         ])->toArray()],
         'subtask_start_commit' => 'abc1234',
     ]);
+    $instance = new AppInstance;
+    $instance->starting_commit = str_repeat('b', 40);
     $group->setRelation('app', $app);
-    $group->setRelation('taskable', new AppInstance);
+    $group->setRelation('taskable', $instance);
     $task->setRelation('taskGroup', $group);
 
     return [$app, $group, $task];
@@ -94,6 +96,7 @@ function production_spawner_prompt(string $method): array
             'project_id' => $app->id,
             'default_branch' => $app->default_branch,
             'task_check' => $app->taskCheckCommand(),
+            'start_commit' => str_repeat('b', 40),
         ],
         'subtask' => [
             'id' => $task->id,
@@ -115,6 +118,7 @@ function render_task_prompt_group(): array
         'project_id' => 23,
         'default_branch' => 'main',
         'task_check' => 'composer check',
+        'start_commit' => str_repeat('b', 40),
     ];
 }
 
@@ -168,8 +172,10 @@ function production_review_prompt(bool $continued): array
 {
     [$app, $group, $task] = production_task_prompt_models();
     $group->update(['pr_url' => 'https://example.test/pull/1']);
+    $instance = new AppInstance;
+    $instance->starting_commit = str_repeat('b', 40);
     $group->setRelation('app', $app);
-    $group->setRelation('taskable', new AppInstance);
+    $group->setRelation('taskable', $instance);
     $task->setRelation('taskGroup', $group);
     TaskCheck::query()->create([
         'task_id' => $task->id,
@@ -219,6 +225,7 @@ function production_review_prompt(bool $continued): array
                 'project_id' => $app->id,
                 'default_branch' => $app->default_branch,
                 'task_check' => $app->taskCheckCommand(),
+                'start_commit' => str_repeat('b', 40),
             ],
             'subtask' => [
                 'id' => $task->id,
@@ -236,28 +243,135 @@ function production_review_prompt(bool $continued): array
 it('renders the same prompt for the implementer with optional command fields, including explicit false', function (): void {
     $production = production_spawner_prompt('implementerPrompt');
     $deliverable = $production['subtask']['deliverables'][0];
+    $payload = [
+        'group' => $production['group'],
+        'subtask' => $production['subtask'],
+        'thread_id' => 31,
+    ];
+    $prompt = render_task_prompt('implementer', $payload)['prompt'];
+
+    $groupStart = str_repeat('b', 40);
 
     expect($deliverable['fails_on_base'])->toBeFalse()
         ->and($deliverable['paths'])->toBe(['apps/gateway/tests/PromptTest.php'])
-        ->and(render_task_prompt('implementer', [
-            'group' => $production['group'],
-            'subtask' => $production['subtask'],
+        ->and($prompt)->toBe($production['prompt'])
+        ->and($prompt)->toContain("The group started at {$groupStart}.\ngit diff --stat {$groupStart}..HEAD")
+        ->and($prompt)->toContain('Follow this repository\'s task instructions.')
+        ->and($prompt)->not->toContain('feature\'s contract')
+        ->and($prompt)->not->toContain('Build to them.');
+});
+
+it('renders only the configured or absent Project check in implementer prompts', function (): void {
+    foreach ([['vp run check', 'When the brief is complete and vp run check passes'], [null, 'When the brief is complete, end your turn']] as [$check, $expected]) {
+        $group = render_task_prompt_group();
+        $group['task_check'] = $check;
+        $prompt = render_task_prompt('implementer', [
+            'group' => $group,
+            'subtask' => render_task_prompt_subtask(),
             'thread_id' => 31,
-        ])['prompt'])->toBe($production['prompt']);
+        ])['prompt'];
+
+        expect($prompt)->toContain($expected)
+            ->toContain('Follow this repository\'s task instructions.')
+            ->not->toContain('composer check')
+            ->not->toContain('vendor/bin/pest')
+            ->not->toContain('Routes and publications')
+            ->not->toContain('required CLI confirmation flags')
+            ->not->toContain('lease and cleanup rules')
+            ->not->toContain('feature\'s contract');
+    }
 });
 
 it('renders the same prompt for the opening reviewer', function (): void {
     $production = production_review_prompt(continued: false);
     $payload = $production['payload'];
+    $prompt = render_task_prompt('reviewer', $payload)['prompt'];
 
-    expect(render_task_prompt('reviewer', $payload)['prompt'])->toBe($production['prompt']);
+    $groupStart = str_repeat('b', 40);
+
+    expect($prompt)->toBe($production['prompt'])
+        ->toContain('git diff --stat abc1234;')
+        ->toContain("The group started at {$groupStart}.\ngit diff --stat {$groupStart}..HEAD")
+        ->toContain('The Project task check is `composer check`.')
+        ->not->toContain('feature\'s contract');
+});
+
+it('renders only the configured or absent Project check in opening reviewer prompts', function (): void {
+    foreach ([['vp run check', 'The Project task check is `vp run check`.'], [null, 'Do not re-run the Project task check']] as [$check, $expected]) {
+        $group = render_task_prompt_group();
+        $group['task_check'] = $check;
+        $prompt = render_task_prompt('reviewer', [
+            'group' => $group,
+            'subtask' => render_task_prompt_subtask(),
+            'thread_id' => 32,
+            'review_packet' => render_task_prompt_review_packet(),
+        ])['prompt'];
+
+        expect($prompt)->toContain($expected)
+            ->not->toContain('composer check')
+            ->not->toContain('vendor/bin/pest')
+            ->not->toContain('Routes and publications')
+            ->not->toContain('required CLI confirmation flags')
+            ->not->toContain('lease and cleanup rules')
+            ->not->toContain('feature\'s contract');
+    }
 });
 
 it('renders the same prompt for a continued reviewer', function (): void {
     $production = production_review_prompt(continued: true);
     $payload = $production['payload'];
+    $prompt = render_task_prompt('reviewer-continue', $payload)['prompt'];
 
-    expect(render_task_prompt('reviewer-continue', $payload)['prompt'])->toBe($production['prompt']);
+    $groupStart = str_repeat('b', 40);
+
+    expect($prompt)->toBe($production['prompt'])
+        ->toContain('git diff --stat abc1234;')
+        ->toContain("The group started at {$groupStart}.\ngit diff --stat {$groupStart}..HEAD")
+        ->toContain('The Project task check is `composer check`.')
+        ->not->toContain('feature\'s contract');
+});
+
+it('renders only the configured or absent Project check in continued reviewer prompts', function (): void {
+    foreach ([['vp run check', 'The Project task check is `vp run check`.'], [null, 'Do not re-run the Project task check']] as [$check, $expected]) {
+        $group = render_task_prompt_group();
+        $group['task_check'] = $check;
+        $review = render_task_prompt_review_packet(continued: true);
+        $prompt = render_task_prompt('reviewer-continue', [
+            'group' => $group,
+            'subtask' => render_task_prompt_subtask(),
+            'thread_id' => 32,
+            'review_packet' => $review,
+        ])['prompt'];
+
+        expect($prompt)->toContain($expected)
+            ->not->toContain('composer check')
+            ->not->toContain('vendor/bin/pest')
+            ->not->toContain('Routes and publications')
+            ->not->toContain('required CLI confirmation flags')
+            ->not->toContain('lease and cleanup rules')
+            ->not->toContain('feature\'s contract');
+    }
+});
+
+it('omits the group start lines when the workspace commit is missing or not a recorded sha', function (): void {
+    foreach ([null, 'abc1234', 'not-a-commit'] as $start) {
+        $group = render_task_prompt_group();
+        $group['start_commit'] = $start;
+        $implementer = render_task_prompt('implementer', [
+            'group' => $group,
+            'subtask' => render_task_prompt_subtask(),
+        ])['prompt'];
+        $reviewer = render_task_prompt('reviewer', [
+            'group' => $group,
+            'subtask' => render_task_prompt_subtask(),
+            'review_packet' => render_task_prompt_review_packet(),
+        ])['prompt'];
+
+        expect($implementer)->not->toContain('The group started at')
+            ->and($implementer)->not->toContain('..HEAD')
+            ->and($reviewer)->not->toContain('The group started at')
+            ->and($reviewer)->toContain('git diff --stat abc1234');
+    }
 });
 
 it('renders the exact injected failure instruction after the reviewer approval warning but not for implementers', function (): void {

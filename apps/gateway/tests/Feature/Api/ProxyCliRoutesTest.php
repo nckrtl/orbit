@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
@@ -45,6 +46,7 @@ function proxycli_gateway(): Node
         'wireguard_ip' => '10.44.0.1',
     ]);
     test()->markAsGateway($node);
+    app(ExtensionStore::class)->set('proxycli', true);
 
     return $node;
 }
@@ -99,8 +101,8 @@ it('exposes the six proxycli routes with stable methods', function (): void {
         ->all();
 
     expect($routes)->toBe([
-        'proxycli:enable' => ['api/v1/proxycli', ['POST']],
-        'proxycli:disable' => ['api/v1/proxycli', ['DELETE']],
+        'proxycli:setup' => ['api/v1/proxycli', ['POST']],
+        'proxycli:teardown' => ['api/v1/proxycli', ['DELETE']],
         'proxycli:status' => ['api/v1/proxycli', ['GET', 'HEAD']],
         'proxycli:list' => ['api/v1/proxycli/providers', ['GET', 'HEAD']],
         'proxycli:show' => ['api/v1/proxycli/providers/{provider}', ['GET', 'HEAD']],
@@ -178,7 +180,7 @@ it('keeps the management key out of activity for every enable outcome', function
     $activity = Activity::query()->where('request_id', $requestId)->sole();
     $stored = (string) DB::table('activity_log')->where('id', $activity->id)->value('properties');
 
-    expect($activity->command)->toBe('proxycli:enable')
+    expect($activity->command)->toBe('proxycli:setup')
         ->and($activity->properties?->get('input'))->toBe([
             'node_id' => $node->id,
             'cache_connection' => 'valkey',

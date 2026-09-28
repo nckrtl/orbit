@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Facades\Artisan;
+use Orbit\Sdk\Requests\Extensions\ListExtensionsRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -37,7 +38,12 @@ function gateway_fixture(string $name): array
 /** @return array<class-string, MockResponse> Saloon mock entries keyed by the SDK request class, one per fixture. */
 function gateway_fixture_mock(string ...$names): array
 {
-    $mocks = [];
+    $mocks = [
+        ListExtensionsRequest::class => MockResponse::make([
+            'data' => ['tasks' => true, 'proxycli' => true],
+            'meta' => ['request_id' => 'test-discovery'],
+        ]),
+    ];
     foreach ($names as $name) {
         $fixture = gateway_fixture($name);
         $mocks[$fixture['request']] = MockResponse::make($fixture['body'], $fixture['status'], ['Content-Type' => 'application/json']);

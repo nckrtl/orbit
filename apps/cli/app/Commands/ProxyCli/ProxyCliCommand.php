@@ -5,41 +5,41 @@ declare(strict_types=1);
 namespace App\Commands\ProxyCli;
 
 use App\Commands\GatewayCommand;
-use App\Exceptions\GatewayConfigException;
-use App\Services\Extensions\LocalExtensionState;
+use App\Repositories\GatewayConfigRepository;
+use App\Services\Extensions\GatewayExtensionState;
+use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
+use App\Support\ExtensionCommandVisibility;
+use App\Support\GatedExtensionCommand;
+use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Responses\ProxyCli\ProxyCliStatusResponse;
 
-abstract class ProxyCliCommand extends GatewayCommand
+abstract class ProxyCliCommand extends GatewayCommand implements GatedExtensionCommand
 {
     public function isHidden(): bool
     {
-        try {
-            return ! app(LocalExtensionState::class)->enabled('proxycli');
-        } catch (GatewayConfigException) {
-            return true;
-        }
+        return ExtensionCommandVisibility::listing()
+            && app(GatewayExtensionState::class)->isEnabled('proxycli') !== true;
     }
 
-    protected function guardExtension(): ?int
+    public function extensionSlug(): ?string
     {
-        try {
-            $enabled = app(LocalExtensionState::class)->enabled('proxycli');
-        } catch (GatewayConfigException) {
-            return $this->renderGatewayFailure(
-                'extension.config_invalid',
-                'Orbit extension configuration is invalid or not private.',
-            );
-        }
+        return 'proxycli';
+    }
 
-        if ($enabled) {
+    protected function gatewayConnector(
+        GatewayConfigRepository $repository,
+        GatewayConnectorFactory $connectors,
+    ): ?GatewayConnector {
+        $state = app(GatewayExtensionState::class)->discover();
+
+        if (! $state->isKnown()) {
+            $this->failUnknownExtensionState('proxycli', $state);
+
             return null;
         }
 
-        return $this->renderGatewayFailure(
-            'extension.disabled',
-            'The proxycli extension is disabled. Run `orbit extension:enable proxycli` first.',
-        );
+        return parent::gatewayConnector($repository, $connectors);
     }
 
     protected function renderStatus(ProxyCliStatusResponse $response, string $message): int

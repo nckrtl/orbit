@@ -24,8 +24,6 @@ use Orbit\Sdk\Requests\Tasks\CreateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskCommentRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\DestroySubtaskRequest;
-use Orbit\Sdk\Requests\Tasks\DisableTasksRequest;
-use Orbit\Sdk\Requests\Tasks\EnableTasksRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskAgentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskCommentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
@@ -70,9 +68,7 @@ describe('task response fixtures', function (): void {
         ]);
     });
 
-    it('records the extension toggles and status', function (): void {
-        record_fixture($this->postJson('/api/v1/tasks/disable')->assertOk(), 'tasks/tasks-disable/disabled', DisableTasksRequest::class, 'POST /api/v1/tasks/disable');
-        record_fixture($this->postJson('/api/v1/tasks/enable')->assertOk(), 'tasks/tasks-enable/enabled', EnableTasksRequest::class, 'POST /api/v1/tasks/enable');
+    it('records tasks status', function (): void {
         record_fixture($this->getJson('/api/v1/tasks/status')->assertOk(), 'tasks/tasks-status/enabled', ShowTasksStatusRequest::class, 'GET /api/v1/tasks/status');
     });
 

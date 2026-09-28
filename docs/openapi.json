@@ -79,7 +79,11 @@
     },
     {
       "name": "Tasks",
-      "description": "Enable-gated Commander feature groups and ordered subtasks."
+      "description": "Commander feature groups and ordered subtasks."
+    },
+    {
+      "name": "Extensions",
+      "description": "Gateway-owned extension switches."
     },
     {
       "name": "Doctor",
@@ -3335,6 +3339,284 @@
             "lang": "php",
             "label": "PHP SDK",
             "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Doctor\\RunDoctorRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new RunDoctorRequest())->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/extensions": {
+      "get": {
+        "operationId": "extension-list",
+        "summary": "List extensions",
+        "tags": [
+          "Extensions"
+        ],
+        "description": "Returns the Gateway-wide extension switch state as an object keyed by extension slug. The initial slugs are `tasks` and `proxycli`.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "description": "Enabled state keyed by extension slug.",
+                      "properties": {
+                        "tasks": {
+                          "type": "boolean"
+                        },
+                        "proxycli": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "tasks",
+                        "proxycli"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/extensions\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Extensions\\ListExtensionsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListExtensionsRequest())->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/extensions/{extension}/disable": {
+      "post": {
+        "operationId": "extension-disable",
+        "summary": "Disable an extension",
+        "tags": [
+          "Extensions"
+        ],
+        "parameters": [
+          {
+            "name": "extension",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "tasks",
+                "proxycli"
+              ]
+            },
+            "description": "Extension slug: `tasks` or `proxycli`."
+          }
+        ],
+        "description": "Disables one Gateway-wide extension without removing its setup data. Use `tasks` or `proxycli`; an unknown slug returns `validation.failed` (422). Returns the extension name and `enabled: false`.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "enum": [
+                            "tasks",
+                            "proxycli"
+                          ]
+                        },
+                        "enabled": {
+                          "type": "boolean",
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "enabled"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The extension slug is unknown (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/extensions/tasks/disable\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/extensions/{extension}/enable": {
+      "post": {
+        "operationId": "extension-enable",
+        "summary": "Enable an extension",
+        "tags": [
+          "Extensions"
+        ],
+        "parameters": [
+          {
+            "name": "extension",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "tasks",
+                "proxycli"
+              ]
+            },
+            "description": "Extension slug: `tasks` or `proxycli`."
+          }
+        ],
+        "description": "Enable a Gateway extension for every client. Use `tasks` or `proxycli`; an unknown slug returns `validation.failed` (422). Returns the extension name and `enabled: true`.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "enum": [
+                            "tasks",
+                            "proxycli"
+                          ]
+                        },
+                        "enabled": {
+                          "type": "boolean",
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "enabled"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The extension slug is unknown (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/extensions/tasks/enable\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
           }
         ]
       }
@@ -16724,12 +17006,13 @@
     },
     "/api/v1/proxycli": {
       "delete": {
-        "operationId": "proxycli-disable",
-        "summary": "Disable proxycli",
+        "operationId": "proxycli-teardown",
+        "summary": "Tear down proxycli",
         "tags": [
           "proxycli"
         ],
-        "description": "Stops the collector Process for the whole fleet, withdraws collector.cli-proxy-api.orbit and its certificate, deletes the stored CLIProxyAPI management key and the read and control tokens, and hides provider reads. Enabling again needs the management key. The Redis connection and Valkey data stay.",
+        "x-orbit-extension": "proxycli",
+        "description": "Stops the collector Process for the whole fleet, withdraws collector.cli-proxy-api.orbit and its certificate, deletes the stored CLIProxyAPI management key and the read and control tokens, and hides provider reads. Setting up again needs the management key. The Redis connection and Valkey data stay.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -16764,7 +17047,7 @@
             }
           },
           "409": {
-            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -16783,7 +17066,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\ProxyCli\\DisableProxyCliRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DisableProxyCliRequest())->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\ProxyCli\\TeardownProxyCliRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new TeardownProxyCliRequest())->dto();\n"
           }
         ]
       },
@@ -16793,6 +17076,7 @@
         "tags": [
           "proxycli"
         ],
+        "x-orbit-extension": "proxycli",
         "description": "Returns whether the fleet feature is enabled, which Node and cache connection it uses, and when the snapshot was last written.",
         "responses": {
           "200": {
@@ -16826,6 +17110,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "A disabled extension returns HTTP 409 (`extension.disabled`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         },
         "x-codeSamples": [
@@ -16842,11 +17136,12 @@
         ]
       },
       "post": {
-        "operationId": "proxycli-enable",
-        "summary": "Enable proxycli",
+        "operationId": "proxycli-setup",
+        "summary": "Set up proxycli",
         "tags": [
           "proxycli"
         ],
+        "x-orbit-extension": "proxycli",
         "description": "Deploys one collector Process and publishes https://collector.cli-proxy-api.orbit after a Redis Database connection for shared Valkey is in place. Fails closed when that connection is missing, is not Redis, or names a Node without the database role. A custom proxy Route that already serves the collector hostname on that Node is withdrawn in the same Caddy reload and removed; any other Route on that name fails with proxycli.hostname_taken. The response never includes tokens or the management key.",
         "requestBody": {
           "required": true,
@@ -16861,14 +17156,12 @@
                   },
                   "cache_connection": {
                     "type": "string",
-                    "maxLength": 64,
-                    "description": "Redis Database connection slug for shared Valkey"
+                    "maxLength": 64
                   },
                   "cliproxy_url": {
                     "type": "string",
                     "format": "uri",
-                    "maxLength": 512,
-                    "description": "CLIProxyAPI Management API origin"
+                    "maxLength": 512
                   },
                   "cliproxy_management_key": {
                     "type": "string",
@@ -16943,7 +17236,7 @@
             }
           },
           "409": {
-            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -16972,7 +17265,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\ProxyCli\\EnableProxyCliRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new EnableProxyCliRequest(\n    nodeId: 7,\n    cacheConnection: 'value',\n    cliproxyUrl: 'value',\n    cliproxyManagementKey: 'value',\n))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\ProxyCli\\SetupProxyCliRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new SetupProxyCliRequest(\n    nodeId: 7,\n    cacheConnection: 'value',\n    cliproxyUrl: 'value',\n    cliproxyManagementKey: 'value',\n))->dto();\n"
           }
         ]
       }
@@ -16995,6 +17288,7 @@
             "description": ""
           }
         ],
+        "x-orbit-extension": "proxycli",
         "description": "Patches CLIProxyAPI account status, then recompiles pools from the cached snapshot without fetching quota.",
         "requestBody": {
           "required": true,
@@ -17004,8 +17298,7 @@
                 "type": "object",
                 "properties": {
                   "disabled": {
-                    "type": "boolean",
-                    "description": "Disable the account"
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -17060,7 +17353,7 @@
             }
           },
           "409": {
-            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -17101,6 +17394,7 @@
         "tags": [
           "proxycli"
         ],
+        "x-orbit-extension": "proxycli",
         "description": "Returns provider pools from the Valkey snapshot. The request never calls CLIProxyAPI.",
         "responses": {
           "200": {
@@ -17130,6 +17424,16 @@
           },
           "403": {
             "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A disabled extension returns HTTP 409 (`extension.disabled`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -17171,6 +17475,7 @@
             "description": ""
           }
         ],
+        "x-orbit-extension": "proxycli",
         "description": "Returns one provider pool and its accounts from the Valkey snapshot. Window titles are duration labels. A missing window is omitted.",
         "responses": {
           "200": {
@@ -17207,6 +17512,16 @@
           },
           "404": {
             "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A disabled extension returns HTTP 409 (`extension.disabled`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -18959,7 +19274,8 @@
             }
           }
         ],
-        "description": "Lists Task groups, newest first. Optional `app_id` and `status` filters. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `tasks.disabled` while the extension is off.",
+        "x-orbit-extension": "tasks",
+        "description": "Lists Task groups, newest first. Optional `app_id` and `status` filters. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -18997,7 +19313,7 @@
             }
           },
           "409": {
-            "description": "The tasks extension is disabled (`tasks.disabled`).",
+            "description": "The tasks extension is disabled (`extension.disabled`). A disabled extension returns HTTP 409 (`extension.disabled`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -19026,7 +19342,8 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `tasks.disabled` while the extension is off.",
+        "x-orbit-extension": "tasks",
+        "description": "Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. `plan: true` on a `backlog` group provisions its Instance on an app-dev Node with access to itself and starts a T3 planner thread that becomes the reviewer (`tasks.plan_requires_backlog`, `tasks.planner_driver_unavailable`, `tasks.planner_node_unavailable`, `tasks.planner_unavailable`). Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `extension.disabled` while the extension is off.",
         "requestBody": {
           "required": true,
           "content": {
@@ -19040,22 +19357,18 @@
                   },
                   "title": {
                     "type": "string",
-                    "maxLength": 160,
-                    "description": "Short name of the feature"
+                    "maxLength": 160
                   },
                   "brief": {
                     "type": "string",
-                    "maxLength": 8000,
-                    "description": "Goal and acceptance"
+                    "maxLength": 8000
                   },
                   "status": {
                     "type": "string",
-                    "enum": [],
-                    "description": "backlog (default) or todo"
+                    "enum": []
                   },
                   "notify_coder": {
-                    "type": "boolean",
-                    "description": "Post the Coder settle webhook when the group settles"
+                    "type": "boolean"
                   },
                   "notify_on_settle": {
                     "type": "boolean"
@@ -19213,7 +19526,7 @@
             }
           },
           "409": {
-            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -19266,7 +19579,8 @@
             "description": "Numeric Task group ID."
           }
         ],
-        "description": "Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `tasks.disabled` while the extension is off.",
+        "x-orbit-extension": "tasks",
+        "description": "Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -19311,7 +19625,7 @@
             }
           },
           "409": {
-            "description": "The tasks extension is disabled (`tasks.disabled`).",
+            "description": "The tasks extension is disabled (`extension.disabled`). A disabled extension returns HTTP 409 (`extension.disabled`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -19352,7 +19666,8 @@
             "description": "Numeric Task group ID."
           }
         ],
-        "description": "Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.",
+        "x-orbit-extension": "tasks",
+        "description": "Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim; for a planning group Orbit first commits the workspace as `Plan: {title}` (`tasks.commit_failed`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.",
         "requestBody": {
           "required": false,
           "content": {
@@ -19362,18 +19677,15 @@
                 "properties": {
                   "title": {
                     "type": "string",
-                    "maxLength": 160,
-                    "description": "New title"
+                    "maxLength": 160
                   },
                   "brief": {
                     "type": "string",
-                    "maxLength": 8000,
-                    "description": "New brief"
+                    "maxLength": 8000
                   },
                   "status": {
                     "type": "string",
-                    "enum": [],
-                    "description": "backlog or todo"
+                    "enum": []
                   }
                 },
                 "additionalProperties": false
@@ -19425,7 +19737,7 @@
             }
           },
           "409": {
-            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -19478,7 +19790,7 @@
             "description": "Numeric Task group ID."
           }
         ],
-        "description": "List a task group's agent threads.",
+        "x-orbit-extension": "tasks",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -19516,7 +19828,7 @@
             }
           },
           "409": {
-            "description": "The tasks extension is disabled (`tasks.disabled`).",
+            "description": "The tasks extension is disabled (`extension.disabled`). A disabled extension returns HTTP 409 (`extension.disabled`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -19582,6 +19894,7 @@
             }
           }
         ],
+        "x-orbit-extension": "tasks",
         "responses": {
           "200": {
             "description": "Normalized agent conversation snapshots and events. Reconnect with an opaque Last-Event-ID cursor. Requires Gateway access.",
@@ -19604,7 +19917,7 @@
             }
           },
           "409": {
-            "description": "The tasks extension is disabled (`tasks.disabled`).",
+            "description": "The tasks extension is disabled (`extension.disabled`). A disabled extension returns HTTP 409 (`extension.disabled`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -19642,7 +19955,8 @@
             "description": "Numeric Task group ID."
           }
         ],
-        "description": "Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns tasks.disabled while the extension is off and tasks.not_cancellable for completed groups and settling groups with a pull request.",
+        "x-orbit-extension": "tasks",
+        "description": "Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns extension.disabled while the extension is off and tasks.not_cancellable for completed groups and settling groups with a pull request.",
         "requestBody": {
           "required": false,
           "content": {
@@ -19698,7 +20012,7 @@
             }
           },
           "409": {
-            "description": "The tasks extension is disabled (`tasks.disabled`), or the Task group is completed or settling with a pull request (`tasks.not_cancellable`).",
+            "description": "The tasks extension is disabled (`extension.disabled`), or the Task group is completed or settling with a pull request (`tasks.not_cancellable`). A disabled extension returns HTTP 409 (`extension.disabled`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -19761,7 +20075,8 @@
             "description": "Numeric Task group ID."
           }
         ],
-        "description": "Marks a settling Task group completed and removes its shared Instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `tasks.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.",
+        "x-orbit-extension": "tasks",
+        "description": "Marks a settling Task group completed and removes its shared Instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.",
         "requestBody": {
           "required": false,
           "content": {
@@ -19817,7 +20132,7 @@
             }
           },
           "409": {
-            "description": "The tasks extension is disabled (`tasks.disabled`) or the Task group is not settling (`tasks.not_settling`).",
+            "description": "The tasks extension is disabled (`extension.disabled`) or the Task group is not settling (`tasks.not_settling`). A disabled extension returns HTTP 409 (`extension.disabled`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -19870,7 +20185,8 @@
             "description": "Numeric Task group ID."
           }
         ],
-        "description": "Appends one subtask to a Task group at the next position with status `todo`. Works in any group status except `completed` and `cancelled` (`tasks.group_closed`). `deliverables` is a list of at most 20 typed items the subtask must deliver, each with a unique slug `id`, a `type`, and a `description`: `file` adds `path` (a path or glob) and `change` (`created`, `modified`, or `any`); `test` adds `project`, `file` (a Pest test file in that project), `name` (a substring of the test name), and an optional boolean `fails_on_base` (true means the named test must fail on the start commit before it passes; omitted is stored as false, and any other type refuses the field); `command` adds `command` and an optional `directory`; `review` adds nothing. Orbit verifies file, test, and command deliverables at handoff, and the reviewer confirms review deliverables. Outside `backlog`, a subtask needs at least one deliverable (`tasks.subtask_deliverables_missing`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.",
+        "x-orbit-extension": "tasks",
+        "description": "Appends one subtask to a Task group at the next position with status `todo`. Works in any group status except `completed` and `cancelled` (`tasks.group_closed`). `deliverables` is a list of at most 20 typed items the subtask must deliver, each with a unique slug `id`, a `type`, and a `description`: `file` adds `path` (a path or glob) and `change` (`created`, `modified`, or `any`); `test` adds `project`, `file` (a Pest test file in that project), `name` (a substring of the test name), and an optional boolean `fails_on_base` (true means the named test must fail on the start commit before it passes; omitted is stored as false, and any other type refuses the field); `command` adds `command` and an optional `directory`; `review` adds nothing. Orbit verifies file, test, and command deliverables at handoff, and the reviewer confirms review deliverables. Outside `backlog`, a subtask needs at least one deliverable (`tasks.subtask_deliverables_missing`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.",
         "requestBody": {
           "required": true,
           "content": {
@@ -19880,13 +20196,11 @@
                 "properties": {
                   "title": {
                     "type": "string",
-                    "maxLength": 160,
-                    "description": "Short name of the step"
+                    "maxLength": 160
                   },
                   "brief": {
                     "type": "string",
-                    "maxLength": 8000,
-                    "description": "Goal and acceptance of the step"
+                    "maxLength": 8000
                   },
                   "deliverables": {
                     "type": "array",
@@ -19951,8 +20265,7 @@
                         "type",
                         "description"
                       ]
-                    },
-                    "description": "JSON file with an array of typed deliverables for the step"
+                    }
                   }
                 },
                 "required": [
@@ -20030,7 +20343,7 @@
             }
           },
           "409": {
-            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -20092,7 +20405,8 @@
             "description": ""
           }
         ],
-        "description": "Deletes a subtask while its group is in `backlog` (`tasks.not_in_backlog`) and closes the position gap. Returns the deleted subtask. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.",
+        "x-orbit-extension": "tasks",
+        "description": "Deletes a subtask while its group is in `backlog` (`tasks.not_in_backlog`) and closes the position gap. Returns the deleted subtask. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.",
         "requestBody": {
           "required": false,
           "content": {
@@ -20148,7 +20462,7 @@
             }
           },
           "409": {
-            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -20208,7 +20522,8 @@
             "description": ""
           }
         ],
-        "description": "Updates a subtask `title`, `brief`, or `position` while its group is in `backlog` (`tasks.not_in_backlog`). In `todo`, `running`, `reviewing`, or `settling`, those fields change only while the subtask is `todo`; positions stay in the todo tail and cannot cross a started or finished subtask. `deliverables` replaces the whole list, in the form that subtask create takes. It changes in `backlog`, or in those four group statuses while the subtask is `todo` (`tasks.deliverables_locked`); outside `backlog` the list cannot become empty (`tasks.subtask_deliverables_missing`). Completed and cancelled groups are read-only. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `tasks.disabled` while the extension is off.",
+        "x-orbit-extension": "tasks",
+        "description": "Updates a subtask `title`, `brief`, or `position` while its group is in `backlog` (`tasks.not_in_backlog`). In `todo`, `running`, `reviewing`, or `settling`, those fields change only while the subtask is `todo`; positions stay in the todo tail and cannot cross a started or finished subtask. `deliverables` replaces the whole list, in the form that subtask create takes. It changes in `backlog`, or in those four group statuses while the subtask is `todo` (`tasks.deliverables_locked`); outside `backlog` the list cannot become empty (`tasks.subtask_deliverables_missing`). Completed and cancelled groups are read-only. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.",
         "requestBody": {
           "required": false,
           "content": {
@@ -20218,18 +20533,15 @@
                 "properties": {
                   "title": {
                     "type": "string",
-                    "maxLength": 160,
-                    "description": "New title"
+                    "maxLength": 160
                   },
                   "brief": {
                     "type": "string",
-                    "maxLength": 8000,
-                    "description": "New brief"
+                    "maxLength": 8000
                   },
                   "position": {
                     "type": "integer",
-                    "minimum": 1,
-                    "description": "New position, starting at 1"
+                    "minimum": 1
                   },
                   "deliverables": {
                     "type": "array",
@@ -20294,8 +20606,7 @@
                         "type",
                         "description"
                       ]
-                    },
-                    "description": "JSON file with an array of typed deliverables that replaces the list"
+                    }
                   }
                 },
                 "additionalProperties": false
@@ -20347,7 +20658,7 @@
             }
           },
           "409": {
-            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -20409,7 +20720,8 @@
             "description": ""
           }
         ],
-        "description": "Cancels a `todo` or `running` subtask. A `todo` subtask may be cancelled when its group is `todo`, `running`, `reviewing`, or `settling`; this marks it cancelled with `settled_at`, starts nothing, and requests no assistance. If no open subtask remains, including reserved, running, or reviewing siblings, the group moves to `settling`. Cancelling a `running` subtask stops its implementer and its running baseline or handoff check, keeps the group and its Instance, and starts the lowest-position `todo` subtask. That subtask runs the baseline check first when no implementer has started in the group. The group settles only when no open subtask remains. Requires Gateway access. Returns `tasks.disabled` while the extension is off, `tasks.subtask_not_running` (409) when the subtask is neither cancellable `todo` nor `running`, and `tasks.subtask_interrupt_failed` (502) when a running subtask implementer or check could not be stopped; the subtask then stays `running`.",
+        "x-orbit-extension": "tasks",
+        "description": "Cancels a `todo` or `running` subtask. A `todo` subtask may be cancelled when its group is `todo`, `running`, `reviewing`, or `settling`; this marks it cancelled with `settled_at`, starts nothing, and requests no assistance. If no open subtask remains, including reserved, running, or reviewing siblings, the group moves to `settling`. Cancelling a `running` subtask stops its implementer and its running baseline or handoff check, keeps the group and its Instance, and starts the lowest-position `todo` subtask. That subtask runs the baseline check first when no implementer has started in the group. The group settles only when no open subtask remains. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.subtask_not_running` (409) when the subtask is neither cancellable `todo` nor `running`, and `tasks.subtask_interrupt_failed` (502) when a running subtask implementer or check could not be stopped; the subtask then stays `running`.",
         "requestBody": {
           "required": false,
           "content": {
@@ -20465,7 +20777,7 @@
             }
           },
           "409": {
-            "description": "The tasks extension is disabled (`tasks.disabled`) or the subtask is not running (`tasks.subtask_not_running`).",
+            "description": "The tasks extension is disabled (`extension.disabled`) or the subtask is not running (`tasks.subtask_not_running`). A disabled extension returns HTTP 409 (`extension.disabled`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -20537,6 +20849,7 @@
             "description": ""
           }
         ],
+        "x-orbit-extension": "tasks",
         "requestBody": {
           "required": false,
           "content": {
@@ -20592,7 +20905,7 @@
             }
           },
           "409": {
-            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -20649,7 +20962,7 @@
             "description": ""
           }
         ],
-        "description": "List a subtask's comments, newest first.",
+        "x-orbit-extension": "tasks",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -20688,6 +21001,16 @@
           },
           "404": {
             "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A disabled extension returns HTTP 409 (`extension.disabled`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -20737,7 +21060,7 @@
             "description": ""
           }
         ],
-        "description": "Ask for assistance on a subtask or resolve a request.",
+        "x-orbit-extension": "tasks",
         "requestBody": {
           "required": true,
           "content": {
@@ -20750,18 +21073,15 @@
                     "enum": [
                       "assistance_requested",
                       "resolution"
-                    ],
-                    "description": "assistance_requested or resolution"
+                    ]
                   },
                   "body": {
                     "type": "string",
-                    "maxLength": 100000,
-                    "description": "Comment text"
+                    "maxLength": 100000
                   },
                   "author": {
                     "type": "string",
-                    "maxLength": 255,
-                    "description": "Who wrote the comment"
+                    "maxLength": 255
                   },
                   "agent_thread_id": {
                     "type": [
@@ -20846,7 +21166,7 @@
             }
           },
           "409": {
-            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -20880,180 +21200,6 @@
         ]
       }
     },
-    "/api/v1/tasks/disable": {
-      "post": {
-        "operationId": "tasks-disable",
-        "summary": "Disable Tasks",
-        "tags": [
-          "Tasks"
-        ],
-        "description": "Turns the Gateway tasks extension off. Existing Task groups stay. Further group and subtask operations return `tasks.disabled`.",
-        "requestBody": {
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The request succeeded.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "type": "object"
-                    },
-                    "meta": {
-                      "$ref": "#/components/schemas/Meta"
-                    }
-                  },
-                  "required": [
-                    "data",
-                    "meta"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "bash",
-            "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/tasks/disable\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
-          },
-          {
-            "lang": "php",
-            "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\DisableTasksRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DisableTasksRequest())->dto();\n"
-          }
-        ]
-      }
-    },
-    "/api/v1/tasks/enable": {
-      "post": {
-        "operationId": "tasks-enable",
-        "summary": "Enable Tasks",
-        "tags": [
-          "Tasks"
-        ],
-        "description": "Turns the Gateway tasks extension on. Idempotent. Requires Gateway access.",
-        "requestBody": {
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The request succeeded.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "type": "object"
-                    },
-                    "meta": {
-                      "$ref": "#/components/schemas/Meta"
-                    }
-                  },
-                  "required": [
-                    "data",
-                    "meta"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "bash",
-            "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/tasks/enable\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
-          },
-          {
-            "lang": "php",
-            "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\EnableTasksRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new EnableTasksRequest())->dto();\n"
-          }
-        ]
-      }
-    },
     "/api/v1/tasks/status": {
       "get": {
         "operationId": "tasks-status",
@@ -21061,7 +21207,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, and reason. The list is present while the extension is off. Enable and disable return only `enabled`.",
+        "description": "Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, and reason. The list is present while the extension is off.",
         "responses": {
           "200": {
             "description": "The request succeeded.",

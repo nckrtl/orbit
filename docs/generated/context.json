@@ -239,10 +239,17 @@
             "path": "docs/cli/extension.mdx",
             "title": "extension",
             "kind": "product",
-            "components": [],
+            "components": [
+                "apps/gateway"
+            ],
             "concepts": [
                 "Extension",
-                "Gateway"
+                "Gateway",
+                "Node",
+                "Process",
+                "Task",
+                "Task group",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -272,6 +279,7 @@
             ],
             "concepts": [
                 "Activity",
+                "Extension",
                 "Gateway",
                 "Node"
             ],
@@ -643,8 +651,7 @@
             ],
             "governing_adrs": [
                 "0104",
-                "0109",
-                "0150"
+                "0109"
             ]
         },
         {
@@ -691,25 +698,6 @@
                 "0104",
                 "0109",
                 "0145"
-            ]
-        },
-        {
-            "path": "docs/decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop.md",
-            "title": "ADR 0150: Keep extension commands local and confirm the proxycli fleet stop",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs"
-            ],
-            "concepts": [
-                "Extension",
-                "Gateway",
-                "Node",
-                "Process"
-            ],
-            "governing_adrs": [
-                "0104",
-                "0150"
             ]
         },
         {
@@ -861,7 +849,6 @@
                 "0104",
                 "0109",
                 "0145",
-                "0150",
                 "0174",
                 "0175",
                 "0178"
@@ -1428,6 +1415,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Extension",
                 "Gateway",
                 "Node",
                 "Project",
@@ -1850,8 +1838,7 @@
             "governing_adrs": [
                 "0104",
                 "0109",
-                "0145",
-                "0150"
+                "0145"
             ]
         },
         {

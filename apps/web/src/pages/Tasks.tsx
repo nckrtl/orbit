@@ -3,6 +3,7 @@ import { TaskComments } from "../tasks/TaskComments";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link, useParams, useRouter } from "@tanstack/react-router";
+import { extensionsQuery } from "../api/extensions";
 import { GatewayError } from "../api/client";
 import { lists } from "../api/queries";
 import {
@@ -159,7 +160,7 @@ function taskProperties(
 }
 
 function TaskError({ error, retry }: { error: Error; retry: () => void }) {
-    const disabled = error instanceof GatewayError && error.code === "tasks.disabled";
+    const disabled = error instanceof GatewayError && error.code === "extension.disabled";
     return (
         <div role="alert" className="px-[1ch] py-[8px]">
             <p>
@@ -264,14 +265,31 @@ const kanbanCardClassName =
     "kanban-card block rounded-[2px] focus-visible:outline-2 focus-visible:outline-cyan";
 
 export function TasksBoard({ instanceId }: { instanceId?: number } = {}) {
-    const groups = useQuery({ ...taskGroupsQuery, refetchInterval: useTaskPoll() });
+    const extensions = useQuery(extensionsQuery);
+    const tasksEnabled = extensions.data?.tasks === true;
+    const groups = useQuery({
+        ...taskGroupsQuery,
+        enabled: tasksEnabled,
+        refetchInterval: useTaskPoll(),
+    });
     const visibleGroups =
         instanceId === undefined ? groups.data : tasksForInstance(groups.data ?? [], instanceId);
     // Cards show whole minutes, so the board ticks once a minute while a group is active.
     const now = useNow(
         60_000,
-        (visibleGroups ?? []).some((group) => isActiveTaskGroup(group.status)),
+        tasksEnabled && (visibleGroups ?? []).some((group) => isActiveTaskGroup(group.status)),
     );
+    if (!tasksEnabled) {
+        return (
+            <Frame title="Tasks" state="warn">
+                <p role={extensions.isPending ? "status" : undefined}>
+                    {extensions.isPending
+                        ? "Loading Gateway extension state…"
+                        : "The tasks extension is disabled on this Gateway."}
+                </p>
+            </Frame>
+        );
+    }
     return (
         <div className="flex min-w-0 flex-col gap-[var(--panel-gap)] md:h-full">
             {instanceId === undefined && <PageHeader trail={[{ label: "Tasks" }]} />}
@@ -347,8 +365,14 @@ export function SubtaskDetail() {
 
 function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
     const router = useRouter();
-    const group = useQuery({ ...taskGroupQuery(id), refetchInterval: useTaskPoll() });
-    const projects = useQuery(lists.projects);
+    const extensions = useQuery(extensionsQuery);
+    const tasksEnabled = extensions.data?.tasks === true;
+    const group = useQuery({
+        ...taskGroupQuery(id),
+        enabled: tasksEnabled,
+        refetchInterval: useTaskPoll(),
+    });
+    const projects = useQuery({ ...lists.projects, enabled: tasksEnabled });
     const go = useGo();
     const task = group.data;
     const project = projects.data?.find((item) => item.id === task?.app_id);
@@ -359,6 +383,17 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
     const countsForward =
         subtaskId === undefined && task !== undefined && isActiveTaskGroup(task.status);
     const now = useNow(1_000, countsForward);
+    if (!tasksEnabled) {
+        return (
+            <Frame title="Tasks" state="warn">
+                <p role={extensions.isPending ? "status" : undefined}>
+                    {extensions.isPending
+                        ? "Loading Gateway extension state…"
+                        : "The tasks extension is disabled on this Gateway."}
+                </p>
+            </Frame>
+        );
+    }
     return (
         <div className="flex min-w-0 flex-col gap-[var(--panel-gap)] md:h-full">
             <PageHeader

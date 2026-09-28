@@ -1,0 +1,43 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Mcp;
+
+use App\Domain\Extensions\ExtensionStore;
+use Generator;
+use Laravel\Mcp\Server\Contracts\Method;
+use Laravel\Mcp\Server\Methods\CallTool;
+use Laravel\Mcp\Server\ServerContext;
+use Laravel\Mcp\Transport\JsonRpcRequest;
+use Laravel\Mcp\Transport\JsonRpcResponse;
+
+final class ExtensionAwareCallTool implements Method
+{
+    /** @return JsonRpcResponse|Generator<JsonRpcResponse> */
+    public function handle(JsonRpcRequest $request, ServerContext $context): Generator|JsonRpcResponse
+    {
+        $name = $request->get('name');
+        if (is_string($name)) {
+            foreach (ToolManifest::default()->definitions() as $definition) {
+                if ($definition->name === $name && $definition->extension !== null
+                    && ! app(ExtensionStore::class)->enabled($definition->extension)) {
+                    $message = json_encode([
+                        'status' => 409,
+                        'error' => [
+                            'code' => 'extension.disabled',
+                            'message' => "The {$definition->extension} extension is disabled.",
+                        ],
+                    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+                    return JsonRpcResponse::result($request->id, [
+                        'content' => [['type' => 'text', 'text' => $message === false ? 'The extension is disabled.' : $message]],
+                        'isError' => true,
+                    ]);
+                }
+            }
+        }
+
+        return (new CallTool)->handle($request, $context);
+    }
+}

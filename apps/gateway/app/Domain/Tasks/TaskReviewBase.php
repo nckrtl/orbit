@@ -42,6 +42,16 @@ final class TaskReviewBase
         return self::isCommit($starting) ? $starting : '';
     }
 
+    /** The workspace commit recorded when the group workspace was created, or empty when it is missing. */
+    public static function groupStartCommit(TaskGroup $group): string
+    {
+        $group->loadMissing('taskable');
+        $instance = $group->taskable;
+        $starting = $instance instanceof AppInstance ? $instance->starting_commit : null;
+
+        return is_string($starting) ? $starting : '';
+    }
+
     private static function previousApprovedCommit(TaskGroup $group, Task $task): ?string
     {
         $earlier = Task::query()

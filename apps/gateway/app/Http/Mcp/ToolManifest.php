@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Mcp;
 
+use App\Domain\Extensions\ExtensionStore;
 use InvalidArgumentException;
 use JsonException;
 
@@ -52,9 +53,11 @@ final readonly class ToolManifest
     /** @return list<ApiOperationTool> */
     public function tools(ApiDispatcher $dispatcher): array
     {
-        return array_map(
+        $extensions = app(ExtensionStore::class);
+
+        return array_values(array_map(
             static fn (ToolDefinition $definition): ApiOperationTool => new ApiOperationTool($definition, $dispatcher),
-            $this->definitions(),
-        );
+            array_filter($this->definitions(), static fn (ToolDefinition $definition): bool => $definition->extension === null || $extensions->enabled($definition->extension)),
+        ));
     }
 }

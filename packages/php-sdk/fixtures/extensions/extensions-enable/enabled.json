@@ -1,0 +1,15 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Extensions\\EnableExtensionRequest",
+    "route": "POST /api/v1/extensions/{extension}/enable",
+    "status": 200,
+    "body": {
+        "data": {
+            "name": "tasks",
+            "enabled": true
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

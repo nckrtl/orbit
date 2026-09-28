@@ -60,11 +60,11 @@ use Orbit\Sdk\Requests\Nodes\ShowNodeMetricsRequest;
 use Orbit\Sdk\Requests\Projects\AddProjectExcludedNodeRequest;
 use Orbit\Sdk\Requests\Projects\ListProjectExcludedNodesRequest;
 use Orbit\Sdk\Requests\Projects\RemoveProjectExcludedNodeRequest;
-use Orbit\Sdk\Requests\ProxyCli\DisableProxyCliRequest;
-use Orbit\Sdk\Requests\ProxyCli\EnableProxyCliRequest;
 use Orbit\Sdk\Requests\ProxyCli\ListProxyCliProvidersRequest;
+use Orbit\Sdk\Requests\ProxyCli\SetupProxyCliRequest;
 use Orbit\Sdk\Requests\ProxyCli\ShowProxyCliProviderRequest;
 use Orbit\Sdk\Requests\ProxyCli\ShowProxyCliStatusRequest;
+use Orbit\Sdk\Requests\ProxyCli\TeardownProxyCliRequest;
 use Orbit\Sdk\Requests\ProxyCli\UpdateProxyCliAccountRequest;
 use Orbit\Sdk\Requests\Schedules\CompleteScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\CreateScheduleRequest;
@@ -81,8 +81,6 @@ use Orbit\Sdk\Requests\Tasks\CreateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskCommentRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\DestroySubtaskRequest;
-use Orbit\Sdk\Requests\Tasks\DisableTasksRequest;
-use Orbit\Sdk\Requests\Tasks\EnableTasksRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskAgentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskCommentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
@@ -222,16 +220,14 @@ describe('repository guidance bootstrap', function (): void {
             DestroyGitHubAppRequest::class,
         ];
         $proxycliRequests = [
-            EnableProxyCliRequest::class,
-            DisableProxyCliRequest::class,
+            SetupProxyCliRequest::class,
+            TeardownProxyCliRequest::class,
             ShowProxyCliStatusRequest::class,
             ListProxyCliProvidersRequest::class,
             ShowProxyCliProviderRequest::class,
             UpdateProxyCliAccountRequest::class,
         ];
         $taskRequests = [
-            EnableTasksRequest::class,
-            DisableTasksRequest::class,
             ShowTasksStatusRequest::class,
             ListTaskGroupsRequest::class,
             ShowTaskGroupRequest::class,
@@ -268,7 +264,13 @@ describe('repository guidance bootstrap', function (): void {
             ListProjectExcludedNodesRequest::class,
             RemoveProjectExcludedNodeRequest::class,
         ];
-        $expectedOperationCount = count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($gitHubRequests) + count($proxycliRequests) + count($taskRequests) + count($logRequests);
+        $extensionRequests = [
+            'Orbit\\Sdk\\Requests\\Extensions\\ListExtensionsRequest',
+            'Orbit\\Sdk\\Requests\\Extensions\\EnableExtensionRequest',
+            'Orbit\\Sdk\\Requests\\Extensions\\DisableExtensionRequest',
+        ];
+        $proxycliSwitchRequests = [SetupProxyCliRequest::class, TeardownProxyCliRequest::class];
+        $expectedOperationCount = count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($gitHubRequests) + count($proxycliRequests) + count($taskRequests) + count($logRequests);
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ListToolsRequest',
@@ -359,12 +361,14 @@ describe('repository guidance bootstrap', function (): void {
         }
 
         expect($requestFileCount)
-            ->toBe($expectedOperationCount + 4)
+            ->toBe($expectedOperationCount + 5)
             ->and($requestClasses)
             ->toHaveCount($expectedOperationCount)
             ->toContain(...$lifecycleRequests)
             ->toContain(...$exclusionRequests)
             ->toContain(...$logRequests)
+            ->toContain(...$extensionRequests)
+            ->toContain(...$proxycliSwitchRequests)
             ->toContain(CloneAppInstanceRequest::class)
             ->toContain(TransferAppInstanceRequest::class)
             ->toContain(CreateAppInstanceRequest::class)

@@ -117,7 +117,7 @@ A successful command exits with `0`. A handled failure returns the command's doc
 
 ## Enable an extension
 
-Some command families are hidden until you enable them on the operator machine. Local extension state composes that client's command surface. The `proxycli` family also has a fleet enable that deploys a collector; see [proxycli](/cli/proxycli).
+Some command families are hidden until you enable them at the Gateway. The Gateway state composes the CLI, MCP, API, and web surfaces for every client. `extension:enable` only reveals a family; `proxycli:setup` separately deploys its collector. See [extension](/cli/extension) and [proxycli](/cli/proxycli).
 
 ```bash
 orbit extension:list

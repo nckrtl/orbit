@@ -5,8 +5,13 @@ declare(strict_types=1);
 namespace App\Commands\Tasks;
 
 use App\Commands\GatewayCommand;
+use App\Repositories\GatewayConfigRepository;
+use App\Services\Extensions\GatewayExtensionState;
+use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
 use App\Support\Console\TerminalText;
+use App\Support\ExtensionCommandVisibility;
+use App\Support\GatedExtensionCommand;
 use DateTimeImmutable;
 use JsonException;
 use Laravel\Prompts\MultiSelectPrompt;
@@ -31,8 +36,41 @@ use Orbit\Sdk\Responses\Tasks\TaskGroupsResponse;
  * false after it rendered the refusal. Prompts run only after every explicit value is checked,
  * so a refusal never waits on the Gateway.
  */
-abstract class TaskCommand extends GatewayCommand
+abstract class TaskCommand extends GatewayCommand implements GatedExtensionCommand
 {
+    public function isHidden(): bool
+    {
+        return ExtensionCommandVisibility::listing()
+            && app(GatewayExtensionState::class)->isEnabled('tasks') !== true;
+    }
+
+    public function extensionSlug(): ?string
+    {
+        return 'tasks';
+    }
+
+    protected function gatewayConnector(
+        GatewayConfigRepository $repository,
+        GatewayConnectorFactory $connectors,
+    ): ?GatewayConnector {
+        $state = app(GatewayExtensionState::class)->discover();
+
+        if (! $state->isKnown()) {
+            $this->failUnknownExtensionState('tasks', $state);
+
+            return null;
+        }
+
+        return $this->coreGatewayConnector($repository, $connectors);
+    }
+
+    protected function coreGatewayConnector(
+        GatewayConfigRepository $repository,
+        GatewayConnectorFactory $connectors,
+    ): ?GatewayConnector {
+        return parent::gatewayConnector($repository, $connectors);
+    }
+
     public const int TITLE_MAX = 160;
 
     public const int BRIEF_MAX = 8000;

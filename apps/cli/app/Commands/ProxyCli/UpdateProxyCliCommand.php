@@ -24,10 +24,6 @@ final class UpdateProxyCliCommand extends ProxyCliCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $factory): int
     {
-        if (($blocked = $this->guardExtension()) !== null) {
-            return $blocked;
-        }
-
         $account = $this->stringArgument('account', 'Account identity', 'proxycli.account_required');
 
         if ($account === null) {
