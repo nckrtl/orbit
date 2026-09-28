@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Actions\Hibernation;
 
 use App\Domain\AgentView\AgentProcessView;
-use App\Domain\Hibernation\AppDevHibernationPolicy;
-use App\Domain\Hibernation\AppInstanceCheckoutInspector;
+use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\Hibernation\HibernationMarkerStore;
+use App\Domain\Hibernation\InstanceCheckoutInspector;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Hibernation\RuntimeHibernationSweepResult;
 use App\Domain\Nodes\RoleName;
@@ -22,11 +22,11 @@ use Illuminate\Support\Carbon;
 final readonly class SweepIdleAppDevRuntimesAction
 {
     public function __construct(
-        private AppDevHibernationPolicy $policy,
+        private DevelopmentHibernationPolicy $policy,
         private ProcessAdmissionLock $admissions,
         private ProcessRuntimeManager $runtime,
         private HibernationMarkerStore $markers,
-        private AppInstanceCheckoutInspector $checkouts,
+        private InstanceCheckoutInspector $checkouts,
         private int $idleSeconds = RuntimeHibernation::DefaultIdleSeconds,
         private int $dependencyIdleSeconds = RuntimeHibernation::DefaultDependencyIdleSeconds,
         private ?AgentProcessView $agents = null,

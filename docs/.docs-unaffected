@@ -42,3 +42,10 @@ docs/reference/php-runtime.md: mechanical App to Project/Instance rename, no beh
 docs/reference/service-metrics.md: mechanical App to Project/Instance rename, no behavior change
 docs/solutions/doctor-incus-proof.md: mechanical App to Project/Instance rename, no behavior change
 docs/solutions/remote-file-writes-on-uutils-coreutils.md: mechanical App to Project/Instance rename, no behavior change
+docs/cli/route.mdx: mechanical App to Project/Instance rename, no behavior change
+docs/reference/caddy-configuration.md: mechanical App to Project/Instance rename, no behavior change
+docs/reference/cli-ux.md: mechanical App to Project/Instance rename, no behavior change
+docs/reference/gateway-recovery.md: mechanical App to Project/Instance rename, no behavior change
+docs/reference/gateway-response-fixtures.md: mechanical App to Project/Instance rename, no behavior change
+docs/reference/implementation-loop.md: mechanical App to Project/Instance rename, no behavior change
+docs/solutions/relocate-gateway-role.mdx: mechanical App to Project/Instance rename, no behavior change

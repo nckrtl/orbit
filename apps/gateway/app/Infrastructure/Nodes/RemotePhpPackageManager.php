@@ -6,8 +6,8 @@ namespace App\Infrastructure\Nodes;
 
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\UbuntuRelease;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
-use App\Infrastructure\AppProd\AppProdSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 use Illuminate\Support\Collection;
@@ -68,16 +68,16 @@ final readonly class RemotePhpPackageManager
     ];
 
     /** @param Collection<int, string> $versions */
-    public function installForAppDev(Node $node, Collection $versions, AppDevSshExecutor $ssh): void
+    public function installForAppDev(Node $node, Collection $versions, DevelopmentSshExecutor $ssh): void
     {
         $this->install($node, $versions, $ssh, RoleName::AppDev, profile: 'app-dev');
     }
 
     /** @param Collection<int, string> $versions */
-    public function installForAppInstance(
+    public function installForInstance(
         Node $node,
         Collection $versions,
-        AppDevSshExecutor $ssh,
+        DevelopmentSshExecutor $ssh,
         RoleName $role,
     ): void {
         $profile = $role === RoleName::AppProd && ! $node->roles->pluck('role')->contains(RoleName::AppDev)
@@ -88,7 +88,7 @@ final readonly class RemotePhpPackageManager
     }
 
     /** @param Collection<int, string> $versions */
-    public function installForAppProd(Node $node, Collection $versions, AppProdSshExecutor $ssh): void
+    public function installForAppProd(Node $node, Collection $versions, ProductionSshExecutor $ssh): void
     {
         $needsPcov = $node->roles->pluck('role')->contains(RoleName::AppDev);
 
@@ -98,7 +98,7 @@ final readonly class RemotePhpPackageManager
     }
 
     /** @param Collection<int, string> $versions */
-    public function installPackagesOnlyForAppProd(Node $node, Collection $versions, AppProdSshExecutor $ssh): void
+    public function installPackagesOnlyForAppProd(Node $node, Collection $versions, ProductionSshExecutor $ssh): void
     {
         if ($versions->isEmpty()) {
             return;
@@ -131,7 +131,7 @@ final readonly class RemotePhpPackageManager
     private function install(
         Node $node,
         Collection $versions,
-        AppDevSshExecutor|AppProdSshExecutor $ssh,
+        DevelopmentSshExecutor|ProductionSshExecutor $ssh,
         RoleName $role,
         string $profile,
     ): void {
@@ -174,7 +174,7 @@ final readonly class RemotePhpPackageManager
     private function convergeSource(
         Node $node,
         array $packages,
-        AppDevSshExecutor|AppProdSshExecutor $ssh,
+        DevelopmentSshExecutor|ProductionSshExecutor $ssh,
         array $failure,
         RoleName $role,
     ): void {
@@ -425,7 +425,7 @@ final readonly class RemotePhpPackageManager
         string $version,
         string $profile,
         array $packages,
-        AppDevSshExecutor|AppProdSshExecutor $ssh,
+        DevelopmentSshExecutor|ProductionSshExecutor $ssh,
         array $failure,
         RoleName $role,
     ): void {
@@ -624,7 +624,7 @@ final readonly class RemotePhpPackageManager
         string $version,
         array $packages,
         bool $allowCliPcov,
-        AppProdSshExecutor $ssh,
+        ProductionSshExecutor $ssh,
     ): void {
         $ssh->execute(
             $node,

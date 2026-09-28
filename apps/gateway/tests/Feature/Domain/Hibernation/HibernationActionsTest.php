@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-use App\Actions\Hibernation\ActivateAppInstanceRuntimeAction;
+use App\Actions\Hibernation\ActivateInstanceRuntimeAction;
 use App\Actions\Hibernation\SweepIdleAppDevRuntimesAction;
 use App\Domain\AppDev\AppDevPhpFpmManager;
 use App\Domain\AppDev\VitePortRuntime;
-use App\Domain\Hibernation\AppDevHibernationPolicy;
-use App\Domain\Hibernation\AppInstanceCheckoutInspector;
-use App\Domain\Hibernation\AppInstanceRuntimeReadiness;
+use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\Hibernation\HibernationException;
 use App\Domain\Hibernation\HibernationMarkerStore;
+use App\Domain\Hibernation\InstanceCheckoutInspector;
+use App\Domain\Hibernation\InstanceRuntimeReadiness;
 use App\Domain\Hibernation\RuntimeDependencyState;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -34,8 +34,8 @@ use App\Models\Process;
 use App\Models\Project;
 use App\Models\Schedule;
 use Illuminate\Support\Carbon;
-use Tests\Support\FakeAppInstanceCheckoutInspector;
-use Tests\Support\FakeAppInstanceRuntimeReadiness;
+use Tests\Support\FakeInstanceCheckoutInspector;
+use Tests\Support\FakeInstanceRuntimeReadiness;
 use Tests\Support\FakeVitePortRuntime;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
@@ -43,13 +43,13 @@ beforeEach(function (): void {
     $this->freezeTime();
     $this->runtime = new ProcessesApiFakeRuntimeManager;
     $this->markers = new HibernationFakeMarkerStore;
-    $this->readiness = new FakeAppInstanceRuntimeReadiness;
-    $this->checkouts = new FakeAppInstanceCheckoutInspector;
+    $this->readiness = new FakeInstanceRuntimeReadiness;
+    $this->checkouts = new FakeInstanceCheckoutInspector;
     $this->checkouts->runtime = $this->runtime;
     app()->instance(ProcessRuntimeManager::class, $this->runtime);
     app()->instance(HibernationMarkerStore::class, $this->markers);
-    app()->instance(AppInstanceRuntimeReadiness::class, $this->readiness);
-    app()->instance(AppInstanceCheckoutInspector::class, $this->checkouts);
+    app()->instance(InstanceRuntimeReadiness::class, $this->readiness);
+    app()->instance(InstanceCheckoutInspector::class, $this->checkouts);
 
     $this->node = Node::query()->create([
         'name' => 'app-dev',
@@ -61,13 +61,13 @@ beforeEach(function (): void {
         'wireguard_ip' => '10.44.0.3',
     ]);
     $this->node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
     ]);
     $this->instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $this->node->id,
         'name' => 'main',
         'environment' => 'development',
@@ -94,7 +94,7 @@ it('does not converge PHP-FPM when it wakes or halts Instance Processes', functi
     app()->instance(AppDevPhpFpmManager::class, $fpm);
     $running = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
 
-    app(ActivateAppInstanceRuntimeAction::class)->execute($this->instance);
+    app(ActivateInstanceRuntimeAction::class)->execute($this->instance);
     $this->markers->activity[RuntimeHibernation::key((int) $this->instance->id)] = Carbon::now()->subSeconds(3_601)->getTimestamp();
     app(SweepIdleAppDevRuntimesAction::class)->execute(Carbon::now());
 
@@ -110,7 +110,7 @@ it('wakes desired-running Instance Processes and writes the awake marker', funct
     $running = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
     $stopped = hibernation_action_process($this->instance, 'queue', DesiredProcessState::Stopped);
 
-    app(ActivateAppInstanceRuntimeAction::class)->execute($this->instance);
+    app(ActivateInstanceRuntimeAction::class)->execute($this->instance);
 
     expect($this->runtime->started)
         ->toBe([$running->id])
@@ -133,7 +133,7 @@ it('does not write the awake marker when readiness fails', function (): void {
         message: 'The development server did not accept connections before the wake timeout.',
     );
 
-    expect(fn () => app(ActivateAppInstanceRuntimeAction::class)->execute($this->instance))
+    expect(fn () => app(ActivateInstanceRuntimeAction::class)->execute($this->instance))
         ->toThrow(HibernationException::class);
     expect($this->markers->awake)->toBe([]);
 });
@@ -182,7 +182,7 @@ it('does not expose a ready Vite site when another Process fails during automati
 
     $failure = null;
     try {
-        app(ActivateAppInstanceRuntimeAction::class)->execute($this->instance);
+        app(ActivateInstanceRuntimeAction::class)->execute($this->instance);
     } catch (HibernationException $exception) {
         $failure = $exception;
     }
@@ -304,7 +304,7 @@ it('stops and starts an Antigravity watcher with Instance hibernation', function
         ->and($watcher->fresh()->keep_alive)
         ->toBeFalse();
 
-    app(ActivateAppInstanceRuntimeAction::class)->execute($this->instance);
+    app(ActivateInstanceRuntimeAction::class)->execute($this->instance);
 
     expect($this->runtime->started)
         ->toBe([$http->id, $watcher->id])
@@ -316,7 +316,7 @@ it('starts a desired-running keep-alive Process on wake when it is down', functi
     $queue = hibernation_action_process($this->instance, 'queue', DesiredProcessState::Running, keepAlive: true);
     $vite = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
 
-    app(ActivateAppInstanceRuntimeAction::class)->execute($this->instance);
+    app(ActivateInstanceRuntimeAction::class)->execute($this->instance);
 
     expect($this->runtime->started)
         ->toBe([$queue->id, $vite->id])
@@ -348,9 +348,9 @@ it('leaves recent HTTP activity and Node or production Processes running', funct
         'wireguard_ip' => '10.44.0.4',
     ]);
     $prodNode->roles()->create(['role' => 'app-prod', 'status' => LifecycleStatus::Active]);
-    $app = Project::query()->findOrFail($this->instance->project_id);
+    $project = Project::query()->findOrFail($this->instance->project_id);
     $production = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $prodNode->id,
         'name' => 'prod',
         'environment' => 'production',
@@ -410,7 +410,7 @@ it('skips prune while the Instance is still awake', function (): void {
     $this->markers->activity[$key] = Carbon::now()->subSeconds(604_801)->getTimestamp();
 
     $result = new SweepIdleAppDevRuntimesAction(
-        policy: app(AppDevHibernationPolicy::class),
+        policy: app(DevelopmentHibernationPolicy::class),
         admissions: app(ProcessAdmissionLock::class),
         runtime: $this->runtime,
         markers: $this->markers,
@@ -479,7 +479,7 @@ it('skips prune when any keep-alive desired-running Process exists', function ()
 it('wakes a soft Instance without restoring checkout dependencies', function (): void {
     $running = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
 
-    app(ActivateAppInstanceRuntimeAction::class)->execute($this->instance);
+    app(ActivateInstanceRuntimeAction::class)->execute($this->instance);
 
     expect($this->checkouts->restored)
         ->toBe([])
@@ -499,7 +499,7 @@ it('restores cold checkout dependencies before it starts Processes', function ()
         nodeModulesPresent: false,
     );
 
-    app(ActivateAppInstanceRuntimeAction::class)->execute($this->instance);
+    app(ActivateInstanceRuntimeAction::class)->execute($this->instance);
 
     expect($this->checkouts->startedBeforeRestore)
         ->toBe([])
@@ -521,7 +521,7 @@ it('keeps the cold marker and skips the awake marker when restore fails', functi
         message: 'Composer install failed.',
     );
 
-    expect(fn () => app(ActivateAppInstanceRuntimeAction::class)->execute($this->instance))
+    expect(fn () => app(ActivateInstanceRuntimeAction::class)->execute($this->instance))
         ->toThrow(HibernationException::class);
     expect($this->runtime->started)
         ->toBe([])

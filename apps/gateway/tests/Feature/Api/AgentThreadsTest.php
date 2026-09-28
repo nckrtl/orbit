@@ -16,8 +16,8 @@ function agent_viewer_fixture(): array
     test()->markAsGateway($node);
     test()->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
     test()->postJson('/api/v1/extensions/tasks/enable')->assertOk();
-    $app = Project::query()->create(['name' => 'viewer', 'slug' => 'viewer', 'repository_url' => 'git@example.test:viewer.git', 'default_branch' => 'main']);
-    $group = TaskGroup::query()->create(['project_id' => $app->id, 'title' => 'Viewer', 'brief' => 'Read sessions']);
+    $project = Project::query()->create(['name' => 'viewer', 'slug' => 'viewer', 'repository_url' => 'git@example.test:viewer.git', 'default_branch' => 'main']);
+    $group = TaskGroup::query()->create(['project_id' => $project->id, 'title' => 'Viewer', 'brief' => 'Read sessions']);
     $session = AgentThread::query()->create(['task_group_id' => $group->id, 'node_id' => $node->id, 'role' => 'reviewer', 'model' => 'claude-opus', 'effort' => 'high', 'external_id' => 'thread-one', 'driver' => 't3', 'runtime_key' => 'node:'.$node->id]);
 
     return [$group, $session];

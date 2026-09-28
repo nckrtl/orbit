@@ -16,15 +16,15 @@ function resolution_fixture(): array
 {
     $cluster = Cluster::query()->create(['name' => 'resolution', 'state' => 'active']);
     $caller = Node::query()->create(['name' => 'resolver-caller', 'public_ssh_host' => '192.0.2.80', 'wireguard_ip' => '10.44.0.80', 'user' => 'orbit', 'status' => 'active']);
-    $app = Project::query()->create(['name' => 'Resolve', 'slug' => 'resolve', 'repository_url' => 'https://example.test/resolve.git']);
+    $project = Project::query()->create(['name' => 'Resolve', 'slug' => 'resolve', 'repository_url' => 'https://example.test/resolve.git']);
     $instances = [];
     foreach ([81, 82] as $octet) {
         $node = Node::query()->create(['name' => 'private-owner-'.$octet, 'public_ssh_host' => '192.0.2.'.$octet, 'wireguard_ip' => '10.44.0.'.$octet, 'user' => 'orbit', 'status' => 'active', 'cluster_id' => $cluster->id]);
         $node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
-        $instances[] = $app->appInstances()->create(['node_id' => $node->id, 'name' => 'private-instance-'.$octet, 'environment' => 'production', 'status' => 'active', 'checkout_path' => '/home/orbit/resolve-'.$octet]);
+        $instances[] = $project->instances()->create(['node_id' => $node->id, 'name' => 'private-instance-'.$octet, 'environment' => 'production', 'status' => 'active', 'checkout_path' => '/home/orbit/resolve-'.$octet]);
         $caller->accessibleNodes()->attach($node);
     }
-    $route = Route::query()->create(['project_id' => $app->id, 'cluster_id' => $cluster->id, 'domain' => 'resolve.example.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+    $route = Route::query()->create(['project_id' => $project->id, 'cluster_id' => $cluster->id, 'domain' => 'resolve.example.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
     $route->targets()->create(['instance_id' => $instances[0]->id, 'position' => 0]);
     $route->update(['status' => 'active']);
 

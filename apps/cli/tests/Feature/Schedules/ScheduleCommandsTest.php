@@ -740,7 +740,7 @@ function schedule_definition_cli_data(): array
 {
     return [
         'id' => '0199cc62-68f3-75b8-9f11-36fe92ac1f36',
-        'app_id' => 7,
+        'project_id' => 7,
         'name' => 'hourly-report',
         'environments' => ['production'],
         'spec' => [

@@ -50,7 +50,7 @@ it('uses the instance argument to create a Route for Instance 12 at shop.test', 
     expect($mock->getLastRequest()?->body()->all())->toBe([
         'domain' => 'shop.test',
         'publication' => 'private',
-        'app_instance_id' => 12,
+        'instance_id' => 12,
     ]);
 });
 
@@ -67,12 +67,12 @@ it('creates an app Route for an Instance while transporting publication intent',
     expect($mock->getLastRequest()?->body()->all())->toBe([
         'domain' => 'Odd_Value',
         'publication' => 'future-policy',
-        'app_instance_id' => 7,
+        'instance_id' => 7,
     ]);
 
     $this->artisan('route:create', ['instance' => '8', 'domain' => 'node.test'])->assertExitCode(0);
 
-    expect($mock->getLastRequest()?->body()->all())->toHaveKey('app_instance_id', 8)
+    expect($mock->getLastRequest()?->body()->all())->toHaveKey('instance_id', 8)
         ->not->toHaveKey('node_id');
 });
 
@@ -251,7 +251,7 @@ it('transports explicit private and public publication intents unchanged', funct
     expect($mock->getLastRequest()?->body()->all())->toBe([
         'domain' => 'app.test',
         'publication' => $publication,
-        'app_instance_id' => 3,
+        'instance_id' => 3,
     ]);
 
     $this->artisan('route:update', ['route' => '11', '--publication' => $publication])->assertExitCode(0);
@@ -449,7 +449,7 @@ it('lists, shows, updates, targets, clears, and removes through exact requests',
     $this->artisan('route:update', ['route' => '11', '--domain' => 'next.test'])->assertExitCode(0);
     expect($mock->getLastRequest()?->body()->all())->toBe(['domain' => 'next.test']);
     $this->artisan('route:target:set', ['route' => '11', 'target' => '8'])->assertExitCode(0);
-    expect($mock->getLastRequest()?->body()->all())->toBe(['app_instance_id' => 8]);
+    expect($mock->getLastRequest()?->body()->all())->toBe(['instance_id' => 8]);
     $this->artisan('route:target:set', [
         'route' => '11',
         'target' => '8',
@@ -460,8 +460,8 @@ it('lists, shows, updates, targets, clears, and removes through exact requests',
     expect($mock->getLastRequest()?->body()->all())->toBe([
         'targets' => [8, 9],
         'dispositions' => [
-            ['app_instance_id' => 10, 'route_id' => 4],
-            ['app_instance_id' => 11, 'remove' => true],
+            ['instance_id' => 10, 'route_id' => 4],
+            ['instance_id' => 11, 'remove' => true],
         ],
     ]);
     $this->artisan('route:target:unset', ['route' => '11', '--yes' => true])->assertExitCode(0);
@@ -536,7 +536,7 @@ function route_payload(): array
     return [
         'id' => 11,
         'kind' => 'app',
-        'app_id' => 3,
+        'project_id' => 3,
         'node_id' => 4,
         'cluster_id' => null,
         'generation_basis_node_id' => null,
@@ -550,8 +550,8 @@ function route_payload(): array
         'replaced_by_route_id' => null,
         'replacement_step' => null,
         'target_set_step' => null,
-        'target' => ['id' => 12, 'app_instance_id' => 7, 'position' => 0],
-        'targets' => [['id' => 12, 'app_instance_id' => 7, 'position' => 0]],
+        'target' => ['id' => 12, 'instance_id' => 7, 'position' => 0],
+        'targets' => [['id' => 12, 'instance_id' => 7, 'position' => 0]],
         'process_id' => null,
         'upstream' => null,
     ];
@@ -568,7 +568,7 @@ function custom_proxy_route_payload(): array
     return [
         ...route_payload(),
         'kind' => 'custom_proxy',
-        'app_id' => null,
+        'project_id' => null,
         'target' => null,
         'targets' => [],
         'process_id' => null,
@@ -716,9 +716,9 @@ it('keeps every ordered target in human list and detail output at narrow widths'
     $original = getenv('COLUMNS');
     putenv('COLUMNS='.$columns);
     $payload = [...route_payload(), 'targets' => [
-        ['id' => 12, 'app_instance_id' => 712, 'position' => 0],
-        ['id' => 13, 'app_instance_id' => 934, 'position' => 1],
-        ['id' => 14, 'app_instance_id' => 856, 'position' => 2],
+        ['id' => 12, 'instance_id' => 712, 'position' => 0],
+        ['id' => 13, 'instance_id' => 934, 'position' => 1],
+        ['id' => 14, 'instance_id' => 856, 'position' => 2],
     ]];
     MockClient::global([
         ShowRouteRequest::class => MockResponse::make(['data' => $payload, 'meta' => ['request_id' => route_request_id()]]),

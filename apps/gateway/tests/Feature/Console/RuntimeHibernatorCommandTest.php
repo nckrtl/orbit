@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-use App\Domain\Hibernation\AppInstanceCheckoutInspector;
-use App\Domain\Hibernation\AppInstanceRuntimeReadiness;
 use App\Domain\Hibernation\HibernationMarkerStore;
+use App\Domain\Hibernation\InstanceCheckoutInspector;
+use App\Domain\Hibernation\InstanceRuntimeReadiness;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
@@ -13,8 +13,8 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
 use Illuminate\Support\Carbon;
-use Tests\Support\FakeAppInstanceCheckoutInspector;
-use Tests\Support\FakeAppInstanceRuntimeReadiness;
+use Tests\Support\FakeInstanceCheckoutInspector;
+use Tests\Support\FakeInstanceRuntimeReadiness;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 it('reports how many idle Instance groups the hibernator halted', function (): void {
@@ -47,8 +47,8 @@ it('reports how many idle Instance groups the hibernator halted', function (): v
     };
     app()->instance(ProcessRuntimeManager::class, $runtime);
     app()->instance(HibernationMarkerStore::class, $markers);
-    app()->instance(AppInstanceRuntimeReadiness::class, new FakeAppInstanceRuntimeReadiness);
-    app()->instance(AppInstanceCheckoutInspector::class, new FakeAppInstanceCheckoutInspector);
+    app()->instance(InstanceRuntimeReadiness::class, new FakeInstanceRuntimeReadiness);
+    app()->instance(InstanceCheckoutInspector::class, new FakeInstanceCheckoutInspector);
 
     $node = Node::query()->create([
         'name' => 'app-dev',
@@ -60,13 +60,13 @@ it('reports how many idle Instance groups the hibernator halted', function (): v
         'wireguard_ip' => '10.44.0.3',
     ]);
     $node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'main',
         'environment' => 'development',

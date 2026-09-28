@@ -20,7 +20,7 @@ final readonly class RemoteAppProdCaddyManager implements AppProdCaddyManager
 {
     public function __construct(
         private NodeCaddyBuilds $builds,
-        private AppProdSshExecutor $ssh,
+        private ProductionSshExecutor $ssh,
         private SystemdVpnOrderingDropIn $vpnOrdering = new SystemdVpnOrderingDropIn,
     ) {}
 

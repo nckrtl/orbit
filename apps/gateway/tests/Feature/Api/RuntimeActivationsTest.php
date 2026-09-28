@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-use App\Domain\Hibernation\AppInstanceCheckoutInspector;
-use App\Domain\Hibernation\AppInstanceRuntimeReadiness;
 use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\Hibernation\HibernationWakeFailureStore;
+use App\Domain\Hibernation\InstanceCheckoutInspector;
+use App\Domain\Hibernation\InstanceRuntimeReadiness;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
@@ -18,8 +18,8 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
 use Illuminate\Testing\TestResponse;
-use Tests\Support\FakeAppInstanceCheckoutInspector;
-use Tests\Support\FakeAppInstanceRuntimeReadiness;
+use Tests\Support\FakeInstanceCheckoutInspector;
+use Tests\Support\FakeInstanceRuntimeReadiness;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 beforeEach(function (): void {
@@ -57,8 +57,8 @@ beforeEach(function (): void {
     };
     app()->instance(ProcessRuntimeManager::class, $this->runtime);
     app()->instance(HibernationMarkerStore::class, $this->markers);
-    app()->instance(AppInstanceRuntimeReadiness::class, new FakeAppInstanceRuntimeReadiness);
-    app()->instance(AppInstanceCheckoutInspector::class, new FakeAppInstanceCheckoutInspector);
+    app()->instance(InstanceRuntimeReadiness::class, new FakeInstanceRuntimeReadiness);
+    app()->instance(InstanceCheckoutInspector::class, new FakeInstanceCheckoutInspector);
 
     $this->node = Node::query()->create([
         'name' => 'app-dev',
@@ -70,13 +70,13 @@ beforeEach(function (): void {
         'wireguard_ip' => '10.44.0.3',
     ]);
     $this->node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
     ]);
     $this->instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $this->node->id,
         'name' => 'main',
         'environment' => 'development',

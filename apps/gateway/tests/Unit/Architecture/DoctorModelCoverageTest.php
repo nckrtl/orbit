@@ -7,17 +7,6 @@ use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\AgentThreadSendLease;
 use App\Models\Annotation;
-use App\Models\AppInstanceDependencyEdge;
-use App\Models\AppInstanceDependencyObservation;
-use App\Models\AppInstanceDependencyResolution;
-use App\Models\AppInstanceDependencyScanAttempt;
-use App\Models\AppInstanceDeployment;
-use App\Models\AppInstanceDeployStep;
-use App\Models\AppInstanceEnvironmentValue;
-use App\Models\AppInstanceRemoval;
-use App\Models\AppInstanceRemovalMember;
-use App\Models\AppInstanceTransfer;
-use App\Models\AppUpdate;
 use App\Models\Cluster;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -25,6 +14,16 @@ use App\Models\DatabaseUser;
 use App\Models\DependencyPackage;
 use App\Models\FirewallRule;
 use App\Models\Instance;
+use App\Models\InstanceDependencyEdge;
+use App\Models\InstanceDependencyObservation;
+use App\Models\InstanceDependencyResolution;
+use App\Models\InstanceDependencyScanAttempt;
+use App\Models\InstanceDeployment;
+use App\Models\InstanceDeployStep;
+use App\Models\InstanceEnvironmentValue;
+use App\Models\InstanceRemoval;
+use App\Models\InstanceRemovalMember;
+use App\Models\InstanceTransfer;
 use App\Models\JevDecision;
 use App\Models\Node;
 use App\Models\NodeAccess;
@@ -34,6 +33,7 @@ use App\Models\ProcessDefinition;
 use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
 use App\Models\ProjectNodeExclusion;
+use App\Models\ProjectUpdate;
 use App\Models\Route;
 use App\Models\RouteAnalyticsTracking;
 use App\Models\RouteCustomProxy;
@@ -52,7 +52,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
     $familyModels = [
         Node::class => DoctorFamily::Node,
         NodeRole::class => DoctorFamily::Role,
-        Project::class => DoctorFamily::App,
+        Project::class => DoctorFamily::Project,
         Instance::class => DoctorFamily::Instance,
         Schedule::class => DoctorFamily::Schedule,
         Tool::class => DoctorFamily::Tool,
@@ -62,7 +62,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         RouteCustomProxy::class => DoctorFamily::Route,
     ];
     $ownerInputs = [
-        AppInstanceEnvironmentValue::class,
+        InstanceEnvironmentValue::class,
         ToolManagerRecord::class,
         Setting::class,
         Cluster::class,
@@ -76,21 +76,21 @@ it('partitions every persisted model across doctor dispositions', function (): v
     $excluded = [
         Annotation::class,
         DependencyPackage::class,
-        AppInstanceDependencyObservation::class,
-        AppInstanceDependencyResolution::class,
-        AppInstanceDependencyEdge::class,
-        AppInstanceDependencyScanAttempt::class,
+        InstanceDependencyObservation::class,
+        InstanceDependencyResolution::class,
+        InstanceDependencyEdge::class,
+        InstanceDependencyScanAttempt::class,
         NodeAccess::class,
         Activity::class,
-        AppInstanceDeployment::class,
-        AppInstanceDeployStep::class,
+        InstanceDeployment::class,
+        InstanceDeployStep::class,
         ProjectLifecycleStep::class,
         ProjectNodeExclusion::class,
-        AppInstanceRemoval::class,
-        AppInstanceRemovalMember::class,
-        AppInstanceTransfer::class,
+        InstanceRemoval::class,
+        InstanceRemovalMember::class,
+        InstanceTransfer::class,
         JevDecision::class,
-        AppUpdate::class,
+        ProjectUpdate::class,
         DatabaseUser::class,
         Task::class,
         AgentThread::class,

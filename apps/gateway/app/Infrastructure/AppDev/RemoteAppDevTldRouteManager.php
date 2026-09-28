@@ -12,7 +12,7 @@ use App\Models\Node;
 final readonly class RemoteAppDevTldRouteManager implements AppDevTldRouteManager
 {
     public function __construct(
-        private AppDevSshExecutor $ssh,
+        private DevelopmentSshExecutor $ssh,
     ) {}
 
     public function converge(Node $node): void

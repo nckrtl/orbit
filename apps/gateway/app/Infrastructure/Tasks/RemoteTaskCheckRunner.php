@@ -10,7 +10,7 @@ use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskWorkspaceSnapshot;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use App\Support\ValidatedData;
@@ -24,7 +24,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
     /** A finished status carries the result, the deliverable evidence and a 16 KiB output tail. It outgrows the 64 KiB process default. */
     public const int OutputLimitBytes = 8 * 1024 * 1024;
 
-    public function __construct(private AppDevSshExecutor $ssh) {}
+    public function __construct(private DevelopmentSshExecutor $ssh) {}
 
     public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess
     {

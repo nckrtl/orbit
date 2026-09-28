@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes\Storage;
 
-use App\Data\Nodes\AppsSettingsData;
 use App\Data\Nodes\NodeSettingsData;
+use App\Data\Nodes\NodeStorageAppsData;
 use App\Domain\Shared\ResourceOperationException;
 use stdClass;
 
@@ -55,7 +55,7 @@ final readonly class NodeSettingsParser
         );
     }
 
-    private function nestedApps(mixed $value): ?AppsSettingsData
+    private function nestedApps(mixed $value): ?NodeStorageAppsData
     {
         if ($value === null) {
             return null;
@@ -75,7 +75,7 @@ final readonly class NodeSettingsParser
             );
         }
 
-        return new AppsSettingsData(is_string($path) ? $path : null);
+        return new NodeStorageAppsData(is_string($path) ? $path : null);
     }
 
     /**

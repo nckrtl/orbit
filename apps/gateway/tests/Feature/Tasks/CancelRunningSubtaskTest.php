@@ -42,7 +42,7 @@ function cancel_subtask_in_baseline(int $suffix): array
         'wireguard_ip' => '10.44.1.'.$suffix,
     ]);
     app(TaskExtensionState::class)->enable();
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Cancel baseline',
         'slug' => 'cancel-baseline-'.$suffix,
         'repository_url' => 'git@example.test:cancel-baseline.git',
@@ -56,14 +56,14 @@ function cancel_subtask_in_baseline(int $suffix): array
         'wireguard_ip' => '10.44.2.'.$suffix,
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'task-workspace',
         'checkout_path' => '/srv/orbit/apps/cancel-baseline/task-workspace',
         'status' => 'source_resolved',
     ]);
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Cancel during baseline',
         'brief' => 'Stop the baseline check.',
         'status' => TaskGroupStatus::Running,
@@ -148,7 +148,7 @@ it('cancel running subtask preserves its group and Instance', function (): void 
     $this->markAsGateway($gateway);
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
     app(TaskExtensionState::class)->enable();
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Cancel subtask',
         'slug' => 'cancel-subtask',
         'repository_url' => 'git@example.test:cancel-subtask.git',
@@ -162,14 +162,14 @@ it('cancel running subtask preserves its group and Instance', function (): void 
         'wireguard_ip' => '10.44.0.98',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'task-workspace',
         'checkout_path' => '/srv/orbit/apps/cancel-subtask/task-workspace',
         'status' => 'source_resolved',
     ]);
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Cancel one subtask',
         'brief' => 'Keep the group workspace.',
         'status' => TaskGroupStatus::Running,
@@ -294,14 +294,14 @@ it('cancels a running subtask through the generated MCP tool', function (): void
     $this->markAsGateway($gateway);
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
     app(TaskExtensionState::class)->enable();
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Cancel via MCP',
         'slug' => 'cancel-via-mcp',
         'repository_url' => 'git@example.test:cancel-via-mcp.git',
         'default_branch' => 'main',
     ]);
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Cancel via MCP',
         'brief' => 'Use the generated tool.',
         'status' => TaskGroupStatus::Running,
@@ -343,14 +343,14 @@ it('retries after an interrupt failure and settles when cancelling the last subt
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
     app(TaskExtensionState::class)->enable();
     app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Cancel retry',
         'slug' => 'cancel-retry',
         'repository_url' => 'git@example.test:cancel-retry.git',
         'default_branch' => 'main',
     ]);
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Cancel final subtask',
         'brief' => 'Retry and settle.',
         'status' => TaskGroupStatus::Running,
@@ -405,14 +405,14 @@ it('returns a conflict when the subtask is neither todo nor running', function (
     $this->markAsGateway($gateway);
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
     app(TaskExtensionState::class)->enable();
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Cancel idle subtask',
         'slug' => 'cancel-idle-subtask',
         'repository_url' => 'git@example.test:cancel-idle-subtask.git',
         'default_branch' => 'main',
     ]);
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Not running',
         'brief' => 'Reject cancellation.',
         'status' => TaskGroupStatus::Running,

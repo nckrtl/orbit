@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 use App\Actions\Nodes\RemoveNodeAction;
 use App\Domain\AppDev\PrivateDnsManager;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\RouterLanIngressReconciler;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\MetricsAccessRevoker;
@@ -127,27 +127,27 @@ it('re-reads removal eligibility after acquiring the lifecycle guard', function 
     $target = remove_node_record(name: 'app-dev', wireguardIp: '10.44.0.3');
     $cluster = Cluster::query()->create(['name' => 'development', 'state' => ClusterState::Active]);
     $target->update(['cluster_id' => $cluster->id]);
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    app()->instance(NodeProvisioningLock::class, new class($target, $app) implements NodeProvisioningLock
+    app()->instance(NodeProvisioningLock::class, new class($target, $project) implements NodeProvisioningLock
     {
-        public function __construct(private Node $target, private Project $app) {}
+        public function __construct(private Node $target, private Project $project) {}
 
         public function run(string $nodeName, Closure $callback): mixed
         {
             Instance::query()->create([
-                'project_id' => $this->app->id,
+                'project_id' => $this->project->id,
                 'node_id' => $this->target->id,
                 'name' => 'dev',
                 'checkout_path' => '/srv/orbit/apps/acme/dev',
                 'branch' => 'dev',
                 'starting_commit' => str_repeat('a', 40),
-                'status' => AppInstanceState::Active,
+                'status' => InstanceState::Active,
             ]);
 
             return $callback();
@@ -155,7 +155,7 @@ it('re-reads removal eligibility after acquiring the lifecycle guard', function 
     });
 
     expect(fn () => app(RemoveNodeAction::class)->execute($target, $caller))
-        ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'node.has_app_instances');
+        ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'node.has_instances');
 
     expect($target->refresh()->status)
         ->toBe(LifecycleStatus::Active)
@@ -303,7 +303,7 @@ it('refuses Node removal around an Instance for ordinary and forced offline path
     $caller->accessibleNodes()->attach($target);
     $cluster = Cluster::query()->create(['name' => 'development', 'state' => ClusterState::Active]);
     $target->update(['cluster_id' => $cluster->id]);
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',
@@ -311,20 +311,20 @@ it('refuses Node removal around an Instance for ordinary and forced offline path
         'root' => 'public',
     ]);
     Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $target->id,
         'name' => 'dev',
         'checkout_path' => '/srv/orbit/apps/acme/dev',
         'branch' => 'dev',
         'starting_commit' => str_repeat('a', 40),
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
         ->deleteJson("/api/v1/nodes/{$target->id}", $body)
         ->assertConflict()
-        ->assertJsonPath('error.code', 'node.has_app_instances');
+        ->assertJsonPath('error.code', 'node.has_instances');
 
     expect($target->refresh()->status)
         ->toBe(LifecycleStatus::Active)

@@ -31,7 +31,7 @@ use Tests\Support\FakeTaskRunReceipts;
 /** A blocked task in the given status, with an implementer and a reviewer thread. */
 function blocked_task(TaskStatus $status): Task
 {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'blocked', 'slug' => 'blocked',
         'repository_url' => 'git@example.test:blocked.git', 'default_branch' => 'main',
     ]);
@@ -40,11 +40,11 @@ function blocked_task(TaskStatus $status): Task
         'public_ssh_host' => '10.44.0.190', 'wireguard_ip' => '10.44.0.190',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-9',
+        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-9',
         'checkout_path' => '/tmp/task-9', 'status' => 'source_resolved',
     ]);
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id, 'title' => 'Blocked', 'brief' => 'Unblock it.',
+        'project_id' => $project->id, 'title' => 'Blocked', 'brief' => 'Unblock it.',
         'status' => $status === TaskStatus::Reviewing ? TaskGroupStatus::Reviewing : TaskGroupStatus::Running,
         'assistance_requested' => true, 'assistance_reason' => 'Blocked.',
     ]);
@@ -102,7 +102,7 @@ it('sends a resolution for a blocked review to the reviewer and does not request
 });
 
 it('starts a fresh subtask reviewer with a review resolution when that thread does not exist', function (): void {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'resolution-target', 'slug' => 'resolution-target',
         'repository_url' => 'git@example.test:resolution-target.git', 'default_branch' => 'main',
     ]);
@@ -111,11 +111,11 @@ it('starts a fresh subtask reviewer with a review resolution when that thread do
         'public_ssh_host' => '10.44.0.191', 'wireguard_ip' => '10.44.0.191',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-136',
+        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-136',
         'checkout_path' => '/tmp/task-136', 'branch' => 'task-136', 'status' => 'source_resolved',
     ]);
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id, 'title' => 'Resolutions', 'brief' => 'Route each resolution to its subtask.',
+        'project_id' => $project->id, 'title' => 'Resolutions', 'brief' => 'Route each resolution to its subtask.',
         'status' => TaskGroupStatus::Reviewing,
         'assistance_requested' => true, 'assistance_reason' => 'The review diff could not be read.',
     ]);

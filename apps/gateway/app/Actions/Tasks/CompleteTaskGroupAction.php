@@ -29,12 +29,12 @@ final readonly class CompleteTaskGroupAction
         $group->requireManagedExecution();
         $this->requireExtension->execute();
 
-        $group->loadMissing(['app', 'tasks', 'taskable']);
+        $group->loadMissing(['project', 'tasks', 'taskable']);
 
         if ($group->status === TaskGroupStatus::Completed) {
             $this->removeOrFinish($group, $finishWhenRemovalFails);
 
-            return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+            return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
         }
 
         if ($group->status !== TaskGroupStatus::Settling) {
@@ -51,7 +51,7 @@ final readonly class CompleteTaskGroupAction
             $group->settled_at ??= now();
             $group->save();
 
-            return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+            return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
         }
 
         $group->refresh();
@@ -60,7 +60,7 @@ final readonly class CompleteTaskGroupAction
         $group->settled_at ??= now();
         $group->save();
 
-        return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+        return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
     }
 
     /**

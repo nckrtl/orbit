@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
@@ -27,7 +27,7 @@ function per_project_baseline_checkout(): string
 
 function per_project_baseline_runner(SshExecutor $transport): RemoteTaskCheckRunner
 {
-    return new RemoteTaskCheckRunner(new AppDevSshExecutor(
+    return new RemoteTaskCheckRunner(new DevelopmentSshExecutor(
         $transport,
         new class implements SshKeyProvider
         {
@@ -108,7 +108,7 @@ it('per-project baseline skips an unset command and preserves custom command fai
         'repository_url' => 'git@github.com:acme/no-check.git',
     ]);
     expect($unsetProject->taskCheckCommand())->toBeNull();
-    $instance->app()->associate($unsetProject);
+    $instance->project()->associate($unsetProject);
     $instance->save();
     $noCheck = $runner->start($instance, command: $unsetProject->taskCheckCommand());
     $noOp = null;

@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $route_id
  * @property int $instance_id
  * @property-read Route|null $route
- * @property-read Instance|null $appInstance
+ * @property-read Instance|null $instance
  */
 final class RouteAnalyticsTracking extends Model
 {
@@ -38,7 +38,7 @@ final class RouteAnalyticsTracking extends Model
     }
 
     /** @return BelongsTo<Instance, $this> */
-    public function appInstance(): BelongsTo
+    public function instance(): BelongsTo
     {
         return $this->belongsTo(Instance::class, 'instance_id');
     }

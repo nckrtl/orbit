@@ -44,11 +44,11 @@ final class Project extends Model
 
     protected static function booted(): void
     {
-        self::creating(static function (self $app): void {
+        self::creating(static function (self $project): void {
 
             $used = ValidatedData::stringList(self::query()->pluck('code')->all());
-            $app->code = ProjectCode::validate($app->code ?? ProjectCode::suggest($app->slug, $used));
-            $app->repository_identity = GitRepositoryIdentity::derive($app->repository_url);
+            $project->code = ProjectCode::validate($project->code ?? ProjectCode::suggest($project->slug, $used));
+            $project->repository_identity = GitRepositoryIdentity::derive($project->repository_url);
         });
     }
 
@@ -60,7 +60,7 @@ final class Project extends Model
     }
 
     /** @return HasMany<Instance, $this> */
-    public function appInstances(): HasMany
+    public function instances(): HasMany
     {
         return $this->hasMany(Instance::class);
     }
@@ -83,10 +83,10 @@ final class Project extends Model
         return $this->hasMany(ScheduleDefinition::class);
     }
 
-    /** @return HasMany<AppUpdate, $this> */
+    /** @return HasMany<ProjectUpdate, $this> */
     public function updates(): HasMany
     {
-        return $this->hasMany(AppUpdate::class);
+        return $this->hasMany(ProjectUpdate::class);
     }
 
     /** @return HasMany<TaskGroup, $this> */

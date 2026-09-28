@@ -247,7 +247,7 @@ function transfer_cli_payload(): array
             'status' => 'active',
             'failed_step' => null,
             'error_code' => null,
-            'target' => ['id' => 51, 'app_instance_id' => 11, 'position' => 0],
+            'target' => ['id' => 51, 'instance_id' => 11, 'position' => 0],
             'process_id' => null,
             'upstream' => null,
         ],

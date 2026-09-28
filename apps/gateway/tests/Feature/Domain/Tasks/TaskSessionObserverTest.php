@@ -19,7 +19,7 @@ use App\Models\TaskGroup;
 
 function observer_group(): TaskGroup
 {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'observe-app',
         'slug' => 'observe-app',
         'repository_url' => 'git@example.test:observe.git',
@@ -33,7 +33,7 @@ function observer_group(): TaskGroup
         'wireguard_ip' => '10.44.0.210',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'task-21',
         'checkout_path' => '/srv/orbit/apps/observe-app/task-21',
@@ -42,7 +42,7 @@ function observer_group(): TaskGroup
         'starting_commit' => str_repeat('a', 40),
     ]);
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Observe idle sessions',
         'brief' => 'Route idle implementer threads.',
         'status' => TaskGroupStatus::Running,
@@ -61,7 +61,7 @@ function observer_group(): TaskGroup
 
     test_link_agent_threads($group);
 
-    return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+    return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
 }
 
 /**

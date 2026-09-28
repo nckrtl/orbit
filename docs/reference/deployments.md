@@ -2,14 +2,14 @@
 title: "Production release layout"
 description: "How a production Instance stores deploy steps, separates releases from persistent files, deploys a branch, and rolls back retained code."
 covers:
-  - apps/gateway/app/Domain/AppInstances/Deployment/**
-  - apps/gateway/app/Actions/AppInstances/{Deploy,Rollback}AppInstanceAction.php
-  - apps/gateway/app/Actions/AppInstances/{AppInstanceDeploymentConfigResolver,UpdateAppInstanceAction,ListAppInstanceReleasesAction,ListAppInstanceDeploymentsAction}.php
-  - apps/gateway/app/Actions/AppInstances/*AppInstanceDeployStep*Action.php
-  - apps/gateway/app/Infrastructure/AppInstances/RemoteProductionDeployment.php
+  - apps/gateway/app/Domain/Instances/Deployment/**
+  - apps/gateway/app/Actions/Instances/{Deploy,Rollback}InstanceAction.php
+  - apps/gateway/app/Actions/Instances/{InstanceDeploymentConfigResolver,UpdateInstanceAction,ListInstanceReleasesAction,ListInstanceDeploymentsAction}.php
+  - apps/gateway/app/Actions/Instances/*InstanceDeployStep*Action.php
+  - apps/gateway/app/Infrastructure/Instances/RemoteProductionDeployment.php
   - apps/gateway/app/Http/Streaming/**
-  - apps/gateway/app/Http/Controllers/Api/{AppInstanceDeploymentsController,AppInstanceDeployStepsController,AppInstanceReleasesController,AppInstanceRollbacksController}.php
-  - apps/gateway/app/Models/{AppInstanceDeployment,AppInstanceDeployStep}.php
+  - apps/gateway/app/Http/Controllers/Api/{InstanceDeploymentsController,InstanceDeployStepsController,InstanceReleasesController,InstanceRollbacksController}.php
+  - apps/gateway/app/Models/{InstanceDeployment,InstanceDeployStep}.php
 ---
 
 # Production release layout

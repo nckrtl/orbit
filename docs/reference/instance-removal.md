@@ -2,12 +2,12 @@
 title: "Instance removal"
 description: "How Orbit removes an Instance, what --force changes for development source, how owned Processes and Schedules go with it, and how an interrupted removal resumes."
 covers:
-  - apps/gateway/app/Actions/AppInstances/RemoveAppInstanceAction.php
-  - apps/gateway/app/Domain/AppInstances/{AppInstanceRemover,AppInstanceRemovalStatus,AppInstanceRemovalStep}.php
-  - apps/gateway/app/Domain/AppInstances/Removal/**
-  - apps/gateway/app/Infrastructure/AppInstances/{NativeAppInstanceRemovalProjector,RemoteDevelopmentAppInstanceSourceRemoval,RecordedProductionAppInstanceContentRetention}.php
-  - apps/gateway/app/Http/Requests/AppInstances/RemoveAppInstanceRequest.php
-  - apps/gateway/app/Models/{AppInstanceRemoval,AppInstanceRemovalMember}.php
+  - apps/gateway/app/Actions/Instances/RemoveInstanceAction.php
+  - apps/gateway/app/Domain/Instances/{InstanceRemover,InstanceRemovalStatus,InstanceRemovalStep}.php
+  - apps/gateway/app/Domain/Instances/Removal/**
+  - apps/gateway/app/Infrastructure/{Instances/{NativeInstanceRemovalProjector,RemoteDevelopmentInstanceSourceRemoval,RecordedProductionInstanceContentRetention},AppInstances/RecordedProductionAppInstanceContentRetention}.php
+  - apps/gateway/app/Http/Requests/Instances/RemoveInstanceRequest.php
+  - apps/gateway/app/Models/{InstanceRemoval,InstanceRemovalMember}.php
   - apps/cli/app/Commands/Instances/DestroyInstanceCommand.php
 ---
 

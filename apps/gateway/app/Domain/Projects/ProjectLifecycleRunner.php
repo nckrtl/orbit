@@ -6,7 +6,7 @@ namespace App\Domain\Projects;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -18,7 +18,7 @@ final readonly class ProjectLifecycleRunner
 {
     public function __construct(
         private ProjectLifecycleStepStore $steps,
-        private AppDevSshExecutor $ssh,
+        private DevelopmentSshExecutor $ssh,
         private CommandDeadline $deadline,
     ) {}
 
@@ -28,8 +28,8 @@ final readonly class ProjectLifecycleRunner
             return false;
         }
 
-        $instance->loadMissing(['app', 'node']);
-        $steps = $this->steps->ordered($instance->app, $phase);
+        $instance->loadMissing(['project', 'node']);
+        $steps = $this->steps->ordered($instance->project, $phase);
 
         if ($steps === []) {
             return false;

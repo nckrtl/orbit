@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
-use App\Infrastructure\AppDev\AppDevSiteRepository;
+use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
 use App\Infrastructure\WebSocket\WebSocketDnsTarget;
 use App\Models\Cluster;
@@ -20,14 +20,14 @@ use App\Models\Project;
 use App\Models\Route;
 
 it('renders managed header and terminal newline', function (): void {
-    $result = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
+    $result = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render();
     expect($result)->toStartWith('# Managed by Orbit.')->toEndWith("\n");
 });
 
 it('projects a Cluster-scoped Route to the Router WireGuard address', function (): void {
     $route = orb258_cluster_route();
 
-    $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
+    $configuration = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render();
 
     expect($configuration)
         ->toContain("host-record={$route->domain},10.44.0.20")
@@ -48,14 +48,14 @@ it('projects a Node-scoped Route to the workload WireGuard address', function ()
         'user' => 'orbit',
     ]);
     $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Solo',
         'slug' => 'solo',
         'repository_url' => 'https://example.test/solo.git',
         'root' => 'public',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'default',
         'checkout_path' => '/home/orbit/apps/solo',
@@ -63,10 +63,10 @@ it('projects a Node-scoped Route to the workload WireGuard address', function ()
         'branch' => 'main',
         'starting_commit' => str_repeat('c', 40),
         'selected_php_version' => '8.5',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'domain' => 'solo.app.test',
         'provenance' => RouteProvenance::Explicit,
@@ -79,7 +79,7 @@ it('projects a Node-scoped Route to the workload WireGuard address', function ()
     ]);
     $route->update(['status' => RouteStatus::Active]);
 
-    $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
+    $configuration = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render();
 
     expect($configuration)
         ->toContain('host-record=solo.app.test,10.44.0.40')
@@ -116,7 +116,7 @@ it('keeps gateway.orbit and metrics.orbit on the Gateway WireGuard address', fun
             'status' => LifecycleStatus::Provisioning,
         ]);
 
-    $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render($metrics);
+    $configuration = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render($metrics);
 
     expect($configuration)->toContain('host-record=metrics.orbit,10.44.0.1')
         ->toContain('host-record=gateway.orbit,10.44.0.1');
@@ -143,7 +143,7 @@ it('keeps gateway.orbit and metrics.orbit while the gateway role itself converge
     ]);
     $metrics->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
 
-    $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
+    $configuration = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render();
 
     expect($configuration)->toContain('host-record=gateway.orbit,10.44.0.2')
         ->toContain('host-record=metrics.orbit,10.44.0.2');
@@ -169,7 +169,7 @@ it('keeps reverb.orbit on the websocket role own node, not the Gateway', functio
     ]);
     $websocket->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
 
-    $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
+    $configuration = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render();
 
     expect($configuration)
         ->toContain('host-record=reverb.orbit,10.44.0.9')
@@ -189,7 +189,7 @@ describe('reverb.orbit during a websocket move', function (): void {
     it('keeps answering with the old Node until the new Node build serves the site', function (): void {
         new CaddySiteCertificates()->record($this->target->id, CaddySiteCertificates::Websocket);
 
-        expect(new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render())
+        expect(new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render())
             ->toContain('host-record=reverb.orbit,10.44.0.4')
             ->not->toContain('host-record=reverb.orbit,10.44.0.3');
     });
@@ -197,7 +197,7 @@ describe('reverb.orbit during a websocket move', function (): void {
     it('answers with the new Node once its build serves the site', function (): void {
         new WebSocketDnsTarget()->markServing($this->target->id);
 
-        expect(new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render())
+        expect(new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render())
             ->toContain('host-record=reverb.orbit,10.44.0.3')
             ->not->toContain('host-record=reverb.orbit,10.44.0.4');
     });
@@ -205,7 +205,7 @@ describe('reverb.orbit during a websocket move', function (): void {
     it('answers with the role Node when no other active Node holds the site', function (): void {
         $this->source->update(['status' => LifecycleStatus::Removing]);
 
-        expect(new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render())
+        expect(new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render())
             ->toContain('host-record=reverb.orbit,10.44.0.3');
     });
 });
@@ -242,7 +242,7 @@ it('keeps analytics.orbit on the analytics role own node, not the Gateway', func
     ]);
     $analytics->roles()->create(['role' => RoleName::Analytics, 'status' => LifecycleStatus::Active]);
 
-    $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
+    $configuration = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render();
 
     expect($configuration)
         ->toContain('host-record=analytics.orbit,10.44.0.12')
@@ -261,7 +261,7 @@ it('omits analytics.orbit when no analytics role is active', function (): void {
     ]);
     $node->roles()->create(['role' => RoleName::Analytics, 'status' => LifecycleStatus::Failed]);
 
-    $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
+    $configuration = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render();
 
     expect($configuration)->not->toContain('analytics.orbit');
 });
@@ -289,7 +289,7 @@ it('keeps role records while each role itself converges', function (): void {
         $services->roles()->create(['role' => $role, 'status' => LifecycleStatus::Provisioning]);
     }
 
-    $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
+    $configuration = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render();
 
     expect($configuration)->toContain('host-record=metrics.orbit,10.44.0.2')
         ->toContain('host-record=reverb.orbit,10.44.0.4')
@@ -308,14 +308,14 @@ it('prefers an active role holder over a converging one', function (): void {
         ])->roles()->create(['role' => RoleName::WebSocket, 'status' => $status]);
     }
 
-    $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
+    $configuration = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render();
 
     expect($configuration)->toContain('host-record=reverb.orbit,10.44.0.5')
         ->not->toContain('host-record=reverb.orbit,10.44.0.4');
 });
 
 it('omits reverb.orbit when no websocket role is active', function (): void {
-    $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
+    $configuration = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render();
 
     expect($configuration)->not->toContain('reverb.orbit');
 });
@@ -323,9 +323,9 @@ it('omits reverb.orbit when no websocket role is active', function (): void {
 it('projects an active Cluster TLD to the Router WireGuard address', function (): void {
     $route = orb258_cluster_route();
     $route->cluster->update(['tld' => 'cluster.test']);
-    $route->targets->first()->appInstance->node->update(['tld' => 'cluster.test']);
+    $route->targets->first()->instance->node->update(['tld' => 'cluster.test']);
 
-    $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
+    $configuration = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render();
 
     expect($configuration)
         ->toContain('address=/.cluster.test/10.44.0.20')
@@ -335,7 +335,7 @@ it('projects an active Cluster TLD to the Router WireGuard address', function ()
 
 it('builds a requester catalog from the same records the renderer publishes', function (): void {
     $route = orb258_cluster_route();
-    $renderer = new AppDevDnsConfigRenderer(new AppDevSiteRepository);
+    $renderer = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository);
 
     $configuration = $renderer->render();
     $catalog = $renderer->catalog();
@@ -348,7 +348,7 @@ it('builds a requester catalog from the same records the renderer publishes', fu
         ->toBeEmpty()
         ->and($renderer->registeredRequesters())
         ->toBe([
-            '10.44.0.10' => $route->targets->first()->appInstance->node_id,
+            '10.44.0.10' => $route->targets->first()->instance->node_id,
             '10.44.0.20' => $route->cluster->routerAssignment->node_id,
         ])
         ->and($configuration)
@@ -388,14 +388,14 @@ function orb258_cluster_route(): Route
         'role' => RoleName::Router,
         'status' => LifecycleStatus::Active,
     ]);
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Clustered',
         'slug' => 'clustered',
         'repository_url' => 'https://example.test/clustered.git',
         'root' => 'public',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $workload->id,
         'name' => 'default',
         'checkout_path' => '/home/orbit/apps/clustered',
@@ -403,10 +403,10 @@ function orb258_cluster_route(): Route
         'branch' => 'main',
         'starting_commit' => str_repeat('d', 40),
         'selected_php_version' => '8.5',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'cluster_id' => $cluster->id,
         'domain' => 'app.cluster.test',
         'provenance' => RouteProvenance::Explicit,
@@ -419,5 +419,5 @@ function orb258_cluster_route(): Route
     ]);
     $route->update(['status' => RouteStatus::Active]);
 
-    return $route->fresh(['targets.appInstance', 'cluster.routerAssignment.node']);
+    return $route->fresh(['targets.instance', 'cluster.routerAssignment.node']);
 }

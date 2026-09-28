@@ -7,7 +7,7 @@ namespace App\Infrastructure\Tasks;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskReviewDiffException;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
@@ -22,7 +22,7 @@ final readonly class RemoteTaskReviewDiff implements TaskReviewDiff
 
     private const string SummaryMarker = '---ORBIT-REVIEW-SUMMARY---';
 
-    public function __construct(private AppDevSshExecutor $ssh) {}
+    public function __construct(private DevelopmentSshExecutor $ssh) {}
 
     public function read(Instance $instance, string $startCommit): array
     {

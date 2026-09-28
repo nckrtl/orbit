@@ -6,9 +6,9 @@ namespace App\Actions\Annotations;
 
 use App\Data\Annotations\AnnotationData;
 use App\Data\Annotations\AnnotationInput;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -28,7 +28,7 @@ final readonly class AnnotationStoreAction
     {
         return DB::transaction(function () use ($instance, $input): Annotation {
             $instance = Instance::query()->lockForUpdate()->findOrFail($instance->id);
-            if ($instance->status === AppInstanceState::Removing) {
+            if ($instance->status === InstanceState::Removing) {
                 throw new ResourceOperationException('annotation.instance_removing', 'Cannot annotate an Instance that is being removed.', 409);
             }
             $context = app(CommandActivityInputSanitizer::class)->sanitizeProperties($input->context);

@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 use App\Actions\Tasks\ShowAgentThreadsAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
-use App\Domain\AppInstances\AppInstanceDestinationGuard;
-use App\Domain\AppInstances\AppInstanceState;
-use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
-use App\Domain\AppInstances\DevelopmentSourceResolution;
+use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
+use App\Domain\Instances\DevelopmentSourceResolution;
+use App\Domain\Instances\InstanceDestinationGuard;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
@@ -107,21 +107,21 @@ function scheduler_node(string $name, string $ip): Node
     ]);
 }
 
-function scheduler_instance(Project $app, Node $node, string $name): Instance
+function scheduler_instance(Project $project, Node $node, string $name): Instance
 {
     return Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => $name,
-        'checkout_path' => "/tmp/tasks-{$app->slug}-{$name}",
+        'checkout_path' => "/tmp/tasks-{$project->slug}-{$name}",
         'status' => 'reserved',
     ]);
 }
 
-function queued_group(Project $app, string $title, ?Instance $instance = null): TaskGroup
+function queued_group(Project $project, string $title, ?Instance $instance = null): TaskGroup
 {
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => $title,
         'brief' => "{$title} brief",
         'status' => TaskGroupStatus::Todo,
@@ -203,11 +203,11 @@ function scheduler_bind_claim(Instance $instance, AgentSpawner $spawner): void
 }
 
 it('reserves queued groups without a per-Project ceiling', function (): void {
-    $app = scheduler_app('ceiling-app');
-    $first = queued_group($app, 'One');
-    $second = queued_group($app, 'Two');
-    $third = queued_group($app, 'Three');
-    $fourth = queued_group($app, 'Four');
+    $project = scheduler_app('ceiling-app');
+    $first = queued_group($project, 'One');
+    $second = queued_group($project, 'Two');
+    $third = queued_group($project, 'Three');
+    $fourth = queued_group($project, 'Four');
 
     $scheduler = app(TaskScheduler::class);
 
@@ -216,43 +216,43 @@ it('reserves queued groups without a per-Project ceiling', function (): void {
         ->and($second->fresh()?->status)->toBe(TaskGroupStatus::Todo)
         ->and($third->fresh()?->status)->toBe(TaskGroupStatus::Todo)
         ->and($fourth->fresh()?->status)->toBe(TaskGroupStatus::Todo)
-        ->and(app(TaskConcurrencyGuard::class)->activeForApp($app->id))->toBe(0);
+        ->and(app(TaskConcurrencyGuard::class)->activeForApp($project->id))->toBe(0);
 });
 
-it('does not count completed groups toward the App ceiling', function (): void {
-    $app = scheduler_app('completed-app');
+it('does not count completed groups toward the Project ceiling', function (): void {
+    $project = scheduler_app('completed-app');
     TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Done',
         'brief' => 'Already settled',
         'status' => TaskGroupStatus::Completed,
     ]);
-    $queued = queued_group($app, 'Next');
+    $queued = queued_group($project, 'Next');
 
     expect(app(TaskScheduler::class)->claimNext())->toBeNull()
         ->and($queued->fresh()?->status)->toBe(TaskGroupStatus::Todo);
 });
 
 it('claims another group when three reserved groups already occupy the App', function (): void {
-    $app = scheduler_app('full-app');
+    $project = scheduler_app('full-app');
     foreach (['A', 'B', 'C'] as $title) {
         TaskGroup::query()->create([
-            'project_id' => $app->id,
+            'project_id' => $project->id,
             'title' => $title,
             'brief' => $title,
             'status' => TaskGroupStatus::Reserved,
         ]);
     }
-    $queued = queued_group($app, 'Overflow');
+    $queued = queued_group($project, 'Overflow');
 
     expect(app(TaskScheduler::class)->claimNext())->toBeNull()
         ->and($queued->fresh()?->status)->toBe(TaskGroupStatus::Todo);
 });
 
-it('applies the Node ceiling only after an App instance is assigned', function (): void {
-    $app = scheduler_app('node-app');
+it('applies the Node ceiling only after a Project instance is assigned', function (): void {
+    $project = scheduler_app('node-app');
     $node = scheduler_node('task-node', '10.44.0.90');
-    $instance = scheduler_instance($app, $node, 'shared');
+    $instance = scheduler_instance($project, $node, 'shared');
 
     foreach (range(1, TaskCeilings::PerNode) as $index) {
         $owner = scheduler_app("node-owner-{$index}");
@@ -267,7 +267,7 @@ it('applies the Node ceiling only after an App instance is assigned', function (
         $group->save();
     }
 
-    $queued = queued_group($app, 'Blocked', $instance);
+    $queued = queued_group($project, 'Blocked', $instance);
 
     expect(app(TaskConcurrencyGuard::class)->activeForNode($node->id))->toBe(TaskCeilings::PerNode)
         ->and(app(TaskScheduler::class)->claimNext())->toBeNull()
@@ -275,10 +275,10 @@ it('applies the Node ceiling only after an App instance is assigned', function (
 });
 
 it('starts a group when provisioning assigns an instance under both ceilings', function (): void {
-    $app = scheduler_app('orbit');
+    $project = scheduler_app('orbit');
     $node = scheduler_node('orbit-node', '10.44.0.91');
-    $instance = scheduler_instance($app, $node, 'isolated');
-    $group = queued_group($app, 'Wire T3');
+    $instance = scheduler_instance($project, $node, 'isolated');
+    $group = queued_group($project, 'Wire T3');
 
     app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
     {
@@ -310,7 +310,7 @@ it('starts a group when provisioning assigns an instance under both ceilings', f
 
     $claimed = app(TaskScheduler::class)->claimNext();
     test_pass_baseline();
-    $claimed = $claimed?->fresh(['tasks', 'app', 'taskable']);
+    $claimed = $claimed?->fresh(['tasks', 'project', 'taskable']);
 
     expect($claimed)->not->toBeNull()
         ->and($claimed?->status)->toBe(TaskGroupStatus::Running)
@@ -322,10 +322,10 @@ it('starts a group when provisioning assigns an instance under both ceilings', f
 });
 
 it('fails a group and its first task when the run script cannot be installed', function (): void {
-    $app = scheduler_app('orbit');
+    $project = scheduler_app('orbit');
     $node = scheduler_node('orbit-node', '10.44.0.91');
-    $instance = scheduler_instance($app, $node, 'isolated');
-    $group = queued_group($app, 'Wire T3');
+    $instance = scheduler_instance($project, $node, 'isolated');
+    $group = queued_group($project, 'Wire T3');
     app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
     {
         public function __construct(private Instance $instance) {}
@@ -367,9 +367,9 @@ it('fails a group and its first task when the run script cannot be installed', f
 });
 
 it('keeps the task in review and counts a communication failure when the reviewer spawn at the first handoff returns no thread id', function (): void {
-    $app = scheduler_app('missing-reviewer');
-    $instance = scheduler_instance($app, scheduler_node('missing-reviewer-node', '10.44.0.96'), 'workspace');
-    $group = queued_group($app, 'Missing reviewer');
+    $project = scheduler_app('missing-reviewer');
+    $instance = scheduler_instance($project, scheduler_node('missing-reviewer-node', '10.44.0.96'), 'workspace');
+    $group = queued_group($project, 'Missing reviewer');
 
     app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
     {
@@ -409,9 +409,9 @@ it('keeps the task in review and counts a communication failure when the reviewe
 });
 
 it('fails a group and its first task when the implementer spawn returns no thread id', function (): void {
-    $app = scheduler_app('missing-implementer');
-    $instance = scheduler_instance($app, scheduler_node('missing-implementer-node', '10.44.0.97'), 'workspace');
-    $group = queued_group($app, 'Missing implementer');
+    $project = scheduler_app('missing-implementer');
+    $instance = scheduler_instance($project, scheduler_node('missing-implementer-node', '10.44.0.97'), 'workspace');
+    $group = queued_group($project, 'Missing implementer');
 
     app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
     {
@@ -441,7 +441,7 @@ it('fails a group and its first task when the implementer spawn returns no threa
 
     $claimed = app(TaskScheduler::class)->claimNext();
     test_pass_baseline();
-    $claimed = $claimed?->fresh(['tasks', 'app', 'taskable']);
+    $claimed = $claimed?->fresh(['tasks', 'project', 'taskable']);
 
     expect($claimed?->status)->toBe(TaskGroupStatus::Failed)
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Failed)
@@ -451,9 +451,9 @@ it('fails a group and its first task when the implementer spawn returns no threa
 });
 
 it('fails the group when a later implementer spawn returns no thread id', function (): void {
-    $app = scheduler_app('missing-next-implementer');
-    $instance = scheduler_instance($app, scheduler_node('missing-next-node', '10.44.0.98'), 'workspace');
-    $group = queued_group($app, 'Missing next implementer', $instance);
+    $project = scheduler_app('missing-next-implementer');
+    $instance = scheduler_instance($project, scheduler_node('missing-next-node', '10.44.0.98'), 'workspace');
+    $group = queued_group($project, 'Missing next implementer', $instance);
     Task::query()->create([
         'task_group_id' => $group->id,
         'position' => 2,
@@ -499,9 +499,9 @@ it('fails the group when a later implementer spawn returns no thread id', functi
 });
 
 it('returns a provisioned group to todo on its Instance when the Node is already at the ceiling', function (): void {
-    $app = scheduler_app('held-app');
+    $project = scheduler_app('held-app');
     $node = scheduler_node('full-node', '10.44.0.92');
-    $instance = scheduler_instance($app, $node, 'held');
+    $instance = scheduler_instance($project, $node, 'held');
 
     foreach (range(1, TaskCeilings::PerNode) as $index) {
         $owner = scheduler_app("fill-owner-{$index}");
@@ -516,7 +516,7 @@ it('returns a provisioned group to todo on its Instance when the Node is already
         $group->save();
     }
 
-    $queued = queued_group($app, 'Wait');
+    $queued = queued_group($project, 'Wait');
     app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
     {
         public function __construct(private Instance $instance) {}
@@ -536,8 +536,8 @@ it('returns a provisioned group to todo on its Instance when the Node is already
 });
 
 it('advances a claimed Orbit group to running when the real provisioner and T3 spawner succeed', function (): void {
-    $app = scheduler_app('orbit');
-    $app->update(['root' => 'public']);
+    $project = scheduler_app('orbit');
+    $project->update(['root' => 'public']);
     $node = scheduler_node('real-wire', '10.44.0.94');
     $node->update(['user' => 'orbit', 'tld' => 'test', 'settings' => ['apps' => ['path' => '/srv/orbit/apps']]]);
     $node->roles()->create([
@@ -554,7 +554,7 @@ it('advances a claimed Orbit group to running when the real provisioner and T3 s
         'desired_state' => DesiredProcessState::Running,
         'status' => LifecycleStatus::Active,
     ]);
-    $group = queued_group($app, 'Real wire');
+    $group = queued_group($project, 'Real wire');
 
     app()->instance(ManagedUserAccountResolver::class, new class implements ManagedUserAccountResolver
     {
@@ -563,24 +563,24 @@ it('advances a claimed Orbit group to running when the real provisioner and T3 s
             return new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
         }
     });
-    app()->instance(AppInstanceDestinationGuard::class, new class implements AppInstanceDestinationGuard
+    app()->instance(InstanceDestinationGuard::class, new class implements InstanceDestinationGuard
     {
         public function assertUnoccupied(Node $node, StoragePath $destination): void {}
     });
-    app()->instance(DevelopmentAppInstanceSourceLifecycle::class, new class implements DevelopmentAppInstanceSourceLifecycle
+    app()->instance(DevelopmentInstanceSourceLifecycle::class, new class implements DevelopmentInstanceSourceLifecycle
     {
-        public function prepare(Instance $appInstance, bool $allowExisting): void {}
+        public function prepare(Instance $instance, bool $allowExisting): void {}
 
-        public function inspectPrepared(Instance $appInstance): void {}
+        public function inspectPrepared(Instance $instance): void {}
 
-        public function resolve(Instance $appInstance): DevelopmentSourceResolution
+        public function resolve(Instance $instance): DevelopmentSourceResolution
         {
-            return new DevelopmentSourceResolution($appInstance->name, str_repeat('c', 40));
+            return new DevelopmentSourceResolution($instance->name, str_repeat('c', 40));
         }
 
-        public function inspectResolved(Instance $appInstance): DevelopmentSourceResolution
+        public function inspectResolved(Instance $instance): DevelopmentSourceResolution
         {
-            return new DevelopmentSourceResolution((string) $appInstance->branch, (string) $appInstance->starting_commit);
+            return new DevelopmentSourceResolution((string) $instance->branch, (string) $instance->starting_commit);
         }
     });
     app()->instance(T3Dispatcher::class, new class implements T3Dispatcher
@@ -602,13 +602,13 @@ it('advances a claimed Orbit group to running when the real provisioner and T3 s
 
     $claimed = app(TaskScheduler::class)->claimNext();
     test_pass_baseline();
-    $claimed = $claimed?->fresh(['tasks', 'app', 'taskable']);
+    $claimed = $claimed?->fresh(['tasks', 'project', 'taskable']);
 
     expect($claimed?->id)->toBe($group->id)
         ->and($claimed?->status)->toBe(TaskGroupStatus::Running)
         ->and($claimed?->taskable_id)->not->toBeNull()
         ->and($claimed?->taskable)->toBeInstanceOf(Instance::class)
-        ->and($claimed?->taskable?->status)->toBe(AppInstanceState::SourceResolved)
+        ->and($claimed?->taskable?->status)->toBe(InstanceState::SourceResolved)
         ->and($claimed?->taskable?->routes()->count())->toBe(0)
         ->and($claimed?->reviewer_agent_thread_id)->toBeNull()
         ->and($claimed?->tasks->first()?->status)->toBe(TaskStatus::Running)
@@ -616,17 +616,17 @@ it('advances a claimed Orbit group to running when the real provisioner and T3 s
 });
 
 it('starts only the first pending subtask when a claimed group has later siblings', function (): void {
-    $app = scheduler_app('opening-order-app');
+    $project = scheduler_app('opening-order-app');
     $node = scheduler_node('opening-order-node', '10.44.0.96');
-    $instance = scheduler_instance($app, $node, 'opening-order');
-    $group = queued_group($app, 'Opening order', $instance);
+    $instance = scheduler_instance($project, $node, 'opening-order');
+    $group = queued_group($project, 'Opening order', $instance);
     scheduler_pending_task($group, 2, 'Second');
     $spawner = scheduler_recording_spawner();
     scheduler_bind_claim($instance, $spawner);
 
     $claimed = app(TaskScheduler::class)->claimNext();
     test_pass_baseline();
-    $claimed = $claimed?->fresh(['tasks', 'app', 'taskable']);
+    $claimed = $claimed?->fresh(['tasks', 'project', 'taskable']);
     $tasks = $claimed?->tasks->sortBy(fn (Task $task): array => [$task->position, $task->id])->values();
 
     expect($claimed?->status)->toBe(TaskGroupStatus::Running)
@@ -637,17 +637,17 @@ it('starts only the first pending subtask when a claimed group has later sibling
 });
 
 it('rejects starting a later subtask while a sibling is still running', function (): void {
-    $app = scheduler_app('second-running-app');
+    $project = scheduler_app('second-running-app');
     $node = scheduler_node('second-running-node', '10.44.0.97');
-    $instance = scheduler_instance($app, $node, 'second-running');
-    $group = queued_group($app, 'Second running', $instance);
+    $instance = scheduler_instance($project, $node, 'second-running');
+    $group = queued_group($project, 'Second running', $instance);
     scheduler_pending_task($group, 2, 'Second');
     $spawner = scheduler_recording_spawner();
     scheduler_bind_claim($instance, $spawner);
 
     $claimed = app(TaskScheduler::class)->claimNext();
     test_pass_baseline();
-    $claimed = $claimed?->fresh(['tasks', 'app', 'taskable']);
+    $claimed = $claimed?->fresh(['tasks', 'project', 'taskable']);
     $second = $claimed?->tasks
         ->sortBy(fn (Task $task): array => [$task->position, $task->id])
         ->values()
@@ -666,17 +666,17 @@ it('rejects starting a later subtask while a sibling is still running', function
 });
 
 it('starts the next pending subtask as the sole running task after review is accepted', function (): void {
-    $app = scheduler_app('accept-next-app');
+    $project = scheduler_app('accept-next-app');
     $node = scheduler_node('accept-next-node', '10.44.0.98');
-    $instance = scheduler_instance($app, $node, 'accept-next');
-    $group = queued_group($app, 'Accept next', $instance);
+    $instance = scheduler_instance($project, $node, 'accept-next');
+    $group = queued_group($project, 'Accept next', $instance);
     scheduler_pending_task($group, 2, 'Second');
     $spawner = scheduler_recording_spawner();
     scheduler_bind_claim($instance, $spawner);
 
     $claimed = app(TaskScheduler::class)->claimNext();
     test_pass_baseline();
-    $claimed = $claimed?->fresh(['tasks', 'app', 'taskable']);
+    $claimed = $claimed?->fresh(['tasks', 'project', 'taskable']);
     $reviewing = app(TaskScheduler::class)->settleImplementer($claimed?->tasks->first() ?? $group->tasks->first());
     $advanced = app(TaskScheduler::class)->acceptReview($reviewing->tasks->first());
     $tasks = $advanced->tasks->sortBy(fn (Task $task): array => [$task->position, $task->id])->values();
@@ -689,10 +689,10 @@ it('starts the next pending subtask as the sole running task after review is acc
 });
 
 it('starts a reviewer at each subtask handoff and starts the next implementer after approval', function (): void {
-    $app = scheduler_app('handoff-app');
+    $project = scheduler_app('handoff-app');
     $node = scheduler_node('handoff-node', '10.44.0.93');
-    $instance = scheduler_instance($app, $node, 'handoff');
-    $group = queued_group($app, 'Handoff', $instance);
+    $instance = scheduler_instance($project, $node, 'handoff');
+    $group = queued_group($project, 'Handoff', $instance);
     Task::query()->create([
         'task_group_id' => $group->id,
         'position' => 2,
@@ -744,7 +744,7 @@ it('starts a reviewer at each subtask handoff and starts the next implementer af
 
     $claimed = app(TaskScheduler::class)->claimNext();
     test_pass_baseline();
-    $claimed = $claimed?->fresh(['tasks', 'app', 'taskable']);
+    $claimed = $claimed?->fresh(['tasks', 'project', 'taskable']);
     $first = $claimed?->tasks->first();
 
     expect($claimed?->status)->toBe(TaskGroupStatus::Running)
@@ -778,11 +778,11 @@ it('starts a reviewer at each subtask handoff and starts the next implementer af
 });
 
 it('retries a review when the diff cannot be read instead of sending an empty change', function (): void {
-    $app = scheduler_app('unread-diff');
+    $project = scheduler_app('unread-diff');
     $node = scheduler_node('unread-diff-node', '10.44.0.78');
-    $instance = scheduler_instance($app, $node, 'unread');
+    $instance = scheduler_instance($project, $node, 'unread');
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Unread diff',
         'brief' => 'The diff read fails.',
         'status' => TaskGroupStatus::Running,
@@ -818,11 +818,11 @@ it('retries a review when the diff cannot be read instead of sending an empty ch
 });
 
 it('holds a review resolution when diff reads fail on a reserved reviewer and retries it', function (): void {
-    $app = scheduler_app('reserved-review');
+    $project = scheduler_app('reserved-review');
     $node = scheduler_node('reserved-review-node', '10.44.0.79');
-    $instance = scheduler_instance($app, $node, 'reserved');
+    $instance = scheduler_instance($project, $node, 'reserved');
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Reserved review',
         'brief' => 'The diff read fails until the operator answers.',
         'status' => TaskGroupStatus::Running,
@@ -938,10 +938,10 @@ it('reviews the first subtask with a missing start commit from the workspace sta
 });
 
 it('records a missing start commit on a later tick', function (): void {
-    $app = scheduler_app('retry-start');
-    $instance = scheduler_instance($app, scheduler_node('retry-start-node', '10.44.0.71'), 'retry');
+    $project = scheduler_app('retry-start');
+    $instance = scheduler_instance($project, scheduler_node('retry-start-node', '10.44.0.71'), 'retry');
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Retry start',
         'brief' => 'The start read failed.',
         'status' => TaskGroupStatus::Running,
@@ -986,10 +986,10 @@ it('records a missing start commit on a later tick', function (): void {
 });
 
 it('keeps a migrated continuation on its source subtask start after the source commits', function (): void {
-    $app = scheduler_app('continuation-start');
-    $instance = scheduler_instance($app, scheduler_node('continuation-start-node', '10.44.0.74'), 'continuation');
+    $project = scheduler_app('continuation-start');
+    $instance = scheduler_instance($project, scheduler_node('continuation-start-node', '10.44.0.74'), 'continuation');
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Continuation start',
         'brief' => 'Overflow deliverables preserve the source boundary.',
         'status' => TaskGroupStatus::Running,
@@ -1044,10 +1044,10 @@ it('keeps a migrated continuation on its source subtask start after the source c
 });
 
 it('does not record a later head after the implementer starts and commits', function (): void {
-    $app = scheduler_app('late-start');
-    $instance = scheduler_instance($app, scheduler_node('late-start-node', '10.44.0.72'), 'late');
+    $project = scheduler_app('late-start');
+    $instance = scheduler_instance($project, scheduler_node('late-start-node', '10.44.0.72'), 'late');
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Late start',
         'brief' => 'The start read failed until the implementer had committed.',
         'status' => TaskGroupStatus::Running,
@@ -1102,10 +1102,10 @@ it('does not record a later head after the implementer starts and commits', func
 });
 
 it('records a start commit on a later tick while the implementer is only reserved', function (): void {
-    $app = scheduler_app('reserved-start');
-    $instance = scheduler_instance($app, scheduler_node('reserved-start-node', '10.44.0.73'), 'reserved');
+    $project = scheduler_app('reserved-start');
+    $instance = scheduler_instance($project, scheduler_node('reserved-start-node', '10.44.0.73'), 'reserved');
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Reserved start',
         'brief' => 'The implementer row is not a turn yet.',
         'status' => TaskGroupStatus::Running,
@@ -1215,11 +1215,11 @@ function scheduler_missing_start_review(?string $approvedCommit, string $startin
 {
     static $octet = 80;
     $octet++;
-    $app = scheduler_app('missing-start-'.$octet);
-    $instance = scheduler_instance($app, scheduler_node($app->slug.'-node', '10.44.3.'.$octet), 'missing');
+    $project = scheduler_app('missing-start-'.$octet);
+    $instance = scheduler_instance($project, scheduler_node($project->slug.'-node', '10.44.3.'.$octet), 'missing');
     $instance->update(['starting_commit' => $startingCommit]);
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Missing start',
         'brief' => 'Review without a recorded start.',
         'status' => TaskGroupStatus::Running,
@@ -1280,12 +1280,12 @@ function scheduler_missing_start_review(?string $approvedCommit, string $startin
 }
 
 it('starts a fresh reviewer per subtask with the packet, and continues that thread on re-review', function (): void {
-    $app = scheduler_app('fresh-reviewer');
-    $app->update(['task_check' => 'composer check']);
+    $project = scheduler_app('fresh-reviewer');
+    $project->update(['task_check' => 'composer check']);
     $node = scheduler_node('fresh-reviewer-node', '10.44.0.77');
-    $instance = scheduler_instance($app, $node, 'fresh');
+    $instance = scheduler_instance($project, $node, 'fresh');
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Fresh reviewers',
         'brief' => 'Each subtask gets its own reviewer.',
         'status' => TaskGroupStatus::Running,
@@ -1461,10 +1461,10 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
 
 it('keeps the reviewed pull request, writes settle metrics, and notifies Coder after the last sign-off', function (): void {
     $this->freezeTime();
-    $app = scheduler_app('settle-app');
+    $project = scheduler_app('settle-app');
     $node = scheduler_node('settle-node', '10.44.0.95');
-    $instance = scheduler_instance($app, $node, 'settle');
-    $group = queued_group($app, 'Settle', $instance);
+    $instance = scheduler_instance($project, $node, 'settle');
+    $group = queued_group($project, 'Settle', $instance);
     $group->notify_coder = true;
     $group->pr_url = 'https://github.com/nckrtl/orbit/pull/543';
     $group->save();
@@ -1534,11 +1534,11 @@ it('keeps the reviewed pull request, writes settle metrics, and notifies Coder a
 });
 
 it('runs the Project setup steps and check on the fresh workspace before the first implementer starts', function (): void {
-    $app = scheduler_app('baseline-app');
-    $app->update(['task_check' => 'composer check']);
-    $instance = scheduler_instance($app, scheduler_node('baseline-node', '10.44.0.94'), 'baseline');
-    $group = queued_group($app, 'Baseline', $instance);
-    ProjectLifecycleStep::query()->create(['project_id' => $app->id, 'phase' => 'setup', 'name' => 'Install', 'command' => 'composer install', 'timeout_seconds' => 600, 'position' => 1]);
+    $project = scheduler_app('baseline-app');
+    $project->update(['task_check' => 'composer check']);
+    $instance = scheduler_instance($project, scheduler_node('baseline-node', '10.44.0.94'), 'baseline');
+    $group = queued_group($project, 'Baseline', $instance);
+    ProjectLifecycleStep::query()->create(['project_id' => $project->id, 'phase' => 'setup', 'name' => 'Install', 'command' => 'composer install', 'timeout_seconds' => 600, 'position' => 1]);
     $spawner = scheduler_recording_spawner();
     scheduler_bind_claim($instance, $spawner);
     $checks = new FakeTaskCheckRunner([TaskCheckReading::running(), FakeTaskCheckRunner::passed()]);
@@ -1561,10 +1561,10 @@ it('runs the Project setup steps and check on the fresh workspace before the fir
 });
 
 it('prepares Composer and JavaScript dependencies referenced by a custom baseline command', function (): void {
-    $app = scheduler_app('custom-baseline-command');
-    $app->update(['task_check' => 'composer test && bun run check']);
-    $instance = scheduler_instance($app, scheduler_node('custom-baseline-node', '10.44.0.98'), 'custom-check');
-    queued_group($app, 'Custom baseline command', $instance);
+    $project = scheduler_app('custom-baseline-command');
+    $project->update(['task_check' => 'composer test && bun run check']);
+    $instance = scheduler_instance($project, scheduler_node('custom-baseline-node', '10.44.0.98'), 'custom-check');
+    queued_group($project, 'Custom baseline command', $instance);
     scheduler_bind_claim($instance, scheduler_recording_spawner());
     $checks = new FakeTaskCheckRunner([TaskCheckReading::running()]);
     app()->instance(TaskCheckRunner::class, $checks);
@@ -1579,10 +1579,10 @@ it('prepares Composer and JavaScript dependencies referenced by a custom baselin
 });
 
 it('prepares Composer dependencies only when the baseline command runs composer or uses vendor', function (string $command, bool $installs): void {
-    $app = scheduler_app('composer-trigger');
-    $app->update(['task_check' => $command]);
-    $instance = scheduler_instance($app, scheduler_node('composer-trigger-node', '10.44.0.99'), 'composer-trigger');
-    queued_group($app, 'Composer trigger', $instance);
+    $project = scheduler_app('composer-trigger');
+    $project->update(['task_check' => $command]);
+    $instance = scheduler_instance($project, scheduler_node('composer-trigger-node', '10.44.0.99'), 'composer-trigger');
+    queued_group($project, 'Composer trigger', $instance);
     scheduler_bind_claim($instance, scheduler_recording_spawner());
     $checks = new FakeTaskCheckRunner([TaskCheckReading::running()]);
     app()->instance(TaskCheckRunner::class, $checks);
@@ -1600,9 +1600,9 @@ it('prepares Composer dependencies only when the baseline command runs composer 
 ]);
 
 it('passes an unset Project baseline without a command and starts the first implementer', function (): void {
-    $app = scheduler_app('no-baseline-command');
-    $instance = scheduler_instance($app, scheduler_node('no-baseline-command-node', '10.44.0.97'), 'no-check');
-    $group = queued_group($app, 'No baseline command', $instance);
+    $project = scheduler_app('no-baseline-command');
+    $instance = scheduler_instance($project, scheduler_node('no-baseline-command-node', '10.44.0.97'), 'no-check');
+    $group = queued_group($project, 'No baseline command', $instance);
     $spawner = scheduler_recording_spawner();
     scheduler_bind_claim($instance, $spawner);
     $checks = new FakeTaskCheckRunner([TaskCheckReading::running(), FakeTaskCheckRunner::passed()]);
@@ -1618,10 +1618,10 @@ it('passes an unset Project baseline without a command and starts the first impl
 });
 
 it('asks for assistance, and starts no agent, when the fresh workspace fails its check', function (?string $failedStep, string $reason): void {
-    $app = scheduler_app('broken-main');
-    $app->update(['task_check' => 'composer check']);
-    $instance = scheduler_instance($app, scheduler_node('broken-node', '10.44.0.95'), 'broken');
-    $group = queued_group($app, 'Broken main', $instance);
+    $project = scheduler_app('broken-main');
+    $project->update(['task_check' => 'composer check']);
+    $instance = scheduler_instance($project, scheduler_node('broken-node', '10.44.0.95'), 'broken');
+    $group = queued_group($project, 'Broken main', $instance);
     $spawner = scheduler_recording_spawner();
     scheduler_bind_claim($instance, $spawner);
     app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner([
@@ -1647,9 +1647,9 @@ it('asks for assistance, and starts no agent, when the fresh workspace fails its
  */
 function scheduler_approved_subtask(string $slug, bool $last = false, ?string $receipt = null): array
 {
-    $app = scheduler_app($slug);
-    $instance = scheduler_instance($app, scheduler_node($slug.'-node', '10.44.0.'.$app->id), $slug);
-    $group = queued_group($app, 'Push', $instance);
+    $project = scheduler_app($slug);
+    $instance = scheduler_instance($project, scheduler_node($slug.'-node', '10.44.0.'.$project->id), $slug);
+    $group = queued_group($project, 'Push', $instance);
     $task = $group->tasks->first();
     if (! $task instanceof Task) {
         throw new RuntimeException('The group has no subtask.');
@@ -1770,7 +1770,7 @@ function scheduler_approved_subtask(string $slug, bool $last = false, ?string $r
     });
     app()->instance(AgentSpawner::class, scheduler_recording_spawner());
 
-    return [$group->fresh(['app', 'tasks', 'taskable']) ?? $group, $task, $signer, $publisher];
+    return [$group->fresh(['project', 'tasks', 'taskable']) ?? $group, $task, $signer, $publisher];
 }
 
 function scheduler_final_approval(): string
@@ -2056,9 +2056,9 @@ it('asks for assistance at settle when the pull request merged before the fixup 
 });
 
 it('prepares a fixup review without pull request fields', function (): void {
-    $app = scheduler_app('fixup-review');
-    $instance = scheduler_instance($app, scheduler_node('fixup-review-node', '10.44.3.41'), 'workspace');
-    $group = queued_group($app, 'Fixup review', $instance);
+    $project = scheduler_app('fixup-review');
+    $instance = scheduler_instance($project, scheduler_node('fixup-review-node', '10.44.3.41'), 'workspace');
+    $group = queued_group($project, 'Fixup review', $instance);
     scheduler_bind_claim($instance, new class implements AgentSpawner
     {
         public function spawnReviewer(Task $task): ?int
@@ -2131,9 +2131,9 @@ it('pushes the stored commit rather than HEAD', function (): void {
 });
 
 it('does not run a baseline for a group whose implementers already started', function (): void {
-    $app = scheduler_app('started-app');
-    $instance = scheduler_instance($app, scheduler_node('started-node', '10.44.0.96'), 'started');
-    $group = queued_group($app, 'Started', $instance);
+    $project = scheduler_app('started-app');
+    $instance = scheduler_instance($project, scheduler_node('started-node', '10.44.0.96'), 'started');
+    $group = queued_group($project, 'Started', $instance);
     scheduler_pending_task($group, 2, 'Second');
     $spawner = scheduler_recording_spawner();
     scheduler_bind_claim($instance, $spawner);
@@ -2159,10 +2159,10 @@ function scheduler_review(array $receipts, bool $notified = true): array
 {
     static $octet = 30;
     $octet++;
-    $app = scheduler_app('review-ws-'.$octet);
+    $project = scheduler_app('review-ws-'.$octet);
     $node = scheduler_node('review-ws-node-'.$octet, '10.44.2.'.$octet);
-    $instance = scheduler_instance($app, $node, 'workspace');
-    $group = queued_group($app, 'Review workspace', $instance);
+    $instance = scheduler_instance($project, $node, 'workspace');
+    $group = queued_group($project, 'Review workspace', $instance);
     scheduler_pending_task($group, 2, 'Second');
     $task = $group->tasks()->orderBy('position')->firstOrFail();
     $group->update([

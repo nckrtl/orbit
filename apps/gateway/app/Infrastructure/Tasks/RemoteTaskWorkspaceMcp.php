@@ -6,7 +6,7 @@ namespace App\Infrastructure\Tasks;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Tasks\TaskWorkspaceMcp;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Shared\StoredValue;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Log;
  */
 final readonly class RemoteTaskWorkspaceMcp implements TaskWorkspaceMcp
 {
-    public function __construct(private AppDevSshExecutor $ssh) {}
+    public function __construct(private DevelopmentSshExecutor $ssh) {}
 
     public function installWhenMissing(Instance $instance): bool
     {

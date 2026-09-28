@@ -35,9 +35,9 @@ function annotationFixture(): Instance
     $node = Node::query()->create(['name' => 'annotation-node', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.88', 'wireguard_ip' => '10.44.0.88']);
     test()->markAsGateway($node);
     test()->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
-    $app = Project::query()->create(['name' => 'Annotation', 'slug' => 'annotation', 'repository_url' => 'https://example.test/annotation.git', 'default_branch' => 'main']);
+    $project = Project::query()->create(['name' => 'Annotation', 'slug' => 'annotation', 'repository_url' => 'https://example.test/annotation.git', 'default_branch' => 'main']);
 
-    return Instance::query()->create(['project_id' => $app->id, 'node_id' => $node->id, 'name' => 'dev', 'environment' => 'development', 'source_layout' => 'worktree', 'checkout_path' => '/worktree', 'status' => 'active']);
+    return Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'dev', 'environment' => 'development', 'source_layout' => 'worktree', 'checkout_path' => '/worktree', 'status' => 'active']);
 }
 
 /** @return array<string, mixed> */

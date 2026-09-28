@@ -6,7 +6,7 @@
     "body": {
         "error": {
             "code": "instance.candidate_required",
-            "message": "New production AppInstances require a candidate. Use instance:clone.",
+            "message": "New production Instances require a candidate. Use instance:clone.",
             "details": {}
         }
     }

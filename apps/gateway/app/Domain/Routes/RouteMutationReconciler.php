@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Routes;
 
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Cluster;
 use App\Models\Instance;
@@ -315,7 +315,7 @@ final readonly class RouteMutationReconciler
         $clusterIds = $this->affectedIds($clusterOverrides, $baselineClusterOverrides);
 
         return Route::query()
-            ->with(['app', 'targets.appInstance.node', 'generationBasisNode', 'analyticsTracking.appInstance.node'])
+            ->with(['project', 'targets.instance.node', 'generationBasisNode', 'analyticsTracking.instance.node'])
             ->where('kind', '!=', RouteKind::CustomProxy->value)
             ->where(function (Builder $query) use ($nodeIds, $clusterIds): void {
                 $query->whereRaw('0 = 1');
@@ -325,11 +325,11 @@ final readonly class RouteMutationReconciler
                         ->orWhereIn('node_id', $nodeIds)
                         ->orWhereIn('generation_basis_node_id', $nodeIds)
                         ->orWhereHas(
-                            'targets.appInstance',
+                            'targets.instance',
                             static fn (Builder $target): Builder => $target->whereIn('node_id', $nodeIds),
                         )
                         ->orWhereHas(
-                            'analyticsTracking.appInstance',
+                            'analyticsTracking.instance',
                             static fn (Builder $instance): Builder => $instance->whereIn('node_id', $nodeIds),
                         );
                 }
@@ -346,11 +346,11 @@ final readonly class RouteMutationReconciler
                             static fn (Builder $node): Builder => $node->whereIn('cluster_id', $clusterIds),
                         )
                         ->orWhereHas(
-                            'targets.appInstance.node',
+                            'targets.instance.node',
                             static fn (Builder $node): Builder => $node->whereIn('cluster_id', $clusterIds),
                         )
                         ->orWhereHas(
-                            'analyticsTracking.appInstance.node',
+                            'analyticsTracking.instance.node',
                             static fn (Builder $node): Builder => $node->whereIn('cluster_id', $clusterIds),
                         );
                 }
@@ -409,7 +409,7 @@ final readonly class RouteMutationReconciler
         $firstTarget = null;
 
         foreach ($targets as $targetRow) {
-            $target = $targetRow->appInstance;
+            $target = $targetRow->instance;
             $this->assertTarget($route, $target);
             $targetPlacement = $this->state->forNode($target->node, $nodeOverrides, $clusterOverrides);
 
@@ -446,7 +446,7 @@ final readonly class RouteMutationReconciler
         if ($route->provenance === RouteProvenance::Generated) {
             if ($firstTarget instanceof Instance) {
                 $domain = $this->state->generatedDomain(
-                    $firstTarget->app->slug,
+                    $firstTarget->project->slug,
                     $firstTarget->name,
                     $placement->effectiveTld,
                 );
@@ -477,9 +477,9 @@ final readonly class RouteMutationReconciler
      */
     private function trackingPlacement(Route $route, array $nodeOverrides, array $clusterOverrides): RoutePlacement
     {
-        $instance = $route->analyticsTracking?->appInstance;
+        $instance = $route->analyticsTracking?->instance;
 
-        if (! $instance instanceof Instance || $instance->status !== AppInstanceState::Active) {
+        if (! $instance instanceof Instance || $instance->status !== InstanceState::Active) {
             throw new ResourceOperationException(
                 errorCode: 'route.target_invalid',
                 message: "Tracking host [{$route->domain}] has no active Instance.",
@@ -566,7 +566,7 @@ final readonly class RouteMutationReconciler
 
     private function assertTarget(Route $route, Instance $target): void
     {
-        if ($target->project_id !== $route->project_id || $target->status !== AppInstanceState::Active) {
+        if ($target->project_id !== $route->project_id || $target->status !== InstanceState::Active) {
             throw new ResourceOperationException(
                 errorCode: 'route.target_invalid',
                 message: "Route [{$route->domain}] has an invalid target.",

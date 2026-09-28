@@ -36,9 +36,9 @@ function pi_node(array $settings = ['pi' => ['token' => PI_TOKEN]]): Node
 
 function pi_workspace(Node $node): Instance
 {
-    $app = Project::query()->create(['name' => 'pi', 'slug' => 'pi', 'repository_url' => 'git@example.test:pi.git', 'default_branch' => 'main']);
+    $project = Project::query()->create(['name' => 'pi', 'slug' => 'pi', 'repository_url' => 'git@example.test:pi.git', 'default_branch' => 'main']);
 
-    return Instance::query()->create(['project_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-1', 'checkout_path' => '/srv/task-1', 'status' => 'source_resolved']);
+    return Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-1', 'checkout_path' => '/srv/task-1', 'status' => 'source_resolved']);
 }
 
 function pi_thread(Node $node, string $externalId = 'session-1'): AgentThread

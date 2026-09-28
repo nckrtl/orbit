@@ -29,14 +29,14 @@ use function Pest\Laravel\mock;
 /** @return array{TaskGroup, Task, Task, Task} */
 function cancelled_brief_coverage_group(): array
 {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Shop',
         'slug' => 'shop',
         'repository_url' => 'git@github.com:acme/shop.git',
         'default_branch' => 'main',
     ]);
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Export orders',
         'brief' => 'Export orders as CSV.',
         'status' => 'reviewing',

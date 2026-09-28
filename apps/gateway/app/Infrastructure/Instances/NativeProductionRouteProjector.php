@@ -1,0 +1,224 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Infrastructure\Instances;
+
+use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Instances\ProductionCloneRouteProjector;
+use App\Domain\Instances\ProductionPhpRuntimeManager;
+use App\Domain\Instances\ProductionReleaseLayout;
+use App\Domain\Instances\ProductionRouteProjector;
+use App\Domain\Nodes\NodeRoleFirewallManager;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\PublicRouteEdgeProjector;
+use App\Domain\Routes\PublicRouteEligibility;
+use App\Domain\Routes\RoutePublication;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
+use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
+use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Models\Instance;
+use App\Models\Node;
+use App\Models\Route;
+
+final readonly class NativeProductionRouteProjector implements ProductionCloneRouteProjector, ProductionRouteProjector
+{
+    public function __construct(
+        private ProductionPhpRuntimeManager $productionPhp,
+        private RemoteAppDevCertificateManager $certificates,
+        private NodeRoleFirewallManager $firewall,
+        private RemoteAppDevCaddyManager $caddy,
+        private DnsmasqPrivateDnsManager $dns,
+        private ProductionReleaseLayout $releaseLayout,
+        private DevelopmentSshExecutor $ssh,
+        private ?PublicRouteEdgeProjector $publicEdge = null,
+        private PublicRouteEligibility $eligibility = new PublicRouteEligibility,
+    ) {}
+
+    public function prepareRuntime(Instance $instance, Route $route): void
+    {
+        $instance->loadMissing('node');
+        if (! is_string($instance->production_php_service) || $instance->production_php_service === '') {
+            throw new RuntimeConvergenceException(
+                step: 'production-php-runtime',
+                errorCode: 'app-prod.php_service_missing',
+                message: 'The production Instance has no recorded dedicated PHP-FPM service.',
+            );
+        }
+
+        $this->productionPhp->converge($instance);
+    }
+
+    public function prepareCertificate(Instance $instance, Route $route): void
+    {
+        $this->certificates->convergeInstance($instance, $route);
+    }
+
+    public function prepareFirewall(Instance $instance): void
+    {
+        $instance->loadMissing('node');
+        $this->firewall->converge($instance->node, RoleName::AppProd, $instance->node->user);
+    }
+
+    public function publish(Instance $instance, Route $route): void
+    {
+        $this->releaseLayout->validateCurrent($instance);
+
+        $this->prepareWorkloadCaddy($instance, $route);
+        $this->prepareRouterCaddy($instance, $route);
+        $this->prepareDns($route);
+        $this->publishPublicEdge($route);
+    }
+
+    private function publishPublicEdge(Route $route): void
+    {
+        if ($route->publication !== RoutePublication::Public || ! $this->eligibility->canStartActivation($route)) {
+            return;
+        }
+
+        $edge = $this->publicEdge ?? app(PublicRouteEdgeProjector::class);
+        $edge->prepareIngressCertificate($route);
+        $edge->verifyPublicEdge($route);
+        $edge->activatePublicHandler($route);
+        $edge->prepareIngressFirewall($route);
+    }
+
+    public function prepareWorkloadCaddy(Instance $instance, Route $route): void
+    {
+        $instance->loadMissing('node');
+        // `prepareCertificate` has issued the certificate the site names.
+        $route->publishSites();
+        $this->caddy->build($instance->node);
+    }
+
+    public function prepareRouterCertificate(Instance $instance, Route $route): void
+    {
+        $router = $this->router($instance, $route);
+
+        if ($router instanceof Node) {
+            $this->certificates->convergeRouteRouter($route, $router);
+        }
+    }
+
+    public function prepareRouteFirewall(Instance $instance, Route $route): void
+    {
+        $router = $this->router($instance, $route);
+
+        if (! $router instanceof Node) {
+            return;
+        }
+
+        $workloadAddress = $instance->node->lan_ip;
+
+        if (! is_string($workloadAddress) || $workloadAddress === '') {
+            return;
+        }
+
+        $routerAddress = $router->lan_ip;
+
+        if (! is_string($routerAddress) || $routerAddress === '') {
+            throw new RuntimeConvergenceException(
+                step: 'route-address',
+                errorCode: 'route.lan_unreachable',
+                message: 'The configured workload LAN requires a Router LAN address.',
+            );
+        }
+
+        $this->ssh->execute(
+            $instance->node,
+            new RemoteCommand([
+                'sudo',
+                'ufw',
+                'allow',
+                'in',
+                'proto',
+                'tcp',
+                'from',
+                $routerAddress,
+                'to',
+                $workloadAddress,
+                'port',
+                '443',
+                'comment',
+                "orbit:route-{$route->id}-lan",
+            ]),
+            step: 'route-firewall',
+            errorCode: 'app-dev.route_firewall_failed',
+        );
+    }
+
+    public function verifyWorkload(Instance $instance, Route $route): void
+    {
+        $router = $this->router($instance, $route);
+
+        if (! $router instanceof Node) {
+            return;
+        }
+
+        $address = is_string($instance->node->lan_ip) && $instance->node->lan_ip !== ''
+            ? $instance->node->lan_ip
+            : $instance->node->wireguard_ip;
+
+        if (! is_string($address) || $address === '') {
+            throw new RuntimeConvergenceException(
+                step: 'route-address',
+                errorCode: 'route.workload_address_missing',
+                message: 'The Route workload has no private address.',
+            );
+        }
+
+        $this->ssh->execute(
+            $router,
+            new RemoteCommand(
+                [
+                    'timeout',
+                    '10',
+                    'openssl',
+                    's_client',
+                    '-connect',
+                    "{$address}:443",
+                    '-servername',
+                    $route->domain,
+                    '-verify_return_error',
+                ],
+                input: '',
+            ),
+            step: 'workload-certificate',
+            errorCode: 'app-dev.workload_certificate_invalid',
+            commandTimeout: 15,
+        );
+    }
+
+    public function prepareRouterCaddy(Instance $instance, Route $route): void
+    {
+        $router = $this->router($instance, $route);
+
+        if ($router instanceof Node) {
+            $this->caddy->build($router);
+        }
+    }
+
+    public function prepareDns(Route $route): void
+    {
+        $this->dns->converge();
+    }
+
+    private function router(Instance $instance, Route $route): ?Node
+    {
+        $instance->loadMissing('node');
+        $route->loadMissing('cluster.routerAssignment.node');
+        $router = $route->cluster?->routerAssignment?->node;
+
+        if ($route->cluster_id !== null && ! $router instanceof Node) {
+            throw new RuntimeConvergenceException(
+                step: 'router',
+                errorCode: 'cluster.router_required',
+                message: 'The Cluster Route requires an active Router.',
+            );
+        }
+
+        return $router instanceof Node && ! $router->is($instance->node) ? $router : null;
+    }
+}

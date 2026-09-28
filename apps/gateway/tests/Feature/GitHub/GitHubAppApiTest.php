@@ -40,7 +40,7 @@ describe('GitHub App API', function (): void {
             ->not->toContain((string) $registration?->state);
     });
 
-    it('refuses an App name or owner that GitHub cannot accept', function (array $body): void {
+    it('refuses a Project name or owner that GitHub cannot accept', function (array $body): void {
         $this->postJson('/api/v1/github/app/install', $body)->assertUnprocessable();
     })->with([
         [['name' => 'orbit/acme']],
@@ -142,7 +142,7 @@ describe('GitHub App API', function (): void {
         expect(app(GitHubAppStore::class)->credentials())->toBeNull();
     });
 
-    it('opens the install page and lists current accounts when the App exists', function (): void {
+    it('opens the install page and lists current accounts when the Project exists', function (): void {
         GitHubTestSupport::storeApp();
         Http::fake([
             'https://api.github.com/app/installations*' => Http::response([[
@@ -161,7 +161,7 @@ describe('GitHub App API', function (): void {
             ->assertJsonPath('data.accounts', ['acme']);
     });
 
-    it('shows the App and its installations without the private key', function (): void {
+    it('shows the Project and its installations without the private key', function (): void {
         GitHubTestSupport::storeApp();
         Http::fake([
             'https://api.github.com/app/installations*' => Http::response([[

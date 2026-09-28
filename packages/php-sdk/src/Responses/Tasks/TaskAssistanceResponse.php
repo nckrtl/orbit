@@ -21,8 +21,8 @@ final readonly class TaskAssistanceResponse
     {
         return new self(
             id: TaskFields::id($data, 'id', 'assisted task group', $requestId),
-            appId: TaskFields::id($data, 'app_id', 'assisted task group', $requestId),
-            app: TaskFields::nullableText($data, 'app'),
+            appId: TaskFields::id($data, 'project_id', 'assisted task group', $requestId),
+            app: TaskFields::nullableText($data, 'project'),
             projectCode: TaskFields::nullableText($data, 'project_code'),
             title: TaskFields::text($data, 'title', 'assisted task group', $requestId),
             status: TaskFields::text($data, 'status', 'assisted task group', $requestId),
@@ -40,13 +40,13 @@ final readonly class TaskAssistanceResponse
             : "{$this->projectCode}-{$this->id}";
     }
 
-    /** @return array{id: int, app_id: int, app: string|null, project_code: string|null, title: string, status: string, assistance_reason: string|null} */
+    /** @return array{id: int, project_id: int, project: string|null, project_code: string|null, title: string, status: string, assistance_reason: string|null} */
     public function toArray(): array
     {
         return [
             'id' => $this->id,
-            'app_id' => $this->appId,
-            'app' => $this->app,
+            'project_id' => $this->appId,
+            'project' => $this->app,
             'project_code' => $this->projectCode,
             'title' => $this->title,
             'status' => $this->status,

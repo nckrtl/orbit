@@ -5,9 +5,9 @@ type Schema<K extends keyof components["schemas"]> = Required<components["schema
 // The spec marks no field as required, so every property is optional in the generated types.
 // The Gateway always sends them; Required<> states that once instead of at every read.
 export type Node = Schema<"Node">;
-export type Project = Schema<"App">;
+export type Project = Schema<"Project">;
 export type ProjectIdentity = { id: number; name: string; slug: string };
-export type Instance = Omit<Schema<"AppInstance">, "project" | "node" | "deploy_steps"> & {
+export type Instance = Omit<Schema<"Instance">, "project" | "node" | "deploy_steps"> & {
     project: ProjectIdentity;
     node: { id: number; name: string };
     deploy_steps: DeployStep[];
@@ -18,7 +18,7 @@ export type Schedule = Schema<"Schedule">;
 export type FirewallRule = Schema<"FirewallRule">;
 export type Database = Schema<"DatabaseConnection">;
 export type DatabaseUser = Schema<"DatabaseUser">;
-export type Deployment = Schema<"AppInstanceDeployment">;
+export type Deployment = Schema<"InstanceDeployment">;
 export type DoctorReport = Schema<"DoctorReport">;
 
 export type DeploymentEvent = {

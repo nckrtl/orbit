@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskPullRequestException;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -31,10 +31,10 @@ function publisher_git(string $directory, array $arguments): string
 
 function publisher_group(string $checkout, string $repository = 'git@github.com:acme/shop.git'): TaskGroup
 {
-    $app = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => $repository, 'default_branch' => 'main']);
+    $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => $repository, 'default_branch' => 'main']);
     $node = Node::query()->create(['name' => 'publish-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.150', 'wireguard_ip' => '10.44.0.150', 'user' => 'orbit']);
-    $instance = Instance::query()->create(['project_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-7', 'checkout_path' => $checkout, 'branch' => 'task-7', 'status' => 'source_resolved']);
-    $group = TaskGroup::query()->create(['project_id' => $app->id, 'title' => 'Export orders', 'brief' => 'Add an export.', 'status' => 'reviewing']);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-7', 'checkout_path' => $checkout, 'branch' => 'task-7', 'status' => 'source_resolved']);
+    $group = TaskGroup::query()->create(['project_id' => $project->id, 'title' => 'Export orders', 'brief' => 'Add an export.', 'status' => 'reviewing']);
     $group->taskable()->associate($instance);
     $group->save();
 
@@ -43,7 +43,7 @@ function publisher_group(string $checkout, string $repository = 'git@github.com:
 
 function publisher(SshExecutor $transport): GitHubTaskPullRequestPublisher
 {
-    app()->instance(AppDevSshExecutor::class, new AppDevSshExecutor(
+    app()->instance(DevelopmentSshExecutor::class, new DevelopmentSshExecutor(
         $transport,
         new class implements SshKeyProvider
         {
@@ -163,8 +163,8 @@ it('uses the open pull request that already has the task branch as its head', fu
     expect(publisher(new AppDevFakeSshExecutor)->publish(publisher_group('/srv/orbit/apps/shop/task-7'), 'Body', str_repeat('a', 40)))->toBe('https://github.com/acme/shop/pull/12');
 });
 
-it('refuses to publish without an App, for another host, or when the push fails', function (bool $app, string $repository, int $pushExit, string $message): void {
-    if ($app) {
+it('refuses to publish without an App, for another host, or when the push fails', function (bool $project, string $repository, int $pushExit, string $message): void {
+    if ($project) {
         GitHubTestSupport::storeApp();
     }
     publisher_github();
@@ -238,7 +238,7 @@ it('names the permissions GitHub has not granted instead of an unreachable GitHu
     $transport = new AppDevFakeSshExecutor;
 
     expect(fn () => publisher($transport)->publish(publisher_group('/srv/orbit/apps/shop/task-7'), 'Body', str_repeat('a', 40)))
-        ->toThrow(TaskPullRequestException::class, 'The pull request could not be opened: GitHub refused the App token request (422): The permissions requested are not granted to this installation.');
+        ->toThrow(TaskPullRequestException::class, 'The pull request could not be opened: GitHub refused the Project token request (422): The permissions requested are not granted to this installation.');
     expect($transport->commands)->toBe([]);
 });
 
@@ -250,5 +250,5 @@ it('still reports an unreachable GitHub when the token request fails on the serv
     ]);
 
     expect(fn () => publisher(new AppDevFakeSshExecutor)->publish(publisher_group('/srv/orbit/apps/shop/task-7'), 'Body', str_repeat('a', 40)))
-        ->toThrow(TaskPullRequestException::class, 'The pull request could not be opened: GitHub could not be reached or refused the App credential.');
+        ->toThrow(TaskPullRequestException::class, 'The pull request could not be opened: GitHub could not be reached or refused the Project credential.');
 });

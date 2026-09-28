@@ -69,9 +69,9 @@ final readonly class RemoveNodeRoleAction
         // concurrent removal, which claim() reports as `node_role.already_removed`.
         NodeRole::query()->where('node_id', $node->id)->where('role', $role)->firstOrFail();
 
-        if ($role === RoleName::AppDev && $node->appInstances()->exists()) {
+        if ($role === RoleName::AppDev && $node->instances()->exists()) {
             throw new NodeRoleValidationException(
-                message: "Role [{$role->value}] cannot be removed while node [{$node->name}] owns AppInstances.",
+                message: "Role [{$role->value}] cannot be removed while node [{$node->name}] owns Instances.",
                 details: [
                     'reason' => 'app_instances_attached',
                     'role' => $role->value,
@@ -355,9 +355,9 @@ final readonly class RemoveNodeRoleAction
             $this->routeGuard()->assertRoleRemovable($node, $role);
             $this->guardPolicy($node->refresh(), $role);
 
-            if ($role === RoleName::AppDev && $node->appInstances()->exists()) {
+            if ($role === RoleName::AppDev && $node->instances()->exists()) {
                 throw new NodeRoleValidationException(
-                    message: "Role [{$role->value}] cannot be removed while node [{$node->name}] owns AppInstances.",
+                    message: "Role [{$role->value}] cannot be removed while node [{$node->name}] owns Instances.",
                     details: [
                         'reason' => 'app_instances_attached',
                         'role' => $role->value,

@@ -21,10 +21,10 @@ final readonly class TaskConcurrencyGuard
         return $this->activeForNode($nodeId, $group->id) < TaskCeilings::PerNode;
     }
 
-    public function activeForApp(int $appId, ?int $exceptGroupId = null): int
+    public function activeForApp(int $projectId, ?int $exceptGroupId = null): int
     {
         return $this->activeQuery($exceptGroupId)
-            ->where('project_id', $appId)
+            ->where('project_id', $projectId)
             ->count();
     }
 

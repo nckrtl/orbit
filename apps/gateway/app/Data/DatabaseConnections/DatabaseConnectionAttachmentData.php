@@ -15,7 +15,7 @@ final class DatabaseConnectionAttachmentData extends Data
      * @param  list<string>  $keys
      */
     public function __construct(
-        public int $appInstanceId,
+        public int $instanceId,
         public string $slug,
         public string $prefix,
         public array $keys,

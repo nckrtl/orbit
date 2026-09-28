@@ -7,9 +7,9 @@ namespace App\Http\Authorization;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstanceDeployment;
 use App\Models\Cluster;
 use App\Models\Instance;
+use App\Models\InstanceDeployment;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
@@ -28,7 +28,7 @@ final readonly class ServingNodeResolver
         return match ($scope) {
             ServingNode::Gateway => $this->gateway(),
             ServingNode::Target => $this->target($request),
-            ServingNode::AppOwning => $this->appOwning($request),
+            ServingNode::ProjectOwning => $this->projectOwning($request),
             ServingNode::InstanceOwning => $this->instanceOwning($request),
             ServingNode::DeploymentOwning => $this->deploymentOwning($request),
             ServingNode::CandidateClone => $this->candidateClone($request),
@@ -37,7 +37,7 @@ final readonly class ServingNodeResolver
             ServingNode::ProcessOwning => $this->processOwning($request),
             ServingNode::ScheduleOwning => $this->scheduleOwning($request),
             ServingNode::ScheduleHost => $this->scheduleHost($request),
-            ServingNode::AppInstanceHost => $this->appInstanceHost($request),
+            ServingNode::InstanceHost => $this->instanceHost($request),
             ServingNode::ToolOwning => $this->toolOwning($request),
             ServingNode::ClusterOwning => $this->clusterOwning($request),
             ServingNode::RouteOwning => $this->routeOwning($request),
@@ -112,23 +112,23 @@ final readonly class ServingNodeResolver
     }
 
     /** @return list<Node> */
-    private function appOwning(Request $request): array
+    private function projectOwning(Request $request): array
     {
-        $app = $request->route('app');
+        $project = $request->route('project');
 
-        if (! $app instanceof Project) {
-            $appId = $this->positiveInteger($request->input('project_id'));
+        if (! $project instanceof Project) {
+            $projectId = $this->positiveInteger($request->input('project_id'));
 
-            if ($appId === null) {
+            if ($projectId === null) {
                 return [];
             }
 
-            $app = Project::query()->findOrFail($appId);
+            $project = Project::query()->findOrFail($projectId);
         }
 
         $nodes = Node::query()
-            ->where(function ($query) use ($app): void {
-                $query->whereIn('id', $app->appInstances()->select('node_id'));
+            ->where(function ($query) use ($project): void {
+                $query->whereIn('id', $project->instances()->select('node_id'));
             })
             ->orderBy('id')
             ->get()
@@ -164,11 +164,11 @@ final readonly class ServingNodeResolver
     {
         $deployment = $request->route('deployment');
 
-        if (! $deployment instanceof AppInstanceDeployment) {
+        if (! $deployment instanceof InstanceDeployment) {
             return [];
         }
 
-        return [Node::query()->findOrFail($deployment->appInstance->node_id)];
+        return [Node::query()->findOrFail($deployment->instance->node_id)];
     }
 
     /** @return list<Node> */
@@ -249,7 +249,7 @@ final readonly class ServingNodeResolver
         if ($instances->count() > 1) {
             throw new ResourceOperationException(
                 errorCode: 'env.target_ambiguous',
-                message: 'The environment target matches multiple AppInstances.',
+                message: 'The environment target matches multiple Instances.',
                 status: 409,
             );
         }
@@ -297,7 +297,7 @@ final readonly class ServingNodeResolver
                 ->limit(2)
                 ->get();
             if ($instances->count() > 1) {
-                throw new ResourceOperationException('process.target_ambiguous', 'The Route matches multiple development AppInstances.', 409);
+                throw new ResourceOperationException('process.target_ambiguous', 'The Route matches multiple development Instances.', 409);
             }
             if ($instances->isEmpty()) {
                 throw new ModelNotFoundException()->setModel(Instance::class);
@@ -320,7 +320,7 @@ final readonly class ServingNodeResolver
     }
 
     /** @return list<Node> */
-    private function appInstanceHost(Request $request): array
+    private function instanceHost(Request $request): array
     {
         $instance = $request->route('instance');
 
@@ -438,12 +438,12 @@ final readonly class ServingNodeResolver
             return $this->clusterNodes((int) $route->cluster_id);
         }
 
-        $appInstanceId = $this->positiveInteger($request->input('instance_id'));
+        $instanceId = $this->positiveInteger($request->input('instance_id'));
 
-        if ($appInstanceId !== null) {
-            $appInstance = Instance::query()->findOrFail($appInstanceId);
+        if ($instanceId !== null) {
+            $instance = Instance::query()->findOrFail($instanceId);
 
-            return [Node::query()->findOrFail($appInstance->node_id)];
+            return [Node::query()->findOrFail($instance->node_id)];
         }
 
         $nodeId = $this->positiveInteger($request->input('node_id'));

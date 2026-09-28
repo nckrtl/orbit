@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -20,7 +20,7 @@ use Tests\Support\LocalShellSshExecutor;
 
 function task_signer_instance(string $checkout = '/srv/orbit/apps/orbit/task-9'): Instance
 {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'orbit',
         'slug' => 'orbit',
         'repository_url' => 'git@example.test:orbit.git',
@@ -36,7 +36,7 @@ function task_signer_instance(string $checkout = '/srv/orbit/apps/orbit/task-9')
     ]);
 
     return Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'task-9',
         'checkout_path' => $checkout,
@@ -44,9 +44,9 @@ function task_signer_instance(string $checkout = '/srv/orbit/apps/orbit/task-9')
     ]);
 }
 
-function task_signer_ssh(SshExecutor $transport): AppDevSshExecutor
+function task_signer_ssh(SshExecutor $transport): DevelopmentSshExecutor
 {
-    return new AppDevSshExecutor(
+    return new DevelopmentSshExecutor(
         $transport,
         new class implements SshKeyProvider
         {

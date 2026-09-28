@@ -21,8 +21,8 @@ final class TaskGroupData extends Data
      */
     public function __construct(
         public int $id,
-        public int $appId,
-        public string $app,
+        public int $projectId,
+        public string $project,
         public string $projectCode,
         public ?string $taskableType,
         public ?int $taskableId,
@@ -47,16 +47,16 @@ final class TaskGroupData extends Data
 
     public static function fromModel(TaskGroup $group): self
     {
-        $group->loadMissing(['app', 'tasks']);
+        $group->loadMissing(['project', 'tasks']);
         $taskable = $group->taskable;
 
         return new self(
             executionMode: $group->execution_mode,
 
             id: $group->id,
-            appId: $group->project_id,
-            app: $group->app->slug,
-            projectCode: $group->app->code,
+            projectId: $group->project_id,
+            project: $group->project->slug,
+            projectCode: $group->project->code,
             taskableType: $taskable instanceof Instance ? 'instance' : $group->taskable_type,
             taskableId: $group->taskable_id,
             title: $group->title,

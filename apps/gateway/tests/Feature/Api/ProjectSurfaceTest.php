@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\LifecycleStatus;
@@ -79,13 +79,13 @@ it('activates a laravel-package Instance without a Route', function (): void {
         'node_id' => $node->id,
         'name' => 'default',
         'checkout_path' => '/var/orbit/apps/support/default',
-        'status' => AppInstanceState::SourceResolved,
+        'status' => InstanceState::SourceResolved,
     ]);
 
-    $instance->update(['status' => AppInstanceState::Active]);
+    $instance->update(['status' => InstanceState::Active]);
 
     expect($instance->refresh()->status)
-        ->toBe(AppInstanceState::Active)
+        ->toBe(InstanceState::Active)
         ->and($instance->requiresRoute())
         ->toBeFalse()
         ->and($instance->routes()->count())
@@ -113,7 +113,7 @@ it('refuses a type change to laravel-app while an active Instance has no Route',
         'node_id' => $node->id,
         'name' => 'default',
         'checkout_path' => '/var/orbit/apps/support/work',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
 
     $this->patchJson('/api/v1/projects/'.$project->id, [
@@ -123,7 +123,7 @@ it('refuses a type change to laravel-app while an active Instance has no Route',
         ->assertJsonPath('error.code', 'project.type_requires_route');
 
     expect($project->refresh()->type)->toBe(ProjectType::LaravelPackage)
-        ->and($instance->refresh()->status)->toBe(AppInstanceState::Active);
+        ->and($instance->refresh()->status)->toBe(InstanceState::Active);
 });
 
 it('normalizes APP_ENV and APP_DEBUG on existing app-prod Instances', function (): void {
@@ -153,7 +153,7 @@ it('normalizes APP_ENV and APP_DEBUG on existing app-prod Instances', function (
         'checkout_path' => '/home/orbit-app-1/releases/initial',
         'production_user' => 'orbit-app-1',
         'production_home' => '/home/orbit-app-1',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
     $instance->environmentValues()->create([
         'env_key' => 'APP_ENV',
@@ -218,7 +218,7 @@ it('exposes the Project identity on Instance payloads', function (): void {
         'node_id' => $node->id,
         'name' => 'default',
         'checkout_path' => '/var/orbit/apps/shop/default',
-        'status' => AppInstanceState::Reserved,
+        'status' => InstanceState::Reserved,
     ]);
 
     $this->getJson('/api/v1/instances/'.$instance->id)

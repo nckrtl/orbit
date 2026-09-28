@@ -36,7 +36,7 @@ describe('AppInstance environment response', function (): void {
             ->toBe('11111111-1111-4111-8111-111111111111')
             ->and($response->toArray())
             ->toBe([
-                'app_instance_id' => 17,
+                'instance_id' => 17,
                 'operation' => 'update',
                 'changed' => true,
                 'key_count' => 3,
@@ -84,44 +84,44 @@ describe('AppInstance environment response', function (): void {
             'key_count' => 1,
         ]],
         'non-positive id' => [[
-            'app_instance_id' => 0,
+            'instance_id' => 0,
             'operation' => 'import',
             'changed' => true,
             'key_count' => 1,
         ]],
         'wrong changed type' => [[
-            'app_instance_id' => 17,
+            'instance_id' => 17,
             'operation' => 'import',
             'changed' => 1,
             'key_count' => 1,
         ]],
         'negative key count' => [[
-            'app_instance_id' => 17,
+            'instance_id' => 17,
             'operation' => 'import',
             'changed' => true,
             'key_count' => -1,
         ]],
         'excessive key count' => [[
-            'app_instance_id' => 17,
+            'instance_id' => 17,
             'operation' => 'import',
             'changed' => true,
             'key_count' => 1_025,
         ]],
         'contradictory operation' => [[
-            'app_instance_id' => 17,
+            'instance_id' => 17,
             'operation' => 'sync',
             'changed' => true,
             'key_count' => 1,
         ]],
         'extra value' => [[
-            'app_instance_id' => 17,
+            'instance_id' => 17,
             'operation' => 'import',
             'changed' => true,
             'key_count' => 1,
             'value' => 'malformed-environment-value-8c2d',
         ]],
         'value-bearing collection' => [[
-            'app_instance_id' => 17,
+            'instance_id' => 17,
             'operation' => 'import',
             'changed' => true,
             'key_count' => 1,
@@ -133,7 +133,7 @@ describe('AppInstance environment response', function (): void {
         $mock = new MockClient([
             SynchronizeAppInstanceEnvironmentRequest::class => MockResponse::make([
                 'data' => [
-                    'app_instance_id' => 17,
+                    'instance_id' => 17,
                     'operation' => 'sync',
                     'changed' => false,
                     'key_count' => 0,
@@ -293,12 +293,12 @@ function environment_response_connector(MockClient $mock): GatewayConnector
     return $connector;
 }
 
-/** @return array{data: array{app_instance_id: int, operation: string, changed: bool, key_count: int}, meta: array{request_id: string}} */
+/** @return array{data: array{instance_id: int, operation: string, changed: bool, key_count: int}, meta: array{request_id: string}} */
 function environment_response_success_envelope(string $operation): array
 {
     return [
         'data' => [
-            'app_instance_id' => 17,
+            'instance_id' => 17,
             'operation' => $operation,
             'changed' => true,
             'key_count' => 3,

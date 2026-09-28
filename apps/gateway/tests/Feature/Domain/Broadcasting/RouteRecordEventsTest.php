@@ -7,9 +7,9 @@ use App\Actions\Routes\RemoveRouteAction;
 use App\Actions\Routes\UpdateRouteAction;
 use App\Data\Routes\CreateRouteData;
 use App\Data\Routes\UpdateRouteData;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Shared\LifecycleStatus;
@@ -39,10 +39,10 @@ beforeEach(function (): void {
     ]);
 });
 
-function route_record_pending(int $appId, int $nodeId): Route
+function route_record_pending(int $projectId, int $nodeId): Route
 {
     return Route::query()->create([
-        'project_id' => $appId,
+        'project_id' => $projectId,
         'node_id' => $nodeId,
         'domain' => 'docs.orbit',
         'provenance' => 'explicit',
@@ -58,13 +58,13 @@ describe('Route record events', function (): void {
         $data = new CreateRouteData(
             domain: 'docs.orbit',
             publication: RoutePublication::Private,
-            appId: $this->orbitApp->id,
-            appInstanceId: Instance::query()->create([
+            projectId: $this->orbitApp->id,
+            instanceId: Instance::query()->create([
                 'project_id' => $this->orbitApp->id,
                 'node_id' => $this->node->id,
                 'name' => 'docs',
                 'checkout_path' => '/srv/docs',
-                'status' => AppInstanceState::Active,
+                'status' => InstanceState::Active,
             ])->id,
         );
 

@@ -12,7 +12,7 @@ final readonly class AppRuntimeDefinitionsResponse
         public string $requestId,
     ) {}
 
-    /** @return array{definitions: list<array{id: string, app_id: int, name: string, environments: list<string>, spec: array<string, mixed>}>, request_id: string} */
+    /** @return array{definitions: list<array{id: string, project_id: int, name: string, environments: list<string>, spec: array<string, mixed>}>, request_id: string} */
     public function toArray(): array
     {
         return [

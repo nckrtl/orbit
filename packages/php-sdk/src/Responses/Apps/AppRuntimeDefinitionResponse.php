@@ -33,7 +33,7 @@ final readonly class AppRuntimeDefinitionResponse
 
         return new self(
             id: is_string($data['id'] ?? null) ? $data['id'] : '',
-            appId: is_int($data['app_id'] ?? null) ? $data['app_id'] : 0,
+            appId: is_int($data['project_id'] ?? null) ? $data['project_id'] : 0,
             name: is_string($data['name'] ?? null) ? $data['name'] : '',
             environments: self::stringList($data['environments'] ?? null),
             spec: $redactor->redactArray(self::stringKeyedArray($data['spec'] ?? null)),
@@ -41,12 +41,12 @@ final readonly class AppRuntimeDefinitionResponse
         );
     }
 
-    /** @return array{id: string, app_id: int, name: string, environments: list<string>, spec: array<string, mixed>, request_id: string} */
+    /** @return array{id: string, project_id: int, name: string, environments: list<string>, spec: array<string, mixed>, request_id: string} */
     public function toArray(): array
     {
         return [
             'id' => $this->id,
-            'app_id' => $this->appId,
+            'project_id' => $this->appId,
             'name' => $this->name,
             'environments' => $this->environments,
             'spec' => $this->spec,

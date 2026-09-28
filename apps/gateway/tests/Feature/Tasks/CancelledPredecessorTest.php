@@ -12,14 +12,14 @@ use App\Models\TaskGroup;
 
 function predecessor_task_group(TaskStatus $predecessorStatus): array
 {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Predecessor test',
         'slug' => 'predecessor-test',
         'repository_url' => 'git@example.test:predecessor-test.git',
         'default_branch' => 'main',
     ]);
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Sequential tasks',
         'brief' => 'Run tasks in order.',
         'status' => TaskGroupStatus::Running,

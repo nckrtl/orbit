@@ -7,9 +7,9 @@ namespace App\Domain\Doctor;
 use App\Data\Doctor\DoctorIssueData;
 use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
 use App\Domain\DatabaseConnections\DatabaseDriver;
-use App\Models\AppInstanceEnvironmentValue;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\InstanceEnvironmentValue;
 use App\Models\Node;
 use Illuminate\Contracts\Encryption\DecryptException;
 
@@ -44,7 +44,7 @@ final readonly class DatabaseConnectionDoctorInspection
 
         try {
             $stored = $this->storedValues($attachment->instance_id);
-            $projected = $this->projection->project($connection, $attachment->appInstance, $attachment->prefix);
+            $projected = $this->projection->project($connection, $attachment->instance, $attachment->prefix);
         } catch (DecryptException) {
             return [$this->issue(
                 DatabaseConnectionDoctorIssueCode::InspectionFailed,
@@ -132,13 +132,13 @@ final readonly class DatabaseConnectionDoctorInspection
     }
 
     /** @return array<string, string> */
-    private function storedValues(int $appInstanceId): array
+    private function storedValues(int $instanceId): array
     {
-        return AppInstanceEnvironmentValue::query()
-            ->where('instance_id', $appInstanceId)
+        return InstanceEnvironmentValue::query()
+            ->where('instance_id', $instanceId)
             ->orderBy('env_key')
             ->get()
-            ->mapWithKeys(static fn (AppInstanceEnvironmentValue $row): array => [$row->env_key => $row->env_value])
+            ->mapWithKeys(static fn (InstanceEnvironmentValue $row): array => [$row->env_key => $row->env_value])
             ->all();
     }
 

@@ -6,8 +6,8 @@
     "body": {
         "data": {
             "id": 2,
-            "app_id": 1,
-            "app": "orbit",
+            "project_id": 1,
+            "project": "orbit",
             "project_code": "ORB",
             "taskable_type": null,
             "taskable_id": null,

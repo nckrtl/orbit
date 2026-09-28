@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Routes;
 
-use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\Route;
@@ -12,9 +12,9 @@ use App\Models\RouteTarget;
 
 final readonly class RouteAssociationGuard
 {
-    public function assertTargetAssignable(Route $route, Instance $appInstance): void
+    public function assertTargetAssignable(Route $route, Instance $instance): void
     {
-        $association = $this->lockedAssociation($appInstance);
+        $association = $this->lockedAssociation($instance);
 
         if (! $association instanceof RouteTarget || $association->route_id === $route->id) {
             return;
@@ -22,14 +22,14 @@ final readonly class RouteAssociationGuard
 
         throw new ResourceOperationException(
             errorCode: 'route.target_conflict',
-            message: "Instance [{$appInstance->id}] is already associated with Route [{$association->route_id}] and cannot be assigned to Route [{$route->id}].",
+            message: "Instance [{$instance->id}] is already associated with Route [{$association->route_id}] and cannot be assigned to Route [{$route->id}].",
             status: 409,
         );
     }
 
-    public function assertTargetUnassociated(Instance $appInstance): void
+    public function assertTargetUnassociated(Instance $instance): void
     {
-        $association = $this->lockedAssociation($appInstance);
+        $association = $this->lockedAssociation($instance);
 
         if (! $association instanceof RouteTarget) {
             return;
@@ -37,7 +37,7 @@ final readonly class RouteAssociationGuard
 
         throw new ResourceOperationException(
             errorCode: 'route.target_conflict',
-            message: "Instance [{$appInstance->id}] is already associated with Route [{$association->route_id}].",
+            message: "Instance [{$instance->id}] is already associated with Route [{$association->route_id}].",
             status: 409,
         );
     }
@@ -52,26 +52,26 @@ final readonly class RouteAssociationGuard
             ->get();
 
         foreach ($associations as $association) {
-            $appInstance = Instance::query()
+            $instance = Instance::query()
                 ->lockForUpdate()
                 ->findOrFail($association->instance_id);
 
-            if ($appInstance->status !== AppInstanceState::Active) {
+            if ($instance->status !== InstanceState::Active) {
                 continue;
             }
 
             throw new ResourceOperationException(
                 errorCode: 'route.target_conflict',
-                message: "Active Instance [{$appInstance->id}] must remain associated with Route [{$route->id}].",
+                message: "Active Instance [{$instance->id}] must remain associated with Route [{$route->id}].",
                 status: 409,
             );
         }
     }
 
-    private function lockedAssociation(Instance $appInstance): ?RouteTarget
+    private function lockedAssociation(Instance $instance): ?RouteTarget
     {
         $association = RouteTarget::query()
-            ->where('instance_id', $appInstance->id)
+            ->where('instance_id', $instance->id)
             ->lockForUpdate()
             ->first();
 

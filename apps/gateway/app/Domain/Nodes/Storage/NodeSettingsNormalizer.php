@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes\Storage;
 
-use App\Data\Nodes\AppsSettingsData;
 use App\Data\Nodes\NodeSettingsData;
+use App\Data\Nodes\NodeStorageAppsData;
 
 final readonly class NodeSettingsNormalizer
 {
@@ -43,16 +43,16 @@ final readonly class NodeSettingsNormalizer
         return $this->normalize(new NodeSettingsData(apps: $this->nestedFromStored($value['apps'] ?? null)));
     }
 
-    private function nested(?string $path): ?AppsSettingsData
+    private function nested(?string $path): ?NodeStorageAppsData
     {
-        return $path === null ? null : new AppsSettingsData($path);
+        return $path === null ? null : new NodeStorageAppsData($path);
     }
 
-    private function nestedFromStored(mixed $value): ?AppsSettingsData
+    private function nestedFromStored(mixed $value): ?NodeStorageAppsData
     {
         $path = $this->pathFromStored($value);
 
-        return $path === null ? null : new AppsSettingsData($path);
+        return $path === null ? null : new NodeStorageAppsData($path);
     }
 
     private function pathFromStored(mixed $value): ?string

@@ -6,12 +6,12 @@ namespace App\Actions\Routes;
 
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\PrivateDnsAnswerExpiry;
-use App\Domain\AppInstances\AppInstanceSourceProfileGuard;
-use App\Domain\AppInstances\AppInstanceState;
-use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRouteDomain;
-use App\Domain\AppInstances\Environment\AppInstanceRouteEnvironmentSynchronizer;
+use App\Domain\Instances\DevelopmentInstanceConfigurator;
+use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Instances\Environment\InstanceEnvironmentRouteDomain;
+use App\Domain\Instances\Environment\InstanceRouteEnvironmentSynchronizer;
+use App\Domain\Instances\InstanceSourceProfileGuard;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RoutePlacement;
@@ -32,9 +32,9 @@ final readonly class ConvergeRouteAction
 {
     public function __construct(
         private RouteDomainProjector $projection,
-        private DevelopmentAppInstanceConfigurator $configuration,
-        private AppInstanceRouteEnvironmentSynchronizer $routeEnvironment,
-        private AppInstanceEnvironmentOperationLock $environmentOperations,
+        private DevelopmentInstanceConfigurator $configuration,
+        private InstanceRouteEnvironmentSynchronizer $routeEnvironment,
+        private InstanceEnvironmentOperationLock $environmentOperations,
         private DevelopmentProjectionOperationLock $owner,
         private PrivateDnsAnswerExpiry $dnsAnswers = new PrivateDnsAnswerExpiry,
         private ?ConvergeAnalyticsTrackingPlacementAction $trackingPlacement = null,
@@ -310,7 +310,7 @@ final readonly class ConvergeRouteAction
     private function storedRoute(int $routeId): ?Route
     {
         return Route::query()
-            ->with(['targets.appInstance.app', 'targets.appInstance.node', 'cluster.routerAssignment.node'])
+            ->with(['targets.instance.project', 'targets.instance.node', 'cluster.routerAssignment.node'])
             ->find($routeId);
     }
 
@@ -324,12 +324,12 @@ final readonly class ConvergeRouteAction
         ?RoutePlacement $placement = null,
     ): Route {
         $route = Route::query()
-            ->with(['targets.appInstance.app', 'targets.appInstance.node', 'cluster.routerAssignment.node'])
+            ->with(['targets.instance.project', 'targets.instance.node', 'cluster.routerAssignment.node'])
             ->findOrFail($routeId);
 
         if ($route->replaces_route_id !== null) {
             $current = Route::query()
-                ->with(['targets.appInstance.app', 'targets.appInstance.node', 'cluster.routerAssignment.node'])
+                ->with(['targets.instance.project', 'targets.instance.node', 'cluster.routerAssignment.node'])
                 ->find($route->replaces_route_id);
 
             if ($current instanceof Route) {
@@ -354,7 +354,7 @@ final readonly class ConvergeRouteAction
 
         if ($route->status === RouteStatus::Retiring && $route->replaced_by_route_id !== null) {
             $replacement = Route::query()
-                ->with(['targets.appInstance.app', 'targets.appInstance.node'])
+                ->with(['targets.instance.project', 'targets.instance.node'])
                 ->findOrFail($route->replaced_by_route_id);
 
             if ($replacement->domain !== $domain) {
@@ -440,8 +440,8 @@ final readonly class ConvergeRouteAction
                 $replacement,
                 RouteReplacementStep::WorkloadCertificate,
                 function () use ($targets, $route, $replacement): void {
-                    foreach ($targets as $appInstance) {
-                        $this->projection->prepareWorkloadCertificate($appInstance, $route, $replacement);
+                    foreach ($targets as $instance) {
+                        $this->projection->prepareWorkloadCertificate($instance, $route, $replacement);
                     }
                 },
             );
@@ -450,8 +450,8 @@ final readonly class ConvergeRouteAction
                 $replacement,
                 RouteReplacementStep::WorkloadCaddy,
                 function () use ($targets, $route, $replacement): void {
-                    foreach ($targets as $appInstance) {
-                        $this->projection->prepareWorkloadCaddy($appInstance, $route, $replacement);
+                    foreach ($targets as $instance) {
+                        $this->projection->prepareWorkloadCaddy($instance, $route, $replacement);
                     }
                 },
             );
@@ -460,8 +460,8 @@ final readonly class ConvergeRouteAction
                 $replacement,
                 RouteReplacementStep::RouterCertificate,
                 function () use ($targets, $route, $replacement): void {
-                    foreach ($targets as $appInstance) {
-                        $this->projection->prepareRouterCertificate($appInstance, $route, $replacement);
+                    foreach ($targets as $instance) {
+                        $this->projection->prepareRouterCertificate($instance, $route, $replacement);
                     }
                 },
             );
@@ -470,8 +470,8 @@ final readonly class ConvergeRouteAction
                 $replacement,
                 RouteReplacementStep::FirewallPolicy,
                 function () use ($targets, $replacement): void {
-                    foreach ($targets as $appInstance) {
-                        $this->projection->prepareFirewallPolicy($appInstance, $replacement);
+                    foreach ($targets as $instance) {
+                        $this->projection->prepareFirewallPolicy($instance, $replacement);
                     }
                 },
             );
@@ -480,8 +480,8 @@ final readonly class ConvergeRouteAction
                 $replacement,
                 RouteReplacementStep::WorkloadVerified,
                 function () use ($targets, $replacement): void {
-                    foreach ($targets as $appInstance) {
-                        $this->projection->verifyWorkload($appInstance, $replacement);
+                    foreach ($targets as $instance) {
+                        $this->projection->verifyWorkload($instance, $replacement);
                     }
                 },
             );
@@ -490,8 +490,8 @@ final readonly class ConvergeRouteAction
                 $replacement,
                 RouteReplacementStep::RouterCaddy,
                 function () use ($targets, $route, $replacement): void {
-                    foreach ($targets as $appInstance) {
-                        $this->projection->prepareRouterCaddy($appInstance, $route, $replacement);
+                    foreach ($targets as $instance) {
+                        $this->projection->prepareRouterCaddy($instance, $route, $replacement);
                     }
                 },
             );
@@ -522,10 +522,10 @@ final readonly class ConvergeRouteAction
                     $replacement,
                     RouteReplacementStep::EnvironmentSynchronized,
                     function () use ($production): void {
-                        foreach ($production as $appInstance) {
+                        foreach ($production as $instance) {
                             $this->routeEnvironment->synchronizeRouteDomain(
-                                $appInstance,
-                                AppInstanceEnvironmentRouteDomain::Candidate,
+                                $instance,
+                                InstanceEnvironmentRouteDomain::Candidate,
                             );
                         }
                     },
@@ -536,10 +536,10 @@ final readonly class ConvergeRouteAction
                     $replacement,
                     RouteReplacementStep::LaravelUrl,
                     function () use ($targets, $replacement): void {
-                        foreach ($targets as $appInstance) {
-                            if ($appInstance->source_is_laravel) {
+                        foreach ($targets as $instance) {
+                            if ($instance->source_is_laravel) {
                                 $this->configuration->configureLaravelUrl(
-                                    $appInstance,
+                                    $instance,
                                     "https://{$replacement->domain}",
                                 );
                             }
@@ -637,7 +637,7 @@ final readonly class ConvergeRouteAction
         bool $allowGenerated = false,
     ): array {
         $targets = array_values($route->targets
-            ->map(static fn ($row) => $row->appInstance)
+            ->map(static fn ($row) => $row->instance)
             ->filter(static fn ($instance): bool => $instance instanceof Instance)
             ->all());
 
@@ -673,12 +673,12 @@ final readonly class ConvergeRouteAction
         }
 
         foreach ($targets as $target) {
-            if ($target->status !== AppInstanceState::Active) {
+            if ($target->status !== InstanceState::Active) {
                 app(RouteReconciliationGuard::class)->refuse();
             }
 
             if ($target->source_is_laravel === null) {
-                new AppInstanceSourceProfileGuard()->refuseMissing();
+                new InstanceSourceProfileGuard()->refuseMissing();
             }
         }
 
@@ -811,8 +811,8 @@ final readonly class ConvergeRouteAction
                 $route,
                 RouteReplacementStep::WorkloadCertificate,
                 function () use ($targets, $route, $candidate): void {
-                    foreach ($targets as $appInstance) {
-                        $this->projection->prepareWorkloadCertificate($appInstance, $route, $candidate);
+                    foreach ($targets as $instance) {
+                        $this->projection->prepareWorkloadCertificate($instance, $route, $candidate);
                     }
                 },
             );
@@ -824,8 +824,8 @@ final readonly class ConvergeRouteAction
                     // The candidate placement is stored before any build renders it.
                     $this->storeTransition($route, $placement->nodeId, $placement->clusterId);
 
-                    foreach ($targets as $appInstance) {
-                        $this->projection->prepareWorkloadCaddy($appInstance, $route, $candidate);
+                    foreach ($targets as $instance) {
+                        $this->projection->prepareWorkloadCaddy($instance, $route, $candidate);
                     }
                 },
             );
@@ -834,8 +834,8 @@ final readonly class ConvergeRouteAction
                 $route,
                 RouteReplacementStep::RouterCertificate,
                 function () use ($targets, $route, $candidate): void {
-                    foreach ($targets as $appInstance) {
-                        $this->projection->prepareRouterCertificate($appInstance, $route, $candidate);
+                    foreach ($targets as $instance) {
+                        $this->projection->prepareRouterCertificate($instance, $route, $candidate);
                     }
                 },
             );
@@ -844,8 +844,8 @@ final readonly class ConvergeRouteAction
                 $route,
                 RouteReplacementStep::FirewallPolicy,
                 function () use ($targets, $candidate): void {
-                    foreach ($targets as $appInstance) {
-                        $this->projection->prepareFirewallPolicy($appInstance, $candidate);
+                    foreach ($targets as $instance) {
+                        $this->projection->prepareFirewallPolicy($instance, $candidate);
                     }
                 },
             );
@@ -854,8 +854,8 @@ final readonly class ConvergeRouteAction
                 $route,
                 RouteReplacementStep::WorkloadVerified,
                 function () use ($targets, $candidate): void {
-                    foreach ($targets as $appInstance) {
-                        $this->projection->verifyWorkload($appInstance, $candidate);
+                    foreach ($targets as $instance) {
+                        $this->projection->verifyWorkload($instance, $candidate);
                     }
                 },
             );
@@ -864,8 +864,8 @@ final readonly class ConvergeRouteAction
                 $route,
                 RouteReplacementStep::RouterCaddy,
                 function () use ($targets, $route, $candidate): void {
-                    foreach ($targets as $appInstance) {
-                        $this->projection->prepareRouterCaddy($appInstance, $route, $candidate);
+                    foreach ($targets as $instance) {
+                        $this->projection->prepareRouterCaddy($instance, $route, $candidate);
                     }
                 },
             );
@@ -881,10 +881,10 @@ final readonly class ConvergeRouteAction
                     $route,
                     RouteReplacementStep::EnvironmentSynchronized,
                     function () use ($production): void {
-                        foreach ($production as $appInstance) {
+                        foreach ($production as $instance) {
                             $this->routeEnvironment->synchronizeRouteDomain(
-                                $appInstance,
-                                AppInstanceEnvironmentRouteDomain::Candidate,
+                                $instance,
+                                InstanceEnvironmentRouteDomain::Candidate,
                             );
                         }
                     },
@@ -895,10 +895,10 @@ final readonly class ConvergeRouteAction
                     $route,
                     RouteReplacementStep::LaravelUrl,
                     function () use ($targets, $candidate): void {
-                        foreach ($targets as $appInstance) {
-                            if ($appInstance->source_is_laravel) {
+                        foreach ($targets as $instance) {
+                            if ($instance->source_is_laravel) {
                                 $this->configuration->configureLaravelUrl(
-                                    $appInstance,
+                                    $instance,
                                     "https://{$candidate->domain}",
                                 );
                             }
@@ -1015,8 +1015,8 @@ final readonly class ConvergeRouteAction
         }
 
         try {
-            foreach ($targets as $appInstance) {
-                $this->projection->prepareCleanup($appInstance, $route);
+            foreach ($targets as $instance) {
+                $this->projection->prepareCleanup($instance, $route);
             }
 
             // Private DNS moves to the current placement before the old one stops serving.
@@ -1044,22 +1044,22 @@ final readonly class ConvergeRouteAction
                 $this->checkpoint($route, RouteReplacementStep::Cleanup);
             }
 
-            foreach ($targets as $appInstance) {
-                $this->projection->cleanup($appInstance, $route);
+            foreach ($targets as $instance) {
+                $this->projection->cleanup($instance, $route);
 
-                if ($appInstance->placedOnAppProd()) {
+                if ($instance->placedOnAppProd()) {
                     $this->routeEnvironment->synchronizeRouteDomain(
-                        $appInstance,
-                        AppInstanceEnvironmentRouteDomain::Candidate,
+                        $instance,
+                        InstanceEnvironmentRouteDomain::Candidate,
                     );
-                } elseif ($appInstance->source_is_laravel) {
+                } elseif ($instance->source_is_laravel) {
                     $this->configuration->configureLaravelUrl(
-                        $appInstance,
+                        $instance,
                         "https://{$candidate->domain}",
                     );
                 }
 
-                $this->projection->verifyWorkload($appInstance, $candidate);
+                $this->projection->verifyWorkload($instance, $candidate);
             }
 
             DB::transaction(function () use ($route): void {
@@ -1131,22 +1131,22 @@ final readonly class ConvergeRouteAction
         $route->refresh();
 
         try {
-            foreach ($targets as $appInstance) {
-                $this->projection->rollbackCaddy($appInstance, $route);
-                $this->projection->rollbackCaddy($appInstance, $candidate);
+            foreach ($targets as $instance) {
+                $this->projection->rollbackCaddy($instance, $route);
+                $this->projection->rollbackCaddy($instance, $candidate);
             }
 
-            foreach ($targets as $appInstance) {
-                $this->projection->rollbackCertificates($appInstance, $candidate);
+            foreach ($targets as $instance) {
+                $this->projection->rollbackCertificates($instance, $candidate);
 
-                if ($appInstance->placedOnAppProd()) {
+                if ($instance->placedOnAppProd()) {
                     $this->routeEnvironment->synchronizeRouteDomain(
-                        $appInstance,
-                        AppInstanceEnvironmentRouteDomain::Authoritative,
+                        $instance,
+                        InstanceEnvironmentRouteDomain::Authoritative,
                     );
-                } elseif ($appInstance->source_is_laravel) {
+                } elseif ($instance->source_is_laravel) {
                     $this->configuration->configureLaravelUrl(
-                        $appInstance,
+                        $instance,
                         "https://{$retired->domain}",
                     );
                 }
@@ -1196,31 +1196,31 @@ final readonly class ConvergeRouteAction
     {
         try {
             if ($replacement->replacement_step !== RouteReplacementStep::Cleanup) {
-                foreach ($targets as $appInstance) {
-                    $this->projection->prepareCleanup($appInstance, $replacement);
+                foreach ($targets as $instance) {
+                    $this->projection->prepareCleanup($instance, $replacement);
                 }
 
                 $this->checkpoint($replacement, RouteReplacementStep::Cleanup);
             }
 
-            foreach ($targets as $appInstance) {
+            foreach ($targets as $instance) {
                 // The replacement is authoritative from cutover on, so the live certificate and the
                 // staging scopes are named after it, not after the Route being retired.
-                $this->projection->cleanup($appInstance, $replacement);
+                $this->projection->cleanup($instance, $replacement);
 
-                if ($appInstance->placedOnAppProd()) {
+                if ($instance->placedOnAppProd()) {
                     $this->routeEnvironment->synchronizeRouteDomain(
-                        $appInstance,
-                        AppInstanceEnvironmentRouteDomain::Candidate,
+                        $instance,
+                        InstanceEnvironmentRouteDomain::Candidate,
                     );
-                } elseif ($appInstance->source_is_laravel) {
+                } elseif ($instance->source_is_laravel) {
                     $this->configuration->configureLaravelUrl(
-                        $appInstance,
+                        $instance,
                         "https://{$replacement->domain}",
                     );
                 }
 
-                $this->projection->verifyWorkload($appInstance, $replacement);
+                $this->projection->verifyWorkload($instance, $replacement);
             }
 
             DB::transaction(function () use ($replacement, $current): void {
@@ -1266,21 +1266,21 @@ final readonly class ConvergeRouteAction
             ->update(['status' => RouteStatus::Failed->value]);
 
         try {
-            foreach ($targets as $appInstance) {
-                $this->projection->rollbackCaddy($appInstance, $replacement);
+            foreach ($targets as $instance) {
+                $this->projection->rollbackCaddy($instance, $replacement);
             }
 
-            foreach ($targets as $appInstance) {
-                $this->projection->rollbackCertificates($appInstance, $replacement);
+            foreach ($targets as $instance) {
+                $this->projection->rollbackCertificates($instance, $replacement);
 
-                if ($appInstance->placedOnAppProd()) {
+                if ($instance->placedOnAppProd()) {
                     $this->routeEnvironment->synchronizeRouteDomain(
-                        $appInstance,
-                        AppInstanceEnvironmentRouteDomain::Authoritative,
+                        $instance,
+                        InstanceEnvironmentRouteDomain::Authoritative,
                     );
-                } elseif ($appInstance->source_is_laravel && $old instanceof Route) {
+                } elseif ($instance->source_is_laravel && $old instanceof Route) {
                     $this->configuration->configureLaravelUrl(
-                        $appInstance,
+                        $instance,
                         "https://{$old->domain}",
                     );
                 }

@@ -6,9 +6,6 @@ namespace App\Actions\Doctor;
 
 use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorIssueData;
-use App\Domain\AppInstances\AppInstanceProvisioning;
-use App\Domain\AppInstances\AppInstanceSourceLayout;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorInspectionException;
@@ -18,6 +15,9 @@ use App\Domain\Doctor\InstanceDoctorIssueCode;
 use App\Domain\Doctor\InstanceStateInspector;
 use App\Domain\Doctor\PrivateRouteProjectionInspector;
 use App\Domain\Doctor\PublicRouteEdgeInspector;
+use App\Domain\Instances\InstanceProvisionProgress;
+use App\Domain\Instances\InstanceSourceLayout;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
@@ -47,7 +47,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
 
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
-        $rows = Instance::query()->with(['app', 'taskGroups'])->where('node_id', $context->node->id)->orderBy('id')->get();
+        $rows = Instance::query()->with(['project', 'taskGroups'])->where('node_id', $context->node->id)->orderBy('id')->get();
         if ($rows->isEmpty()) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, 0, []);
         }
@@ -67,7 +67,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
         foreach ($rows as $instance) {
             $instanceIssueOffset = count($issues);
 
-            if ($instance->status === AppInstanceState::Removing) {
+            if ($instance->status === InstanceState::Removing) {
                 if ($instance->updated_at?->lessThanOrEqualTo(now()->subMinutes(self::StuckRemovalMinutes))) {
                     $issues[] = new DoctorIssueData(
                         InstanceDoctorIssueCode::RemovalStuck,
@@ -111,7 +111,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
                     'instance',
                     $instance->id,
                     $instance->name,
-                    $settled === AppInstanceState::Active
+                    $settled === InstanceState::Active
                         ? 'Instance lifecycle is not active.'
                         : 'Task workspace lifecycle is not source resolved.',
                     $settled->value,
@@ -119,7 +119,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
                 );
             }
 
-            if (! AppInstanceSourceLayout::tryFrom($instance->source_layout) instanceof AppInstanceSourceLayout) {
+            if (! InstanceSourceLayout::tryFrom($instance->source_layout) instanceof InstanceSourceLayout) {
                 $issues[] = new DoctorIssueData(
                     InstanceDoctorIssueCode::SourceLayoutMismatch,
                     DoctorIssueKind::Drift,
@@ -184,7 +184,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
             if (count($issues) > $instanceIssueOffset) {
                 $current = Instance::query()->find($instance->id);
 
-                if (! $current instanceof Instance || $current->status === AppInstanceState::Removing) {
+                if (! $current instanceof Instance || $current->status === InstanceState::Removing) {
                     $issues = array_slice($issues, 0, $instanceIssueOffset);
 
                     if (
@@ -209,9 +209,9 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
         return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, $rows->count(), $issues);
     }
 
-    private function isProvisioning(Instance $instance, AppInstanceState $settled): bool
+    private function isProvisioning(Instance $instance, InstanceState $settled): bool
     {
-        return AppInstanceProvisioning::isInFlight($instance, $settled);
+        return InstanceProvisionProgress::isInFlight($instance, $settled);
     }
 
     private function productionAssociationMissing(Instance $instance): bool

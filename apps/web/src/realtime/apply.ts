@@ -246,7 +246,7 @@ export function applyEvent(client: QueryClient, event: RealtimeEvent): void {
 
     // The event carries the row; the history and the open log reload from the Gateway.
     if (family === "deployment") {
-        const instanceId = event.data.app_instance_id;
+        const instanceId = event.data.instance_id;
         void client.invalidateQueries({
             queryKey:
                 typeof instanceId === "number" ? ["deployments", instanceId] : ["deployments"],

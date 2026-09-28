@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 use App\Domain\AppDev\DnsRequester;
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
-use App\Infrastructure\AppDev\AppDevSiteRepository;
+use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\AppDev\PrivateDnsAnswerCatalog;
 use App\Models\Cluster;
 use App\Models\Instance;
@@ -94,7 +94,7 @@ it('restores the previous working service after a restart failure and republishe
 
         $harness->clearRestartFailure();
         $harness->manager()->converge();
-        $expected = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
+        $expected = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render();
 
         expect(file_get_contents($harness->recordsPath()))
             ->toBe($expected)
@@ -219,14 +219,14 @@ function orb260_published_cluster(): array
         'role' => RoleName::Router,
         'status' => LifecycleStatus::Active,
     ]);
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Published',
         'slug' => 'published',
         'repository_url' => 'https://example.test/published.git',
         'root' => 'public',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $member->id,
         'name' => 'default',
         'checkout_path' => '/home/orbit/apps/published',
@@ -234,10 +234,10 @@ function orb260_published_cluster(): array
         'branch' => 'main',
         'starting_commit' => str_repeat('a', 40),
         'selected_php_version' => '8.5',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'cluster_id' => $cluster->id,
         'domain' => 'app.cluster.test',
         'provenance' => RouteProvenance::Explicit,

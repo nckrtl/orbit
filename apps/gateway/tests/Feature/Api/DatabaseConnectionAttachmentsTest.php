@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentContext;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentReader;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriteResult;
-use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
+use App\Domain\Instances\Environment\InstanceEnvironmentContext;
+use App\Domain\Instances\Environment\InstanceEnvironmentReader;
+use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
+use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
+use App\Domain\Instances\Environment\InstanceOperationPreflight;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
@@ -15,10 +15,10 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
-use App\Models\AppInstanceEnvironmentValue;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
+use App\Models\InstanceEnvironmentValue;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
@@ -29,9 +29,9 @@ const DATABASE_ATTACHMENT_SECRET = 'db-attach-secret-7c21';
 beforeEach(function (): void {
     [$this->caller, $this->instance, $this->route] = database_attachment_fixture();
     $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip]);
-    app()->instance(AppInstanceOperationPreflight::class, new DatabaseAttachmentAccess);
-    app()->instance(AppInstanceEnvironmentReader::class, new DatabaseAttachmentAccess);
-    app()->instance(AppInstanceEnvironmentWriter::class, new DatabaseAttachmentAccess);
+    app()->instance(InstanceOperationPreflight::class, new DatabaseAttachmentAccess);
+    app()->instance(InstanceEnvironmentReader::class, new DatabaseAttachmentAccess);
+    app()->instance(InstanceEnvironmentWriter::class, new DatabaseAttachmentAccess);
 });
 
 it('attaches mysql keys into stored Instance env and redacts the password', function (): void {
@@ -53,7 +53,7 @@ it('attaches mysql keys into stored Instance env and redacts the password', func
 
     $attach
         ->assertOk()
-        ->assertJsonPath('data.app_instance_id', $this->instance->id)
+        ->assertJsonPath('data.instance_id', $this->instance->id)
         ->assertJsonPath('data.slug', 'app')
         ->assertJsonPath('data.prefix', 'DB')
         ->assertJsonPath('data.operation', 'attach')
@@ -323,7 +323,7 @@ function database_attachment_fixture(): array
         'user' => 'orbit',
     ]);
     orbit_test_set_app_placement_role($node, false);
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Environment API',
         'slug' => 'environment-api',
         'repository_url' => 'https://example.test/environment-api.git',
@@ -331,7 +331,7 @@ function database_attachment_fixture(): array
         'root' => 'public',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'default',
         'environment' => 'development',
@@ -340,7 +340,7 @@ function database_attachment_fixture(): array
         'provisioning_step' => 'active',
     ]);
     $route = Route::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'domain' => 'environment-api.test',
         'provenance' => RouteProvenance::Explicit,
@@ -357,38 +357,38 @@ function database_attachment_fixture(): array
 /** @return array<string, string> */
 function stored_env(Instance $instance): array
 {
-    return AppInstanceEnvironmentValue::query()
+    return InstanceEnvironmentValue::query()
         ->where('instance_id', $instance->id)
         ->orderBy('env_key')
         ->get()
-        ->mapWithKeys(static fn (AppInstanceEnvironmentValue $row): array => [$row->env_key => $row->env_value])
+        ->mapWithKeys(static fn (InstanceEnvironmentValue $row): array => [$row->env_key => $row->env_value])
         ->all();
 }
 
-final class DatabaseAttachmentAccess implements AppInstanceEnvironmentReader, AppInstanceEnvironmentWriter, AppInstanceOperationPreflight
+final class DatabaseAttachmentAccess implements InstanceEnvironmentReader, InstanceEnvironmentWriter, InstanceOperationPreflight
 {
-    public function assertEnvironmentReadable(AppInstanceEnvironmentContext $context): void
+    public function assertEnvironmentReadable(InstanceEnvironmentContext $context): void
     {
         throw new RuntimeException('Attachment contacted the workload Node.');
     }
 
     public function assertEnvironmentWritable(
-        AppInstanceEnvironmentContext $context,
+        InstanceEnvironmentContext $context,
         int $requiredCapacityBytes,
     ): void {
         throw new RuntimeException('Attachment contacted the workload Node.');
     }
 
-    public function read(AppInstanceEnvironmentContext $context): string
+    public function read(InstanceEnvironmentContext $context): string
     {
         throw new RuntimeException('Attachment contacted the workload Node.');
     }
 
     public function write(
-        AppInstanceEnvironmentContext $context,
+        InstanceEnvironmentContext $context,
         #[SensitiveParameter]
         string $contents,
-    ): AppInstanceEnvironmentWriteResult {
+    ): InstanceEnvironmentWriteResult {
         throw new RuntimeException('Attachment contacted the workload Node.');
     }
 }

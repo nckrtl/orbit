@@ -38,7 +38,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property int|null $transition_node_id
  * @property int|null $transition_cluster_id
  * @property CarbonImmutable|null $transition_dns_moved_at
- * @property-read Project|null $app
+ * @property-read Project|null $project
  * @property-read Node|null $node
  * @property-read Cluster|null $cluster
  * @property-read Node|null $generationBasisNode
@@ -143,7 +143,7 @@ final class Route extends Model
     }
 
     /** @return BelongsTo<Project, $this> */
-    public function app(): BelongsTo
+    public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class, 'project_id');
     }

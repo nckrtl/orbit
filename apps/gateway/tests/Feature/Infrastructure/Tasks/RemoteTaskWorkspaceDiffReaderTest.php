@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -16,7 +16,7 @@ use Tests\Support\AppDevFakeSshExecutor;
 
 function remote_diff_instance(): Instance
 {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'orbit',
         'slug' => 'orbit',
         'repository_url' => 'git@github.com:nckrtl/orbit.git',
@@ -32,7 +32,7 @@ function remote_diff_instance(): Instance
     ]);
 
     return Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'task-12',
         'checkout_path' => '/srv/orbit/apps/orbit/task-12',
@@ -41,9 +41,9 @@ function remote_diff_instance(): Instance
     ]);
 }
 
-function remote_diff_ssh(AppDevFakeSshExecutor $transport): AppDevSshExecutor
+function remote_diff_ssh(AppDevFakeSshExecutor $transport): DevelopmentSshExecutor
 {
-    return new AppDevSshExecutor(
+    return new DevelopmentSshExecutor(
         $transport,
         new class implements SshKeyProvider
         {

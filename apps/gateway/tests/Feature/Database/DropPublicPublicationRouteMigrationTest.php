@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteKind;
@@ -94,21 +94,21 @@ function drop_public_publication_app_route(
     }
 
     $workload = drop_public_publication_node($cluster, "{$name}-prod", RoleName::AppProd);
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => $name,
         'slug' => $name,
         'repository_url' => "https://example.test/{$name}.git",
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $workload->id,
         'name' => 'production',
         'environment' => 'production',
         'checkout_path' => "/srv/{$name}",
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'cluster_id' => $cluster->id,
         'domain' => "{$name}.example.test",
         'provenance' => RouteProvenance::Explicit,
@@ -138,22 +138,22 @@ function drop_public_publication_tracking_route(Cluster $cluster, string $domain
 
 function drop_public_publication_private_route(Cluster $cluster): Route
 {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Private',
         'slug' => 'private-cutover',
         'repository_url' => 'https://example.test/private-cutover.git',
     ]);
     $workload = drop_public_publication_node($cluster, 'private-prod', RoleName::AppProd);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $workload->id,
         'name' => 'production',
         'environment' => 'production',
         'checkout_path' => '/srv/private-cutover',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'cluster_id' => $cluster->id,
         'domain' => 'private-cutover.example.test',
         'provenance' => RouteProvenance::Explicit,

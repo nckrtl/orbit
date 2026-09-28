@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 use App\Domain\AppDev\DevelopmentServerEndpoint;
 use App\Domain\Hibernation\RuntimeHibernation;
-use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
-use App\Infrastructure\AppDev\AppDevSite;
+use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
+use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\Caddy\CaddyGlobalOptions;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 it('proxies the reserved development-server path to loopback on a development site', function (): void {
-    $configuration = new AppDevCaddyConfigRenderer()->render(collect([
+    $configuration = new DevelopmentCaddyConfigRenderer()->render(collect([
         development_server_site('tasks.commander.test', '/home/orbit/apps/tasks'),
     ]));
 
@@ -42,7 +42,7 @@ it('proxies the reserved development-server path to loopback on a development si
 });
 
 it('shows the Orbit wake page before Caddy proxies a sleeping site', function (): void {
-    $configuration = new AppDevCaddyConfigRenderer()->render(collect([
+    $configuration = new DevelopmentCaddyConfigRenderer()->render(collect([
         development_server_site('tasks.commander.test', '/home/orbit/apps/tasks'),
     ]));
 
@@ -59,7 +59,7 @@ it('shows the Orbit wake page before Caddy proxies a sleeping site', function ()
 });
 
 it('adapts hibernation wake with a nested awake-marker matcher', function (): void {
-    $configuration = new AppDevCaddyConfigRenderer()->render(collect([
+    $configuration = new DevelopmentCaddyConfigRenderer()->render(collect([
         development_server_site('tasks.commander.test', '/home/orbit/apps/tasks'),
     ]));
 
@@ -75,7 +75,7 @@ it('adapts hibernation wake with a nested awake-marker matcher', function (): vo
 });
 
 it('keeps two development sites isolated on the same loopback port', function (): void {
-    $configuration = new AppDevCaddyConfigRenderer()->render(collect([
+    $configuration = new DevelopmentCaddyConfigRenderer()->render(collect([
         development_server_site('alpha.example.test', '/home/orbit/apps/alpha', nodeId: 12, scope: 'app-instance-6'),
         development_server_site('beta.example.test', '/home/orbit/apps/beta', nodeId: 13, scope: 'app-instance-7'),
     ]));
@@ -98,8 +98,8 @@ it('keeps two development sites isolated on the same loopback port', function ()
 });
 
 it('binds a public Ingress proxy without an https prefix and preserves forwarded identity', function (): void {
-    $configuration = new AppDevCaddyConfigRenderer()->render(collect([
-        new AppDevSite(
+    $configuration = new DevelopmentCaddyConfigRenderer()->render(collect([
+        new DevelopmentSite(
             nodeId: 3,
             nodeAddress: '10.44.0.3',
             scope: 'route-9-ingress',
@@ -128,8 +128,8 @@ it('binds a public Ingress proxy without an https prefix and preserves forwarded
 });
 
 it('automates the public Ingress certificate alone under the Node-wide certificate default', function (): void {
-    $sites = new AppDevCaddyConfigRenderer()->render(collect([
-        new AppDevSite(
+    $sites = new DevelopmentCaddyConfigRenderer()->render(collect([
+        new DevelopmentSite(
             nodeId: 3,
             nodeAddress: '10.44.0.3',
             scope: 'route-9-ingress',
@@ -142,7 +142,7 @@ it('automates the public Ingress certificate alone under the Node-wide certifica
             publicListener: true,
             preserveForwardedIdentity: true,
         ),
-        new AppDevSite(
+        new DevelopmentSite(
             nodeId: 3,
             nodeAddress: '10.44.0.3',
             scope: 'route-10',
@@ -169,8 +169,8 @@ it('automates the public Ingress certificate alone under the Node-wide certifica
 });
 
 it('measures a development site without waking it or counting the request as activity', function (): void {
-    $configuration = new AppDevCaddyConfigRenderer()->render(collect([
-        new AppDevSite(
+    $configuration = new DevelopmentCaddyConfigRenderer()->render(collect([
+        new DevelopmentSite(
             nodeId: 3,
             nodeAddress: '10.44.0.7',
             scope: 'app-instance-28',
@@ -195,7 +195,7 @@ it('measures a development site without waking it or counting the request as act
 });
 
 it('does not attach the development-server handle to production, proxy, or unavailable sites', function (): void {
-    $production = new AppDevSite(
+    $production = new DevelopmentSite(
         nodeId: 1,
         nodeAddress: '10.44.0.10',
         scope: 'app-instance-1',
@@ -206,7 +206,7 @@ it('does not attach the development-server handle to production, proxy, or unava
         environment: 'production',
         productionPhpSocket: '/run/php/orbit-acme.sock',
     );
-    $proxy = new AppDevSite(
+    $proxy = new DevelopmentSite(
         nodeId: 9,
         nodeAddress: '10.44.0.7',
         scope: 'route-4-router',
@@ -216,7 +216,7 @@ it('does not attach the development-server handle to production, proxy, or unava
         domain: 'tasks.commander.test',
         upstreamAddresses: ['10.44.0.10'],
     );
-    $unavailable = new AppDevSite(
+    $unavailable = new DevelopmentSite(
         nodeId: 9,
         nodeAddress: '10.44.0.7',
         scope: 'route-4-router',
@@ -227,7 +227,7 @@ it('does not attach the development-server handle to production, proxy, or unava
         unavailable: true,
     );
 
-    $renderer = new AppDevCaddyConfigRenderer;
+    $renderer = new DevelopmentCaddyConfigRenderer;
     $productionConfig = $renderer->render(new Collection([$production]));
     $proxyConfig = $renderer->render(new Collection([$proxy]));
     $unavailableConfig = $renderer->render(new Collection([$unavailable]));
@@ -254,8 +254,8 @@ it('does not attach the development-server handle to production, proxy, or unava
 });
 
 it('publishes a production pool with round-robin, no replay, a 10s cooldown, and 503 on connection failure', function (): void {
-    $configuration = new AppDevCaddyConfigRenderer()->render(collect([
-        new AppDevSite(
+    $configuration = new DevelopmentCaddyConfigRenderer()->render(collect([
+        new DevelopmentSite(
             nodeId: 9,
             nodeAddress: '10.44.0.7',
             scope: 'route-4-router',
@@ -282,8 +282,8 @@ it('publishes a production pool with round-robin, no replay, a 10s cooldown, and
 });
 
 it('composes a Router-local unix upstream with a remote HTTPS target without a self-proxy loop', function (): void {
-    $configuration = new AppDevCaddyConfigRenderer()->render(collect([
-        new AppDevSite(
+    $configuration = new DevelopmentCaddyConfigRenderer()->render(collect([
+        new DevelopmentSite(
             nodeId: 9,
             nodeAddress: '10.44.0.7',
             scope: 'route-4-router',
@@ -295,7 +295,7 @@ it('composes a Router-local unix upstream with a remote HTTPS target without a s
             environment: 'production',
             productionUser: 'orbit-acme',
             productionHome: '/var/www/acme',
-            appSlug: 'acme',
+            projectSlug: 'acme',
             productionPhpSocket: '/run/php/orbit-acme.sock',
             localUnixUpstream: 'unix//run/orbit/route-4-local.sock',
         ),
@@ -314,7 +314,7 @@ it('composes a Router-local unix upstream with a remote HTTPS target without a s
 });
 
 it('does not fall back to port 5173 when a development site has no assigned Vite port', function (): void {
-    $configuration = new AppDevCaddyConfigRenderer()->render(collect([
+    $configuration = new DevelopmentCaddyConfigRenderer()->render(collect([
         development_server_site('tasks.commander.test', '/home/orbit/apps/tasks', vitePort: null),
     ]));
 
@@ -339,8 +339,8 @@ function development_server_site(
     int $nodeId = 12,
     string $scope = 'app-instance-6',
     ?int $vitePort = 5173,
-): AppDevSite {
-    return new AppDevSite(
+): DevelopmentSite {
+    return new DevelopmentSite(
         nodeId: $nodeId,
         nodeAddress: '10.44.0.10',
         scope: $scope,
@@ -353,8 +353,8 @@ function development_server_site(
 }
 
 it('proxies a local HTTP custom proxy site without Host rewrite or an https hop', function (): void {
-    $configuration = new AppDevCaddyConfigRenderer()->render(collect([
-        new AppDevSite(
+    $configuration = new DevelopmentCaddyConfigRenderer()->render(collect([
+        new DevelopmentSite(
             nodeId: 4,
             nodeAddress: '10.44.0.4',
             scope: 'route-11',
@@ -378,11 +378,11 @@ it('proxies a local HTTP custom proxy site without Host rewrite or an https hop'
 });
 
 it('proxies the reserved Agentation path only when a port is assigned', function (): void {
-    $without = new AppDevCaddyConfigRenderer()->render(collect([
+    $without = new DevelopmentCaddyConfigRenderer()->render(collect([
         development_server_site('commander.test', '/apps/commander'),
     ]));
-    $with = new AppDevCaddyConfigRenderer()->render(collect([
-        new AppDevSite(
+    $with = new DevelopmentCaddyConfigRenderer()->render(collect([
+        new DevelopmentSite(
             nodeId: 12,
             nodeAddress: '10.44.0.10',
             scope: 'app-instance-6',
@@ -406,18 +406,18 @@ it('proxies the reserved Agentation path only when a port is assigned', function
 
 it('keeps assigned Vite endpoints separate and preserves their base path', function (): void {
     $sites = collect([
-        new AppDevSite(nodeId: 1, nodeAddress: '10.44.0.2', scope: 'app-instance-10', checkoutPath: '/apps/first', documentRoot: 'public', phpVersion: null, domain: 'first.test', vitePort: 5174),
-        new AppDevSite(nodeId: 1, nodeAddress: '10.44.0.2', scope: 'app-instance-11', checkoutPath: '/apps/second', documentRoot: 'public', phpVersion: null, domain: 'second.test', vitePort: 5210),
+        new DevelopmentSite(nodeId: 1, nodeAddress: '10.44.0.2', scope: 'app-instance-10', checkoutPath: '/apps/first', documentRoot: 'public', phpVersion: null, domain: 'first.test', vitePort: 5174),
+        new DevelopmentSite(nodeId: 1, nodeAddress: '10.44.0.2', scope: 'app-instance-11', checkoutPath: '/apps/second', documentRoot: 'public', phpVersion: null, domain: 'second.test', vitePort: 5210),
     ]);
-    $config = new AppDevCaddyConfigRenderer()->render($sites);
+    $config = new DevelopmentCaddyConfigRenderer()->render($sites);
     expect($config)->toContain('reverse_proxy 127.0.0.1:5174')->toContain('reverse_proxy 127.0.0.1:5210')->not->toContain('uri strip_prefix');
     expect(caddy_adapt($config)->succeeded())->toBeTrue();
 });
 
 describe('analytics tracking site', function (): void {
     it('proxies only the script and event paths on a Router behind a separate Ingress', function (): void {
-        $configuration = new AppDevCaddyConfigRenderer()->render(collect([
-            new AppDevSite(
+        $configuration = new DevelopmentCaddyConfigRenderer()->render(collect([
+            new DevelopmentSite(
                 nodeId: 3,
                 nodeAddress: '10.45.0.20',
                 scope: 'route-91-router',
@@ -460,8 +460,8 @@ describe('analytics tracking site', function (): void {
     });
 
     it('serves the public listener itself when the Router is also the Ingress', function (): void {
-        $configuration = new AppDevCaddyConfigRenderer()->render(collect([
-            new AppDevSite(
+        $configuration = new DevelopmentCaddyConfigRenderer()->render(collect([
+            new DevelopmentSite(
                 nodeId: 3,
                 nodeAddress: '10.45.0.20',
                 scope: 'route-91-ingress',

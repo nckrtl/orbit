@@ -12,7 +12,7 @@ use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceMcp;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -53,10 +53,10 @@ it('reads tracked and untracked review diff without updating the index', functio
     $start = trim((new Process(['git', '-C', $checkout, 'rev-parse', 'HEAD']))->mustRun()->getOutput());
     file_put_contents($checkout.'/tracked.php', "<?php\nreturn 2;\n");
     file_put_contents($checkout.'/untracked.php', "<?php\nreturn 'new';\n");
-    $app = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'git@example.test:orbit.git', 'default_branch' => 'main']);
+    $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'git@example.test:orbit.git', 'default_branch' => 'main']);
     $node = Node::query()->create(['name' => 'review-diff-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.144', 'wireguard_ip' => '10.44.0.144', 'user' => 'orbit']);
-    $instance = Instance::query()->create(['project_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-14', 'checkout_path' => $checkout, 'branch' => 'task-14', 'status' => 'source_resolved']);
-    $reader = new RemoteTaskReviewDiff(new AppDevSshExecutor(
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-14', 'checkout_path' => $checkout, 'branch' => 'task-14', 'status' => 'source_resolved']);
+    $reader = new RemoteTaskReviewDiff(new DevelopmentSshExecutor(
         new LocalShellSshExecutor,
         new class implements SshKeyProvider
         {
@@ -226,15 +226,15 @@ function review_diff_checkout(): string
 
 function review_diff_instance(string $checkout): Instance
 {
-    $app = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit-'.bin2hex(random_bytes(3)), 'repository_url' => 'git@example.test:orbit.git', 'default_branch' => 'main']);
+    $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit-'.bin2hex(random_bytes(3)), 'repository_url' => 'git@example.test:orbit.git', 'default_branch' => 'main']);
     $node = Node::query()->create(['name' => 'review-diff-'.bin2hex(random_bytes(3)), 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.144', 'wireguard_ip' => '10.44.0.144', 'user' => 'orbit']);
 
-    return Instance::query()->create(['project_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-14', 'checkout_path' => $checkout, 'branch' => 'task-14', 'status' => 'source_resolved']);
+    return Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-14', 'checkout_path' => $checkout, 'branch' => 'task-14', 'status' => 'source_resolved']);
 }
 
 function review_diff_reader(SshExecutor $ssh): RemoteTaskReviewDiff
 {
-    return new RemoteTaskReviewDiff(new AppDevSshExecutor(
+    return new RemoteTaskReviewDiff(new DevelopmentSshExecutor(
         $ssh,
         new class implements SshKeyProvider
         {

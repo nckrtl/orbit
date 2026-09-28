@@ -451,7 +451,7 @@ function instance_gateway_route_data(): array
     return [
         'id' => 9,
         'kind' => 'app',
-        'app_id' => 3,
+        'project_id' => 3,
         'node_id' => 4,
         'cluster_id' => null,
         'generation_basis_node_id' => 4,
@@ -465,8 +465,8 @@ function instance_gateway_route_data(): array
         'replaced_by_route_id' => null,
         'replacement_step' => null,
         'target_set_step' => null,
-        'target' => ['id' => 10, 'app_instance_id' => 7, 'position' => 0],
-        'targets' => [['id' => 10, 'app_instance_id' => 7, 'position' => 0]],
+        'target' => ['id' => 10, 'instance_id' => 7, 'position' => 0],
+        'targets' => [['id' => 10, 'instance_id' => 7, 'position' => 0]],
         'process_id' => null,
         'upstream' => null,
     ];

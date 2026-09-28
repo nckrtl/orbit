@@ -12,7 +12,7 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 final class RouteTargetDispositionData extends Data
 {
     public function __construct(
-        public int $appInstanceId,
+        public int $instanceId,
         public ?int $routeId = null,
         public bool $remove = false,
     ) {}
@@ -20,7 +20,7 @@ final class RouteTargetDispositionData extends Data
     /** @return array{instance_id: int, route_id?: int, remove?: true} */
     public function toIntent(): array
     {
-        $intent = ['instance_id' => $this->appInstanceId];
+        $intent = ['instance_id' => $this->instanceId];
 
         if ($this->routeId !== null) {
             $intent['route_id'] = $this->routeId;

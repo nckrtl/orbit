@@ -6,8 +6,8 @@ use App\Actions\Clusters\ClearClusterRouterAction;
 use App\Actions\Clusters\SetClusterRouterAction;
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterRouterOperationLock;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ClusterRouterReplacementProjector;
@@ -17,8 +17,8 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
-use App\Infrastructure\AppDev\AppDevSiteRepository;
+use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Models\Activity;
 use App\Models\Cluster;
 use App\Models\Instance;
@@ -274,7 +274,7 @@ it('reloads the requested Node after waiting and rejects stale membership', func
 
 it('runs Router mutation and removal guards against state created while waiting', function (): void {
     $owner = new ClusterRouterApiOperationLock(function (): void {
-        $app = Project::query()->create([
+        $project = Project::query()->create([
             'name' => 'Acme',
             'slug' => 'acme',
             'repository_url' => 'https://example.test/acme.git',
@@ -289,13 +289,13 @@ it('runs Router mutation and removal guards against state created while waiting'
                 'status' => LifecycleStatus::Active,
             ]);
         $target = Instance::query()->create([
-            'project_id' => $app->id,
+            'project_id' => $project->id,
             'node_id' => $this->first->id,
             'name' => 'default',
             'checkout_path' => '/srv/acme/default',
         ]);
         $route = Route::query()->create([
-            'project_id' => $app->id,
+            'project_id' => $project->id,
             'cluster_id' => $this->cluster->id,
             'domain' => 'acme.example.test',
             'provenance' => RouteProvenance::Explicit,
@@ -303,7 +303,7 @@ it('runs Router mutation and removal guards against state created while waiting'
         ]);
         $route->targets()->create(['instance_id' => $target->id, 'position' => 0]);
         $route->update(['status' => RouteStatus::Active]);
-        $target->update(['status' => AppInstanceState::Active]);
+        $target->update(['status' => InstanceState::Active]);
     });
     app()->instance(ClusterRouterOperationLock::class, $owner);
 
@@ -750,7 +750,7 @@ it('prepares and publishes Cluster Route projections before a replacement assign
         ->toBe([
             'id' => $target->id,
             'node_id' => $this->first->id,
-            'status' => AppInstanceState::Active,
+            'status' => InstanceState::Active,
         ])
         ->and($this->replacements->events)
         ->toBe([
@@ -779,8 +779,8 @@ it('composes a colocated replacement Caddy site without a self-proxy hop', funct
             'error_code' => null,
         ],
     );
-    $sites = new AppDevSiteRepository()->forNode($this->second);
-    $rendered = new AppDevCaddyConfigRenderer()->render($sites);
+    $sites = new DevelopmentSiteRepository()->forNode($this->second);
+    $rendered = new DevelopmentCaddyConfigRenderer()->render($sites);
 
     expect($sites->contains(fn ($site): bool => $site->isProxy() && $site->domain === $route->domain))
         ->toBeFalse()
@@ -891,7 +891,7 @@ it('replaces a Router when the application returns HTTP 500 and leaves Route lif
         ->and($route->refresh()->status)
         ->toBe(RouteStatus::Active)
         ->and($target->refresh()->status)
-        ->toBe(AppInstanceState::Active)
+        ->toBe(InstanceState::Active)
         ->and($this->replacements->events)
         ->toContain('workload-verify');
 });
@@ -913,7 +913,7 @@ function cluster_router_owned_route(Cluster $cluster, Node $workload): array
         $workload->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     }
 
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme-'.Str::random(6),
         'repository_url' => 'https://example.test/acme.git',
@@ -921,14 +921,14 @@ function cluster_router_owned_route(Cluster $cluster, Node $workload): array
         'root' => 'public',
     ]);
     $target = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $workload->id,
         'name' => 'default',
         'checkout_path' => '/srv/acme/default',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'cluster_id' => $cluster->id,
         'domain' => 'acme.example.test',
         'provenance' => RouteProvenance::Explicit,

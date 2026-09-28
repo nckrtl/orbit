@@ -171,7 +171,7 @@ function clone_instance_envelope(): array
                 'replacement_step' => null,
                 'target' => [
                     'id' => 51,
-                    'app_instance_id' => 29,
+                    'instance_id' => 29,
                     'position' => 1,
                 ],
                 'process_id' => null,

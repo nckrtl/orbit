@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Actions\AppInstances\Dependencies\SelectDependencyInputAction;
-use App\Domain\AppInstances\Dependencies\CollectedDependencyFiles;
-use App\Domain\AppInstances\Dependencies\DependencyEcosystem;
+use App\Actions\Instances\Dependencies\SelectDependencyInputAction;
+use App\Domain\Instances\Dependencies\CollectedDependencyFiles;
+use App\Domain\Instances\Dependencies\DependencyEcosystem;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppInstances\DependencyFilesProgram;
+use App\Infrastructure\Instances\DependencyFilesProgram;
 use App\Models\Node;
 use App\Models\Project;
 

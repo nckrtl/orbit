@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 use App\Data\Metrics\MetricsMutationData;
 use App\Domain\AppDev\PrivateDnsManager;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentContext;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentReader;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriteResult;
-use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\NodeStateInspector;
 use App\Domain\Firewall\FirewallBackendStatus;
 use App\Domain\Firewall\FirewallManager;
+use App\Domain\Instances\Environment\InstanceEnvironmentContext;
+use App\Domain\Instances\Environment\InstanceEnvironmentReader;
+use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
+use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
+use App\Domain\Instances\Environment\InstanceOperationPreflight;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\MetricsPublicationCleanup;
 use App\Domain\Metrics\MetricsRoleManager;
@@ -61,9 +61,9 @@ it('records environment commands without submitted imported or rejected values',
     $imported = 'arbitrary-imported-value';
     [$caller, $instance] = command_activity_environment_fixture();
     $access = new CommandActivityEnvironmentAccess("IMPORTED={$imported}\n");
-    app()->instance(AppInstanceOperationPreflight::class, $access);
-    app()->instance(AppInstanceEnvironmentReader::class, $access);
-    app()->instance(AppInstanceEnvironmentWriter::class, $access);
+    app()->instance(InstanceOperationPreflight::class, $access);
+    app()->instance(InstanceEnvironmentReader::class, $access);
+    app()->instance(InstanceEnvironmentWriter::class, $access);
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
@@ -114,9 +114,9 @@ it('records environment commands without submitted imported or rejected values',
 it('records database create destroy add and remove command names and Instance targets', function (): void {
     [$caller, $instance] = command_activity_environment_fixture();
     $access = new CommandActivityEnvironmentAccess('');
-    app()->instance(AppInstanceOperationPreflight::class, $access);
-    app()->instance(AppInstanceEnvironmentReader::class, $access);
-    app()->instance(AppInstanceEnvironmentWriter::class, $access);
+    app()->instance(InstanceOperationPreflight::class, $access);
+    app()->instance(InstanceEnvironmentReader::class, $access);
+    app()->instance(InstanceEnvironmentWriter::class, $access);
 
     $create = $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
@@ -513,8 +513,8 @@ it('records renamed App Cluster and Route lifecycle command names', function ():
         'default_branch' => 'main',
         'root' => 'public',
     ]))->toBe('project:create');
-    $app = Project::query()->where('slug', 'lifecycle')->sole();
-    expect($recorded('DELETE', "/api/v1/projects/{$app->id}"))->toBe('project:destroy');
+    $project = Project::query()->where('slug', 'lifecycle')->sole();
+    expect($recorded('DELETE', "/api/v1/projects/{$project->id}"))->toBe('project:destroy');
 
     expect($recorded('POST', '/api/v1/clusters', ['name' => 'lifecycle']))->toBe('cluster:create');
     $cluster = Cluster::query()->where('name', 'lifecycle')->sole();
@@ -530,7 +530,7 @@ it('records renamed App Cluster and Route lifecycle command names', function ():
         ->toBe('cluster:node:remove');
     expect($recorded('DELETE', "/api/v1/clusters/{$cluster->id}"))->toBe('cluster:destroy');
 
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Lifecycle',
         'slug' => 'lifecycle-route',
         'repository_url' => 'https://example.test/lifecycle-route.git',
@@ -545,13 +545,13 @@ it('records renamed App Cluster and Route lifecycle command names', function ():
         'tld' => 'test',
     ]);
     $this->postJson('/api/v1/routes', [
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'domain' => 'lifecycle.example.test',
         'publication' => 'private',
         'node_id' => $node->id,
     ])->assertUnprocessable();
     $route = Route::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'domain' => 'lifecycle.example.test',
         'provenance' => 'explicit',
@@ -1657,7 +1657,7 @@ it('keeps failed remove tools retained and redacted', function (): void {
         ->not->toContain('REMOVE_EXCEPTION_SENTINEL');
 });
 
-it('records definition commands against the App instead of a Process or Schedule target', function (): void {
+it('records definition commands against the Project instead of a Process or Schedule target', function (): void {
     $gateway = $this->markAsGateway(Node::query()->create([
         'name' => 'definition-activity-gateway',
         'status' => LifecycleStatus::Active,
@@ -1800,7 +1800,7 @@ function command_activity_environment_fixture(): array
     $caller->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
     $owner = command_activity_doctor_node('environment-activity-owner');
     $owner->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Environment activity',
         'slug' => 'environment-activity',
         'repository_url' => 'https://example.test/environment-activity.git',
@@ -1808,7 +1808,7 @@ function command_activity_environment_fixture(): array
         'root' => 'public',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $owner->id,
         'name' => 'default',
         'environment' => 'development',
@@ -1818,7 +1818,7 @@ function command_activity_environment_fixture(): array
         'status' => 'source_resolved',
     ]);
     $route = Route::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $owner->id,
         'domain' => 'environment-activity.example.test',
         'provenance' => RouteProvenance::Explicit,
@@ -1845,30 +1845,30 @@ final class CommandActivityFirewallFakeManager implements FirewallManager
     }
 }
 
-final readonly class CommandActivityEnvironmentAccess implements AppInstanceEnvironmentReader, AppInstanceEnvironmentWriter, AppInstanceOperationPreflight
+final readonly class CommandActivityEnvironmentAccess implements InstanceEnvironmentReader, InstanceEnvironmentWriter, InstanceOperationPreflight
 {
     public function __construct(
         private string $contents,
     ) {}
 
-    public function assertEnvironmentReadable(AppInstanceEnvironmentContext $context): void {}
+    public function assertEnvironmentReadable(InstanceEnvironmentContext $context): void {}
 
     public function assertEnvironmentWritable(
-        AppInstanceEnvironmentContext $context,
+        InstanceEnvironmentContext $context,
         int $requiredCapacityBytes,
     ): void {}
 
-    public function read(AppInstanceEnvironmentContext $context): string
+    public function read(InstanceEnvironmentContext $context): string
     {
         return $this->contents;
     }
 
     public function write(
-        AppInstanceEnvironmentContext $context,
+        InstanceEnvironmentContext $context,
         #[SensitiveParameter]
         string $contents,
-    ): AppInstanceEnvironmentWriteResult {
-        return AppInstanceEnvironmentWriteResult::changed();
+    ): InstanceEnvironmentWriteResult {
+        return InstanceEnvironmentWriteResult::changed();
     }
 }
 

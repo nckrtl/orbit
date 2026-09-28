@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
-use App\Domain\AppInstances\AppInstanceRemover;
+use App\Domain\Instances\InstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskExtensionState;
@@ -13,8 +13,8 @@ use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
-use App\Models\AppInstanceRemoval;
 use App\Models\Instance;
+use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
@@ -24,7 +24,7 @@ use Illuminate\Support\Facades\DB;
 
 function cancellable_task_group(TaskGroupStatus $status, ?string $prUrl = null): TaskGroup
 {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'cancel-app',
         'slug' => 'cancel-app',
         'repository_url' => 'git@github.com:nckrtl/orbit.git',
@@ -38,14 +38,14 @@ function cancellable_task_group(TaskGroupStatus $status, ?string $prUrl = null):
         'wireguard_ip' => '10.44.0.160',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'task-21',
         'checkout_path' => '/srv/orbit/apps/cancel-app/task-21',
         'status' => 'source_resolved',
     ]);
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Cancel me',
         'brief' => 'Remove the stuck task workspace.',
         'status' => $status,
@@ -54,26 +54,26 @@ function cancellable_task_group(TaskGroupStatus $status, ?string $prUrl = null):
     $group->taskable()->associate($instance);
     $group->save();
 
-    return $group->fresh(['app', 'taskable']) ?? $group;
+    return $group->fresh(['project', 'taskable']) ?? $group;
 }
 
 /** Records each removal and deletes the row, as a completed removal does. */
 function cancel_recording_remover(): object
 {
-    $remover = new class implements AppInstanceRemover
+    $remover = new class implements InstanceRemover
     {
         /** @var list<array{0: int, 1: bool}> */
         public array $calls = [];
 
-        public function execute(Instance $instance, bool $force): AppInstanceRemoval
+        public function execute(Instance $instance, bool $force): InstanceRemoval
         {
             $this->calls[] = [$instance->id, $force];
             $instance->delete();
 
-            return new AppInstanceRemoval;
+            return new InstanceRemoval;
         }
     };
-    app()->instance(AppInstanceRemover::class, $remover);
+    app()->instance(InstanceRemover::class, $remover);
 
     return $remover;
 }
@@ -280,9 +280,9 @@ it('does not push a settling group without approved subtasks', function (): void
 
 it('asks for assistance and keeps the clone when removal of a source-resolved workspace is refused', function (): void {
     app(TaskExtensionState::class)->enable();
-    app()->instance(AppInstanceRemover::class, new class implements AppInstanceRemover
+    app()->instance(InstanceRemover::class, new class implements InstanceRemover
     {
-        public function execute(Instance $instance, bool $force): AppInstanceRemoval
+        public function execute(Instance $instance, bool $force): InstanceRemoval
         {
             throw new ResourceOperationException('instance.force_failed', 'The checkout could not be inspected.', 409);
         }
@@ -319,7 +319,7 @@ function cancel_unattached_workspace(TaskGroupStatus $status, string $instanceSt
         'status' => $instanceStatus,
     ]);
 
-    return [$group->fresh(['app', 'taskable']) ?? $group, $workspace];
+    return [$group->fresh(['project', 'taskable']) ?? $group, $workspace];
 }
 
 describe('a workspace the group never attached', function (): void {
@@ -365,7 +365,7 @@ describe('a workspace the group never attached', function (): void {
         $remover = cancel_recording_remover();
         [$group, $workspace] = cancel_unattached_workspace(TaskGroupStatus::Reserved);
         $group->forceFill(['reserved_at' => now()->subSeconds(30)])->save();
-        $stale = $group->fresh(['app', 'taskable']);
+        $stale = $group->fresh(['project', 'taskable']);
         $group->taskable()->associate($workspace);
         $group->save();
 
@@ -386,14 +386,14 @@ describe('a workspace the group never attached', function (): void {
             'checkout_path' => '/srv/orbit/apps/cancel-app/late-attach',
             'status' => 'source_resolved',
         ]);
-        $remover = new class($group->id, $late) implements AppInstanceRemover
+        $remover = new class($group->id, $late) implements InstanceRemover
         {
             /** @var list<int> */
             public array $calls = [];
 
             public function __construct(private int $groupId, private Instance $late) {}
 
-            public function execute(Instance $instance, bool $force): AppInstanceRemoval
+            public function execute(Instance $instance, bool $force): InstanceRemoval
             {
                 $this->calls[] = $instance->id;
                 if ($this->calls === [$instance->id] && $instance->id !== $this->late->id) {
@@ -403,10 +403,10 @@ describe('a workspace the group never attached', function (): void {
                 }
                 $instance->delete();
 
-                return new AppInstanceRemoval;
+                return new InstanceRemoval;
             }
         };
-        app()->instance(AppInstanceRemover::class, $remover);
+        app()->instance(InstanceRemover::class, $remover);
 
         $cancelled = app(CancelTaskGroupAction::class)->execute($group);
 
@@ -417,9 +417,9 @@ describe('a workspace the group never attached', function (): void {
 
     it('keeps a half-provisioned workspace and asks for assistance when removal refuses', function (): void {
         app(TaskExtensionState::class)->enable();
-        app()->instance(AppInstanceRemover::class, new class implements AppInstanceRemover
+        app()->instance(InstanceRemover::class, new class implements InstanceRemover
         {
-            public function execute(Instance $instance, bool $force): AppInstanceRemoval
+            public function execute(Instance $instance, bool $force): InstanceRemoval
             {
                 throw new ResourceOperationException('instance.remove_refused', 'Instance is not active.', 409);
             }

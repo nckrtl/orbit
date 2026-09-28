@@ -107,7 +107,7 @@ final class StoreRouteRequest extends FormRequest
         return new CreateRouteData(
             domain: $this->string('domain')->toString(),
             publication: RoutePublication::from(is_string($validated['publication'] ?? null) ? $validated['publication'] : RoutePublication::Private->value),
-            appInstanceId: $this->integer('instance_id'),
+            instanceId: $this->integer('instance_id'),
         );
     }
 

@@ -33,9 +33,9 @@ final class NodeExcludedProjectsController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::Target)]
-    public function store(Request $request, Node $node, Project $app): JsonResponse
+    public function store(Request $request, Node $node, Project $project): JsonResponse
     {
-        $result = $this->exclusions->add($app, $node);
+        $result = $this->exclusions->add($project, $node);
 
         return response()->json([
             'data' => DevelopmentNodeExclusionResultData::fromModel($result['exclusion'], ! $result['created'])->toArray(),
@@ -44,10 +44,10 @@ final class NodeExcludedProjectsController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::Target)]
-    public function destroy(Request $request, Node $node, Project $app): JsonResponse
+    public function destroy(Request $request, Node $node, Project $project): JsonResponse
     {
         return response()->json([
-            'data' => DevelopmentNodeExclusionData::fromModel($this->exclusions->remove($app, $node))->toArray(),
+            'data' => DevelopmentNodeExclusionData::fromModel($this->exclusions->remove($project, $node))->toArray(),
             'meta' => $this->meta($request),
         ]);
     }

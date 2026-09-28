@@ -23,7 +23,7 @@ final readonly class RemoteAppDevCaddyManager implements AppDevCaddyManager
 {
     public function __construct(
         private NodeCaddyBuilds $builds,
-        private AppDevSshExecutor $ssh,
+        private DevelopmentSshExecutor $ssh,
         private ?DevelopmentProjectionOperationLock $projection = null,
         private SystemdVpnOrderingDropIn $vpnOrdering = new SystemdVpnOrderingDropIn,
     ) {}

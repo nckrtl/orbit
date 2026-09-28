@@ -10,7 +10,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\IngressSite;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\PublicRoutePrivateOverride;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -24,7 +24,7 @@ final readonly class NativePublicRouteEdgeProjector implements PublicRouteEdgePr
         private RemoteAppDevCertificateManager $certificates,
         private RemoteAppDevCaddyManager $caddy,
         private NodeRoleFirewallManager $firewall,
-        private AppDevSshExecutor $ssh,
+        private DevelopmentSshExecutor $ssh,
     ) {}
 
     public function artifact(Route $route): IngressSite

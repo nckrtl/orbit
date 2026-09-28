@@ -5,11 +5,11 @@ declare(strict_types=1);
 use App\Domain\AppDev\AgentationSiteProjection;
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\VitePortRuntime;
-use App\Domain\AppInstances\Deployment\AppInstanceDeployStepStore;
-use App\Domain\AppInstances\Deployment\DeploymentPhase;
-use App\Domain\AppInstances\Deployment\DeploymentStep;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\RouterLanIngressReconciler;
+use App\Domain\Instances\Deployment\DeploymentPhase;
+use App\Domain\Instances\Deployment\DeploymentStep;
+use App\Domain\Instances\Deployment\InstanceDeployStepStore;
 use App\Domain\Logs\LogStreamStore;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\RoleName;
@@ -21,8 +21,8 @@ use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskRunReceipts;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\AgentView\CacheAgentStateView;
-use App\Infrastructure\AppInstances\DependencyUpdateSupervisorHost;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
+use App\Infrastructure\Instances\DependencyUpdateSupervisorHost;
 use App\Infrastructure\Logs\CacheLogStreamStore;
 use App\Infrastructure\Nodes\NodeLocks;
 use App\Infrastructure\Processes\CommandResult;
@@ -50,7 +50,7 @@ use Tests\Support\FakeVitePortRuntime;
 use Tests\Support\TestToolchain;
 use Tests\TestCase;
 
-require_once __DIR__.'/Support/AppInstanceEnvironmentMigration.php';
+require_once __DIR__.'/Support/InstanceEnvironmentMigration.php';
 require_once __DIR__.'/Support/LegacySchemaMigration.php';
 require_once __DIR__.'/Support/FakeNodeAgentRuntime.php';
 require_once __DIR__.'/Support/Orb245TransferFakes.php';
@@ -124,7 +124,7 @@ pest()->tia()->watch([
 /** @param list<array{name: string, phase: string, command: string, timeout_seconds: int}> $steps */
 function store_deploy_steps(Instance $instance, array $steps): void
 {
-    app(AppInstanceDeployStepStore::class)->replaceAll(
+    app(InstanceDeployStepStore::class)->replaceAll(
         $instance,
         array_map(static fn (array $step): DeploymentStep => new DeploymentStep(
             $step['name'],
@@ -158,7 +158,7 @@ function normalized_deploy_steps(Instance $instance): array
 {
     return array_map(
         static fn (DeploymentStep $step): array => $step->toArray(),
-        app(AppInstanceDeployStepStore::class)->ordered($instance),
+        app(InstanceDeployStepStore::class)->ordered($instance),
     );
 }
 
@@ -186,7 +186,7 @@ function deployment_migration_parents(): array
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.'.(130 + $count),
     ]);
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => "Deployment migration {$count}",
         'slug' => "deployment-migration-{$count}",
         'repository_url' => "https://example.test/deployment-migration-{$count}.git",
@@ -194,7 +194,7 @@ function deployment_migration_parents(): array
         'root' => 'public',
     ]);
 
-    return [$app, $node];
+    return [$project, $node];
 }
 
 /** @return array{Node, Node, Project, Instance} */
@@ -218,7 +218,7 @@ function deployment_api_fixture(): array
         'user' => 'orbit',
     ]);
     $owner->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Deployment API',
         'slug' => 'deployment-api',
         'repository_url' => 'https://example.test/deployment-api.git',
@@ -226,7 +226,7 @@ function deployment_api_fixture(): array
         'root' => 'public',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $owner->id,
         'name' => 'production',
         'environment' => 'production',
@@ -238,7 +238,7 @@ function deployment_api_fixture(): array
         'status' => 'source_resolved',
     ]);
 
-    return [$caller, $owner, $app, $instance->fresh()];
+    return [$caller, $owner, $project, $instance->fresh()];
 }
 
 function orb183_production_route_migration(): Migration

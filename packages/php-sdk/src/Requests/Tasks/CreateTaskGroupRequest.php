@@ -48,7 +48,7 @@ final class CreateTaskGroupRequest extends GatewayRequest implements HasBody
     {
         $body = array_filter(
             [
-                'app_id' => $this->appId,
+                'project_id' => $this->appId,
                 'title' => $this->title,
                 'brief' => $this->brief,
                 'status' => $this->status,

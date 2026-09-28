@@ -13,7 +13,7 @@ use App\Data\Processes\AddProcessData;
 use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsStorageConnection;
-use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Logs\LogRedactor;
 use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleOperationException;
@@ -68,7 +68,7 @@ beforeEach(function (): void {
         'checkout_path' => '/home/orbit/apps/docs',
         'source_is_laravel' => true,
         'provisioning_step' => 'active',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
 });
 
@@ -536,7 +536,7 @@ it('uses the node managed user and Instance certificate scope for app-dev target
 
 it('rejects leftover Process owners before runtime removal', function (): void {
     $process = Process::query()->create([
-        'owner_type' => 'App\\Models\\AppInstance',
+        'owner_type' => 'App\\Models\\Instance',
         'owner_id' => 999_999,
         'name' => 'legacy',
         'runtime' => ProcessRuntime::Systemd,
@@ -1170,9 +1170,9 @@ final class ProcessActionsFakeAdmissionLock implements ProcessAdmissionLock
         private readonly Closure $beforeOperation,
     ) {}
 
-    public function run(array $appInstanceIds, Closure $operation): mixed
+    public function run(array $instanceIds, Closure $operation): mixed
     {
-        $this->runs[] = $appInstanceIds;
+        $this->runs[] = $instanceIds;
         ($this->beforeOperation)();
 
         return $operation();

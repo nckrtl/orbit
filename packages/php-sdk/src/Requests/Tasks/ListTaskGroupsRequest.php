@@ -29,7 +29,7 @@ final class ListTaskGroupsRequest extends GatewayRequest
     protected function defaultQuery(): array
     {
         return array_filter(
-            ['app_id' => $this->appId, 'status' => $this->status],
+            ['project_id' => $this->appId, 'status' => $this->status],
             static fn (int|string|null $value): bool => $value !== null,
         );
     }

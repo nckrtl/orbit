@@ -7,7 +7,7 @@ namespace App\Actions\Analytics;
 use App\Actions\Routes\PublishPublicRouteAction;
 use App\Actions\Routes\RemoveRouteAction;
 use App\Data\Analytics\InstanceAnalyticsData;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
+use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Models\Instance;
 use App\Models\Route;
 
@@ -17,7 +17,7 @@ final readonly class DisableInstanceAnalyticsAction
         private ShowInstanceAnalyticsAction $show,
         private PublishPublicRouteAction $publication,
         private RemoveRouteAction $remove,
-        private AppInstanceEnvironmentOperationLock $operations,
+        private InstanceEnvironmentOperationLock $operations,
     ) {}
 
     public function execute(Instance $instance): InstanceAnalyticsData

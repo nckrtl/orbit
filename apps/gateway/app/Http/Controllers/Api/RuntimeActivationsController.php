@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Actions\Hibernation\ScheduleAppInstanceRuntimeWakeAction;
-use App\Domain\Hibernation\AppDevHibernationPolicy;
+use App\Actions\Hibernation\ScheduleInstanceRuntimeWakeAction;
+use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\Hibernation\HibernationWakeFailureStore;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
@@ -17,16 +17,16 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use SensitiveParameter;
 
-#[RequiresNodeAccess(ServingNode::AppInstanceHost)]
+#[RequiresNodeAccess(ServingNode::InstanceHost)]
 final class RuntimeActivationsController extends Controller
 {
     public function show(
         Request $request,
         #[SensitiveParameter]
         Instance $instance,
-        AppDevHibernationPolicy $policy,
+        DevelopmentHibernationPolicy $policy,
         HibernationWakeFailureStore $failures,
-        ScheduleAppInstanceRuntimeWakeAction $schedule,
+        ScheduleInstanceRuntimeWakeAction $schedule,
         RuntimeActivationPage $pages,
     ): Response {
         $caller = $request->user();

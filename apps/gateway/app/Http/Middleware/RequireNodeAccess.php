@@ -69,7 +69,7 @@ final readonly class RequireNodeAccess
         }
 
         if (
-            in_array($scope, [ServingNode::ScheduleHost, ServingNode::AppInstanceHost], true)
+            in_array($scope, [ServingNode::ScheduleHost, ServingNode::InstanceHost], true)
             && count($servingNodes) === 1
             && $this->sameNode($consumer, $servingNodes[0])
         ) {

@@ -68,14 +68,14 @@ function agentation_projection_instance(string $name): Instance
         'public_ssh_host' => '192.0.2.'.(80 + crc32($name) % 20),
         'status' => 'active',
     ]);
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Agentation '.$name,
         'slug' => 'agentation-'.$name,
         'repository_url' => 'git@example.test:agentation-'.$name.'.git',
     ]);
 
     return Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => $name,
         'environment' => 'development',

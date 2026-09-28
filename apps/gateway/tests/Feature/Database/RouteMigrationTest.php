@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -43,14 +43,14 @@ it('stores exclusive Route scope, immutable provenance, basis, and pending lifec
         'error_code',
     ]))->toBeTrue();
 
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
     ]);
     $node = route_migration_node('one');
     $route = Route::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'domain' => 'acme.test',
         'provenance' => RouteProvenance::Generated,
@@ -66,16 +66,16 @@ it('stores exclusive Route scope, immutable provenance, basis, and pending lifec
 });
 
 it('rejects duplicate target Nodes', function (): void {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
     ]);
     $nodeOne = route_migration_node('one');
-    $one = route_migration_instance($app, $nodeOne, 'one');
-    $duplicateNode = route_migration_instance($app, $nodeOne, 'duplicate', 'development');
+    $one = route_migration_instance($project, $nodeOne, 'one');
+    $duplicateNode = route_migration_instance($project, $nodeOne, 'duplicate', 'development');
     $explicit = Route::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $nodeOne->id,
         'domain' => 'explicit.test',
         'provenance' => RouteProvenance::Explicit,
@@ -221,14 +221,14 @@ it('allows target-set failure evidence and empty explicit Cluster Routes', funct
     ]))
         ->not->toThrow(QueryException::class);
 
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Vacated',
         'slug' => 'vacated',
         'repository_url' => 'https://example.test/vacated.git',
     ]);
     $cluster = Cluster::query()->create(['name' => 'vacated', 'state' => 'active']);
     $empty = Route::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'cluster_id' => $cluster->id,
         'domain' => 'vacated-empty.example.test',
         'provenance' => RouteProvenance::Explicit,
@@ -245,7 +245,7 @@ it('allows target-set failure evidence and empty explicit Cluster Routes', funct
 });
 
 it('enforces multi-target storage with compatible Cluster-scoped production rows', function (): void {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
@@ -257,10 +257,10 @@ it('enforces multi-target storage with compatible Cluster-scoped production rows
     $twoNode->update(['cluster_id' => $cluster->id]);
     $oneNode->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $twoNode->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
-    $one = route_migration_instance($app, $oneNode, 'one');
-    $two = route_migration_instance($app, $twoNode, 'two');
+    $one = route_migration_instance($project, $oneNode, 'one');
+    $two = route_migration_instance($project, $twoNode, 'two');
     $route = Route::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'cluster_id' => $cluster->id,
         'domain' => 'explicit.test',
         'provenance' => RouteProvenance::Explicit,
@@ -276,12 +276,12 @@ it('enforces multi-target storage with compatible Cluster-scoped production rows
         ->toThrow(QueryException::class)
         ->and(Schema::hasTable('active_app_prod_nodes'))
         ->toBeTrue();
-    $one->update(['status' => AppInstanceState::SourceResolved]);
-    $two->update(['status' => AppInstanceState::SourceResolved]);
+    $one->update(['status' => InstanceState::SourceResolved]);
+    $two->update(['status' => InstanceState::SourceResolved]);
     $route->targets()->delete();
 
     $generated = Route::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'cluster_id' => $cluster->id,
         'generation_basis_node_id' => $oneNode->id,
         'domain' => 'generated.test',
@@ -359,7 +359,7 @@ function route_migration_node(string $name): Node
 }
 
 function route_migration_instance(
-    Project $app,
+    Project $project,
     Node $node,
     string $name,
     string $environment = 'production',
@@ -370,11 +370,11 @@ function route_migration_instance(
     }
 
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => $name,
         'checkout_path' => "/srv/{$name}",
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
     DB::table('instances')->where('id', $instance->id)->update(['environment' => $environment]);
 
@@ -391,23 +391,23 @@ function route_migration_replacement_route(string $suffix, bool $activate = true
 /** @return array{Route, Instance} */
 function route_migration_replacement_pair(string $suffix, bool $activate = true): array
 {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => "Domain {$suffix}",
         'slug' => "domain-{$suffix}",
         'repository_url' => "https://example.test/domain-{$suffix}.git",
     ]);
     $node = route_migration_node("domain-{$suffix}");
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => $suffix,
         'environment' => 'development',
         'checkout_path' => "/srv/{$suffix}",
         'source_is_laravel' => false,
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'domain' => "{$suffix}.example.test",
         'provenance' => RouteProvenance::Explicit,
@@ -426,7 +426,7 @@ function route_migration_replacement_pair(string $suffix, bool $activate = true)
 /** @return array{Route, Instance, Instance} */
 function route_migration_production_set(string $suffix, string $environment = 'production'): array
 {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => "Set {$suffix}",
         'slug' => "set-{$suffix}",
         'repository_url' => "https://example.test/set-{$suffix}.git",
@@ -438,12 +438,12 @@ function route_migration_production_set(string $suffix, string $environment = 'p
     $twoNode->update(['cluster_id' => $cluster->id]);
     $oneNode->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $twoNode->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
-    $one = route_migration_instance($app, $oneNode, "{$suffix}-one");
-    $two = route_migration_instance($app, $twoNode, "{$suffix}-two");
+    $one = route_migration_instance($project, $oneNode, "{$suffix}-one");
+    $two = route_migration_instance($project, $twoNode, "{$suffix}-two");
     DB::table('instances')->where('id', $one->id)->update(['environment' => $environment]);
     DB::table('instances')->where('id', $two->id)->update(['environment' => $environment]);
     $route = Route::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'cluster_id' => $cluster->id,
         'domain' => "{$suffix}.example.test",
         'provenance' => RouteProvenance::Explicit,

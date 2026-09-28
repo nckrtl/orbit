@@ -25,7 +25,7 @@ final readonly class RunDoctorAction
         private NodeStateInspector $nodeInspector,
         private NodeDoctorProbe $nodeProbe,
         private RoleDoctorProbe $roleProbe,
-        private AppDoctorProbe $appProbe,
+        private ProjectDoctorProbe $appProbe,
         private InstanceDoctorProbe $instanceProbe,
         private ScheduleDoctorProbe $scheduleProbe,
         private ToolDoctorProbe $toolProbe,
@@ -121,7 +121,7 @@ final readonly class RunDoctorAction
         return match ($family) {
             DoctorFamily::Node => $this->nodeProbe,
             DoctorFamily::Role => $this->roleProbe,
-            DoctorFamily::App => $this->appProbe,
+            DoctorFamily::Project => $this->appProbe,
             DoctorFamily::Instance => $this->instanceProbe,
             DoctorFamily::Schedule => $this->scheduleProbe,
             DoctorFamily::Tool => $this->toolProbe,

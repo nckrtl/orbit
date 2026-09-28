@@ -43,20 +43,20 @@ use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Domain\WebSocket\WebSocketCredentials;
 use App\Domain\WebSocket\WebSocketPublicationManager;
 use App\Domain\WireGuard\VpnSettings;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
-use App\Infrastructure\AppProd\AppProdSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
 use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
 use App\Infrastructure\Nodes\Roles\AnalyticsRoleBaseline;
-use App\Infrastructure\Nodes\Roles\AppDevRoleBaseline;
-use App\Infrastructure\Nodes\Roles\AppProdRoleBaseline;
 use App\Infrastructure\Nodes\Roles\DatabaseRoleBaseline;
+use App\Infrastructure\Nodes\Roles\DevelopmentRoleBaseline;
 use App\Infrastructure\Nodes\Roles\GatewayRoleBaseline;
 use App\Infrastructure\Nodes\Roles\IngressRoleBaseline;
 use App\Infrastructure\Nodes\Roles\MetricsRoleBaseline;
 use App\Infrastructure\Nodes\Roles\NativeRoleBaselineConverger;
 use App\Infrastructure\Nodes\Roles\NodeRoleOperatingSystemGuard;
 use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
+use App\Infrastructure\Nodes\Roles\ProductionRoleBaseline;
 use App\Infrastructure\Nodes\Roles\RouterRoleBaseline;
 use App\Infrastructure\Nodes\Roles\VpnRoleBaseline;
 use App\Infrastructure\Nodes\Roles\WebSocketRoleBaseline;
@@ -76,7 +76,7 @@ use App\Models\Process;
 use Illuminate\Support\Facades\Log;
 
 it('converges and removes only app development role-owned infrastructure', function (): void {
-    expect(class_exists(AppDevRoleBaseline::class))->toBeTrue();
+    expect(class_exists(DevelopmentRoleBaseline::class))->toBeTrue();
 
     $events = [];
     [$node, $assignment] = role_baseline_models(RoleName::AppDev);
@@ -125,7 +125,7 @@ it('converges only the private DNS record when an app development node is unreac
 });
 
 it('converges and removes only app production role-owned infrastructure', function (): void {
-    expect(class_exists(AppProdRoleBaseline::class))->toBeTrue();
+    expect(class_exists(ProductionRoleBaseline::class))->toBeTrue();
 
     $events = [];
     [$node, $assignment] = role_baseline_models(RoleName::AppProd);
@@ -265,7 +265,7 @@ it('converges and removes the gateway role while VPN removal stays protected', f
         $firewall,
         baseline_dns($events),
         new NodeRolePrerequisiteCommandFactory,
-        new AppDevSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
+        new DevelopmentSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
     );
     $vpn = new VpnRoleBaseline(
         new NodeRolePrerequisiteCommandFactory,
@@ -375,9 +375,9 @@ it('passes a nondefault managed account into every baseline prerequisite command
         $accounts,
     )->converge($vpnNode, $vpnAssignment);
 
-    new AppDevRoleBaseline(
+    new DevelopmentRoleBaseline(
         new NodeRolePrerequisiteCommandFactory,
-        new AppDevSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
+        new DevelopmentSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
         new class implements AppDevCaddyManager
         {
             public function converge(Node $node, RoleName $role = RoleName::AppDev): void {}
@@ -415,9 +415,9 @@ it('passes a nondefault managed account into every baseline prerequisite command
         ),
     )->converge($appDevNode, $appDevAssignment);
 
-    new AppProdRoleBaseline(
+    new ProductionRoleBaseline(
         new NodeRolePrerequisiteCommandFactory,
-        new AppProdSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
+        new ProductionSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
         new class implements AppProdCaddyManager
         {
             public function converge(Node $node): void {}
@@ -566,7 +566,7 @@ it('installs pinned Caddy before the gateway role firewall and stops when it can
         baseline_firewall($events),
         baseline_dns($events),
         new NodeRolePrerequisiteCommandFactory,
-        new AppDevSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
+        new DevelopmentSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
     );
 
     expect(fn () => $gateway->converge($node, $assignment))
@@ -598,7 +598,7 @@ it('routes the private domain on the Gateway machine to the configured VPN DNS a
         baseline_firewall($events),
         baseline_dns($events),
         new NodeRolePrerequisiteCommandFactory,
-        new AppDevSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
+        new DevelopmentSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
     );
 
     $gateway->converge($node, $assignment);
@@ -624,7 +624,7 @@ it('keeps the gateway role converged, logs the underlying code, and reports a fo
         baseline_firewall($events),
         baseline_dns($events),
         new NodeRolePrerequisiteCommandFactory,
-        new AppDevSshExecutor(gateway_resolver_ssh($events, failResolver: true), baseline_keys(), baseline_known_hosts()),
+        new DevelopmentSshExecutor(gateway_resolver_ssh($events, failResolver: true), baseline_keys(), baseline_known_hosts()),
         followUps: $followUps,
     );
 
@@ -655,7 +655,7 @@ it('reports no follow-up when the resolver step succeeds', function (): void {
         baseline_firewall($events),
         baseline_dns($events),
         new NodeRolePrerequisiteCommandFactory,
-        new AppDevSshExecutor(gateway_resolver_ssh($events, failResolver: false), baseline_keys(), baseline_known_hosts()),
+        new DevelopmentSshExecutor(gateway_resolver_ssh($events, failResolver: false), baseline_keys(), baseline_known_hosts()),
         followUps: $followUps,
     );
 
@@ -672,7 +672,7 @@ it('fails gateway role removal before any other step when the resolver drop-in c
         baseline_firewall($events),
         baseline_dns($events),
         new NodeRolePrerequisiteCommandFactory,
-        new AppDevSshExecutor(gateway_resolver_ssh($events, failResolver: true), baseline_keys(), baseline_known_hosts()),
+        new DevelopmentSshExecutor(gateway_resolver_ssh($events, failResolver: true), baseline_keys(), baseline_known_hosts()),
     );
 
     expect(static fn () => $gateway->remove($node, $assignment, purgeData: false))
@@ -696,7 +696,7 @@ it('skips the resolver step while no Node holds an active vpn role', function ()
         baseline_firewall($events),
         baseline_dns($events),
         new NodeRolePrerequisiteCommandFactory,
-        new AppDevSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
+        new DevelopmentSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
     );
 
     $gateway->converge($node, $assignment);
@@ -718,7 +718,7 @@ it('dispatches every assignment to its code-defined baseline', function (): void
             $firewall,
             baseline_dns($events),
             new NodeRolePrerequisiteCommandFactory,
-            new AppDevSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
+            new DevelopmentSshExecutor($ssh, baseline_keys(), baseline_known_hosts()),
         ),
         new VpnRoleBaseline(
             new NodeRolePrerequisiteCommandFactory,
@@ -1190,7 +1190,7 @@ function gateway_role_baseline(array &$events): GatewayRoleBaseline
         baseline_firewall($events),
         baseline_dns($events),
         new NodeRolePrerequisiteCommandFactory,
-        new AppDevSshExecutor(baseline_ssh($events), baseline_keys(), baseline_known_hosts()),
+        new DevelopmentSshExecutor(baseline_ssh($events), baseline_keys(), baseline_known_hosts()),
     );
 }
 
@@ -1289,7 +1289,7 @@ function analytics_role_baseline(): AnalyticsRoleBaseline
     );
 }
 
-function app_dev_role_baseline(array &$events): AppDevRoleBaseline
+function app_dev_role_baseline(array &$events): DevelopmentRoleBaseline
 {
     $caddy = new class($events) implements AppDevCaddyManager
     {
@@ -1321,9 +1321,9 @@ function app_dev_role_baseline(array &$events): AppDevRoleBaseline
         }
     };
 
-    return new AppDevRoleBaseline(
+    return new DevelopmentRoleBaseline(
         new NodeRolePrerequisiteCommandFactory,
-        new AppDevSshExecutor(baseline_ssh($events), baseline_keys(), baseline_known_hosts()),
+        new DevelopmentSshExecutor(baseline_ssh($events), baseline_keys(), baseline_known_hosts()),
         $caddy,
         baseline_firewall($events),
         $dns,
@@ -1355,7 +1355,7 @@ function app_dev_role_baseline(array &$events): AppDevRoleBaseline
 }
 
 /** @param list<string> $events */
-function app_prod_role_baseline(array &$events): AppProdRoleBaseline
+function app_prod_role_baseline(array &$events): ProductionRoleBaseline
 {
     $caddy = new class($events) implements AppProdCaddyManager
     {
@@ -1375,9 +1375,9 @@ function app_prod_role_baseline(array &$events): AppProdRoleBaseline
         }
     };
 
-    return new AppProdRoleBaseline(
+    return new ProductionRoleBaseline(
         new NodeRolePrerequisiteCommandFactory,
-        new AppProdSshExecutor(baseline_ssh($events), baseline_keys(), baseline_known_hosts()),
+        new ProductionSshExecutor(baseline_ssh($events), baseline_keys(), baseline_known_hosts()),
         $caddy,
         baseline_firewall($events),
         baseline_account_resolver(),
@@ -1407,7 +1407,7 @@ function router_role_baseline(array &$events): RouterRoleBaseline
 
     return new RouterRoleBaseline(
         new NodeRolePrerequisiteCommandFactory,
-        new AppDevSshExecutor(baseline_ssh($events), baseline_keys(), baseline_known_hosts()),
+        new DevelopmentSshExecutor(baseline_ssh($events), baseline_keys(), baseline_known_hosts()),
         $caddy,
         baseline_firewall($events),
         baseline_account_resolver(),
@@ -1437,7 +1437,7 @@ function ingress_role_baseline(array &$events): IngressRoleBaseline
 
     return new IngressRoleBaseline(
         new NodeRolePrerequisiteCommandFactory,
-        new AppDevSshExecutor(baseline_ssh($events), baseline_keys(), baseline_known_hosts()),
+        new DevelopmentSshExecutor(baseline_ssh($events), baseline_keys(), baseline_known_hosts()),
         $caddy,
         baseline_account_resolver(),
         baseline_firewall($events),

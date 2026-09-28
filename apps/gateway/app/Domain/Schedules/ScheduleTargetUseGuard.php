@@ -24,7 +24,7 @@ final readonly class ScheduleTargetUseGuard
         }
     }
 
-    public function assertAppInstanceStable(Instance $instance): void
+    public function assertInstanceStable(Instance $instance): void
     {
         if (
             Schedule::query()

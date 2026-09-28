@@ -2,11 +2,11 @@
 title: "Instance transfer"
 description: "How the Gateway moves one development Instance to another app-dev Node, keeps its ID, and recovers from a failed or interrupted move."
 covers:
-  - apps/gateway/app/Actions/AppInstances/TransferAppInstanceAction.php
-  - apps/gateway/app/Domain/AppInstances/Transfer/**
-  - apps/gateway/app/Infrastructure/AppInstances/{NativeAppInstanceTransferRuntime,RemoteAppInstanceTransferSource}.php
-  - apps/gateway/app/Http/Controllers/Api/AppInstanceTransfersController.php
-  - apps/gateway/app/Models/AppInstanceTransfer.php
+  - apps/gateway/app/Actions/Instances/TransferInstanceAction.php
+  - apps/gateway/app/Domain/Instances/Transfer/**
+  - apps/gateway/app/Infrastructure/Instances/{NativeInstanceTransferRuntime,RemoteInstanceTransferSource}.php
+  - apps/gateway/app/Http/Controllers/Api/InstanceTransfersController.php
+  - apps/gateway/app/Models/InstanceTransfer.php
   - apps/cli/app/Commands/Instances/TransferInstanceCommand.php
   - packages/php-sdk/src/Requests/AppInstances/TransferAppInstanceRequest.php
 ---

@@ -23,7 +23,7 @@ ARCHITECTURE_TESTS = {
     'apps/cli': ('tests/Feature/CommandSurfaceTest.php',),
     'apps/gateway': (
         'tests/Unit/Architecture',
-        'tests/Feature/Infrastructure/AppInstances/ConfiguredOriginReadTest.php',
+        'tests/Feature/Infrastructure/Instances/ConfiguredOriginReadTest.php',
         'tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php',
     ),
     'apps/e2e': (

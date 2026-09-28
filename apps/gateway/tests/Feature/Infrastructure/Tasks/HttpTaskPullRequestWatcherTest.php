@@ -12,15 +12,15 @@ use Tests\Feature\GitHub\GitHubTestSupport;
 
 function watcher_group(string $url = 'https://github.com/acme/orbit/pull/42'): TaskGroup
 {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Watcher App', 'slug' => 'watcher-app',
         'repository_url' => 'https://github.com/acme/orbit.git', 'default_branch' => 'main',
     ]);
 
     return TaskGroup::query()->create([
-        'project_id' => $app->id, 'title' => 'Watch PR', 'brief' => 'Verify PR state',
+        'project_id' => $project->id, 'title' => 'Watch PR', 'brief' => 'Verify PR state',
         'status' => 'settling', 'pr_url' => $url,
-    ])->load('app');
+    ])->load('project');
 }
 
 /**
@@ -68,8 +68,8 @@ it('reads merged, closed, and open pull request status through the Gateway GitHu
         && $request->hasHeader('Authorization', 'Bearer ghs_watch'));
 });
 
-it('reports no status without an App, for another repository URL, or when GitHub fails', function (?string $url, bool $app, int $status): void {
-    if ($app) {
+it('reports no status without an App, for another repository URL, or when GitHub fails', function (?string $url, bool $project, int $status): void {
+    if ($project) {
         GitHubTestSupport::storeApp();
     }
     Http::fake([
@@ -85,8 +85,8 @@ it('reports no status without an App, for another repository URL, or when GitHub
     'GitHub failure' => [null, true, 502],
 ]);
 
-it('reports no health without an App, for another repository URL, or when GitHub fails', function (?string $url, bool $app, int $status): void {
-    if ($app) {
+it('reports no health without an App, for another repository URL, or when GitHub fails', function (?string $url, bool $project, int $status): void {
+    if ($project) {
         GitHubTestSupport::storeApp();
     }
     watcher_fake_health([], pullRequestStatus: $status);
@@ -262,14 +262,14 @@ it('reads the check runs of one head commit at most once a minute', function ():
     ));
 
     $first = $watcher->health(watcher_group());
-    $second = $watcher->health(TaskGroup::query()->sole()->load('app'));
+    $second = $watcher->health(TaskGroup::query()->sole()->load('project'));
 
     expect($first?->problems)->toBe(['Check Rust agent failed: https://github.com/acme/orbit/runs/1.'])
         ->and($second?->problems)->toBe($first?->problems)
         ->and($checkRunReads())->toBe(1);
 
     $this->travel(61)->seconds();
-    $watcher->health(TaskGroup::query()->sole()->load('app'));
+    $watcher->health(TaskGroup::query()->sole()->load('project'));
 
     expect($checkRunReads())->toBe(2);
 });
@@ -320,12 +320,12 @@ it('keeps the first read of a pending check with no started_at and does not move
         ->and($first?->infrastructureChecks)->toBe([]);
 
     $this->travel(30)->minutes();
-    $second = $watcher->health($group->fresh(['app']));
+    $second = $watcher->health($group->fresh(['project']));
     expect($second?->checksYoungPending)->toBeTrue()
         ->and($second?->problems)->toBe([]);
 
     $this->travel(31)->minutes();
-    $third = $watcher->health($group->fresh(['app']));
+    $third = $watcher->health($group->fresh(['project']));
     expect($third?->checksYoungPending)->toBeFalse()
         ->and($third?->checksPending)->toBeTrue()
         ->and($third?->problems)->toBe(['Check Web is still pending: https://github.com/acme/orbit/runs/11.'])
@@ -356,12 +356,12 @@ it('starts a new pending clock when the check run id changes and clears one that
     expect($watcher->health($group)?->checksYoungPending)->toBeTrue();
 
     $this->travel(61)->minutes();
-    $completed = $watcher->health($group->fresh(['app']));
+    $completed = $watcher->health($group->fresh(['project']));
     expect($completed?->checksPending)->toBeFalse()
         ->and($completed?->problems)->toBe([])
         ->and($completed?->infrastructureChecks)->toBe([]);
 
     $this->travel(61)->seconds();
-    expect($watcher->health($group->fresh(['app']))?->checksYoungPending)->toBeTrue()
-        ->and($watcher->health($group->fresh(['app']))?->problems)->toBe([]);
+    expect($watcher->health($group->fresh(['project']))?->checksYoungPending)->toBeTrue()
+        ->and($watcher->health($group->fresh(['project']))?->problems)->toBe([]);
 });

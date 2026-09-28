@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Metrics;
 
-use App\Domain\AppInstances\AppInstanceState;
-use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
+use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Metrics\MetricsExporterProjection;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -43,9 +43,9 @@ final readonly class ServiceMetricsProjection
             ->whereHas('node.roles', static fn ($query) => $query
                 ->where('role', RoleName::AppProd)
                 ->where('status', LifecycleStatus::Active))
-            ->where('status', AppInstanceState::Active)
+            ->where('status', InstanceState::Active)
             ->whereNotNull('production_php_service')->whereNotNull('selected_php_version')
-            ->with(['app', 'node'])->orderBy('id')->get()->all());
+            ->with(['project', 'node'])->orderBy('id')->get()->all());
         foreach ($instances as $instance) {
             ProductionPhpRuntimeIdentity::from($instance);
         }

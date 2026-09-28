@@ -13,9 +13,9 @@ use App\Domain\Doctor\PrivateRouteProjectionObservation;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteStateResolver;
-use App\Infrastructure\AppDev\AppDevSite;
-use App\Infrastructure\AppDev\AppDevSiteRepository;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSite;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -27,9 +27,9 @@ use Throwable;
 final readonly class NativePrivateRouteProjectionInspector implements PrivateRouteProjectionInspector
 {
     public function __construct(
-        private AppDevSshExecutor $ssh,
+        private DevelopmentSshExecutor $ssh,
         private CommandDeadline $deadline,
-        private AppDevSiteRepository $sites = new AppDevSiteRepository,
+        private DevelopmentSiteRepository $sites = new DevelopmentSiteRepository,
         private RouteStateResolver $placements = new RouteStateResolver,
         private PublicRouteEligibility $eligibility = new PublicRouteEligibility,
         private ClusterRouterDnsSelection $dnsSelection = new ClusterRouterDnsSelection,
@@ -38,15 +38,15 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
 
     public function inspect(Instance $instance, Route $route): PrivateRouteProjectionObservation
     {
-        $instance->loadMissing(['node.cluster', 'node.roles', 'app']);
-        $route->loadMissing(['cluster.routerAssignment.node', 'targets.appInstance.node']);
+        $instance->loadMissing(['node.cluster', 'node.roles', 'project']);
+        $route->loadMissing(['cluster.routerAssignment.node', 'targets.instance.node']);
 
         try {
             $workload = $this->workloadSite($instance, $route);
             $router = $this->routerNode($instance, $route);
             $routerSite = $router instanceof Node ? $this->routerSite($route, $router) : null;
             $workloadValues = $this->observe($instance->node, $this->workloadCommand($instance, $route, $workload));
-            $routerValues = $router instanceof Node && $routerSite instanceof AppDevSite
+            $routerValues = $router instanceof Node && $routerSite instanceof DevelopmentSite
                 ? $this->observe($router, $this->routerCommand($route, $routerSite))
                 : ['caddy' => true, 'tls' => true, 'firewall' => true];
         } catch (DoctorInspectionException $exception) {
@@ -77,16 +77,16 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
         );
     }
 
-    private function targetSetMatches(Route $route, ?AppDevSite $routerSite): bool
+    private function targetSetMatches(Route $route, ?DevelopmentSite $routerSite): bool
     {
-        if (! $routerSite instanceof AppDevSite) {
+        if (! $routerSite instanceof DevelopmentSite) {
             return $route->targets->count() <= 1;
         }
 
         $router = $route->cluster?->routerAssignment?->node;
         $expected = $route->targets
             ->map(static function ($row) use ($router): ?string {
-                $node = $row->appInstance->node;
+                $node = $row->instance->node;
 
                 if ($router instanceof Node && $router->is($node)) {
                     return null;
@@ -136,32 +136,32 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
         return $router instanceof Node && ! $router->is($instance->node) ? $router : null;
     }
 
-    private function workloadSite(Instance $instance, Route $route): AppDevSite
+    private function workloadSite(Instance $instance, Route $route): DevelopmentSite
     {
         $site = $this->sites->forNode($instance->node)->first(
-            static fn (AppDevSite $candidate): bool => $candidate->domain === $route->domain
+            static fn (DevelopmentSite $candidate): bool => $candidate->domain === $route->domain
                 && $candidate->nodeId === $instance->node_id
                 && ! $candidate->isProxy()
                 && ! $candidate->publicListener,
         );
 
-        if (! $site instanceof AppDevSite) {
+        if (! $site instanceof DevelopmentSite) {
             throw new DoctorInspectionException;
         }
 
         return $site;
     }
 
-    private function routerSite(Route $route, Node $router): ?AppDevSite
+    private function routerSite(Route $route, Node $router): ?DevelopmentSite
     {
         $site = $this->sites->forNode($router)->first(
-            static fn (AppDevSite $candidate): bool => $candidate->domain === $route->domain
+            static fn (DevelopmentSite $candidate): bool => $candidate->domain === $route->domain
                 && $candidate->nodeId === $router->id
                 && $candidate->isProxy()
                 && ! $candidate->publicListener,
         );
 
-        return $site instanceof AppDevSite ? $site : null;
+        return $site instanceof DevelopmentSite ? $site : null;
     }
 
     /** @return array<string, ?bool> */
@@ -194,7 +194,7 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
         return $values;
     }
 
-    private function workloadCommand(Instance $instance, Route $route, AppDevSite $site): RemoteCommand
+    private function workloadCommand(Instance $instance, Route $route, DevelopmentSite $site): RemoteCommand
     {
         $laravel = match ($instance->source_is_laravel) {
             true => '1',
@@ -283,7 +283,7 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
         );
     }
 
-    private function routerCommand(Route $route, AppDevSite $site): RemoteCommand
+    private function routerCommand(Route $route, DevelopmentSite $site): RemoteCommand
     {
         $upstreams = implode("\n", array_values(array_filter(
             $site->proxyAddresses(),

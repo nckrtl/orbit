@@ -7,8 +7,8 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Settings\SettingRepository;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
-use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
-use App\Infrastructure\AppDev\AppDevSiteRepository;
+use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Doctor\NativeGatewayVpnStateInspector;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
@@ -309,7 +309,7 @@ function gateway_vpn_inspector(array $results): array
         new GatewayVpnInspectorKnownHosts,
         new VpnConfigurationRepository($settings, $orbitHome),
         new WireGuardServerConfigRenderer,
-        new AppDevDnsConfigRenderer(new AppDevSiteRepository),
+        new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository),
         new CommandDeadline,
     );
 

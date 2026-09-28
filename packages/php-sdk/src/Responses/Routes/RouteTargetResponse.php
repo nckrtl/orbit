@@ -17,17 +17,17 @@ final readonly class RouteTargetResponse
     {
         return new self(
             id: is_int($data['id'] ?? null) ? $data['id'] : 0,
-            appInstanceId: is_int($data['app_instance_id'] ?? null) ? $data['app_instance_id'] : 0,
+            appInstanceId: is_int($data['instance_id'] ?? null) ? $data['instance_id'] : 0,
             position: is_int($data['position'] ?? null) ? $data['position'] : 0,
         );
     }
 
-    /** @return array{id: int, app_instance_id: int, position: int} */
+    /** @return array{id: int, instance_id: int, position: int} */
     public function toArray(): array
     {
         return [
             'id' => $this->id,
-            'app_instance_id' => $this->appInstanceId,
+            'instance_id' => $this->appInstanceId,
             'position' => $this->position,
         ];
     }

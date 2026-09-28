@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $id
  * @property int $project_id
  * @property int $node_id
- * @property-read Project $app
+ * @property-read Project $project
  * @property-read Node $node
  */
 final class ProjectNodeExclusion extends Model
@@ -21,7 +21,7 @@ final class ProjectNodeExclusion extends Model
     protected $fillable = ['project_id', 'node_id'];
 
     /** @return BelongsTo<Project, $this> */
-    public function app(): BelongsTo
+    public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class, 'project_id');
     }

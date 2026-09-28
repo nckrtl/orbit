@@ -14,7 +14,7 @@ final class RouteTargetData extends Data
 {
     public function __construct(
         public int $id,
-        public int $appInstanceId,
+        public int $instanceId,
         public int $position,
     ) {}
 
@@ -22,7 +22,7 @@ final class RouteTargetData extends Data
     {
         return new self(
             id: $target->id,
-            appInstanceId: $target->instance_id,
+            instanceId: $target->instance_id,
             position: $target->position,
         );
     }

@@ -315,12 +315,12 @@ function environment_operation(GatewayRequest $request): string
     };
 }
 
-/** @return array{data: array{app_instance_id: int, operation: string, changed: bool, key_count: int}, meta: array{request_id: string}} */
+/** @return array{data: array{instance_id: int, operation: string, changed: bool, key_count: int}, meta: array{request_id: string}} */
 function environment_success_envelope(string $operation): array
 {
     return [
         'data' => [
-            'app_instance_id' => 17,
+            'instance_id' => 17,
             'operation' => $operation,
             'changed' => true,
             'key_count' => 3,

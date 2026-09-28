@@ -13,18 +13,18 @@ final readonly class ManagedCheckoutOverlap
         int $nodeId,
         StoragePath $checkout,
         string $errorCode,
-        ?int $ignoreAppInstanceId = null,
+        ?int $ignoreInstanceId = null,
     ): void {
-        $appInstances = Instance::query()
+        $instances = Instance::query()
             ->where('node_id', $nodeId)
             ->when(
-                $ignoreAppInstanceId !== null,
-                static fn ($query) => $query->whereKeyNot($ignoreAppInstanceId),
+                $ignoreInstanceId !== null,
+                static fn ($query) => $query->whereKeyNot($ignoreInstanceId),
             )
             ->get(['checkout_path']);
 
-        foreach ($appInstances as $appInstance) {
-            $managed = StoragePath::tryParse($appInstance->checkout_path);
+        foreach ($instances as $instance) {
+            $managed = StoragePath::tryParse($instance->checkout_path);
 
             if ($managed instanceof StoragePath && $checkout->overlaps($managed)) {
                 $this->taken($checkout, $errorCode);

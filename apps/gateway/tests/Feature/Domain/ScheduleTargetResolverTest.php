@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Domain\Schedules\ScheduleTargetType;
 use App\Domain\Shared\LifecycleStatus;
@@ -24,19 +24,19 @@ beforeEach(function (): void {
         'wireguard_ip' => '10.44.0.3',
     ]);
     $this->node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
     ]);
     $this->instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $this->node->id,
         'name' => 'main',
         'environment' => 'development',
         'checkout_path' => '/srv/apps/docs',
         'provisioning_step' => 'active',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
 });
 
@@ -82,7 +82,7 @@ it('maps unavailable targets and account inspection to the stable catalog', func
         ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'schedule.target_unavailable');
 
     $this->accounts->unavailable = false;
-    $this->instance->update(['status' => AppInstanceState::Reserved]);
+    $this->instance->update(['status' => InstanceState::Reserved]);
 
     expect(fn () => $this->resolver->resolve(ScheduleTargetType::Instance, $this->instance->id))
         ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'schedule.target_unavailable');

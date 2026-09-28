@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\AppInstanceRemover;
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Instances\InstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\InstanceProvisioning;
@@ -18,8 +18,8 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Api\TaskGroupsController;
 use App\Http\Controllers\Api\TasksController;
-use App\Models\AppInstanceRemoval;
 use App\Models\Instance;
+use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
@@ -92,9 +92,9 @@ it('exposes the tasks routes with stable methods', function (): void {
 it('creates and reads operator task comments', function (): void {
     tasks_gateway();
     enable_tasks();
-    $app = tasks_app('comments');
+    $project = tasks_app('comments');
     $group = $this->postJson('/api/v1/task-groups', [
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Comments',
         'brief' => 'Record comments.',
         'tasks' => [['title' => 'Comment task', 'brief' => 'A task.']],
@@ -125,9 +125,9 @@ it('creates and reads operator task comments', function (): void {
 it('refuses turn outcomes, which agents report with the run script', function (string $type): void {
     tasks_gateway();
     enable_tasks();
-    $app = tasks_app('invalid-comments');
+    $project = tasks_app('invalid-comments');
     $group = $this->postJson('/api/v1/task-groups', [
-        'project_id' => $app->id, 'title' => 'Comments', 'brief' => 'Record comments.',
+        'project_id' => $project->id, 'title' => 'Comments', 'brief' => 'Record comments.',
         'tasks' => [['title' => 'Comment task', 'brief' => 'A task.']],
     ])->assertCreated()->json('data');
     $taskId = $group['tasks'][0]['id'];
@@ -187,10 +187,10 @@ it('enables and disables the extension through empty JSON objects', function ():
 it('accepts notify_on_settle as the Commander alias for notify_coder', function (): void {
     tasks_gateway();
     enable_tasks();
-    $app = tasks_app('notify-alias');
+    $project = tasks_app('notify-alias');
 
     $this->postJson('/api/v1/task-groups', [
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Notify alias',
         'brief' => 'Commander callers send notify_on_settle.',
         'notify_on_settle' => true,
@@ -201,10 +201,10 @@ it('accepts notify_on_settle as the Commander alias for notify_coder', function 
 
 it('returns 409 extension.disabled for create and list while the extension is off', function (): void {
     tasks_gateway();
-    $app = tasks_app();
+    $project = tasks_app();
 
     $this->postJson('/api/v1/task-groups', [
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Ship absorb',
         'brief' => 'Deliver the first slice. Accept when MCP create works.',
     ])
@@ -222,7 +222,7 @@ it('returns 409 extension.disabled for create and list while the extension is of
 it('still returns the created group, and fails it when the first implementer cannot start after the baseline', function (): void {
     tasks_gateway();
     enable_tasks();
-    $app = tasks_app('spawn-failure');
+    $project = tasks_app('spawn-failure');
     $node = Node::query()->create([
         'name' => 'spawn-failure-node',
         'status' => LifecycleStatus::Active,
@@ -231,7 +231,7 @@ it('still returns the created group, and fails it when the first implementer can
         'wireguard_ip' => '10.44.0.81',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'workspace',
         'checkout_path' => '/tmp/tasks-spawn-failure',
@@ -263,7 +263,7 @@ it('still returns the created group, and fails it when the first implementer can
     });
 
     $this->postJson('/api/v1/task-groups', [
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Spawn failure',
         'brief' => 'Fail the group. Accept when create still answers.',
         'status' => 'todo',
@@ -283,10 +283,10 @@ it('still returns the created group, and fails it when the first implementer can
 it('creates a group with ordered tasks and lists and shows it', function (): void {
     tasks_gateway();
     enable_tasks();
-    $app = tasks_app();
+    $project = tasks_app();
 
     $created = $this->postJson('/api/v1/task-groups', [
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Absorb Commander',
         'brief' => 'Persist groups. Accept when create and list work.',
         'notify_coder' => true,
@@ -299,7 +299,7 @@ it('creates a group with ordered tasks and lists and shows it', function (): voi
     $created
         ->assertCreated()
         ->assertJsonPath('data.title', 'Absorb Commander')
-        ->assertJsonPath('data.app', 'commander-demo')
+        ->assertJsonPath('data.project', 'commander-demo')
         ->assertJsonPath('data.status', 'backlog')
         ->assertJsonPath('data.notify_coder', true)
         ->assertJsonPath('data.implementer_model', 'gpt-5.6-luna')
@@ -337,14 +337,14 @@ it('creates a group with ordered tasks and lists and shows it', function (): voi
         ->and(TaskGroup::query()->findOrFail($id)->status)->toBe(TaskGroupStatus::Backlog);
 });
 
-it('creates a fourth group when the App already has three active groups', function (): void {
+it('creates a fourth group when the Project already has three active groups', function (): void {
     tasks_gateway();
     enable_tasks();
-    $app = tasks_app('full-create');
+    $project = tasks_app('full-create');
 
     foreach (['One', 'Two', 'Three'] as $title) {
         $this->postJson('/api/v1/task-groups', [
-            'project_id' => $app->id,
+            'project_id' => $project->id,
             'title' => $title,
             'brief' => "{$title} brief",
             'status' => 'todo',
@@ -353,7 +353,7 @@ it('creates a fourth group when the App already has three active groups', functi
     }
 
     $this->postJson('/api/v1/task-groups', [
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Four',
         'brief' => 'No per-Project ceiling holds this group.',
         'status' => 'todo',
@@ -397,13 +397,13 @@ it('returns 403 node_access.required when create comes from a Node without Gatew
         'wireguard_ip' => '10.44.0.82',
     ]);
     $this->markAsGateway($gateway);
-    $app = tasks_app('no-grant');
+    $project = tasks_app('no-grant');
     app(TaskExtensionState::class)->enable();
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
         ->postJson('/api/v1/task-groups', [
-            'project_id' => $app->id,
+            'project_id' => $project->id,
             'title' => 'Denied',
             'brief' => 'Must not persist.',
         ])
@@ -430,13 +430,13 @@ it('lets a Node with a Gateway grant create a group', function (): void {
     ]);
     $this->markAsGateway($gateway);
     $caller->accessibleNodes()->attach($gateway);
-    $app = tasks_app('granted');
+    $project = tasks_app('granted');
     app(TaskExtensionState::class)->enable();
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
         ->postJson('/api/v1/task-groups', [
-            'project_id' => $app->id,
+            'project_id' => $project->id,
             'title' => 'Granted',
             'brief' => 'Caller has Gateway access.',
         ])
@@ -447,7 +447,7 @@ it('lets a Node with a Gateway grant create a group', function (): void {
 it('completes a settling group and removes its App instance', function (): void {
     tasks_gateway();
     enable_tasks();
-    $app = tasks_app('complete-api');
+    $project = tasks_app('complete-api');
     $node = Node::query()->create([
         'name' => 'complete-api-node',
         'status' => LifecycleStatus::Active,
@@ -456,14 +456,14 @@ it('completes a settling group and removes its App instance', function (): void 
         'wireguard_ip' => '10.44.0.86',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'task-30',
         'checkout_path' => '/tmp/task-30',
         'status' => 'source_resolved',
     ]);
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Ready',
         'brief' => 'PR is merged.',
         'status' => TaskGroupStatus::Settling,
@@ -471,16 +471,16 @@ it('completes a settling group and removes its App instance', function (): void 
     ]);
     $group->taskable()->associate($instance);
     $group->save();
-    $remover = new class implements AppInstanceRemover
+    $remover = new class implements InstanceRemover
     {
-        public function execute(Instance $instance, bool $force): AppInstanceRemoval
+        public function execute(Instance $instance, bool $force): InstanceRemoval
         {
             $instance->delete();
 
-            return new AppInstanceRemoval;
+            return new InstanceRemoval;
         }
     };
-    app()->instance(AppInstanceRemover::class, $remover);
+    app()->instance(InstanceRemover::class, $remover);
 
     $this->postJson("/api/v1/task-groups/{$group->id}/complete")
         ->assertOk()
@@ -492,9 +492,9 @@ it('completes a settling group and removes its App instance', function (): void 
 it('returns 409 tasks.not_settling when complete runs before settle', function (): void {
     tasks_gateway();
     enable_tasks();
-    $app = tasks_app('too-early');
+    $project = tasks_app('too-early');
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Running',
         'brief' => 'Not ready.',
         'status' => TaskGroupStatus::Running,
@@ -508,11 +508,11 @@ it('returns 409 tasks.not_settling when complete runs before settle', function (
 it('stores the configured models on a new group and keeps the defaults when unset', function (): void {
     tasks_gateway();
     enable_tasks();
-    $app = tasks_app();
+    $project = tasks_app();
     config()->set('orbit.tasks.implementer_model', 'gpt-6-luna');
     config()->set('orbit.tasks.reviewer_model', '');
 
-    $this->postJson('/api/v1/task-groups', ['project_id' => $app->id, 'title' => 'Models', 'brief' => 'Configured models'])
+    $this->postJson('/api/v1/task-groups', ['project_id' => $project->id, 'title' => 'Models', 'brief' => 'Configured models'])
         ->assertCreated();
 
     $this->assertDatabaseHas('task_groups', ['title' => 'Models', 'implementer_model' => 'gpt-6-luna', 'reviewer_model' => TaskAgentDefaults::ReviewerModel]);
@@ -521,11 +521,11 @@ it('stores the configured models on a new group and keeps the defaults when unse
 it('stores the configured implementer and reviewer drivers on a new group', function (): void {
     tasks_gateway();
     enable_tasks();
-    $app = tasks_app();
+    $project = tasks_app();
     config()->set('orbit.tasks.implementer_agent_driver', 'pi');
     config()->set('orbit.tasks.reviewer_agent_driver', 't3');
 
-    $this->postJson('/api/v1/task-groups', ['project_id' => $app->id, 'title' => 'Mixed', 'brief' => 'Pi implements, T3 reviews'])
+    $this->postJson('/api/v1/task-groups', ['project_id' => $project->id, 'title' => 'Mixed', 'brief' => 'Pi implements, T3 reviews'])
         ->assertCreated();
 
     $this->assertDatabaseHas('task_groups', ['title' => 'Mixed', 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 't3']);
@@ -534,10 +534,10 @@ it('stores the configured implementer and reviewer drivers on a new group', func
 it('rejects an unregistered configured driver with 409 before storing a group', function (string $role): void {
     tasks_gateway();
     enable_tasks();
-    $app = tasks_app();
+    $project = tasks_app();
     config()->set("orbit.tasks.{$role}_agent_driver", 'missing-driver');
 
-    $this->postJson('/api/v1/task-groups', ['project_id' => $app->id, 'title' => 'Unavailable', 'brief' => 'No driver'])
+    $this->postJson('/api/v1/task-groups', ['project_id' => $project->id, 'title' => 'Unavailable', 'brief' => 'No driver'])
         ->assertStatus(409)->assertJsonPath('error.code', 'tasks.agent_driver_unavailable');
 
     $this->assertDatabaseCount('task_groups', 0);
@@ -547,10 +547,10 @@ it('rejects an unregistered configured driver with 409 before storing a group', 
 it('cancels a running check and shows it on the task', function (): void {
     tasks_gateway();
     enable_tasks();
-    $app = tasks_app('checks');
+    $project = tasks_app('checks');
     $node = Node::query()->create(['name' => 'check-dev', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '192.0.2.81', 'wireguard_ip' => '10.44.0.81']);
-    $instance = Instance::query()->create(['project_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-1', 'checkout_path' => '/srv/apps/checks/task-1', 'status' => 'source_resolved']);
-    $group = TaskGroup::query()->create(['project_id' => $app->id, 'title' => 'Checks', 'brief' => 'Run the check.', 'status' => 'running']);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-1', 'checkout_path' => '/srv/apps/checks/task-1', 'status' => 'source_resolved']);
+    $group = TaskGroup::query()->create(['project_id' => $project->id, 'title' => 'Checks', 'brief' => 'Run the check.', 'status' => 'running']);
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create(['task_group_id' => $group->id, 'position' => 1, 'title' => 'Check', 'brief' => 'Run it.', 'status' => 'running']);
@@ -603,10 +603,10 @@ function tasks_cli_record(array $group): array
 it('returns assistance fields on show and list for flagged and unflagged groups', function (): void {
     tasks_gateway();
     enable_tasks();
-    $app = tasks_app('assistance');
-    $create = function (string $title) use ($app): array {
+    $project = tasks_app('assistance');
+    $create = function (string $title) use ($project): array {
         $group = $this->postJson('/api/v1/task-groups', [
-            'project_id' => $app->id,
+            'project_id' => $project->id,
             'title' => $title,
             'brief' => "{$title} brief.",
             'tasks' => [
@@ -675,7 +675,7 @@ it('returns assistance fields on show and list for flagged and unflagged groups'
 
 it('summarises groups asking for assistance on tasks status', function (): void {
     tasks_gateway();
-    $app = tasks_app('assist-status');
+    $project = tasks_app('assist-status');
 
     $this->getJson('/api/v1/tasks/status')
         ->assertOk()
@@ -683,9 +683,9 @@ it('summarises groups asking for assistance on tasks status', function (): void 
         ->assertJsonPath('data.assistance', []);
 
     enable_tasks();
-    $create = function (string $title) use ($app): int {
+    $create = function (string $title) use ($project): int {
         $id = $this->postJson('/api/v1/task-groups', [
-            'project_id' => $app->id,
+            'project_id' => $project->id,
             'title' => $title,
             'brief' => "{$title} brief.",
             'tasks' => [['title' => 'Step', 'brief' => 'Step brief.']],
@@ -723,18 +723,18 @@ it('summarises groups asking for assistance on tasks status', function (): void 
     $assistance = [
         [
             'id' => $first,
-            'app_id' => $app->id,
-            'app' => $app->slug,
-            'project_code' => $app->code,
+            'project_id' => $project->id,
+            'project' => $project->slug,
+            'project_code' => $project->code,
             'title' => 'First stalled',
             'status' => 'running',
             'assistance_reason' => 'The implementer is blocked.',
         ],
         [
             'id' => $second,
-            'app_id' => $app->id,
-            'app' => $app->slug,
-            'project_code' => $app->code,
+            'project_id' => $project->id,
+            'project' => $project->slug,
+            'project_code' => $project->code,
             'title' => 'Second stalled',
             'status' => 'settling',
             'assistance_reason' => null,

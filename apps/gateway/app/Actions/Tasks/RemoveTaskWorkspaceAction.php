@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Tasks;
 
-use App\Domain\AppInstances\AppInstanceRemover;
+use App\Domain\Instances\InstanceRemover;
 use App\Domain\Tasks\TaskBridgeWorktreeRemover;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
@@ -33,7 +33,7 @@ final readonly class RemoveTaskWorkspaceAction
     public const string MergeCleanupFailedPrefix = 'Merged pull request cleanup failed: ';
 
     public function __construct(
-        private AppInstanceRemover $remover,
+        private InstanceRemover $remover,
         private TaskBridgeWorktreeRemover $bridges,
     ) {}
 

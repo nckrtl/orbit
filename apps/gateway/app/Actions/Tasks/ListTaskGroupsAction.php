@@ -15,13 +15,13 @@ final readonly class ListTaskGroupsAction
     /**
      * @return Collection<int, TaskGroup>
      */
-    public function execute(?int $appId, ?TaskGroupStatus $status): Collection
+    public function execute(?int $projectId, ?TaskGroupStatus $status): Collection
     {
         $this->requireExtension->execute();
 
         return TaskGroup::query()
-            ->with(['app', 'tasks', 'taskable'])
-            ->when($appId !== null, static fn ($query) => $query->where('project_id', $appId))
+            ->with(['project', 'tasks', 'taskable'])
+            ->when($projectId !== null, static fn ($query) => $query->where('project_id', $projectId))
             ->when($status instanceof TaskGroupStatus, static fn ($query) => $query->where('status', $status))
             ->orderByDesc('id')
             ->get();

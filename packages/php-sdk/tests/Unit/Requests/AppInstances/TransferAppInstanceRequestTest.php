@@ -179,7 +179,7 @@ function transfer_instance_envelope(): array
                 'replacement_step' => null,
                 'target' => [
                     'id' => 51,
-                    'app_instance_id' => 11,
+                    'instance_id' => 11,
                     'position' => 0,
                 ],
                 'process_id' => null,

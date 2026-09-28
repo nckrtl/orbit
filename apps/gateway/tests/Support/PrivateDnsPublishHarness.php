@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
-use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
-use App\Infrastructure\AppDev\AppDevSiteRepository;
+use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\NativeDevelopmentProjectionOperationLock;
 use App\Infrastructure\Processes\CommandDeadline;
@@ -172,7 +172,7 @@ final class PrivateDnsPublishHarness
         return new DnsmasqPrivateDnsManager(
             processes: new NativeProcessRunner,
             projection: $this->projectionLock(),
-            renderer: new AppDevDnsConfigRenderer(new AppDevSiteRepository),
+            renderer: new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository),
             recordsDirectory: $this->root.'/etc/dnsmasq.d',
             dnsmasqConf: $this->root.'/etc/dnsmasq.conf',
             catalogDirectory: $this->root.'/var/lib/orbit/private-dns',
@@ -188,7 +188,7 @@ final class PrivateDnsPublishHarness
         return new DnsmasqPrivateDnsManager(
             processes: new NativeProcessRunner,
             projection: $this->projectionLock(),
-            renderer: new AppDevDnsConfigRenderer(new AppDevSiteRepository),
+            renderer: new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository),
             recordsDirectory: $this->root.'/etc/dnsmasq.d',
             dnsmasqConf: $this->root.'/etc/dnsmasq.conf',
             catalogDirectory: $this->root.'/var/lib/orbit/private-dns',

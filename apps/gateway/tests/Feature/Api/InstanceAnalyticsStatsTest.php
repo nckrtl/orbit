@@ -55,7 +55,7 @@ beforeEach(function (): void {
 });
 
 describe('instance:analytics:stats', function (): void {
-    it('hides the report when the App instance has no tracking host', function (): void {
+    it('hides the report when the Project instance has no tracking host', function (): void {
         $this->getJson($this->url)
             ->assertOk()
             ->assertJsonPath('data', ['available' => false]);
@@ -122,7 +122,7 @@ describe('instance:analytics:stats', function (): void {
             ->and($response->json('data'))->not->toHaveKey('pages');
     });
 
-    it('maps the App instance domain, not a client-supplied site', function (): void {
+    it('maps the Project instance domain, not a client-supplied site', function (): void {
         $this->postJson("/api/v1/instances/{$this->instance->id}/analytics")->assertOk();
 
         $this->getJson($this->url.'?site_id=other.example.com')->assertOk();

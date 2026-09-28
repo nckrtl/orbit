@@ -6,7 +6,7 @@ namespace Tests\Support;
 
 use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Projects\ProjectLifecycleStepStore;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
@@ -79,7 +79,7 @@ final class LifecycleSshExecutor implements SshExecutor
     {
         return new ProjectLifecycleRunner(
             new ProjectLifecycleStepStore,
-            new AppDevSshExecutor($this, new class implements SshKeyProvider
+            new DevelopmentSshExecutor($this, new class implements SshKeyProvider
             {
                 public function privateKeyPath(): string
                 {

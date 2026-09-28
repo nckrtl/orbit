@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace App\Actions\DatabaseConnections;
 
 use App\Data\DatabaseConnections\DatabaseConnectionAttachmentData;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentContextResolver;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentStore;
 use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
 use App\Domain\DatabaseConnections\DatabaseConnectionPrefix;
+use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
+use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -20,9 +20,9 @@ use SensitiveParameter;
 final readonly class DetachDatabaseConnectionAction
 {
     public function __construct(
-        private AppInstanceEnvironmentOperationLock $operations,
-        private AppInstanceEnvironmentContextResolver $contexts,
-        private AppInstanceEnvironmentStore $store,
+        private InstanceEnvironmentOperationLock $operations,
+        private InstanceEnvironmentContextResolver $contexts,
+        private InstanceEnvironmentStore $store,
         private DatabaseConnectionEnvProjection $projection,
     ) {}
 
@@ -68,7 +68,7 @@ final readonly class DetachDatabaseConnectionAction
                 $forgotten = $this->store->forget($context, $keys, 'detach');
 
                 return new DatabaseConnectionAttachmentData(
-                    appInstanceId: $instance->id,
+                    instanceId: $instance->id,
                     slug: $connection->slug,
                     prefix: $normalizedPrefix,
                     keys: $keys,

@@ -6,7 +6,7 @@ namespace App\Domain\Routes;
 
 use App\Data\Routes\RouteTargetDispositionData;
 use App\Data\Routes\SetRouteTargetsData;
-use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -73,7 +73,7 @@ final readonly class RouteTargetSetGuard
         }
 
         $instances = Instance::query()
-            ->with(['app', 'node.roles', 'node.cluster'])
+            ->with(['project', 'node.roles', 'node.cluster'])
             ->whereIn('id', $ids)
             ->lockForUpdate()
             ->get()
@@ -107,7 +107,7 @@ final readonly class RouteTargetSetGuard
         }
 
         $dispositionIds = array_map(
-            static fn (RouteTargetDispositionData $disposition): int => $disposition->appInstanceId,
+            static fn (RouteTargetDispositionData $disposition): int => $disposition->instanceId,
             $proposal->dispositions,
         );
 
@@ -133,7 +133,7 @@ final readonly class RouteTargetSetGuard
             ->all();
         $detached = array_values(array_diff($current, $proposal->targetIds));
         $accounted = array_map(
-            static fn (RouteTargetDispositionData $disposition): int => $disposition->appInstanceId,
+            static fn (RouteTargetDispositionData $disposition): int => $disposition->instanceId,
             $proposal->dispositions,
         );
 
@@ -158,7 +158,7 @@ final readonly class RouteTargetSetGuard
                 $this->refuse('route.target_app_conflict', 'The Route target must belong to the Route Project.');
             }
 
-            if ($instance->status !== AppInstanceState::Active) {
+            if ($instance->status !== InstanceState::Active) {
                 $this->refuse('route.target_inactive', 'The Route target must be active.');
             }
 
@@ -217,13 +217,13 @@ final readonly class RouteTargetSetGuard
         RouteTargetDispositionData $disposition,
         SetRouteTargetsData $proposal,
     ): void {
-        $instance = $this->instances([$disposition->appInstanceId])->first();
+        $instance = $this->instances([$disposition->instanceId])->first();
 
         if (! $instance instanceof Instance) {
             $this->refuse('route.target_inactive', 'The Route target must be active.');
         }
 
-        if ($instance->status === AppInstanceState::Active && ! $disposition->remove && $disposition->routeId === null) {
+        if ($instance->status === InstanceState::Active && ! $disposition->remove && $disposition->routeId === null) {
             $this->refuse(
                 'route.target_disposition_required',
                 'A detached active Instance must be reassigned or authorized for removal.',

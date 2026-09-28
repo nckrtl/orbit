@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Doctor\DoctorInspectionException;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteProvenance;
@@ -12,7 +12,7 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\CaddyGlobalOptions;
@@ -434,7 +434,7 @@ function public_edge_inspector(
     int $forwardingPort = 443,
 ): NativePublicRouteEdgeInspector {
     return new NativePublicRouteEdgeInspector(
-        new AppDevSshExecutor(
+        new DevelopmentSshExecutor(
             $ssh,
             new class implements SshKeyProvider
             {
@@ -502,16 +502,16 @@ function public_edge_route(Cluster $cluster, Node $workload): Route
 {
     static $number = 0;
     $number++;
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => "Shop {$number}",
         'slug' => "shop-{$number}",
         'repository_url' => "https://git.example.test/acme/shop-{$number}.git",
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    $user = "orbit-app-{$app->id}";
+    $user = "orbit-app-{$project->id}";
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $workload->id,
         'name' => 'production',
         'environment' => 'production',
@@ -526,10 +526,10 @@ function public_edge_route(Cluster $cluster, Node $workload): Route
         'starting_commit' => str_repeat('a', 40),
         'selected_php_version' => '8.5',
         'provisioning_step' => 'active',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'cluster_id' => $cluster->id,
         'domain' => "shop-{$number}.example.com",
         'provenance' => RouteProvenance::Explicit,

@@ -58,10 +58,10 @@ final class FakeClusterRouterReplacementProjector implements ClusterRouterReplac
 
     public function prepareRouterCaddy(Route $route, Node $router): void
     {
-        $route->loadMissing('targets.appInstance.node');
+        $route->loadMissing('targets.instance.node');
         $colocated = $route->targets->contains(
-            static fn ($target): bool => $target->appInstance instanceof Instance
-                && $router->is($target->appInstance->node),
+            static fn ($target): bool => $target->instance instanceof Instance
+                && $router->is($target->instance->node),
         );
         $this->event($colocated ? 'router-caddy:local-next-hop' : 'router-caddy', $route, $router);
     }

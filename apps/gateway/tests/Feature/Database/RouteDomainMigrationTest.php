@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
-use App\Models\AppInstanceEnvironmentValue;
 use App\Models\Instance;
+use App\Models\InstanceEnvironmentValue;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
@@ -55,7 +55,7 @@ it('preserves populated application endpoints and migrates them to domain', func
         ]))
         ->toBeFalse();
 
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Shop',
         'slug' => 'shop',
         'repository_url' => 'https://example.test/shop.git',
@@ -67,17 +67,17 @@ it('preserves populated application endpoints and migrates them to domain', func
         'wireguard_ip' => '10.44.0.80',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'default',
         'environment' => 'development',
         'checkout_path' => '/srv/shop',
         'clone_preview_domain' => 'preview.shop.test',
         'registration_route_domain' => 'shop.test',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'domain' => 'shop.test',
         'provenance' => RouteProvenance::Generated,
@@ -105,7 +105,7 @@ it('refuses before schema mutation when a Route hostname change is incomplete', 
             $table->string('hostname_change_target', 253)->nullable();
         });
     }
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Refuse',
         'slug' => 'refuse',
         'repository_url' => 'https://example.test/refuse.git',
@@ -117,7 +117,7 @@ it('refuses before schema mutation when a Route hostname change is incomplete', 
         'wireguard_ip' => '10.44.0.81',
     ]);
     $routeId = DB::table('routes')->insertGetId([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'domain' => 'refuse.test',
         'provenance' => 'explicit',
@@ -170,7 +170,7 @@ it('skips leftover Instance and Workspace endpoint columns after schema retireme
 });
 
 it('rewrites encrypted environment references to the domain placeholder', function (): void {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Env',
         'slug' => 'env',
         'repository_url' => 'https://example.test/env.git',
@@ -182,13 +182,13 @@ it('rewrites encrypted environment references to the domain placeholder', functi
         'wireguard_ip' => '10.44.0.83',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'default',
         'checkout_path' => '/srv/env',
-        'status' => AppInstanceState::Reserved,
+        'status' => InstanceState::Reserved,
     ]);
-    $row = AppInstanceEnvironmentValue::query()->create([
+    $row = InstanceEnvironmentValue::query()->create([
         'instance_id' => $instance->id,
         'env_key' => 'APP_URL',
         'env_value' => 'https://{{instance.domain}}',
@@ -199,7 +199,7 @@ it('rewrites encrypted environment references to the domain placeholder', functi
 
 it('repairs after an injected failure and retries the domain migration forward', function (): void {
     $migration = route_domain_migration();
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Retry',
         'slug' => 'retry',
         'repository_url' => 'https://example.test/retry.git',
@@ -211,11 +211,11 @@ it('repairs after an injected failure and retries the domain migration forward',
         'wireguard_ip' => '10.44.0.84',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'default',
         'checkout_path' => '/srv/retry',
-        'status' => AppInstanceState::Reserved,
+        'status' => InstanceState::Reserved,
     ]);
     DB::table('instance_environment_values')->insert([
         'instance_id' => $instance->id,

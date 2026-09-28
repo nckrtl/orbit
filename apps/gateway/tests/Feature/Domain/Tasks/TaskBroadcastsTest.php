@@ -24,13 +24,13 @@ use Illuminate\Support\Facades\Event;
 
 function live_group(string $status = 'running'): TaskGroup
 {
-    $app = Project::query()->firstOrCreate(['slug' => 'live-tasks'], [
+    $project = Project::query()->firstOrCreate(['slug' => 'live-tasks'], [
         'name' => 'Live tasks',
         'repository_url' => 'git@example.test:live-tasks.git',
         'default_branch' => 'main',
     ]);
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Secret title',
         'brief' => 'A brief that must never reach a broadcast.',
         'status' => TaskGroupStatus::from($status),

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Logs\LogReadLimit;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -1583,7 +1583,7 @@ it('requires a successful systemd stop before deleting an owned unit', function 
 it('removes an instance process after its role and resources enter removing state', function (): void {
     $process = runtime_manager_systemd_process($this->instance);
     $process->update(['status' => LifecycleStatus::Removing]);
-    $this->instance->update(['status' => AppInstanceState::SourceResolved]);
+    $this->instance->update(['status' => InstanceState::SourceResolved]);
     $this->instance->node->roles()->where('role', 'app-dev')->update(['status' => LifecycleStatus::Removing]);
     $ownedUnit = "[Unit]\nX-Orbit-Process-ID={$process->id}\n";
     $this->ssh->responses = [
@@ -1634,7 +1634,7 @@ it('derives the production removal target from persisted Instance identity', fun
     $process = runtime_manager_systemd_process($this->instance);
     $process->update(['status' => LifecycleStatus::Removing]);
     $this->instance->update([
-        'status' => AppInstanceState::SourceResolved,
+        'status' => InstanceState::SourceResolved,
         'environment' => 'production',
         'checkout_path' => '/home/orbit-docs/releases/20260910',
         'production_user' => 'orbit-docs',
@@ -1752,7 +1752,7 @@ it('refuses desired-running production convergence before runtime mutation when 
 
 it('keeps the active-node prerequisite on the removal-only target path', function (): void {
     $process = runtime_manager_systemd_process($this->instance);
-    $this->instance->update(['status' => AppInstanceState::SourceResolved]);
+    $this->instance->update(['status' => InstanceState::SourceResolved]);
     $this->instance->node->update(['status' => LifecycleStatus::Failed]);
 
     expect(fn () => new ProcessTargetResolver()->forRemoval($process))

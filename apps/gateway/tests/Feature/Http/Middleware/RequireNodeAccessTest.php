@@ -31,7 +31,7 @@ beforeEach(function (): void {
     ])->prefix('_node-access')->group(function (): void {
         Route::get('target/{node}', [NodeAccessTestController::class, 'target']);
         Route::get('override/{node}', [NodeAccessTestController::class, 'override']);
-        Route::get('app/{app}', [NodeAccessTestController::class, 'app']);
+        Route::get('app/{project}', [NodeAccessTestController::class, 'app']);
         Route::get('collection', [NodeAccessTestController::class, 'collection']);
         Route::get('gateway', [NodeAccessTestController::class, 'gateway']);
         Route::post('instance', [NodeAccessTestController::class, 'instance']);
@@ -151,9 +151,9 @@ it('fails closed for a Gateway scope without an active Gateway', function (): vo
 
 it('fails closed for an unplaced app without an active Gateway', function (): void {
     $consumer = middleware_node('consumer');
-    $app = middleware_app('unplaced-without-gateway');
+    $project = middleware_app('unplaced-without-gateway');
 
-    middleware_get($this, $consumer, "/_node-access/app/{$app->id}")
+    middleware_get($this, $consumer, "/_node-access/app/{$project->id}")
         ->assertForbidden()
         ->assertHeader('X-Test-Orbit-Error-Code', 'node_access.required')
         ->assertJsonPath('error.code', 'node_access.required')
@@ -195,13 +195,13 @@ it('allows access to any one node that owns a multiply placed app', function ():
     $consumer = middleware_node('consumer');
     $first = middleware_node('first');
     $second = middleware_node('second');
-    $app = middleware_app('placed');
-    middleware_app_instance($app, $first, name: 'first');
-    middleware_app_instance($app, $second, name: 'second');
+    $project = middleware_app('placed');
+    middleware_app_instance($project, $first, name: 'first');
+    middleware_app_instance($project, $second, name: 'second');
     $consumer->accessibleNodes()->attach($second);
     middleware_gateway();
 
-    middleware_get($this, $consumer, "/_node-access/app/{$app->id}")->assertOk();
+    middleware_get($this, $consumer, "/_node-access/app/{$project->id}")->assertOk();
 });
 
 it('requires direct access to both candidate clone Nodes', function (): void {
@@ -310,12 +310,12 @@ it('uses the first stable app node in a multiple-placement denial', function ():
     $consumer = middleware_node('consumer');
     $first = middleware_node('first');
     $second = middleware_node('second');
-    $app = middleware_app('placed');
-    middleware_app_instance($app, $second, name: 'second');
-    middleware_app_instance($app, $first, name: 'first');
+    $project = middleware_app('placed');
+    middleware_app_instance($project, $second, name: 'second');
+    middleware_app_instance($project, $first, name: 'first');
     middleware_gateway();
 
-    middleware_get($this, $consumer, "/_node-access/app/{$app->id}")
+    middleware_get($this, $consumer, "/_node-access/app/{$project->id}")
         ->assertForbidden()
         ->assertJsonPath('error.details.serving_node.id', $first->id);
 });
@@ -437,12 +437,12 @@ function middleware_app(string $slug): Project
     ]);
 }
 
-function middleware_app_instance(Project $app, Node $node, string $name): Instance
+function middleware_app_instance(Project $project, Node $node, string $name): Instance
 {
     orbit_test_set_app_placement_role($node, false);
 
     return Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => $name,
         'checkout_path' => "/srv/{$name}",
@@ -519,10 +519,10 @@ final class NodeAccessTestController
     }
 
     /** @return array{project_id: int} */
-    #[RequiresNodeAccess(ServingNode::AppOwning)]
-    public function app(Project $app): array
+    #[RequiresNodeAccess(ServingNode::ProjectOwning)]
+    public function app(Project $project): array
     {
-        return ['project_id' => $app->id];
+        return ['project_id' => $project->id];
     }
 
     /** @return array{ok: true} */

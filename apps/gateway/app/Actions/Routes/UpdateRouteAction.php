@@ -6,9 +6,9 @@ namespace App\Actions\Routes;
 
 use App\Data\Routes\RouteData;
 use App\Data\Routes\UpdateRouteData;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\Routes\RouteProvenance;
@@ -24,7 +24,7 @@ use Illuminate\Support\Facades\DB;
 final readonly class UpdateRouteAction
 {
     public function __construct(
-        private AppInstanceEnvironmentOperationLock $environmentOperations,
+        private InstanceEnvironmentOperationLock $environmentOperations,
         private ConvergeRouteAction $converge,
         private PublishPublicRouteAction $publishPublic,
         private RouteReconciliationGuard $reconciliation,

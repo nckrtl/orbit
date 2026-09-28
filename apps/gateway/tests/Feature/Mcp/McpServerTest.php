@@ -93,7 +93,7 @@ describe('POST /mcp', function (): void {
 
     it('places a DELETE path parameter from the tool arguments onto the Route', function (): void {
         app()->instance(RouteRemovalProjector::class, new FakeRouteRemovalProjector);
-        $app = Project::query()->create([
+        $project = Project::query()->create([
             'name' => 'MCP routes',
             'slug' => 'mcp-routes',
             'repository_url' => 'https://example.test/mcp-routes.git',
@@ -111,7 +111,7 @@ describe('POST /mcp', function (): void {
             'user' => 'orbit',
         ]);
         $routeId = Route::query()->create([
-            'project_id' => $app->id,
+            'project_id' => $project->id,
             'node_id' => $node->id,
             'domain' => 'mcp-destroy.example.test',
             'provenance' => 'explicit',

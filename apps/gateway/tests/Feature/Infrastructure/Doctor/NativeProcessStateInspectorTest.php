@@ -230,13 +230,13 @@ function native_process_inspector(
         'wireguard_ip' => '10.44.0.51',
     ]);
     orbit_test_set_app_placement_role($node, false);
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => fake()->word(),
         'slug' => fake()->unique()->slug(),
         'repository_url' => 'git@example.test:app.git',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => fake()->word(),
         'environment' => 'development',

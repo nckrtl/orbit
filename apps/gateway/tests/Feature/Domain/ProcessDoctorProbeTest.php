@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 use App\Actions\Doctor\ProcessDoctorProbe;
 use App\Data\Doctor\DoctorFamilyReportData;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\ProcessInspectionData;
 use App\Domain\Doctor\ProcessInspectionStatus;
 use App\Domain\Doctor\ProcessStateInspector;
-use App\Domain\Hibernation\AppDevHibernationPolicy;
+use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\Hibernation\RuntimeHibernation;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
@@ -72,13 +72,13 @@ it('compares selected process runtimes in process id order', function (): void {
         'user' => 'orbit',
         'wireguard_ip' => '10.44.0.3',
     ]);
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'App',
         'slug' => 'app',
         'repository_url' => 'git@example.test:app.git',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'main',
         'environment' => 'development',
@@ -318,7 +318,7 @@ it('selects only Instance processes on the exact target Node', function (): void
     $selected = doctor_process($node, ProcessRuntime::Systemd, DesiredProcessState::Running, name: 'selected');
     doctor_process($other, ProcessRuntime::Systemd, DesiredProcessState::Running, name: 'excluded');
     $wrongMorph = $selected->replicate();
-    $wrongMorph->owner_type = 'App\\Models\\AppInstance';
+    $wrongMorph->owner_type = 'App\\Models\\Instance';
     $wrongMorph->save();
     $manager = Mockery::mock(ProcessStateInspector::class);
     $manager
@@ -343,7 +343,7 @@ it('does not treat a sleeping non-keep-alive Process as drift', function (): voi
         ->with(Mockery::on(fn (Process $process): bool => $process->is($vite)))
         ->andReturn(new ProcessInspectionData(true, ProcessInspectionStatus::Inactive));
 
-    $report = new ProcessDoctorProbe($runtime, new AppDevHibernationPolicy, $markers)
+    $report = new ProcessDoctorProbe($runtime, new DevelopmentHibernationPolicy, $markers)
         ->inspect(doctor_process_context($node));
 
     expect($report->checked)
@@ -363,7 +363,7 @@ it('still reports a keep-alive Process that is down while the group is asleep', 
         ->with(Mockery::on(fn (Process $process): bool => $process->is($queue)))
         ->andReturn(new ProcessInspectionData(true, ProcessInspectionStatus::Inactive));
 
-    $report = new ProcessDoctorProbe($runtime, new AppDevHibernationPolicy, $markers)
+    $report = new ProcessDoctorProbe($runtime, new DevelopmentHibernationPolicy, $markers)
         ->inspect(doctor_process_context($node));
 
     expect($report->issues)
@@ -385,7 +385,7 @@ it('reports a non-keep-alive Process that is down while the Instance is awake', 
         ->once()
         ->andReturn(new ProcessInspectionData(true, ProcessInspectionStatus::Inactive));
 
-    $report = new ProcessDoctorProbe($runtime, new AppDevHibernationPolicy, $markers)
+    $report = new ProcessDoctorProbe($runtime, new DevelopmentHibernationPolicy, $markers)
         ->inspect(doctor_process_context($node));
 
     expect($report->issues)
@@ -420,7 +420,7 @@ function doctor_process_mark_removing(Instance $instance): void
     DB::statement('DROP TRIGGER instances_removal_status_update');
 
     try {
-        $instance->update(['status' => AppInstanceState::Removing]);
+        $instance->update(['status' => InstanceState::Removing]);
     } finally {
         DB::statement($trigger);
     }
@@ -438,13 +438,13 @@ function doctor_process(
     string $name = 'process',
 ): Process {
     $slug = fake()->unique()->slug();
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => fake()->word(),
         'slug' => $slug,
         'repository_url' => "git@example.test:{$slug}.git",
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => fake()->word(),
         'environment' => 'development',
@@ -472,13 +472,13 @@ function doctor_app_dev_instance(): array
 {
     $node = doctor_process_node();
     $node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Docs',
         'slug' => fake()->unique()->slug(),
         'repository_url' => 'git@example.test:docs.git',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'main',
         'environment' => 'development',

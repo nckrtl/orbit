@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Actions\Routes;
 
 use App\Data\Routes\RouteData;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Routes\RouteAssociationGuard;
 use App\Domain\Routes\RouteReconciliationGuard;
@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\DB;
 final readonly class ClearRouteTargetAction
 {
     public function __construct(
-        private AppInstanceEnvironmentOperationLock $environmentOperations,
+        private InstanceEnvironmentOperationLock $environmentOperations,
         private RouteAssociationGuard $associations,
         private ?RecordEventBroadcaster $broadcaster = null,
         private ?MetricsFleetReconciler $metrics = null,

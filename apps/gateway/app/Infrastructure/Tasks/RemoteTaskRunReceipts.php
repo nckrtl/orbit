@@ -11,7 +11,7 @@ use App\Domain\Tasks\TaskRunReceipt;
 use App\Domain\Tasks\TaskRunReceiptException;
 use App\Domain\Tasks\TaskRunReceipts;
 use App\Domain\Tasks\TaskThreadRole;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 
@@ -24,7 +24,7 @@ final readonly class RemoteTaskRunReceipts implements TaskRunReceipts
         dir=$(git -C "$checkout" rev-parse --absolute-git-dir)/orbit
         BASH;
 
-    public function __construct(private AppDevSshExecutor $ssh) {}
+    public function __construct(private DevelopmentSshExecutor $ssh) {}
 
     public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void
     {

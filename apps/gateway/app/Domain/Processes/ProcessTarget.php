@@ -16,7 +16,7 @@ final readonly class ProcessTarget
         public string $user,
         public string $checkoutPath,
         public ?string $certificateScope = null,
-        public ?Instance $appInstance = null,
+        public ?Instance $instance = null,
         public string $environmentFile = '',
         public bool $productionReleaseLayout = false,
         public ?string $routeDomain = null,

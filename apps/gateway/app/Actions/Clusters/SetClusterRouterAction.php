@@ -402,7 +402,7 @@ final readonly class SetClusterRouterAction
     private function clusterRoutes(int $clusterId): Collection
     {
         return Route::query()
-            ->with(['targets.appInstance.node', 'cluster'])
+            ->with(['targets.instance.node', 'cluster'])
             ->where('cluster_id', $clusterId)
             ->whereIn('status', [
                 RouteStatus::Active,
@@ -419,7 +419,7 @@ final readonly class SetClusterRouterAction
     {
         return array_values($route
             ->targets
-            ->map(static fn ($target) => $target->appInstance)
+            ->map(static fn ($target) => $target->instance)
             ->filter(static fn ($target): bool => $target instanceof Instance)
             ->all());
     }

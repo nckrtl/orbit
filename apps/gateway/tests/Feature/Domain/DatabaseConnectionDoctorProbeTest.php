@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Actions\DatabaseConnections\AttachDatabaseConnectionAction;
 use App\Actions\Doctor\DatabaseConnectionDoctorProbe;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Doctor\DatabaseConnectionDoctorInspection;
@@ -12,6 +11,7 @@ use App\Domain\Doctor\DatabaseConnectionDoctorIssueCode;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
@@ -20,10 +20,10 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
-use App\Models\AppInstanceEnvironmentValue;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
+use App\Models\InstanceEnvironmentValue;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
@@ -318,7 +318,7 @@ function database_connection_doctor_mark_removing(Instance $instance): void
     DB::statement('DROP TRIGGER instances_removal_status_update');
 
     try {
-        $instance->update(['status' => AppInstanceState::Removing]);
+        $instance->update(['status' => InstanceState::Removing]);
     } finally {
         DB::statement($trigger);
     }
@@ -361,7 +361,7 @@ function database_connection_doctor_instance(Node $node): Instance
     static $number = 0;
     $number++;
 
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => "Database Doctor {$number}",
         'slug' => "database-doctor-{$number}",
         'repository_url' => "https://example.test/database-doctor-{$number}.git",
@@ -370,7 +370,7 @@ function database_connection_doctor_instance(Node $node): Instance
     ]);
     $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'default',
         'environment' => 'development',
@@ -379,7 +379,7 @@ function database_connection_doctor_instance(Node $node): Instance
         'provisioning_step' => 'active',
     ]);
     $route = Route::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'domain' => "database-doctor-{$number}.test",
         'provenance' => RouteProvenance::Explicit,
@@ -410,10 +410,10 @@ function database_connection_doctor_mysql(Node $node, string $slug): DatabaseCon
 /** @return array<string, string> */
 function database_connection_doctor_stored(Instance $instance): array
 {
-    return AppInstanceEnvironmentValue::query()
+    return InstanceEnvironmentValue::query()
         ->where('instance_id', $instance->id)
         ->orderBy('env_key')
         ->get()
-        ->mapWithKeys(static fn (AppInstanceEnvironmentValue $row): array => [$row->env_key => $row->env_value])
+        ->mapWithKeys(static fn (InstanceEnvironmentValue $row): array => [$row->env_key => $row->env_value])
         ->all();
 }

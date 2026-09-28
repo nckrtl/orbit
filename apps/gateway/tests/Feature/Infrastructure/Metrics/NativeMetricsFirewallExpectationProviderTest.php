@@ -19,8 +19,8 @@ it('projects selected exporter and Gateway-only publication expectations in cata
     $metrics->roles()->create(['role' => 'metrics', 'status' => 'active']);
     $gateway = metricsFirewallExpectationNode('gateway', '10.44.0.1');
     $gateway->roles()->create(['role' => 'gateway', 'status' => 'active']);
-    $app = metricsFirewallExpectationNode('app', '10.44.0.4');
-    $app->roles()->create(['role' => 'app-prod', 'status' => 'active']);
+    $project = metricsFirewallExpectationNode('app', '10.44.0.4');
+    $project->roles()->create(['role' => 'app-prod', 'status' => 'active']);
     $excluded = metricsFirewallExpectationNode('excluded', '10.44.0.5');
     $excluded->roles()->create(['role' => 'app-dev', 'status' => 'active']);
     $preferences = app(ExporterPreferenceRepository::class);
@@ -40,7 +40,7 @@ it('projects selected exporter and Gateway-only publication expectations in cata
         ])
         ->and(array_column($provider->for($gateway), 'resourceId'))
         ->toBe(['orbit:metrics-node-exporter', 'orbit:metrics-cadvisor'])
-        ->and(array_column($provider->for($app), 'resourceId'))
+        ->and(array_column($provider->for($project), 'resourceId'))
         ->toBe(['orbit:metrics-node-exporter', 'orbit:metrics-cadvisor'])
         ->and($provider->for($excluded))
         ->toBe([]);

@@ -438,7 +438,7 @@ function environment_cli_response(string $operation, bool $changed = true): Mock
 {
     return MockResponse::make([
         'data' => [
-            'app_instance_id' => 17,
+            'instance_id' => 17,
             'operation' => $operation,
             'changed' => $changed,
             'key_count' => 3,
@@ -450,7 +450,7 @@ function environment_cli_response(string $operation, bool $changed = true): Mock
 function environment_cli_result_json(string $operation, ?bool $workloadFileChanged = null): string
 {
     $payload = [
-        'app_instance_id' => 17,
+        'instance_id' => 17,
         'operation' => $operation,
         'changed' => true,
         'key_count' => 3,

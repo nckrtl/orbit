@@ -124,7 +124,7 @@ final readonly class TaskScheduler
         }
 
         $groups = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
-            ->with(['app', 'tasks', 'taskable'])
+            ->with(['project', 'tasks', 'taskable'])
             ->whereIn('status', [TaskGroupStatus::Running, TaskGroupStatus::Reviewing, TaskGroupStatus::Settling])
             ->orderBy('id')
             ->get();
@@ -190,14 +190,14 @@ final readonly class TaskScheduler
                 }
                 if ($task->assistance_requested || $group->assistance_requested) {
                     if ($task->status === TaskStatus::Reviewing) {
-                        $group = $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+                        $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
                         $this->retryCommittedApproval($group, $task);
                     }
 
                     continue;
                 }
 
-                $group = $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+                $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
                 if ($task->status === TaskStatus::Reviewing && $this->retryCommittedApproval($group, $task)) {
                     continue;
                 }
@@ -394,7 +394,7 @@ final readonly class TaskScheduler
         $repeats = $check instanceof TaskCheck
             ? TaskCheck::query()->where('task_comment_id', $receipt->id)->where('status', $check->status->value)->count()
             : 0;
-        $command = $group->app->taskCheckCommand();
+        $command = $group->project->taskCheckCommand();
         $name = $command ?? 'the task check';
         $owned = $command === null ? "Orbit's task check" : "Orbit's {$command}";
         $item = match (true) {
@@ -704,7 +704,7 @@ final readonly class TaskScheduler
                 return;
             }
             try {
-                $url = $this->publisher->publish($group, TaskPullRequestDescription::render($pullRequest, $group->tasks()->whereNotIn('status', [TaskStatus::Cancelled, TaskStatus::Failed])->count(), $group->app->taskCheckCommand()), $commit);
+                $url = $this->publisher->publish($group, TaskPullRequestDescription::render($pullRequest, $group->tasks()->whereNotIn('status', [TaskStatus::Cancelled, TaskStatus::Failed])->count(), $group->project->taskCheckCommand()), $commit);
             } catch (TaskPullRequestException $exception) {
                 $this->failPublication($group, $task, $exception->getMessage());
 
@@ -849,7 +849,7 @@ final readonly class TaskScheduler
     {
         $instance = $group->taskable;
         $items = [
-            new TaskRubricItem('check_script', ! self::runsComposerCheck($group->app->taskCheckCommand()) || $instance instanceof Instance && $this->workspace->definesComposerCheckScript($instance), 'composer.json in the workspace does not define a check script, so Orbit cannot run composer check. Restore the check script.'),
+            new TaskRubricItem('check_script', ! self::runsComposerCheck($group->project->taskCheckCommand()) || $instance instanceof Instance && $this->workspace->definesComposerCheckScript($instance), 'composer.json in the workspace does not define a check script, so Orbit cannot run composer check. Restore the check script.'),
             $this->receiptItem($read, $receipt),
         ];
         $confirmation = $this->confirmationItem($task, $receipt, TaskThreadRole::Implementer);
@@ -985,7 +985,7 @@ final readonly class TaskScheduler
             }
             $this->prepareTurn($group, $task, $thread->role, $actingThreadId);
             $instructions = $thread->role === TaskThreadRole::Implementer
-                ? TaskRunInstructions::implementer($task->deliverableList(), $group->app->taskCheckCommand(), $actingThreadId)
+                ? TaskRunInstructions::implementer($task->deliverableList(), $group->project->taskCheckCommand(), $actingThreadId)
                 : TaskRunInstructions::reviewer($task->opensPullRequest(), $task->deliverableList(), $actingThreadId);
             $this->actor->remindRubric($group, $thread, 'Orbit bound this turn to its thread. '.$instructions);
         } catch (AgentDriverException|TaskRunReceiptException $exception) {
@@ -1063,7 +1063,7 @@ final readonly class TaskScheduler
         if ($task->{$reminder} !== $task->{$attempt}) {
             try {
                 $this->prepareTurn($group, $task, $thread->role, $thread->threadId);
-                $this->actor->remindRubric($group, $thread, TaskRubricReminder::compose($thread->role, $failures, ! $implementer && $task->opensPullRequest(), $task->deliverableList(), $group->app->taskCheckCommand(), $thread->threadId));
+                $this->actor->remindRubric($group, $thread, TaskRubricReminder::compose($thread->role, $failures, ! $implementer && $task->opensPullRequest(), $task->deliverableList(), $group->project->taskCheckCommand(), $thread->threadId));
             } catch (AgentDriverException|TaskRunReceiptException $exception) {
                 $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
@@ -1268,7 +1268,7 @@ final readonly class TaskScheduler
 
     private function advance(TaskGroup $group, Task $task, TaskSessionDecision $decision, TaskSessionObservation $observation): void
     {
-        $group = $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+        $group = $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
         $current = $task->fresh();
 
         if ($decision->action === TaskSessionNextAction::MarkSubtaskDone && $current instanceof Task) {
@@ -1323,7 +1323,7 @@ final readonly class TaskScheduler
                     $group->reserved_at = now();
                     $group->save();
 
-                    return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+                    return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
                 }
 
                 return null;
@@ -1383,7 +1383,7 @@ final readonly class TaskScheduler
 
         $this->startFirstTask($started);
 
-        return $started->fresh(['tasks', 'app', 'taskable']) ?? $started;
+        return $started->fresh(['tasks', 'project', 'taskable']) ?? $started;
     }
 
     /**
@@ -1396,7 +1396,7 @@ final readonly class TaskScheduler
     private function startReserved(TaskGroup $reserved, Instance $instance): ?TaskGroup
     {
         $group = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
-            ->with(['tasks', 'app', 'taskable'])
+            ->with(['tasks', 'project', 'taskable'])
             ->lockForUpdate()
             ->findOrFail($reserved->id);
 
@@ -1427,7 +1427,7 @@ final readonly class TaskScheduler
         }
         $group->save();
 
-        return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+        return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
     }
 
     /**
@@ -1653,7 +1653,7 @@ final readonly class TaskScheduler
             return;
         }
         $group->setRelation('taskable', $instance);
-        $group->loadMissing('app');
+        $group->loadMissing('project');
         $this->publisher->push($group, $commit);
     }
 
@@ -2051,12 +2051,12 @@ final readonly class TaskScheduler
         $group = DB::transaction(function () use ($task): TaskGroup {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
             $group = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
-                ->with(['tasks', 'app', 'taskable'])
+                ->with(['tasks', 'project', 'taskable'])
                 ->lockForUpdate()
                 ->findOrFail($locked->task_group_id);
 
             if ($group->status !== TaskGroupStatus::Running || $locked->status !== TaskStatus::Running) {
-                return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+                return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
             }
 
             $locked->status = TaskStatus::Reviewing;
@@ -2064,7 +2064,7 @@ final readonly class TaskScheduler
             $group->status = TaskGroupStatus::Reviewing;
             $group->save();
 
-            return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+            return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
         });
 
         $reviewing = $group->tasks->first(
@@ -2075,7 +2075,7 @@ final readonly class TaskScheduler
             $this->nudgeReviewer($reviewing, $reviewer);
         }
 
-        return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+        return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
     }
 
     public function startTask(Task $task): TaskGroup
@@ -2084,7 +2084,7 @@ final readonly class TaskScheduler
         $started = $this->activateRunningTask($task);
         $this->recordSubtaskStart($started);
         if ($this->needsBaseline($started)) {
-            $group = $started->taskGroup()->with(['app', 'taskable'])->firstOrFail();
+            $group = $started->taskGroup()->with(['project', 'taskable'])->firstOrFail();
             $this->startBaseline($group, $started);
         } else {
             $this->assignImplementer($started);
@@ -2092,7 +2092,7 @@ final readonly class TaskScheduler
 
         $group = $started->taskGroup;
 
-        return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+        return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
     }
 
     /**
@@ -2138,14 +2138,14 @@ final readonly class TaskScheduler
                 }
                 $group->save();
 
-                return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+                return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
             });
 
             if ($group->status === TaskGroupStatus::Settling) {
                 return $this->settle($group, requestMissingPullRequest: false, checkReturningPullRequest: false);
             }
 
-            return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+            return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
         }
 
         if ($candidate->status !== TaskStatus::Running) {
@@ -2193,7 +2193,7 @@ final readonly class TaskScheduler
             }
             $group->save();
 
-            return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+            return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
         });
 
         if ($next instanceof Task && $next->status === TaskStatus::Running) {
@@ -2204,7 +2204,7 @@ final readonly class TaskScheduler
             return $this->settle($group);
         }
 
-        return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+        return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
     }
 
     public function acceptReview(Task $task): TaskGroup
@@ -2214,12 +2214,12 @@ final readonly class TaskScheduler
         $group = DB::transaction(function () use ($task, &$next): TaskGroup {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
             $group = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
-                ->with(['tasks', 'app', 'taskable'])
+                ->with(['tasks', 'project', 'taskable'])
                 ->lockForUpdate()
                 ->findOrFail($locked->task_group_id);
 
             if ($group->status !== TaskGroupStatus::Reviewing || $locked->status !== TaskStatus::Reviewing) {
-                return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+                return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
             }
 
             $locked->status = TaskStatus::Completed;
@@ -2245,7 +2245,7 @@ final readonly class TaskScheduler
 
             $group->save();
 
-            return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+            return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
         });
 
         if ($next instanceof Task && $next->status === TaskStatus::Running) {
@@ -2257,7 +2257,7 @@ final readonly class TaskScheduler
             return $this->settle($group);
         }
 
-        return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+        return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
     }
 
     public function settle(
@@ -2266,10 +2266,10 @@ final readonly class TaskScheduler
         bool $checkReturningPullRequest = true,
     ): TaskGroup {
         $group->requireManagedExecution();
-        $group->loadMissing(['app', 'tasks', 'taskable']);
+        $group->loadMissing(['project', 'tasks', 'taskable']);
 
         if ($group->status !== TaskGroupStatus::Settling) {
-            return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+            return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
         }
 
         $url = $group->pr_url;
@@ -2279,7 +2279,7 @@ final readonly class TaskScheduler
                 $this->requestMissingPullRequest($group);
             }
 
-            return $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+            return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
         }
 
         // ADR 0164: returning to settling refreshes metrics and does not post task_group.settled again.
@@ -2294,13 +2294,13 @@ final readonly class TaskScheduler
         $group->settled_at ??= now();
         $group->save();
 
-        $settled = $group->fresh(['tasks', 'app', 'taskable']) ?? $group;
+        $settled = $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
 
         if ($settled->notify_coder && ! $returning) {
             $this->coder->notify($settled);
         }
 
-        return $settled->fresh(['tasks', 'app', 'taskable']) ?? $settled;
+        return $settled->fresh(['tasks', 'project', 'taskable']) ?? $settled;
     }
 
     /**
@@ -2447,7 +2447,7 @@ final readonly class TaskScheduler
     {
         $counts = $this->fixupCountsSinceOperatorWork($group);
 
-        foreach (TaskSettlingFixup::plans((string) $group->app->slug, $health->conflicts, $health->baseRef, $health->failedChecks) as $plan) {
+        foreach (TaskSettlingFixup::plans((string) $group->project->slug, $health->conflicts, $health->baseRef, $health->failedChecks) as $plan) {
             if ($conflictOnly && $plan->conflictBase() === null) {
                 continue;
             }
@@ -2465,7 +2465,7 @@ final readonly class TaskScheduler
         $counts = $this->fixupCountsSinceOperatorWork($group);
         $reasons = [];
 
-        foreach (TaskSettlingFixup::plans((string) $group->app->slug, $health->conflicts, $health->baseRef, $health->failedChecks) as $plan) {
+        foreach (TaskSettlingFixup::plans((string) $group->project->slug, $health->conflicts, $health->baseRef, $health->failedChecks) as $plan) {
             if ($conflictOnly && $plan->conflictBase() === null) {
                 continue;
             }
@@ -2575,7 +2575,7 @@ final readonly class TaskScheduler
             return;
         }
 
-        $group = $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+        $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
         if (! in_array($group->status, [TaskGroupStatus::Settling, TaskGroupStatus::Running], true)) {
             return;
         }
@@ -2680,7 +2680,7 @@ final readonly class TaskScheduler
 
                 $this->markRunning($locked, $tasks);
 
-                return $locked->fresh(['taskGroup.tasks', 'taskGroup.app', 'taskGroup.taskable']) ?? $locked;
+                return $locked->fresh(['taskGroup.tasks', 'taskGroup.project', 'taskGroup.taskable']) ?? $locked;
             });
         } catch (TaskSequenceException) {
             return null;
@@ -2794,7 +2794,7 @@ final readonly class TaskScheduler
 
             $this->markRunning($locked, $tasks);
 
-            return $locked->fresh(['taskGroup.tasks', 'taskGroup.app', 'taskGroup.taskable']) ?? $locked;
+            return $locked->fresh(['taskGroup.tasks', 'taskGroup.project', 'taskGroup.taskable']) ?? $locked;
         });
     }
 
@@ -2830,7 +2830,7 @@ final readonly class TaskScheduler
     {
         $this->recordSubtaskStart($task);
         if ($this->needsBaseline($task)) {
-            $group = $task->taskGroup()->with(['app', 'taskable'])->firstOrFail();
+            $group = $task->taskGroup()->with(['project', 'taskable'])->firstOrFail();
             $this->startBaseline($group, $task);
         } else {
             $this->assignImplementer($task);
@@ -2963,7 +2963,7 @@ final readonly class TaskScheduler
             ->get()
             ->map(static fn (ProjectLifecycleStep $step): array => ['name' => $step->name, 'command' => $step->command, 'timeout_seconds' => $step->timeout_seconds])
             ->all());
-        $command = $instance->app->taskCheckCommand();
+        $command = $instance->project->taskCheckCommand();
         if ($command !== null && preg_match('/(?:^|[\\s;&|(])composer(?=$|\\s)|\\bvendor\\//i', $command) === 1) {
             $setup[] = [
                 'name' => self::BASELINE_COMPOSER_INSTALL_STEP,

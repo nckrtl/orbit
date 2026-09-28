@@ -6,9 +6,9 @@ covers:
   - apps/gateway/app/Domain/Processes/**
   - apps/gateway/app/Infrastructure/Processes/{RemoteProcessRuntimeManager,SystemdProcessRenderer,DockerProcessRenderer,NativeProcessAdmissionLock,NativeProcessRuntimeLease}.php
   - apps/gateway/app/Http/{Controllers/Api/ProcessesController,Requests/Processes/*}.php
-  - apps/gateway/app/Actions/AppDefinitions/**
-  - apps/gateway/app/Actions/AppInstances/InstantiateAppRuntimeDefinitionsAction.php
-  - apps/gateway/app/Http/{Controllers/Api/AppRuntimeDefinitionsController,Requests/AppDefinitions/*}.php
+  - apps/gateway/app/Actions/ProjectDefinitions/**
+  - apps/gateway/app/Actions/Instances/InstantiateProjectRuntimeDefinitionsAction.php
+  - apps/gateway/app/Http/{Controllers/Api/ProjectRuntimeDefinitionsController,Requests/ProjectDefinitions/*}.php
   - apps/gateway/app/Models/{Process,ProcessDefinition,ScheduleDefinition}.php
 ---
 

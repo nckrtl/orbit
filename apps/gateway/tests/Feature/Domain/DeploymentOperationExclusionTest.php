@@ -2,33 +2,33 @@
 
 declare(strict_types=1);
 
-use App\Actions\AppInstances\CreateAppInstanceDeployStepAction;
-use App\Actions\AppInstances\DeployAppInstanceAction;
-use App\Actions\AppInstances\DestroyAppInstanceDeployStepAction;
-use App\Actions\AppInstances\ImportAppInstanceEnvironmentAction;
-use App\Actions\AppInstances\RemoveAppInstanceAction;
-use App\Actions\AppInstances\RollbackAppInstanceAction;
-use App\Actions\AppInstances\SynchronizeAppInstanceEnvironmentAction;
-use App\Actions\AppInstances\UpdateAppInstanceAction;
-use App\Actions\AppInstances\UpdateAppInstanceDeployStepAction;
-use App\Actions\AppInstances\UpdateAppInstanceEnvironmentAction;
+use App\Actions\Instances\CreateInstanceDeployStepAction;
+use App\Actions\Instances\DeployInstanceAction;
+use App\Actions\Instances\DestroyInstanceDeployStepAction;
+use App\Actions\Instances\ImportInstanceEnvironmentAction;
+use App\Actions\Instances\RemoveInstanceAction;
+use App\Actions\Instances\RollbackInstanceAction;
+use App\Actions\Instances\SynchronizeInstanceEnvironmentAction;
+use App\Actions\Instances\UpdateInstanceAction;
+use App\Actions\Instances\UpdateInstanceDeployStepAction;
+use App\Actions\Instances\UpdateInstanceEnvironmentAction;
 use App\Actions\Routes\ConvergeRouteAction;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
+use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 
 it('shares one Instance mutation owner across deployment and every competing operation', function (): void {
-    $owner = app(AppInstanceEnvironmentOperationLock::class);
+    $owner = app(InstanceEnvironmentOperationLock::class);
     $operations = [
-        [DeployAppInstanceAction::class, 'operations'],
-        [RollbackAppInstanceAction::class, 'operations'],
-        [RemoveAppInstanceAction::class, 'environmentOperations'],
-        [ImportAppInstanceEnvironmentAction::class, 'operations'],
-        [UpdateAppInstanceEnvironmentAction::class, 'operations'],
-        [SynchronizeAppInstanceEnvironmentAction::class, 'operations'],
+        [DeployInstanceAction::class, 'operations'],
+        [RollbackInstanceAction::class, 'operations'],
+        [RemoveInstanceAction::class, 'environmentOperations'],
+        [ImportInstanceEnvironmentAction::class, 'operations'],
+        [UpdateInstanceEnvironmentAction::class, 'operations'],
+        [SynchronizeInstanceEnvironmentAction::class, 'operations'],
         [ConvergeRouteAction::class, 'environmentOperations'],
-        [CreateAppInstanceDeployStepAction::class, 'operations'],
-        [UpdateAppInstanceDeployStepAction::class, 'operations'],
-        [DestroyAppInstanceDeployStepAction::class, 'operations'],
-        [UpdateAppInstanceAction::class, 'operations'],
+        [CreateInstanceDeployStepAction::class, 'operations'],
+        [UpdateInstanceDeployStepAction::class, 'operations'],
+        [DestroyInstanceDeployStepAction::class, 'operations'],
+        [UpdateInstanceAction::class, 'operations'],
     ];
 
     foreach ($operations as [$action, $property]) {

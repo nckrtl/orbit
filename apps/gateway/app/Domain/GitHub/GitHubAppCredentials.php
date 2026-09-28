@@ -20,7 +20,7 @@ final readonly class GitHubAppCredentials
         public string $privateKey,
     ) {}
 
-    /** The GitHub page where the owner deletes the App registration. */
+    /** The GitHub page where the owner deletes the Project registration. */
     public function settingsUrl(): string
     {
         return $this->ownerType === 'organization'

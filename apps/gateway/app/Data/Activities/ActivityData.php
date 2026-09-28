@@ -117,7 +117,7 @@ final readonly class ActivityData
     {
         return match ($subjectType) {
             Node::class => 'node',
-            Project::class => 'app',
+            Project::class => 'project',
             Instance::MorphAlias => 'instance',
             OrbitProcess::class => 'process',
             FirewallRule::class => 'firewall_rule',

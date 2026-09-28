@@ -10,7 +10,7 @@ use App\Domain\Doctor\InstanceStateInspector;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\SourceControl\GitRepositoryOrigin;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
@@ -21,39 +21,39 @@ use Throwable;
 final readonly class NativeInstanceStateInspector implements InstanceStateInspector
 {
     public function __construct(
-        private AppDevSshExecutor $ssh,
+        private DevelopmentSshExecutor $ssh,
         private CommandDeadline $deadline,
         private ManagedUserAccountResolver $accounts,
         private CheckoutRemovalBoundary $removal,
         private ProductionInstanceInspectionExpectationFactory $productionExpectations,
     ) {}
 
-    public function inspect(Instance $appInstance): InstanceInspectionData
+    public function inspect(Instance $instance): InstanceInspectionData
     {
-        $appInstance->loadMissing(['app', 'node']);
+        $instance->loadMissing(['project', 'node']);
 
-        if ($appInstance->placedOnAppProd()) {
-            return $this->inspectProduction($appInstance);
+        if ($instance->placedOnAppProd()) {
+            return $this->inspectProduction($instance);
         }
 
         try {
-            $account = $this->accounts->resolve($appInstance->node);
-            $root = $this->removal->appInstanceRoot($appInstance, $account);
-            $repository = GitRepositoryOrigin::validate($appInstance->app->repository_url);
+            $account = $this->accounts->resolve($instance->node);
+            $root = $this->removal->instanceRoot($instance, $account);
+            $repository = GitRepositoryOrigin::validate($instance->project->repository_url);
             $result = $this->ssh->execute(
-                $appInstance->node,
+                $instance->node,
                 new RemoteCommand(
                     arguments: [
                         'bash',
                         '-seu',
                         '--',
                         $repository,
-                        $appInstance->checkout_path,
+                        $instance->checkout_path,
                         $root->value,
                         $account->user,
                         $account->group,
-                        $appInstance->source_layout,
-                        $appInstance->starting_commit ?? '',
+                        $instance->source_layout,
+                        $instance->starting_commit ?? '',
                     ],
                     input: self::remoteScript(),
                 ),
@@ -75,12 +75,12 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
         );
     }
 
-    private function inspectProduction(Instance $appInstance): InstanceInspectionData
+    private function inspectProduction(Instance $instance): InstanceInspectionData
     {
         try {
-            $expectation = $this->productionExpectations->make($appInstance);
+            $expectation = $this->productionExpectations->make($instance);
             $result = $this->ssh->execute(
-                $appInstance->node,
+                $instance->node,
                 new RemoteCommand(
                     arguments: ['sudo', 'bash', '-s', '--'],
                     protectedInput: ProtectedInput::fromString($this->productionProgram($expectation)),

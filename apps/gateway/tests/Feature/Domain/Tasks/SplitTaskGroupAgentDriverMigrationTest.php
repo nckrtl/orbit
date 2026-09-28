@@ -19,9 +19,9 @@ function split_driver_migration(): object
 
 function split_driver_group(string $driver, string $code): int
 {
-    $appId = DB::table('projects')->insertGetId(['name' => 'split-'.$driver, 'slug' => 'split-'.$driver, 'code' => $code, 'repository_url' => 'git@example.test:split.git', 'repository_identity' => 'example.test/split-'.$driver]);
+    $projectId = DB::table('projects')->insertGetId(['name' => 'split-'.$driver, 'slug' => 'split-'.$driver, 'code' => $code, 'repository_url' => 'git@example.test:split.git', 'repository_identity' => 'example.test/split-'.$driver]);
 
-    return DB::table('task_groups')->insertGetId(['project_id' => $appId, 'title' => 'Split', 'brief' => 'Split', 'agent_driver' => $driver]);
+    return DB::table('task_groups')->insertGetId(['project_id' => $projectId, 'title' => 'Split', 'brief' => 'Split', 'agent_driver' => $driver]);
 }
 
 it('copies the existing group driver into both roles and removes the single column', function (): void {

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\ToolManagerName;
@@ -14,25 +14,25 @@ use App\Models\Process;
 use App\Models\Project;
 use Illuminate\Database\QueryException;
 
-it('stores apps, AppInstances, and their process ownership', function (): void {
+it('stores apps, Instances, and their process ownership', function (): void {
     $node = Node::query()->create([
         'name' => 'app-dev',
         'public_ssh_host' => '94.237.40.75',
     ]);
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Orbit',
         'slug' => 'orbit',
         'repository_url' => 'git@github.com:nckrtl/orbit.git',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'dev',
         'environment' => 'development',
         'checkout_path' => '/home/orbit/apps/orbit',
         'root' => 'public',
         'selected_php_version' => '8.5',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
     $process = $instance
         ->processes()
@@ -43,9 +43,9 @@ it('stores apps, AppInstances, and their process ownership', function (): void {
             'runtime_config' => ['command' => 'npm run dev'],
         ]);
 
-    expect($app->appInstances()->sole()->is($instance))
+    expect($project->instances()->sole()->is($instance))
         ->toBeTrue()
-        ->and($node->appInstances()->sole()->is($instance))
+        ->and($node->instances()->sole()->is($instance))
         ->toBeTrue()
         ->and($process)
         ->toBeInstanceOf(Process::class)
@@ -58,42 +58,42 @@ it('enforces one Instance name per app and one checkout path per node', function
         'name' => 'app-dev',
         'public_ssh_host' => '94.237.40.75',
     ]);
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Orbit',
         'slug' => 'orbit',
         'repository_url' => 'git@github.com:nckrtl/orbit.git',
     ]);
     Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'first',
         'environment' => 'development',
         'checkout_path' => '/home/orbit/apps/orbit',
         'root' => 'public',
         'selected_php_version' => '8.5',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
 
     expect(fn () => Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'first',
         'environment' => 'development',
         'checkout_path' => '/home/orbit/apps/orbit-other',
         'root' => 'public',
         'selected_php_version' => '8.5',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]))
         ->toThrow(QueryException::class)
         ->and(fn () => Instance::query()->create([
-            'project_id' => $app->id,
+            'project_id' => $project->id,
             'node_id' => $node->id,
             'name' => 'second',
             'environment' => 'development',
             'checkout_path' => '/home/orbit/apps/orbit',
             'root' => 'public',
             'selected_php_version' => '8.5',
-            'status' => AppInstanceState::Active,
+            'status' => InstanceState::Active,
         ]))
         ->toThrow(QueryException::class);
 });

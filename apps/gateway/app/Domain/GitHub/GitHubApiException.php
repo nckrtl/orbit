@@ -10,13 +10,13 @@ final class GitHubApiException extends RuntimeException
 {
     public static function unavailable(): self
     {
-        return new self('GitHub could not be reached or refused the App credential.');
+        return new self('GitHub could not be reached or refused the Project credential.');
     }
 
     /** GitHub answered the token request with a client error, such as permissions the installation has not accepted. */
     public static function tokenRefused(int $status, string $message): self
     {
-        return new self('GitHub refused the App token request ('.$status.'): '.($message !== '' ? $message : 'no message').'.');
+        return new self('GitHub refused the Project token request ('.$status.'): '.($message !== '' ? $message : 'no message').'.');
     }
 
     public static function refused(): self

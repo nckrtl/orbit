@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -16,7 +16,7 @@ use Tests\Support\AppDevFakeSshExecutor;
 
 function workspace_state_instance(): Instance
 {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'orbit',
         'slug' => 'orbit',
         'repository_url' => 'git@github.com:nckrtl/orbit.git',
@@ -32,7 +32,7 @@ function workspace_state_instance(): Instance
     ]);
 
     return Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'task-13',
         'checkout_path' => '/srv/orbit/apps/orbit/task-13',
@@ -43,7 +43,7 @@ function workspace_state_instance(): Instance
 
 function workspace_state_reader(AppDevFakeSshExecutor $transport): RemoteTaskWorkspaceStateReader
 {
-    return new RemoteTaskWorkspaceStateReader(new AppDevSshExecutor(
+    return new RemoteTaskWorkspaceStateReader(new DevelopmentSshExecutor(
         $transport,
         new class implements SshKeyProvider
         {

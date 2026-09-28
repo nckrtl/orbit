@@ -33,7 +33,7 @@ final readonly class ListAgentWorkspacesAction
             TaskGroupStatus::Running, TaskGroupStatus::Reviewing, TaskGroupStatus::Settling,
         ];
         $groups = TaskGroup::query()
-            ->with(['app', 'taskable'])
+            ->with(['project', 'taskable'])
             ->where('taskable_type', 'instance')
             ->whereNotNull('taskable_id')
             ->whereIn('status', $unfinished)
@@ -44,7 +44,7 @@ final readonly class ListAgentWorkspacesAction
 
         foreach ($groups as $group) {
             $instance = $group->taskable;
-            $base = $group->app->default_branch;
+            $base = $group->project->default_branch;
 
             if (! $instance instanceof Instance || $instance->checkout_path === '' || ! is_string($base) || $base === '' || isset($workspaces[$instance->id])) {
                 continue;

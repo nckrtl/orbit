@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\AppInstanceState;
-use App\Domain\Doctor\AppInspectionData;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\InstanceInspectionData;
+use App\Domain\Doctor\ProjectInspectionData;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
@@ -18,10 +18,10 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
-use App\Infrastructure\Doctor\NativeAppStateInspector;
 use App\Infrastructure\Doctor\NativeInstanceStateInspector;
+use App\Infrastructure\Doctor\NativeProjectStateInspector;
 use App\Infrastructure\Doctor\ProductionInstanceInspectionExpectationFactory;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
@@ -48,16 +48,16 @@ use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\UnixSocketDirectory;
 
 it('checks only selected-node app projections through the fixed SSH boundary', function (): void {
-    $app = application_inspector_app();
+    $project = application_inspector_app();
     $node = application_inspector_node();
-    $appInstance = application_app_instance($app, $node);
-    application_app_instance($app, application_inspector_node(), 'other-node');
+    $instance = application_app_instance($project, $node);
+    application_app_instance($project, application_inspector_node(), 'other-node');
     $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n")]);
 
-    $inspection = application_app_inspector($ssh)->inspect($app, $node);
+    $inspection = application_app_inspector($ssh)->inspect($project, $node);
 
     expect($inspection)
-        ->toEqual(new AppInspectionData(1, true))
+        ->toEqual(new ProjectInspectionData(1, true))
         ->and($ssh->commands)
         ->toHaveCount(1)
         ->and($ssh->commands[0]->arguments)
@@ -65,8 +65,8 @@ it('checks only selected-node app projections through the fixed SSH boundary', f
             'bash',
             '-seu',
             '--',
-            $app->repository_url,
-            $appInstance->checkout_path,
+            $project->repository_url,
+            $instance->checkout_path,
             '/srv/users/nckrtl/apps',
             'nckrtl',
             '',
@@ -89,37 +89,37 @@ it('checks only selected-node app projections through the fixed SSH boundary', f
 });
 
 it('excludes removing Instances from App checkout inspection', function (): void {
-    $app = application_inspector_app();
+    $project = application_inspector_app();
     $node = application_inspector_node();
-    application_app_instance($app, $node, 'active');
-    $removing = application_app_instance($app, $node, 'removing');
+    application_app_instance($project, $node, 'active');
+    $removing = application_app_instance($project, $node, 'removing');
     application_mark_removing($removing);
     $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n")]);
 
-    $inspection = application_app_inspector($ssh)->inspect($app, $node);
+    $inspection = application_app_inspector($ssh)->inspect($project, $node);
 
     expect($inspection)
-        ->toEqual(new AppInspectionData(1, true))
+        ->toEqual(new ProjectInspectionData(1, true))
         ->and($ssh->commands)
         ->toHaveCount(1);
 });
 
 it('excludes in-flight App checkouts while preserving settled checkout failures', function (): void {
-    $app = application_inspector_app();
+    $project = application_inspector_app();
     $node = application_inspector_node();
-    $settled = application_app_instance($app, $node, 'settled');
-    $provisioning = application_app_instance($app, $node, 'provisioning');
+    $settled = application_app_instance($project, $node, 'settled');
+    $provisioning = application_app_instance($project, $node, 'provisioning');
     $provisioning->update([
-        'status' => AppInstanceState::CheckoutPrepared,
+        'status' => InstanceState::CheckoutPrepared,
         'provisioning_step' => 'checkout',
         'environment' => 'production',
     ]);
     $ssh = new AppDevFakeSshExecutor([app_inspector_result('', exitCode: 1)]);
 
-    $inspection = application_app_inspector($ssh)->inspect($app, $node);
+    $inspection = application_app_inspector($ssh)->inspect($project, $node);
 
     expect($inspection)
-        ->toEqual(new AppInspectionData(1, true, [], [(int) $settled->id]))
+        ->toEqual(new ProjectInspectionData(1, true, [], [(int) $settled->id]))
         ->and($ssh->commands)
         ->toHaveCount(1)
         ->and($ssh->commands[0]->arguments[4])
@@ -127,33 +127,33 @@ it('excludes in-flight App checkouts while preserving settled checkout failures'
 });
 
 it('keeps per-checkout app failures bounded and continues inspecting other Instances', function (): void {
-    $app = application_inspector_app();
+    $project = application_inspector_app();
     $node = application_inspector_node();
-    $failed = application_app_instance($app, $node, 'failed');
-    application_app_instance($app, $node, 'healthy');
+    $failed = application_app_instance($project, $node, 'failed');
+    application_app_instance($project, $node, 'healthy');
     $ssh = new AppDevFakeSshExecutor([
         app_inspector_result('', exitCode: 1),
         app_inspector_result("1\n"),
     ]);
 
-    $inspection = application_app_inspector($ssh)->inspect($app, $node);
+    $inspection = application_app_inspector($ssh)->inspect($project, $node);
 
     expect($inspection)
-        ->toEqual(new AppInspectionData(2, true, [], [(int) $failed->id]))
+        ->toEqual(new ProjectInspectionData(2, true, [], [(int) $failed->id]))
         ->and($ssh->commands)
         ->toHaveCount(2);
 });
 
 it('checks app-production origins as the app owner within its production root', function (): void {
-    $app = application_inspector_app();
+    $project = application_inspector_app();
     $node = application_inspector_node();
-    $appInstance = application_production_app_instance($app, $node, 'base64:'.str_repeat('A', 44));
+    $instance = application_production_app_instance($project, $node, 'base64:'.str_repeat('A', 44));
     $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n")]);
 
-    $inspection = application_app_inspector($ssh)->inspect($app, $node);
+    $inspection = application_app_inspector($ssh)->inspect($project, $node);
 
     expect($inspection)
-        ->toEqual(new AppInspectionData(1, true))
+        ->toEqual(new ProjectInspectionData(1, true))
         ->and($ssh->connections[0]->user)
         ->toBe('nckrtl')
         ->and($ssh->commands[0]->arguments)
@@ -161,12 +161,12 @@ it('checks app-production origins as the app owner within its production root', 
             'bash',
             '-seu',
             '--',
-            $app->repository_url,
-            $appInstance->checkout_path,
-            $appInstance->production_home,
-            $appInstance->production_user,
-            $app->slug,
-            $appInstance->name,
+            $project->repository_url,
+            $instance->checkout_path,
+            $instance->production_home,
+            $instance->production_user,
+            $project->slug,
+            $instance->name,
             'app-prod',
             '',
         ])
@@ -175,47 +175,47 @@ it('checks app-production origins as the app owner within its production root', 
 });
 
 it('returns a bounded mismatch for an app-production origin', function (): void {
-    $app = application_inspector_app();
+    $project = application_inspector_app();
     $node = application_inspector_node();
-    $instance = application_production_app_instance($app, $node, 'base64:'.str_repeat('B', 44));
+    $instance = application_production_app_instance($project, $node, 'base64:'.str_repeat('B', 44));
     $ssh = new AppDevFakeSshExecutor([app_inspector_result("0\n")]);
 
-    $inspection = application_app_inspector($ssh)->inspect($app, $node);
+    $inspection = application_app_inspector($ssh)->inspect($project, $node);
 
     expect($inspection)
-        ->toEqual(new AppInspectionData(1, false, [(int) $instance->id]))
+        ->toEqual(new ProjectInspectionData(1, false, [(int) $instance->id]))
         ->and($ssh->commands[0]->input)
         ->toContain('test "$(sudo -u "$user" -H -- stat -c %U "$checkout")" = "$user"');
 });
 
 it('returns a bounded app mismatch and a healthy empty selection', function (): void {
-    $app = application_inspector_app();
+    $project = application_inspector_app();
     $node = application_inspector_node();
-    $instance = application_app_instance($app, $node);
+    $instance = application_app_instance($project, $node);
     $mismatch = application_app_inspector(new AppDevFakeSshExecutor([
         app_inspector_result("0\n"),
     ]))
-        ->inspect($app, $node);
-    $empty = application_app_inspector(new AppDevFakeSshExecutor)->inspect($app, application_inspector_node());
+        ->inspect($project, $node);
+    $empty = application_app_inspector(new AppDevFakeSshExecutor)->inspect($project, application_inspector_node());
 
     expect($mismatch)
-        ->toEqual(new AppInspectionData(1, false, [(int) $instance->id]))
+        ->toEqual(new ProjectInspectionData(1, false, [(int) $instance->id]))
         ->and($empty)
-        ->toEqual(new AppInspectionData(0, true));
+        ->toEqual(new ProjectInspectionData(0, true));
 });
 
 it('fails app inspection closed for invalid intent and failed observations', function (
     string $repository,
     CommandResult $result,
 ): void {
-    $app = application_inspector_app();
+    $project = application_inspector_app();
     $node = application_inspector_node();
-    $instance = application_app_instance($app, $node);
-    $app->repository_url = $repository;
+    $instance = application_app_instance($project, $node);
+    $project->repository_url = $repository;
 
-    $inspection = fn (): AppInspectionData => application_app_inspector(
+    $inspection = fn (): ProjectInspectionData => application_app_inspector(
         new AppDevFakeSshExecutor([$result]),
-    )->inspect($app, $node);
+    )->inspect($project, $node);
 
     if ($repository === 'not a repository') {
         expect($inspection)->toThrow(DoctorInspectionException::class, '');
@@ -224,7 +224,7 @@ it('fails app inspection closed for invalid intent and failed observations', fun
     }
 
     expect($inspection())
-        ->toEqual(new AppInspectionData(1, true, [], [(int) $instance->id]));
+        ->toEqual(new ProjectInspectionData(1, true, [], [(int) $instance->id]));
 })->with([
     'invalid origin' => ['not a repository', app_inspector_result("1\n")],
     'command failure' => ['https://github.com/acme/project.git', app_inspector_result('', exitCode: 1)],
@@ -234,10 +234,10 @@ it('fails app inspection closed for invalid intent and failed observations', fun
 
 it('observes only Instance source evidence through the fixed SSH boundary', function (): void {
     $node = application_inspector_node();
-    $appInstance = application_app_instance(application_inspector_app(), $node);
+    $instance = application_app_instance(application_inspector_app(), $node);
     $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n1\n1\n1\n")]);
 
-    $inspection = application_instance_inspector($ssh)->inspect($appInstance);
+    $inspection = application_instance_inspector($ssh)->inspect($instance);
 
     expect($inspection)
         ->toEqual(new InstanceInspectionData(true, true, true, true))
@@ -246,13 +246,13 @@ it('observes only Instance source evidence through the fixed SSH boundary', func
             'bash',
             '-seu',
             '--',
-            $appInstance->app->repository_url,
-            $appInstance->checkout_path,
+            $instance->project->repository_url,
+            $instance->checkout_path,
             '/srv/users/nckrtl/apps',
             'nckrtl',
             'nckrtl',
-            $appInstance->source_layout,
-            $appInstance->starting_commit,
+            $instance->source_layout,
+            $instance->starting_commit,
         ])
         ->and($ssh->commands[0]->input)
         ->toContain('repository_layout_matches', 'origin_matches', 'source_identity_matches')
@@ -263,10 +263,10 @@ it('maps each Instance source observation without retaining diagnostics', functi
     string $remote,
     InstanceInspectionData $expected,
 ): void {
-    $appInstance = application_app_instance(application_inspector_app(), application_inspector_node());
+    $instance = application_app_instance(application_inspector_app(), application_inspector_node());
     $ssh = new AppDevFakeSshExecutor([app_inspector_result($remote, stderr: 'private-stderr')]);
 
-    $inspection = application_instance_inspector($ssh)->inspect($appInstance);
+    $inspection = application_instance_inspector($ssh)->inspect($instance);
 
     expect($inspection)->toEqual($expected)->and(json_encode($inspection))->not->toContain('private');
 })->with([
@@ -277,23 +277,23 @@ it('maps each Instance source observation without retaining diagnostics', functi
 ]);
 
 it('rejects an unavailable marker from the non-nullable development observation', function (): void {
-    $appInstance = application_app_instance(application_inspector_app(), application_inspector_node());
+    $instance = application_app_instance(application_inspector_app(), application_inspector_node());
 
     expect(fn (): InstanceInspectionData => application_instance_inspector(
         new AppDevFakeSshExecutor([app_inspector_result("2\n1\n1\n1\n")]),
-    )->inspect($appInstance))->toThrow(DoctorInspectionException::class, '');
+    )->inspect($instance))->toThrow(DoctorInspectionException::class, '');
 });
 
 it('observes production projections through fixed arguments and protected input', function (): void {
     $secret = 'doctor-production-secret';
-    $appInstance = application_production_app_instance(
+    $instance = application_production_app_instance(
         application_inspector_app(),
         application_inspector_node(),
         $secret,
     );
     $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n1\n1\n1\n1\n1\n")]);
 
-    $inspection = application_instance_inspector($ssh)->inspect($appInstance);
+    $inspection = application_instance_inspector($ssh)->inspect($instance);
     $command = $ssh->commands[0];
     $protected = $command->protectedInput;
     if (! $protected instanceof ProtectedInput) {
@@ -304,7 +304,7 @@ it('observes production projections through fixed arguments and protected input'
         throw new RuntimeException('Expected readable production inspection input.');
     }
     application_run(['bash', '-n'], $program);
-    $expectation = app(ProductionInstanceInspectionExpectationFactory::class)->make($appInstance);
+    $expectation = app(ProductionInstanceInspectionExpectationFactory::class)->make($instance);
 
     expect($inspection)
         ->toEqual(new InstanceInspectionData(
@@ -328,7 +328,7 @@ it('observes production projections through fixed arguments and protected input'
         ->and($command->maxOutputBytes)
         ->toBe(128)
         ->and(json_encode($command, JSON_THROW_ON_ERROR))
-        ->not->toContain($secret, $appInstance->production_home)
+        ->not->toContain($secret, $instance->production_home)
         ->and($program)
         ->toContain(
             base64_encode("APP_KEY=\"{$secret}\"\n"),
@@ -404,10 +404,10 @@ it('inspects non-PHP production Instances without requiring or probing a PHP-FPM
 });
 
 it('inspects a Laravel package with selected PHP but no PHP-FPM identity as having no runtime', function (): void {
-    $app = application_inspector_app();
-    $app->update(['type' => ProjectType::LaravelPackage]);
+    $project = application_inspector_app();
+    $project->update(['type' => ProjectType::LaravelPackage]);
     $instance = application_production_app_instance(
-        $app,
+        $project,
         application_inspector_node(),
         'doctor-package-secret',
     );
@@ -764,14 +764,14 @@ it('maps each production projection without retaining protected diagnostics', fu
     string $remote,
     string $field,
 ): void {
-    $appInstance = application_production_app_instance(
+    $instance = application_production_app_instance(
         application_inspector_app(),
         application_inspector_node(),
         'private-production-value',
     );
     $ssh = new AppDevFakeSshExecutor([app_inspector_result($remote)]);
 
-    $inspection = application_instance_inspector($ssh)->inspect($appInstance);
+    $inspection = application_instance_inspector($ssh)->inspect($instance);
 
     expect($inspection->{$field})
         ->toBeFalse()
@@ -822,14 +822,14 @@ it('finds each of the Instance site blocks unchanged in the one live Caddyfile',
 ]);
 
 it('keeps an unavailable production runtime observation distinct from drift', function (): void {
-    $appInstance = application_production_app_instance(
+    $instance = application_production_app_instance(
         application_inspector_app(),
         application_inspector_node(),
         'private-production-value',
     );
     $ssh = new AppDevFakeSshExecutor([app_inspector_result("0\n1\n1\n1\n2\n1\n")]);
 
-    $inspection = application_instance_inspector($ssh)->inspect($appInstance);
+    $inspection = application_instance_inspector($ssh)->inspect($instance);
 
     expect($inspection->productionHomeMatches)
         ->toBeFalse()
@@ -842,7 +842,7 @@ it('keeps an unavailable production runtime observation distinct from drift', fu
 it('fails production inspection closed for malformed, failed, truncated, and diagnostic output', function (
     CommandResult $result,
 ): void {
-    $appInstance = application_production_app_instance(
+    $instance = application_production_app_instance(
         application_inspector_app(),
         application_inspector_node(),
         'private-production-value',
@@ -851,7 +851,7 @@ it('fails production inspection closed for malformed, failed, truncated, and dia
     $exception = application_capture_exception(
         fn (): InstanceInspectionData => application_instance_inspector(
             new AppDevFakeSshExecutor([$result]),
-        )->inspect($appInstance),
+        )->inspect($instance),
     );
 
     application_assert_sanitized($exception, 'private-production-value');
@@ -863,9 +863,9 @@ it('fails production inspection closed for malformed, failed, truncated, and dia
 ]);
 
 it('reports shared Instance Git administration as non-independent', function (): void {
-    $appInstance = application_app_instance(application_inspector_app(), application_inspector_node());
-    $script = application_instance_remote_script($appInstance);
-    $fixture = application_instance_repository_fixture($appInstance->app->repository_url);
+    $instance = application_app_instance(application_inspector_app(), application_inspector_node());
+    $script = application_instance_remote_script($instance);
+    $fixture = application_instance_repository_fixture($instance->project->repository_url);
     $sharedGitDirectory = "{$fixture['sandbox']}/shared.git";
     $files = new Filesystem;
     $files->copyDirectory("{$fixture['checkout']}/.git", $sharedGitDirectory);
@@ -877,7 +877,7 @@ it('reports shared Instance Git administration as non-independent', function ():
                 'bash',
                 '-seu',
                 '--',
-                $appInstance->app->repository_url,
+                $instance->project->repository_url,
                 $fixture['checkout'],
                 $fixture['allowedRoot'],
                 $fixture['user'],
@@ -897,13 +897,13 @@ it('reports shared Instance Git administration as non-independent', function ():
 it('accepts a development checkout that switched branches within the recorded history', function (
     Closure $switch,
 ): void {
-    $appInstance = application_app_instance(application_inspector_app(), application_inspector_node());
-    $script = application_instance_remote_script($appInstance);
-    $fixture = application_instance_repository_fixture($appInstance->app->repository_url);
+    $instance = application_app_instance(application_inspector_app(), application_inspector_node());
+    $script = application_instance_remote_script($instance);
+    $fixture = application_instance_repository_fixture($instance->project->repository_url);
     $switch($fixture);
 
     try {
-        $result = application_run(application_instance_source_arguments($appInstance, $fixture), $script);
+        $result = application_run(application_instance_source_arguments($instance, $fixture), $script);
 
         expect($result->stdout)->toBe("1\n1\n1\n1\n");
     } finally {
@@ -924,13 +924,13 @@ it('accepts a development checkout that switched branches within the recorded hi
 ]);
 
 it('reports a development checkout whose history was replaced', function (Closure $replace): void {
-    $appInstance = application_app_instance(application_inspector_app(), application_inspector_node());
-    $script = application_instance_remote_script($appInstance);
-    $fixture = application_instance_repository_fixture($appInstance->app->repository_url);
+    $instance = application_app_instance(application_inspector_app(), application_inspector_node());
+    $script = application_instance_remote_script($instance);
+    $fixture = application_instance_repository_fixture($instance->project->repository_url);
     $replace($fixture);
 
     try {
-        $result = application_run(application_instance_source_arguments($appInstance, $fixture), $script);
+        $result = application_run(application_instance_source_arguments($instance, $fixture), $script);
 
         expect($result->stdout)->toBe("1\n1\n1\n0\n");
     } finally {
@@ -953,13 +953,13 @@ it('reports a development checkout whose history was replaced', function (Closur
 ]);
 
 it('reports a development checkout without a recorded starting commit', function (): void {
-    $appInstance = application_app_instance(application_inspector_app(), application_inspector_node());
-    $script = application_instance_remote_script($appInstance);
-    $fixture = application_instance_repository_fixture($appInstance->app->repository_url);
+    $instance = application_app_instance(application_inspector_app(), application_inspector_node());
+    $script = application_instance_remote_script($instance);
+    $fixture = application_instance_repository_fixture($instance->project->repository_url);
     $fixture['startingCommit'] = '';
 
     try {
-        $result = application_run(application_instance_source_arguments($appInstance, $fixture), $script);
+        $result = application_run(application_instance_source_arguments($instance, $fixture), $script);
 
         expect($result->stdout)->toBe("1\n1\n1\n0\n");
     } finally {
@@ -968,9 +968,9 @@ it('reports a development checkout without a recorded starting commit', function
 });
 
 it('compares the configured Instance origin, not the insteadOf rewrite Git applies', function (): void {
-    $appInstance = application_app_instance(application_inspector_app(), application_inspector_node());
-    $script = application_instance_remote_script($appInstance);
-    $fixture = application_instance_repository_fixture($appInstance->app->repository_url);
+    $instance = application_app_instance(application_inspector_app(), application_inspector_node());
+    $script = application_instance_remote_script($instance);
+    $fixture = application_instance_repository_fixture($instance->project->repository_url);
     application_run(['git', '-C', $fixture['checkout'], 'config', 'url.git@git.example.test:.insteadOf', 'https://git.example.test/']);
 
     try {
@@ -979,7 +979,7 @@ it('compares the configured Instance origin, not the insteadOf rewrite Git appli
                 'bash',
                 '-seu',
                 '--',
-                $appInstance->app->repository_url,
+                $instance->project->repository_url,
                 $fixture['checkout'],
                 $fixture['allowedRoot'],
                 $fixture['user'],
@@ -997,24 +997,24 @@ it('compares the configured Instance origin, not the insteadOf rewrite Git appli
 });
 
 it('checks a development checkout under the Node apps root', function (): void {
-    $app = application_inspector_app();
+    $project = application_inspector_app();
     $node = application_inspector_node();
     $node->update(['settings' => ['apps' => ['path' => '/fast/apps']]]);
-    $appInstance = application_app_instance($app, $node);
-    $appInstance->update(['checkout_path' => "/fast/apps/{$app->slug}/development"]);
+    $instance = application_app_instance($project, $node);
+    $instance->update(['checkout_path' => "/fast/apps/{$project->slug}/development"]);
     $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n")]);
 
-    $inspection = application_app_inspector($ssh)->inspect($app, $node);
+    $inspection = application_app_inspector($ssh)->inspect($project, $node);
 
     expect($inspection)
-        ->toEqual(new AppInspectionData(1, true))
+        ->toEqual(new ProjectInspectionData(1, true))
         ->and($ssh->commands[0]->arguments)
         ->toBe([
             'bash',
             '-seu',
             '--',
-            $app->repository_url,
-            "/fast/apps/{$app->slug}/development",
+            $project->repository_url,
+            "/fast/apps/{$project->slug}/development",
             '/fast/apps',
             'nckrtl',
             '',
@@ -1025,14 +1025,14 @@ it('checks a development checkout under the Node apps root', function (): void {
 });
 
 it('matches an app origin under the Node apps root despite an insteadOf rewrite', function (): void {
-    $app = application_inspector_app();
+    $project = application_inspector_app();
     $node = application_inspector_node();
-    $fixture = application_instance_repository_fixture($app->repository_url);
+    $fixture = application_instance_repository_fixture($project->repository_url);
     application_run(['git', '-C', $fixture['checkout'], 'config', 'url.git@git.example.test:.insteadOf', 'https://git.example.test/']);
     $node->update(['settings' => ['apps' => ['path' => $fixture['allowedRoot']]]]);
-    application_app_instance($app, $node)->update(['checkout_path' => $fixture['checkout']]);
+    application_app_instance($project, $node)->update(['checkout_path' => $fixture['checkout']]);
     $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n")]);
-    application_app_inspector($ssh)->inspect($app, $node);
+    application_app_inspector($ssh)->inspect($project, $node);
 
     try {
         $result = application_run($ssh->commands[0]->arguments, $ssh->commands[0]->input);
@@ -1044,9 +1044,9 @@ it('matches an app origin under the Node apps root despite an insteadOf rewrite'
 });
 
 it('still reports a truly different Instance origin despite an insteadOf rule', function (): void {
-    $appInstance = application_app_instance(application_inspector_app(), application_inspector_node());
-    $script = application_instance_remote_script($appInstance);
-    $fixture = application_instance_repository_fixture($appInstance->app->repository_url);
+    $instance = application_app_instance(application_inspector_app(), application_inspector_node());
+    $script = application_instance_remote_script($instance);
+    $fixture = application_instance_repository_fixture($instance->project->repository_url);
     application_run(['git', '-C', $fixture['checkout'], 'config', 'url.git@git.example.test:.insteadOf', 'https://git.example.test/']);
     application_run(['git', '-C', $fixture['checkout'], 'remote', 'set-url', 'origin', 'https://git.example.test/acme/other.git']);
 
@@ -1056,7 +1056,7 @@ it('still reports a truly different Instance origin despite an insteadOf rule', 
                 'bash',
                 '-seu',
                 '--',
-                $appInstance->app->repository_url,
+                $instance->project->repository_url,
                 $fixture['checkout'],
                 $fixture['allowedRoot'],
                 $fixture['user'],
@@ -1074,15 +1074,15 @@ it('still reports a truly different Instance origin despite an insteadOf rule', 
 });
 
 it('still reports a truly different app origin despite an insteadOf rule', function (): void {
-    $app = application_inspector_app();
+    $project = application_inspector_app();
     $node = application_inspector_node();
-    $fixture = application_instance_repository_fixture($app->repository_url);
+    $fixture = application_instance_repository_fixture($project->repository_url);
     application_run(['git', '-C', $fixture['checkout'], 'config', 'url.git@git.example.test:.insteadOf', 'https://git.example.test/']);
     application_run(['git', '-C', $fixture['checkout'], 'remote', 'set-url', 'origin', 'https://git.example.test/acme/other.git']);
     $node->update(['settings' => ['apps' => ['path' => $fixture['allowedRoot']]]]);
-    application_app_instance($app, $node)->update(['checkout_path' => $fixture['checkout']]);
+    application_app_instance($project, $node)->update(['checkout_path' => $fixture['checkout']]);
     $ssh = new AppDevFakeSshExecutor([app_inspector_result("0\n")]);
-    application_app_inspector($ssh)->inspect($app, $node);
+    application_app_inspector($ssh)->inspect($project, $node);
 
     try {
         $result = application_run($ssh->commands[0]->arguments, $ssh->commands[0]->input);
@@ -1094,13 +1094,13 @@ it('still reports a truly different app origin despite an insteadOf rule', funct
 });
 
 it('fails app inspection for a checkout outside the effective apps root', function (): void {
-    $app = application_inspector_app();
+    $project = application_inspector_app();
     $node = application_inspector_node();
-    $fixture = application_instance_repository_fixture($app->repository_url);
+    $fixture = application_instance_repository_fixture($project->repository_url);
     $node->update(['settings' => ['apps' => ['path' => "{$fixture['sandbox']}/configured"]]]);
-    application_app_instance($app, $node)->update(['checkout_path' => $fixture['checkout']]);
+    application_app_instance($project, $node)->update(['checkout_path' => $fixture['checkout']]);
     $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n")]);
-    application_app_inspector($ssh)->inspect($app, $node);
+    application_app_inspector($ssh)->inspect($project, $node);
 
     try {
         $result = new NativeProcessRunner()->run(
@@ -1116,9 +1116,9 @@ it('fails app inspection for a checkout outside the effective apps root', functi
 });
 
 it('keeps a symlink checkout false when ownership lookup succeeds', function (): void {
-    $appInstance = application_app_instance(application_inspector_app(), application_inspector_node());
-    $script = application_instance_remote_script($appInstance);
-    $fixture = application_instance_repository_fixture($appInstance->app->repository_url);
+    $instance = application_app_instance(application_inspector_app(), application_inspector_node());
+    $script = application_instance_remote_script($instance);
+    $fixture = application_instance_repository_fixture($instance->project->repository_url);
     $symlink = "{$fixture['allowedRoot']}/acme/symlink";
     symlink($fixture['checkout'], $symlink);
 
@@ -1128,7 +1128,7 @@ it('keeps a symlink checkout false when ownership lookup succeeds', function ():
                 'bash',
                 '-seu',
                 '--',
-                $appInstance->app->repository_url,
+                $instance->project->repository_url,
                 $symlink,
                 $fixture['allowedRoot'],
                 $fixture['user'],
@@ -1146,9 +1146,9 @@ it('keeps a symlink checkout false when ownership lookup succeeds', function ():
 });
 
 it('keeps a non-canonical checkout false when ownership lookup succeeds', function (): void {
-    $appInstance = application_app_instance(application_inspector_app(), application_inspector_node());
-    $script = application_instance_remote_script($appInstance);
-    $fixture = application_instance_repository_fixture($appInstance->app->repository_url);
+    $instance = application_app_instance(application_inspector_app(), application_inspector_node());
+    $script = application_instance_remote_script($instance);
+    $fixture = application_instance_repository_fixture($instance->project->repository_url);
     $nonCanonicalCheckout = "{$fixture['allowedRoot']}/acme/../acme/development";
 
     try {
@@ -1157,7 +1157,7 @@ it('keeps a non-canonical checkout false when ownership lookup succeeds', functi
                 'bash',
                 '-seu',
                 '--',
-                $appInstance->app->repository_url,
+                $instance->project->repository_url,
                 $nonCanonicalCheckout,
                 $fixture['allowedRoot'],
                 $fixture['user'],
@@ -1177,13 +1177,13 @@ it('keeps a non-canonical checkout false when ownership lookup succeeds', functi
 it('fails instance observations closed on remote errors', function (
     CommandResult $remote,
 ): void {
-    $appInstance = application_app_instance(application_inspector_app(), application_inspector_node());
+    $instance = application_app_instance(application_inspector_app(), application_inspector_node());
 
     expect(
         fn (): InstanceInspectionData => application_instance_inspector(
             new AppDevFakeSshExecutor([$remote]),
         )
-            ->inspect($appInstance),
+            ->inspect($instance),
     )
         ->toThrow(DoctorInspectionException::class, '');
 })->with([
@@ -1194,12 +1194,12 @@ it('fails instance observations closed on remote errors', function (
 
 it('redacts thrown remote timeouts while preserving the capped deadlines', function (): void {
     $node = application_inspector_node();
-    $appInstance = application_app_instance(application_inspector_app(), $node);
+    $instance = application_app_instance(application_inspector_app(), $node);
     $remoteTimeout = application_timeout('remote-secret-token');
     expect((string) $remoteTimeout)->toContain('remote-secret-token');
     $remote = new ApplicationInspectorTimeoutSshExecutor($remoteTimeout);
     $remoteException = application_capture_exception(
-        fn (): InstanceInspectionData => application_instance_inspector($remote)->inspect($appInstance),
+        fn (): InstanceInspectionData => application_instance_inspector($remote)->inspect($instance),
     );
     application_assert_sanitized($remoteException, sentinel: 'remote-secret-token');
     expect($remote->connections[0]->commandTimeout)
@@ -1225,23 +1225,23 @@ function application_run(array $arguments, ?string $input = null): CommandResult
     return $result;
 }
 
-function application_instance_remote_script(Instance $appInstance): string
+function application_instance_remote_script(Instance $instance): string
 {
     $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n1\n1\n1\n")]);
-    application_instance_inspector($ssh)->inspect($appInstance);
+    application_instance_inspector($ssh)->inspect($instance);
 
     return $ssh->commands[0]->input;
 }
 
 function application_production_observation_program(string $observation, string $setup): string
 {
-    $appInstance = application_production_app_instance(
+    $instance = application_production_app_instance(
         application_inspector_app(),
         application_inspector_node(),
         'private-production-value',
     );
     $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n1\n1\n1\n1\n1\n")]);
-    application_instance_inspector($ssh)->inspect($appInstance);
+    application_instance_inspector($ssh)->inspect($instance);
     $protected = $ssh->commands[0]->protectedInput;
     if (! $protected instanceof ProtectedInput) {
         throw new RuntimeException('Expected protected production inspection input.');
@@ -1325,13 +1325,13 @@ function application_commit(string $checkout, string $file): void
  * @param  array{sandbox: string, repository: string, allowedRoot: string, checkout: string, startingCommit: string, user: string, group: string}  $fixture
  * @return non-empty-list<string>
  */
-function application_instance_source_arguments(Instance $appInstance, array $fixture): array
+function application_instance_source_arguments(Instance $instance, array $fixture): array
 {
     return [
         'bash',
         '-seu',
         '--',
-        $appInstance->app->repository_url,
+        $instance->project->repository_url,
         $fixture['checkout'],
         $fixture['allowedRoot'],
         $fixture['user'],
@@ -1391,21 +1391,21 @@ function application_inspector_app(): Project
     ]);
 }
 
-function application_app_instance(Project $app, Node $node, string $name = 'development'): Instance
+function application_app_instance(Project $project, Node $node, string $name = 'development'): Instance
 {
-    $app->update(['default_branch' => 'main', 'root' => 'public']);
+    $project->update(['default_branch' => 'main', 'root' => 'public']);
     if (! $node->roles()->whereIn('role', [RoleName::AppDev->value, RoleName::AppProd->value])->exists()) {
         $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     }
 
     return Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => $name,
-        'checkout_path' => "/srv/users/nckrtl/apps/{$app->slug}/{$name}",
+        'checkout_path' => "/srv/users/nckrtl/apps/{$project->slug}/{$name}",
         'branch' => 'development',
         'starting_commit' => str_repeat('a', 40),
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
 }
 
@@ -1419,15 +1419,15 @@ function application_mark_removing(Instance $instance): void
     DB::statement('DROP TRIGGER instances_removal_status_update');
 
     try {
-        $instance->update(['status' => AppInstanceState::Removing]);
+        $instance->update(['status' => InstanceState::Removing]);
     } finally {
         DB::statement($trigger);
     }
 }
 
-function application_app_inspector(AppDevFakeSshExecutor $ssh): NativeAppStateInspector
+function application_app_inspector(AppDevFakeSshExecutor $ssh): NativeProjectStateInspector
 {
-    return new NativeAppStateInspector(
+    return new NativeProjectStateInspector(
         $ssh,
         application_inspector_keys(),
         application_inspector_hosts(),
@@ -1442,7 +1442,7 @@ function application_instance_inspector(
     SshExecutor $ssh,
 ): NativeInstanceStateInspector {
     return new NativeInstanceStateInspector(
-        new AppDevSshExecutor($ssh, application_inspector_keys(), application_inspector_hosts()),
+        new DevelopmentSshExecutor($ssh, application_inspector_keys(), application_inspector_hosts()),
         new CommandDeadline,
         application_inspector_accounts(),
         new CheckoutRemovalBoundary(new ProtectedPathCatalog),
@@ -1450,16 +1450,16 @@ function application_instance_inspector(
     );
 }
 
-function application_production_app_instance(Project $app, Node $node, string $secret): Instance
+function application_production_app_instance(Project $project, Node $node, string $secret): Instance
 {
     NodeRole::query()->firstOrCreate(
         ['node_id' => $node->id, 'role' => RoleName::AppProd],
         ['status' => LifecycleStatus::Active],
     );
-    $app->update(['default_branch' => 'main', 'root' => 'public']);
-    $user = "orbit-app-{$app->id}";
+    $project->update(['default_branch' => 'main', 'root' => 'public']);
+    $user = "orbit-app-{$project->id}";
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'production',
         'environment' => 'production',
@@ -1475,12 +1475,12 @@ function application_production_app_instance(Project $app, Node $node, string $s
         'selected_php_version' => '8.5',
         'source_is_laravel' => true,
         'provisioning_step' => 'active',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
-        'domain' => "{$app->slug}.example.test",
+        'domain' => "{$project->slug}.example.test",
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Public,
         'status' => RouteStatus::Pending,

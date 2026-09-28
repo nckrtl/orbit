@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\Domain\AgentView\AgentProcessView;
 use App\Domain\Hibernation\HibernationException;
 use App\Domain\Processes\ProcessRuntimeManager;
-use App\Infrastructure\Hibernation\RemoteAppInstanceRuntimeReadiness;
+use App\Infrastructure\Hibernation\RemoteInstanceRuntimeReadiness;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
@@ -69,9 +69,9 @@ final class AgentViewReadinessKnownHosts implements KnownHostsStore
     public function put(string $host, int $port, HostKey $key): void {}
 }
 
-function agent_view_readiness(CountingStatusRuntimeManager $runtime, int $timeoutSeconds = 5): RemoteAppInstanceRuntimeReadiness
+function agent_view_readiness(CountingStatusRuntimeManager $runtime, int $timeoutSeconds = 5): RemoteInstanceRuntimeReadiness
 {
-    return new RemoteAppInstanceRuntimeReadiness(
+    return new RemoteInstanceRuntimeReadiness(
         runtime: $runtime,
         ssh: new AppDevFakeSshExecutor,
         keys: new AgentViewReadinessKeys,

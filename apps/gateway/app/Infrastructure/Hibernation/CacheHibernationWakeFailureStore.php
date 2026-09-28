@@ -11,22 +11,22 @@ final readonly class CacheHibernationWakeFailureStore implements HibernationWake
 {
     public function __construct(private Repository $cache) {}
 
-    public function remember(int $appInstanceId, string $message): void
+    public function remember(int $instanceId, string $message): void
     {
-        $this->cache->put($this->key($appInstanceId), $message, 120);
+        $this->cache->put($this->key($instanceId), $message, 120);
     }
 
-    public function pull(int $appInstanceId): ?string
+    public function pull(int $instanceId): ?string
     {
-        $key = $this->key($appInstanceId);
+        $key = $this->key($instanceId);
         $message = $this->cache->get($key);
         $this->cache->forget($key);
 
         return is_string($message) && $message !== '' ? $message : null;
     }
 
-    private function key(int $appInstanceId): string
+    private function key(int $instanceId): string
     {
-        return 'hibernation.wake-failed.'.$appInstanceId;
+        return 'hibernation.wake-failed.'.$instanceId;
     }
 }

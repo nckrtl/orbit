@@ -217,7 +217,7 @@ final readonly class AddProcessAction
             throw new ResourceOperationException('process.preset_target_invalid', 'The Process preset is not supported.', 422);
         }
 
-        if (! $target->appInstance?->placedOnAppDev()) {
+        if (! $target->instance?->placedOnAppDev()) {
             throw new ResourceOperationException(
                 errorCode: 'process.preset_target_invalid',
                 message: "The {$data->preset} preset requires a development Instance.",
@@ -258,8 +258,8 @@ final readonly class AddProcessAction
         }
 
         if ($data->preset === AgentationMcpPreset::NAME) {
-            $this->agentationPorts->assign($target->appInstance);
-            $this->agentationUrls->project($target->appInstance);
+            $this->agentationPorts->assign($target->instance);
+            $this->agentationUrls->project($target->instance);
         }
     }
 }

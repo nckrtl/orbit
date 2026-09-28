@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Processes;
 
-use App\Domain\AppInstances\AppInstanceState;
-use App\Domain\Hibernation\AppDevHibernationPolicy;
+use App\Domain\Hibernation\DevelopmentHibernationPolicy;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -77,7 +77,7 @@ final readonly class ProcessTargetResolver
 
         if (
             $instance->node->status !== LifecycleStatus::Active
-            || $instance->status === AppInstanceState::Removing
+            || $instance->status === InstanceState::Removing
         ) {
             throw new ResourceOperationException(
                 errorCode: 'process.target_inactive',
@@ -230,11 +230,11 @@ final readonly class ProcessTargetResolver
             user: $user,
             checkoutPath: $workingDirectory,
             certificateScope: $certificateScope,
-            appInstance: $instance,
+            instance: $instance,
             environmentFile: $environmentFile,
             productionReleaseLayout: $productionReleaseLayout,
             routeDomain: $this->developmentRouteDomain($instance),
-            onDemandHostStart: new AppDevHibernationPolicy()->usesOnDemandHostStart($instance),
+            onDemandHostStart: new DevelopmentHibernationPolicy()->usesOnDemandHostStart($instance),
         );
     }
 
@@ -258,7 +258,7 @@ final readonly class ProcessTargetResolver
         $this->ensureLinux($instance->node);
 
         if (
-            $instance->status === AppInstanceState::Active
+            $instance->status === InstanceState::Active
             && $instance->node->status === LifecycleStatus::Active
             && $instance->provisioning_step === 'active'
         ) {

@@ -2,11 +2,11 @@
 title: "Applications"
 description: "How a Project becomes an Instance on a Node: create or adopt a development checkout, provision its endpoint, clone to production, move, and remove."
 covers:
-  - apps/gateway/app/Actions/AppInstances/{CreateAppInstanceAction,RegisterAppInstanceAction,ListAppInstancesAction,ShowAppInstanceAction}.php
-  - apps/gateway/app/Domain/AppInstances/{AppInstanceState,AppInstanceSourceLayout,AppInstanceDestinationGuard,ComposerSourceClassifier,Development*}.php
-  - apps/gateway/app/Domain/AppInstances/Registration/**
-  - apps/gateway/app/Infrastructure/AppInstances/{NativeDevelopmentAppInstanceProvisioner,RemoteDevelopmentAppInstanceSourceLifecycle,RemoteDevelopmentAppInstanceConfigurator,RemoteRegistrationSourceManager,RemoteAppInstanceDestinationGuard}.php
-  - apps/gateway/app/{Http/Controllers/Api/AppInstancesController.php,Http/Requests/AppInstances/**,Data/AppInstances/**,Models/Instance.php}
+  - apps/gateway/app/Actions/Instances/{CreateInstanceAction,RegisterInstanceAction,ListInstancesAction,ShowInstanceAction}.php
+  - apps/gateway/app/Domain/Instances/{InstanceState,InstanceSourceLayout,InstanceDestinationGuard,ComposerSourceClassifier,Development*}.php
+  - apps/gateway/app/Domain/Instances/Registration/**
+  - apps/gateway/app/Infrastructure/Instances/{NativeDevelopmentInstanceProvisioner,RemoteDevelopmentInstanceSourceLifecycle,RemoteDevelopmentInstanceConfigurator,RemoteRegistrationSourceManager,RemoteInstanceDestinationGuard}.php
+  - apps/gateway/app/{Http/Controllers/Api/InstancesController.php,Http/Requests/Instances/**,Data/Instances/**,Models/Instance.php}
   - apps/cli/app/Commands/Instances/{CreateInstanceCommand,RegisterInstanceCommand,ListInstancesCommand,ShowInstanceCommand,InstanceOutput}.php
   - apps/cli/app/Services/Git/**
 ---

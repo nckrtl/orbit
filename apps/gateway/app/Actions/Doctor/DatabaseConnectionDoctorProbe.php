@@ -6,11 +6,11 @@ namespace App\Actions\Doctor;
 
 use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorIssueData;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Doctor\DatabaseConnectionDoctorInspection;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorNodeContext;
+use App\Domain\Instances\InstanceState;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
@@ -59,7 +59,7 @@ final readonly class DatabaseConnectionDoctorProbe implements DoctorFamilyProbe
 
             foreach ($attachmentIssues as $instanceId => $found) {
                 $instance = $instances->get($instanceId);
-                if (! $instance instanceof Instance || $instance->status === AppInstanceState::Removing) {
+                if (! $instance instanceof Instance || $instance->status === InstanceState::Removing) {
                     continue;
                 }
 
@@ -82,13 +82,13 @@ final readonly class DatabaseConnectionDoctorProbe implements DoctorFamilyProbe
     private function attachmentsOn(Node $node): Collection
     {
         return DatabaseConnectionTarget::query()
-            ->with(['databaseConnection', 'appInstance'])
+            ->with(['databaseConnection', 'instance'])
             ->whereIn(
                 'instance_id',
                 Instance::query()
                     ->select('id')
                     ->where('node_id', $node->id)
-                    ->where('status', '!=', AppInstanceState::Removing),
+                    ->where('status', '!=', InstanceState::Removing),
             )
             ->orderBy('id')
             ->get();

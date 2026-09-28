@@ -3,12 +3,12 @@
 declare(strict_types=1);
 
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\AppInstances\ProductionPhpRuntimeManager;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppProd\AppProdSshExecutor;
+use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Metrics\NativeServiceMetricsRuntime;
 use App\Infrastructure\Metrics\ServiceMetricsNode;
 use App\Infrastructure\Processes\CommandResult;
@@ -43,7 +43,7 @@ beforeEach(function (): void {
     $this->builds = new FakeNodeCaddyBuilds;
     $this->productionPhp = Mockery::mock(ProductionPhpRuntimeManager::class)->shouldIgnoreMissing();
     $this->runtime = new NativeServiceMetricsRuntime(
-        new AppProdSshExecutor(
+        new ProductionSshExecutor(
             $this->ssh,
             new class implements SshKeyProvider
             {
@@ -225,14 +225,14 @@ function service_metrics_runtime_instance(Node $node): Instance
         ['role' => RoleName::AppProd],
         ['status' => LifecycleStatus::Active],
     );
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Metrics fixture',
         'slug' => 'metrics-fixture',
         'repository_url' => 'https://example.test/metrics-fixture.git',
     ]);
 
     return Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'production',
         'environment' => 'production',

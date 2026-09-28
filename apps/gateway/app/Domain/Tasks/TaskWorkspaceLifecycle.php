@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Instances\InstanceState;
 use App\Models\Instance;
 use App\Models\TaskGroup;
 
@@ -16,15 +16,15 @@ use App\Models\TaskGroup;
  */
 final readonly class TaskWorkspaceLifecycle
 {
-    public static function settledState(Instance $instance): AppInstanceState
+    public static function settledState(Instance $instance): InstanceState
     {
-        $instance->loadMissing(['app', 'taskGroups']);
+        $instance->loadMissing(['project', 'taskGroups']);
 
-        if (self::isTaskWorkspace($instance) && ! InstanceProvisionIntent::visitableFor($instance->app)) {
-            return AppInstanceState::SourceResolved;
+        if (self::isTaskWorkspace($instance) && ! InstanceProvisionIntent::visitableFor($instance->project)) {
+            return InstanceState::SourceResolved;
         }
 
-        return AppInstanceState::Active;
+        return InstanceState::Active;
     }
 
     /**

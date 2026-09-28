@@ -23,7 +23,7 @@ use Symfony\Component\Process\Process;
 use Tests\Support\FakeTaskCheckRunner;
 
 it('baseline installs vendor before check on a fresh workspace', function (): void {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'baseline vendor install',
         'slug' => 'baseline-vendor-install',
         'repository_url' => 'git@example.test:baseline-vendor-install.git',
@@ -38,14 +38,14 @@ it('baseline installs vendor before check on a fresh workspace', function (): vo
         'wireguard_ip' => '10.44.0.191',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'baseline-vendor',
         'checkout_path' => '/tmp/tasks-baseline-vendor-install',
         'status' => 'reserved',
     ]);
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Baseline vendor install',
         'brief' => 'Install missing dependencies before check.',
         'status' => TaskGroupStatus::Running,
@@ -61,7 +61,7 @@ it('baseline installs vendor before check on a fresh workspace', function (): vo
         'status' => TaskStatus::Running,
     ]);
     ProjectLifecycleStep::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'phase' => 'setup',
         'name' => 'Project setup',
         'command' => 'echo project setup',
@@ -89,7 +89,7 @@ it('baseline installs vendor before check on a fresh workspace', function (): vo
 });
 
 it('reports missing dependencies instead of claiming the default branch is broken', function (?string $failedStep, string $output, string $reasonText): void {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'baseline install failure',
         'slug' => 'baseline-install-failure',
         'repository_url' => 'git@example.test:baseline-install-failure.git',
@@ -104,14 +104,14 @@ it('reports missing dependencies instead of claiming the default branch is broke
         'wireguard_ip' => '10.44.0.192',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'baseline-failure',
         'checkout_path' => '/tmp/tasks-baseline-install-failure',
         'status' => 'reserved',
     ]);
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Baseline install failure',
         'brief' => 'Report dependency installation failure.',
         'status' => TaskGroupStatus::Running,
@@ -157,7 +157,7 @@ it('reports missing dependencies instead of claiming the default branch is broke
 ]);
 
 it('keeps a baseline check error failed when the tree changed during the run', function (): void {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'baseline changed error',
         'slug' => 'baseline-changed-error',
         'repository_url' => 'git@example.test:baseline-changed-error.git',
@@ -172,14 +172,14 @@ it('keeps a baseline check error failed when the tree changed during the run', f
         'wireguard_ip' => '10.44.0.193',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'baseline-changed-error',
         'checkout_path' => '/tmp/tasks-baseline-changed-error',
         'status' => 'reserved',
     ]);
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Baseline changed error',
         'brief' => 'Report a check error even when the tree changes.',
         'status' => TaskGroupStatus::Running,
@@ -232,7 +232,7 @@ it('installs the root Composer package without a lockfile, removes the lockfile 
     chmod($bin.'/composer', 0755);
 
     try {
-        $app = Project::query()->create([
+        $project = Project::query()->create([
             'name' => 'package without lockfile',
             'slug' => 'package-without-lockfile',
             'repository_url' => 'git@example.test:package-without-lockfile.git',
@@ -246,14 +246,14 @@ it('installs the root Composer package without a lockfile, removes the lockfile 
             'wireguard_ip' => '10.44.0.193',
         ]);
         $instance = Instance::query()->create([
-            'project_id' => $app->id,
+            'project_id' => $project->id,
             'node_id' => $node->id,
             'name' => 'baseline-lockless',
             'checkout_path' => $checkout,
             'status' => 'reserved',
         ]);
         $group = TaskGroup::query()->create([
-            'project_id' => $app->id,
+            'project_id' => $project->id,
             'title' => 'Lockless package',
             'brief' => 'Install the root package.',
             'status' => TaskGroupStatus::Running,

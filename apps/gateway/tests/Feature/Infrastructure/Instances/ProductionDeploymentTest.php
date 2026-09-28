@@ -1,0 +1,446 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Domain\GitHub\RepositoryReadAccess;
+use App\Domain\Instances\Deployment\DeploymentEvent;
+use App\Domain\Instances\Deployment\DeploymentOutputStream;
+use App\Domain\Instances\Deployment\DeploymentPhase;
+use App\Domain\Instances\Deployment\DeploymentRelease;
+use App\Domain\Instances\Deployment\DeploymentRequest;
+use App\Domain\Instances\Deployment\DeploymentStep;
+use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AppProd\ProductionSshExecutor;
+use App\Infrastructure\Instances\RemoteProductionDeployment;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessOutput;
+use App\Infrastructure\Processes\ProcessOutputStream;
+use App\Infrastructure\Processes\ProtectedInput;
+use App\Infrastructure\Ssh\HostKey;
+use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Models\Instance;
+use App\Models\Node;
+use App\Models\Project;
+use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Http;
+use Symfony\Component\Process\Process;
+use Tests\Feature\GitHub\GitHubTestSupport;
+use Tests\Support\AppDevFakeSshExecutor;
+
+it('prepares a fresh branch-pinned release without changing current', function (): void {
+    [$deployment, $ssh, $instance] = orb219_remote_deployment([
+        new CommandResult(0, "20260911-a1\t".str_repeat('a', 40)."\n", '', 1, false),
+    ]);
+
+    $release = $deployment->prepare($instance, 'release');
+
+    expect($release->name)
+        ->toBe('20260911-a1')
+        ->and($release->path)
+        ->toBe('/home/orbit-app-1/releases/20260911-a1')
+        ->and($release->commit)
+        ->toBe(str_repeat('a', 40))
+        ->and($ssh->commands[0]->arguments)
+        ->toBe([
+            'bash',
+            '-seu',
+            '--',
+            'https://example.test/deployment.git',
+            'orbit-app-1',
+            '/home/orbit-app-1',
+            (string) $instance->id,
+            'release',
+            '20260911-a1',
+            'public',
+        ])
+        ->and($ssh->commands[0]->input)
+        ->toContain(
+            'git clone --no-checkout --origin origin',
+            'git -C "$release" fetch --prune -- origin',
+            'show-ref --verify --quiet "$source_ref"',
+            'checkout --detach "$source_ref"',
+            'ln -s ../../.env "$release_environment"',
+            'test ! -e "$release"',
+            'unexpected_symlink=$(sudo find -P "$selected_root" -type l -print -quit)',
+        )
+        ->not->toContain('mv -Tf -- "$temporary" "$current"');
+});
+
+it('carries a GitHub App token only in protected input for a covered repository', function (): void {
+    [$deployment, $ssh, $instance] = orb219_remote_deployment([
+        new CommandResult(0, "20260911-a1\t".str_repeat('a', 40)."\n", '', 1, false),
+    ]);
+    $instance->project->update(['repository_url' => 'git@github.com:acme/deployment.git']);
+    GitHubTestSupport::storeApp();
+    Http::fake([
+        'https://api.github.com/repos/acme/deployment/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_sentinel'], 201),
+    ]);
+
+    $deployment->prepare($instance->refresh(), 'release');
+
+    $command = $ssh->commands[0];
+    $header = base64_encode('x-access-token:ghs_sentinel');
+    $script = stream_get_contents($command->protectedInput?->stream());
+
+    expect($command->input)->toBeNull()
+        ->and(implode(' ', $command->arguments))->not->toContain('ghs_sentinel')->not->toContain($header)
+        ->and($command->arguments[3])->toBe('git@github.com:acme/deployment.git')
+        ->and($script)
+        ->toContain("export GIT_CONFIG_VALUE_0='Authorization: Basic {$header}'")
+        ->toContain('git_read sudo $git_read_sudo -u "$user" -H git clone --no-checkout --origin origin')
+        ->toContain('git_read sudo $git_read_sudo -u "$user" -H git -C "$release" fetch --prune -- origin');
+});
+
+it('runs protected application input from the release with streaming controls', function (): void {
+    [$deployment, $ssh, $instance] = orb219_remote_deployment([
+        new CommandResult(0, 'final-out', 'final-error', 12, false),
+    ]);
+    $events = [];
+    $request = new DeploymentRequest(static function (DeploymentEvent $event) use (&$events): void {
+        $events[] = $event;
+    });
+    $step = new DeploymentStep(
+        'build',
+        DeploymentPhase::BeforeActivation,
+        'printf "private-command"',
+        37,
+    );
+
+    $result = $deployment->executeStep(
+        $instance,
+        new DeploymentRelease('retained', '/home/orbit-app-1/releases/retained', str_repeat('b', 40)),
+        $step,
+        $request,
+    );
+    $command = $ssh->commands[0];
+    ($command->output)(new ProcessOutput(ProcessOutputStream::Stdout, 'one'));
+    ($command->output)(new ProcessOutput(ProcessOutputStream::Stderr, 'two'));
+
+    expect($result->stdout)
+        ->toBe('final-out')
+        ->and($command->arguments)
+        ->toBe(['bash', '-seu', '--', 'orbit-app-1', '/home/orbit-app-1', '/home/orbit-app-1/releases/retained'])
+        ->and($command->timeout)
+        ->toBe(37.0)
+        ->and($command->protectedInput)
+        ->toBeInstanceOf(ProtectedInput::class)
+        ->and($command->input)
+        ->toBeNull()
+        ->and(implode("\0", $command->arguments))
+        ->not->toContain('private-command')
+        ->and(print_r($command, return: true))
+        ->not->toContain('private-command')
+        ->and(stream_get_contents($command->protectedInput->stream()))
+        ->toContain(
+            'owner=$PPID',
+            'sudo -u "$user" -H setsid --wait bash -eu -c \'umask 077; cd -- "$1"; exec bash -eu "$2"\'',
+            'supervisor=$!',
+            'candidate=$(pgrep -P "$supervisor"',
+            '[ "$1" = "$supervisor" ] && [ "$2" = "$candidate" ] && [ "$3" = "$expected_uid" ]',
+            'process_group=$(discover_process_group)',
+            'while kill -0 "$owner" 2>/dev/null && kill -0 "$supervisor" 2>/dev/null',
+            'sudo -u "$user" -H kill -TERM -- "-$process_group"',
+            'sudo -u "$user" -H kill -KILL -- "-$process_group"',
+            'sudo -u "$user" -H kill -TERM -- "-$watched_group"',
+            'sudo -u "$user" -H kill -KILL -- "-$watched_group"',
+            base64_encode('printf "private-command"'),
+        )
+        ->not->toContain(
+            'group_file',
+            'completion_file',
+            'sudo kill -TERM',
+            'sudo kill -KILL',
+        )
+        ->and(array_map(
+            static fn (DeploymentEvent $event): array => [$event->step, $event->stream, $event->value],
+            $events,
+        ))
+        ->toBe([
+            ['build', DeploymentOutputStream::Stdout, 'one'],
+            ['build', DeploymentOutputStream::Stderr, 'two'],
+        ]);
+});
+
+it('publishes one validated release with an atomic current replacement', function (): void {
+    [$deployment, $ssh, $instance] = orb219_remote_deployment([
+        new CommandResult(0, "retained\t".str_repeat('b', 40)."\n", '', 1, false),
+    ]);
+    $release = new DeploymentRelease(
+        'retained',
+        '/home/orbit-app-1/releases/retained',
+        str_repeat('b', 40),
+    );
+
+    $selected = $deployment->activate($instance, $release);
+
+    expect($selected)
+        ->toBe($release)
+        ->and($ssh->commands[0]->input)
+        ->toContain(
+            'config --null --get remote.origin.url',
+            'realpath -m -- "$release/$relative_root"',
+            'unexpected_symlink=$(sudo find -P "$selected_root" -type l -print -quit)',
+            'sudo setfacl -m u:caddy:--x "$release"',
+            'sudo setfacl -P -R -m u:caddy:r-X "$selected_root"',
+            'sudo find -P "$selected_root" -type d -exec setfacl -m d:u:caddy:r-x -- {} +',
+            'ln -s "releases/$name" "$temporary"',
+            'mv -Tf -- "$temporary" "$current"',
+        );
+});
+
+it('inspects current and retained releases through owned source and root boundaries', function (): void {
+    [$deployment, $ssh, $instance] = orb219_remote_deployment([
+        new CommandResult(0, "initial\t".str_repeat('a', 40)."\n", '', 1, false),
+        new CommandResult(0, "retained\t".str_repeat('b', 40)."\n", '', 1, false),
+    ]);
+
+    $selected = $deployment->selected($instance);
+    $retained = $deployment->retained($instance, 'retained');
+
+    expect($selected?->path)
+        ->toBe('/home/orbit-app-1/releases/initial')
+        ->and($retained->path)
+        ->toBe('/home/orbit-app-1/releases/retained');
+
+    foreach ($ssh->commands as $command) {
+        expect($command->input)->toContain(
+            'config --null --get remote.origin.url',
+            'realpath -m -- "$release/$relative_root"',
+            'unexpected_symlink=$(sudo find -P "$selected_root" -type l -print -quit)',
+            'find -P "$release" -xdev ! -user "$user"',
+            'realpath -e -- "$release_environment"',
+        );
+    }
+
+    expect($ssh->commands[0]->input)
+        ->toContain('case "$release" in "$releases"/*)')
+        ->and($ssh->commands[1]->input)
+        ->toContain('release="$releases/$name"');
+});
+
+it('reports no selection when current does not exist', function (): void {
+    [$deployment, $ssh, $instance] = orb219_remote_deployment([
+        new CommandResult(0, "NONE\n", '', 1, false),
+    ]);
+
+    expect($deployment->selected($instance))
+        ->toBeNull()
+        ->and($ssh->commands)
+        ->toHaveCount(1);
+});
+
+it('lists only validated retained release names and the current selection', function (): void {
+    [$deployment, $ssh, $instance] = orb219_remote_deployment([
+        new CommandResult(
+            0,
+            "SELECTED\tinitial\nRELEASE\tinitial\t".str_repeat('a', 40)."\nRELEASE\tretained\t".str_repeat('b', 40)."\n",
+            '',
+            1,
+            false,
+        ),
+    ]);
+
+    $state = $deployment->releases($instance);
+
+    expect($state->releases)
+        ->toBe(['initial', 'retained'])
+        ->and($state->selectedRelease)
+        ->toBe('initial')
+        ->and($ssh->commands[0]->input)
+        ->toContain(
+            'find -P "$releases" -mindepth 1 -maxdepth 1 -type d',
+            'config --null --get remote.origin.url',
+            'realpath -m -- "$release/$relative_root"',
+            'unexpected_symlink=$(sudo find -P "$selected_root" -type l -print -quit)',
+            'find -P "$release" -xdev ! -user "$user"',
+            'realpath -e -- "$release_environment"',
+        );
+});
+
+it('reports a nullable current selection while retaining present releases', function (): void {
+    [$deployment, $ssh, $instance] = orb219_remote_deployment([
+        new CommandResult(
+            0,
+            "SELECTED\t\nRELEASE\tinitial\t".str_repeat('a', 40)."\n",
+            '',
+            1,
+            false,
+        ),
+    ]);
+
+    $state = $deployment->releases($instance);
+
+    expect($state->releases)
+        ->toBe(['initial'])
+        ->and($state->selectedRelease)
+        ->toBeNull()
+        ->and($ssh->commands)
+        ->toHaveCount(1);
+});
+
+it('skips partial directories while executing the retained release listing', function (): void {
+    [$deployment, $ssh, $instance] = orb219_remote_deployment([
+        new CommandResult(0, "SELECTED\tvalid\nRELEASE\tvalid\t".str_repeat('a', 40)."\n", '', 1, false),
+    ]);
+    $deployment->releases($instance);
+
+    $filesystem = new Filesystem;
+    $sandbox = sys_get_temp_dir().'/orbit-release-list-'.bin2hex(random_bytes(6));
+    $home = $sandbox.'/home';
+    $release = $home.'/releases/valid';
+    $partial = $home.'/releases/partial';
+    $repository = 'https://example.test/deployment.git';
+    $user = 'orbit-fixture';
+
+    try {
+        $filesystem->ensureDirectoryExists($release.'/public');
+        $filesystem->ensureDirectoryExists($partial.'/.git');
+        $filesystem->ensureDirectoryExists($home.'/state');
+        $filesystem->ensureDirectoryExists($sandbox.'/bin');
+        file_put_contents($home.'/.env', "APP_ENV=production\n");
+        file_put_contents($release.'/public/index.php', "<?php\n");
+        symlink('../../.env', $release.'/.env');
+        symlink('releases/valid', $home.'/current');
+        file_put_contents(
+            $home.'/state/release-layout',
+            $repository."\0".$user."\0".$home."\0initial\0",
+        );
+        chmod($home.'/state/release-layout', 0600);
+        file_put_contents(
+            $sandbox.'/bin/sudo',
+            <<<'BASH'
+                #!/usr/bin/env bash
+                if [ "${1:-}" = -u ]; then shift 2; fi
+                if [ "${1:-}" = -H ]; then shift; fi
+                exec "$@"
+                BASH,
+        );
+        chmod($sandbox.'/bin/sudo', 0755);
+
+        foreach ([
+            ['git', 'init', '--quiet', $release],
+            ['git', '-C', $release, 'config', 'user.email', 'orbit@example.test'],
+            ['git', '-C', $release, 'config', 'user.name', 'Orbit Test'],
+            ['git', '-C', $release, 'remote', 'add', 'origin', $repository],
+            ['git', '-C', $release, 'add', 'public/index.php'],
+            ['git', '-C', $release, 'commit', '--quiet', '-m', 'fixture'],
+        ] as $arguments) {
+            new Process($arguments)->mustRun();
+        }
+        $commit = trim((new Process(['git', '-C', $release, 'rev-parse', 'HEAD']))->mustRun()->getOutput());
+
+        $script = str_replace(
+            [
+                'state_directory="/var/lib/orbit/app-instance-sources/$instance"',
+                'test "$home" = "/home/$user"',
+                'root:root:600',
+                '! -user "$user"',
+                '! -group "$user"',
+            ],
+            [
+                'state_directory="$home/state"',
+                'test -d "$home"',
+                '"$(id -un):$(id -gn):600"',
+                '! -uid "$(id -u)"',
+                '! -gid "$(id -g)"',
+            ],
+            $ssh->commands[0]->input ?? '',
+        );
+        $process = new Process(
+            ['bash', '-seu', '--', $repository, $user, $home, 'fixture-instance', 'public'],
+            env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')],
+        );
+        $process->setInput($script);
+        $process->mustRun();
+
+        expect($process->getOutput())
+            ->toBe("SELECTED\tvalid\nRELEASE\tvalid\t{$commit}\n")
+            ->not->toContain('partial');
+    } finally {
+        $filesystem->deleteDirectory($sandbox);
+    }
+});
+
+it('rejects traversal before asking the remote host to inspect a release', function (): void {
+    [$deployment, $ssh, $instance] = orb219_remote_deployment([]);
+
+    try {
+        $deployment->retained($instance, '../foreign');
+        $this->fail('The unsafe retained release was accepted.');
+    } catch (ResourceOperationException $exception) {
+        expect($exception->errorCode)->toBe('rollback.release_invalid');
+    }
+
+    expect($ssh->commands)->toBe([]);
+});
+
+/**
+ * @param  list<CommandResult>  $results
+ * @return array{RemoteProductionDeployment, AppDevFakeSshExecutor, Instance}
+ */
+function orb219_remote_deployment(array $results): array
+{
+    $ssh = new AppDevFakeSshExecutor($results);
+    $executor = new ProductionSshExecutor(
+        $ssh,
+        new class implements SshKeyProvider
+        {
+            public function privateKeyPath(): string
+            {
+                return '/tmp/orbit-test-key';
+            }
+
+            public function publicKey(): string
+            {
+                return 'ssh-ed25519 test';
+            }
+        },
+        new class implements KnownHostsStore
+        {
+            public function path(): string
+            {
+                return '/tmp/orbit-test-known-hosts';
+            }
+
+            public function put(string $host, int $port, HostKey $key): void {}
+        },
+    );
+    $node = Node::query()->create([
+        'name' => 'deployment-node',
+        'status' => 'active',
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.219',
+        'wireguard_ip' => '10.44.0.219',
+        'user' => 'orbit',
+    ]);
+    $node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
+    $project = Project::query()->create([
+        'name' => 'Deployment',
+        'slug' => 'deployment',
+        'repository_url' => 'https://example.test/deployment.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => 'production',
+        'environment' => 'production',
+        'source_layout' => 'release',
+        'checkout_path' => '/home/orbit-app-1/releases/initial',
+        'production_user' => 'orbit-app-1',
+        'production_home' => '/home/orbit-app-1',
+        'root' => 'public',
+        'branch' => 'main',
+        'provisioning_step' => 'active',
+        'status' => 'active',
+    ]);
+
+    return [
+        new RemoteProductionDeployment($executor, app(RepositoryReadAccess::class), static fn (): string => '20260911-a1'),
+        $ssh,
+        $instance,
+    ];
+}

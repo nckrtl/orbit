@@ -81,8 +81,8 @@ final readonly class ConfiguredStoragePathValidator
     {
         $paths = [];
 
-        foreach (Instance::query()->where('node_id', $node->id)->get(['checkout_path']) as $appInstance) {
-            $path = StoragePath::tryParse($appInstance->checkout_path);
+        foreach (Instance::query()->where('node_id', $node->id)->get(['checkout_path']) as $instance) {
+            $path = StoragePath::tryParse($instance->checkout_path);
 
             if ($path instanceof StoragePath) {
                 $paths[] = $path;

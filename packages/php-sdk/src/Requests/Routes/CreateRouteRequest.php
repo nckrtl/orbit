@@ -44,7 +44,7 @@ final class CreateRouteRequest extends GatewayRequest implements HasBody
             [
                 'domain' => $this->domain,
                 'publication' => $this->publication,
-                'app_instance_id' => $this->appInstanceId,
+                'instance_id' => $this->appInstanceId,
                 'node_id' => $this->nodeId,
                 'upstream' => $this->upstream,
                 'process_id' => $this->processId,

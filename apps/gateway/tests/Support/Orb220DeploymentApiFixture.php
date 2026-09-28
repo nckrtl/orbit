@@ -4,17 +4,17 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
-use App\Domain\AppInstances\Deployment\DeploymentEvent;
-use App\Domain\AppInstances\Deployment\DeploymentOutputStream;
-use App\Domain\AppInstances\Deployment\DeploymentRelease;
-use App\Domain\AppInstances\Deployment\DeploymentReleaseState;
-use App\Domain\AppInstances\Deployment\DeploymentRequest;
-use App\Domain\AppInstances\Deployment\DeploymentStep;
-use App\Domain\AppInstances\Deployment\ProductionDeployment;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentResult;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentSynchronizer;
-use App\Domain\AppInstances\ProductionPhpRuntimeManager;
+use App\Domain\Instances\Deployment\DeploymentEvent;
+use App\Domain\Instances\Deployment\DeploymentOutputStream;
+use App\Domain\Instances\Deployment\DeploymentRelease;
+use App\Domain\Instances\Deployment\DeploymentReleaseState;
+use App\Domain\Instances\Deployment\DeploymentRequest;
+use App\Domain\Instances\Deployment\DeploymentStep;
+use App\Domain\Instances\Deployment\ProductionDeployment;
+use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Instances\Environment\InstanceEnvironmentResult;
+use App\Domain\Instances\Environment\InstanceEnvironmentSynchronizer;
+use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -58,7 +58,7 @@ final readonly class Orb220DeploymentApiFixture
         ]);
         $owner->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
         $caller->accessibleNodes()->attach($owner->id);
-        $app = Project::query()->create([
+        $project = Project::query()->create([
             'name' => 'Deployment Stream',
             'slug' => 'deployment-stream',
             'repository_url' => 'https://example.test/deployment-stream.git',
@@ -66,7 +66,7 @@ final readonly class Orb220DeploymentApiFixture
             'root' => 'public',
         ]);
         $instance = Instance::query()->create([
-            'project_id' => $app->id,
+            'project_id' => $project->id,
             'node_id' => $owner->id,
             'name' => 'production',
             'environment' => 'production',
@@ -102,8 +102,8 @@ final readonly class Orb220DeploymentApiFixture
 
         app()->instance(ProductionDeployment::class, $deployment);
         app()->instance(DeploymentStreamConnection::class, $connection);
-        app()->instance(AppInstanceEnvironmentOperationLock::class, new Orb220DeploymentLock);
-        app()->instance(AppInstanceEnvironmentSynchronizer::class, new Orb220EnvironmentSynchronizer);
+        app()->instance(InstanceEnvironmentOperationLock::class, new Orb220DeploymentLock);
+        app()->instance(InstanceEnvironmentSynchronizer::class, new Orb220EnvironmentSynchronizer);
         app()->instance(ProductionPhpRuntimeManager::class, new Orb220PhpRuntimeManager);
 
         return new self($caller, $owner, $instance->fresh(), $deployment, $connection);
@@ -124,7 +124,7 @@ final class Orb220ProductionDeployment implements ProductionDeployment
 
     public ?string $requestedRelease = null;
 
-    public function prepare(Instance $appInstance, string $branch): DeploymentRelease
+    public function prepare(Instance $instance, string $branch): DeploymentRelease
     {
         $this->invocations++;
 
@@ -136,7 +136,7 @@ final class Orb220ProductionDeployment implements ProductionDeployment
     }
 
     public function executeStep(
-        Instance $appInstance,
+        Instance $instance,
         DeploymentRelease $release,
         DeploymentStep $step,
         DeploymentRequest $request,
@@ -162,19 +162,19 @@ final class Orb220ProductionDeployment implements ProductionDeployment
         return new CommandResult(0, '', '', 1, false);
     }
 
-    public function activate(Instance $appInstance, DeploymentRelease $release): DeploymentRelease
+    public function activate(Instance $instance, DeploymentRelease $release): DeploymentRelease
     {
         $this->activations++;
 
         return $release;
     }
 
-    public function selected(Instance $appInstance): ?DeploymentRelease
+    public function selected(Instance $instance): ?DeploymentRelease
     {
         return $this->release('initial');
     }
 
-    public function retained(Instance $appInstance, string $name): DeploymentRelease
+    public function retained(Instance $instance, string $name): DeploymentRelease
     {
         $this->invocations++;
         $this->requestedRelease = $name;
@@ -182,7 +182,7 @@ final class Orb220ProductionDeployment implements ProductionDeployment
         return $this->release($name);
     }
 
-    public function releases(Instance $appInstance): DeploymentReleaseState
+    public function releases(Instance $instance): DeploymentReleaseState
     {
         return new DeploymentReleaseState(['fresh', 'initial'], 'initial');
     }
@@ -237,29 +237,29 @@ final class Orb220StreamConnection implements DeploymentStreamConnection
     }
 }
 
-final readonly class Orb220DeploymentLock implements AppInstanceEnvironmentOperationLock
+final readonly class Orb220DeploymentLock implements InstanceEnvironmentOperationLock
 {
-    public function run(array $appInstanceIds, Closure $operation): mixed
+    public function run(array $instanceIds, Closure $operation): mixed
     {
         return $operation();
     }
 }
 
-final readonly class Orb220EnvironmentSynchronizer implements AppInstanceEnvironmentSynchronizer
+final readonly class Orb220EnvironmentSynchronizer implements InstanceEnvironmentSynchronizer
 {
-    public function execute(Instance $instance): AppInstanceEnvironmentResult
+    public function execute(Instance $instance): InstanceEnvironmentResult
     {
-        return new AppInstanceEnvironmentResult($instance->id, 'sync', false, 0);
+        return new InstanceEnvironmentResult($instance->id, 'sync', false, 0);
     }
 }
 
 final readonly class Orb220PhpRuntimeManager implements ProductionPhpRuntimeManager
 {
-    public function converge(Instance $appInstance): void {}
+    public function converge(Instance $instance): void {}
 
-    public function convergeMonitoring(Instance $appInstance, bool $enabled): void {}
+    public function convergeMonitoring(Instance $instance, bool $enabled): void {}
 
-    public function refreshCache(Instance $appInstance): void {}
+    public function refreshCache(Instance $instance): void {}
 
-    public function remove(Instance $appInstance): void {}
+    public function remove(Instance $instance): void {}
 }

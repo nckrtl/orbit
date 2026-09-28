@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Http\Streaming;
 
-use App\Domain\AppInstances\Deployment\AppInstanceDeploymentRecorder;
-use App\Domain\AppInstances\Deployment\DeploymentCancellation;
-use App\Domain\AppInstances\Deployment\DeploymentEvent;
-use App\Domain\AppInstances\Deployment\DeploymentEventCollector;
-use App\Domain\AppInstances\Deployment\DeploymentFailureBoundary;
-use App\Domain\AppInstances\Deployment\DeploymentProgressPhase;
-use App\Domain\AppInstances\Deployment\DeploymentRequest;
-use App\Domain\AppInstances\Deployment\DeploymentResult;
+use App\Domain\Instances\Deployment\DeploymentCancellation;
+use App\Domain\Instances\Deployment\DeploymentEvent;
+use App\Domain\Instances\Deployment\DeploymentEventCollector;
+use App\Domain\Instances\Deployment\DeploymentFailureBoundary;
+use App\Domain\Instances\Deployment\DeploymentProgressPhase;
+use App\Domain\Instances\Deployment\DeploymentRequest;
+use App\Domain\Instances\Deployment\DeploymentResult;
+use App\Domain\Instances\Deployment\InstanceDeploymentRecorder;
 use App\Models\Instance;
 use Closure;
 use Illuminate\Http\Request;
@@ -22,7 +22,7 @@ final readonly class DeploymentStreamResponse
 {
     public function __construct(
         private DeploymentStreamConnection $connection,
-        private AppInstanceDeploymentRecorder $recorder,
+        private InstanceDeploymentRecorder $recorder,
     ) {}
 
     /** @param Closure(DeploymentRequest): DeploymentResult $operation */

@@ -620,7 +620,7 @@ function database_cli_request_id(): string
 function database_cli_attachment_data(): array
 {
     return [
-        'app_instance_id' => 12,
+        'instance_id' => 12,
         'slug' => 'app',
         'prefix' => 'DB',
         'keys' => ['DB_CONNECTION', 'DB_DATABASE', 'DB_HOST', 'DB_PASSWORD', 'DB_PORT', 'DB_USERNAME'],

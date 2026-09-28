@@ -2,13 +2,13 @@
 title: "Projects"
 description: "How a Project records one repository, its type, and the source defaults that Instances inherit, and how create, update, and removal work."
 covers:
-  - apps/gateway/app/{Actions,Domain,Infrastructure}/Apps/**
+  - apps/gateway/app/{Actions,Domain,Infrastructure}/Projects/**
   - apps/gateway/app/Domain/Projects/{ProjectType,ProjectCode}.php
   - apps/gateway/app/Domain/SourceControl/{GitRepositoryIdentity,GitRepositoryOrigin,ProjectRoot,RelativeWebRoot,RepositoryDefaultBranchResolver}.php
   - apps/gateway/app/Infrastructure/SourceControl/NativeRepositoryDefaultBranchResolver.php
-  - apps/gateway/app/Http/{Controllers/Api/AppsController.php,Requests/Apps/**}
-  - apps/gateway/app/Data/Apps/**
-  - apps/gateway/app/Models/{Project,AppUpdate}.php
+  - apps/gateway/app/Http/{Controllers/Api/ProjectsController.php,Requests/Projects/**}
+  - apps/gateway/app/Data/Projects/**
+  - apps/gateway/app/Models/{Project,ProjectUpdate}.php
   - apps/cli/app/Commands/Apps/**
 ---
 

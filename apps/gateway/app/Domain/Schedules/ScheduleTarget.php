@@ -17,11 +17,11 @@ final readonly class ScheduleTarget
         public string $workingDirectory,
         public string $shell,
         public bool $loginShell,
-        public ?Instance $appInstance,
+        public ?Instance $instance,
     ) {}
 
     public function isProduction(): bool
     {
-        return $this->appInstance?->placedOnAppProd() ?? false;
+        return $this->instance?->placedOnAppProd() ?? false;
     }
 }

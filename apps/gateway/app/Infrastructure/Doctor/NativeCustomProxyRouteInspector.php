@@ -8,7 +8,7 @@ use App\Domain\Doctor\CustomProxyRouteInspector;
 use App\Domain\Doctor\CustomProxyRouteObservation;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Routes\CustomProxyUpstream;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
@@ -22,7 +22,7 @@ use Throwable;
 final readonly class NativeCustomProxyRouteInspector implements CustomProxyRouteInspector
 {
     public function __construct(
-        private AppDevSshExecutor $ssh,
+        private DevelopmentSshExecutor $ssh,
         private CommandDeadline $deadline,
         private string $liveCaddyfilePath = '/etc/caddy/Caddyfile',
     ) {}

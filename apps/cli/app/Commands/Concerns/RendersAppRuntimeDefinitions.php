@@ -68,7 +68,7 @@ trait RendersAppRuntimeDefinitions
         return self::SUCCESS;
     }
 
-    /** @return array{id: string, app_id: int, name: string, environments: list<string>, spec: array<string, mixed>} */
+    /** @return array{id: string, project_id: int, name: string, environments: list<string>, spec: array<string, mixed>} */
     private function commandSafeDefinition(AppRuntimeDefinitionResponse $definition): array
     {
         $data = $definition->toArray();

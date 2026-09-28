@@ -5,8 +5,8 @@ declare(strict_types=1);
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\UbuntuRelease;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
-use App\Infrastructure\AppProd\AppProdSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Nodes\PhpFpmRuntimeIniRenderer;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Processes\CommandResult;
@@ -1394,18 +1394,18 @@ function php_package_node(RoleName $role): Node
     return $node->load('roles');
 }
 
-function php_package_app_dev_ssh(AppDevFakeSshExecutor $transport): AppDevSshExecutor
+function php_package_app_dev_ssh(AppDevFakeSshExecutor $transport): DevelopmentSshExecutor
 {
-    return new AppDevSshExecutor(
+    return new DevelopmentSshExecutor(
         ssh: $transport,
         keys: php_package_keys(),
         knownHosts: php_package_known_hosts(),
     );
 }
 
-function php_package_app_prod_ssh(AppDevFakeSshExecutor $transport): AppProdSshExecutor
+function php_package_app_prod_ssh(AppDevFakeSshExecutor $transport): ProductionSshExecutor
 {
-    return new AppProdSshExecutor(
+    return new ProductionSshExecutor(
         ssh: $transport,
         keys: php_package_keys(),
         knownHosts: php_package_known_hosts(),

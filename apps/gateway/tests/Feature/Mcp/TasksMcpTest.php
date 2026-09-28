@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\AppInstanceRemover;
+use App\Domain\Instances\InstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Models\AppInstanceRemoval;
 use App\Models\Instance;
+use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\TaskGroup;
@@ -129,13 +129,13 @@ it('cancels a running or queued group through MCP and removes its shared Instanc
     ]);
     $group->taskable()->associate($instance);
     $group->save();
-    app()->instance(AppInstanceRemover::class, new class implements AppInstanceRemover
+    app()->instance(InstanceRemover::class, new class implements InstanceRemover
     {
-        public function execute(Instance $instance, bool $force): AppInstanceRemoval
+        public function execute(Instance $instance, bool $force): InstanceRemoval
         {
             $instance->delete();
 
-            return new AppInstanceRemoval;
+            return new InstanceRemoval;
         }
     });
 

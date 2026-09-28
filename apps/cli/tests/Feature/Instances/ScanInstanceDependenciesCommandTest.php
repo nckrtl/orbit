@@ -98,8 +98,8 @@ function fleet_cli_listed_instance(int $id, string $name, string $environment, s
     $payload['domain'] = $domain;
     $payload['url'] = 'https://'.$domain;
     $payload['route']['domain'] = $domain;
-    $payload['route']['target']['app_instance_id'] = $id;
-    $payload['route']['targets'][0]['app_instance_id'] = $id;
+    $payload['route']['target']['instance_id'] = $id;
+    $payload['route']['targets'][0]['instance_id'] = $id;
 
     return $payload;
 }

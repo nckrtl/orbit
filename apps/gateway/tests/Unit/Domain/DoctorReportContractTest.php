@@ -6,7 +6,6 @@ use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorIssueData;
 use App\Data\Doctor\DoctorNodeReportData;
 use App\Data\Doctor\DoctorReportData;
-use App\Domain\Doctor\AppDoctorIssueCode;
 use App\Domain\Doctor\DatabaseConnectionDoctorIssueCode;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorInspectionException;
@@ -16,6 +15,7 @@ use App\Domain\Doctor\FirewallDoctorIssueCode;
 use App\Domain\Doctor\InstanceDoctorIssueCode;
 use App\Domain\Doctor\NodeDoctorIssueCode;
 use App\Domain\Doctor\ProcessDoctorIssueCode;
+use App\Domain\Doctor\ProjectDoctorIssueCode;
 use App\Domain\Doctor\RoleDoctorIssueCode;
 use App\Domain\Doctor\RouteDoctorIssueCode;
 use App\Domain\Doctor\ScheduleDoctorIssueCode;
@@ -61,7 +61,7 @@ it('serializes bounded doctor reports and derives status precedence', function (
     $report = DoctorReportData::fromNodes([$node]);
 
     expect(array_map(static fn (DoctorFamily $family): string => $family->value, DoctorFamily::cases()))
-        ->toEqual(['node', 'role', 'app', 'instance', 'schedule', 'tool', 'process', 'firewall', 'database_connection', 'route'])
+        ->toEqual(['node', 'role', 'project', 'instance', 'schedule', 'tool', 'process', 'firewall', 'database_connection', 'route'])
         ->and($family->status->value)
         ->toBe('unverifiable')
         ->and($family->family)
@@ -178,7 +178,7 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
     $catalogs = [
         DoctorFamily::Node->value => NodeDoctorIssueCode::cases(),
         DoctorFamily::Role->value => RoleDoctorIssueCode::cases(),
-        DoctorFamily::App->value => AppDoctorIssueCode::cases(),
+        DoctorFamily::Project->value => ProjectDoctorIssueCode::cases(),
         DoctorFamily::Instance->value => InstanceDoctorIssueCode::cases(),
         DoctorFamily::Schedule->value => ScheduleDoctorIssueCode::cases(),
         DoctorFamily::Tool->value => ToolDoctorIssueCode::cases(),
@@ -225,7 +225,7 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'role.inspection_failed',
             'role.node_unreachable',
         ],
-        'app' => ['app.repository_origin_mismatch', 'app.inspection_failed', 'app.node_unreachable'],
+        'project' => ['project.repository_origin_mismatch', 'project.inspection_failed', 'project.node_unreachable'],
         'instance' => [
             'instance.lifecycle_not_active',
             'instance.removal_stuck',

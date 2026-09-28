@@ -5,10 +5,10 @@ covers:
   - apps/gateway/app/{Domain,Actions,Infrastructure,Data}/Routes/**
   - apps/gateway/app/Http/{Controllers/Api/RoutesController.php,Requests/Routes/**}
   - apps/gateway/app/Models/{Route,RouteTarget,RouteCustomProxy}.php
-  - apps/gateway/app/Infrastructure/AppDev/{AppDevCaddyConfigRenderer,AppDevSiteRepository,NativeDevelopmentProjectionOperationLock}.php
+  - apps/gateway/app/Infrastructure/AppDev/{DevelopmentCaddyConfigRenderer,DevelopmentSiteRepository,NativeDevelopmentProjectionOperationLock}.php
   - apps/gateway/app/Domain/AppDev/{DevelopmentServerEndpoint,AgentationEndpoint,PrivateDnsAnswerExpiry}.php
   - apps/gateway/app/Infrastructure/Clusters/NativeClusterRouterOperationLock.php
-  - apps/gateway/app/Infrastructure/AppInstances/NativeProductionRouteProjector.php
+  - apps/gateway/app/Infrastructure/Instances/{NativeProductionRouteProjector,NativeDevelopmentRouteProjector}.php
 ---
 
 # Routes

@@ -17,7 +17,7 @@ use App\Models\Process;
 final readonly class RemoteVitePortRuntime implements VitePortRuntime
 {
     public function __construct(
-        private AppDevSshExecutor $ssh,
+        private DevelopmentSshExecutor $ssh,
         private RemoteAppDevCaddyManager $caddy,
         private DevelopmentProjectionOperationLock $projection,
         private SystemdProcessRenderer $systemd,

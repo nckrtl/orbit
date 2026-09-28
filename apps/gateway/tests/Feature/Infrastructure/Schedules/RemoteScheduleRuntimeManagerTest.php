@@ -66,12 +66,12 @@ it('requires the selected production release even when installing a disabled Sch
         'wireguard_ip' => '10.44.0.4',
     ]);
     $node->roles()->create(['role' => 'app-prod', 'status' => LifecycleStatus::Active]);
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Release target',
         'slug' => 'release-target',
         'repository_url' => 'https://example.test/release-target.git',
     ]);
-    $instance = $app->appInstances()->create([
+    $instance = $project->instances()->create([
         'node_id' => $node->id,
         'name' => 'main',
         'checkout_path' => '/home/managed/releases/prepared',

@@ -9,7 +9,7 @@ use SensitiveParameter;
 interface GitHubApi
 {
     /**
-     * Exchange the one-time code of an App manifest registration for the App's credentials.
+     * Exchange the one-time code of a Project manifest registration for the App's credentials.
      *
      * @throws GitHubApiException
      */

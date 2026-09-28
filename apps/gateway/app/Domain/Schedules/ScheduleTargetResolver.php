@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Schedules;
 
-use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
@@ -29,7 +29,7 @@ final readonly class ScheduleTargetResolver
         try {
             return match ($type) {
                 ScheduleTargetType::Node => $this->node(Node::query()->findOrFail($id)),
-                ScheduleTargetType::Instance => $this->appInstance(
+                ScheduleTargetType::Instance => $this->instance(
                     Instance::query()->with('node')->findOrFail($id),
                 ),
             };
@@ -66,12 +66,12 @@ final readonly class ScheduleTargetResolver
 
         if (
             $instance->node->status !== LifecycleStatus::Active
-            || $instance->status === AppInstanceState::Removing
+            || $instance->status === InstanceState::Removing
         ) {
             $this->unavailable();
         }
 
-        $target = $this->appInstance($instance, requireActive: false);
+        $target = $this->instance($instance, requireActive: false);
 
         if ($target->node->id !== $schedule->host_node_id) {
             $this->unavailable();
@@ -90,7 +90,7 @@ final readonly class ScheduleTargetResolver
                     Node::query()->findOrFail($schedule->target_id),
                     requireActive: false,
                 ),
-                ScheduleTargetType::Instance => $this->appInstance(
+                ScheduleTargetType::Instance => $this->instance(
                     Instance::query()->with('node')->findOrFail($schedule->target_id),
                     requireActive: false,
                 ),
@@ -136,18 +136,18 @@ final readonly class ScheduleTargetResolver
             workingDirectory: $account->home,
             shell: $account->shell,
             loginShell: true,
-            appInstance: null,
+            instance: null,
         );
     }
 
-    private function appInstance(Instance $instance, bool $requireActive = true): ScheduleTarget
+    private function instance(Instance $instance, bool $requireActive = true): ScheduleTarget
     {
         $instance->loadMissing('node');
         $this->assertNode($instance->node, $requireActive);
 
         if (
             $requireActive
-            && ($instance->status !== AppInstanceState::Active
+            && ($instance->status !== InstanceState::Active
                 || $instance->provisioning_step !== 'active')
         ) {
             $this->unavailable();
@@ -195,7 +195,7 @@ final readonly class ScheduleTargetResolver
             workingDirectory: $workingDirectory,
             shell: $account->shell,
             loginShell: $loginShell,
-            appInstance: $instance,
+            instance: $instance,
         );
     }
 

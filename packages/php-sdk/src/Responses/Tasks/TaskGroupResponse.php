@@ -42,8 +42,8 @@ final readonly class TaskGroupResponse
     {
         return new self(
             id: TaskFields::id($data, 'id', 'task group', $requestId),
-            appId: TaskFields::id($data, 'app_id', 'task group', $requestId),
-            app: TaskFields::nullableText($data, 'app'),
+            appId: TaskFields::id($data, 'project_id', 'task group', $requestId),
+            app: TaskFields::nullableText($data, 'project'),
             projectCode: TaskFields::nullableText($data, 'project_code'),
             title: TaskFields::text($data, 'title', 'task group', $requestId),
             brief: TaskFields::text($data, 'brief', 'task group', $requestId),
@@ -83,8 +83,8 @@ final readonly class TaskGroupResponse
     {
         return [
             'id' => $this->id,
-            'app_id' => $this->appId,
-            'app' => $this->app,
+            'project_id' => $this->appId,
+            'project' => $this->app,
             'project_code' => $this->projectCode,
             'title' => $this->title,
             'brief' => $this->brief,

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Processes\ProcessTargetType;
 use App\Domain\Routes\RouteProvenance;
@@ -21,7 +21,7 @@ it('derives development placement from the Instance', function (): void {
 
     $target = app(ProcessTargetResolver::class)->resolve(ProcessTargetType::Instance, $instance->id);
 
-    expect($target->appInstance?->is($instance))
+    expect($target->instance?->is($instance))
         ->toBeTrue()
         ->and($target->node->is($instance->node))
         ->toBeTrue()
@@ -90,14 +90,14 @@ it('refuses the legacy flat production home as a process working directory', fun
     app(ProcessTargetResolver::class)->forStart(process_target_process($instance));
 })->throws(ResourceOperationException::class, 'no valid Process placement');
 
-it('rejects inactive AppInstances and Nodes for admission', function (array $instanceChanges, array $nodeChanges): void {
+it('rejects inactive Instances and Nodes for admission', function (array $instanceChanges, array $nodeChanges): void {
     $instance = process_target_instance();
     $instance->update($instanceChanges);
     $instance->node->update($nodeChanges);
 
     app(ProcessTargetResolver::class)->forAdmission($instance->refresh()->load('node'));
 })->with([
-    'inactive Instance' => [['status' => AppInstanceState::SourceResolved], []],
+    'inactive Instance' => [['status' => InstanceState::SourceResolved], []],
     'unfinished provisioning' => [['provisioning_step' => 'source'], []],
     'inactive Node' => [[], ['status' => LifecycleStatus::Failed]],
 ])->throws(ResourceOperationException::class, 'not active');
@@ -105,16 +105,16 @@ it('rejects inactive AppInstances and Nodes for admission', function (array $ins
 it('allows inspection and cleanup during incomplete removal when the Node remains reachable', function (): void {
     $instance = process_target_instance();
     $instance->update([
-        'status' => AppInstanceState::SourceResolved,
+        'status' => InstanceState::SourceResolved,
         'failed_step' => 'runtime_cleanup',
         'error_code' => 'process.remove_failed',
     ]);
     $process = process_target_process($instance->refresh());
     $resolver = app(ProcessTargetResolver::class);
 
-    expect($resolver->forInspection($process)->appInstance?->id)
+    expect($resolver->forInspection($process)->instance?->id)
         ->toBe($instance->id)
-        ->and($resolver->forRemoval($process)->appInstance?->id)
+        ->and($resolver->forRemoval($process)->instance?->id)
         ->toBe($instance->id);
 });
 
@@ -141,7 +141,7 @@ it('derives Node placement from the managed user home', function (): void {
 
     $target = app(ProcessTargetResolver::class)->resolve(ProcessTargetType::Node, $node->id);
 
-    expect($target->appInstance)
+    expect($target->instance)
         ->toBeNull()
         ->and($target->node->is($node))
         ->toBeTrue()
@@ -198,7 +198,7 @@ it('allows inspection of a Node Process when the Node is inactive', function ():
 
 it('rejects a leftover Process owner before target resolution', function (): void {
     $process = Process::query()->create([
-        'owner_type' => 'App\\Models\\AppInstance',
+        'owner_type' => 'App\\Models\\Instance',
         'owner_id' => 999_999,
         'name' => 'legacy',
         'runtime' => 'systemd',
@@ -214,7 +214,7 @@ it('rejects a leftover Process owner before target resolution', function (): voi
 
 function process_target_instance(string $environment = 'development', array $attributes = []): Instance
 {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'https://example.test/docs.git',
@@ -234,13 +234,13 @@ function process_target_instance(string $environment = 'development', array $att
     ]);
 
     return Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'main',
         'checkout_path' => '/srv/orbit/docs/main',
         'source_is_laravel' => false,
         'provisioning_step' => 'active',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
         ...$attributes,
     ])->load('node');
 }

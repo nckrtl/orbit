@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
@@ -358,20 +358,20 @@ it('keeps read-only gateway status available before peer enrollment', function (
 
 function peer_boundary_process(Node $node): Process
 {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Private App',
         'slug' => 'private-app',
         'repository_url' => 'https://example.test/private.git',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'main',
         'environment' => 'development',
         'checkout_path' => '/home/orbit/apps/private-app',
         'source_is_laravel' => true,
         'provisioning_step' => 'active',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
 
     return Process::query()->create([

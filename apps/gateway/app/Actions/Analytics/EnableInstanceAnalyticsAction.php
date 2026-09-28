@@ -10,9 +10,9 @@ use App\Data\Routes\RouteData;
 use App\Domain\Analytics\AnalyticsTrackingHosts;
 use App\Domain\Analytics\AnalyticsTrackingRouteProjector;
 use App\Domain\Analytics\AnalyticsTrackingUpstream;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteKind;
@@ -36,7 +36,7 @@ final readonly class EnableInstanceAnalyticsAction
         private AnalyticsTrackingRouteProjector $projection,
         private PublishPublicRouteAction $publication,
         private RouteStateResolver $state,
-        private AppInstanceEnvironmentOperationLock $operations,
+        private InstanceEnvironmentOperationLock $operations,
         private RecordEventBroadcaster $broadcaster,
         private ?MetricsFleetReconciler $metrics = null,
     ) {}

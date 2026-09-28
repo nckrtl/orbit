@@ -28,14 +28,14 @@ final readonly class TaskWorkspaceSummary
 
         $diff = $workspace['diff'];
         $groups = TaskGroup::query()
-            ->with('app')
+            ->with('project')
             ->where('taskable_type', 'instance')
             ->where('taskable_id', $workspace['instance_id'])
             ->whereIn('status', [...TaskGroupStatus::active(), TaskGroupStatus::Backlog, TaskGroupStatus::Todo])
             ->get();
 
         foreach ($groups as $group) {
-            if ($group->app->default_branch !== $workspace['base']) {
+            if ($group->project->default_branch !== $workspace['base']) {
                 continue;
             }
 

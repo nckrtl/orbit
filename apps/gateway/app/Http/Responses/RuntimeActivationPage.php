@@ -92,8 +92,8 @@ final readonly class RuntimeActivationPage
             return trim($domain);
         }
 
-        $instance->loadMissing('app');
-        $name = $instance->app->name;
+        $instance->loadMissing('project');
+        $name = $instance->project->name;
 
         return $name !== '' ? $name : $instance->name;
     }

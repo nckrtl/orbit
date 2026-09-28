@@ -24,20 +24,20 @@ function agent_workspace_node(string $name, string $address): Node
 
 function agent_workspace_group(Node $node, string $name, TaskGroupStatus $status, ?string $start = null): Instance
 {
-    $app = Project::query()->firstOrCreate(['slug' => 'agent-workspaces'], [
+    $project = Project::query()->firstOrCreate(['slug' => 'agent-workspaces'], [
         'name' => 'Agent workspaces',
         'repository_url' => 'git@example.test:agent-workspaces.git',
         'default_branch' => 'main',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => $name,
         'checkout_path' => "/home/orbit/apps/agent-workspaces/{$name}",
         'status' => 'source_resolved',
         'starting_commit' => $start,
     ]);
-    $group = TaskGroup::query()->create(['project_id' => $app->id, 'title' => $name, 'brief' => 'Brief', 'status' => $status]);
+    $group = TaskGroup::query()->create(['project_id' => $project->id, 'title' => $name, 'brief' => 'Brief', 'status' => $status]);
     $group->taskable()->associate($instance);
     $group->save();
 

@@ -61,7 +61,7 @@ function crumbs(kind: Kind, row: AnyRecord, fleet: Fleet, go: ReturnType<typeof 
         case "instances":
             return instanceCrumbs(row as Instance);
         case "deployments":
-            return under(instanceCrumbs(instanceById((row as Deployment).app_instance_id)));
+            return under(instanceCrumbs(instanceById((row as Deployment).instance_id)));
         case "processes":
         case "schedules": {
             const owned = row as Process | Schedule;

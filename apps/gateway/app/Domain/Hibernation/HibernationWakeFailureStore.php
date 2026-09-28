@@ -6,7 +6,7 @@ namespace App\Domain\Hibernation;
 
 interface HibernationWakeFailureStore
 {
-    public function remember(int $appInstanceId, string $message): void;
+    public function remember(int $instanceId, string $message): void;
 
-    public function pull(int $appInstanceId): ?string;
+    public function pull(int $instanceId): ?string;
 }

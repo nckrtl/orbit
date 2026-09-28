@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Actions\Routes;
 
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteAssociationGuard;
@@ -25,7 +25,7 @@ use Throwable;
 final readonly class RemoveRouteAction
 {
     public function __construct(
-        private AppInstanceEnvironmentOperationLock $environmentOperations,
+        private InstanceEnvironmentOperationLock $environmentOperations,
         private DevelopmentProjectionOperationLock $owner,
         private RouteAssociationGuard $associations,
         private RouteReconciliationGuard $reconciliation,

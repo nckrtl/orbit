@@ -19,7 +19,7 @@ final class ListTaskGroupsRequest extends FormRequest
         ];
     }
 
-    public function appId(): ?int
+    public function projectId(): ?int
     {
         $value = $this->validated('project_id');
 

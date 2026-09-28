@@ -199,7 +199,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
 
     private function prepareReceipt(AgentThread $thread): void
     {
-        $group = TaskGroup::query()->with(['taskable', 'app'])->find($thread->task_group_id);
+        $group = TaskGroup::query()->with(['taskable', 'project'])->find($thread->task_group_id);
         $instance = $group?->taskable;
         $role = TaskThreadRole::tryFrom((string) $thread->role);
         if (! $group instanceof TaskGroup || ! $instance instanceof Instance || $role === null) {
@@ -319,10 +319,10 @@ final readonly class TaskAgentSpawner implements AgentSpawner
                 id: $group->id,
                 title: $group->title,
                 brief: $group->brief,
-                projectSlug: $group->app->slug,
+                projectSlug: $group->project->slug,
                 projectId: $group->project_id,
-                defaultBranch: is_string($group->app->default_branch) ? $group->app->default_branch : null,
-                taskCheck: $group->app->taskCheckCommand(),
+                defaultBranch: is_string($group->project->default_branch) ? $group->project->default_branch : null,
+                taskCheck: $group->project->taskCheckCommand(),
                 startCommit: TaskReviewBase::groupStartCommit($group),
             ),
             new TaskPromptSubtask(

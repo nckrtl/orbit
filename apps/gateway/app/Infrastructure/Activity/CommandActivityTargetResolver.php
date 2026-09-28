@@ -143,22 +143,22 @@ final readonly class CommandActivityTargetResolver
 
     private function subject(Request $request): ?Model
     {
-        $clone = $request->attributes->get('orbit.app_instance_clone');
+        $clone = $request->attributes->get('orbit.instance_clone');
 
         if ($clone instanceof Instance) {
             return $clone;
         }
 
-        $registration = $request->attributes->get('orbit.app_instance_registration');
+        $registration = $request->attributes->get('orbit.instance_registration');
 
         if ($registration instanceof Instance) {
             return $registration;
         }
 
         if (str_contains($request->path(), '-definitions')) {
-            $app = $request->route('app');
+            $project = $request->route('project');
 
-            return $app instanceof Project ? $app : null;
+            return $project instanceof Project ? $project : null;
         }
 
         if (str_starts_with((string) $request->route()?->getName(), 'process:')) {
@@ -182,7 +182,7 @@ final readonly class CommandActivityTargetResolver
             'process',
             'instance',
             'route',
-            'app',
+            'project',
             'servingNode',
             'node',
         ] as $parameter) {
@@ -341,7 +341,7 @@ final readonly class CommandActivityTargetResolver
                 return $subject->node_id;
             }
 
-            $targetNodeId = $subject->targets()->with('appInstance')->first()?->appInstance?->node_id;
+            $targetNodeId = $subject->targets()->with('instance')->first()?->instance?->node_id;
 
             if ($targetNodeId !== null) {
                 return $targetNodeId;

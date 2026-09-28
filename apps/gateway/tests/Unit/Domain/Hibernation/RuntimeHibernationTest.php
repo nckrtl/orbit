@@ -17,7 +17,7 @@ it('names per-Instance marker and access-log paths', function (): void {
         ->toBe(3_600)
         ->and(RuntimeHibernation::DefaultDependencyIdleSeconds)
         ->toBe(604_800)
-        ->and(RuntimeHibernation::parseAppInstanceId('app-instance-12'))
+        ->and(RuntimeHibernation::parseInstanceId('app-instance-12'))
         ->toBe(12);
 });
 

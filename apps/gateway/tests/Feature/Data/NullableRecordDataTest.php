@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-use App\Data\AppInstances\AppInstanceTransferData;
+use App\Data\Instances\InstanceTransferData;
 use App\Data\Tasks\TaskCommentData;
-use App\Models\AppInstanceTransfer;
+use App\Models\InstanceTransfer;
 use App\Models\TaskComment;
 
 it('refuses a task comment whose type is not a known comment', function (): void {
@@ -25,9 +25,9 @@ it('refuses a task comment whose type is not a known comment', function (): void
 });
 
 it('refuses transfer history that no longer belongs to an Instance', function (): void {
-    $transfer = new AppInstanceTransfer;
+    $transfer = new InstanceTransfer;
     $transfer->setRawAttributes(['instance_id' => null], true);
 
-    expect(fn () => AppInstanceTransferData::fromModel($transfer))
+    expect(fn () => InstanceTransferData::fromModel($transfer))
         ->toThrow(InvalidArgumentException::class, 'An Instance transfer has no Instance.');
 });

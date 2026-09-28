@@ -3,9 +3,9 @@
 declare(strict_types=1);
 
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\AppInstances\AppInstanceRemovalStatus;
-use App\Domain\AppInstances\Removal\AppInstanceRemovalException;
 use App\Domain\Firewall\FirewallOperationException;
+use App\Domain\Instances\InstanceRemovalStatus;
+use App\Domain\Instances\Removal\InstanceRemovalException;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeRemovalException;
 use App\Domain\Nodes\NodeRoleOperationException;
@@ -21,7 +21,7 @@ use App\Domain\Tools\ToolOutcome;
 use App\Http\Mcp\OrbitServer;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
 use App\Infrastructure\Processes\CommandResult;
-use App\Models\AppInstanceRemoval;
+use App\Models\InstanceRemoval;
 use App\Models\Node;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
@@ -54,7 +54,7 @@ it('uses one generated request id for a headerless MCP handler log and response'
     expect($logger)->toBeInstanceOf(Logger::class);
     $logger->pushHandler($handler);
 
-    app()->bind(OrbitServer::class, static function (Container $app, array $parameters): OrbitServer {
+    app()->bind(OrbitServer::class, static function (Container $project, array $parameters): OrbitServer {
         $transport = $parameters['transport'];
         assert($transport instanceof Transport);
 
@@ -195,17 +195,17 @@ it('includes the request id in the log for successful and server-error requests 
 
 it('renders domain and framework exception statuses from one status source', function (): void {
     $result = new CommandResult(1, '', '', 1, false);
-    $removal = new AppInstanceRemoval([
+    $removal = new InstanceRemoval([
         'id' => 'status-source-removal',
         'requested_instance_id' => 1,
         'requested_name' => 'status-source-app',
         'force' => false,
         'inventory_digest' => 'digest',
         'total' => 0,
-        'status' => AppInstanceRemovalStatus::Failed,
+        'status' => InstanceRemovalStatus::Failed,
     ]);
     $exceptions = [
-        new AppInstanceRemovalException('app_instance.remove_failed', 503, $removal),
+        new InstanceRemovalException('instance.remove_failed', 503, $removal),
         new NodeRoleValidationException('Role validation failed.'),
         new NodeRoleOperationException('apply', 'node_role.failed', 'failed', 'Role operation failed.', $result),
         new NodeProvisioningException('provision', 'node.provision_failed', 'Provisioning failed.', result: $result),

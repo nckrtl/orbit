@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
@@ -32,7 +32,7 @@ it('backfills the publication record for Routes that serve their sites', functio
     $interrupted = store_route_site_transitions_route($node, 'interrupted', RouteStatus::Active);
     DB::table('instances')
         ->whereIn('id', DB::table('route_targets')->where('route_id', $interrupted)->select('instance_id'))
-        ->update(['status' => AppInstanceState::SourceResolved->value]);
+        ->update(['status' => InstanceState::SourceResolved->value]);
     DB::table('route_targets')->where('route_id', $interrupted)->delete();
 
     run_legacy_schema_migration($migration, 'up');
@@ -78,21 +78,21 @@ function store_route_site_transitions_node(): Node
 /** Writes the Route through the query builder, as a Gateway before this migration would have. */
 function store_route_site_transitions_route(Node $node, string $name, RouteStatus $status): int
 {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => $name,
         'slug' => "backfill-{$name}",
         'repository_url' => "https://example.test/{$name}.git",
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => $name,
         'checkout_path' => "/home/orbit/apps/{$name}",
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
     $id = DB::table('routes')->insertGetId([
         'kind' => 'app',
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'domain' => "{$name}.backfill.test",
         'provenance' => RouteProvenance::Explicit->value,

@@ -377,7 +377,7 @@ describe('activity access and redaction', function (): void {
             properties: [],
         );
         $legacy->update([
-            'subject_type' => 'App\\Models\\AppInstance',
+            'subject_type' => 'App\\Models\\Instance',
             'subject_id' => 9,
         ]);
         $workspace = activity_api_record(

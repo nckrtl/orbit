@@ -22,8 +22,8 @@ final readonly class NativeRoleBaselineConverger implements RoleBaselineConverge
     public function __construct(
         private GatewayRoleBaseline $gateway,
         private VpnRoleBaseline $vpn,
-        private AppDevRoleBaseline $appDev,
-        private AppProdRoleBaseline $appProd,
+        private DevelopmentRoleBaseline $appDev,
+        private ProductionRoleBaseline $appProd,
         private MetricsRoleBaseline $metrics,
         private MetricsFleetReconciler $metricsFleet,
         private NodeRoleOperatingSystemGuard $operatingSystem,

@@ -2,10 +2,10 @@
 title: "Dependency contracts"
 description: "The graph values, lockfile reader rules, collection limits, stored tables, and response shapes behind Instance dependency inventory."
 covers:
-  - apps/gateway/app/Domain/AppInstances/Dependencies/**
-  - apps/gateway/app/Actions/AppInstances/Dependencies/**
-  - apps/gateway/app/Infrastructure/AppInstances/{*DependencyUpdate*Program,DependencyFilesProgram,DependencyUpdateSupervisorHost}.php
-  - apps/gateway/app/Models/{DependencyPackage,AppInstanceDependencyObservation,AppInstanceDependencyResolution,AppInstanceDependencyEdge,AppInstanceDependencyScanAttempt}.php
+  - apps/gateway/app/Domain/Instances/Dependencies/**
+  - apps/gateway/app/Actions/Instances/Dependencies/**
+  - apps/gateway/app/Infrastructure/Instances/{*DependencyUpdate*Program,DependencyFilesProgram,DependencyUpdateSupervisorHost}.php
+  - apps/gateway/app/Models/{DependencyPackage,InstanceDependencyObservation,InstanceDependencyResolution,InstanceDependencyEdge,InstanceDependencyScanAttempt}.php
   - apps/gateway/database/migrations/2026_09_15_200000_create_instance_dependency_inventory.php
   - packages/php-sdk/src/Support/{DependencyInventoryDecoder,InstanceResolutionDecoder}.php
   - packages/php-sdk/src/Requests/AppInstances/{Show,Scan,Update}InstanceDependenciesRequest.php

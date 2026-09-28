@@ -85,13 +85,13 @@ it('accepts mysql-server image names and published host ports', function (string
 
 it('refuses an Instance Process, a systemd Process, and a non-MySQL image', function (): void {
     $node = managed_mysql_process_node();
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'main',
         'environment' => 'development',

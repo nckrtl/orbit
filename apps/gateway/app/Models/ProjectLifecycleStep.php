@@ -15,7 +15,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $command
  * @property int $timeout_seconds
  * @property int $position
- * @property-read Project $app
+ * @property-read Project $project
  */
 final class ProjectLifecycleStep extends Model
 {
@@ -35,7 +35,7 @@ final class ProjectLifecycleStep extends Model
     ];
 
     /** @return BelongsTo<Project, $this> */
-    public function app(): BelongsTo
+    public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class, 'project_id');
     }

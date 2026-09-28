@@ -7,10 +7,10 @@ namespace App\Actions\Routes;
 use App\Data\Routes\RouteTargetDispositionData;
 use App\Data\Routes\SetRouteTargetsData;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
-use App\Domain\AppInstances\AppInstanceRemover;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRouteDomain;
-use App\Domain\AppInstances\Environment\AppInstanceRouteEnvironmentSynchronizer;
+use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Instances\Environment\InstanceEnvironmentRouteDomain;
+use App\Domain\Instances\Environment\InstanceRouteEnvironmentSynchronizer;
+use App\Domain\Instances\InstanceRemover;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetSetGuard;
@@ -28,10 +28,10 @@ final readonly class ConvergeRouteTargetSetAction
     public function __construct(
         private RouteTargetSetGuard $guard,
         private RouteDomainProjector $projection,
-        private AppInstanceRouteEnvironmentSynchronizer $routeEnvironment,
-        private AppInstanceEnvironmentOperationLock $environmentOperations,
+        private InstanceRouteEnvironmentSynchronizer $routeEnvironment,
+        private InstanceEnvironmentOperationLock $environmentOperations,
         private DevelopmentProjectionOperationLock $owner,
-        private AppInstanceRemover $removals,
+        private InstanceRemover $removals,
     ) {}
 
     public function execute(Route $route, SetRouteTargetsData $proposal): Route
@@ -50,7 +50,7 @@ final readonly class ConvergeRouteTargetSetAction
     private function convergeOwned(int $routeId, SetRouteTargetsData $proposal, array $expectedOwnerIds): Route
     {
         $route = Route::query()
-            ->with(['targets.appInstance.app', 'targets.appInstance.node', 'cluster.routerAssignment.node'])
+            ->with(['targets.instance.project', 'targets.instance.node', 'cluster.routerAssignment.node'])
             ->findOrFail($routeId);
 
         if ($this->ownerIds($route, $proposal) !== $expectedOwnerIds) {
@@ -89,7 +89,7 @@ final readonly class ConvergeRouteTargetSetAction
                 $failureStep = 'database-committed';
                 $vacatedRouteIds = $this->vacatedRouteIds($route, $proposal);
                 $this->commitAssociations($route, $proposal);
-                $route = $route->refresh()->load(['targets.appInstance.app', 'targets.appInstance.node']);
+                $route = $route->refresh()->load(['targets.instance.project', 'targets.instance.node']);
                 $this->advance($route, RouteTargetSetStep::DatabaseCommitted);
                 $step = RouteTargetSetStep::DatabaseCommitted;
                 $route->update([
@@ -192,18 +192,18 @@ final readonly class ConvergeRouteTargetSetAction
 
             foreach ($proposal->dispositions as $disposition) {
                 if ($disposition->remove) {
-                    $removeIds[] = $disposition->appInstanceId;
+                    $removeIds[] = $disposition->instanceId;
                 } elseif ($disposition->routeId !== null) {
-                    $reassignments[$disposition->appInstanceId] = $disposition->routeId;
+                    $reassignments[$disposition->instanceId] = $disposition->routeId;
                 }
             }
 
-            foreach ($proposal->targetIds as $appInstanceId) {
-                $this->associateOnRoute($locked, $appInstanceId);
+            foreach ($proposal->targetIds as $instanceId) {
+                $this->associateOnRoute($locked, $instanceId);
             }
 
-            foreach ($reassignments as $appInstanceId => $destinationId) {
-                $this->reassignToRoute($appInstanceId, $destinationId);
+            foreach ($reassignments as $instanceId => $destinationId) {
+                $this->reassignToRoute($instanceId, $destinationId);
             }
 
             $this->compactPositions($locked->id, [...$proposal->targetIds, ...$removeIds]);
@@ -214,10 +214,10 @@ final readonly class ConvergeRouteTargetSetAction
         });
     }
 
-    private function associateOnRoute(Route $route, int $appInstanceId): void
+    private function associateOnRoute(Route $route, int $instanceId): void
     {
         $existing = RouteTarget::query()
-            ->where('instance_id', $appInstanceId)
+            ->where('instance_id', $instanceId)
             ->lockForUpdate()
             ->first();
 
@@ -238,15 +238,15 @@ final readonly class ConvergeRouteTargetSetAction
 
         RouteTarget::query()->create([
             'route_id' => $route->id,
-            'instance_id' => $appInstanceId,
+            'instance_id' => $instanceId,
             'position' => $position,
         ]);
     }
 
-    private function reassignToRoute(int $appInstanceId, int $destinationId): void
+    private function reassignToRoute(int $instanceId, int $destinationId): void
     {
         $existing = RouteTarget::query()
-            ->where('instance_id', $appInstanceId)
+            ->where('instance_id', $instanceId)
             ->lockForUpdate()
             ->first();
 
@@ -276,8 +276,8 @@ final readonly class ConvergeRouteTargetSetAction
                 ->keyBy('instance_id');
             $position = 0;
 
-            foreach ($orderedInstanceIds as $appInstanceId) {
-                $row = $rows->get($appInstanceId);
+            foreach ($orderedInstanceIds as $instanceId) {
+                $row = $rows->get($instanceId);
 
                 if (! $row instanceof RouteTarget) {
                     continue;
@@ -313,7 +313,7 @@ final readonly class ConvergeRouteTargetSetAction
         foreach ($this->synchronizedInstances($route, $proposal) as $instance) {
             $this->routeEnvironment->synchronizeRouteDomain(
                 $instance,
-                AppInstanceEnvironmentRouteDomain::Authoritative,
+                InstanceEnvironmentRouteDomain::Authoritative,
             );
         }
     }
@@ -323,7 +323,7 @@ final readonly class ConvergeRouteTargetSetAction
         $instances = $this->guard->instances($proposal->targetIds);
 
         if ($instances->isEmpty()) {
-            $probeId = $proposal->dispositions[0]->appInstanceId ?? null;
+            $probeId = $proposal->dispositions[0]->instanceId ?? null;
             $probe = is_int($probeId) ? Instance::query()->find($probeId) : null;
 
             if ($probe instanceof Instance) {
@@ -356,7 +356,7 @@ final readonly class ConvergeRouteTargetSetAction
                 continue;
             }
 
-            $destination = Route::query()->with(['targets.appInstance'])->find($routeId);
+            $destination = Route::query()->with(['targets.instance'])->find($routeId);
 
             if (! $destination instanceof Route) {
                 continue;
@@ -365,8 +365,8 @@ final readonly class ConvergeRouteTargetSetAction
             $published[$destination->id] = true;
             $firstTarget = $destination->targets->first();
             $target = $firstTarget instanceof RouteTarget
-                ? $firstTarget->appInstance
-                : Instance::query()->find($proposal->dispositions[0]->appInstanceId ?? 0);
+                ? $firstTarget->instance
+                : Instance::query()->find($proposal->dispositions[0]->instanceId ?? 0);
 
             if ($target instanceof Instance) {
                 $this->projection->prepareRouterCaddy($target, $destination, $destination);
@@ -379,9 +379,9 @@ final readonly class ConvergeRouteTargetSetAction
     {
         $ids = [];
 
-        foreach ($proposal->targetIds as $appInstanceId) {
+        foreach ($proposal->targetIds as $instanceId) {
             $association = RouteTarget::query()
-                ->where('instance_id', $appInstanceId)
+                ->where('instance_id', $instanceId)
                 ->where('route_id', '!=', $route->id)
                 ->first();
 
@@ -400,7 +400,7 @@ final readonly class ConvergeRouteTargetSetAction
                 continue;
             }
 
-            $instance = Instance::query()->find($disposition->appInstanceId);
+            $instance = Instance::query()->find($disposition->instanceId);
 
             if (! $instance instanceof Instance) {
                 continue;
@@ -434,7 +434,7 @@ final readonly class ConvergeRouteTargetSetAction
                 continue;
             }
 
-            $instance = $this->guard->instances([$disposition->appInstanceId])->first();
+            $instance = $this->guard->instances([$disposition->instanceId])->first();
             $destination = Route::query()->findOrFail($disposition->routeId);
 
             if ($instance instanceof Instance) {
@@ -452,7 +452,7 @@ final readonly class ConvergeRouteTargetSetAction
 
         foreach ($proposal->dispositions as $disposition) {
             if (! $disposition->remove) {
-                $ids[] = $disposition->appInstanceId;
+                $ids[] = $disposition->instanceId;
             }
         }
 
@@ -517,7 +517,7 @@ final readonly class ConvergeRouteTargetSetAction
             ...$route->targets->pluck('instance_id')->map(static fn (mixed $id): int => StoredInteger::from($id))->all(),
             ...$proposal->targetIds,
             ...array_map(
-                static fn (RouteTargetDispositionData $disposition): int => $disposition->appInstanceId,
+                static fn (RouteTargetDispositionData $disposition): int => $disposition->instanceId,
                 $proposal->dispositions,
             ),
         ];

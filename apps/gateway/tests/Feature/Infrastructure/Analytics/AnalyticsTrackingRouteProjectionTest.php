@@ -13,11 +13,11 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
-use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
-use App\Infrastructure\AppDev\AppDevSite;
-use App\Infrastructure\AppDev\AppDevSiteRepository;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
+use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
+use App\Infrastructure\AppDev\DevelopmentSite;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
@@ -55,7 +55,7 @@ beforeEach(function (): void {
 
 describe('analytics tracking Route sites', function (): void {
     it('renders nothing for a pending tracking Route until its creation stores the publication record', function (): void {
-        $sites = new AppDevSiteRepository;
+        $sites = new DevelopmentSiteRepository;
 
         expect($sites->all())->toBeEmpty();
 
@@ -67,13 +67,13 @@ describe('analytics tracking Route sites', function (): void {
 
     it('serves only the script and event paths on the Router before publication', function (): void {
         $this->route->update(['status' => RouteStatus::Active]);
-        $sites = new AppDevSiteRepository;
+        $sites = new DevelopmentSiteRepository;
         $id = $this->route->id;
 
         expect($sites->all())->toHaveCount(1)
             ->and($sites->forNode($this->ingress))->toBeEmpty()
             ->and($sites->forNode($this->analytics))->toBeEmpty()
-            ->and(new AppDevCaddyConfigRenderer()->render($sites->forNode($this->router)))->toBe(<<<CADDY
+            ->and(new DevelopmentCaddyConfigRenderer()->render($sites->forNode($this->router)))->toBe(<<<CADDY
                 https://analytics.shop.example.com {
                     bind 0.0.0.0
                     tls /etc/caddy/orbit-certificates/route-{$id}-router/current/cert.pem /etc/caddy/orbit-certificates/route-{$id}-router/current/key.pem
@@ -91,10 +91,10 @@ describe('analytics tracking Route sites', function (): void {
 
     it('forwards the whole host from the Ingress and trusts that Ingress for the visitor address', function (): void {
         analytics_projection_publish($this->route);
-        $sites = new AppDevSiteRepository;
+        $sites = new DevelopmentSiteRepository;
         $id = $this->route->id;
-        $renderer = new AppDevCaddyConfigRenderer;
-        $root = AppDevCaddyConfigRenderer::ORBIT_ROOT_CA_PATH;
+        $renderer = new DevelopmentCaddyConfigRenderer;
+        $root = DevelopmentCaddyConfigRenderer::ORBIT_ROOT_CA_PATH;
 
         expect($renderer->render($sites->forNode($this->router)))->toBe(<<<CADDY
             https://analytics.shop.example.com {
@@ -139,11 +139,11 @@ describe('analytics tracking Route sites', function (): void {
         ]);
         analytics_projection_publish($this->route);
         $id = $this->route->id;
-        $sites = new AppDevSiteRepository()->all();
+        $sites = new DevelopmentSiteRepository()->all();
 
         expect($sites)->toHaveCount(1)
             ->and($sites->sole()->nodeId)->toBe($this->router->id)
-            ->and(new AppDevCaddyConfigRenderer()->render($sites))->toBe(<<<'CADDY'
+            ->and(new DevelopmentCaddyConfigRenderer()->render($sites))->toBe(<<<'CADDY'
                 analytics.shop.example.com {
                     bind 0.0.0.0
                     tls force_automate
@@ -163,12 +163,12 @@ describe('analytics tracking Route sites', function (): void {
         $this->route->update(['status' => RouteStatus::Active]);
         $this->analytics->roles()->update(['status' => LifecycleStatus::Failed]);
 
-        expect(new AppDevSiteRepository()->all())->toBeEmpty();
+        expect(new DevelopmentSiteRepository()->all())->toBeEmpty();
 
         $this->analytics->roles()->update(['status' => LifecycleStatus::Active]);
         $this->route->update(['status' => RouteStatus::Retiring]);
 
-        expect(new AppDevSiteRepository()->all())->toBeEmpty();
+        expect(new DevelopmentSiteRepository()->all())->toBeEmpty();
     });
 
     it('keeps the site and its private DNS while the analytics role itself converges', function (): void {
@@ -176,8 +176,8 @@ describe('analytics tracking Route sites', function (): void {
         // `node:role:add services analytics --converge` marks the assignment provisioning while it republishes DNS.
         $this->analytics->roles()->update(['status' => LifecycleStatus::Provisioning]);
 
-        expect(new AppDevSiteRepository()->all()->map->analyticsUpstream->all())->toBe(['10.44.0.40:8000'])
-            ->and(new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render())
+        expect(new DevelopmentSiteRepository()->all()->map->analyticsUpstream->all())->toBe(['10.44.0.40:8000'])
+            ->and(new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render())
             ->toContain('host-record=analytics.shop.example.com,10.44.0.20');
     });
 
@@ -186,13 +186,13 @@ describe('analytics tracking Route sites', function (): void {
         $this->analytics->roles()->update(['status' => LifecycleStatus::Provisioning]);
         analytics_projection_node('services-2', '10.44.0.41', null, null, RoleName::Analytics);
 
-        expect(new AppDevSiteRepository()->all()->map->analyticsUpstream->all())->toBe(['10.44.0.41:8000']);
+        expect(new DevelopmentSiteRepository()->all()->map->analyticsUpstream->all())->toBe(['10.44.0.41:8000']);
     });
 
     it('answers private DNS for the host with the Router', function (): void {
         analytics_projection_publish($this->route);
 
-        expect(new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render())
+        expect(new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render())
             ->toContain('host-record=analytics.shop.example.com,10.44.0.20')
             ->not->toContain('host-record=analytics.shop.example.com,10.44.0.30');
     });
@@ -205,26 +205,26 @@ describe('analytics tracking Route sites', function (): void {
             'transition_node_id' => $workload->id,
             'replacement_step' => RouteReplacementStep::DatabaseCutover,
         ]);
-        $sites = new AppDevSiteRepository;
+        $sites = new DevelopmentSiteRepository;
 
-        expect($sites->forNode($this->router)->map(static fn (AppDevSite $site): array => [$site->scope, $site->secondary])->all())
+        expect($sites->forNode($this->router)->map(static fn (DevelopmentSite $site): array => [$site->scope, $site->secondary])->all())
             ->toBe([["route-{$this->route->id}-router", false]])
-            ->and($sites->forNode($workload)->map(static fn (AppDevSite $site): array => [$site->scope, $site->secondary])->all())
+            ->and($sites->forNode($workload)->map(static fn (DevelopmentSite $site): array => [$site->scope, $site->secondary])->all())
             ->toBe([["route-{$this->route->id}-router", true]])
-            ->and(new AppDevDnsConfigRenderer($sites)->render())
+            ->and(new DevelopmentDnsConfigRenderer($sites)->render())
             ->toContain('host-record=analytics.shop.example.com,10.44.0.20')
             ->not->toContain('host-record=analytics.shop.example.com,10.44.0.50');
 
         $this->route->update(['replacement_step' => RouteReplacementStep::Cleanup]);
 
-        expect(new AppDevSiteRepository()->forNode($workload))->toBeEmpty();
+        expect(new DevelopmentSiteRepository()->forNode($workload))->toBeEmpty();
     });
 
     it('never treats the tracking site as a PHP workload', function (): void {
         $this->route->update(['status' => RouteStatus::Active]);
 
-        expect(new AppDevSiteRepository()->all()->every(
-            static fn (AppDevSite $site): bool => $site->isProxy() && $site->phpVersion === null,
+        expect(new DevelopmentSiteRepository()->all()->every(
+            static fn (DevelopmentSite $site): bool => $site->isProxy() && $site->phpVersion === null,
         ))->toBeTrue();
     });
 });
@@ -245,7 +245,7 @@ describe('analytics tracking Route public edge', function (): void {
 describe('analytics tracking Route removal', function (): void {
     it('removes the Router certificates of the tracking Route', function (): void {
         $ssh = new AnalyticsProjectionSshExecutor;
-        $executor = new AppDevSshExecutor(
+        $executor = new DevelopmentSshExecutor(
             $ssh,
             new class implements SshKeyProvider
             {
@@ -295,9 +295,9 @@ describe('analytics tracking Route removal', function (): void {
                 return new CommandResult(0, '', '', 1, false);
             }
         };
-        $sites = new AppDevSiteRepository;
+        $sites = new DevelopmentSiteRepository;
         $projector = new NativeRouteRemovalProjector(
-            new DnsmasqPrivateDnsManager($processes, new AppDevDnsConfigRenderer($sites)),
+            new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer($sites)),
             new RemoteAppDevCertificateManager($executor, $signer, $accounts),
             new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($ssh), $executor),
             new RemoteAppDevRouteFirewallManager($executor),

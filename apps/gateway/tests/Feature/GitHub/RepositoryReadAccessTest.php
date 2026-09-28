@@ -13,7 +13,7 @@ describe('RepositoryReadAccess', function (): void {
         Http::preventStrayRequests();
     });
 
-    it('asks GitHub for nothing without an App or for another host', function (): void {
+    it('asks GitHub for nothing without a Project or for another host', function (): void {
         expect(app(RepositoryReadAccess::class)->for('https://github.com/acme/shop')->isEmpty())->toBeTrue();
 
         GitHubTestSupport::storeApp();

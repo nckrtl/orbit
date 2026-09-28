@@ -6,7 +6,7 @@ use App\Actions\Tasks\CancelTaskCheckAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
-use App\Domain\AppInstances\AppInstanceRemover;
+use App\Domain\Instances\InstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\ArchiveFinishedTaskThreads;
@@ -48,8 +48,8 @@ use App\Infrastructure\Tasks\T3\T3Dispatcher;
 use App\Infrastructure\Tasks\T3\T3DispatchException;
 use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Models\AgentThread;
-use App\Models\AppInstanceRemoval;
 use App\Models\Instance;
+use App\Models\InstanceRemoval;
 use App\Models\JevDecision;
 use App\Models\Node;
 use App\Models\Project;
@@ -75,7 +75,7 @@ use function Pest\Laravel\mock;
 
 function tick_group(): TaskGroup
 {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'tick-app',
         'slug' => 'tick-app',
         'repository_url' => 'git@example.test:tick.git',
@@ -90,7 +90,7 @@ function tick_group(): TaskGroup
         'wireguard_ip' => '10.44.0.212',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'task-21',
         'checkout_path' => '/srv/orbit/apps/tick-app/task-21',
@@ -98,7 +98,7 @@ function tick_group(): TaskGroup
         'status' => 'source_resolved',
     ]);
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Tick routing',
         'brief' => 'Observe, classify, and execute.',
         'status' => TaskGroupStatus::Running,
@@ -116,7 +116,7 @@ function tick_group(): TaskGroup
 
     test_link_agent_threads($group);
 
-    return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+    return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
 }
 
 /** @return array{thread: array<string, mixed>} */
@@ -531,17 +531,17 @@ it('does not resume a settling group without a pull request while another assist
 
 it('continues watching a prior settling PR and completes only after it merges', function (): void {
     $group = tick_group();
-    $group->app->update(['repository_url' => 'https://github.com/acme/orbit.git']);
+    $group->project->update(['repository_url' => 'https://github.com/acme/orbit.git']);
     $group->update(['status' => TaskGroupStatus::Settling, 'pr_url' => 'https://github.com/acme/orbit/pull/42']);
     $group->tasks()->update(['status' => TaskStatus::Completed]);
     app(TaskExtensionState::class)->enable();
     GitHubTestSupport::storeApp();
-    mock(AppInstanceRemover::class)->shouldReceive('execute')->once()->withArgs(
+    mock(InstanceRemover::class)->shouldReceive('execute')->once()->withArgs(
         fn (Instance $instance, bool $force): bool => $instance->id === $group->taskable_id && $force,
-    )->andReturnUsing(function (Instance $instance): AppInstanceRemoval {
+    )->andReturnUsing(function (Instance $instance): InstanceRemoval {
         $instance->delete();
 
-        return new AppInstanceRemoval;
+        return new InstanceRemoval;
     });
     Http::preventStrayRequests();
     Http::fake([
@@ -566,7 +566,7 @@ it('continues watching a prior settling PR and completes only after it merges', 
 function tick_settling_group(): TaskGroup
 {
     $group = tick_group();
-    $group->app->update(['repository_url' => 'https://github.com/acme/orbit.git']);
+    $group->project->update(['repository_url' => 'https://github.com/acme/orbit.git']);
     $group->update(['status' => TaskGroupStatus::Settling, 'pr_url' => 'https://github.com/acme/orbit/pull/42']);
     $group->tasks()->update(['status' => TaskStatus::Completed]);
     app(TaskExtensionState::class)->enable();
@@ -805,7 +805,7 @@ it('leaves another cause of assistance on a settling group alone while its pull 
 it('withdraws its pull request assistance request when the pull request merges', function (): void {
     $group = tick_settling_group();
     $group->update(['assistance_requested' => true, 'assistance_reason' => 'The pull request needs attention: It conflicts with main; merge main into the task branch and push.']);
-    mock(AppInstanceRemover::class)->shouldReceive('execute')->once()->andReturn(new AppInstanceRemoval);
+    mock(InstanceRemover::class)->shouldReceive('execute')->once()->andReturn(new InstanceRemoval);
     Http::preventStrayRequests();
     Http::fake([
         'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
@@ -821,7 +821,7 @@ it('withdraws its pull request assistance request when the pull request merges',
 it('keeps another cause of assistance when the pull request merges', function (): void {
     $group = tick_settling_group();
     $group->update(['assistance_requested' => true, 'assistance_reason' => 'The operator asked to hold this group.']);
-    mock(AppInstanceRemover::class)->shouldReceive('execute')->once()->andReturn(new AppInstanceRemoval);
+    mock(InstanceRemover::class)->shouldReceive('execute')->once()->andReturn(new InstanceRemoval);
     Http::preventStrayRequests();
     Http::fake([
         'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
@@ -837,7 +837,7 @@ it('keeps another cause of assistance when the pull request merges', function ()
 it('backs off a merged pull request cleanup and retries it on a later tick', function (): void {
     $group = tick_settling_group();
     $calls = 0;
-    mock(AppInstanceRemover::class)->shouldReceive('execute')->andReturnUsing(function () use (&$calls): never {
+    mock(InstanceRemover::class)->shouldReceive('execute')->andReturnUsing(function () use (&$calls): never {
         $calls++;
 
         throw new RuntimeException('disk full');
@@ -881,7 +881,7 @@ it('preserves labeled merge evidence and report metrics when cleanup retries los
         'answers' => ['subtask_'.$task->id => ['value' => true, 'selected_answer_probability' => 0.97]],
         'latency_ms' => 25,
     ]);
-    mock(AppInstanceRemover::class)->shouldReceive('execute')->andThrow(new RuntimeException('disk full'));
+    mock(InstanceRemover::class)->shouldReceive('execute')->andThrow(new RuntimeException('disk full'));
     Http::preventStrayRequests();
     Http::fake([
         'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
@@ -941,7 +941,7 @@ it('uses backoff for publication and removal retries and retries a failed manual
         ->and($group->fresh()?->assistance_requested)->toBeTrue()
         ->and($group->fresh()?->assistance_reason)->toBe($hold);
 
-    $remover = new class implements AppInstanceRemover
+    $remover = new class implements InstanceRemover
     {
         /** @var list<int> */
         public array $failing = [];
@@ -949,7 +949,7 @@ it('uses backoff for publication and removal retries and retries a failed manual
         /** @var list<int> */
         public array $attempts = [];
 
-        public function execute(Instance $instance, bool $force): AppInstanceRemoval
+        public function execute(Instance $instance, bool $force): InstanceRemoval
         {
             $this->attempts[] = $instance->id;
             if (in_array($instance->id, $this->failing, true)) {
@@ -957,10 +957,10 @@ it('uses backoff for publication and removal retries and retries a failed manual
             }
             $instance->delete();
 
-            return new AppInstanceRemoval;
+            return new InstanceRemoval;
         }
     };
-    app()->instance(AppInstanceRemover::class, $remover);
+    app()->instance(InstanceRemover::class, $remover);
     $ended = TaskGroup::query()->create([
         'project_id' => $group->project_id,
         'title' => 'Ended',
@@ -1061,7 +1061,7 @@ it('uses backoff for publication and removal retries and retries a failed manual
 it('replaces its pull request assistance request with the cleanup failure when a merged group cannot complete', function (): void {
     $group = tick_settling_group();
     $group->update(['assistance_requested' => true, 'assistance_reason' => 'The pull request needs attention: It conflicts with main; merge main into the task branch and push.']);
-    mock(AppInstanceRemover::class)->shouldReceive('execute')->once()->andThrow(new RuntimeException('disk full'));
+    mock(InstanceRemover::class)->shouldReceive('execute')->once()->andThrow(new RuntimeException('disk full'));
     Http::preventStrayRequests();
     Http::fake([
         'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
@@ -1153,7 +1153,7 @@ it('appends one check fixup naming the failed check and its url', function (): v
 
 it('appends an orbit check fixup with the reproduction command', function (): void {
     $group = tick_settling_group();
-    $group->app->update(['slug' => 'orbit']);
+    $group->project->update(['slug' => 'orbit']);
     $agents = tick_running_agents();
     tick_watch_pulls([tick_open_pull()], ['abc123' => [[
         'name' => 'Rust agent', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/9',
@@ -1258,7 +1258,7 @@ it('appends a conflict fixup when a different-cased problem is already at the ca
 
 it('appends a reproducible check fixup before another failed check', function (): void {
     $group = tick_settling_group();
-    $group->app->update(['slug' => 'orbit']);
+    $group->project->update(['slug' => 'orbit']);
     tick_spent_fixup($group, 'conflict:main');
     tick_spent_fixup($group, 'conflict:main', TaskStatus::Failed);
     $agents = tick_running_agents();
@@ -1347,7 +1347,7 @@ it('does not start an appended subtask when the pull request merges', function (
     $group = tick_settling_group();
     $todo = tick_appended_subtask($group);
     $agents = tick_running_agents();
-    mock(AppInstanceRemover::class)->shouldReceive('execute')->once()->andReturn(new AppInstanceRemoval);
+    mock(InstanceRemover::class)->shouldReceive('execute')->once()->andReturn(new InstanceRemoval);
     tick_watch_pulls([['merged' => true, 'state' => 'closed']]);
 
     app(TaskScheduler::class)->tick();
@@ -1521,7 +1521,7 @@ it('waits for the checks on a new head to complete before the next fixup', funct
 
 it('appends one fixup for a failed check and ignores the Required checks rollup it explains', function (): void {
     $group = tick_settling_group();
-    $group->app->update(['slug' => 'orbit']);
+    $group->project->update(['slug' => 'orbit']);
     tick_running_agents();
     tick_watch_pulls([tick_open_pull()], ['abc123' => [
         ['name' => 'Gateway', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/1'],
@@ -1932,7 +1932,7 @@ it('advances the current subtask when Jev marks it done', function (): void {
 
 it('hands off only when Orbit can run the workspace check script', function (bool $definesCheckScript, TaskStatus $status, string $taskCheck = 'composer check'): void {
     $group = tick_group();
-    $group->app->update(['task_check' => $taskCheck]);
+    $group->project->update(['task_check' => $taskCheck]);
     $task = $group->tasks->sole();
     app(TaskExtensionState::class)->enable();
     tick_workspace($definesCheckScript);
@@ -1963,7 +1963,7 @@ it('hands off only when Orbit can run the workspace check script', function (boo
 
 it('hands off with the Project task check, and runs no command when the Project has none', function (?string $taskCheck): void {
     $group = tick_group();
-    $group->app->update(['task_check' => $taskCheck]);
+    $group->project->update(['task_check' => $taskCheck]);
     $task = $group->tasks->sole();
     app(TaskExtensionState::class)->enable();
     tick_workspace(false);
@@ -2014,7 +2014,7 @@ it('records an unreachable workspace as a communication failure without aborting
 it('records a legacy turn read failure without skipping the other group', function (): void {
     $running = tick_group();
     $implementer = $running->tasks->sole();
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'tick-review-legacy', 'slug' => 'tick-review-legacy',
         'repository_url' => 'git@example.test:tick-review-legacy.git', 'default_branch' => 'main',
         'task_check' => 'composer check',
@@ -2024,11 +2024,11 @@ it('records a legacy turn read failure without skipping the other group', functi
         'public_ssh_host' => '10.44.0.213', 'wireguard_ip' => '10.44.0.213',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-22',
+        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-22',
         'checkout_path' => '/srv/orbit/apps/tick-review-legacy/task-22', 'branch' => 'task-22', 'status' => 'source_resolved',
     ]);
     $reviewing = TaskGroup::query()->create([
-        'project_id' => $app->id, 'title' => 'Tick review', 'brief' => 'Review the records.', 'status' => TaskGroupStatus::Reviewing,
+        'project_id' => $project->id, 'title' => 'Tick review', 'brief' => 'Review the records.', 'status' => TaskGroupStatus::Reviewing,
     ]);
     $reviewing->taskable()->associate($instance);
     $reviewing->save();
@@ -2929,7 +2929,7 @@ it('reminds an implementer that ends a turn without a receipt once, then asks fo
 
     $reminder = $dispatcher->commands[0]['message']['text'];
     expect($dispatcher->commands)->toHaveCount(1)
-        ->and($reminder)->toBe('Orbit could not confirm the brief is complete. No run receipt was found. '.TaskRunInstructions::implementer(check: $group->app->taskCheckCommand(), threadId: $task->implementer_agent_thread_id))
+        ->and($reminder)->toBe('Orbit could not confirm the brief is complete. No run receipt was found. '.TaskRunInstructions::implementer(check: $group->project->taskCheckCommand(), threadId: $task->implementer_agent_thread_id))
         ->and($receipts->prepared)->toBe(['implementer'])
         ->and($group->fresh()?->assistance_requested)->toBeFalse();
 
@@ -3395,7 +3395,7 @@ it('retries review findings until the implementer receives them', function (): v
     expect($task->fresh()?->status)->toBe(TaskStatus::Running)
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
         ->and($dispatcher->commands[1]['message']['text'])->toContain('Add the missing test.')
-        ->and($dispatcher->commands[1]['message']['text'])->toContain(TaskRunInstructions::implementer(check: $group->app->taskCheckCommand(), threadId: $task->implementer_agent_thread_id))
+        ->and($dispatcher->commands[1]['message']['text'])->toContain(TaskRunInstructions::implementer(check: $group->project->taskCheckCommand(), threadId: $task->implementer_agent_thread_id))
         ->and(app(TaskRunReceipts::class)->prepared)->toBe(['implementer', 'implementer']);
 });
 
@@ -3663,7 +3663,7 @@ function tick_review(array $receipts, bool $onBranch = true, bool $last = false)
     };
     app()->instance(TaskPullRequestPublisher::class, $publisher);
 
-    return [$group->fresh(['app', 'tasks', 'taskable']) ?? $group, $task, $receipts, $signer, $publisher];
+    return [$group->fresh(['project', 'tasks', 'taskable']) ?? $group, $task, $receipts, $signer, $publisher];
 }
 
 it('does not apply a receipt from the thread named by a stale turn file', function (): void {

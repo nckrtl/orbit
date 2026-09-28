@@ -2,10 +2,10 @@
 title: "Instance queue"
 description: "How the Gateway reads the Laravel Horizon queue of an Instance, what it returns, and what it never returns."
 covers:
-  - apps/gateway/app/Actions/AppInstances/ShowAppInstanceQueueAction.php
-  - apps/gateway/app/Http/Controllers/Api/AppInstanceQueueController.php
-  - apps/gateway/app/Http/Requests/AppInstances/AppInstanceQueueRequest.php
-  - apps/gateway/app/Infrastructure/AppInstances/RemoteAppInstanceQueueReader.php
+  - apps/gateway/app/Actions/Instances/ShowInstanceQueueAction.php
+  - apps/gateway/app/Http/Controllers/Api/InstanceQueueController.php
+  - apps/gateway/app/Http/Requests/Instances/InstanceQueueRequest.php
+  - apps/gateway/app/Infrastructure/Instances/RemoteInstanceQueueReader.php
 ---
 
 # Instance queue

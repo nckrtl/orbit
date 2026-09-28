@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $instance_id
  * @property string $prefix
  * @property-read DatabaseConnection $databaseConnection
- * @property-read Instance $appInstance
+ * @property-read Instance $instance
  */
 final class DatabaseConnectionTarget extends Model
 {
@@ -32,7 +32,7 @@ final class DatabaseConnectionTarget extends Model
     }
 
     /** @return BelongsTo<Instance, $this> */
-    public function appInstance(): BelongsTo
+    public function instance(): BelongsTo
     {
         return $this->belongsTo(Instance::class, 'instance_id');
     }

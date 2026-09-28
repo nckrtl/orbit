@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Doctor;
 
-use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
-use App\Infrastructure\AppInstances\ProductionPhpRuntimeConfiguration;
+use App\Domain\Instances\ProductionPhpRuntimeIdentity;
+use App\Infrastructure\Instances\ProductionPhpRuntimeConfiguration;
 use App\Models\Instance;
 
 /**

@@ -85,27 +85,27 @@ it('rolls back archive backoff columns and their index', function (): void {
     }
 });
 
-it('persists a TaskGroup morph to an App instance and ordered subtasks', function (): void {
+it('persists a TaskGroup morph to a Project instance and ordered subtasks', function (): void {
     $node = Node::query()->create([
         'name' => 'task-migration-node',
         'status' => 'active',
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.99',
     ]);
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Task migration',
         'slug' => 'task-migration',
         'repository_url' => 'git@example.test:task-migration.git',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'feature',
         'checkout_path' => '/tmp/task-migration',
         'status' => 'reserved',
     ]);
 
-    $group = $app->taskGroups()->create([
+    $group = $project->taskGroups()->create([
         'title' => 'Morph',
         'brief' => 'Attach the instance.',
     ]);

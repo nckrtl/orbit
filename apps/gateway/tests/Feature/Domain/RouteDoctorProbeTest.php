@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Actions\Doctor\RouteDoctorProbe;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Doctor\CustomProxyRouteInspector;
 use App\Domain\Doctor\CustomProxyRouteObservation;
@@ -12,6 +11,7 @@ use App\Domain\Doctor\DoctorFamilyStatus;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteProvenance;
@@ -339,7 +339,7 @@ function route_doctor_custom_proxy(Node $node, string $domain): RouteCustomProxy
 
 function route_doctor_app_route(Node $node): Route
 {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Doctor App '.$node->id,
         'slug' => 'doctor-app-'.$node->id,
         'repository_url' => 'https://example.test/doctor-app.git',
@@ -347,15 +347,15 @@ function route_doctor_app_route(Node $node): Route
         'root' => 'public',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'main',
         'checkout_path' => '/srv/doctor/main',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
     $route = Route::query()->create([
         'kind' => RouteKind::App,
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'domain' => 'app-'.$node->id.'.test',
         'provenance' => RouteProvenance::Explicit,

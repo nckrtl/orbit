@@ -2,8 +2,8 @@
 title: "Instance dependencies"
 description: "Record the resolved Composer and JavaScript dependencies of each Instance, and update a development Instance within its declared constraints."
 covers:
-  - apps/gateway/app/Actions/AppInstances/Dependencies/{ScanInstanceDependenciesAction,UpdateInstanceDependenciesAction,AccessInstanceDependenciesAction}.php
-  - apps/gateway/app/Http/Controllers/Api/{AppInstanceDependenciesController,ResolveDependencyInstanceController,ResolveDirectoryInstanceController}.php
+  - apps/gateway/app/Actions/Instances/Dependencies/{ScanInstanceDependenciesAction,UpdateInstanceDependenciesAction,AccessInstanceDependenciesAction}.php
+  - apps/gateway/app/Http/Controllers/Api/{InstanceDependenciesController,ResolveDependencyInstanceController,ResolveDirectoryInstanceController}.php
   - apps/cli/app/Commands/Dependencies/**
 ---
 

@@ -65,7 +65,7 @@ final readonly class UpdateTaskGroupAction
             $this->scheduler->claimNext();
         }
 
-        return $updated->fresh(['app', 'tasks', 'taskable']) ?? $updated;
+        return $updated->fresh(['project', 'tasks', 'taskable']) ?? $updated;
     }
 
     /**

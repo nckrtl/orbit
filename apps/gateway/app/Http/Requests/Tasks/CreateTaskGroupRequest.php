@@ -87,7 +87,7 @@ final class CreateTaskGroupRequest extends FormRequest
         }
 
         return new CreateTaskGroupData(
-            appId: $this->integer('project_id'),
+            projectId: $this->integer('project_id'),
             title: $this->string('title')->toString(),
             brief: $this->string('brief')->toString(),
             status: TaskGroupStatus::from($this->string('status', TaskGroupStatus::Backlog->value)->toString()),

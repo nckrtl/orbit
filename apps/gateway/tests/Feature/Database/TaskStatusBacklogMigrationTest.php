@@ -29,9 +29,9 @@ it('rewrites queued groups and pending subtasks to todo and keeps every row and 
     $default = DB::getDefaultConnection();
     try {
         $migration = task_status_backlog_migration();
-        $appId = DB::table('projects')->insertGetId(['name' => 'status', 'slug' => 'status', 'code' => 'STA', 'repository_url' => 'git@example.test:status.git', 'repository_identity' => 'example.test/status']);
-        $queued = DB::table('task_groups')->insertGetId(['project_id' => $appId, 'title' => 'Queued', 'brief' => 'Brief', 'status' => 'queued']);
-        $running = DB::table('task_groups')->insertGetId(['project_id' => $appId, 'title' => 'Running', 'brief' => 'Brief', 'status' => 'running']);
+        $projectId = DB::table('projects')->insertGetId(['name' => 'status', 'slug' => 'status', 'code' => 'STA', 'repository_url' => 'git@example.test:status.git', 'repository_identity' => 'example.test/status']);
+        $queued = DB::table('task_groups')->insertGetId(['project_id' => $projectId, 'title' => 'Queued', 'brief' => 'Brief', 'status' => 'queued']);
+        $running = DB::table('task_groups')->insertGetId(['project_id' => $projectId, 'title' => 'Running', 'brief' => 'Brief', 'status' => 'running']);
         $pending = DB::table('tasks')->insertGetId(['task_group_id' => $queued, 'position' => 1, 'title' => 'Pending', 'brief' => 'Brief', 'status' => 'pending']);
         $completed = DB::table('tasks')->insertGetId(['task_group_id' => $running, 'position' => 1, 'title' => 'Done', 'brief' => 'Brief', 'status' => 'completed']);
         $thread = DB::table('agent_threads')->insertGetId(['driver' => 't3', 'runtime_key' => 'node:1', 'external_id' => 'reviewer', 'task_group_id' => $running, 'role' => 'reviewer']);

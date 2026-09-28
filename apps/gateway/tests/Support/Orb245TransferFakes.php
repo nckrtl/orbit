@@ -5,30 +5,30 @@ declare(strict_types=1);
 namespace Tests\Support;
 
 use App\Domain\AppDev\AppDevSourceOperationLock;
-use App\Domain\AppInstances\AppInstanceDestinationGuard;
-use App\Domain\AppInstances\AppInstanceSourceLayout;
-use App\Domain\AppInstances\DevelopmentRouteProjector;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentContext;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentReader;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriteResult;
-use App\Domain\AppInstances\Sqlite\AppInstanceSqliteSeeder;
-use App\Domain\AppInstances\Sqlite\SqliteSeedPlacement;
-use App\Domain\AppInstances\Sqlite\SqliteSeedResult;
-use App\Domain\AppInstances\Transfer\AppInstanceTransferRouteProjector;
-use App\Domain\AppInstances\Transfer\AppInstanceTransferRuntime;
-use App\Domain\AppInstances\Transfer\AppInstanceTransferSource;
-use App\Domain\AppInstances\Transfer\TransferCheckout;
-use App\Domain\AppInstances\Transfer\TransferCleanupResult;
-use App\Domain\AppInstances\Transfer\TransferSourceCapture;
 use App\Domain\Clusters\ClusterRouterOperationLock;
+use App\Domain\Instances\DevelopmentRouteProjector;
+use App\Domain\Instances\Environment\InstanceEnvironmentContext;
+use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Instances\Environment\InstanceEnvironmentReader;
+use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
+use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
+use App\Domain\Instances\InstanceDestinationGuard;
+use App\Domain\Instances\InstanceSourceLayout;
+use App\Domain\Instances\Sqlite\InstanceSqliteSeeder;
+use App\Domain\Instances\Sqlite\SqliteSeedPlacement;
+use App\Domain\Instances\Sqlite\SqliteSeedResult;
+use App\Domain\Instances\Transfer\InstanceTransferRouteProjector;
+use App\Domain\Instances\Transfer\InstanceTransferRuntime;
+use App\Domain\Instances\Transfer\InstanceTransferSource;
+use App\Domain\Instances\Transfer\TransferCheckout;
+use App\Domain\Instances\Transfer\TransferCleanupResult;
+use App\Domain\Instances\Transfer\TransferSourceCapture;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstanceTransfer;
 use App\Models\Instance;
+use App\Models\InstanceTransfer;
 use App\Models\Node;
 use App\Models\Route;
 use Closure;
@@ -41,16 +41,16 @@ final class Orb245Accounts implements ManagedUserAccountResolver
     }
 }
 
-final class Orb245DestinationGuard implements AppInstanceDestinationGuard
+final class Orb245DestinationGuard implements InstanceDestinationGuard
 {
     public function assertUnoccupied(Node $node, StoragePath $destination): void {}
 }
 
-final class Orb245EnvironmentLock implements AppInstanceEnvironmentOperationLock
+final class Orb245EnvironmentLock implements InstanceEnvironmentOperationLock
 {
     public ?Closure $beforeRun = null;
 
-    public function run(array $appInstanceIds, Closure $operation): mixed
+    public function run(array $instanceIds, Closure $operation): mixed
     {
         ($this->beforeRun ?? static fn () => null)();
 
@@ -81,7 +81,7 @@ final class Orb245SourceLock implements AppDevSourceOperationLock
     }
 }
 
-final class Orb245TransferSource implements AppInstanceTransferSource
+final class Orb245TransferSource implements InstanceTransferSource
 {
     /** @var list<string> */
     public array $calls = [];
@@ -107,7 +107,7 @@ final class Orb245TransferSource implements AppInstanceTransferSource
 
     public ?string $cleanupCommon = null;
 
-    public AppInstanceSourceLayout $layout = AppInstanceSourceLayout::Checkout;
+    public InstanceSourceLayout $layout = InstanceSourceLayout::Checkout;
 
     public ?string $common = null;
 
@@ -116,7 +116,7 @@ final class Orb245TransferSource implements AppInstanceTransferSource
         $this->calls[] = 'capture';
         ($this->onCall ?? static fn () => null)('capture');
         $capture = new TransferSourceCapture(
-            appInstanceId: $instance->id,
+            instanceId: $instance->id,
             nodeId: $instance->node_id,
             layout: $this->layout,
             sourcePath: $instance->checkout_path,
@@ -146,7 +146,7 @@ final class Orb245TransferSource implements AppInstanceTransferSource
         $checkout = new TransferCheckout(
             nodeId: $destination->id,
             path: $path->value,
-            layout: AppInstanceSourceLayout::Checkout,
+            layout: InstanceSourceLayout::Checkout,
             head: $capture->head,
             branch: $capture->branch,
             detached: $capture->detached,
@@ -161,7 +161,7 @@ final class Orb245TransferSource implements AppInstanceTransferSource
         $this->discarded[] = $path->value;
     }
 
-    public function cleanupSource(AppInstanceTransfer $transfer): TransferCleanupResult
+    public function cleanupSource(InstanceTransfer $transfer): TransferCleanupResult
     {
         $this->calls[] = 'cleanup';
         $this->cleanupCommon = $transfer->common_repository_path;
@@ -174,7 +174,7 @@ final class Orb245TransferSource implements AppInstanceTransferSource
     }
 }
 
-final class Orb245TransferRuntime implements AppInstanceTransferRuntime
+final class Orb245TransferRuntime implements InstanceTransferRuntime
 {
     /** @var list<string> */
     public array $calls = [];
@@ -240,7 +240,7 @@ final class Orb245TransferRuntime implements AppInstanceTransferRuntime
     }
 }
 
-final class Orb245SqliteSeeder implements AppInstanceSqliteSeeder
+final class Orb245SqliteSeeder implements InstanceSqliteSeeder
 {
     /** @var list<string> */
     public array $calls = [];
@@ -265,13 +265,13 @@ final class Orb245SqliteSeeder implements AppInstanceSqliteSeeder
     }
 }
 
-final class Orb245EnvironmentReader implements AppInstanceEnvironmentReader
+final class Orb245EnvironmentReader implements InstanceEnvironmentReader
 {
     public string $contents = "APP_KEY=from-file\nNEW_FROM_ENV=imported\n";
 
     public ?ResourceOperationException $failure = null;
 
-    public function read(AppInstanceEnvironmentContext $context): string
+    public function read(InstanceEnvironmentContext $context): string
     {
         if ($this->failure instanceof ResourceOperationException) {
             throw $this->failure;
@@ -281,7 +281,7 @@ final class Orb245EnvironmentReader implements AppInstanceEnvironmentReader
     }
 }
 
-final class Orb245EnvironmentWriter implements AppInstanceEnvironmentWriter
+final class Orb245EnvironmentWriter implements InstanceEnvironmentWriter
 {
     public ?string $contents = null;
 
@@ -293,9 +293,9 @@ final class Orb245EnvironmentWriter implements AppInstanceEnvironmentWriter
     public array $observed = [];
 
     public function write(
-        AppInstanceEnvironmentContext $context,
+        InstanceEnvironmentContext $context,
         string $contents,
-    ): AppInstanceEnvironmentWriteResult {
+    ): InstanceEnvironmentWriteResult {
         $this->contents = $contents;
         $this->path = $context->path;
         $this->domain = $context->routeDomain;
@@ -305,11 +305,11 @@ final class Orb245EnvironmentWriter implements AppInstanceEnvironmentWriter
             'domain' => $context->routeDomain,
         ];
 
-        return AppInstanceEnvironmentWriteResult::changed();
+        return InstanceEnvironmentWriteResult::changed();
     }
 }
 
-final class Orb245Projection implements AppInstanceTransferRouteProjector, DevelopmentRouteProjector
+final class Orb245Projection implements DevelopmentRouteProjector, InstanceTransferRouteProjector
 {
     /** @var list<string> */
     public array $calls = [];
@@ -320,7 +320,7 @@ final class Orb245Projection implements AppInstanceTransferRouteProjector, Devel
 
     public bool $failRetirementOnce = false;
 
-    public function retireSource(AppInstanceTransfer $transfer): void
+    public function retireSource(InstanceTransfer $transfer): void
     {
         $this->calls[] = 'retire';
         if ($this->failRetirementOnce) {
@@ -329,7 +329,7 @@ final class Orb245Projection implements AppInstanceTransferRouteProjector, Devel
         }
     }
 
-    public function converge(Instance $appInstance, Route $route): void
+    public function converge(Instance $instance, Route $route): void
     {
         $this->calls[] = 'converge';
 

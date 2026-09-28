@@ -20,7 +20,7 @@ final readonly class IngressSiteRepository
 
     public function forRoute(Route $route): IngressSite
     {
-        $route->loadMissing(['cluster.routerAssignment.node', 'targets.appInstance.node']);
+        $route->loadMissing(['cluster.routerAssignment.node', 'targets.instance.node']);
         $cluster = $route->cluster;
         $ingress = $cluster !== null ? $this->eligibility->servingIngress($cluster) : null;
         $router = $cluster !== null ? $this->eligibility->activeRouter($cluster) : null;
@@ -44,10 +44,10 @@ final readonly class IngressSiteRepository
 
     public function privateOverride(Route $route): PublicRoutePrivateOverride
     {
-        $route->loadMissing(['cluster.routerAssignment.node', 'targets.appInstance.node']);
+        $route->loadMissing(['cluster.routerAssignment.node', 'targets.instance.node']);
         $cluster = $route->cluster;
         $router = $cluster !== null ? $this->eligibility->activeRouter($cluster) : null;
-        $target = $route->targets->first()?->appInstance;
+        $target = $route->targets->first()?->instance;
 
         // A tracking host has no workload: the Router itself answers, so the Router is the last hop to verify.
         if ($route->isAnalyticsTracking() && $router instanceof Node) {

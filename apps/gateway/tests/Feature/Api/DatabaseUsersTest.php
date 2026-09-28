@@ -214,13 +214,13 @@ it('refuses a missing Process, a wrong Process, and a slug owned by another driv
         'password' => DATABASE_USER_SECRET,
     ])->assertStatus(422)->assertJsonPath('error.code', 'database.process_not_docker');
 
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $this->dbNode->id,
         'name' => 'main',
         'environment' => 'development',

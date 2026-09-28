@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -19,7 +19,7 @@ function browserOriginRoute(string $domain, bool $activate = true): Route
 {
     static $sequence = 0;
     $sequence++;
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => "Shop {$sequence}",
         'slug' => "shop-{$sequence}",
         'repository_url' => "https://example.test/shop-{$sequence}.git",
@@ -31,16 +31,16 @@ function browserOriginRoute(string $domain, bool $activate = true): Route
         'wireguard_ip' => '10.44.0.'.(100 + $sequence),
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'dev',
         'environment' => 'development',
         'checkout_path' => "/srv/shop-{$sequence}",
         'source_is_laravel' => false,
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'domain' => $domain,
         'provenance' => RouteProvenance::Explicit,

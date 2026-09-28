@@ -346,14 +346,14 @@ function schedules_api_node(string $name, string $ip): Node
 function schedules_api_instance(Node $node): Instance
 {
     orbit_test_set_app_placement_role($node, false);
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Reports',
         'slug' => 'reports',
         'repository_url' => 'git@example.test:reports.git',
     ]);
 
     return Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'main',
         'environment' => 'development',

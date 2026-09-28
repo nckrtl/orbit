@@ -14,10 +14,10 @@ use InvalidArgumentException;
 final readonly class ProjectLifecycleStepStore
 {
     /** @return list<LifecycleStep> */
-    public function ordered(Project $app, LifecyclePhase $phase): array
+    public function ordered(Project $project, LifecyclePhase $phase): array
     {
         return array_values(ProjectLifecycleStep::query()
-            ->where('project_id', $app->id)
+            ->where('project_id', $project->id)
             ->where('phase', $phase->value)
             ->orderBy('position')
             ->get()
@@ -26,25 +26,25 @@ final readonly class ProjectLifecycleStepStore
     }
 
     public function create(
-        Project $app,
+        Project $project,
         LifecyclePhase $phase,
         LifecycleStep $step,
         ?string $before,
         ?string $after,
     ): LifecycleStep {
-        return DB::transaction(function () use ($app, $phase, $step, $before, $after): LifecycleStep {
-            Project::query()->lockForUpdate()->findOrFail($app->id);
-            $existing = $this->ordered($app, $phase);
+        return DB::transaction(function () use ($project, $phase, $step, $before, $after): LifecycleStep {
+            Project::query()->lockForUpdate()->findOrFail($project->id);
+            $existing = $this->ordered($project, $phase);
             $placed = $this->insert($existing, $step, $before, $after);
             $this->assertValid($placed, $existing);
-            $this->persist($app, $phase, $placed);
+            $this->persist($project, $phase, $placed);
 
             return $step;
         }, 5);
     }
 
     public function update(
-        Project $app,
+        Project $project,
         LifecyclePhase $phase,
         string $name,
         ?string $command,
@@ -54,9 +54,9 @@ final readonly class ProjectLifecycleStepStore
         bool $hasCommand,
         bool $hasTimeout,
     ): LifecycleStep {
-        return DB::transaction(function () use ($app, $phase, $name, $command, $timeoutSeconds, $before, $after, $hasCommand, $hasTimeout): LifecycleStep {
-            Project::query()->lockForUpdate()->findOrFail($app->id);
-            $existing = $this->ordered($app, $phase);
+        return DB::transaction(function () use ($project, $phase, $name, $command, $timeoutSeconds, $before, $after, $hasCommand, $hasTimeout): LifecycleStep {
+            Project::query()->lockForUpdate()->findOrFail($project->id);
+            $existing = $this->ordered($project, $phase);
             $previous = $existing;
             $index = $this->indexByName($existing, $name, $phase);
             $current = $existing[$index];
@@ -76,23 +76,23 @@ final readonly class ProjectLifecycleStepStore
                 ? $this->restore($existing, $index, $updated)
                 : $this->insert($existing, $updated, $before, $after);
             $this->assertValid($placed, $previous);
-            $this->persist($app, $phase, $placed);
+            $this->persist($project, $phase, $placed);
 
             return $updated;
         }, 5);
     }
 
-    public function destroy(Project $app, LifecyclePhase $phase, string $name): LifecycleStep
+    public function destroy(Project $project, LifecyclePhase $phase, string $name): LifecycleStep
     {
-        return DB::transaction(function () use ($app, $phase, $name): LifecycleStep {
-            Project::query()->lockForUpdate()->findOrFail($app->id);
-            $existing = $this->ordered($app, $phase);
+        return DB::transaction(function () use ($project, $phase, $name): LifecycleStep {
+            Project::query()->lockForUpdate()->findOrFail($project->id);
+            $existing = $this->ordered($project, $phase);
             $previous = $existing;
             $index = $this->indexByName($existing, $name, $phase);
             $removed = $existing[$index];
             array_splice($existing, $index, 1);
             $this->assertValid($existing, $previous);
-            $this->persist($app, $phase, $existing);
+            $this->persist($project, $phase, $existing);
 
             return $removed;
         }, 5);
@@ -203,16 +203,16 @@ final readonly class ProjectLifecycleStepStore
     }
 
     /** @param list<LifecycleStep> $steps */
-    private function persist(Project $app, LifecyclePhase $phase, array $steps): void
+    private function persist(Project $project, LifecyclePhase $phase, array $steps): void
     {
         ProjectLifecycleStep::query()
-            ->where('project_id', $app->id)
+            ->where('project_id', $project->id)
             ->where('phase', $phase->value)
             ->delete();
 
         foreach ($steps as $position => $step) {
             ProjectLifecycleStep::query()->create([
-                'project_id' => $app->id,
+                'project_id' => $project->id,
                 'phase' => $phase->value,
                 'name' => $step->name,
                 'command' => $step->command,

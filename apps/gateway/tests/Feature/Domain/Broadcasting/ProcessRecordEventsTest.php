@@ -7,9 +7,9 @@ use App\Actions\Processes\RemoveProcessAction;
 use App\Actions\Processes\StartProcessAction;
 use App\Actions\Processes\StopProcessAction;
 use App\Data\Processes\AddProcessData;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessRuntime;
@@ -76,7 +76,7 @@ beforeEach(function (): void {
         'checkout_path' => '/home/orbit/apps/docs',
         'source_is_laravel' => true,
         'provisioning_step' => 'active',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
 });
 

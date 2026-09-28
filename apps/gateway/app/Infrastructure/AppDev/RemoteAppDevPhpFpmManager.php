@@ -19,9 +19,9 @@ use App\Rules\SupportedPhpVersion;
 final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
 {
     public function __construct(
-        private AppDevSiteRepository $sites,
-        private AppDevPhpFpmConfigRenderer $renderer,
-        private AppDevSshExecutor $ssh,
+        private DevelopmentSiteRepository $sites,
+        private DevelopmentPhpFpmConfigRenderer $renderer,
+        private DevelopmentSshExecutor $ssh,
         private ManagedUserAccountResolver $accounts,
         private RemotePhpPackageManager $packages,
         private string $phpRoot = '/etc/php',
@@ -39,7 +39,7 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
         $desiredSites = $this->sites
             ->forNode($node)
             ->filter(
-                static fn (AppDevSite $site): bool => (
+                static fn (DevelopmentSite $site): bool => (
                     $site->phpVersion !== null
                     && ! $site->isProxy()
                     && ! $site->usesDedicatedPhpRuntime()
@@ -47,7 +47,7 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
             )
             ->values();
         $desiredVersions = $desiredSites
-            ->map(static fn (AppDevSite $site): string => $site->phpVersion ?? '')
+            ->map(static fn (DevelopmentSite $site): string => $site->phpVersion ?? '')
             ->unique()
             ->values();
         $unsupportedVersion = $desiredVersions
@@ -62,13 +62,13 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
         }
 
         $installedProjection = $this->installedProjection($node, $account);
-        $role = $desiredSites->contains(static fn (AppDevSite $site): bool => $site->environment === 'production')
+        $role = $desiredSites->contains(static fn (DevelopmentSite $site): bool => $site->environment === 'production')
             ? RoleName::AppProd
             : RoleName::AppDev;
-        $this->packages->installForAppInstance($node->loadMissing('roles'), $desiredVersions, $this->ssh, $role);
+        $this->packages->installForInstance($node->loadMissing('roles'), $desiredVersions, $this->ssh, $role);
 
         $desiredPoolVersions = $desiredSites
-            ->mapWithKeys(static fn (AppDevSite $site): array => [$site->poolName() => $site->phpVersion ?? ''])
+            ->mapWithKeys(static fn (DevelopmentSite $site): array => [$site->poolName() => $site->phpVersion ?? ''])
             ->all();
         $plan = PhpFpmPublicationPlan::from(
             installed: $installedProjection,
@@ -77,7 +77,7 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
         );
 
         $transitionSites = $desiredSites
-            ->reject(static fn (AppDevSite $site): bool => in_array(
+            ->reject(static fn (DevelopmentSite $site): bool => in_array(
                 needle: $site->poolName(),
                 haystack: $plan->movingPoolNames,
                 strict: true,

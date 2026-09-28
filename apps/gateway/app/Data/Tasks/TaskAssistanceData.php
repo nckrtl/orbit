@@ -15,8 +15,8 @@ final class TaskAssistanceData extends Data
 {
     public function __construct(
         public int $id,
-        public int $appId,
-        public string $app,
+        public int $projectId,
+        public string $project,
         public string $projectCode,
         public string $title,
         public TaskGroupStatus $status,
@@ -25,13 +25,13 @@ final class TaskAssistanceData extends Data
 
     public static function fromModel(TaskGroup $group): self
     {
-        $group->loadMissing('app');
+        $group->loadMissing('project');
 
         return new self(
             id: $group->id,
-            appId: $group->project_id,
-            app: $group->app->slug,
-            projectCode: $group->app->code,
+            projectId: $group->project_id,
+            project: $group->project->slug,
+            projectCode: $group->project->code,
             title: $group->title,
             status: $group->status,
             assistanceReason: $group->assistance_reason,

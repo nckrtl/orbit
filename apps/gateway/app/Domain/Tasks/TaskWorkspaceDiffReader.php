@@ -7,7 +7,7 @@ namespace App\Domain\Tasks;
 use App\Models\Instance;
 
 /**
- * Reads the line diff of a task workspace against the App default branch.
+ * Reads the line diff of a task workspace against the Project default branch.
  *
  * A no-op implementation returns 0. A refused remote git command returns 0.
  */

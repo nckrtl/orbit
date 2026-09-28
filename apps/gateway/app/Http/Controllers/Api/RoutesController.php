@@ -84,7 +84,7 @@ final class RoutesController extends Controller
     ): JsonResponse {
         $updated = $request->isTargetSet()
             ? $targetSet->execute($route, $request->payload())
-            : $action->execute($route, $request->appInstanceId());
+            : $action->execute($route, $request->instanceId());
 
         return response()->json([
             'data' => RouteData::fromModel($updated)->toArray(),

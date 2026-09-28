@@ -6,14 +6,14 @@ namespace App\Infrastructure\Tasks;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use JsonException;
 
 final readonly class RemoteTaskWorkspaceStateReader implements TaskWorkspaceStateReader
 {
-    public function __construct(private AppDevSshExecutor $ssh) {}
+    public function __construct(private DevelopmentSshExecutor $ssh) {}
 
     public function headCommit(Instance $instance): ?string
     {

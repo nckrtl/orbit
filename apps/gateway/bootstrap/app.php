@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-use App\Data\AppInstances\AppInstanceRemovalData;
+use App\Data\Instances\InstanceRemovalData;
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\AppInstances\Removal\AppInstanceRemovalException;
 use App\Domain\Firewall\FirewallOperationException;
+use App\Domain\Instances\Removal\InstanceRemovalException;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeRemovalException;
 use App\Domain\Nodes\NodeRoleOperationException;
@@ -82,10 +82,10 @@ return Application::configure(basePath: dirname(__DIR__))
                 return GatewayExceptionStatus::for($exception, request()->is('api/*')) >= 500;
             });
 
-            $exceptions->render(function (AppInstanceRemovalException $exception, Request $request): JsonResponse {
+            $exceptions->render(function (InstanceRemovalException $exception, Request $request): JsonResponse {
                 $request->attributes->set('orbit.error_code', $exception->errorCode);
-                $removal = AppInstanceRemovalData::fromModel($exception->removal)->toArray();
-                $request->attributes->set('orbit.app_instance_removal', $removal);
+                $removal = InstanceRemovalData::fromModel($exception->removal)->toArray();
+                $request->attributes->set('orbit.instance_removal', $removal);
                 $requestId = $request->attributes->get('orbit.request_id');
 
                 if (! is_string($requestId) || $requestId === '') {

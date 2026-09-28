@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Actions\Doctor\ScheduleDoctorProbe;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorFamilyStatus;
 use App\Domain\Doctor\DoctorInspectionException;
@@ -11,6 +10,7 @@ use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\ScheduleInspectionData;
 use App\Domain\Doctor\ScheduleStateInspector;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Schedules\ScheduleTargetResolver;
@@ -36,19 +36,19 @@ beforeEach(function (): void {
         'role' => RoleName::AppDev,
         'status' => LifecycleStatus::Active,
     ]);
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $this->node->id,
         'name' => 'main',
         'environment' => 'development',
         'checkout_path' => '/srv/apps/docs',
         'provisioning_step' => 'active',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
     $this->schedule = Schedule::query()->create([
         'target_type' => Instance::MorphAlias,

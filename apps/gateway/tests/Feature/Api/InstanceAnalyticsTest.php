@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Actions\AppInstances\RemoveAppInstanceAction;
+use App\Actions\Instances\RemoveInstanceAction;
 use App\Domain\Analytics\AnalyticsTrackingRouteProjector;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\Clusters\ClusterState;
@@ -62,7 +62,7 @@ beforeEach(function (): void {
 });
 
 describe('instance:analytics:show', function (): void {
-    it('reports an App instance without tracking', function (): void {
+    it('reports a Project instance without tracking', function (): void {
         $this->getJson($this->url)
             ->assertOk()
             ->assertJsonPath('data', [
@@ -155,7 +155,7 @@ describe('instance:analytics:enable', function (): void {
             ->assertJsonPath('data.analytics_instance_id', null);
     });
 
-    it('publishes a public tracking host through Ingress and Router when both roles sit on the App instance Node', function (): void {
+    it('publishes a public tracking host through Ingress and Router when both roles sit on the Project instance Node', function (): void {
         $this->router->roles()->delete();
         $this->ingress->roles()->delete();
 
@@ -359,7 +359,7 @@ describe('instance:analytics:enable', function (): void {
             ->and($this->edge->calls)->toBe([]);
     });
 
-    it('refuses an App instance that serves no domain', function (Closure $instance): void {
+    it('refuses a Project instance that serves no domain', function (Closure $instance): void {
         $target = $instance();
 
         $this->postJson("/api/v1/instances/{$target->id}/analytics", ['hosts' => ['stats.shop.example.com']])
@@ -411,7 +411,7 @@ describe('instance:analytics:enable', function (): void {
 });
 
 describe('instance:analytics:disable', function (): void {
-    it('removes every tracking Route of the App instance and is idempotent', function (): void {
+    it('removes every tracking Route of the Project instance and is idempotent', function (): void {
         $other = instance_analytics_extra_instance('other');
         instance_analytics_app_route($other, 'other.example.com', RoutePublication::Public);
         $this->postJson("/api/v1/instances/{$other->id}/analytics")->assertOk();
@@ -508,10 +508,10 @@ describe('guards around a tracking host', function (): void {
         expect($this->analytics->roles()->where('role', RoleName::Analytics->value)->exists())->toBeTrue();
     });
 
-    it('refuses to remove an App instance that still publishes a tracking host', function (): void {
+    it('refuses to remove a Project instance that still publishes a tracking host', function (): void {
         $this->postJson($this->url)->assertOk();
 
-        expect(fn () => app(RemoveAppInstanceAction::class)->execute($this->instance->refresh(), force: true))
+        expect(fn () => app(RemoveInstanceAction::class)->execute($this->instance->refresh(), force: true))
             ->toThrow(function (ResourceOperationException $exception): void {
                 expect($exception->errorCode)->toBe('analytics.tracking_hosts_exist');
             });

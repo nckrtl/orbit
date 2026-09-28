@@ -32,14 +32,14 @@ function log_stream_node(string $name, string $address): Node
 
 function log_stream_instance(Node $node, string $checkout = '/home/orbit/apps/shop/main'): Instance
 {
-    $app = Project::query()->firstOrCreate(['slug' => 'shop'], [
+    $project = Project::query()->firstOrCreate(['slug' => 'shop'], [
         'name' => 'Shop',
         'repository_url' => 'git@example.test:shop.git',
         'default_branch' => 'main',
     ]);
 
     return Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'main-'.$node->id.'-'.random_int(1, 1_000_000),
         'checkout_path' => $checkout,

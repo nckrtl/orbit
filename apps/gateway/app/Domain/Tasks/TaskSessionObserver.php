@@ -22,7 +22,7 @@ final readonly class TaskSessionObserver
      */
     public function observe(TaskGroup $group, Task $task): TaskSessionObservation
     {
-        $group->loadMissing(['app', 'tasks', 'taskable']);
+        $group->loadMissing(['project', 'tasks', 'taskable']);
         $records = AgentThread::query()->where('task_group_id', $group->id)->orderBy('id')->get();
         $reviewerId = $this->subtaskReviewerId($records, $group, $task);
         $observations = [];

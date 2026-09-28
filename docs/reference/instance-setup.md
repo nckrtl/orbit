@@ -3,9 +3,9 @@ title: "Instance setup and teardown"
 description: "How a Project stores named setup and teardown commands, and when Orbit runs them for a development Instance."
 covers:
   - apps/gateway/app/Domain/Projects/{LifecyclePhase,LifecycleStep,ProjectLifecycleRunner,ProjectLifecycleStepStore}.php
-  - apps/gateway/app/Actions/AppInstances/{CreateAppInstanceAction,RunInstanceSetupAction}.php
-  - apps/gateway/app/Infrastructure/AppInstances/NativeDevelopmentAppInstanceProvisioner.php
-  - apps/gateway/app/Domain/AppInstances/DevelopmentAppInstanceProvisioner.php
+  - apps/gateway/app/Actions/{Instances/{CreateInstanceAction,RegisterInstanceAction,RunInstanceSetupAction},AppInstances/CreateAppInstanceAction}.php
+  - apps/gateway/app/Infrastructure/{Instances/{NativeDevelopmentInstanceProvisioner,RemoteDevelopmentInstanceConfigurator,RemoteDevelopmentInstanceSourceLifecycle,RemoteRegistrationSourceManager,RemoteInstanceDestinationGuard},AppInstances/NativeDevelopmentAppInstanceProvisioner,AppDev/DevelopmentSshExecutor,AppProd/ProductionSshExecutor}.php
+  - apps/gateway/app/Domain/Instances/{DevelopmentInstanceProvisioner,InstanceSourceProfileGuard}.php
   - apps/gateway/app/Http/Controllers/Api/ProjectLifecycleStepsController.php
   - apps/gateway/app/Models/ProjectLifecycleStep.php
   - apps/gateway/resources/instances/lifecycle.py

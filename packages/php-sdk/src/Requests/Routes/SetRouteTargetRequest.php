@@ -20,7 +20,7 @@ final class SetRouteTargetRequest extends GatewayRequest implements HasBody
 
     /**
      * @param  list<int>|null  $targetIds
-     * @param  list<array{app_instance_id: int, route_id?: int, remove?: true}>  $dispositions
+     * @param  list<array{instance_id: int, route_id?: int, remove?: true}>  $dispositions
      */
     public function __construct(
         private readonly int $routeId,
@@ -52,6 +52,6 @@ final class SetRouteTargetRequest extends GatewayRequest implements HasBody
             return $body;
         }
 
-        return ['app_instance_id' => $this->appInstanceId];
+        return ['instance_id' => $this->appInstanceId];
     }
 }

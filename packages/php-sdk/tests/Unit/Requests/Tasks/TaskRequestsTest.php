@@ -56,11 +56,11 @@ describe('task transport', function (): void {
 
     it('sends create fields and omits only absent optional values', function (): void {
         expect(new CreateTaskGroupRequest(1, 'Title', 'Brief')->body()->all())
-            ->toBe('{"app_id":1,"title":"Title","brief":"Brief"}')
+            ->toBe('{"project_id":1,"title":"Title","brief":"Brief"}')
             ->and(new CreateTaskGroupRequest(1, 'Title', 'Brief', 'todo', false, tasks: [new SubtaskInput('One', 'First.')])->body()->all())
-            ->toBe('{"app_id":1,"title":"Title","brief":"Brief","status":"todo","notify_coder":false,"tasks":[{"title":"One","brief":"First."}]}')
+            ->toBe('{"project_id":1,"title":"Title","brief":"Brief","status":"todo","notify_coder":false,"tasks":[{"title":"One","brief":"First."}]}')
             ->and(new CreateTaskGroupRequest(1, 'Title', 'Brief', tasks: [])->body()->all())
-            ->toBe('{"app_id":1,"title":"Title","brief":"Brief","tasks":[]}')
+            ->toBe('{"project_id":1,"title":"Title","brief":"Brief","tasks":[]}')
             ->and(new CreateTaskGroupRequest(1, 'Title', 'Brief')->headers()->get('Content-Type'))
             ->toBe('application/json');
     });
@@ -97,7 +97,7 @@ describe('task transport', function (): void {
 
     it('puts list filters in the query and omits absent ones', function (): void {
         expect(new ListTaskGroupsRequest()->query()->all())->toBe([])
-            ->and(new ListTaskGroupsRequest(4, 'backlog')->query()->all())->toBe(['app_id' => 4, 'status' => 'backlog']);
+            ->and(new ListTaskGroupsRequest(4, 'backlog')->query()->all())->toBe(['project_id' => 4, 'status' => 'backlog']);
     });
 
     it('keeps status, task, and read requests bodyless', function (GatewayRequest $request): void {
@@ -180,7 +180,7 @@ describe('task responses from recorded Gateway fixtures', function (): void {
             ->and(array_map(static fn (TaskAssistanceResponse $group): string => $group->reference(), $assisted->assistance ?? []))->toBe(['ORB-1', 'ORB-2'])
             ->and($assisted->toArray()['assistance'][0])->toMatchArray([
                 'id' => 1,
-                'app' => 'orbit',
+                'project' => 'orbit',
                 'project_code' => 'ORB',
                 'title' => 'Blocked implementer',
                 'status' => 'running',
@@ -198,7 +198,7 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         $mockClient = new MockClient([ShowTaskGroupRequest::class => MockResponse::make([
             'data' => [
                 'id' => 4,
-                'app_id' => 1,
+                'project_id' => 1,
                 'title' => 'Stalled',
                 'brief' => 'The group is waiting.',
                 'status' => 'running',
@@ -318,8 +318,8 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         'status without enabled' => [new ShowTasksStatusRequest, ['enabled' => 'yes']],
         'status assistance is not a list' => [new ShowTasksStatusRequest, ['enabled' => true, 'assistance' => 'blocked']],
         'status assistance entry without an id' => [new ShowTasksStatusRequest, ['enabled' => true, 'assistance' => [['title' => 'Stalled', 'status' => 'running']]]],
-        'group without title' => [new ShowTaskGroupRequest(1), ['id' => 1, 'app_id' => 1, 'brief' => 'B', 'status' => 'backlog', 'tasks' => []]],
-        'group with scalar subtasks' => [new ShowTaskGroupRequest(1), ['id' => 1, 'app_id' => 1, 'title' => 'T', 'brief' => 'B', 'status' => 'backlog', 'tasks' => 'none']],
+        'group without title' => [new ShowTaskGroupRequest(1), ['id' => 1, 'project_id' => 1, 'brief' => 'B', 'status' => 'backlog', 'tasks' => []]],
+        'group with scalar subtasks' => [new ShowTaskGroupRequest(1), ['id' => 1, 'project_id' => 1, 'title' => 'T', 'brief' => 'B', 'status' => 'backlog', 'tasks' => 'none']],
         'group list member without id' => [new ListTaskGroupsRequest, [['title' => 'T']]],
         'subtask without position' => [new CreateSubtaskRequest(1, 'T', 'B'), ['id' => 1, 'task_group_id' => 1, 'title' => 'T', 'brief' => 'B', 'status' => 'todo']],
         'subtask with a scalar deliverable' => [new CreateSubtaskRequest(1, 'T', 'B'), ['id' => 1, 'task_group_id' => 1, 'position' => 1, 'title' => 'T', 'brief' => 'B', 'status' => 'todo', 'deliverables' => ['docs']]],

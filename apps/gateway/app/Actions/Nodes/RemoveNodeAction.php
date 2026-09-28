@@ -345,10 +345,10 @@ final readonly class RemoveNodeAction
      */
     private function guardProtected(Node $node, Node $caller): void
     {
-        if ($node->appInstances()->exists()) {
+        if ($node->instances()->exists()) {
             throw $this->conflict(
-                'node.has_app_instances',
-                "Node [{$node->name}] still owns AppInstances.",
+                'node.has_instances',
+                "Node [{$node->name}] still owns Instances.",
             );
         }
 

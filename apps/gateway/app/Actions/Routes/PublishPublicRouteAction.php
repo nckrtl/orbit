@@ -35,7 +35,7 @@ final readonly class PublishPublicRouteAction
     {
         return $this->owner->run(function () use ($route): Route {
             $route = Route::query()
-                ->with(['targets.appInstance.node', 'cluster.routerAssignment.node', 'cluster.ingressAssignment.node'])
+                ->with(['targets.instance.node', 'cluster.routerAssignment.node', 'cluster.ingressAssignment.node'])
                 ->findOrFail($route->id);
 
             $shouldRemove = $this->eligibility->canActivate($route) || $this->eligibility->publicEdgeIsLive($route);
@@ -61,7 +61,7 @@ final readonly class PublishPublicRouteAction
     private function publishOwned(int $routeId, RoutePublication $publication): Route
     {
         $route = Route::query()
-            ->with(['targets.appInstance.node', 'cluster.routerAssignment.node', 'cluster.ingressAssignment.node'])
+            ->with(['targets.instance.node', 'cluster.routerAssignment.node', 'cluster.ingressAssignment.node'])
             ->findOrFail($routeId);
 
         if ($publication === RoutePublication::Private) {

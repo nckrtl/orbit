@@ -26,7 +26,7 @@ use App\Models\TaskGroup;
 
 function router_group(): TaskGroup
 {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'router-app',
         'slug' => 'router-app',
         'repository_url' => 'git@example.test:router.git',
@@ -40,7 +40,7 @@ function router_group(): TaskGroup
         'wireguard_ip' => '10.44.0.211',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'task-21',
         'checkout_path' => '/srv/orbit/apps/router-app/task-21',
@@ -48,7 +48,7 @@ function router_group(): TaskGroup
         'status' => 'source_resolved',
     ]);
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Execute Jev actions',
         'brief' => 'Drain, advance, escalate, or stay quiet.',
         'status' => TaskGroupStatus::Running,
@@ -66,7 +66,7 @@ function router_group(): TaskGroup
 
     test_link_agent_threads($group);
 
-    return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+    return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
 }
 
 function router_observation(TaskGroup $group, ?string $pendingApprovalId = null): TaskSessionObservation

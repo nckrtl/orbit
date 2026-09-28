@@ -14,7 +14,7 @@ use Illuminate\Support\Str;
  * @property string $name
  * @property list<string> $environments
  * @property array<string, mixed> $spec
- * @property-read Project $app
+ * @property-read Project $project
  */
 final class ScheduleDefinition extends Model
 {
@@ -52,7 +52,7 @@ final class ScheduleDefinition extends Model
     }
 
     /** @return BelongsTo<Project, $this> */
-    public function app(): BelongsTo
+    public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class, 'project_id');
     }

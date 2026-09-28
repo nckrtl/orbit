@@ -48,7 +48,7 @@ beforeEach(function (): void {
 
 function t3_spawner_group(): TaskGroup
 {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'orbit',
         'slug' => 'orbit',
         'repository_url' => 'git@example.test:orbit.git',
@@ -62,7 +62,7 @@ function t3_spawner_group(): TaskGroup
         'wireguard_ip' => '10.44.0.110',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'task-1',
         'checkout_path' => '/srv/orbit/apps/orbit/task-1',
@@ -71,7 +71,7 @@ function t3_spawner_group(): TaskGroup
         'starting_commit' => str_repeat('b', 40),
     ]);
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Wire T3',
         'brief' => 'Spawn reviewer and implementer.',
         'status' => TaskGroupStatus::Running,
@@ -86,7 +86,7 @@ function t3_spawner_group(): TaskGroup
         'status' => TaskStatus::Running,
     ]);
 
-    return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+    return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
 }
 
 /**
@@ -327,7 +327,7 @@ it('sends the review request to the stored reviewer thread', function (): void {
 
 it('names a non-main project default branch in the opening review packet', function (): void {
     $group = t3_spawner_group();
-    $group->app->update(['default_branch' => 'develop']);
+    $group->project->update(['default_branch' => 'develop']);
     [$spawner, $dispatcher] = t3_spawner_stack();
 
     $spawner->spawnReviewer($group->tasks->first());
@@ -697,11 +697,11 @@ it('imports legacy thread links using the instance morph alias', function (strin
             // Archive backoff alters agent_threads, which this legacy import creates.
             && ! str_contains($path, 'add_archive_backoff_to_agent_threads')));
         Artisan::call('migrate', ['--database' => 'agent_migration', '--path' => $paths, '--realpath' => true, '--force' => true]);
-        $appId = DB::table('projects')->insertGetId(['name' => 'legacy', 'slug' => 'legacy', 'code' => 'LEG', 'repository_url' => 'git@example.test:legacy.git', 'repository_identity' => 'example.test/legacy']);
+        $projectId = DB::table('projects')->insertGetId(['name' => 'legacy', 'slug' => 'legacy', 'code' => 'LEG', 'repository_url' => 'git@example.test:legacy.git', 'repository_identity' => 'example.test/legacy']);
         $nodeId = DB::table('nodes')->insertGetId(['name' => 'legacy-node', 'public_ssh_host' => '10.44.0.110', 'status' => 'active', 'platform' => 'linux']);
-        $instanceId = DB::table('instances')->insertGetId(['project_id' => $appId, 'node_id' => $nodeId, 'name' => 'task', 'checkout_path' => '/srv/legacy', 'status' => 'source_resolved']);
+        $instanceId = DB::table('instances')->insertGetId(['project_id' => $projectId, 'node_id' => $nodeId, 'name' => 'task', 'checkout_path' => '/srv/legacy', 'status' => 'source_resolved']);
         $groupId = DB::table('task_groups')->insertGetId([
-            'project_id' => $appId, 'title' => 'Legacy', 'brief' => 'Legacy links',
+            'project_id' => $projectId, 'title' => 'Legacy', 'brief' => 'Legacy links',
             'taskable_type' => 'instance', 'taskable_id' => $instanceId,
             'reviewer_thread_id' => 'legacy-review', 'reviewer_model' => 'claude-opus-5', 'implementer_model' => 'gpt-5.6-luna',
         ]);

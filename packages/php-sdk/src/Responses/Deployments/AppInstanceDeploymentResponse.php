@@ -42,7 +42,7 @@ final readonly class AppInstanceDeploymentResponse
 
         return new self(
             id: is_int($data['id'] ?? null) ? $data['id'] : 0,
-            appInstanceId: is_int($data['app_instance_id'] ?? null) ? $data['app_instance_id'] : 0,
+            appInstanceId: is_int($data['instance_id'] ?? null) ? $data['instance_id'] : 0,
             release: is_string($data['release'] ?? null) ? $data['release'] : null,
             branch: is_string($data['branch'] ?? null) ? $data['branch'] : null,
             commit: is_string($data['commit'] ?? null) ? $data['commit'] : null,
@@ -81,7 +81,7 @@ final readonly class AppInstanceDeploymentResponse
     {
         return [
             'id' => $this->id,
-            'app_instance_id' => $this->appInstanceId,
+            'instance_id' => $this->appInstanceId,
             'release' => $this->release,
             'branch' => $this->branch,
             'commit' => $this->commit,

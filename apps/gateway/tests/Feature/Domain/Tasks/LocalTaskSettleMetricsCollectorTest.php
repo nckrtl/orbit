@@ -17,7 +17,7 @@ use App\Models\TaskGroup;
 
 it('sums task tokens, reads the workspace line diff, and measures duration', function (): void {
     $this->travelTo('2026-09-20 12:00:02');
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'metrics-app',
         'slug' => 'metrics-app',
         'repository_url' => 'git@github.com:nckrtl/orbit.git',
@@ -31,14 +31,14 @@ it('sums task tokens, reads the workspace line diff, and measures duration', fun
         'wireguard_ip' => '10.44.0.160',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'task-40',
         'checkout_path' => '/tmp/task-40',
         'status' => 'source_resolved',
     ]);
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Metrics',
         'brief' => 'Fill settle numbers.',
         'status' => TaskGroupStatus::Settling,
@@ -84,7 +84,7 @@ it('sums task tokens, reads the workspace line diff, and measures duration', fun
 
     $metrics = new LocalTaskSettleMetricsCollector(
         new TaskGroupMetricsRefresher(test_agent_observer(new NullT3ThreadReader), $reader),
-    )->collect($group->fresh(['app', 'tasks', 'taskable']) ?? $group);
+    )->collect($group->fresh(['project', 'tasks', 'taskable']) ?? $group);
 
     expect($metrics->tokens)->toBe(40)
         ->and($metrics->lineDiff)->toBe(18)

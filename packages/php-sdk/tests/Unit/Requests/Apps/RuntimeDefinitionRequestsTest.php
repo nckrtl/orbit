@@ -189,7 +189,7 @@ describe('App runtime definition requests', function (): void {
     it('bounds malformed item fields to immutable typed values', function (): void {
         $response = AppRuntimeDefinitionResponse::fromGatewayData([
             'id' => 41,
-            'app_id' => '7',
+            'project_id' => '7',
             'name' => ['worker'],
             'environments' => [5, 'production'],
             'spec' => ['runtime' => 'systemd', 0 => 'malformed'],
@@ -300,7 +300,7 @@ function runtime_definition_gateway_data(bool $includeCommand = true): array
 
     return [
         'id' => runtime_definition_id(),
-        'app_id' => 7,
+        'project_id' => 7,
         'name' => 'worker',
         'environments' => ['production'],
         'spec' => $spec,

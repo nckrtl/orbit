@@ -5,8 +5,8 @@ declare(strict_types=1);
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
-use App\Infrastructure\AppDev\AppDevSiteRepository;
+use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\PrivateDnsListenerRelease;
 use App\Infrastructure\Processes\CommandResult;
@@ -138,7 +138,7 @@ function dns_target_manager(ProcessRunner $processes, SshExecutor $ssh): Dnsmasq
 {
     return new DnsmasqPrivateDnsManager(
         processes: $processes,
-        renderer: new AppDevDnsConfigRenderer(new AppDevSiteRepository),
+        renderer: new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository),
         activateListener: true,
         ssh: $ssh,
         keys: new DnsTargetSshKeyProvider,

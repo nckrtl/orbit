@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskPullRequestException;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -30,7 +30,7 @@ function fetcher_git(string $directory, array $arguments): string
 
 function fetcher_group(string $checkout): TaskGroup
 {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@github.com:acme/shop.git', 'default_branch' => 'main',
     ]);
     $node = Node::query()->create([
@@ -38,21 +38,21 @@ function fetcher_group(string $checkout): TaskGroup
         'public_ssh_host' => '10.44.0.150', 'wireguard_ip' => '10.44.0.150', 'user' => 'orbit',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-7', 'checkout_path' => $checkout,
+        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-7', 'checkout_path' => $checkout,
         'branch' => 'task-7', 'status' => 'source_resolved',
     ]);
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id, 'title' => 'Export orders', 'brief' => 'Add an export.', 'status' => 'settling',
+        'project_id' => $project->id, 'title' => 'Export orders', 'brief' => 'Add an export.', 'status' => 'settling',
     ]);
     $group->taskable()->associate($instance);
     $group->save();
 
-    return $group->fresh(['app', 'taskable']) ?? $group;
+    return $group->fresh(['project', 'taskable']) ?? $group;
 }
 
 function fetcher(SshExecutor $transport): GitHubTaskBaseBranchFetcher
 {
-    app()->instance(AppDevSshExecutor::class, new AppDevSshExecutor(
+    app()->instance(DevelopmentSshExecutor::class, new DevelopmentSshExecutor(
         $transport,
         new class implements SshKeyProvider
         {

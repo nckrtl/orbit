@@ -101,7 +101,7 @@ final class Node extends Model
     }
 
     /** @return HasMany<Instance, $this> */
-    public function appInstances(): HasMany
+    public function instances(): HasMany
     {
         return $this->hasMany(Instance::class);
     }

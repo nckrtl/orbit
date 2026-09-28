@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Http\Controllers\Api\AppInstancesController;
+use App\Http\Controllers\Api\InstancesController;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
@@ -79,23 +79,23 @@ function operator_prepared_supported_graph(): array
         'user' => 'orbit',
         'wireguard_ip' => '10.44.0.3',
     ]);
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'git@github.com:acme/site.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    $appInstance = Instance::query()->create([
-        'project_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'default',
         'checkout_path' => '/home/orbit/apps/acme/default',
         'source_layout' => 'worktree',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'generation_basis_node_id' => $node->id,
         'domain' => 'acme.app-dev.orbit',
@@ -104,38 +104,38 @@ function operator_prepared_supported_graph(): array
         'provenance' => RouteProvenance::Generated,
     ]);
     $route->targets()->create([
-        'instance_id' => $appInstance->id,
+        'instance_id' => $instance->id,
         'position' => 0,
     ]);
     $route->update(['status' => RouteStatus::Active]);
     $route = $route->refresh();
     $process = Process::query()->create([
         'owner_type' => Instance::MorphAlias,
-        'owner_id' => $appInstance->id,
+        'owner_id' => $instance->id,
         'name' => 'queue',
         'runtime' => ProcessRuntime::Systemd,
-        'working_directory' => $appInstance->checkout_path,
+        'working_directory' => $instance->checkout_path,
         'runtime_config' => ['command' => ['/usr/bin/true']],
         'restart_policy' => 'never',
         'desired_state' => 'stopped',
         'status' => LifecycleStatus::Active,
     ]);
 
-    return [$app, $node, $appInstance, $route, $process, supported_legacy_schema_snapshot($app, $node, $appInstance, $route, $process)];
+    return [$project, $node, $instance, $route, $process, supported_legacy_schema_snapshot($project, $node, $instance, $route, $process)];
 }
 
 /** @return array<string, mixed> */
 function supported_legacy_schema_snapshot(
-    Project $app,
+    Project $project,
     Node $node,
-    Instance $appInstance,
+    Instance $instance,
     Route $route,
     Process $process,
 ): array {
     return [
-        'app' => $app->fresh()->only(['id', 'name', 'slug', 'repository_url', 'default_branch', 'root']),
+        'app' => $project->fresh()->only(['id', 'name', 'slug', 'repository_url', 'default_branch', 'root']),
         'node' => $node->fresh()->only(['id', 'name', 'tld', 'status', 'user', 'wireguard_ip']),
-        'app_instance' => $appInstance->fresh()->only([
+        'app_instance' => $instance->fresh()->only([
             'id',
             'project_id',
             'node_id',
@@ -173,11 +173,11 @@ it('leaves a fresh Gateway schema without leftover Instance or Workspace tables 
 });
 
 it('drops leftover tables on an ordinary update and keeps supported records unchanged', function (): void {
-    [$app, $node, $appInstance, $route, $process, $before] = operator_prepared_supported_graph();
+    [$project, $node, $instance, $route, $process, $before] = operator_prepared_supported_graph();
 
     restore_legacy_application_tables();
     $legacyInstanceId = DB::table('instances')->insertGetId([
-        'app_id' => $app->id,
+        'app_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'legacy',
         'environment' => 'development',
@@ -216,7 +216,7 @@ it('drops leftover tables on an ordinary update and keeps supported records unch
         ->toBeTrue()
         ->and(Schema::hasTable('workspaces'))
         ->toBeFalse()
-        ->and(supported_legacy_schema_snapshot($app, $node, $appInstance, $route, $process))
+        ->and(supported_legacy_schema_snapshot($project, $node, $instance, $route, $process))
         ->toBe($before);
 });
 
@@ -237,7 +237,7 @@ it('supplies no conversion command, script, API, SDK operation, or completion ga
             'workspace:migrate',
         ])
         ->and($named['instance:list'] ?? null)
-        ->toBe(['GET', 'api/v1/instances', AppInstancesController::class]);
+        ->toBe(['GET', 'api/v1/instances', InstancesController::class]);
 
     foreach ($named as [$method, $uri]) {
         expect($uri)

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\LifecycleStatus;
@@ -72,22 +72,22 @@ use Illuminate\Support\Carbon;
  * @property string|null $failed_step
  * @property string|null $error_code
  * @property Carbon|null $runtime_definitions_captured_at
- * @property AppInstanceState $status
+ * @property InstanceState $status
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
- * @property-read Project $app
+ * @property-read Project $project
  * @property-read Node $node
  * @property-read Collection<int, RouteTarget> $routeTargets
  * @property-read Collection<int, Route> $routes
- * @property-read Collection<int, AppInstanceDeployStep> $deploySteps
- * @property-read Collection<int, AppInstanceEnvironmentValue> $environmentValues
+ * @property-read Collection<int, InstanceDeployStep> $deploySteps
+ * @property-read Collection<int, InstanceEnvironmentValue> $environmentValues
  * @property-read Collection<int, DatabaseConnectionTarget> $databaseConnectionTargets
  * @property-read Collection<int, Process> $processes
  * @property-read Collection<int, Schedule> $schedules
- * @property-read AppInstanceRemovalMember|null $removalMember
- * @property-read Collection<int, AppInstanceTransfer> $transfers
- * @property-read Collection<int, AppInstanceDependencyObservation> $dependencyObservations
- * @property-read Collection<int, AppInstanceDependencyScanAttempt> $dependencyScanAttempts
+ * @property-read InstanceRemovalMember|null $removalMember
+ * @property-read Collection<int, InstanceTransfer> $transfers
+ * @property-read Collection<int, InstanceDependencyObservation> $dependencyObservations
+ * @property-read Collection<int, InstanceDependencyScanAttempt> $dependencyScanAttempts
  * @property-read Collection<int, TaskGroup> $taskGroups
  */
 final class Instance extends Model
@@ -172,7 +172,7 @@ final class Instance extends Model
     }
 
     /** @return BelongsTo<Project, $this> */
-    public function app(): BelongsTo
+    public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class, 'project_id');
     }
@@ -204,22 +204,22 @@ final class Instance extends Model
         );
     }
 
-    /** @return HasMany<AppInstanceDeployStep, $this> */
+    /** @return HasMany<InstanceDeployStep, $this> */
     public function deploySteps(): HasMany
     {
-        return $this->hasMany(AppInstanceDeployStep::class);
+        return $this->hasMany(InstanceDeployStep::class);
     }
 
-    /** @return HasMany<AppInstanceDeployment, $this> */
+    /** @return HasMany<InstanceDeployment, $this> */
     public function deployments(): HasMany
     {
-        return $this->hasMany(AppInstanceDeployment::class);
+        return $this->hasMany(InstanceDeployment::class);
     }
 
-    /** @return HasMany<AppInstanceEnvironmentValue, $this> */
+    /** @return HasMany<InstanceEnvironmentValue, $this> */
     public function environmentValues(): HasMany
     {
-        return $this->hasMany(AppInstanceEnvironmentValue::class);
+        return $this->hasMany(InstanceEnvironmentValue::class);
     }
 
     /** @return HasMany<DatabaseConnectionTarget, $this> */
@@ -240,28 +240,28 @@ final class Instance extends Model
         return $this->morphMany(Schedule::class, 'target');
     }
 
-    /** @return HasOne<AppInstanceRemovalMember, $this> */
+    /** @return HasOne<InstanceRemovalMember, $this> */
     public function removalMember(): HasOne
     {
-        return $this->hasOne(AppInstanceRemovalMember::class)->whereNull('row_deleted_at');
+        return $this->hasOne(InstanceRemovalMember::class)->whereNull('row_deleted_at');
     }
 
-    /** @return HasMany<AppInstanceTransfer, $this> */
+    /** @return HasMany<InstanceTransfer, $this> */
     public function transfers(): HasMany
     {
-        return $this->hasMany(AppInstanceTransfer::class);
+        return $this->hasMany(InstanceTransfer::class);
     }
 
-    /** @return HasMany<AppInstanceDependencyObservation, $this> */
+    /** @return HasMany<InstanceDependencyObservation, $this> */
     public function dependencyObservations(): HasMany
     {
-        return $this->hasMany(AppInstanceDependencyObservation::class);
+        return $this->hasMany(InstanceDependencyObservation::class);
     }
 
-    /** @return HasMany<AppInstanceDependencyScanAttempt, $this> */
+    /** @return HasMany<InstanceDependencyScanAttempt, $this> */
     public function dependencyScanAttempts(): HasMany
     {
-        return $this->hasMany(AppInstanceDependencyScanAttempt::class);
+        return $this->hasMany(InstanceDependencyScanAttempt::class);
     }
 
     /** @return MorphMany<TaskGroup, $this> */
@@ -290,20 +290,20 @@ final class Instance extends Model
 
     public function requiresRoute(): bool
     {
-        $this->loadMissing('app');
+        $this->loadMissing('project');
 
-        return $this->app->type === ProjectType::LaravelApp;
+        return $this->project->type === ProjectType::LaravelApp;
     }
 
     public function servesPhp(): bool
     {
-        $this->loadMissing('app');
+        $this->loadMissing('project');
 
-        if ($this->app->type->servesPhpByDefault()) {
+        if ($this->project->type->servesPhpByDefault()) {
             return true;
         }
 
-        return $this->app->type === ProjectType::Monorepo
+        return $this->project->type === ProjectType::Monorepo
             && $this->authoritativeRoute() !== null
             && $this->source_is_laravel === true;
     }
@@ -339,7 +339,7 @@ final class Instance extends Model
 
     public function effectiveRoot(): ?string
     {
-        $root = $this->root ?? $this->app->root;
+        $root = $this->root ?? $this->project->root;
 
         if ($this->placementEnvironment(allowRemovingRole: true) === 'production' && is_string($this->production_home) && is_string($root)) {
             return "{$this->production_home}/current/{$root}";
@@ -395,7 +395,7 @@ final class Instance extends Model
             'registration_completed_at' => 'immutable_datetime',
             'runtime_definitions_captured_at' => 'immutable_datetime',
             'source_is_laravel' => 'boolean',
-            'status' => AppInstanceState::class,
+            'status' => InstanceState::class,
         ];
     }
 

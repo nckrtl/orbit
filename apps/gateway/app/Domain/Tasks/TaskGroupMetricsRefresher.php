@@ -22,7 +22,7 @@ final readonly class TaskGroupMetricsRefresher
 
     public function refresh(TaskGroup $group): TaskGroup
     {
-        $group->loadMissing(['app', 'tasks', 'taskable']);
+        $group->loadMissing(['project', 'tasks', 'taskable']);
 
         if ($group->execution_mode !== TaskExecutionMode::Managed || ! $group->status->isActive()) {
             return $group;
@@ -58,7 +58,7 @@ final readonly class TaskGroupMetricsRefresher
         }
 
         $instance = $group->taskable;
-        $base = $group->app->default_branch;
+        $base = $group->project->default_branch;
 
         if ($instance instanceof Instance && is_string($base) && $base !== '') {
             $changes = $this->diff->lineChanges($instance, $base);
@@ -79,7 +79,7 @@ final readonly class TaskGroupMetricsRefresher
             $group->save();
         }
 
-        return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+        return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
     }
 
     private function refreshTask(Task $task): void

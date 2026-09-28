@@ -14,37 +14,37 @@ final readonly class CheckoutRemovalBoundary
         private ProtectedPathCatalog $catalog,
     ) {}
 
-    public function appInstanceRoot(Instance $appInstance, ManagedUserAccount $account): StoragePath
+    public function instanceRoot(Instance $instance, ManagedUserAccount $account): StoragePath
     {
-        $checkout = StoragePath::tryParse($appInstance->checkout_path);
+        $checkout = StoragePath::tryParse($instance->checkout_path);
 
         if (
             ! $checkout instanceof StoragePath
-            || ! $checkout->hasSuffix($appInstance->app->slug, $appInstance->name)
+            || ! $checkout->hasSuffix($instance->project->slug, $instance->name)
         ) {
-            $this->unsafeAppInstance($appInstance);
+            $this->unsafeInstance($instance);
         }
 
-        $root = $checkout->stripSuffix($appInstance->app->slug, $appInstance->name);
+        $root = $checkout->stripSuffix($instance->project->slug, $instance->name);
 
         if ($this->catalog->isProtected($root, $account) || ! $checkout->isInside($root)) {
-            $this->unsafeAppInstance($appInstance);
+            $this->unsafeInstance($instance);
         }
 
         return $root;
     }
 
-    public function appInstanceGroupingDirectory(Instance $appInstance, StoragePath $root): StoragePath
+    public function instanceGroupingDirectory(Instance $instance, StoragePath $root): StoragePath
     {
-        return $root->append($appInstance->app->slug);
+        return $root->append($instance->project->slug);
     }
 
-    private function unsafeAppInstance(Instance $appInstance): never
+    private function unsafeInstance(Instance $instance): never
     {
         throw new RuntimeConvergenceException(
             step: 'app-instance-source-path',
             errorCode: 'instance.checkout_path_unsafe',
-            message: "Instance [{$appInstance->name}] has an unsafe checkout path.",
+            message: "Instance [{$instance->name}] has an unsafe checkout path.",
         );
     }
 }

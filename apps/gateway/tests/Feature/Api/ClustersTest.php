@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -103,7 +103,7 @@ describe('Cluster lifecycle', function (): void {
             'public_ssh_host' => '192.0.2.10',
             'wireguard_ip' => '10.44.0.10',
         ]);
-        $app = Project::query()->create([
+        $project = Project::query()->create([
             'name' => 'Acme',
             'slug' => 'acme',
             'repository_url' => 'https://example.test/acme.git',
@@ -111,16 +111,16 @@ describe('Cluster lifecycle', function (): void {
             'root' => 'public',
         ]);
         $instance = Instance::query()->create([
-            'project_id' => $app->id,
+            'project_id' => $project->id,
             'node_id' => $member->id,
             'name' => 'dev',
             'checkout_path' => '/srv/orbit/apps/acme/dev',
             'branch' => 'dev',
             'starting_commit' => str_repeat('a', 40),
-            'status' => AppInstanceState::Active,
+            'status' => InstanceState::Active,
         ]);
         $route = Route::query()->create([
-            'project_id' => $app->id,
+            'project_id' => $project->id,
             'cluster_id' => $cluster->id,
             'domain' => 'acme.example.test',
             'provenance' => RouteProvenance::Explicit,

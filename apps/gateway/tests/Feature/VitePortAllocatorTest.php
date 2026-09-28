@@ -10,7 +10,7 @@ use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\VpDevPreset;
 use App\Domain\Schedules\ScheduleRuntimeManager;
-use App\Infrastructure\AppInstances\NativeAppInstanceTransferRuntime;
+use App\Infrastructure\Instances\NativeInstanceTransferRuntime;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
@@ -22,9 +22,9 @@ it('keeps node scoped assignments and retains both placements until transfer cle
     orbit_test_set_app_placement_role($node, false);
     $destination = Node::query()->create(['name' => 'vite-destination', 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.10']);
     orbit_test_set_app_placement_role($destination, false);
-    $app = Project::query()->create(['name' => 'Vite', 'slug' => 'vite', 'repository_url' => 'git@example.test:vite.git']);
-    $first = Instance::query()->create(['project_id' => $app->id, 'node_id' => $node->id, 'name' => 'main', 'checkout_path' => '/apps/vite/main']);
-    $second = Instance::query()->create(['project_id' => $app->id, 'node_id' => $node->id, 'name' => 'next', 'checkout_path' => '/apps/vite/next']);
+    $project = Project::query()->create(['name' => 'Vite', 'slug' => 'vite', 'repository_url' => 'git@example.test:vite.git']);
+    $first = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'main', 'checkout_path' => '/apps/vite/main']);
+    $second = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'next', 'checkout_path' => '/apps/vite/next']);
     $runtime = Mockery::mock(VitePortRuntime::class);
     $runtime->shouldReceive('selectPort')->withArgs(fn ($n, $preferred, $excluded) => $n->id === $node->id && $preferred === 5173 && ! in_array(5173, $excluded, true))->once()->andReturn(5173);
     $runtime->shouldReceive('selectPort')->withArgs(fn ($n, $preferred, $excluded) => $n->id === $node->id && in_array(5173, $excluded, true))->once()->andReturn(5174);
@@ -46,9 +46,9 @@ it('rechecks a preferred port and persists its replacement without allocating fo
     orbit_test_set_app_placement_role($node, false);
     $productionNode = Node::query()->create(['name' => 'vite-production', 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.11']);
     orbit_test_set_app_placement_role($productionNode, true);
-    $app = Project::query()->create(['name' => 'Vite', 'slug' => 'vite', 'repository_url' => 'git@example.test:vite.git']);
-    $instance = Instance::query()->create(['project_id' => $app->id, 'node_id' => $node->id, 'name' => 'main', 'checkout_path' => '/apps/vite/main']);
-    $production = Instance::query()->create(['project_id' => $app->id, 'node_id' => $productionNode->id, 'name' => 'prod', 'checkout_path' => '/var/www/vite']);
+    $project = Project::query()->create(['name' => 'Vite', 'slug' => 'vite', 'repository_url' => 'git@example.test:vite.git']);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'main', 'checkout_path' => '/apps/vite/main']);
+    $production = Instance::query()->create(['project_id' => $project->id, 'node_id' => $productionNode->id, 'name' => 'prod', 'checkout_path' => '/var/www/vite']);
     $runtime = Mockery::mock(VitePortRuntime::class);
     $runtime->shouldReceive('selectPort')->withArgs(fn ($n, $preferred, $excluded) => $preferred === 5173 && in_array(5432, $excluded, true) && in_array(6379, $excluded, true))->twice()->andReturn(5173, 5175);
     app()->instance(VitePortRuntime::class, $runtime);
@@ -64,8 +64,8 @@ it('rechecks a preferred port and persists its replacement without allocating fo
 it('keeps a reserved assignment when projection fails and retries from that assignment', function (): void {
     $node = Node::query()->create(['name' => 'retry', 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.12']);
     orbit_test_set_app_placement_role($node, false);
-    $app = Project::query()->create(['name' => 'Retry', 'slug' => 'retry', 'repository_url' => 'git@example.test:retry.git']);
-    $instance = Instance::query()->create(['project_id' => $app->id, 'node_id' => $node->id, 'name' => 'main', 'checkout_path' => '/apps/retry/main']);
+    $project = Project::query()->create(['name' => 'Retry', 'slug' => 'retry', 'repository_url' => 'git@example.test:retry.git']);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'main', 'checkout_path' => '/apps/retry/main']);
     $runtime = Mockery::mock(VitePortRuntime::class);
     $runtime->shouldReceive('selectPort')->twice()->andReturn(5173);
     $runtime->shouldReceive('ownsListener')->once()->andReturn(false);
@@ -82,10 +82,10 @@ it('keeps a reserved assignment when projection fails and retries from that assi
 it('relocates the preset environment with its working directory', function (): void {
     $node = Node::query()->create(['name' => 'relocate', 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.10']);
     orbit_test_set_app_placement_role($node, false);
-    $app = Project::query()->create(['name' => 'Relocate', 'slug' => 'relocate', 'repository_url' => 'git@example.test:relocate.git']);
-    $instance = Instance::query()->create(['project_id' => $app->id, 'node_id' => $node->id, 'name' => 'main', 'checkout_path' => '/apps/old']);
+    $project = Project::query()->create(['name' => 'Relocate', 'slug' => 'relocate', 'repository_url' => 'git@example.test:relocate.git']);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'main', 'checkout_path' => '/apps/old']);
     $process = Process::query()->create(['owner_type' => Instance::MorphAlias, 'owner_id' => $instance->id, 'name' => 'assets', 'runtime' => 'systemd', 'runtime_config' => ['preset' => 'vp-dev', 'command' => VpDevPreset::command(), 'environment_file' => '/apps/old/.env'], 'working_directory' => '/apps/old', 'restart_policy' => 'on-failure', 'desired_state' => 'running', 'status' => 'active']);
-    app(NativeAppInstanceTransferRuntime::class)->relocate($instance, $node, '/apps/old', '/apps/new');
+    app(NativeInstanceTransferRuntime::class)->relocate($instance, $node, '/apps/old', '/apps/new');
     expect($process->refresh()->working_directory)->toBe('/apps/new')->and($process->runtime_config['environment_file'])->toBe('/apps/new/.env')->and($process->desired_state->value)->toBe('running');
 });
 
@@ -94,11 +94,11 @@ it('does not remove the destination service during cleanup when both nodes use t
     orbit_test_set_app_placement_role($source, false);
     $destination = Node::query()->create(['name' => 'destination-cleanup', 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.11']);
     orbit_test_set_app_placement_role($destination, false);
-    $app = Project::query()->create(['name' => 'Same path', 'slug' => 'same-path', 'repository_url' => 'git@example.test:same-path.git']);
-    $instance = Instance::query()->create(['project_id' => $app->id, 'node_id' => $destination->id, 'name' => 'main', 'checkout_path' => '/apps/main']);
+    $project = Project::query()->create(['name' => 'Same path', 'slug' => 'same-path', 'repository_url' => 'git@example.test:same-path.git']);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $destination->id, 'name' => 'main', 'checkout_path' => '/apps/main']);
     $instance->processes()->create(['name' => 'assets', 'runtime' => 'systemd', 'working_directory' => '/apps/main', 'runtime_config' => ['command' => ['/bin/true']], 'desired_state' => 'running', 'status' => 'active']);
     $runtime = Mockery::mock(ProcessRuntimeManager::class);
     $runtime->shouldNotReceive('remove');
     $schedules = Mockery::mock(ScheduleRuntimeManager::class);
-    new NativeAppInstanceTransferRuntime($runtime, $schedules)->cleanupSourceArtifacts($instance, $source, '/apps/main');
+    new NativeInstanceTransferRuntime($runtime, $schedules)->cleanupSourceArtifacts($instance, $source, '/apps/main');
 });

@@ -101,7 +101,7 @@ final readonly class NativeRepositoryDefaultBranchResolver implements Repository
         }
 
         return new ResourceOperationException(
-            errorCode: 'app.default_branch_unavailable',
+            errorCode: 'project.default_branch_unavailable',
             message: $message,
         );
     }

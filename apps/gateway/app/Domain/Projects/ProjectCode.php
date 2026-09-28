@@ -25,7 +25,7 @@ final readonly class ProjectCode
                 return $code;
             }
         }
-        throw new ResourceOperationException('app.codes_exhausted', 'All three-letter Project codes are in use.', 409);
+        throw new ResourceOperationException('project.codes_exhausted', 'All three-letter Project codes are in use.', 409);
     }
 
     private static function letter(int $index): string
@@ -42,7 +42,7 @@ final readonly class ProjectCode
     public static function validate(string $code): string
     {
         if (preg_match('/\A[A-Z]{3}\z/D', $code) !== 1) {
-            throw new ResourceOperationException('app.invalid_code', 'A Project code must contain exactly three uppercase letters.', 422);
+            throw new ResourceOperationException('project.invalid_code', 'A Project code must contain exactly three uppercase letters.', 422);
         }
 
         return $code;

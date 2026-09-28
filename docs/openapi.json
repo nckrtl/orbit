@@ -3182,7 +3182,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppInstanceDeployment"
+                      "$ref": "#/components/schemas/InstanceDeployment"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -3258,7 +3258,7 @@
                       "enum": [
                         "node",
                         "role",
-                        "app",
+                        "project",
                         "instance",
                         "schedule",
                         "tool",
@@ -4062,7 +4062,7 @@
                     "data": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/AppInstance"
+                        "$ref": "#/components/schemas/Instance"
                       }
                     },
                     "meta": {
@@ -4162,7 +4162,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppInstance"
+                      "$ref": "#/components/schemas/Instance"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -4184,7 +4184,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppInstance"
+                      "$ref": "#/components/schemas/Instance"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -4233,7 +4233,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/instances\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"project_id\": 1, \"node_id\": 7, \"name\": \"default\"}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/instances\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"project_id\": 4, \"node_id\": 7, \"name\": \"default\"}'\n"
           },
           {
             "lang": "php",
@@ -4320,7 +4320,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppInstanceRegistration"
+                      "$ref": "#/components/schemas/InstanceRegistration"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -4342,7 +4342,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppInstanceRegistration"
+                      "$ref": "#/components/schemas/InstanceRegistration"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -4606,7 +4606,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppInstance"
+                      "$ref": "#/components/schemas/Instance"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -4628,7 +4628,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppInstance"
+                      "$ref": "#/components/schemas/Instance"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -4743,7 +4743,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppInstanceRemoval"
+                      "$ref": "#/components/schemas/InstanceRemoval"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -4839,7 +4839,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppInstance"
+                      "$ref": "#/components/schemas/Instance"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -4926,7 +4926,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppInstance"
+                      "$ref": "#/components/schemas/Instance"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -7566,7 +7566,7 @@
                     "data": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/AppInstanceDeployment"
+                        "$ref": "#/components/schemas/InstanceDeployment"
                       }
                     },
                     "meta": {
@@ -9062,7 +9062,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppInstance"
+                      "$ref": "#/components/schemas/Instance"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -9182,7 +9182,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppInstance"
+                      "$ref": "#/components/schemas/Instance"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -9204,7 +9204,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppInstance"
+                      "$ref": "#/components/schemas/Instance"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -10520,7 +10520,7 @@
         ]
       }
     },
-    "/api/v1/nodes/{node}/excluded-projects/{app}": {
+    "/api/v1/nodes/{node}/excluded-projects/{project}": {
       "delete": {
         "operationId": "node-excluded-project-remove",
         "summary": "node:excluded-project:remove",
@@ -10539,7 +10539,7 @@
             "description": "Numeric Node ID."
           },
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -10635,7 +10635,7 @@
             "description": "Numeric Node ID."
           },
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -13977,7 +13977,7 @@
                     "data": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/App"
+                        "$ref": "#/components/schemas/Project"
                       }
                     },
                     "meta": {
@@ -14098,7 +14098,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/App"
+                      "$ref": "#/components/schemas/Project"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -14120,7 +14120,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/App"
+                      "$ref": "#/components/schemas/Project"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -14179,7 +14179,7 @@
         ]
       }
     },
-    "/api/v1/projects/{app}": {
+    "/api/v1/projects/{project}": {
       "delete": {
         "operationId": "project-destroy",
         "summary": "Remove a Project",
@@ -14188,7 +14188,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -14208,7 +14208,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/App"
+                      "$ref": "#/components/schemas/Project"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -14274,7 +14274,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -14296,7 +14296,7 @@
                     "data": {
                       "allOf": [
                         {
-                          "$ref": "#/components/schemas/App"
+                          "$ref": "#/components/schemas/Project"
                         },
                         {
                           "type": "object",
@@ -14365,7 +14365,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -14440,7 +14440,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/App"
+                      "$ref": "#/components/schemas/Project"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -14509,7 +14509,7 @@
         ]
       }
     },
-    "/api/v1/projects/{app}/excluded-nodes": {
+    "/api/v1/projects/{project}/excluded-nodes": {
       "get": {
         "operationId": "project-excluded-node-list",
         "summary": "project:excluded-node:list",
@@ -14518,7 +14518,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -14590,7 +14590,7 @@
         ]
       }
     },
-    "/api/v1/projects/{app}/excluded-nodes/{node}": {
+    "/api/v1/projects/{project}/excluded-nodes/{node}": {
       "delete": {
         "operationId": "project-excluded-node-remove",
         "summary": "project:excluded-node:remove",
@@ -14599,7 +14599,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -14695,7 +14695,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -14806,7 +14806,7 @@
         ]
       }
     },
-    "/api/v1/projects/{app}/process-definitions": {
+    "/api/v1/projects/{project}/process-definitions": {
       "get": {
         "operationId": "project-process-definition-list",
         "summary": "List process definitions",
@@ -14815,7 +14815,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -14837,7 +14837,7 @@
                     "data": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/AppRuntimeDefinition"
+                        "$ref": "#/components/schemas/ProjectRuntimeDefinition"
                       }
                     },
                     "meta": {
@@ -14894,7 +14894,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -15041,7 +15041,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
+                      "$ref": "#/components/schemas/ProjectRuntimeDefinition"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -15063,7 +15063,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
+                      "$ref": "#/components/schemas/ProjectRuntimeDefinition"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -15132,7 +15132,7 @@
         ]
       }
     },
-    "/api/v1/projects/{app}/process-definitions/{process_definition}": {
+    "/api/v1/projects/{project}/process-definitions/{process_definition}": {
       "delete": {
         "operationId": "project-process-definition-destroy",
         "summary": "Remove a process definition",
@@ -15141,7 +15141,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -15170,7 +15170,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
+                      "$ref": "#/components/schemas/ProjectRuntimeDefinition"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -15236,7 +15236,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -15265,7 +15265,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
+                      "$ref": "#/components/schemas/ProjectRuntimeDefinition"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -15321,7 +15321,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -15477,7 +15477,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
+                      "$ref": "#/components/schemas/ProjectRuntimeDefinition"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -15546,7 +15546,7 @@
         ]
       }
     },
-    "/api/v1/projects/{app}/schedule-definitions": {
+    "/api/v1/projects/{project}/schedule-definitions": {
       "get": {
         "operationId": "project-schedule-definition-list",
         "summary": "List Schedule definitions",
@@ -15555,7 +15555,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -15577,7 +15577,7 @@
                     "data": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/AppRuntimeDefinition"
+                        "$ref": "#/components/schemas/ProjectRuntimeDefinition"
                       }
                     },
                     "meta": {
@@ -15634,7 +15634,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -15712,7 +15712,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
+                      "$ref": "#/components/schemas/ProjectRuntimeDefinition"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -15734,7 +15734,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
+                      "$ref": "#/components/schemas/ProjectRuntimeDefinition"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -15803,7 +15803,7 @@
         ]
       }
     },
-    "/api/v1/projects/{app}/schedule-definitions/{schedule_definition}": {
+    "/api/v1/projects/{project}/schedule-definitions/{schedule_definition}": {
       "delete": {
         "operationId": "project-schedule-definition-destroy",
         "summary": "Remove a Schedule definition",
@@ -15812,7 +15812,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -15841,7 +15841,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
+                      "$ref": "#/components/schemas/ProjectRuntimeDefinition"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -15907,7 +15907,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -15936,7 +15936,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
+                      "$ref": "#/components/schemas/ProjectRuntimeDefinition"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -15992,7 +15992,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -16079,7 +16079,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
+                      "$ref": "#/components/schemas/ProjectRuntimeDefinition"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -16148,7 +16148,7 @@
         ]
       }
     },
-    "/api/v1/projects/{app}/setup-steps": {
+    "/api/v1/projects/{project}/setup-steps": {
       "get": {
         "operationId": "instance-setup-step-list",
         "summary": "instance:setup-step:list",
@@ -16157,7 +16157,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -16228,7 +16228,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -16348,7 +16348,7 @@
         ]
       }
     },
-    "/api/v1/projects/{app}/setup-steps/{step}": {
+    "/api/v1/projects/{project}/setup-steps/{step}": {
       "delete": {
         "operationId": "instance-setup-step-destroy",
         "summary": "instance:setup-step:destroy",
@@ -16357,7 +16357,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -16448,7 +16448,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -16570,7 +16570,7 @@
         ]
       }
     },
-    "/api/v1/projects/{app}/teardown-steps": {
+    "/api/v1/projects/{project}/teardown-steps": {
       "get": {
         "operationId": "instance-teardown-step-list",
         "summary": "instance:teardown-step:list",
@@ -16579,7 +16579,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -16650,7 +16650,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -16770,7 +16770,7 @@
         ]
       }
     },
-    "/api/v1/projects/{app}/teardown-steps/{step}": {
+    "/api/v1/projects/{project}/teardown-steps/{step}": {
       "delete": {
         "operationId": "instance-teardown-step-destroy",
         "summary": "instance:teardown-step:destroy",
@@ -16779,7 +16779,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -16870,7 +16870,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -19263,7 +19263,7 @@
           }
         ],
         "x-orbit-extension": "tasks",
-        "description": "Lists Task groups, newest first. Optional `app_id` and `status` filters. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.",
+        "description": "Lists Task groups, newest first. Optional `project_id` and `status` filters. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -19315,7 +19315,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS \"https://gateway.orbit/api/v1/task-groups?project_id=1&status=success\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+            "source": "curl -sS \"https://gateway.orbit/api/v1/task-groups?project_id=4&status=success\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
           },
           {
             "lang": "php",
@@ -19538,7 +19538,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/task-groups\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"project_id\": 1, \"title\": \"Absorb Commander\", \"brief\": \"Persist groups. Accept when create and list work.\"}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/task-groups\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"project_id\": 4, \"title\": \"Absorb Commander\", \"brief\": \"Persist groups. Accept when create and list work.\"}'\n"
           },
           {
             "lang": "php",
@@ -22034,13 +22034,13 @@
           }
         }
       },
-      "AppInstanceDeployment": {
+      "InstanceDeployment": {
         "type": "object",
         "properties": {
           "id": {
             "type": "integer"
           },
-          "app_instance_id": {
+          "instance_id": {
             "type": "integer"
           },
           "release": {
@@ -22151,7 +22151,7 @@
             "enum": [
               "node",
               "role",
-              "app",
+              "project",
               "instance",
               "schedule",
               "tool",
@@ -22292,7 +22292,7 @@
           }
         }
       },
-      "AppInstance": {
+      "Instance": {
         "type": "object",
         "properties": {
           "id": {
@@ -22305,7 +22305,7 @@
             "type": "integer"
           },
           "project": {
-            "$ref": "#/components/schemas/AppIdentity"
+            "$ref": "#/components/schemas/ProjectIdentity"
           },
           "node": {
             "$ref": "#/components/schemas/NodeIdentity"
@@ -22392,7 +22392,7 @@
           "removal": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/AppInstanceRemoval"
+                "$ref": "#/components/schemas/InstanceRemoval"
               },
               {
                 "type": "null"
@@ -22402,7 +22402,7 @@
           "transfer": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/AppInstanceTransfer"
+                "$ref": "#/components/schemas/InstanceTransfer"
               },
               {
                 "type": "null"
@@ -22423,7 +22423,7 @@
           }
         }
       },
-      "AppIdentity": {
+      "ProjectIdentity": {
         "type": "object",
         "properties": {
           "id": {
@@ -22466,7 +22466,7 @@
           "kind": {
             "type": "string"
           },
-          "app_id": {
+          "project_id": {
             "type": [
               "integer",
               "null"
@@ -22580,7 +22580,7 @@
           "id": {
             "type": "integer"
           },
-          "app_instance_id": {
+          "instance_id": {
             "type": "integer"
           },
           "position": {
@@ -22588,7 +22588,7 @@
           }
         }
       },
-      "AppInstanceRemoval": {
+      "InstanceRemoval": {
         "type": "object",
         "properties": {
           "operation_id": {
@@ -22635,7 +22635,7 @@
           }
         }
       },
-      "AppInstanceTransfer": {
+      "InstanceTransfer": {
         "type": "object",
         "properties": {
           "operation_id": {
@@ -22712,19 +22712,19 @@
           }
         }
       },
-      "AppInstanceRegistration": {
+      "InstanceRegistration": {
         "type": "object",
         "properties": {
-          "app": {
-            "$ref": "#/components/schemas/App"
+          "project": {
+            "$ref": "#/components/schemas/Project"
           },
-          "app_instance": {
-            "$ref": "#/components/schemas/AppInstance"
+          "instance": {
+            "$ref": "#/components/schemas/Instance"
           },
           "instances": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/AppInstance"
+              "$ref": "#/components/schemas/Instance"
             }
           },
           "status": {
@@ -22738,7 +22738,7 @@
           }
         }
       },
-      "App": {
+      "Project": {
         "type": "object",
         "properties": {
           "id": {
@@ -22960,7 +22960,7 @@
       "DatabaseConnectionAttachment": {
         "type": "object",
         "properties": {
-          "app_instance_id": {
+          "instance_id": {
             "type": "integer"
           },
           "slug": {
@@ -23286,7 +23286,7 @@
           "apps": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/AppsSettings"
+                "$ref": "#/components/schemas/NodeStorageApps"
               },
               {
                 "type": "null"
@@ -23295,7 +23295,7 @@
           }
         }
       },
-      "AppsSettings": {
+      "NodeStorageApps": {
         "type": "object",
         "properties": {
           "path": {
@@ -23536,13 +23536,13 @@
           }
         }
       },
-      "AppRuntimeDefinition": {
+      "ProjectRuntimeDefinition": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string"
           },
-          "app_id": {
+          "project_id": {
             "type": "integer"
           },
           "name": {
@@ -23633,10 +23633,10 @@
           "id": {
             "type": "integer"
           },
-          "app_id": {
+          "project_id": {
             "type": "integer"
           },
-          "app": {
+          "project": {
             "type": "string"
           },
           "project_code": {
@@ -24143,10 +24143,10 @@
           "id": {
             "type": "integer"
           },
-          "app_id": {
+          "project_id": {
             "type": "integer"
           },
-          "app": {
+          "project": {
             "type": "string"
           },
           "project_code": {

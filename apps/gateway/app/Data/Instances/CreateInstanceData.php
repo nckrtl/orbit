@@ -2,8 +2,16 @@
 
 declare(strict_types=1);
 
-use App\Models\Instance;
+namespace App\Data\Instances;
 
-// This inert path remains a prepared-state fingerprint input. Instance owns
-// the supported application schema and operations.
-return;
+final readonly class CreateInstanceData
+{
+    public function __construct(
+        public int $projectId,
+        public int $nodeId,
+        public string $name,
+        public ?string $root,
+        public ?string $domain,
+        public ?string $branch,
+    ) {}
+}

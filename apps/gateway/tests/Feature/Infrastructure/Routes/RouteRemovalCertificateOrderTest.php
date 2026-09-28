@@ -15,9 +15,9 @@ use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetSetStep;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
-use App\Infrastructure\AppDev\AppDevSiteRepository;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
@@ -123,14 +123,14 @@ describe('Route removal certificate order', function (): void {
     it('withdraws a targetless Project Route from its Router before it removes the Router certificate', function (): void {
         $cluster = Cluster::query()->create(['name' => 'lab', 'state' => ClusterState::Active]);
         $router = certificate_order_node('router', 20, RoleName::Router, $cluster);
-        $app = Project::query()->create([
+        $project = Project::query()->create([
             'name' => 'Acme',
             'slug' => 'acme',
             'repository_url' => 'https://example.test/acme.git',
             'root' => 'public',
         ]);
         $route = Route::query()->create([
-            'project_id' => $app->id,
+            'project_id' => $project->id,
             'cluster_id' => $cluster->id,
             'domain' => 'vacated.acme.test',
             'provenance' => RouteProvenance::Explicit,
@@ -273,7 +273,7 @@ function certificate_order_node(string $name, int $octet, RoleName $role, ?Clust
 
 function certificate_order_bind_projectors(CertificateOrderNodes $nodes, CertificateOrderDnsRunner $dnsRuns): void
 {
-    $executor = new AppDevSshExecutor(
+    $executor = new DevelopmentSshExecutor(
         $nodes,
         new class implements SshKeyProvider
         {
@@ -297,7 +297,7 @@ function certificate_order_bind_projectors(CertificateOrderNodes $nodes, Certifi
             public function put(string $host, int $port, HostKey $key): void {}
         },
     );
-    $sites = new AppDevSiteRepository;
+    $sites = new DevelopmentSiteRepository;
     $caddy = new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($nodes), $executor);
     $certificates = new RemoteAppDevCertificateManager(
         $executor,
@@ -321,7 +321,7 @@ function certificate_order_bind_projectors(CertificateOrderNodes $nodes, Certifi
             }
         },
     );
-    $dns = new DnsmasqPrivateDnsManager($dnsRuns, new AppDevDnsConfigRenderer($sites));
+    $dns = new DnsmasqPrivateDnsManager($dnsRuns, new DevelopmentDnsConfigRenderer($sites));
 
     app()->instance(RemoteAppDevCaddyManager::class, $caddy);
     app()->instance(RemoteAppDevCertificateManager::class, $certificates);

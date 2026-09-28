@@ -6,7 +6,6 @@ namespace App\Actions\Doctor;
 
 use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorIssueData;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorInspectionException;
@@ -15,9 +14,10 @@ use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\ProcessDoctorIssueCode;
 use App\Domain\Doctor\ProcessInspectionStatus;
 use App\Domain\Doctor\ProcessStateInspector;
-use App\Domain\Hibernation\AppDevHibernationPolicy;
+use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\Hibernation\RuntimeHibernation;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Models\Instance;
@@ -28,7 +28,7 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
 {
     public function __construct(
         private ProcessStateInspector $inspector,
-        private AppDevHibernationPolicy $policy = new AppDevHibernationPolicy,
+        private DevelopmentHibernationPolicy $policy = new DevelopmentHibernationPolicy,
         private ?HibernationMarkerStore $markers = null,
     ) {}
 
@@ -50,7 +50,7 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
                                 Instance::query()
                                     ->select('id')
                                     ->where('node_id', $context->node->id)
-                                    ->where('status', '!=', AppInstanceState::Removing),
+                                    ->where('status', '!=', InstanceState::Removing),
                             );
                     })
                     ->orWhere(function ($query) use ($context): void {
@@ -139,7 +139,7 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
 
             foreach ($instanceIssues as $instanceId => $ownedIssues) {
                 $instance = $instances->get($instanceId);
-                if (! $instance instanceof Instance || $instance->status === AppInstanceState::Removing) {
+                if (! $instance instanceof Instance || $instance->status === InstanceState::Removing) {
                     continue;
                 }
 

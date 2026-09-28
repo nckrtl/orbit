@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Http;
 
 function coder_settle_group(): TaskGroup
 {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'coder-app',
         'slug' => 'coder-app',
         'repository_url' => 'git@github.com:nckrtl/orbit.git',
@@ -24,7 +24,7 @@ function coder_settle_group(): TaskGroup
     ]);
 
     return TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Settle notify',
         'brief' => 'Notify Coder after the PR opens.',
         'status' => TaskGroupStatus::Settling,

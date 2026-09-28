@@ -2,9 +2,9 @@
 title: "Instance logs"
 description: "How the Gateway reads the application log of an Instance, which file it reads, what it redacts, and how a viewer follows it live."
 covers:
-  - apps/gateway/app/Actions/AppInstances/ShowAppInstanceLogsAction.php
-  - apps/gateway/app/Http/Controllers/Api/AppInstanceLogsController.php
-  - apps/gateway/app/Infrastructure/AppInstances/RemoteAppInstanceLogReader.php
+  - apps/gateway/app/Actions/Instances/ShowInstanceLogsAction.php
+  - apps/gateway/app/Http/Controllers/Api/InstanceLogsController.php
+  - apps/gateway/app/Infrastructure/Instances/RemoteInstanceLogReader.php
   - apps/gateway/app/Domain/Logs/{LogReadLimit,LogRedactor}.php
 ---
 

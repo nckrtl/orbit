@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Actions\AppInstances\RunInstanceSetupAction;
-use App\Domain\AppInstances\AppInstanceState;
+use App\Actions\Instances\RunInstanceSetupAction;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\LifecycleStep;
 use App\Domain\Projects\ProjectLifecycleRunner;
@@ -25,7 +25,7 @@ beforeEach(function (): void {
     $node = Node::query()->create(['name' => 'lifecycle', 'public_ssh_host' => '192.0.2.8', 'wireguard_ip' => '192.0.2.8']);
     $this->instance = Instance::query()->create([
         'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'dev',
-        'checkout_path' => $this->sandbox, 'status' => AppInstanceState::Active,
+        'checkout_path' => $this->sandbox, 'status' => InstanceState::Active,
     ]);
     $this->steps = new ProjectLifecycleStepStore;
     $this->transport = new LifecycleSshExecutor(local: true);
@@ -38,7 +38,7 @@ afterEach(function (): void {
 });
 
 it('reports a busy lifecycle lock as a busy result', function (): void {
-    $this->steps->create($this->instance->app, LifecyclePhase::Setup, new LifecycleStep('install', 'true'), null, null);
+    $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('install', 'true'), null, null);
     $transport = new LifecycleSshExecutor(result: static fn (): int => 75);
 
     expect(fn () => $transport->runner()->run($this->instance, LifecyclePhase::Setup))
@@ -50,16 +50,16 @@ it('reports a busy lifecycle lock as a busy result', function (): void {
 });
 
 it('runs an ordered snapshot from the checkout and keeps commands out of argv', function (): void {
-    $this->steps->create($this->instance->app, LifecyclePhase::Setup, new LifecycleStep('first', 'printf first > result'), null, null);
-    $this->steps->create($this->instance->app, LifecyclePhase::Setup, new LifecycleStep('second', 'printf second >> result'), null, null);
+    $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('first', 'printf first > result'), null, null);
+    $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('second', 'printf second >> result'), null, null);
     expect($this->runner->run($this->instance, LifecyclePhase::Setup))->toBeTrue()
         ->and(file_get_contents($this->sandbox.'/result'))->toBe('firstsecond')
         ->and(implode('', $this->transport->shells))->not->toContain('printf first', 'printf second');
 });
 
 it('stops after a failed step and preserves the instance on explicit setup', function (): void {
-    $this->steps->create($this->instance->app, LifecyclePhase::Setup, new LifecycleStep('broken', 'echo secret-output; exit 41'), null, null);
-    $this->steps->create($this->instance->app, LifecyclePhase::Setup, new LifecycleStep('later', 'touch later'), null, null);
+    $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('broken', 'echo secret-output; exit 41'), null, null);
+    $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('later', 'touch later'), null, null);
     try {
         app(RunInstanceSetupAction::class)->execute($this->instance);
         $this->fail('Setup must fail.');
@@ -74,7 +74,7 @@ it('stops after a failed step and preserves the instance on explicit setup', fun
 });
 
 it('kills the timed-out command group before returning failure', function (): void {
-    $this->steps->create($this->instance->app, LifecyclePhase::Setup,
+    $this->steps->create($this->instance->project, LifecyclePhase::Setup,
         new LifecycleStep('slow', "(sleep 2; touch escaped) &\nwait", 1), null, null);
     expect(fn () => $this->runner->run($this->instance, LifecyclePhase::Setup))->toThrow(ResourceOperationException::class);
     usleep(1_200_000);
@@ -82,14 +82,14 @@ it('kills the timed-out command group before returning failure', function (): vo
 });
 
 it('refuses setup for an unfinished instance before executing commands', function (): void {
-    $this->instance->update(['status' => AppInstanceState::SourceResolved]);
+    $this->instance->update(['status' => InstanceState::SourceResolved]);
     expect(fn () => app(RunInstanceSetupAction::class)->execute($this->instance))->toThrow(ResourceOperationException::class)
         ->and($this->transport->inputs)->toBeEmpty();
 });
 
 it('does not mistake transport loss for a confirmed command failure', function (): void {
     $transport = new LifecycleSshExecutor(result: static fn (): int => 255);
-    $this->steps->create($this->instance->app, LifecyclePhase::Setup, new LifecycleStep('install', 'true'), null, null);
+    $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('install', 'true'), null, null);
     try {
         $transport->runner()->run($this->instance, LifecyclePhase::Setup);
         $this->fail('Transport must fail.');
@@ -102,7 +102,7 @@ it('keeps remote cleanup time inside the remaining request deadline', function (
     $deadline = new CommandDeadline(static fn (): float => 10.0);
     $deadline->start(8.0);
     $transport = new LifecycleSshExecutor;
-    $this->steps->create($this->instance->app, LifecyclePhase::Setup, new LifecycleStep('install', 'true', 10), null, null);
+    $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('install', 'true', 10), null, null);
     $transport->runner($deadline)->run($this->instance, LifecyclePhase::Setup);
     expect($transport->inputs[0]['timeout'])->toBe(3);
 });

@@ -48,7 +48,7 @@ final class SetRouteTargetRequest extends FormRequest
         return array_key_exists('targets', $this->validated());
     }
 
-    public function appInstanceId(): int
+    public function instanceId(): int
     {
         return self::integerValue($this->validated('instance_id'));
     }
@@ -63,13 +63,13 @@ final class SetRouteTargetRequest extends FormRequest
                 continue;
             }
 
-            $appInstanceId = self::integerValue($disposition['instance_id'] ?? null);
+            $instanceId = self::integerValue($disposition['instance_id'] ?? null);
             $routeId = array_key_exists('route_id', $disposition)
                 ? self::integerValue($disposition['route_id'])
                 : null;
 
             $dispositions[] = new RouteTargetDispositionData(
-                appInstanceId: $appInstanceId,
+                instanceId: $instanceId,
                 routeId: $routeId,
                 remove: ($disposition['remove'] ?? false) === true,
             );

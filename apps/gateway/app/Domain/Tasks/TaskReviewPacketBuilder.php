@@ -19,7 +19,7 @@ final readonly class TaskReviewPacketBuilder
 
     public function build(Task $task, bool $continued, ?int $threadId = null): string
     {
-        $task->loadMissing(['taskGroup.app', 'taskGroup.taskable']);
+        $task->loadMissing(['taskGroup.project', 'taskGroup.taskable']);
         $group = $task->taskGroup;
         $start = TaskReviewBase::commit($task);
         $instance = $group->taskable;
@@ -40,7 +40,7 @@ final readonly class TaskReviewPacketBuilder
             approvals: $continued ? [] : $this->approvals($group, $task),
             diffFiles: $filesComplete ? $diff['files'] : [],
             diff: $diffAvailable ? $diff['diff'] : '',
-            taskCheck: $group->app->taskCheckCommand(),
+            taskCheck: $group->project->taskCheckCommand(),
             handoffStatus: $handoff['status'],
             handoffExitCode: $handoff['exit'],
             evidence: $handoff['evidence'],

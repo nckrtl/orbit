@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Infrastructure\Logging;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\AppInstances\Removal\AppInstanceRemovalException;
 use App\Domain\Firewall\FirewallOperationException;
+use App\Domain\Instances\Removal\InstanceRemovalException;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeRemovalException;
 use App\Domain\Nodes\NodeRoleOperationException;
@@ -42,7 +42,7 @@ final class GatewayExceptionStatus
         }
 
         return match (true) {
-            $exception instanceof AppInstanceRemovalException,
+            $exception instanceof InstanceRemovalException,
             $exception instanceof FirewallOperationException,
             $exception instanceof ResourceOperationException,
             $exception instanceof ToolOperationException => $exception->status,
@@ -72,7 +72,7 @@ final class GatewayExceptionStatus
 
     private static function hasApiExceptionRenderer(Throwable $exception): bool
     {
-        return $exception instanceof AppInstanceRemovalException
+        return $exception instanceof InstanceRemovalException
             || $exception instanceof FirewallOperationException
             || $exception instanceof NodeProvisioningException
             || $exception instanceof NodeRemovalException

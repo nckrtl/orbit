@@ -33,7 +33,7 @@ final readonly class CancelTaskGroupAction
         $group->requireManagedExecution();
         $this->requireExtension->execute();
 
-        $group->refresh()->load(['app', 'tasks', 'taskable']);
+        $group->refresh()->load(['project', 'tasks', 'taskable']);
 
         $unpublished = $group->status === TaskGroupStatus::Settling && ($group->pr_url === null || $group->pr_url === '');
         if ($group->status === TaskGroupStatus::Completed || ($group->status === TaskGroupStatus::Settling && ! $unpublished)) {
@@ -97,11 +97,11 @@ final readonly class CancelTaskGroupAction
         $group->tasks()
             ->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])
             ->update(['status' => TaskStatus::Cancelled, 'settled_at' => now()]);
-        $cancelled = $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+        $cancelled = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
         // Removal success clears the assistance flag and keeps the last reason. An unreachable Node keeps the flag.
         if (! $cancelled->assistance_requested) {
             $group->tasks()->where('assistance_requested', true)->update(['assistance_requested' => false]);
-            $cancelled = $group->fresh(['app', 'tasks', 'taskable']) ?? $cancelled;
+            $cancelled = $group->fresh(['project', 'tasks', 'taskable']) ?? $cancelled;
         }
 
         return $cancelled;

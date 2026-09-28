@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Nodes\RemoteNodeStorageRootPreparer;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -22,7 +22,7 @@ it('prepares configured roots through a narrow sudo bash command', function (): 
         'user' => 'orbit',
     ]);
     $ssh = new AppDevFakeSshExecutor;
-    $preparer = new RemoteNodeStorageRootPreparer(new AppDevSshExecutor(
+    $preparer = new RemoteNodeStorageRootPreparer(new DevelopmentSshExecutor(
         $ssh,
         new class implements SshKeyProvider
         {

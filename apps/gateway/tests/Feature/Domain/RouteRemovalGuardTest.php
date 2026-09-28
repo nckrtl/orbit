@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-use App\Actions\Apps\RemoveAppAction;
 use App\Actions\Clusters\ClearClusterRouterAction;
 use App\Actions\Clusters\RemoveClusterAction;
 use App\Actions\Nodes\RemoveNodeAction;
 use App\Actions\Nodes\RemoveNodeRoleAction;
+use App\Actions\Projects\RemoveProjectAction;
 use App\Actions\Routes\ClearRouteTargetAction;
 use App\Actions\Routes\CreateRouteAction;
 use App\Actions\Routes\RemoveRouteAction;
-use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
@@ -40,9 +40,9 @@ beforeEach(function (): void {
         'node_id' => $this->node->id,
         'name' => 'dev',
         'checkout_path' => '/srv/dev',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
-    $this->route = app(CreateRouteAction::class)->ensureForAppInstance($this->instance, null);
+    $this->route = app(CreateRouteAction::class)->ensureForInstance($this->instance, null);
     $this->guard = app(RouteRemovalGuard::class);
 });
 
@@ -54,7 +54,7 @@ it('guards App ownership, Node scope, target host, retained basis, and app roles
         ->and(fn () => $this->guard->assertRoleRemovable($this->node, RoleName::AppDev))
         ->toThrow(NodeRoleValidationException::class, 'hosts Route targets');
 
-    $this->instance->update(['status' => AppInstanceState::Reserved]);
+    $this->instance->update(['status' => InstanceState::Reserved]);
     app(ClearRouteTargetAction::class)->execute($this->route);
     expect(fn () => $this->guard->assertNodeRemovable($this->node))
         ->toThrow(ResourceOperationException::class, 'referenced by Routes');
@@ -85,9 +85,9 @@ it('runs ownership and scope guards through destructive action entry points', fu
         'publication' => RoutePublication::Private,
     ]);
 
-    expect(fn () => app(RemoveAppAction::class)->execute($this->orbitApp))
+    expect(fn () => app(RemoveProjectAction::class)->execute($this->orbitApp))
         ->toThrow(ResourceOperationException::class, 'still has Instances')
-        ->and(fn () => app(RemoveAppAction::class)->execute($routed))
+        ->and(fn () => app(RemoveProjectAction::class)->execute($routed))
         ->toThrow(ResourceOperationException::class, 'still owns Routes')
         ->and(fn () => app(RemoveNodeAction::class)->execute($this->node, $caller, offline: true, force: true))
         ->toThrow(ResourceOperationException::class, 'referenced by Routes');
@@ -106,7 +106,7 @@ it('returns App and Cluster ownership refusals for an active Route and retains N
 
     expect(fn () => $this->guard->assertAppRemovable($this->orbitApp))
         ->toThrow(function (ResourceOperationException $exception): void {
-            expect($exception->errorCode)->toBe('app.has_routes');
+            expect($exception->errorCode)->toBe('project.has_routes');
         })
         ->and(fn () => $this->guard->assertNodeRemovable($this->node))
         ->toThrow(function (ResourceOperationException $exception): void {
@@ -128,12 +128,12 @@ it('returns App and Cluster ownership refusals for an active Route and retains N
         });
 });
 
-it('refuses owned AppInstances and member Nodes before Route ownership through removal actions for an active Route', function (): void {
+it('refuses owned Instances and member Nodes before Route ownership through removal actions for an active Route', function (): void {
     $this->route->update(['status' => RouteStatus::Active]);
 
-    expect(fn () => app(RemoveAppAction::class)->execute($this->orbitApp))
+    expect(fn () => app(RemoveProjectAction::class)->execute($this->orbitApp))
         ->toThrow(function (ResourceOperationException $exception): void {
-            expect($exception->errorCode)->toBe('app.has_app_instances');
+            expect($exception->errorCode)->toBe('project.has_instances');
         });
 
     $cluster = Cluster::query()->create(['name' => 'ordered', 'state' => 'active', 'tld' => null]);
@@ -209,7 +209,7 @@ it('eligible Route removal deletes only owned target rows and releases unrelated
         'repository_url' => 'https://example.test/other.git',
     ]);
 
-    $this->instance->update(['status' => AppInstanceState::Reserved]);
+    $this->instance->update(['status' => InstanceState::Reserved]);
     app(RemoveRouteAction::class)->execute($this->route);
 
     expect(Route::query()->count())

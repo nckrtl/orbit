@@ -46,7 +46,7 @@ it('selects an omitted Instance by stable ID and sends the selected Instance in 
         ->and($mock->getLastRequest()?->body()->all())->toBe([
             'domain' => 'shop.test',
             'publication' => 'private',
-            'app_instance_id' => 12,
+            'instance_id' => 12,
         ]);
     $mock->assertSent(ListAppInstancesRequest::class);
 });
@@ -62,7 +62,7 @@ it('prompts for the omitted domain after an explicit Instance without listing In
         ->and($mock->getLastRequest()?->body()->all())->toBe([
             'domain' => 'shop.test',
             'publication' => 'private',
-            'app_instance_id' => 12,
+            'instance_id' => 12,
         ]);
     $mock->assertNotSent(ListAppInstancesRequest::class);
 });
@@ -105,14 +105,14 @@ function route_prompt_response(): MockResponse
 {
     return MockResponse::make([
         'data' => [
-            'id' => 11, 'kind' => 'app', 'app_id' => 3, 'node_id' => 2,
+            'id' => 11, 'kind' => 'app', 'project_id' => 3, 'node_id' => 2,
             'cluster_id' => null, 'generation_basis_node_id' => null,
             'domain' => 'shop.test', 'provenance' => 'explicit', 'publication' => 'private',
             'status' => 'pending', 'failed_step' => null, 'error_code' => null,
             'replaces_route_id' => null, 'replaced_by_route_id' => null,
             'replacement_step' => null, 'target_set_step' => null,
-            'target' => ['id' => 13, 'app_instance_id' => 12, 'position' => 0],
-            'targets' => [['id' => 13, 'app_instance_id' => 12, 'position' => 0]],
+            'target' => ['id' => 13, 'instance_id' => 12, 'position' => 0],
+            'targets' => [['id' => 13, 'instance_id' => 12, 'position' => 0]],
             'process_id' => null, 'upstream' => null,
         ],
         'meta' => ['request_id' => '0198e15d-16c4-7855-8eb2-182b53ad28ba'],

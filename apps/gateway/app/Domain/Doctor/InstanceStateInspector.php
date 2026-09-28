@@ -8,5 +8,5 @@ use App\Models\Instance;
 
 interface InstanceStateInspector
 {
-    public function inspect(Instance $appInstance): InstanceInspectionData;
+    public function inspect(Instance $instance): InstanceInspectionData;
 }

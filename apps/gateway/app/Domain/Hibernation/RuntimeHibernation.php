@@ -14,7 +14,7 @@ final readonly class RuntimeHibernation
     /**
      * Header a measurement carries so a development site neither wakes for it nor counts it as
      * the activity that keeps it awake. `orbit profile --instance` sends it; the rendered Caddy
-     * site honours it (see AppDevCaddyConfigRenderer).
+     * site honours it (see DevelopmentCaddyConfigRenderer).
      */
     public const string ProbeHeader = 'X-Orbit-Probe';
 
@@ -32,16 +32,16 @@ final readonly class RuntimeHibernation
 
     public const string ActivationType = 'app-instance';
 
-    public static function key(int $appInstanceId): string
+    public static function key(int $instanceId): string
     {
-        if ($appInstanceId < 1) {
+        if ($instanceId < 1) {
             throw new InvalidArgumentException('A hibernation key needs a positive Instance ID.');
         }
 
-        return 'app-instance-'.$appInstanceId;
+        return 'app-instance-'.$instanceId;
     }
 
-    public static function parseAppInstanceId(string $key): int
+    public static function parseInstanceId(string $key): int
     {
         if (preg_match('/\Aapp-instance-([1-9][0-9]*)\z/D', $key, $matches) !== 1) {
             throw new InvalidArgumentException('A hibernation key must be app-instance-{id}.');
@@ -52,21 +52,21 @@ final readonly class RuntimeHibernation
 
     public static function awakePath(string $key): string
     {
-        self::parseAppInstanceId($key);
+        self::parseInstanceId($key);
 
         return self::MarkerDirectory.'/'.$key.'.awake';
     }
 
     public static function accessLogPath(string $key): string
     {
-        self::parseAppInstanceId($key);
+        self::parseInstanceId($key);
 
         return self::AccessLogDirectory.'/'.$key.'.log';
     }
 
     public static function coldPath(string $key): string
     {
-        self::parseAppInstanceId($key);
+        self::parseInstanceId($key);
 
         return self::AccessLogDirectory.'/'.$key.'.cold';
     }

@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Actions\Doctor\RunDoctorAction;
 use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorNodeReportData;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorInspectionException;
@@ -15,6 +14,7 @@ use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\NodeStateInspector;
 use App\Domain\Doctor\PublicRouteEdgeInspector;
 use App\Domain\Doctor\PublicRouteEdgeObservation;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -300,16 +300,16 @@ describe('RunDoctorAction', function (): void {
             'role' => RoleName::Router,
             'status' => LifecycleStatus::Active,
         ]);
-        $app = Project::query()->create([
+        $project = Project::query()->create([
             'name' => 'Doctor Run',
             'slug' => 'doctor-run',
             'repository_url' => 'https://example.test/doctor-run.git',
             'default_branch' => 'main',
             'root' => 'public',
         ]);
-        $user = "orbit-app-{$app->id}";
+        $user = "orbit-app-{$project->id}";
         $instance = Instance::query()->create([
-            'project_id' => $app->id,
+            'project_id' => $project->id,
             'node_id' => $workload->id,
             'name' => 'production',
             'environment' => 'production',
@@ -323,10 +323,10 @@ describe('RunDoctorAction', function (): void {
             'root' => 'public',
             'branch' => 'main',
             'starting_commit' => str_repeat('a', 40),
-            'status' => AppInstanceState::Active,
+            'status' => InstanceState::Active,
         ]);
         $route = Route::query()->create([
-            'project_id' => $app->id,
+            'project_id' => $project->id,
             'cluster_id' => $cluster->id,
             'domain' => 'run-doctor.example.test',
             'provenance' => RouteProvenance::Explicit,
@@ -342,7 +342,7 @@ describe('RunDoctorAction', function (): void {
         bind_run_doctor_inspector();
         app()->instance(InstanceStateInspector::class, new class implements InstanceStateInspector
         {
-            public function inspect(Instance $appInstance): InstanceInspectionData
+            public function inspect(Instance $instance): InstanceInspectionData
             {
                 return new InstanceInspectionData(
                     true,

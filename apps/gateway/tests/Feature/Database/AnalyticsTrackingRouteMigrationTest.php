@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -50,7 +50,7 @@ beforeEach(function (): void {
         'name' => 'production',
         'environment' => 'production',
         'checkout_path' => '/srv/shop',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
 });
 
@@ -105,7 +105,7 @@ describe('analytics tracking Route persistence contract', function (): void {
             'provenance' => RouteProvenance::Generated,
             'generation_basis_node_id' => $this->node->id,
         ],
-        'an App owner' => fn (): array => ['project_id' => $this->instance->project_id],
+        'a Project owner' => fn (): array => ['project_id' => $this->instance->project_id],
     ]);
 
     it('rejects a tracking Route that turns public on a Node or changes kind', function (array $update): void {

@@ -336,7 +336,7 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestWatche
     /** @return array{GitHubRepository, int}|null */
     private function target(TaskGroup $group): ?array
     {
-        $repository = GitHubRepository::fromOrigin((string) $group->app->repository_url);
+        $repository = GitHubRepository::fromOrigin((string) $group->project->repository_url);
         if (! $repository instanceof GitHubRepository || ! is_string($group->pr_url)) {
             return null;
         }

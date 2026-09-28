@@ -46,7 +46,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $reserved_at
  * @property Carbon|null $started_at
  * @property Carbon|null $settled_at
- * @property-read Project $app
+ * @property-read Project $project
  * @property-read Instance|Model|null $taskable
  * @property-read Collection<int, Task> $tasks
  */
@@ -104,7 +104,7 @@ final class TaskGroup extends Model
     }
 
     /** @return BelongsTo<Project, $this> */
-    public function app(): BelongsTo
+    public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class, 'project_id');
     }

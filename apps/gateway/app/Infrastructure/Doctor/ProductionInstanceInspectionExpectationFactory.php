@@ -4,20 +4,20 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Doctor;
 
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentContextResolver;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentRenderer;
-use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
-use App\Infrastructure\AppInstances\ProductionPhpRuntimeConfigRenderer;
+use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
+use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
+use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
+use App\Infrastructure\Instances\ProductionPhpRuntimeConfigRenderer;
 use App\Infrastructure\Metrics\ServiceMetricsProjection;
-use App\Models\AppInstanceEnvironmentValue;
 use App\Models\Instance;
+use App\Models\InstanceEnvironmentValue;
 
 final readonly class ProductionInstanceInspectionExpectationFactory
 {
     public function __construct(
-        private AppInstanceEnvironmentContextResolver $contexts,
-        private AppInstanceEnvironmentRenderer $environmentRenderer,
+        private InstanceEnvironmentContextResolver $contexts,
+        private InstanceEnvironmentRenderer $environmentRenderer,
         private ProductionPhpRuntimeConfigRenderer $runtimeRenderer,
         private ?ServiceMetricsProjection $serviceMetrics = null,
         private ?NodeCaddyfileRenderer $builds = null,
@@ -25,19 +25,19 @@ final readonly class ProductionInstanceInspectionExpectationFactory
 
     public function make(Instance $instance): ProductionInstanceInspectionExpectation
     {
-        $instance->loadMissing(['app', 'node']);
+        $instance->loadMissing(['project', 'node']);
         $context = $this->contexts->resolve($instance, requireActiveNode: false);
-        $values = AppInstanceEnvironmentValue::query()
+        $values = InstanceEnvironmentValue::query()
             ->where('instance_id', $instance->id)
             ->orderBy('env_key')
             ->get()
-            ->mapWithKeys(static fn (AppInstanceEnvironmentValue $value): array => [
+            ->mapWithKeys(static fn (InstanceEnvironmentValue $value): array => [
                 $value->env_key => $value->env_value,
             ])
             ->all();
         $user = $instance->production_user;
         $home = $instance->production_home;
-        $root = $instance->root ?? $instance->app->root;
+        $root = $instance->root ?? $instance->project->root;
 
         if (! is_string($user) || ! is_string($home) || ! is_string($root)) {
             throw new \InvalidArgumentException('The production inspection identity is incomplete.');

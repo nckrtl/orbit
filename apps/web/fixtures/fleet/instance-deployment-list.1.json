@@ -6,7 +6,7 @@
         "data": [
             {
                 "id": 2,
-                "app_instance_id": 1,
+                "instance_id": 1,
                 "release": "20260102000000",
                 "branch": "main",
                 "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -21,7 +21,7 @@
             },
             {
                 "id": 1,
-                "app_instance_id": 1,
+                "instance_id": 1,
                 "release": "20260101000000",
                 "branch": "main",
                 "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

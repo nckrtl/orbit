@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-use App\Actions\AppInstances\CreateAppInstanceDeployStepAction;
-use App\Actions\AppInstances\UpdateAppInstanceAction;
-use App\Domain\AppInstances\Deployment\DeploymentConfig;
-use App\Domain\AppInstances\Deployment\DeploymentPhase;
-use App\Domain\AppInstances\Deployment\DeploymentStep;
+use App\Actions\Instances\CreateInstanceDeployStepAction;
+use App\Actions\Instances\UpdateInstanceAction;
+use App\Domain\Instances\Deployment\DeploymentConfig;
+use App\Domain\Instances\Deployment\DeploymentPhase;
+use App\Domain\Instances\Deployment\DeploymentStep;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -143,7 +143,7 @@ it('accepts the exact aggregate timeout boundary', function (): void {
 });
 
 it('updates only stored deployment intent without changing source evidence or current', function (): void {
-    [$app, $first, $second] = deployment_domain_fixture();
+    [$project, $first, $second] = deployment_domain_fixture();
     app()->instance(SshExecutor::class, new class implements SshExecutor
     {
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
@@ -156,14 +156,14 @@ it('updates only stored deployment intent without changing source evidence or cu
     file_put_contents($sandbox.'/current', 'unchanged');
 
     try {
-        app(UpdateAppInstanceAction::class)->execute($first, 'release/next');
-        app(CreateAppInstanceDeployStepAction::class)->execute(
+        app(UpdateInstanceAction::class)->execute($first, 'release/next');
+        app(CreateInstanceDeployStepAction::class)->execute(
             $first->fresh(),
             new DeploymentStep('migrate', DeploymentPhase::BeforeActivation, 'php artisan migrate'),
             null,
             null,
         );
-        $app->update(['default_branch' => 'future-default']);
+        $project->update(['default_branch' => 'future-default']);
 
         expect($first->fresh())
             ->deployment_branch->toBe('release/next')
@@ -191,7 +191,7 @@ it('updates only stored deployment intent without changing source evidence or cu
 /** @return array{Project, Instance, Instance} */
 function deployment_domain_fixture(): array
 {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Deployment domain',
         'slug' => 'deployment-domain',
         'repository_url' => 'https://example.test/deployment-domain.git',
@@ -211,7 +211,7 @@ function deployment_domain_fixture(): array
 
     foreach ([['first', 'main', 'main'], ['second', 'stable', null]] as $index => [$name, $branch, $override]) {
         $instances[] = Instance::query()->create([
-            'project_id' => $app->id,
+            'project_id' => $project->id,
             'node_id' => $nodes[$index]->id,
             'name' => $name,
             'environment' => 'production',
@@ -223,5 +223,5 @@ function deployment_domain_fixture(): array
         ]);
     }
 
-    return [$app, ...$instances];
+    return [$project, ...$instances];
 }

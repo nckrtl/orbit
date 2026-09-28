@@ -17,7 +17,7 @@ final class RouteData extends Data
     public function __construct(
         public int $id,
         public string $kind,
-        public ?int $appId,
+        public ?int $projectId,
         public ?int $nodeId,
         public ?int $clusterId,
         public ?int $generationBasisNodeId,
@@ -48,7 +48,7 @@ final class RouteData extends Data
         return new self(
             id: $route->id,
             kind: $route->kind->value,
-            appId: $route->project_id,
+            projectId: $route->project_id,
             nodeId: $route->node_id,
             clusterId: $route->cluster_id,
             generationBasisNodeId: $route->generation_basis_node_id,

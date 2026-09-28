@@ -39,9 +39,9 @@ final class NativeProcessAdmissionLock implements ProcessAdmissionLock
         };
     }
 
-    public function run(array $appInstanceIds, Closure $operation): mixed
+    public function run(array $instanceIds, Closure $operation): mixed
     {
-        $ids = array_values(array_unique(array_map(intval(...), $appInstanceIds)));
+        $ids = array_values(array_unique(array_map(intval(...), $instanceIds)));
         sort($ids, SORT_NUMERIC);
 
         if ($ids === []) {

@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Historical migrations name the App domain. Re-running one on the renamed schema
+ * Historical migrations name the Project domain. Re-running one on the renamed schema
  * flips back to those names for the call, then restores Project and Instance.
  */
 function rewrite_current_schema_sql(string $sql, bool $hasEnvironment): string

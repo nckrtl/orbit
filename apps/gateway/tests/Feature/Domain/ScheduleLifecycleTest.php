@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Schedules\ActivateScheduleAction;
 use App\Actions\Schedules\AddScheduleAction;
-use App\Actions\Schedules\CascadeAppInstanceSchedulesAction;
+use App\Actions\Schedules\CascadeInstanceSchedulesAction;
 use App\Actions\Schedules\CompleteScheduleAction;
 use App\Actions\Schedules\RemoveScheduleAction;
 use App\Data\Schedules\AddScheduleData;
@@ -53,13 +53,13 @@ beforeEach(function (): void {
         'user' => 'orbit',
         'wireguard_ip' => '10.44.0.4',
     ]);
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
     ]);
     $this->instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $this->node->id,
         'name' => 'main',
         'environment' => 'development',
@@ -193,7 +193,7 @@ it('cascades only the selected Instance schedules and blocks Node removal while 
     expect(fn () => new ScheduleTargetUseGuard()->assertNodeRemovable($this->node))
         ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'schedule.target_in_use');
 
-    new CascadeAppInstanceSchedulesAction(new RemoveScheduleAction($this->runtime))->execute($this->instance->id);
+    new CascadeInstanceSchedulesAction(new RemoveScheduleAction($this->runtime))->execute($this->instance->id);
 
     expect(Schedule::query()->whereKey($owned->id)->exists())->toBeFalse()
         ->and(Schedule::query()->whereKey($nodeSchedule->id)->exists())->toBeTrue()

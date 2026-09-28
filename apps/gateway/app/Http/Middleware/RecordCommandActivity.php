@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
-use App\Data\AppInstances\AppInstanceRemovalData;
+use App\Data\Instances\InstanceRemovalData;
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\AppInstances\Deployment\DeploymentRelease;
-use App\Domain\AppInstances\Deployment\DeploymentResult;
-use App\Domain\AppInstances\Removal\AppInstanceRemovalException;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Firewall\FirewallOperationException;
+use App\Domain\Instances\Deployment\DeploymentRelease;
+use App\Domain\Instances\Deployment\DeploymentResult;
+use App\Domain\Instances\Removal\InstanceRemovalException;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\NodeRemovalException;
 use App\Domain\Nodes\NodeRoleOperationException;
@@ -319,7 +319,7 @@ final readonly class RecordCommandActivity
     /** @return array<string, mixed>|null */
     private function removalProjection(Request $request, Response $response): ?array
     {
-        $attribute = $request->attributes->get('orbit.app_instance_removal');
+        $attribute = $request->attributes->get('orbit.instance_removal');
 
         if (is_array($attribute)) {
             return ValidatedData::object($attribute);
@@ -385,7 +385,7 @@ final readonly class RecordCommandActivity
                 $exception instanceof NodeProvisioningException => $exception->errorCode,
                 $exception instanceof NodeRemovalException => $exception->errorCode,
                 $exception instanceof RuntimeConvergenceException => $exception->errorCode,
-                $exception instanceof AppInstanceRemovalException => $exception->errorCode,
+                $exception instanceof InstanceRemovalException => $exception->errorCode,
                 $exception instanceof ProcessOperationException => $exception->errorCode,
                 $exception instanceof ScheduleOperationException => $exception->errorCode,
                 $exception instanceof FirewallOperationException => $exception->errorCode,
@@ -415,11 +415,11 @@ final readonly class RecordCommandActivity
             $result = null;
         }
 
-        if ($exception instanceof AppInstanceRemovalException) {
+        if ($exception instanceof InstanceRemovalException) {
             $updates['properties'] = [
                 ...($activity->properties?->toArray() ?? []),
                 'removal' => $this->inputSanitizer->sanitizeProperties(
-                    AppInstanceRemovalData::fromModel($exception->removal)->toArray(),
+                    InstanceRemovalData::fromModel($exception->removal)->toArray(),
                 ),
             ];
         }
@@ -560,15 +560,15 @@ final readonly class RecordCommandActivity
         }
 
         if ($command === 'instance:destroy') {
-            return $this->appInstanceRemovalInput($request);
+            return $this->instanceRemovalInput($request);
         }
 
         if ($command === 'instance:register') {
-            return $this->appInstanceRegistrationInput($request);
+            return $this->instanceRegistrationInput($request);
         }
 
         if ($command === 'instance:clone') {
-            return $this->appInstanceCloneInput($request);
+            return $this->instanceCloneInput($request);
         }
 
         if ($command === 'project:update') {
@@ -576,11 +576,11 @@ final readonly class RecordCommandActivity
         }
 
         if ($command === 'instance:transfer') {
-            return $this->appInstanceTransferInput($request);
+            return $this->instanceTransferInput($request);
         }
 
         if ($command === 'env:import') {
-            return $this->appInstanceEnvironmentImportInput($request);
+            return $this->instanceEnvironmentImportInput($request);
         }
 
         if ($command === 'env:update') {
@@ -610,7 +610,7 @@ final readonly class RecordCommandActivity
         }
 
         if ($command === 'instance:rollback') {
-            return $this->appInstanceRollbackInput($request);
+            return $this->instanceRollbackInput($request);
         }
 
         if (is_string($command) && str_contains($request->path(), '-definitions')) {
@@ -722,7 +722,7 @@ final readonly class RecordCommandActivity
     }
 
     /** @return array{release: string}|array{} */
-    private function appInstanceRollbackInput(Request $request): array
+    private function instanceRollbackInput(Request $request): array
     {
         try {
             $input = $this->jsonInspector->inspect($request->getContent(), ['release']);
@@ -787,7 +787,7 @@ final readonly class RecordCommandActivity
     }
 
     /** @return array<array-key, mixed> */
-    private function appInstanceRemovalInput(Request $request): array
+    private function instanceRemovalInput(Request $request): array
     {
         try {
             $input = $this->jsonInspector->inspect($request->getContent(), ['force']);
@@ -803,7 +803,7 @@ final readonly class RecordCommandActivity
     }
 
     /** @return array<array-key, mixed> */
-    private function appInstanceRegistrationInput(Request $request): array
+    private function instanceRegistrationInput(Request $request): array
     {
         try {
             $input = $this->jsonInspector->inspect($request->getContent(), [
@@ -827,7 +827,7 @@ final readonly class RecordCommandActivity
     }
 
     /** @return array<array-key, mixed> */
-    private function appInstanceCloneInput(Request $request): array
+    private function instanceCloneInput(Request $request): array
     {
         try {
             $input = $this->jsonInspector->inspect($request->getContent(), [
@@ -868,7 +868,7 @@ final readonly class RecordCommandActivity
     }
 
     /** @return array<array-key, mixed> */
-    private function appInstanceTransferInput(Request $request): array
+    private function instanceTransferInput(Request $request): array
     {
         try {
             $input = $this->jsonInspector->inspect($request->getContent(), [
@@ -904,7 +904,7 @@ final readonly class RecordCommandActivity
     }
 
     /** @return array<array-key, mixed> */
-    private function appInstanceEnvironmentImportInput(Request $request): array
+    private function instanceEnvironmentImportInput(Request $request): array
     {
         try {
             $input = $this->jsonInspector->inspect($request->getContent(), ['replace']);
@@ -1044,7 +1044,7 @@ final readonly class RecordCommandActivity
             $updates = [...$updates, ...$target];
 
             if (Instance::isMorphType($target['subject_type'] ?? null)) {
-                $updates = $this->withAppInstanceSourceLayout($activity, $request, $updates, $target);
+                $updates = $this->withInstanceSourceLayout($activity, $request, $updates, $target);
             }
         }
 
@@ -1079,18 +1079,18 @@ final readonly class RecordCommandActivity
      * @param  array<string, mixed>  $target
      * @return array<string, mixed>
      */
-    private function withAppInstanceSourceLayout(
+    private function withInstanceSourceLayout(
         Activity $activity,
         Request $request,
         array $updates,
         array $target,
     ): array {
         $bound = $request->route('instance');
-        $appInstance = $bound instanceof Instance
+        $instance = $bound instanceof Instance
             ? $bound
             : Instance::query()->find($target['subject_id'] ?? null);
 
-        if (! $appInstance instanceof Instance) {
+        if (! $instance instanceof Instance) {
             return $updates;
         }
 
@@ -1102,8 +1102,8 @@ final readonly class RecordCommandActivity
             ...$updates,
             'properties' => [
                 ...$properties,
-                'source_layout' => $appInstance->source_layout,
-                'branch_override' => $appInstance->branch_override,
+                'source_layout' => $instance->source_layout,
+                'branch_override' => $instance->branch_override,
             ],
         ];
     }

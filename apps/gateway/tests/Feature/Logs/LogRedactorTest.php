@@ -3,8 +3,8 @@
 declare(strict_types=1);
 
 use App\Domain\Logs\LogRedactor;
-use App\Models\AppInstanceEnvironmentValue;
 use App\Models\Instance;
+use App\Models\InstanceEnvironmentValue;
 use App\Models\Process;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -12,7 +12,7 @@ describe('the stored environment values a log redacts', function (): void {
     it('skips the values of setting keys and values shorter than eight characters on an Instance', function (): void {
         $instance = new Instance;
         $instance->setRelation('environmentValues', new Collection(array_map(
-            static fn (array $pair): AppInstanceEnvironmentValue => new AppInstanceEnvironmentValue(['env_key' => $pair[0], 'env_value' => $pair[1]]),
+            static fn (array $pair): InstanceEnvironmentValue => new InstanceEnvironmentValue(['env_key' => $pair[0], 'env_value' => $pair[1]]),
             [
                 ['APP_ENV', 'production'],
                 ['LOG_CHANNEL', 'stack-daily'],
@@ -35,7 +35,7 @@ describe('the stored environment values a log redacts', function (): void {
     it('redacts secrets stored under keys that look like settings', function (string $key, string $value): void {
         $instance = new Instance;
         $instance->setRelation('environmentValues', new Collection([
-            new AppInstanceEnvironmentValue(['env_key' => $key, 'env_value' => $value]),
+            new InstanceEnvironmentValue(['env_key' => $key, 'env_value' => $value]),
         ]));
         $redactor = app(LogRedactor::class);
 

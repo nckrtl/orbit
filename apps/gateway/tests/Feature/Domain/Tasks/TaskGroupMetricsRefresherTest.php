@@ -21,7 +21,7 @@ use App\Models\TaskGroup;
 
 function metrics_running_group(): TaskGroup
 {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'live-metrics',
         'slug' => 'live-metrics',
         'repository_url' => 'git@example.test:live-metrics.git',
@@ -35,14 +35,14 @@ function metrics_running_group(): TaskGroup
         'wireguard_ip' => '10.44.0.161',
     ]);
     $instance = Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'task-7',
         'checkout_path' => '/tmp/task-7',
         'status' => 'source_resolved',
     ]);
     $group = TaskGroup::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Live metrics',
         'brief' => 'Show session totals.',
         'status' => TaskGroupStatus::Running,
@@ -61,7 +61,7 @@ function metrics_running_group(): TaskGroup
 
     test_link_agent_threads($group, implementer: 'implementer-1');
 
-    return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+    return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
 }
 
 it('fills subtask session metrics from T3 and the group line diff from git', function (): void {
@@ -195,7 +195,7 @@ it('keeps stored thread metrics when T3 refuses the snapshot', function (): void
         }
     };
 
-    $refreshed = new TaskGroupMetricsRefresher(test_agent_observer($threads), $diff)->refresh($group->fresh(['app', 'tasks', 'taskable']) ?? $group);
+    $refreshed = new TaskGroupMetricsRefresher(test_agent_observer($threads), $diff)->refresh($group->fresh(['project', 'tasks', 'taskable']) ?? $group);
 
     expect($refreshed->tokens)->toBe(90)
         ->and($refreshed->line_diff)->toBe(11)

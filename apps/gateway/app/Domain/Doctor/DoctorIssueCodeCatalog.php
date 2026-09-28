@@ -11,7 +11,7 @@ final class DoctorIssueCodeCatalog
         return match ($family) {
             DoctorFamily::Node => NodeDoctorIssueCode::tryFrom($code) ?? NodeDoctorIssueCode::InspectionFailed,
             DoctorFamily::Role => RoleDoctorIssueCode::tryFrom($code) ?? RoleDoctorIssueCode::InspectionFailed,
-            DoctorFamily::App => AppDoctorIssueCode::tryFrom($code) ?? AppDoctorIssueCode::InspectionFailed,
+            DoctorFamily::Project => ProjectDoctorIssueCode::tryFrom($code) ?? ProjectDoctorIssueCode::InspectionFailed,
             DoctorFamily::Instance => InstanceDoctorIssueCode::tryFrom($code)
                 ?? InstanceDoctorIssueCode::InspectionFailed,
             DoctorFamily::Schedule => ScheduleDoctorIssueCode::tryFrom($code)

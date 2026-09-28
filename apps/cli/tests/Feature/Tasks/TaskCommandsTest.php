@@ -129,7 +129,7 @@ describe('requests', function (): void {
         expect(Artisan::call('tasks:create', ['title' => 'Add the tasks CLI', '--project' => '1', '--brief' => 'Brief', '--status' => 'todo', '--subtasks' => $path, '--notify-coder' => true, '--json' => true]))->toBe(0);
 
         $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateTaskGroupRequest
-            && (string) $request->body() === '{"app_id":1,"title":"Add the tasks CLI","brief":"Brief","status":"todo","notify_coder":true,"tasks":[{"title":"One","brief":"First."},{"title":"Two","brief":"Second."}]}');
+            && (string) $request->body() === '{"project_id":1,"title":"Add the tasks CLI","brief":"Brief","status":"todo","notify_coder":true,"tasks":[{"title":"One","brief":"First."},{"title":"Two","brief":"Second."}]}');
     });
 
     it('omits the status and notification that the caller did not supply', function (): void {
@@ -138,7 +138,7 @@ describe('requests', function (): void {
         expect(Artisan::call('tasks:create', ['title' => 'Add the tasks CLI', '--project' => '1', '--brief' => 'Brief', '--json' => true]))->toBe(0);
 
         $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateTaskGroupRequest
-            && (string) $request->body() === '{"app_id":1,"title":"Add the tasks CLI","brief":"Brief"}');
+            && (string) $request->body() === '{"project_id":1,"title":"Add the tasks CLI","brief":"Brief"}');
     });
 
     it('sends only the supplied update fields', function (): void {
@@ -168,7 +168,7 @@ describe('requests', function (): void {
             ->and(Artisan::call('tasks:comment:create', ['group' => '1', 'subtask' => '2', '--type' => 'assistance_requested', '--body' => 'Stuck.', '--author' => 'nick', '--agent-thread' => '9', '--json' => true]))->toBe(0);
 
         $mock->assertSent(static fn (Request $request): bool => $request instanceof ListTaskGroupsRequest
-            && $request->query()->all() === ['app_id' => 4, 'status' => 'settling']);
+            && $request->query()->all() === ['project_id' => 4, 'status' => 'settling']);
         $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateTaskCommentRequest
             && (string) $request->body() === '{"type":"assistance_requested","body":"Stuck.","author":"nick","agent_thread_id":9}');
     });
@@ -365,7 +365,7 @@ function task_prompt_mock(): MockClient
 {
     $meta = ['request_id' => '11111111-1111-4111-8111-111111111111'];
     $group = static fn (int $id, string $title, string $status): array => [
-        'id' => $id, 'app_id' => 1, 'app' => 'orbit', 'project_code' => 'ORB', 'title' => $title, 'brief' => 'Brief', 'status' => $status, 'tasks' => [],
+        'id' => $id, 'project_id' => 1, 'app' => 'orbit', 'project_code' => 'ORB', 'title' => $title, 'brief' => 'Brief', 'status' => $status, 'tasks' => [],
     ];
 
     return MockClient::global([
@@ -505,7 +505,7 @@ describe('assistance columns', function (): void {
                 'enabled' => true,
                 'assistance' => [[
                     'id' => 4,
-                    'app_id' => 1,
+                    'project_id' => 1,
                     'app' => 'orbit',
                     'project_code' => 'ORB',
                     'title' => 'Blocked implementer',

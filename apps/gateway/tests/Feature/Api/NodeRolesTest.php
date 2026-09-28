@@ -5,8 +5,8 @@ declare(strict_types=1);
 use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\AppDev\PrivateDnsManager;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\GatewayPrivateDnsRoute;
 use App\Domain\Nodes\NodeConverger;
@@ -1257,7 +1257,7 @@ it('does not let force offline or purge remove an app-dev role beneath an Instan
             'role' => RoleName::AppDev,
             'status' => LifecycleStatus::Active,
         ]);
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',
@@ -1265,13 +1265,13 @@ it('does not let force offline or purge remove an app-dev role beneath an Instan
         'root' => 'public',
     ]);
     Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
         'checkout_path' => '/srv/orbit/apps/acme/dev',
         'branch' => 'dev',
         'starting_commit' => str_repeat('a', 40),
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
 
     $this
@@ -1656,7 +1656,7 @@ function node_roles_api_node(
 
 function node_roles_api_public_route(Cluster $cluster): OrbitRoute
 {
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Public',
         'slug' => 'public-'.$cluster->id,
         'repository_url' => 'https://github.com/acme/public.git',
@@ -1665,7 +1665,7 @@ function node_roles_api_public_route(Cluster $cluster): OrbitRoute
     ]);
 
     return OrbitRoute::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'cluster_id' => $cluster->id,
         'domain' => "public-{$cluster->id}.example.com",
         'provenance' => RouteProvenance::Explicit,

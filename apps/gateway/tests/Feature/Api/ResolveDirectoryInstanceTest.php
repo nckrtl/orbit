@@ -15,8 +15,8 @@ function directory_resolution_fixture(): array
     $caller = Node::query()->create(['name' => 'directory-caller', 'public_ssh_host' => '192.0.2.80', 'wireguard_ip' => '10.44.0.80', 'user' => 'orbit', 'status' => 'active']);
     orbit_test_set_app_placement_role($caller, false);
     $caller->accessibleNodes()->attach($caller);
-    $app = Project::query()->create(['name' => 'Directory', 'slug' => 'directory', 'repository_url' => 'https://example.test/app.git']);
-    $instance = $app->appInstances()->create(['node_id' => $caller->id, 'name' => 'fixture', 'environment' => 'development', 'status' => 'active', 'checkout_path' => '/home/orbit/project']);
+    $project = Project::query()->create(['name' => 'Directory', 'slug' => 'directory', 'repository_url' => 'https://example.test/app.git']);
+    $instance = $project->instances()->create(['node_id' => $caller->id, 'name' => 'fixture', 'environment' => 'development', 'status' => 'active', 'checkout_path' => '/home/orbit/project']);
     mock(SshExecutor::class)->shouldNotReceive('execute');
 
     return [$caller, $instance];
@@ -54,7 +54,7 @@ describe('caller directory resolution', function (): void {
 
     it('rejects nested ownership without filtering unavailable instances', function (string $root, string $status): void {
         [$caller, $instance] = directory_resolution_fixture();
-        $instance->app->appInstances()->create(['node_id' => $caller->id, 'name' => 'overlap', 'environment' => 'development', 'status' => $status, 'checkout_path' => $root]);
+        $instance->project->instances()->create(['node_id' => $caller->id, 'name' => 'overlap', 'environment' => 'development', 'status' => $status, 'checkout_path' => $root]);
         $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->get('/api/v1/instances/resolve-directory?directory=/home/orbit/project/child')
             ->assertStatus(409)->assertJsonPath('error.code', 'dependencies.target_ambiguous')->assertJsonMissingPath('data');
     })->with([['/home/orbit/project/child', 'active'], ['/home/orbit/project/child', 'reserved']]);

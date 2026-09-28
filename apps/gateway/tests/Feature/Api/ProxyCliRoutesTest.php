@@ -24,7 +24,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Api\ProxyCliController;
-use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
+use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\ProxyCli\RecordingProxyCliPublicationManager;
 use App\Infrastructure\ProxyCli\RecordingProxyCliRuntimeLifecycle;
 use App\Models\Activity;
@@ -485,7 +485,7 @@ it('republishes private DNS without the collector name when the extension is dis
 
         public function remove(Node $node): void
         {
-            $this->dnsAtRemoval = app(AppDevDnsConfigRenderer::class)->render();
+            $this->dnsAtRemoval = app(DevelopmentDnsConfigRenderer::class)->render();
         }
     };
     app()->instance(ProxyCliPublicationManager::class, $publication);
@@ -499,7 +499,7 @@ it('republishes private DNS without the collector name when the extension is dis
         ])
         ->assertCreated();
 
-    expect(app(AppDevDnsConfigRenderer::class)->render())->toContain('host-record=collector.cli-proxy-api.orbit,10.44.0.8');
+    expect(app(DevelopmentDnsConfigRenderer::class)->render())->toContain('host-record=collector.cli-proxy-api.orbit,10.44.0.8');
 
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip])
         ->deleteJson('/api/v1/proxycli')

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\Hibernation\AppDevHibernationPolicy;
+use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Instance;
 use App\Models\Node;
@@ -10,16 +10,16 @@ use App\Models\Process;
 use App\Models\Project;
 
 it('applies only to development Instance Processes on an active app-dev Node', function (): void {
-    $policy = new AppDevHibernationPolicy;
+    $policy = new DevelopmentHibernationPolicy;
     $appDev = hibernation_policy_node('app-dev', 'app-dev');
     $appProd = hibernation_policy_node('app-prod', 'app-prod');
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
     ]);
-    $development = hibernation_policy_instance($app, $appDev, 'development');
-    $production = hibernation_policy_instance($app, $appProd, 'production');
+    $development = hibernation_policy_instance($project, $appDev, 'development');
+    $production = hibernation_policy_instance($project, $appProd, 'production');
     $eligible = hibernation_policy_process($development);
     $nodeOwned = Process::query()->create([
         'owner_type' => Node::class,
@@ -48,28 +48,28 @@ it('applies only to development Instance Processes on an active app-dev Node', f
 });
 
 it('does not treat restart policy as an exemption', function (): void {
-    $policy = new AppDevHibernationPolicy;
+    $policy = new DevelopmentHibernationPolicy;
     $node = hibernation_policy_node('app-dev', 'app-dev');
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
     ]);
-    $instance = hibernation_policy_instance($app, $node, 'development');
+    $instance = hibernation_policy_instance($project, $node, 'development');
     $always = hibernation_policy_process($instance, 'always');
 
     expect($policy->appliesToProcess($always))->toBeTrue();
 });
 
 it('still applies to a keep-alive Process so restart policy stays independent', function (): void {
-    $policy = new AppDevHibernationPolicy;
+    $policy = new DevelopmentHibernationPolicy;
     $node = hibernation_policy_node('app-dev', 'app-dev');
-    $app = Project::query()->create([
+    $project = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
     ]);
-    $instance = hibernation_policy_instance($app, $node, 'development');
+    $instance = hibernation_policy_instance($project, $node, 'development');
     $queue = hibernation_policy_process($instance, 'never', keepAlive: true);
 
     expect($policy->appliesToProcess($queue))->toBeTrue();
@@ -91,10 +91,10 @@ function hibernation_policy_node(string $name, string $role): Node
     return $node;
 }
 
-function hibernation_policy_instance(Project $app, Node $node, string $environment): Instance
+function hibernation_policy_instance(Project $project, Node $node, string $environment): Instance
 {
     return Instance::query()->create([
-        'project_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => $environment,
         'environment' => $environment,
