@@ -214,17 +214,24 @@ final readonly class DocsImpact
     {
         $report = $this->report($base, []);
         $changed = array_fill_keys($report['paths'], true);
-        $exceptionPath = $this->root.'/docs/.docs-unaffected';
-        $exceptionFile = is_file($exceptionPath) ? file_get_contents($exceptionPath) : false;
-        $baseExceptionFile = $this->gitAllowMissing(['show', $base.':docs/.docs-unaffected']);
-        $baseLines = array_fill_keys(array_map(trim(...), preg_split('/\\R/', $baseExceptionFile ?? '') ?: []), true);
+        // Only added lines in the candidate diff can waive a page. In particular,
+        // an untracked file or a line inherited from the base cannot be reused.
+        $diff = $this->git(['diff', '--no-ext-diff', '--no-textconv', '--unified=0', $base, '--', 'docs/.docs-unaffected']);
         $exceptions = [];
-        foreach (preg_split('/\\R/', is_string($exceptionFile) ? $exceptionFile : '') ?: [] as $line) {
-            $line = trim($line);
-            if (isset($baseLines[$line]) || preg_match('/^([^:#]+):\\s*(\\S.*)$/', $line, $match) !== 1) {
+        $inHunk = false;
+        foreach ($diff as $line) {
+            if (str_starts_with($line, '@@')) {
+                $inHunk = true;
+
                 continue;
             }
-            $exceptions[$match[1]] = $match[2];
+            if (! $inHunk || ! str_starts_with($line, '+')) {
+                continue;
+            }
+            $addedLine = trim(substr($line, 1));
+            if (preg_match('/^([^:#]+):\\s*(\\S.*)$/', $addedLine, $match) === 1) {
+                $exceptions[$match[1]] = $match[2];
+            }
         }
         $missing = [];
         foreach ($report['impacted_pages'] as $impact) {

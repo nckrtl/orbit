@@ -8,17 +8,22 @@ The documentation is the single source of truth for Orbit's current architecture
 
 Records lists the decisions in progress. Retired decisions lists every retired number and the page that now holds the decision.
 
+## Decision lifecycle
+
+The docs-first subtask writes an ADR when a feature needs an architectural decision, alongside the documentation that describes the intended behavior. A new ADR says `In progress.` in its Status section and names the [mission principle](/mission#principles) it serves. If the decision needs an exception to a principle, its Principle line names that principle and explains the exception and its reason. The ADR and documentation are the contract for implementation.
+
+The pull request that completes a decision writes its behavior into the owning page and its lasting reasons and rejected alternatives into that page's "Why it works this way" section. It deletes the ADR, removes it from Records, redirects the exact ADR path to the absorbing section, adds a Retired decisions row, and updates inbound links. A decision completed in one pull request never leaves an ADR on main; a record stays only while a decision spans multiple pull requests. Numbers are never reused. The retired table and redirects resolve old numbers and links, including those in code comments.
+
+`composer docs-lint` enforces this lifecycle: retired slugs have no matching file and each has a redirect from its exact path. Live ADRs numbered 0180 or later must say `In progress.` in their Status section and include a `Principle:` line. The committed allowlist for older live records can only shrink as those records retire. The [docs-impact check](/decisions/0175-docs-impact-check-in-orbit-repo) and `covers:` frontmatter keep pages in step with code between decisions.
+
+## Why it works this way
+
+Permanent ADRs made the current rule hard to find: amendments spread it across historical records, and built decisions still marked `Proposed.` misled readers. Domain pages now own the present behavior, while Git keeps the full history. Keeping superseded records would leave the same growing list and link chains; retiring them in periodic batches would leave documentation behind the code. Absorbing each decision in the completing pull request lets reviewers check the behavior, rationale, and redirect together. Keeping only the reasons that still matter in the owning page makes the documentation useful without requiring readers to reconstruct an ADR chain. An exact retired slug, rather than just its number, preserves the identity of older paths even when historical records share a number.
+
 ## Records
 
 | Record | Decision | Status |
 | --- | --- | --- |
-| [0051](/decisions/0051-select-discovery-only-feature-delivery) | Select discovery-only feature delivery | Accepted 2026-09-10 |
-| [0052](/decisions/0052-seed-worktrees-from-successful-main-test-baselines) | Seed worktrees from successful main test baselines | Accepted 2026-09-10 |
-| [0053](/decisions/0053-use-local-review-checks-for-feature-landing) | Use local review checks for feature landing | Accepted 2026-09-10 |
-| [0054](/decisions/0054-maintain-main-caches-asynchronously) | Maintain main caches asynchronously | Accepted 2026-09-10 |
-| [0058](/decisions/0058-separate-incus-requirements-from-delivery-flow) | Separate Incus requirements from delivery flow | Accepted 2026-09-10 |
-| [0059](/decisions/0059-make-the-builder-own-the-candidate-quality-gate) | Make the Builder own the candidate quality gate | Accepted 2026-09-10 |
-| [0076](/decisions/0076-deliver-features-through-complete-pull-requests) | Deliver features through complete pull requests | Proposed; accepted through merge |
 | [0097](/decisions/0097-publish-analytics-tracking-hosts-for-app-instances) | Publish analytics tracking hosts for App instances | Proposed |
 | [0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) | Absorb Commander tasks as a Gateway extension | Proposed; amended by 0122, 0160, and 0169; extended by 0165 |
 | [0104](/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension) | Own CLIProxyAPI quota through the proxycli extension | Proposed; amended by 0109 and 0150 |
@@ -45,7 +50,6 @@ Records lists the decisions in progress. Retired decisions lists every retired n
 | [0163](/decisions/0163-prove-a-failing-test-on-the-start-commit) | Prove a failing test on the start commit | Proposed; amended by 0178 and 0169 |
 | [0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask) | Heal a settling pull request with a fixup subtask | Proposed; amended by 0178, 0169, and 0171 |
 | [0165](/decisions/0165-record-per-thread-token-metrics) | Record per-thread token metrics | Proposed |
-| [0166](/decisions/0166-raise-phpstan-one-level-at-a-time) | Raise PHPStan one level at a time | Proposed |
 | [0167](/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart) | Resume a Pi turn interrupted by a server restart | Proposed |
 | [0168](/decisions/0168-offload-large-pi-tool-output) | Offload large Pi tool output | Proposed |
 | [0169](/decisions/0169-start-each-subtask-review-in-a-fresh-thread) | Start each subtask review in a fresh thread | Proposed |
@@ -54,7 +58,6 @@ Records lists the decisions in progress. Retired decisions lists every retired n
 | [0171](/decisions/0171-reset-fixup-caps-after-operator-work) | Reset fixup caps after operator work | Proposed; amends 0164 |
 | [0175](/decisions/0175-docs-impact-check-in-orbit-repo) | Keep the docs-impact check in Orbit's repository | Proposed |
 | [0178](/decisions/0178-run-project-agnostic-tasks-without-a-planner) | Run project-agnostic Tasks without a planner | Proposed; supersedes 0124 and amends 0122, 0125, 0133, 0135, 0163, and 0164 |
-| [0180](/decisions/0180-absorb-built-decisions-into-the-docs) | Absorb built decisions into the documentation | In progress |
 
 ## Retired decisions
 
@@ -110,9 +113,15 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0048 | Copy App process and schedule definitions into AppInstances | [Processes and schedules: Production copies](/reference/app-processes-and-schedules#production-copies) |
 | 0049 | Keep delivery artifacts off the merge head (superseded) | [Contributor guide: Review reproduces on a discovery topology](/contributor-guide#review-reproduces-on-a-discovery-topology) |
 | 0050 | Release successful proof resources before landing (superseded) | [Contributor guide: Review reproduces on a discovery topology](/contributor-guide#review-reproduces-on-a-discovery-topology) |
+| 0051 | Select discovery-only feature delivery (superseded) | [Contributor guide: Review reproduces on a discovery topology](/contributor-guide#review-reproduces-on-a-discovery-topology) |
+| 0052 | Seed worktrees from successful main test baselines | [Feature delivery: Main caches come only from clean main](/reference/implementation-loop#main-caches-come-only-from-clean-main) |
+| 0053 | Use local review checks for feature landing (superseded) | [Feature delivery: The candidate gate](/reference/implementation-loop#the-candidate-gate) |
+| 0054 | Maintain main caches asynchronously | [Feature delivery: Maintenance runs in the background](/reference/implementation-loop#maintenance-runs-in-the-background) |
 | 0055 | Restrict Grafana access to authorized Gateway peers | [Metrics role: Grafana access](/reference/metrics#grafana-access) |
 | 0056 | Retain proof topologies for interactive review (superseded) | [Contributor guide: Review reproduces on a discovery topology](/contributor-guide#review-reproduces-on-a-discovery-topology) |
 | 0057 | Limit Metrics exporters to managed Nodes | [Metrics role: Exporter selection](/reference/metrics#exporter-selection) |
+| 0058 | Separate Incus requirements from delivery flow (superseded) | [Contributor guide: Review reproduces on a discovery topology](/contributor-guide#review-reproduces-on-a-discovery-topology) |
+| 0059 | Make the Builder own the candidate quality gate (superseded) | [Feature delivery: The candidate gate](/reference/implementation-loop#the-candidate-gate) |
 | 0060 | Record the latest Schedule run status | [Schedules: Latest run](/reference/schedules#latest-run) |
 | 0061 | Use VPN DNS by default on managed peers | [Private DNS: Resolver selection](/reference/private-dns#resolver-selection) |
 | 0062 | Select Cluster Router DNS addresses from LAN intent | [Private DNS: Cluster Router addresses](/reference/private-dns#cluster-router-addresses) |
@@ -129,6 +138,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0073 | Store deploy steps as named AppInstance records | [Production release layout: Deploy steps](/reference/deployments#deploy-steps) |
 | 0074 | Hibernate idle app-dev AppInstance Processes | [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation) |
 | 0075 | Prune idle app-dev checkout dependencies | [App-dev runtime hibernation: Dependency prune](/reference/app-dev-runtime-hibernation#dependency-prune) |
+| 0076 | Deliver features through complete pull requests | [Contributor guide: Decisions ship with their feature](/contributor-guide#decisions-ship-with-their-feature) |
 | 0077 | Allow the database role beside router | [Database role: The remaining conflicts](/reference/database-role#the-remaining-conflicts) |
 | 0078 | Assign Vite ports to development App instances | [Assigned Vite ports](/reference/assigned-vite-ports) |
 | 0079 | Publish linux-x64 from hosted GitHub Actions and macos-arm64 from mini | [CLI binaries](/reference/cli-binaries) |
@@ -162,6 +172,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0114 | Expand the three-node Incus Cluster | [Incus topology registry: Three Nodes](/reference/incus-topologies#three-nodes) |
 | 0115 | Run Project setup commands on development Instances | [Instance setup and teardown](/reference/instance-setup) |
 | 0118 | Skip selected Nodes for a Project | [Development node exclusions](/reference/development-node-exclusions) |
+| 0119 | Share caches after bootstrap | [Feature delivery: Publish from bootstrap](/reference/implementation-loop#publish-from-bootstrap) |
 | 0120 | Extract the agent annotation package | [Agent annotation package](/reference/agent-annotation) |
 | 0123 | Serve the web app from the Gateway origin | [Web app: Why it works this way](/reference/web-app#why-it-works-this-way) |
 | 0126 | Limit browser API calls to Orbit origins | [Browser access to the Gateway](/reference/browser-access) |
@@ -193,3 +204,5 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0159 | Push Activity changes to the web app | [Realtime events: Activity](/reference/events#activity) |
 | 0161 | Set a stale Caddyfile aside when Caddy is absent | [Caddy configuration: When Caddy is absent](/reference/caddy-configuration#when-caddy-is-absent) |
 | 0162 | Verify web UI changes with bin/web-verify | [Web verification: Why it works this way](/reference/web-verification#why-it-works-this-way) |
+| 0166 | Raise PHPStan one level at a time | [Feature delivery: Findings are fixed, not silenced](/reference/implementation-loop#findings-are-fixed-not-silenced) |
+| 0180 | Absorb built decisions into the documentation | [Architecture decisions: Why it works this way](/decisions/overview#why-it-works-this-way) |

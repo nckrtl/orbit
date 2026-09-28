@@ -27,8 +27,10 @@ The pull request that completes a decision absorbs it into the documentation and
 2. Write the reasons and the rejected alternatives that still matter into that page's "Why it works this way" section.
 3. Delete the ADR file and remove it from the Records navigation.
 4. Add a redirect from the ADR path to the section that absorbed it.
-5. Add a row to "Retired decisions" in the [overview](/decisions/overview) with the number, the title, and the link.
+5. Add a row to "Retired decisions" in the [overview](/decisions/overview). Record the deleted filename slug in the number's list in `apps/docs/config/adr-retired-slugs.php`.
 6. Point every inbound link to the absorbing section.
+
+Older records can share a number. Record each retired slug separately under that number, and keep a live record in the legacy allowlist until it retires. Docs-lint checks the redirect against each slug, not against any redirect that shares the number. This keeps a deleted Incus ADR distinct from a live Tasks ADR that used the same number.
 
 Most decisions are built in one task group, so their ADR is retired in the same pull request that adds it. An ADR stays on main only while its decision spans more than one pull request. A code comment can keep an ADR number, because the overview resolves every retired number.
 
