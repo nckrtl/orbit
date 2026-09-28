@@ -87,7 +87,7 @@ Cloning never stops the candidate's Processes or Schedules, pauses queues, or ch
 
 ## Retry
 
-The Gateway records the clone request and each finished step. An identical request resumes an interrupted clone, even when the candidate has moved to a newer commit. A request that changes the candidate, Node, name, preview, branch, or SQLite path returns `instance.clone_retry_conflict`. After completion, an identical request returns the same Instance and changes nothing.
+The Gateway records the clone request and each finished step. An identical request resumes an interrupted clone, even when the candidate has moved to a newer commit. A request that changes the candidate, Node, name, preview, branch, or SQLite path returns `instance.clone_retry_conflict`. After completion, an identical request returns the same Instance and changes nothing. `instance:create` does not create or resume a production Instance.
 
 While a clone is incomplete, removal of its candidate returns `instance.clone_in_progress`.
 

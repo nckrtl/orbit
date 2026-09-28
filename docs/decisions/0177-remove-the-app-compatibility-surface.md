@@ -33,7 +33,7 @@ This amends ADR 0105 as follows:
 - Keep `/api/v1/projects` and `project:*`. Remove the `/api/v1/apps` routes, including `app:list`, `app:show`, `app:create`, `app:update`, and `app:destroy`, plus the App-nested process-definition and Schedule-definition routes. Keep the canonical Project-nested definition routes. Remove the 15 generated `app-*` MCP tools derived from those routes.
 - Remove the optional `type` behavior from `StoreAppRequest` that supplies `laravel-app` only for `/apps`. Project creation requires an explicit `type`.
 - Remove `app_id` and `app` from Instance JSON alongside the canonical `project_id` and `project`. Remove `app_id` as an Instance create or registration input; callers use `project_id`.
-- Remove the `--app` alias for Project selection on process, Schedule, and `instance:register`; use `--project`. The dependencies commands' `--app` remains because it selects the Route domain, not a Project, and is not part of this compatibility removal.
+- Remove the `--app` alias for Project selection on process, Schedule, `instance:register`, and the dependency commands; use `--project`. On `instance:dependencies:scan` and `instance:dependencies:update`, `--project` takes the Route domain of one Instance.
 - Remove `--wireguard-address`, the alias for `--wireguard-ip`, from `node:add` and Gateway console commands. `--wireguard-ip` is the supported name.
 - Remove the `ORBIT_TASKS_AGENT_DRIVER` environment fallback. `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` and `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` each default directly to `t3`; a configured role-specific driver continues to select the driver for that role.
 
@@ -50,7 +50,7 @@ The database's existing table names and foreign keys are not public aliases and 
 
 - The Project API, CLI, MCP tools, and Instance owner fields have one unambiguous public name.
 - Older binaries or clients that depend on `/apps`, `app-*`, `app_id`, `app`, `--app` as a Project selector, or the removed environment fallback must be updated; no compatibility period is provided.
-- The dependencies commands retain their Route-domain `--app` selector, which is unrelated to Project selection.
+- Dependency scan and update select one Instance with `--project` and its Route domain. They have no `--app` option.
 - Historical ADR 0105 retains its original rationale and records the prior window; this ADR supersedes only that compatibility commitment.
 
 ## Affects

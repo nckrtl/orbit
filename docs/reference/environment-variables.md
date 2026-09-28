@@ -30,7 +30,7 @@ Import and update change stored configuration only. The `.env` file on the Node 
 
 A success returns `app_instance_id`, `operation`, `changed`, and `key_count`, the total number of stored keys. `changed` is `false` when the stored value or the file already matched.
 
-The Instance must be active, with complete placement and no pending source migration. The Node must have exactly one active `app-dev` or `app-prod` role; without one, the Gateway returns `app_instance.placement_unavailable` (409).
+The Instance must be active and have complete placement. The Node must have exactly one active `app-dev` or `app-prod` role; without one, the Gateway returns `app_instance.placement_unavailable` (409).
 
 Import, update, and synchronization use the Instance's recorded owning Node. A Route is not required for synchronization unless a stored value refers to `{{app_instance.domain}}`; then the Gateway needs an authoritative Route and returns `env.reference_unavailable` (409) if it cannot resolve one. A Route in an incomplete transition also blocks synchronization. The caller needs an access grant to the Instance's Node. Import and synchronize also need an active Node. Update does not contact the Node, so it works while the Node is unreachable.
 

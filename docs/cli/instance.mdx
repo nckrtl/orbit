@@ -69,7 +69,7 @@ Analytics commands publish the tracking hosts that send visits to the [analytics
 
 ## orbit instance:create
 
-Create a development Instance on a Node with the active `app-dev` role. New production placements require [`instance:clone`](#orbit-instanceclone); `instance:create` refuses them with `instance.candidate_required`.
+Create a development Instance on a Node with the active `app-dev` role. A Node with the active `app-prod` role returns `instance.candidate_required`, including a repeat for an existing production Instance. Create a production Instance with [`instance:clone`](#orbit-instanceclone).
 
 ```bash
 orbit instance:create <project> <node> <name> [options]
@@ -91,8 +91,8 @@ Development placement and branch selection follow the requested name.
 
 | Creation input | Managed placement | Selected branch |
 | --- | --- | --- |
-| `default` without `--branch` | `<node-apps-root>/<app-slug>/default` | The Project `default_branch`. |
-| Another name without `--branch` | `<node-apps-root>/<app-slug>/<name>` | The matching remote branch, or a new branch from the fetched `default_branch` commit. |
+| `default` without `--branch` | `<node-apps-root>/<project-slug>/default` | The Project `default_branch`. |
+| Another name without `--branch` | `<node-apps-root>/<project-slug>/<name>` | The matching remote branch, or a new branch from the fetched `default_branch` commit. |
 | Any name with `--branch` | The placement for the requested name | The existing remote branch, or a new branch from the fetched `default_branch` commit when `--branch` matches a non-default Instance name. |
 
 ```bash
@@ -121,8 +121,8 @@ orbit instance:register [options]
 | `--path=PATH` | the current directory | Existing Git checkout or worktree. |
 | `--include-worktrees` | off | Adopt the checkout and every linked worktree as one preflighted set. |
 | `--project=ID` | resolved from the origin | Existing numeric Project ID. |
-| `--app-name=NAME` | inferred | Confirmed Project display name for a new Project. |
-| `--app-slug=SLUG` | the repository name | Confirmed Project slug for a new Project. |
+| `--project-name=NAME` | inferred | Confirmed Project display name for a new Project. |
+| `--project-slug=SLUG` | the repository name | Confirmed Project slug for a new Project. |
 | `--default-branch=BRANCH` | the remote default | Confirmed Project default branch for a new Project. |
 | `--name=NAME` | inferred | Non-default Instance name. |
 | `--root=PATH` | `public` for an unambiguous Laravel checkout | Confirmed Project root, or a root override for an existing Project. |

@@ -70,7 +70,7 @@ When [`instance:register`](/domains/applications#register-an-existing-checkout) 
 | Slug | The repository name. |
 | `default_branch` | The checkout's `origin/HEAD`; optional API and SDK input, returned by every Project response. |
 | Root | `public` when the checkout has `composer.json`, `artisan`, and a `public` directory. |
-| Name | The slug, unless you pass `--app-name`. |
+| Name | The slug, unless you pass `--project-name`. |
 | Type | `monorepo` for the Orbit repository, or for slug `orbit` with a repository path that ends in `/orbit`. `laravel-app` when the root is `public` or ends in `/public`. `laravel-package` otherwise. |
 | `type` | Required on `project:create`. Closed enum `monorepo`, `laravel-app`, `laravel-package`, or `node-package`. |
 | `repository_url` | Required repository access URL in the Gateway API and PHP SDK. |
@@ -85,17 +85,17 @@ A value you pass fills an unresolved value only. It must match what the Gateway 
 
 | Input | Code when it differs |
 | --- | --- |
-| `--app-slug` for a new Project | `app.slug_conflict`. The slug is always the repository name. |
+| `--project-slug` for a new Project | `app.slug_conflict`. The slug is always the repository name. |
 | `--default-branch` for a new Project | `app.default_branch_conflict`, when the checkout has an `origin/HEAD`. |
 | `--root` for a new Project | `app.root_conflict`, when the root was inferred. |
-| `--app-slug`, `--app-name`, or `--default-branch` for an existing Project | `app.identity_conflict`. |
+| `--project-slug`, `--project-name`, or `--default-branch` for an existing Project | `app.identity_conflict`. |
 | A root that the type does not allow | `app.root_invalid`. |
 
 Valid explicit values fill only unresolved or optional values. They do not override a conflicting repository identity or verified source fact. When the Project is created but registration then fails, the Project stays for an identical retry.
 
 ## Retry creation safely
 
-Repeating `project:create` with the same name, slug, type, repository access URL, default branch, root, defaults, and any sent task check returns the existing Project. A retry does not look up an omitted branch again.
+Repeating `project:create` with the same name, slug, type, repository access URL, default branch, root, and any sent task check returns the existing Project. A retry does not look up an omitted branch again.
 
 A retry that changes any creation value fails with `app.identity_conflict` and does not mutate the Project. A different repository access URL is a changed value even when it has the same canonical repository identity, so creation never switches the stored URL.
 
