@@ -38,7 +38,9 @@ The JSON report includes the base and paths, impacted pages and reasons, detecte
 
 For `docs_required`, update the listed pages or run the named generator and include the result in the handoff. For `no_docs_change`, include the complete JSON report as evidence. The reviewer checks the report and confirms the planned paths without requiring a prose justification or a new ADR.
 
-At every handoff, `bin/review-check` fails with the list of impacted pages that the candidate diff did not change. A reviewer-confirmed exception requires a matching `page: reason` line in `docs/.docs-unaffected`, committed in that candidate diff. The exception does not bypass generator checks. `covers:` remains optional for pages not yet on the coverage ratchet; the ratchet may only grow, and this page is its initial entry. Jev is out of scope for this first version.
+At every handoff, `bin/review-check` fails with the list of impacted pages that the candidate diff did not change. A reviewer-confirmed waiver requires a matching `page: reason` line in `docs/.docs-unaffected` that the branch under check adds against its base commit. Lines already present in the base do not count, even if they match an impacted page. Waivers count only when the branch adds them; lines left on `main` are inert. Add any needed lines on the feature branch for reviewer confirmation. A waiver does not bypass generator checks.
+
+`covers:` remains optional for pages not yet on the coverage ratchet; the ratchet may only grow, and this page is its initial entry. Jev is out of scope for this first version.
 
 ## Enable the extension
 
