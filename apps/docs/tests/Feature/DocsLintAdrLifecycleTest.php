@@ -15,7 +15,7 @@ function adrLifecycleFixture(): string
         ['source' => '/decisions/0114-expand-the-three-node-incus-cluster', 'destination' => '/reference/incus-topologies'],
     ]], JSON_THROW_ON_ERROR));
     file_put_contents($root.'/apps/docs/config/adr-legacy-allowlist.php', "<?php return ['0114'];\n");
-    file_put_contents($root.'/apps/docs/config/adr-retired-slugs.php', "<?php return ['0114' => '0114-expand-the-three-node-incus-cluster'];\n");
+    file_put_contents($root.'/apps/docs/config/adr-retired-slugs.php', "<?php return ['0114' => ['0114-expand-the-three-node-incus-cluster']];\n");
     file_put_contents($root.'/docs/decisions/0114-judge-task-completion-as-separate-checks.md', "# Tasks\n");
     exec('git -C '.escapeshellarg($root).' init -q -b main');
     exec('git -C '.escapeshellarg($root).' add .');
@@ -58,6 +58,42 @@ it('adr lifecycle requires the retired slug independently of the redirect', func
     $root = adrLifecycleFixture();
     file_put_contents($root.'/apps/docs/config/adr-retired-slugs.php', '<?php return [];');
     expectAdrLifecycleLintFailure($root, 'Retired decision 0114 needs its exact source slug.');
+});
+
+it('adr lifecycle checks both retired slugs with a shared number while the allowlist resolves to the live file', function (): void {
+    $root = adrLifecycleFixture();
+    $incus = '0114-expand-the-three-node-incus-cluster';
+    $tasks = '0114-judge-task-completion-as-separate-checks';
+    // The retired Incus slug does not make the live Tasks ADR an allowlist violation.
+    expect(new AdrLifecycle($root)->findings())->toBe([]);
+
+    unlink($root.'/docs/decisions/'.$tasks.'.md');
+    expect(collect(new AdrLifecycle($root)->findings())->pluck('message'))->toContain('Legacy ADR 0114 is no longer live; remove it from the allowlist.');
+    file_put_contents($root.'/apps/docs/config/adr-legacy-allowlist.php', '<?php return [];');
+    file_put_contents($root.'/docs/decisions/overview.mdx', "## Retired decisions\n\n| 0114 | Expand the three-node Incus Cluster | [Topology](/reference/incus-topologies) |\n| 0114 | Judge task completion as separate checks | [Tasks](/reference/tasks) |\n");
+    file_put_contents($root.'/apps/docs/config/adr-retired-slugs.php', "<?php return ['0114' => ['{$incus}', '{$tasks}']];\n");
+    file_put_contents($root.'/docs/docs.json', json_encode(['redirects' => [
+        ['source' => '/decisions/'.$incus, 'destination' => '/reference/incus-topologies'],
+        ['source' => '/decisions/'.$tasks, 'destination' => '/reference/tasks'],
+    ]], JSON_THROW_ON_ERROR));
+    expect(new AdrLifecycle($root)->findings())->toBe([]);
+
+    file_put_contents($root.'/docs/decisions/overview.mdx', "## Retired decisions\n\n| 0114 | Expand the three-node Incus Cluster | [Topology](/reference/incus-topologies) |\n");
+    expectAdrLifecycleLintFailure($root, 'Retired slug 0114 has no row in the decisions overview.');
+    file_put_contents($root.'/docs/decisions/overview.mdx', "## Retired decisions\n\n| 0114 | Expand the three-node Incus Cluster | [Topology](/reference/incus-topologies) |\n| 0114 | Judge task completion as separate checks | [Tasks](/reference/tasks) |\n");
+    file_put_contents($root.'/apps/docs/config/adr-retired-slugs.php', "<?php return ['0114' => ['{$incus}']];\n");
+    expectAdrLifecycleLintFailure($root, 'Retired decision 0114 needs its exact source slug.');
+    file_put_contents($root.'/apps/docs/config/adr-retired-slugs.php', "<?php return ['0114' => ['{$incus}', '{$tasks}']];\n");
+
+    foreach ([$incus, $tasks] as $slug) {
+        file_put_contents($root.'/docs/docs.json', json_encode(['redirects' => [
+            ['source' => '/decisions/'.($slug === $incus ? $tasks : $incus), 'destination' => '/reference/tasks'],
+        ]], JSON_THROW_ON_ERROR));
+        expectAdrLifecycleLintFailure($root, "Retired decision 0114 has no redirect from /decisions/{$slug} in docs/docs.json.");
+        file_put_contents($root.'/docs/decisions/'.$slug.'.md', "# Retired\n");
+        expectAdrLifecycleLintFailure($root, "Retired decision {$slug} still has a file.");
+        unlink($root.'/docs/decisions/'.$slug.'.md');
+    }
 });
 
 it('adr lifecycle rejects new ADRs missing status or principle', function (): void {

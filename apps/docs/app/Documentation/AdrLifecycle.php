@@ -54,23 +54,34 @@ final readonly class AdrLifecycle
 
         foreach ($rows as $row) {
             $number = $row[1];
-            $listed[$number] = true;
-            $slug = $retiredSlugs[$number] ?? null;
-            if (! is_string($slug) || preg_match('/^'.preg_quote($number, '/').'-[a-z0-9-]+$/', $slug) !== 1) {
-                $findings[] = $this->error('apps/docs/config/adr-retired-slugs.php', "Retired decision {$number} needs its exact source slug.");
+            $listed[$number] = ($listed[$number] ?? 0) + 1;
+        }
+        $seen = [];
+        foreach ($retiredSlugs as $number => $slugs) {
+            if (! is_array($slugs)) {
+                throw new RuntimeException('Retired ADR slugs must be lists keyed by number.');
+            }
+            foreach ($slugs as $slug) {
+                if (! is_string($slug) || preg_match('/^'.preg_quote((string) $number, '/').'-[a-z0-9-]+$/', $slug) !== 1 || isset($seen[$slug])) {
+                    $findings[] = $this->error('apps/docs/config/adr-retired-slugs.php', "Retired decision {$number} needs its exact source slug.");
 
-                continue;
+                    continue;
+                }
+                $seen[$slug] = true;
+                if (! isset($redirects['/decisions/'.$slug])) {
+                    $findings[] = $this->error('docs/decisions/overview.mdx', "Retired decision {$number} has no redirect from /decisions/{$slug} in docs/docs.json.");
+                }
+                if (isset($live[$slug])) {
+                    $findings[] = $this->error('docs/decisions/'.$slug.'.md', "Retired decision {$slug} still has a file.");
+                }
             }
-            if (! isset($redirects['/decisions/'.$slug])) {
-                $findings[] = $this->error('docs/decisions/overview.mdx', "Retired decision {$number} has no redirect from /decisions/{$slug} in docs/docs.json.");
-            }
-            if (isset($live[$slug])) {
-                $findings[] = $this->error('docs/decisions/'.$slug.'.md', "Retired decision {$slug} still has a file.");
+            if (count($slugs) > ($listed[$number] ?? 0)) {
+                $findings[] = $this->error('apps/docs/config/adr-retired-slugs.php', "Retired slug {$number} has no row in the decisions overview.");
             }
         }
-        foreach (array_keys($retiredSlugs) as $number) {
-            if (! isset($listed[$number])) {
-                $findings[] = $this->error('apps/docs/config/adr-retired-slugs.php', "Retired slug {$number} has no row in the decisions overview.");
+        foreach ($listed as $number => $count) {
+            if (count($retiredSlugs[$number] ?? []) < $count) {
+                $findings[] = $this->error('apps/docs/config/adr-retired-slugs.php', "Retired decision {$number} needs its exact source slug.");
             }
         }
 
