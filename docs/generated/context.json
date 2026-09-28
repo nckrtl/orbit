@@ -1650,7 +1650,9 @@
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
-            "components": [],
+            "components": [
+                "apps/docs"
+            ],
             "concepts": [
                 "Task",
                 "Task group"

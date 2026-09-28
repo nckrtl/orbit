@@ -40,6 +40,11 @@ final readonly class AdrLifecycle
 
         $retired = explode('## Retired decisions', $overview, 2)[1] ?? '';
         preg_match_all('/^\| (\d{4}) \| ([^|]+) \|/m', $retired, $rows, PREG_SET_ORDER);
+        $retiredSlugs = require $this->root.'/apps/docs/config/adr-retired-slugs.php';
+        if (! is_array($retiredSlugs)) {
+            throw new RuntimeException('Retired ADR slugs must be configured as an array.');
+        }
+        $listed = [];
         $files = glob($this->root.'/docs/decisions/[0-9][0-9][0-9][0-9]-*.md') ?: [];
         $live = [];
         foreach ($files as $file) {
@@ -49,15 +54,23 @@ final readonly class AdrLifecycle
 
         foreach ($rows as $row) {
             $number = $row[1];
-            $sources = array_filter(array_keys($redirects), static fn (string $source): bool => preg_match('#^/decisions/'.preg_quote($number, '#').'-[a-z0-9-]+$#', $source) === 1);
-            if ($sources === []) {
-                $findings[] = $this->error('docs/decisions/overview.mdx', "Retired decision {$number} has no redirect in docs/docs.json.");
+            $listed[$number] = true;
+            $slug = $retiredSlugs[$number] ?? null;
+            if (! is_string($slug) || preg_match('/^'.preg_quote($number, '/').'-[a-z0-9-]+$/', $slug) !== 1) {
+                $findings[] = $this->error('apps/docs/config/adr-retired-slugs.php', "Retired decision {$number} needs its exact source slug.");
+
+                continue;
             }
-            foreach ($sources as $source) {
-                $slug = substr($source, strlen('/decisions/'));
-                if (isset($live[$slug])) {
-                    $findings[] = $this->error('docs/decisions/'.$slug.'.md', "Retired decision {$slug} still has a file.");
-                }
+            if (! isset($redirects['/decisions/'.$slug])) {
+                $findings[] = $this->error('docs/decisions/overview.mdx', "Retired decision {$number} has no redirect from /decisions/{$slug} in docs/docs.json.");
+            }
+            if (isset($live[$slug])) {
+                $findings[] = $this->error('docs/decisions/'.$slug.'.md', "Retired decision {$slug} still has a file.");
+            }
+        }
+        foreach (array_keys($retiredSlugs) as $number) {
+            if (! isset($listed[$number])) {
+                $findings[] = $this->error('apps/docs/config/adr-retired-slugs.php', "Retired slug {$number} has no row in the decisions overview.");
             }
         }
 
@@ -68,9 +81,11 @@ final readonly class AdrLifecycle
                 $findings[] = $this->error($allowlistPath, "Legacy ADR allowlist cannot add {$number}.");
             }
         }
-        // Compare with the committed version as well: re-adding a number removed later is not allowed.
-        $history = $this->git(['log', '--format=%H', 'HEAD', '--', $allowlistPath]);
+        // Walk one ancestry chain, not git log's interleaved commits from sibling branches.
+        // Only a number still allowed today can violate the ratchet; a later correction clears it.
+        $history = $this->git(['log', '--first-parent', '--format=%H', 'HEAD', '--', $allowlistPath]);
         $previous = $allowed;
+        $added = [];
         foreach (explode("\n", trim($history ?? '')) as $commit) {
             if ($commit === '') {
                 continue;
@@ -80,10 +95,11 @@ final readonly class AdrLifecycle
                 continue;
             }
             $older = $this->parseAllowlist($contents);
-            foreach (array_diff($previous, $older) as $number) {
-                $findings[] = $this->error($allowlistPath, "Legacy ADR allowlist cannot add {$number}.");
-            }
+            array_push($added, ...array_diff($previous, $older));
             $previous = $older;
+        }
+        foreach (array_unique(array_intersect($allowed, $added)) as $number) {
+            $findings[] = $this->error($allowlistPath, "Legacy ADR allowlist cannot add {$number}.");
         }
 
         foreach ($allowed as $number) {
