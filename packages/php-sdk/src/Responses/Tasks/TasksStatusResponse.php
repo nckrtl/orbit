@@ -62,8 +62,15 @@ final readonly class TasksStatusResponse
                 throw TaskFields::invalid('tasks extension status', $requestId);
             }
 
-            /** @var array<string, mixed> $group */
-            $groups[] = TaskAssistanceResponse::fromGatewayData($group, $requestId);
+            $data = [];
+            foreach ($group as $key => $item) {
+                if (! is_string($key)) {
+                    throw TaskFields::invalid('tasks extension status', $requestId);
+                }
+                $data[$key] = $item;
+            }
+
+            $groups[] = TaskAssistanceResponse::fromGatewayData($data, $requestId);
         }
 
         return $groups;

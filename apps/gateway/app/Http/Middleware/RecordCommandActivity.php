@@ -36,6 +36,7 @@ use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Schedule;
+use App\Support\ValidatedData;
 use Closure;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
@@ -98,7 +99,6 @@ final readonly class RecordCommandActivity
         $shutdown = $activity->exists ? ActivityShutdownFinalizer::arm($activity) : null;
 
         try {
-            /** @var Response $response */
             $response = $next($request);
 
             if ($response instanceof StreamedResponse) {
@@ -322,8 +322,7 @@ final readonly class RecordCommandActivity
         $attribute = $request->attributes->get('orbit.app_instance_removal');
 
         if (is_array($attribute)) {
-            /** @var array<string, mixed> $attribute */
-            return $attribute;
+            return ValidatedData::object($attribute);
         }
 
         if ($request->route()?->getName() !== 'instance:destroy' || $response->getStatusCode() >= 400) {
@@ -368,7 +367,7 @@ final readonly class RecordCommandActivity
             }
         }
 
-        return $projection;
+        return ValidatedData::object($projection);
     }
 
     private function fail(
@@ -1059,7 +1058,6 @@ final readonly class RecordCommandActivity
             return $updates;
         }
 
-        /** @var array<string, mixed> $properties */
         $properties = is_array($updates['properties'] ?? null)
             ? $updates['properties']
             : $activity->properties?->toArray() ?? [];
@@ -1096,7 +1094,6 @@ final readonly class RecordCommandActivity
             return $updates;
         }
 
-        /** @var array<string, mixed> $properties */
         $properties = is_array($updates['properties'] ?? null)
             ? $updates['properties']
             : $activity->properties?->toArray() ?? [];
@@ -1129,7 +1126,6 @@ final readonly class RecordCommandActivity
         $storedEnvironment = $process instanceof Process
             ? $process->runtime_config['environment'] ?? null
             : null;
-        /** @var list<string> $values */
         $values = [];
 
         $submittedValue = $request->input('value');

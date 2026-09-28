@@ -108,7 +108,6 @@ final readonly class IssueState
             throw new RuntimeException("The {$this->issue} attempt lease is invalid.");
         }
 
-        /** @var array{issue:string,attempt_id:string,purpose:string,operation_id:string,acquired_at:string,extension?:null|string,snapshot_replacement?:bool} $lease */
         return $lease;
     }
 

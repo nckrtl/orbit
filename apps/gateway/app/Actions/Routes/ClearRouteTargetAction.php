@@ -35,7 +35,6 @@ final readonly class ClearRouteTargetAction
             );
         }
 
-        /** @var list<int> $expectedTargetIds */
         $expectedTargetIds = $route
             ->targets()
             ->orderBy('app_instance_id')
@@ -43,7 +42,7 @@ final readonly class ClearRouteTargetAction
             ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->values()
             ->all();
-
+        $expectedTargetIds = array_values($expectedTargetIds);
         $result = $this->environmentOperations->run(
             $expectedTargetIds,
             fn (): Route => $this->executeOwned($route, $expectedTargetIds),
@@ -63,7 +62,6 @@ final readonly class ClearRouteTargetAction
     /** @param list<int> $expectedTargetIds */
     private function executeOwned(Route $route, array $expectedTargetIds): Route
     {
-        /** @var Route $updated */
         $updated = DB::transaction(function () use ($route, $expectedTargetIds): Route {
             $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
             $currentTargetIds = $locked

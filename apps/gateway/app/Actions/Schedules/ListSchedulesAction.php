@@ -9,6 +9,7 @@ use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Models\AppInstance;
 use App\Models\Node;
 use App\Models\Schedule;
+use App\Support\ValidatedData;
 use Illuminate\Support\Collection;
 
 final readonly class ListSchedulesAction
@@ -20,7 +21,6 @@ final readonly class ListSchedulesAction
     {
         $accessibleNodeIds = $this->authorizer->accessibleNodeIds($caller);
 
-        /** @var Collection<int, array<string, mixed>> */
         return Schedule::query()
             ->where(static function ($query) use ($accessibleNodeIds): void {
                 $query
@@ -56,9 +56,8 @@ final readonly class ListSchedulesAction
                 'last_run_at',
                 'last_run_status',
             ])
-            ->map(static fn (Schedule $schedule): array => ScheduleData::fromModel(
-                $schedule,
-                includeCommand: false,
-            )->toArray());
+            ->map(static fn (Schedule $schedule): array => ValidatedData::object(
+                ScheduleData::fromModel($schedule, includeCommand: false)->toArray(),
+            ));
     }
 }

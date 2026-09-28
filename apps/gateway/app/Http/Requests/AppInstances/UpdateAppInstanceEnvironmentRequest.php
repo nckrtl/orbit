@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\AppInstances;
 
 use App\Http\Requests\TopLevelJsonObjectInspector;
+use App\Support\ValidatedData;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\ValidationException;
 use UnexpectedValueException;
@@ -29,9 +30,8 @@ final class UpdateAppInstanceEnvironmentRequest extends FormRequest
 
     public function value(): string
     {
-        /** @var array{value: string} $validated */
         $validated = $this->validated();
 
-        return $validated['value'];
+        return ValidatedData::string($validated['value'] ?? null);
     }
 }

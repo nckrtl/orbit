@@ -6,6 +6,7 @@ namespace App\Domain\Nodes;
 
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\StoredInteger;
 use App\Models\Node;
 
 final readonly class NodeAccessAuthorizer
@@ -73,19 +74,20 @@ final readonly class NodeAccessAuthorizer
     public function accessibleNodeIds(Node $consumer): array
     {
         if ($this->hasControlPlaneAuthority($consumer) || $this->hasGatewayAuthority($consumer)) {
-            /** @var list<int> */
-            return Node::query()
+
+            return array_values(Node::query()
                 ->orderBy('id')
                 ->pluck('id')
-                ->all();
+                ->map(static fn (mixed $id): int => StoredInteger::from($id))
+                ->all());
         }
 
-        /** @var list<int> */
-        return $consumer
+        return array_values($consumer
             ->accessibleNodes()
             ->orderBy('nodes.id')
             ->pluck('nodes.id')
-            ->all();
+            ->map(static fn (mixed $id): int => StoredInteger::from($id))
+            ->all());
     }
 
     private function hasControlPlaneAuthority(Node $node): bool
@@ -100,8 +102,8 @@ final readonly class NodeAccessAuthorizer
 
     private function activeGatewayId(): ?int
     {
-        /** @var ?int */
-        return Node::query()
+
+        $id = Node::query()
             ->where('status', LifecycleStatus::Active)
             ->whereHas('roles', static function ($query): void {
                 $query
@@ -110,5 +112,7 @@ final readonly class NodeAccessAuthorizer
             })
             ->orderBy('id')
             ->value('id');
+
+        return $id === null ? null : StoredInteger::from($id);
     }
 }

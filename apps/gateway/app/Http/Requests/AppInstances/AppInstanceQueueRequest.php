@@ -21,8 +21,11 @@ final class AppInstanceQueueRequest extends FormRequest
     /** @return 'pending'|'completed'|'failed' */
     public function state(): string
     {
-        /** @var 'pending'|'completed'|'failed' */
-        return $this->string('state', 'pending')->toString();
+        return match ($this->string('state', 'pending')->toString()) {
+            'completed' => 'completed',
+            'failed' => 'failed',
+            default => 'pending',
+        };
     }
 
     public function limit(): int

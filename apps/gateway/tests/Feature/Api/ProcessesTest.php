@@ -364,6 +364,20 @@ it('keeps Docker environment values out of production exception diagnostics', fu
         ->not->toContain($sensitiveValue);
 });
 
+it('normalizes associative Docker ports before building the process payload', function (): void {
+    $this->postJson('/api/v1/processes', [
+        'target_type' => 'instance',
+        'target_id' => $this->instance->id,
+        'name' => 'worker',
+        'runtime' => 'docker',
+        'image' => 'busybox:1',
+        'command' => ['sleep', 'infinity'],
+        'ports' => ['http' => '8080:80'],
+    ])->assertCreated();
+
+    expect(Process::query()->sole()->runtime_config['ports'])->toBe(['8080:80']);
+});
+
 it('validates runtime-specific fixed argv and Docker input', function (array $payload, string $field): void {
     $response = $this->postJson('/api/v1/processes', [
         'target_type' => 'instance',

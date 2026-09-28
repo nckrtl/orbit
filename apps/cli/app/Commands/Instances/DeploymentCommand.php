@@ -10,7 +10,8 @@ use App\Support\Console\InterruptIntent;
 use App\Support\Console\ProgressDisplay;
 use App\Support\Console\ProgressState;
 use App\Support\Console\TerminalText;
-use Generator;
+use Iterator;
+use IteratorIterator;
 use LogicException;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Responses\Deployments\DeploymentEvent;
@@ -85,8 +86,8 @@ abstract class DeploymentCommand extends GatewayCommand
 
     private function renderDeploymentStreamHuman(DeploymentStream $stream, string $title, string $openingPhase, string $verb): int
     {
-        /** @var Generator<int, DeploymentEvent> $iterator */
-        $iterator = $stream->getIterator();
+
+        $iterator = new IteratorIterator($stream->getIterator());
         $progress = $this->progressDisplay($title);
         $alwaysEmitted = $this->alwaysEmittedPhases($openingPhase);
 
@@ -275,13 +276,13 @@ abstract class DeploymentCommand extends GatewayCommand
      * status JSON would report for the same terminal result — not a hard failure.
      *
      * @param  list<string>  $alwaysEmitted
-     * @param  Generator<int, DeploymentEvent>  $iterator
+     * @param  Iterator<int, DeploymentEvent>  $iterator
      */
     private function degradeDeploymentStream(
         ProgressDisplay $progress,
         array $alwaysEmitted,
         string $currentStepId,
-        Generator $iterator,
+        Iterator $iterator,
         DeploymentEvent $event,
         string $verb,
     ): int {
@@ -325,8 +326,8 @@ abstract class DeploymentCommand extends GatewayCommand
         return $event->succeeded() ? self::SUCCESS : self::FAILURE;
     }
 
-    /** @param Generator<int, DeploymentEvent> $iterator */
-    private function renderHumanOutputEvents(Generator $iterator): void
+    /** @param Iterator<int, DeploymentEvent> $iterator */
+    private function renderHumanOutputEvents(Iterator $iterator): void
     {
         while ($iterator->valid() && $iterator->current() instanceof DeploymentOutputEvent) {
             $event = $iterator->current();

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Tasks;
 
 use App\Data\Tasks\UpdateTaskData;
+use App\Domain\Shared\StoredInteger;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPositions;
@@ -56,8 +57,16 @@ final readonly class UpdateTaskAction
             $task->save();
 
             if ($data->position !== null && $data->position !== $task->position) {
-                /** @var list<int> $ids */
-                $ids = Task::query()->where('task_group_id', $locked->id)->whereKeyNot($task->id)->orderBy('position')->pluck('id')->all();
+
+                $ids = Task::query()
+                    ->where('task_group_id', $locked->id)
+                    ->whereKeyNot($task->id)
+                    ->orderBy('position')
+                    ->pluck('id')
+                    ->map(static fn (mixed $id): int => StoredInteger::from($id))
+                    ->values()
+                    ->all();
+                $ids = array_values($ids);
 
                 if ($todoOutsideBacklog) {
                     $ordered = Task::query()

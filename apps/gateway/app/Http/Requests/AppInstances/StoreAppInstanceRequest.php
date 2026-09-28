@@ -12,6 +12,7 @@ use App\Domain\SourceControl\ProjectRoot;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\App as OrbitApp;
 use App\Models\Node;
+use App\Support\ValidatedData;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -82,13 +83,12 @@ final class StoreAppInstanceRequest extends FormRequest
 
     public function payload(): CreateAppInstanceData
     {
-        /** @var array{node_id: int|string, name: string, project_id: int|string, root?: string, domain?: string, branch?: string} $validated */
         $validated = $this->validated();
 
         return new CreateAppInstanceData(
             appId: $this->resolvedProjectId($validated),
             nodeId: self::integerId($validated['node_id']) ?? throw new UnexpectedValueException('A validated Node identifier must be an integer.'),
-            name: $validated['name'],
+            name: ValidatedData::string($validated['name'] ?? null),
             root: is_string($validated['root'] ?? null) ? $validated['root'] : null,
             domain: is_string($validated['domain'] ?? null)
                 ? RouteDomain::normalize($validated['domain'])

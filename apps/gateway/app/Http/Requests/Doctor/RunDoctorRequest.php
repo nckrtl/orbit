@@ -61,13 +61,20 @@ final class RunDoctorRequest extends FormRequest
     /** @return list<DoctorFamily> */
     public function families(): array
     {
-        /** @var array<array-key, string> $families */
         $families = $this->validated('families', []);
+        if (! is_array($families) || ! array_is_list($families)) {
+            return [];
+        }
 
-        return array_map(
-            DoctorFamily::from(...),
-            array_values($families),
-        );
+        $resolved = [];
+        foreach ($families as $family) {
+            if (! is_string($family)) {
+                continue;
+            }
+            $resolved[] = DoctorFamily::from($family);
+        }
+
+        return $resolved;
     }
 
     private function strictInteger(string $attribute, mixed $value, Closure $fail): void

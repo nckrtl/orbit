@@ -43,7 +43,6 @@ final class GitRepositoryOrigin
             return false;
         }
 
-        /** @var array<string, mixed> $parts */
         $scheme = is_string($parts['scheme'] ?? null) ? $parts['scheme'] : null;
         $host = is_string($parts['host'] ?? null) ? $parts['host'] : null;
         $path = is_string($parts['path'] ?? null) ? $parts['path'] : null;

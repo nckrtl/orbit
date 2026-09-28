@@ -43,7 +43,6 @@ final class ListToolManagersRequest extends GatewayRequest
 
         $requestId = $this->successRequestId($response);
 
-        /** @var list<array<string, mixed>> $data */
         $managers = array_map(
             static fn (array $item): ToolManagerResponse => ToolManagerResponse::fromGatewayData(
                 $item,

@@ -16,7 +16,6 @@ abstract class ProcessCommand extends GatewayCommand
      */
     protected function sanitizedProcessPayload(array $payload): array
     {
-        /** @var mixed $runtimeConfig */
         $runtimeConfig = $payload['runtime_config'] ?? null;
 
         if (! is_array($runtimeConfig)) {
@@ -26,7 +25,6 @@ abstract class ProcessCommand extends GatewayCommand
         unset($runtimeConfig['environment']);
         $payload['runtime_config'] = $runtimeConfig;
 
-        /** @var array<string, mixed> $sanitized */
         $sanitized = $this->sanitizedProcessValues($payload);
 
         return $sanitized;

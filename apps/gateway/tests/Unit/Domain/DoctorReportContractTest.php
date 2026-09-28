@@ -194,6 +194,7 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
     ))->toBe([
         'node' => [
             'node.lifecycle_not_active',
+            'node.disk_low',
             'node.ssh_unreachable',
             'node.platform_mismatch',
             'node.architecture_mismatch',

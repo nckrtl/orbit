@@ -1532,6 +1532,32 @@
             ]
         },
         {
+            "path": "docs/decisions/0174-match-the-task-gate-to-ci-and-repeated-findings.md",
+            "title": "ADR 0174: Match the task gate to CI and repeated findings",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Process",
+                "Project",
+                "Task",
+                "Task workspace",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0125",
+                "0174"
+            ]
+        },
+        {
             "path": "docs/decisions/0175-docs-impact-check-in-orbit-repo.md",
             "title": "ADR 0175: Keep the docs-impact check in Orbit's repository",
             "kind": "decision",
@@ -1718,6 +1744,7 @@
                 "0170",
                 "0171",
                 "0173",
+                "0174",
                 "0175",
                 "0178"
             ]
@@ -2017,6 +2044,7 @@
                 "Instance",
                 "Node",
                 "Process",
+                "Project",
                 "Route"
             ],
             "governing_adrs": []
@@ -2837,6 +2865,7 @@
                 "0171",
                 "0172",
                 "0173",
+                "0174",
                 "0175",
                 "0178",
                 "0179"

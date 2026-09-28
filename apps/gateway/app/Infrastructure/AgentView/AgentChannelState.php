@@ -340,8 +340,10 @@ final class AgentChannelState
         }
 
         foreach ($pending['workspaces'] as $workspace) {
-            /** @var array{instance_id: int, base: string, start: ?string, branch: ?string, head: ?string, dirty: ?bool, commits: ?int, diff: array{files: int, added: int, removed: int, truncated: bool}|null} $workspace */
-            $this->storeWorkspace($workspace);
+            $workspace = self::workspace($workspace);
+            if ($workspace !== null) {
+                $this->storeWorkspace($workspace);
+            }
         }
     }
 

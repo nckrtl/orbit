@@ -17,7 +17,7 @@ covers:
 
 ## Two paths
 
-Retarget picks its path from the Node's role assignments. Any assignment counts, also a `provisioning` or `failed` one, because a failed convergence can already have closed public SSH. [Public SSH](/reference/node-provisioning#public-ssh) describes that boundary.
+Retarget picks its path from the Node's role assignments. Any assignment counts, also a `provisioning` or `failed` one, because a failed convergence can already have closed public SSH. When the first role is assigned, the Gateway moves the Node from operator DNS to managed DNS and removes its public SSH recovery rule; roleless retarget uses public SSH to converge the WireGuard peer before switching to the tunnel. [Public SSH](/reference/node-provisioning#public-ssh) describes that boundary.
 
 | Node | Path |
 | --- | --- |

@@ -10,6 +10,7 @@ use App\Domain\AppDefinitions\DefinitionEnvironment;
 use App\Domain\Schedules\ScheduleSpecificationValidator;
 use App\Domain\Schedules\ScheduleTargetType;
 use App\Domain\Shared\ResourceOperationException;
+use App\Support\ValidatedData;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -79,13 +80,12 @@ final class ScheduleDefinitionRequest extends FormRequest
 
     public function payload(): AppDefinitionInputData
     {
-        /** @var array{name: string, environments: list<string>, spec: array<string, mixed>} $validated */
         $validated = $this->validated();
 
         return new AppDefinitionInputData(
-            name: $validated['name'],
-            environments: $validated['environments'],
-            spec: $validated['spec'],
+            name: ValidatedData::string($validated['name'] ?? null),
+            environments: ValidatedData::stringList($validated['environments'] ?? null),
+            spec: ValidatedData::object($validated['spec'] ?? null),
         );
     }
 }

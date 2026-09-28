@@ -8,6 +8,7 @@ use App\Data\Firewall\StoreFirewallRuleData;
 use App\Domain\Firewall\FirewallAction;
 use App\Domain\Firewall\FirewallPort;
 use App\Domain\Firewall\FirewallSource;
+use App\Support\ValidatedData;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -44,16 +45,15 @@ final class StoreFirewallRuleRequest extends FormRequest
 
     public function getData(): StoreFirewallRuleData
     {
-        /** @var array{name: string, source?: string, protocol?: string, port: string} $validated */
         $validated = $this->validated();
         $routeAction = $this->route('firewall_action');
 
         return new StoreFirewallRuleData(
-            name: $validated['name'],
+            name: ValidatedData::string($validated['name'] ?? null),
             action: FirewallAction::from(is_string($routeAction) ? $routeAction : ''),
-            source: FirewallSource::normalize($validated['source'] ?? 'any'),
-            protocol: $validated['protocol'] ?? 'tcp',
-            port: FirewallPort::normalize($validated['port']),
+            source: FirewallSource::normalize(ValidatedData::string($validated['source'] ?? 'any')),
+            protocol: ValidatedData::string($validated['protocol'] ?? 'tcp'),
+            port: FirewallPort::normalize(ValidatedData::string($validated['port'] ?? null)),
         );
     }
 

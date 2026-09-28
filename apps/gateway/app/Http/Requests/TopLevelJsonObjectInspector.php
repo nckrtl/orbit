@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests;
 
+use App\Support\ValidatedData;
 use JsonException;
 use stdClass;
 use UnexpectedValueException;
@@ -43,13 +44,16 @@ final readonly class TopLevelJsonObjectInspector
         }
 
         try {
-            /** @var array<string, mixed> $payload */
             $payload = json_decode($json, associative: true, flags: JSON_THROW_ON_ERROR);
         } catch (JsonException) {
             $this->fail('The request body must be a valid JSON object.');
         }
 
-        return $payload;
+        if (! is_array($payload)) {
+            $this->fail('The request body must be a valid JSON object.');
+        }
+
+        return ValidatedData::object($payload);
     }
 
     /**

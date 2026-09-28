@@ -34,7 +34,6 @@ final readonly class ToolManagersResponse
             }
         }
 
-        /** @var list<ToolManagerResponse> $managers */
         $this->managers = $managers;
         $this->requestId = GatewayRequestId::fromTransport($requestId) ?? '';
     }

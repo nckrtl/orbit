@@ -47,11 +47,6 @@ final readonly class GitHubAppResponse
             throw new GatewayApiException('Gateway response contains an invalid GitHub App.', requestId: $requestId);
         }
 
-        /** @var string $name */
-        /** @var string $slug */
-        /** @var string $owner */
-        /** @var string $url */
-        /** @var string $settingsUrl */
         return new self(
             $name,
             $slug,

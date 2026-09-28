@@ -20,7 +20,6 @@ final readonly class ComposerInstalledInventoryParser
     public function parse(CommandResult $result, Closure $validatePackage): ComposerInstalledInventory
     {
         try {
-            /** @var mixed $decoded */
             $decoded = json_decode($result->stdout, flags: JSON_THROW_ON_ERROR);
         } catch (JsonException $exception) {
             throw new ToolManagerException(
@@ -43,18 +42,14 @@ final readonly class ComposerInstalledInventoryParser
             throw $this->malformed($result);
         }
 
-        /** @var array<string, list<string>> $versionsByPackage */
         $versionsByPackage = [];
 
-        /** @var mixed $entry */
         foreach ($decoded->installed as $entry) {
             if (! $entry instanceof stdClass) {
                 throw $this->malformed($result);
             }
 
-            /** @var mixed $name */
             $name = $entry->name ?? null;
-            /** @var mixed $version */
             $version = $entry->version ?? null;
 
             if (
