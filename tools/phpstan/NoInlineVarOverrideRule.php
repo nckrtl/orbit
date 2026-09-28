@@ -21,8 +21,7 @@ final class NoInlineVarOverrideRule implements Rule
 
     public function processNode(Node $node, Scope $scope): array
     {
-        if (! $scope->isInClass() || ! $node instanceof Stmt || $node instanceof Stmt\ClassMethod || $node instanceof Stmt\Function_
-            || $node instanceof Stmt\Property || $node instanceof Stmt\ClassConst) {
+        if (! $scope->isInClass() || ! $node instanceof Stmt\Expression) {
             return [];
         }
 
