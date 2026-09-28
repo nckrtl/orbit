@@ -94,3 +94,5 @@ The stored assignment already keeps other Instances off the port. A process outs
 ### An explicit preset
 
 Orbit does not guess from a Process name or command that it runs Vite. The stored preset connects start, restart, wake, and transfer to port preparation.
+
+The `vp-dev` Process preset uses the assigned Vite port for a development Instance and does not apply to Node or Project targets.

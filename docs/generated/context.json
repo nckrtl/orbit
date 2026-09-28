@@ -400,7 +400,6 @@
                 "Node agent",
                 "Process",
                 "Project",
-                "Role",
                 "Route",
                 "Schedule"
             ],
@@ -1866,7 +1865,6 @@
             "concepts": [
                 "Access grant",
                 "Activity",
-                "Deployment",
                 "Doctor",
                 "Gateway",
                 "Instance",

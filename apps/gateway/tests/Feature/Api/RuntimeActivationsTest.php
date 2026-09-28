@@ -90,7 +90,7 @@ beforeEach(function (): void {
 
 it('returns the Orbit progress page before it starts Processes', function (): void {
     $running = Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $this->instance->id,
         'name' => 'vite',
         'runtime' => 'systemd',
@@ -161,7 +161,7 @@ it('returns an HTML progress page when another wake holds the AppInstance lock',
 
 it('returns an HTML failure page on the next intercept when Process start fails', function (): void {
     Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $this->instance->id,
         'name' => 'vite',
         'runtime' => 'systemd',

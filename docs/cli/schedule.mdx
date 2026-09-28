@@ -68,8 +68,6 @@ orbit schedule:create hourly-report --instance=12 --calendar=hourly --command='p
 orbit schedule:create hourly-report --project=1 --for=production --calendar=hourly --command='php artisan report:send' --timeout=600
 ```
 
-An identical create returns the existing Schedule. A different specification with the same owner and name returns `schedule.retry_conflict`. To change a Schedule, destroy it and create it again.
-
 ## orbit schedule:list
 
 List the Schedules whose target Node you may address, without command text, or the definitions of one Project.

@@ -118,6 +118,7 @@ function private_route_inspector_standalone(): array
         'user' => 'orbit',
         'wireguard_ip' => private_route_inspector_address(),
     ]);
+    $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $instance = AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,

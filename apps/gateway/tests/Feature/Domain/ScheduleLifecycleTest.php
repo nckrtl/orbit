@@ -44,6 +44,7 @@ beforeEach(function (): void {
         'user' => 'orbit',
         'wireguard_ip' => '10.44.0.3',
     ]);
+    $this->node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
     $this->foreignNode = Node::query()->create([
         'name' => 'other',
         'status' => LifecycleStatus::Active,

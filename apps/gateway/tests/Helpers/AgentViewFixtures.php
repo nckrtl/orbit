@@ -53,7 +53,7 @@ function agent_view_instance_process(Node $node, string $name, ProcessRuntime $r
     ]);
 
     return Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => $name,
         'runtime' => $runtime,

@@ -23,12 +23,13 @@ final readonly class AppInstanceEnvironmentContextResolver
         bool $lockRoute = false,
     ): AppInstanceEnvironmentContext {
         $sourceIsLaravel = $instance->source_is_laravel;
+        $environment = $instance->placementEnvironment();
 
         if (
             $instance->status !== AppInstanceState::Active
             || $instance->migration_required
             || $instance->provisioning_step !== 'active'
-            || ! in_array($instance->environment, ['development', 'production'], true)
+            || $environment === null
         ) {
             $this->conflict();
         }
@@ -78,7 +79,7 @@ final readonly class AppInstanceEnvironmentContextResolver
             appInstanceId: $instance->id,
             appId: $instance->app_id,
             nodeId: $instance->node_id,
-            environment: $instance->environment,
+            environment: $environment,
             path: $path,
             executionUser: $executionUser,
             laravel: $sourceIsLaravel,
@@ -95,6 +96,7 @@ final readonly class AppInstanceEnvironmentContextResolver
         bool $lockRoute = false,
     ): AppInstanceEnvironmentContext {
         $sourceIsLaravel = $instance->source_is_laravel;
+        $environment = $instance->placementEnvironment();
 
         if (
             ! in_array(
@@ -102,7 +104,7 @@ final readonly class AppInstanceEnvironmentContextResolver
                 [AppInstanceState::Reserved, AppInstanceState::CheckoutPrepared, AppInstanceState::SourceResolved],
                 strict: true,
             )
-            || $instance->environment !== 'production'
+            || $environment !== 'production'
             || $instance->migration_required
             || ! is_bool($sourceIsLaravel)
             || ! is_string($instance->provisioning_step)
@@ -152,7 +154,7 @@ final readonly class AppInstanceEnvironmentContextResolver
             appInstanceId: $instance->id,
             appId: $instance->app_id,
             nodeId: $instance->node_id,
-            environment: $instance->environment,
+            environment: $environment,
             path: $path,
             executionUser: $executionUser,
             laravel: $sourceIsLaravel,
@@ -170,10 +172,11 @@ final readonly class AppInstanceEnvironmentContextResolver
         bool $lockRoute = false,
     ): AppInstanceEnvironmentContext {
         $sourceIsLaravel = $instance->source_is_laravel;
+        $environment = $instance->placementEnvironment();
 
         if (
             $instance->status !== AppInstanceState::Active
-            || ! in_array($instance->environment, ['development', 'production'], true)
+            || ! in_array($environment, ['development', 'production'], true)
             || $instance->migration_required
             || $instance->provisioning_step !== 'active'
             || ! is_bool($sourceIsLaravel)
@@ -232,7 +235,7 @@ final readonly class AppInstanceEnvironmentContextResolver
             appInstanceId: $instance->id,
             appId: $instance->app_id,
             nodeId: $instance->node_id,
-            environment: $instance->environment,
+            environment: $environment,
             path: $path,
             executionUser: $executionUser,
             laravel: $sourceIsLaravel,
@@ -247,14 +250,14 @@ final readonly class AppInstanceEnvironmentContextResolver
     /** @return array{string, string} */
     private function placement(AppInstance $instance, Node $node): array
     {
-        if ($instance->environment === 'development') {
+        if ($instance->placementEnvironment() === 'development') {
             $path = $instance->getAttribute('checkout_path');
             $executionUser = $node->user;
         } else {
             $path = $instance->getAttribute('production_home');
             $executionUser = $instance->production_user;
 
-            if ($instance->checkout_path !== $path && ! $instance->usesProductionReleaseLayout()) {
+            if (! $instance->usesProductionReleaseLayout()) {
                 $this->conflict();
             }
         }

@@ -63,7 +63,7 @@ it('retains failed cleanup for retry and repeats only unfinished Process removal
 
     expect($runtime->removed)->toBe([$first->id, $second->id, $second->id, $third->id]);
     $this->assertDatabaseMissing('processes', [
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $target->id,
     ]);
 });
@@ -90,6 +90,7 @@ function orb131_cascade_instance(string $suffix): AppInstance
         'wireguard_ip' => "10.44.0.{$octet}",
         'user' => 'orbit',
     ]);
+    orbit_test_set_app_placement_role($node, false);
 
     return AppInstance::query()->create([
         'app_id' => $app->id,
@@ -110,7 +111,7 @@ function orb131_cascade_process(
     int $ownerId,
     string $name,
     LifecycleStatus $status,
-    string $ownerType = AppInstance::class,
+    string $ownerType = AppInstance::MorphAlias,
 ): Process {
     return Process::query()->create([
         'owner_type' => $ownerType,

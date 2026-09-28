@@ -64,13 +64,12 @@ class CreateRouteCommand extends RouteCommand
                     (string) $candidate->id,
                     $candidate->name,
                     $candidate->project->name ?? (string) $candidate->projectId,
-                    $candidate->environment,
                     $candidate->node->name ?? (string) $candidate->nodeId,
                     $candidate->status,
                 ];
             }
 
-            $instance = $this->commandPrompts()->selectEntity('Instance', ['ID', 'Name', 'Project', 'Environment', 'Node', 'Status'], $rows);
+            $instance = $this->commandPrompts()->selectEntity('Instance', ['ID', 'Name', 'Project', 'Node', 'Status'], $rows);
         }
 
         $instanceId = filter_var($instance, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);

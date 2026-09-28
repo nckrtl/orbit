@@ -5,6 +5,7 @@ import { demoFleet } from "../demo/fleet";
 import {
     attentionRows,
     counts,
+    instanceEnvironment,
     listRows,
     processCpu,
     processHealthy,
@@ -77,6 +78,23 @@ describe("process health", () => {
     it("treats an unknown desired state as needing a look", () => {
         expect(processHealthy(process({ desired_state: "paused", runtime_status: "active" }))).toBe(
             false,
+        );
+    });
+});
+
+describe("Instance environment", () => {
+    it("uses the owning Node role", () => {
+        const instance = fleet.instances[0]!;
+        const node = fleet.nodes.find((candidate) => candidate.id === instance.node.id)!;
+
+        expect(
+            instanceEnvironment({ ...fleet, nodes: [{ ...node, roles: ["app-dev"] }] }, instance),
+        ).toBe("development");
+        expect(
+            instanceEnvironment({ ...fleet, nodes: [{ ...node, roles: ["app-prod"] }] }, instance),
+        ).toBe("production");
+        expect(instanceEnvironment({ ...fleet, nodes: [{ ...node, roles: [] }] }, instance)).toBe(
+            "—",
         );
     });
 });

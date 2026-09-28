@@ -20,7 +20,6 @@
                     "name": "app-dev"
                 },
                 "name": "dev",
-                "environment": "development",
                 "source_layout": "checkout",
                 "checkout_path": "/srv/orbit/apps/charlie-shop/dev",
                 "production_user": null,
@@ -88,7 +87,6 @@
                     "name": "app-dev"
                 },
                 "name": "dev",
-                "environment": "development",
                 "source_layout": "checkout",
                 "checkout_path": "/srv/orbit/apps/acme/dev",
                 "production_user": null,
@@ -156,7 +154,6 @@
                     "name": "app-dev"
                 },
                 "name": "feature-checkout",
-                "environment": "development",
                 "source_layout": "checkout",
                 "checkout_path": "/srv/orbit/apps/charlie-shop/feature-checkout",
                 "production_user": null,
@@ -224,7 +221,6 @@
                     "name": "app-dev"
                 },
                 "name": "staging",
-                "environment": "development",
                 "source_layout": "checkout",
                 "checkout_path": "/srv/orbit/apps/charlie-shop/staging",
                 "production_user": null,

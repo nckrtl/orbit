@@ -39,7 +39,6 @@ final readonly class SweepIdleAppDevRuntimesAction
         $pruned = 0;
 
         $instances = AppInstance::query()
-            ->where('environment', 'development')
             ->whereHas('node.roles', static function ($query): void {
                 $query
                     ->where('role', RoleName::AppDev)

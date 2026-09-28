@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\AppInstances\AppInstanceDeploymentConfigResolver;
 use App\Actions\AppInstances\DeployAppInstanceAction;
+use App\Actions\AppInstances\InstantiateAppRuntimeDefinitionsAction;
 use App\Actions\AppInstances\RollbackAppInstanceAction;
 use App\Domain\AppInstances\Deployment\DeploymentCancellation;
 use App\Domain\AppInstances\Deployment\DeploymentFailureBoundary;
@@ -16,6 +17,14 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentResult;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentSynchronizer;
 use App\Domain\AppInstances\ProductionPhpRuntimeManager;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Processes\DesiredProcessState;
+use App\Domain\Processes\ProcessAdmissionLock;
+use App\Domain\Processes\ProcessRuntimeManager;
+use App\Domain\Processes\ProcessSpecification;
+use App\Domain\Processes\ProcessTargetResolver;
+use App\Domain\Schedules\ScheduleRuntimeManager;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
@@ -23,6 +32,8 @@ use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
 use App\Models\Node;
+use App\Models\NodeRole;
+use App\Models\Process;
 use Illuminate\Support\Facades\DB;
 
 it('captures one configuration and preserves the complete deployment order', function (): void {
@@ -68,6 +79,51 @@ it('captures one configuration and preserves the complete deployment order', fun
         ->and(print_r($result, return: true))
         ->not->toContain('prepare-one-stdout', 'prepare-one-stderr')
         ->toContain('[OUTPUT]');
+});
+
+it('installs captured runtime definitions only after deployment selects the release', function (): void {
+    $instance = orb219_deployment_instance([]);
+    $definition = $instance->app->processDefinitions()->create([
+        'name' => 'queue',
+        'environments' => ['production'],
+        'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/php', 'artisan', 'queue:work']],
+    ]);
+    $instance->update(['runtime_definitions_captured_at' => now()]);
+    $process = Process::query()->create([
+        'owner_type' => AppInstance::MorphAlias,
+        'owner_id' => $instance->id,
+        'source_definition_id' => $definition->id,
+        'name' => 'queue',
+        'runtime' => 'systemd',
+        'working_directory' => $instance->production_home.'/current',
+        'runtime_config' => ['command' => ['/usr/bin/php', 'artisan', 'queue:work']],
+        'restart_policy' => 'always',
+        'desired_state' => DesiredProcessState::Stopped,
+        'status' => LifecycleStatus::Provisioning,
+    ]);
+    $processRuntime = Mockery::mock(ProcessRuntimeManager::class);
+    $processRuntime->shouldReceive('converge')
+        ->once()
+        ->with(Mockery::on(function (Process $runtimeProcess) use ($instance): bool {
+            return $runtimeProcess->id === Process::query()->where('owner_id', $instance->id)->value('id')
+                && $instance->refresh()->checkout_path === '/home/orbit-app-1/releases/fresh';
+        }));
+    $scheduleRuntime = Mockery::mock(ScheduleRuntimeManager::class);
+    $scheduleRuntime->shouldNotReceive('install');
+    $definitions = new InstantiateAppRuntimeDefinitionsAction(
+        app(ProcessAdmissionLock::class),
+        new ProcessTargetResolver,
+        new ProcessSpecification,
+        $processRuntime,
+        $scheduleRuntime,
+    );
+    [$deploy] = orb219_actions(new Orb219DeploymentTrace, definitions: $definitions);
+
+    $result = $deploy->execute($instance);
+
+    expect($result->succeeded)->toBeTrue()
+        ->and($process->refresh()->status)->toBe(LifecycleStatus::Active)
+        ->and($process->desired_state)->toBe(DesiredProcessState::Stopped);
 });
 
 it('runs no application command or cache refresh for an empty non-PHP deployment', function (): void {
@@ -296,7 +352,6 @@ it('selects retained code without fetching, synchronizing, running steps, or cha
     ], php: true);
     $trace = new Orb219DeploymentTrace;
     [, $rollback] = orb219_actions($trace);
-    $environment = $instance->environment;
     $instance->environmentValues()->create(['env_key' => 'DATABASE_URL', 'env_value' => 'kept']);
 
     $result = $rollback->execute($instance, 'retained');
@@ -315,8 +370,6 @@ it('selects retained code without fetching, synchronizing, running steps, or cha
         ])
         ->and($instance->refresh()->checkout_path)
         ->toBe('/home/orbit-app-1/releases/retained')
-        ->and($instance->environment)
-        ->toBe($environment)
         ->and(AppInstanceEnvironmentValue::query()->sole()->env_value)
         ->toBe('kept');
 });
@@ -364,6 +417,7 @@ it('uses the same action for a first deployment and adds no deployment history s
 function orb219_actions(
     Orb219DeploymentTrace $trace,
     ?AppInstanceEnvironmentSynchronizer $environment = null,
+    ?InstantiateAppRuntimeDefinitionsAction $definitions = null,
 ): array {
     $lock = new Orb219DeploymentLock($trace);
     $remote = new Orb219ProductionDeployment($trace);
@@ -371,9 +425,10 @@ function orb219_actions(
     $deadline = new CommandDeadline;
     $resolver = app(AppInstanceDeploymentConfigResolver::class);
     $environment ??= new Orb219EnvironmentSynchronizer($trace);
+    $definitions ??= app(InstantiateAppRuntimeDefinitionsAction::class);
 
     return [
-        new DeployAppInstanceAction($resolver, $lock, $environment, $remote, $runtime, $deadline),
+        new DeployAppInstanceAction($resolver, $lock, $environment, $remote, $runtime, $definitions, $deadline),
         new RollbackAppInstanceAction($resolver, $lock, $remote, $runtime, $deadline),
     ];
 }
@@ -388,6 +443,11 @@ function orb219_deployment_instance(array $steps, bool $php = false): AppInstanc
         'public_ssh_host' => '192.0.2.219',
         'wireguard_ip' => '10.44.0.219',
         'user' => 'orbit',
+    ]);
+    NodeRole::query()->create([
+        'node_id' => $node->id,
+        'role' => RoleName::AppProd,
+        'status' => LifecycleStatus::Active,
     ]);
     $app = OrbitApp::query()->create([
         'name' => 'Deployment',

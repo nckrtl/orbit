@@ -51,6 +51,27 @@ PYTHON);
     }
 })->with(['lost credentials', 'unsafe permissions', 'conflicting process', 'missing process']);
 
+it('derives fixture Instance placement from Node roles without an environment payload field', function (): void {
+    $script = file_get_contents(dirname(__DIR__, 2).'/resources/guest/converge-sample-fixtures.sh');
+    $start = strpos($script, '    def instance_placement(instance, nodes):');
+    $end = strpos($script, '    nodes=orbit(', $start);
+
+    expect($start)->not->toBeFalse()->and($end)->not->toBeFalse();
+
+    $helper = substr($script, $start, $end - $start);
+    $helper = preg_replace('/^    /m', '', $helper);
+    $python = $helper."\nimport json\n".<<<'PYTHON'
+nodes=[{'id': 2, 'roles': ['app-dev']}, {'id': 3, 'roles': ['app-prod']}]
+instances=[{'id': 11, 'node_id': 2}, {'id': 12, 'node_id': 3}]
+print(json.dumps([instance_placement(instance, nodes) for instance in instances]))
+PYTHON;
+    $process = new Process(['python3', '-c', $python]);
+
+    expect($process->run())->toBe(0, $process->getErrorOutput())
+        ->and(json_decode($process->getOutput(), true, 16, JSON_THROW_ON_ERROR))
+        ->toBe(['development', 'production']);
+});
+
 it('checks sleeping queue workers through Doctor without changing their desired state', function (string $desiredState, bool $keepAlive, bool $healthy, int $exitCode, bool $checksDoctor): void {
     $root = temporaryPath('orbit-sleeping-fixtures-', 6);
     mkdir($root.'/bin', 0700, true);

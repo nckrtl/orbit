@@ -455,6 +455,7 @@ it('withdraws a failed domain change before removing its certificates and retrie
 it('serves a composed Router pool from the staging Router certificate during a domain change', function (): void {
     [$remote, $route, $workload, $router] = orb127_route_projection_models();
     // A multi-target Route is a production pool on app-prod Nodes of its Cluster.
+    $workload->roles()->where('role', RoleName::AppDev->value)->delete();
     $workload->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $router->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $production = static fn (string $name): array => [
@@ -807,6 +808,7 @@ it('hydrates only requested workload and Router routes while global inventory st
         'wireguard_ip' => '10.44.0.30',
         'user' => 'orbit',
     ]);
+    $unrelatedNode->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $unrelatedInstance = AppInstance::query()->create([
         'app_id' => $pendingInstance->app_id,
         'node_id' => $unrelatedNode->id,

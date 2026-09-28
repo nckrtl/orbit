@@ -37,19 +37,8 @@ final readonly class ListProcessesAction
      */
     public function executeAll(): Collection
     {
-        // Only the owner types a target can name. The table also holds Processes owned by a
-        // legacy model that no target selects, and that ProcessData cannot describe, so listing
-        // the fleet returns exactly what listing every target one by one would have.
-        $owners = array_values(array_unique(array_merge(
-            ...array_map(
-                static fn (ProcessTargetType $type): array => $type->storedTypes(),
-                ProcessTargetType::cases(),
-            ),
-        )));
-
         return $this->withStatuses(
             Process::query()
-                ->whereIn('owner_type', $owners)
                 ->orderBy('owner_type')
                 ->orderBy('owner_id')
                 ->orderBy('name')

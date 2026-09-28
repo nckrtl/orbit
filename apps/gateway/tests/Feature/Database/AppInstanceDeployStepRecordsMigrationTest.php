@@ -6,6 +6,9 @@ use App\Models\AppInstance;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
+beforeEach(fn () => app_instance_environment_migration()->down());
+afterEach(fn () => restore_app_instance_environment_schema_for_migration_test());
+
 it('copies JSON deploy steps into named records and drops the JSON column', function (): void {
     $legacy = app_instance_deployment_config_migration();
     $records = app_instance_deploy_step_records_migration();

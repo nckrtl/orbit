@@ -56,6 +56,7 @@ final readonly class Orb220DeploymentApiFixture
             'wireguard_ip' => '10.44.0.221',
             'user' => 'orbit',
         ]);
+        $owner->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
         $caller->accessibleNodes()->attach($owner->id);
         $app = OrbitApp::query()->create([
             'name' => 'Deployment Stream',

@@ -18,6 +18,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\NodeRole;
 use App\Models\Schedule;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 
@@ -29,6 +30,11 @@ beforeEach(function (): void {
         'public_ssh_host' => '192.0.2.20',
         'user' => 'orbit',
         'wireguard_ip' => '10.44.0.3',
+    ]);
+    NodeRole::query()->create([
+        'node_id' => $this->node->id,
+        'role' => RoleName::AppDev,
+        'status' => LifecycleStatus::Active,
     ]);
     $app = OrbitApp::query()->create([
         'name' => 'Docs',
@@ -45,7 +51,7 @@ beforeEach(function (): void {
         'status' => AppInstanceState::Active,
     ]);
     $this->schedule = Schedule::query()->create([
-        'target_type' => AppInstance::class,
+        'target_type' => AppInstance::MorphAlias,
         'target_id' => $instance->id,
         'host_node_id' => $this->node->id,
         'name' => 'daily',
@@ -121,6 +127,7 @@ it('collapses unreachable host inspection to one family issue', function (): voi
 
 it('skips the orphan scan on a Node without Schedules or roles', function (): void {
     $this->schedule->delete();
+    $this->node->roles()->delete();
     $this->inspector->orphanScanFails = true;
 
     $report = $this->probe->inspect(new DoctorNodeContext($this->node, new NodeInspectionData(true, 'linux', 'x86_64', true)));
@@ -133,7 +140,10 @@ it('skips the orphan scan on a Node without Schedules or roles', function (): vo
 
 it('skips the orphan scan on an unreachable Node without Schedules', function (): void {
     $this->schedule->delete();
-    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    $this->node->roles()->firstOrCreate(
+        ['role' => RoleName::AppDev],
+        ['status' => LifecycleStatus::Active],
+    );
     $this->inspector->orphanScanFails = true;
 
     $report = $this->probe->inspect(new DoctorNodeContext($this->node, new NodeInspectionData(false, null, null, null)));
@@ -145,7 +155,10 @@ it('skips the orphan scan on an unreachable Node without Schedules', function ()
 
 it('scans a Node with a role for orphans even without Schedules', function (): void {
     $this->schedule->delete();
-    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    $this->node->roles()->firstOrCreate(
+        ['role' => RoleName::AppDev],
+        ['status' => LifecycleStatus::Active],
+    );
     $this->inspector->orphans = ['123e4567-e89b-42d3-a456-426614174099'];
 
     $report = $this->probe->inspect(new DoctorNodeContext($this->node, new NodeInspectionData(true, 'linux', 'x86_64', true)));
@@ -156,7 +169,10 @@ it('scans a Node with a role for orphans even without Schedules', function (): v
 
 it('still reports a failed orphan scan on a Node with a role', function (): void {
     $this->schedule->delete();
-    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    $this->node->roles()->firstOrCreate(
+        ['role' => RoleName::AppDev],
+        ['status' => LifecycleStatus::Active],
+    );
     $this->inspector->orphanScanFails = true;
 
     $report = $this->probe->inspect(new DoctorNodeContext($this->node, new NodeInspectionData(true, 'linux', 'x86_64', true)));

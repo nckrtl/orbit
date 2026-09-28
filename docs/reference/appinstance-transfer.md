@@ -118,3 +118,5 @@ Orbit cannot know the owner, credentials, or consistency rules of other database
 ### Clusters on both sides
 
 A move between Clusters can change the generated domain and the Router path. Transfer uses the destination Cluster's naming and the replacement Route lifecycle for that change. Standalone Nodes are refused.
+
+Transfers preserve the Instance identity and resolve its development or production placement from the destination Node role.

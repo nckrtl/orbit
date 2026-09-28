@@ -34,7 +34,7 @@ enum ScheduleTargetType: string
     {
         return match ($this) {
             self::Node => [Node::class],
-            self::AppInstance => AppInstance::morphTypes(),
+            self::AppInstance => [AppInstance::MorphAlias],
         };
     }
 }

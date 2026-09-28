@@ -415,6 +415,7 @@ function orb219_remote_deployment(array $results): array
         'wireguard_ip' => '10.44.0.219',
         'user' => 'orbit',
     ]);
+    $node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
     $app = OrbitApp::query()->create([
         'name' => 'Deployment',
         'slug' => 'deployment',

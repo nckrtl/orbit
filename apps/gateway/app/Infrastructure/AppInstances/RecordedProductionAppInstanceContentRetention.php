@@ -23,7 +23,7 @@ final readonly class RecordedProductionAppInstanceContentRetention implements Pr
         $root = $appInstance->root ?? $appInstance->app->root;
 
         if (
-            $appInstance->environment !== 'production'
+            ! $appInstance->placedOnAppProd()
             || $appInstance->checkout_path === ''
             || ! is_string($root)
             || $root === ''
@@ -83,7 +83,7 @@ final readonly class RecordedProductionAppInstanceContentRetention implements Pr
     {
         $appInstance = AppInstance::query()->with('app')->find($member->app_instance_id);
 
-        if (! $appInstance instanceof AppInstance || $appInstance->environment !== 'production') {
+        if (! $appInstance instanceof AppInstance || ! $appInstance->placedOnAppProd()) {
             $this->conflict($member->name);
         }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\GitHub\RepositoryReadAccess;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppInstances\RemoteAppInstanceCloneCandidateInspector;
@@ -285,6 +286,10 @@ function orb198_clone_candidate(string $environment = 'development'): AppInstanc
         'public_ssh_host' => '192.0.2.20',
         'wireguard_ip' => '10.44.0.20',
         'user' => 'orbit',
+    ]);
+    $node->roles()->create([
+        'role' => $environment === 'production' ? RoleName::AppProd : RoleName::AppDev,
+        'status' => LifecycleStatus::Active,
     ]);
     $app = OrbitApp::query()->create([
         'name' => 'Acme clone candidate',

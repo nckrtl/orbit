@@ -21,8 +21,11 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 beforeEach(function (): void {
+    app_instance_environment_migration()->down();
     orb183_production_route_migration()->down();
 });
+
+afterEach(fn () => restore_app_instance_environment_schema_for_migration_test());
 
 it('preserves populated AppInstance and Route state while adding empty removal storage', function (): void {
     $migration = orb179_removal_migration();
@@ -535,7 +538,7 @@ function orb179_removal_fixture(
         'tld' => null,
     ]);
     $node->roles()->firstOrCreate(
-        ['role' => RoleName::AppDev],
+        ['role' => $environment === 'production' ? RoleName::AppProd : RoleName::AppDev],
         ['status' => LifecycleStatus::Active],
     );
     $attributes = [
@@ -557,6 +560,7 @@ function orb179_removal_fixture(
     }
 
     $instance = AppInstance::query()->create($attributes);
+    DB::table('app_instances')->where('id', $instance->id)->update(['environment' => $environment]);
     $route = Route::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
@@ -607,7 +611,7 @@ function orb179_removal_member(AppInstance $instance, Route $route, int $positio
         'node_id' => $instance->node_id,
         'route_id' => $route->id,
         'name' => $instance->name,
-        'environment' => $instance->environment,
+        'environment' => $instance->defaultAppEnv(),
         'source_layout' => $instance->source_layout,
         'repository_identity' => $instance->app->repository_identity,
         'checkout_path' => $instance->checkout_path,

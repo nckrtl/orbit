@@ -345,6 +345,7 @@ function schedules_api_node(string $name, string $ip): Node
 
 function schedules_api_instance(Node $node): AppInstance
 {
+    orbit_test_set_app_placement_role($node, false);
     $app = OrbitApp::query()->create([
         'name' => 'Reports',
         'slug' => 'reports',
@@ -370,7 +371,7 @@ function schedules_api_record(
     bool $start = true,
 ): Schedule {
     return Schedule::query()->create([
-        'target_type' => $target::class,
+        'target_type' => $target instanceof AppInstance ? AppInstance::MorphAlias : Node::class,
         'target_id' => $target->id,
         'host_node_id' => $host->id,
         'name' => $name,

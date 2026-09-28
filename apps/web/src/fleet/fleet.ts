@@ -52,6 +52,15 @@ export function instanceName(fleet: Fleet, id: number): string {
 export const instanceNodeName = (fleet: Fleet, id: number): string =>
     fleet.instances.find((instance) => instance.id === id)?.node.name ?? "—";
 
+export const instanceEnvironment = (fleet: Fleet, instance: Instance): string => {
+    const roles = fleet.nodes.find((node) => node.id === instance.node.id)?.roles ?? [];
+
+    if (roles.includes("app-dev")) return "development";
+    if (roles.includes("app-prod")) return "production";
+
+    return "—";
+};
+
 export const processOwner = (fleet: Fleet, process: Process): string =>
     process.target_type === "node"
         ? `node ${nodeName(fleet, process.target_id)}`

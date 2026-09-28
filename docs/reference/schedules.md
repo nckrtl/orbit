@@ -62,7 +62,7 @@ The caller picks only the target. The Gateway derives the host Node, the user, t
 | Instance on `app-dev` | The Node's managed user | The Instance checkout | The user's login shell, with `-lc` |
 | Instance on `app-prod` | The Instance's production user | `<production-home>/current` | `/bin/bash -c`, without a login |
 
-The target Node must be an active Linux Node with a WireGuard address. An Instance target must be active. A production Schedule resolves `current` each time it runs, so a new release changes later runs. A production Instance with no selected release accepts a Schedule with a disabled timer. A run, an enable, or an enabled install then fails with `schedule.target_unavailable` until [a deployment](/reference/deployments) selects a release.
+The target Node must be an active Linux Node with a WireGuard address. An Instance target must be active. A production Schedule resolves `current` each time it runs, so a new release changes later runs. A production Instance needs a selected release before it can install a Schedule, even with a disabled timer.
 
 A Schedule does not follow its target. While a Schedule exists, the Gateway refuses to remove its target Node or host Node with `schedule.target_in_use` (409). [Instance transfer](/reference/appinstance-transfer) does not check Schedules. After a transfer, list and show still work, and an identical create returns `schedule.target_in_use`. Run, logs, enable, and destroy fail with `schedule.target_unavailable`, because the Instance runs on another Node than the host Node. Destroy the Instance's Schedules before a transfer. Instance removal removes the Instance's Schedules itself.
 
@@ -88,7 +88,9 @@ An existing file at an owned path must be a regular file with the expected owner
 
 ## Timer state
 
-A Node Schedule installs with its timer enabled and running. An Instance Schedule installs enabled or disabled. A disabled installation still becomes `active`, with the timer disabled and stopped.
+Production Schedules require a selected release. Each execution resolves `current` when it starts. Selecting another release changes later executions without rewriting the Schedule or restarting a command that is already active.
+
+A Node Schedule installs with its timer enabled and active and rejects a disabled initial state. An Instance Schedule can install enabled or disabled. Production Instance installation requires a selected `current` release even when the timer is disabled. A disabled installation still becomes `active`, with the timer disabled and stopped. Explicit activation enables and starts the Instance timer, verifies both states, and is idempotent. A failed activation restores the prior desired and actual timer states or returns `schedule.rollback_failed` without claiming success.
 
 Enable turns on and starts the timer of an active Instance Schedule, checks both states, and stores `enabled`. It is idempotent. When it fails, it restores the earlier timer state and returns `schedule.activation_failed`, or `schedule.rollback_failed` when the restore fails too. A Node Schedule refuses enable with `schedule.target_invalid`, because its timer is always on.
 

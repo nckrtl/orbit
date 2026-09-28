@@ -769,7 +769,7 @@ it('keeps persisted Docker environment values out of lifecycle exception traces'
 function processes_api_record(AppInstance $instance): Process
 {
     return Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => 'queue',
         'runtime' => 'systemd',

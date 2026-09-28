@@ -16,8 +16,10 @@ use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriteResult;
 use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
 use App\Domain\Apps\AppUpdateProjectionMutator;
 use App\Domain\Apps\AppUpdateStatus;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\Apps\NativeAppUpdateProjectionMutator;
@@ -346,9 +348,19 @@ describe('UpdateAppAction', function (): void {
             'branch' => 'main',
             'status' => AppInstanceState::Active,
         ]);
+        $productionNode = Node::query()->create([
+            'name' => 'app-prod',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.81',
+            'wireguard_ip' => '10.44.0.81',
+        ]);
+        $productionNode->roles()->create([
+            'role' => RoleName::AppProd,
+            'status' => LifecycleStatus::Active,
+        ]);
         $production = AppInstance::query()->create([
             'app_id' => $this->fixture->app->id,
-            'node_id' => $this->fixture->node->id,
+            'node_id' => $productionNode->id,
             'name' => 'prod',
             'environment' => 'production',
             'source_layout' => 'release',

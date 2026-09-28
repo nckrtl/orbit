@@ -62,6 +62,7 @@ beforeEach(function (): void {
         'user' => 'nckrtl',
         'wireguard_ip' => '10.44.0.3',
     ]);
+    $this->node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
     $this->orbitApp = OrbitApp::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
@@ -138,7 +139,7 @@ describe('Process record events', function (): void {
 
     it('broadcasts process.status when a process is started', function (): void {
         $process = Process::query()->create([
-            'owner_type' => AppInstance::class,
+            'owner_type' => AppInstance::MorphAlias,
             'owner_id' => $this->instance->id,
             'name' => 'web',
             'runtime' => ProcessRuntime::Systemd,
@@ -163,7 +164,7 @@ describe('Process record events', function (): void {
 
     it('broadcasts process.status when a process is stopped', function (): void {
         $process = Process::query()->create([
-            'owner_type' => AppInstance::class,
+            'owner_type' => AppInstance::MorphAlias,
             'owner_id' => $this->instance->id,
             'name' => 'web',
             'runtime' => ProcessRuntime::Systemd,
@@ -187,7 +188,7 @@ describe('Process record events', function (): void {
 
     it('broadcasts process.deleted with a minimal snapshot when a process is removed', function (): void {
         $process = Process::query()->create([
-            'owner_type' => AppInstance::class,
+            'owner_type' => AppInstance::MorphAlias,
             'owner_id' => $this->instance->id,
             'name' => 'web',
             'runtime' => ProcessRuntime::Systemd,

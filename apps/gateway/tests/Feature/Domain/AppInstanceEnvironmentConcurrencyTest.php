@@ -232,9 +232,15 @@ it('refuses a stale import across the recorded Route domain transition without a
 
 it('renders stored production values for candidate and previous Route domains without changing storage', function (): void {
     [$instance, $route] = orb207_concurrency_fixture();
+    $instance->node->roles()->where('role', RoleName::AppDev->value)->delete();
+    $instance->node->roles()->create([
+        'role' => RoleName::AppProd,
+        'status' => LifecycleStatus::Active,
+    ]);
     $instance->update([
         'environment' => 'production',
-        'production_home' => $instance->checkout_path,
+        'checkout_path' => '/srv/orbit/apps/concurrency/releases/1',
+        'production_home' => '/srv/orbit/apps/concurrency',
         'production_user' => 'orbit-production',
     ]);
     $instance->environmentValues()->createMany([
@@ -414,7 +420,7 @@ function orb207_begin_recorded_removal(AppInstance $instance): void
                 'node_id' => $locked->node_id,
                 'route_id' => $route->id,
                 'name' => $locked->name,
-                'environment' => $locked->environment,
+                'environment' => $locked->defaultAppEnv(),
                 'source_layout' => $locked->source_layout,
                 'repository_identity' => $locked->app->repository_identity,
                 'checkout_path' => $locked->checkout_path,
@@ -472,6 +478,7 @@ function orb207_concurrency_worker_script(): string
                 'wireguard_ip' => '10.44.0.220',
                 'user' => 'orbit',
             ]);
+            $node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
             $instance = App\Models\AppInstance::query()->create([
                 'app_id' => $orbitApp->id,
                 'node_id' => $node->id,
@@ -625,6 +632,7 @@ function orb212_sync_concurrency_worker_script(): string
                 'wireguard_ip' => '10.44.0.221',
                 'user' => 'orbit',
             ]);
+            $node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
             $instance = App\Models\AppInstance::query()->create([
                 'app_id' => $orbitApp->id,
                 'node_id' => $node->id,

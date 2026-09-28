@@ -29,23 +29,45 @@ use App\Domain\AppInstances\ProductionRouteProjector;
 use App\Domain\AppInstances\Sqlite\AppInstanceSqliteSeeder;
 use App\Domain\AppInstances\Sqlite\SqliteSeedPlacement;
 use App\Domain\AppInstances\Sqlite\SqliteSeedResult;
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Metrics\MetricsFleetReconciler;
+use App\Domain\Nodes\ManagedUserAccount;
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Processes\DesiredProcessState;
+use App\Domain\Processes\ProcessAdmissionLock;
+use App\Domain\Processes\ProcessSpecification;
+use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Schedules\DesiredTimerState;
+use App\Domain\Schedules\ScheduleRenderer;
+use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\DockerProcessRenderer;
+use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
+use App\Infrastructure\Processes\SystemdProcessRenderer;
+use App\Infrastructure\Schedules\RemoteScheduleRuntimeManager;
+use App\Infrastructure\Ssh\HostKey;
+use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceEnvironmentValue;
 use App\Models\Cluster;
 use App\Models\Node;
+use App\Models\Process;
 use App\Models\Route;
+use App\Models\Schedule;
+use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
 
 beforeEach(function (): void {
     $this->orbitApp = OrbitApp::query()->create([
@@ -56,6 +78,10 @@ beforeEach(function (): void {
         'root' => 'public',
     ]);
     $this->candidateNode = orb198_clone_node('candidate', '10.44.20.10');
+    $this->candidateNode->roles()->create([
+        'role' => RoleName::AppDev,
+        'status' => LifecycleStatus::Active,
+    ]);
     $this->targetNode = orb198_clone_node('target', '10.44.20.11', 'prod.orbit');
     $this->targetNode->roles()->create([
         'role' => RoleName::AppProd,
@@ -105,7 +131,7 @@ beforeEach(function (): void {
     $this->projectionOwner = new Orb198ProjectionOwner;
     $contexts = new AppInstanceEnvironmentContextResolver;
     $store = new AppInstanceEnvironmentStore($contexts, new AppInstanceEnvironmentValidator);
-    $environment = new CloneAppInstanceEnvironmentAction(
+    $this->environment = new CloneAppInstanceEnvironmentAction(
         $this->lock,
         $contexts,
         $store,
@@ -120,7 +146,7 @@ beforeEach(function (): void {
         $this->sourceLock,
         $this->source,
         new RouteStateResolver,
-        $environment,
+        $this->environment,
         $this->sqlite,
         app(InstantiateAppRuntimeDefinitionsAction::class),
         $this->projection,
@@ -219,10 +245,155 @@ it('prepares an independent production target and activates its explicit private
         ->and($this->lock->owners)->toContain([$this->candidate->id], [$this->candidate->id, $target->id]);
 });
 
+it('captures production runtime definitions during clone and installs them only after a release is selected', function (): void {
+    $this->orbitApp->processDefinitions()->create([
+        'name' => 'queue',
+        'environments' => ['production'],
+        'spec' => [
+            'runtime' => 'systemd',
+            'command' => ['/usr/bin/php', 'artisan', 'queue:work'],
+        ],
+    ]);
+    $this->orbitApp->scheduleDefinitions()->create([
+        'name' => 'cleanup',
+        'environments' => ['production'],
+        'spec' => [
+            'command' => '/usr/bin/php artisan schedule:run',
+            'calendar' => 'daily',
+            'timeout_seconds' => 60,
+        ],
+    ]);
+
+    $ssh = new AppDevFakeSshExecutor([
+        new CommandResult(1, '', '', 1, false),
+        new CommandResult(0, '', '', 1, false),
+        new CommandResult(1, '', '', 1, false),
+        ...array_fill(0, 12, new CommandResult(0, '', '', 1, false)),
+    ]);
+    $accounts = new class implements ManagedUserAccountResolver
+    {
+        public function resolve(Node $node): ManagedUserAccount
+        {
+            return new ManagedUserAccount($node->user, $node->user, '/home/'.$node->user);
+        }
+    };
+    $keys = new class implements SshKeyProvider
+    {
+        public function privateKeyPath(): string
+        {
+            return '/tmp/orbit-test-key';
+        }
+
+        public function publicKey(): string
+        {
+            return 'ssh-ed25519 test';
+        }
+    };
+    $knownHosts = new class implements KnownHostsStore
+    {
+        public function path(): string
+        {
+            return '/tmp/orbit-test-known-hosts';
+        }
+
+        public function put(string $host, int $port, HostKey $key): void {}
+    };
+    $processRuntime = new RemoteProcessRuntimeManager(
+        new ProcessTargetResolver,
+        $accounts,
+        $ssh,
+        $keys,
+        $knownHosts,
+        new SystemdProcessRenderer,
+        new DockerProcessRenderer,
+    );
+    $certificates = new class implements LeafCertificateSigner
+    {
+        public function sign(string $hostname, string $certificateRequest): string
+        {
+            return '';
+        }
+
+        public function rootCertificate(): string
+        {
+            return 'test-root-certificate';
+        }
+    };
+    $scheduleRuntime = new RemoteScheduleRuntimeManager(
+        new ScheduleTargetResolver(new FakeScheduleRuntimeAccountResolver),
+        new ScheduleRenderer($certificates),
+        $ssh,
+        $keys,
+        $knownHosts,
+    );
+    $definitions = new InstantiateAppRuntimeDefinitionsAction(
+        app(ProcessAdmissionLock::class),
+        new ProcessTargetResolver,
+        new ProcessSpecification,
+        $processRuntime,
+        $scheduleRuntime,
+    );
+    $this->action = new CloneAppInstanceAction(
+        $this->inspector,
+        $this->lock,
+        new Orb198SourceLock,
+        $this->source,
+        new RouteStateResolver,
+        $this->environment,
+        $this->sqlite,
+        $definitions,
+        $this->projection,
+        $this->cloneProjection,
+        $this->projectionOwner,
+        $this->metrics,
+    );
+
+    $result = $this->action->execute($this->candidate, $this->data);
+    $target = $result['appInstance'];
+    $process = Process::query()->where('owner_id', $target->id)->sole();
+    $schedule = Schedule::query()->where('target_id', $target->id)->sole();
+
+    expect($ssh->commands)
+        ->toBeEmpty()
+        ->and($target->runtime_definitions_captured_at)
+        ->not->toBeNull()
+        ->and($process->desired_state)
+        ->toBe(DesiredProcessState::Stopped)
+        ->and($process->status)
+        ->toBe(LifecycleStatus::Provisioning)
+        ->and($schedule->desired_timer_state)
+        ->toBe(DesiredTimerState::Disabled)
+        ->and($schedule->status)
+        ->toBe(LifecycleStatus::Provisioning);
+
+    expect(fn () => $definitions->installCaptured($target))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('process.release_unavailable');
+        });
+    expect($ssh->commands[0]->arguments)
+        ->toBe(['sudo', 'test', '-d', $target->production_home.'/current']);
+
+    $target->update(['checkout_path' => $target->production_home.'/releases/first']);
+    $definitions->installCaptured($target->refresh());
+
+    expect($process->refresh()->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and($process->desired_state)
+        ->toBe(DesiredProcessState::Stopped)
+        ->and($schedule->refresh()->status)
+        ->toBe(LifecycleStatus::Active)
+        ->and($schedule->desired_timer_state)
+        ->toBe(DesiredTimerState::Disabled)
+        ->and(array_map(static fn ($command): array => $command->arguments, $ssh->commands))
+        ->toContain(
+            ['sudo', 'test', '-d', $target->production_home.'/current'],
+            ['sudo', '-u', $target->production_user, 'test', '-d', $target->production_home.'/current'],
+        );
+});
+
 it('prepares a production target from an eligible production candidate', function (): void {
     $user = "orbit-app-{$this->orbitApp->id}";
     $this->candidate->update([
-        'environment' => 'production',
         'production_user' => $user,
         'production_home' => "/home/{$user}",
         'checkout_path' => "/home/{$user}/releases/20260914000000",
@@ -235,9 +406,9 @@ it('prepares a production target from an eligible production candidate', functio
     expect($result['created'])->toBeTrue()
         ->and($target->status)->toBe(AppInstanceState::Active)
         ->and($target->clone_candidate_id)->toBe($this->candidate->id)
-        ->and($target->environment)->toBe('production')
+        ->and($target->placedOnAppProd())->toBeTrue()
         ->and($this->candidate->refresh()->status)->toBe(AppInstanceState::Active)
-        ->and($this->candidate->environment)->toBe('production');
+        ->and($this->candidate->defaultAppEnv())->toBe('development');
 });
 
 it('prepares a Cluster-scoped preview with the production Node TLD', function (): void {
@@ -565,7 +736,7 @@ final class Orb198CandidateInspector implements AppInstanceCloneCandidateInspect
 
         return new CloneCandidateSource(
             appInstanceId: $candidate->id,
-            environment: $candidate->environment,
+            environment: $candidate->defaultAppEnv(),
             basePath: $candidate->checkout_path,
             executionUser: $candidate->node->user,
             branch: (string) $candidate->branch,

@@ -35,7 +35,7 @@ it('accepts complete systemd, Docker, and Schedule definition specifications', f
     $this
         ->postJson("/api/v1/projects/{$this->orbitApp->id}/process-definitions", [
             'name' => 'systemd-worker',
-            'environments' => ['development', 'production'],
+            'environments' => ['production'],
             'spec' => [
                 'runtime' => 'systemd',
                 'command' => ['/usr/bin/php', 'artisan', 'queue:work'],
@@ -63,7 +63,7 @@ it('accepts complete systemd, Docker, and Schedule definition specifications', f
     $this
         ->postJson("/api/v1/projects/{$this->orbitApp->id}/schedule-definitions", [
             'name' => 'report',
-            'environments' => ['development'],
+            'environments' => ['production'],
             'spec' => [
                 'command' => 'php artisan report',
                 'calendar' => '*-*-* 03:00:00',
@@ -119,9 +119,10 @@ it('rejects invalid applicability and runtime specification boundaries', functio
         ->assertJsonPath('error.code', 'validation.failed');
 })->with([
     'empty applicability' => ['process', domain_process_definition_payload(environments: [])],
+    'development applicability' => ['process', domain_process_definition_payload(environments: ['development'])],
     'duplicate applicability' => [
         'process',
-        domain_process_definition_payload(environments: ['development', 'development']),
+        domain_process_definition_payload(environments: ['production', 'production']),
     ],
     'unknown applicability' => ['process', domain_process_definition_payload(environments: ['staging'])],
     'relative systemd executable' => [
@@ -210,7 +211,7 @@ it('keeps definition mutations database-only and preserves existing runtime stat
     $instance = domain_runtime_definition_instance($this->orbitApp, $this->gateway, 'primary');
     $other = domain_runtime_definition_instance($this->orbitApp, $this->gateway, 'other');
     $process = Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => 'existing-worker',
         'runtime' => 'systemd',
@@ -221,7 +222,7 @@ it('keeps definition mutations database-only and preserves existing runtime stat
         'status' => 'active',
     ]);
     $schedule = Schedule::query()->create([
-        'target_type' => AppInstance::class,
+        'target_type' => AppInstance::MorphAlias,
         'target_id' => $instance->id,
         'host_node_id' => $this->gateway->id,
         'name' => 'existing-report',
@@ -243,7 +244,7 @@ it('keeps definition mutations database-only and preserves existing runtime stat
 
     $processDefinition = app(CreateProcessDefinitionAction::class)->execute(
         $this->orbitApp,
-        new AppDefinitionInputData('worker', ['development'], [
+        new AppDefinitionInputData('worker', ['production'], [
             'runtime' => 'systemd',
             'command' => ['/usr/bin/php'],
         ]),
@@ -282,7 +283,7 @@ it('keeps definitions when an AppInstance is removed and keeps unrelated copies 
     $unrelated = domain_runtime_definition_instance($this->orbitApp, $this->gateway, 'unrelated');
     $processDefinition = $this->orbitApp->processDefinitions()->create([
         'name' => 'worker',
-        'environments' => ['development'],
+        'environments' => ['production'],
         'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/php']],
     ]);
     $scheduleDefinition = $this->orbitApp->scheduleDefinitions()->create([
@@ -305,7 +306,7 @@ it('keeps definitions when an AppInstance is removed and keeps unrelated copies 
 it('cascades both definition kinds when an otherwise removable App is deleted', function (): void {
     $processDefinition = $this->orbitApp->processDefinitions()->create([
         'name' => 'worker',
-        'environments' => ['development'],
+        'environments' => ['production'],
         'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/php']],
     ]);
     $scheduleDefinition = $this->orbitApp->scheduleDefinitions()->create([
@@ -349,7 +350,7 @@ function domain_runtime_definition_instance(OrbitApp $app, Node $node, string $n
 
 /** @return array{name: string, environments: list<string>, spec: array<string, mixed>} */
 function domain_process_definition_payload(
-    array $environments = ['development'],
+    array $environments = ['production'],
     array $spec = ['runtime' => 'systemd', 'command' => ['/usr/bin/php']],
 ): array {
     return ['name' => 'worker', 'environments' => $environments, 'spec' => $spec];
@@ -357,7 +358,7 @@ function domain_process_definition_payload(
 
 /** @return array{name: string, environments: list<string>, spec: array<string, mixed>} */
 function domain_schedule_definition_payload(
-    array $environments = ['development'],
+    array $environments = ['production'],
     array $spec = ['command' => 'php artisan report', 'calendar' => 'daily', 'timeout_seconds' => 60],
 ): array {
     return ['name' => 'report', 'environments' => $environments, 'spec' => $spec];

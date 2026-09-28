@@ -76,6 +76,7 @@ beforeEach(function (): void {
     Carbon::setTestNow(Carbon::createFromTimestamp(1_000));
     [, $this->credentials] = activate_websocket_role();
     $this->serving = log_stream_node('app-prod', '10.44.0.11');
+    $this->serving->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $this->viewer = log_stream_node('laptop', '10.44.0.21');
     $this->viewer->accessibleNodes()->attach($this->serving->id);
     $this->instance = log_stream_instance($this->serving);
@@ -188,8 +189,15 @@ describe('opening a live log stream', function (): void {
 
         expect(app(LogStreamStore::class)->all())->toBe([]);
     })->with([
-        'production Instance' => [fn ($test) => $test->instance->update(['environment' => 'production', 'production_home' => '/home/shop', 'checkout_path' => '/home/shop/releases/1'])],
-        'app-prod Node' => [fn ($test) => $test->serving->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active])],
+        'production Instance' => [function ($test): void {
+            $test->serving->roles()->delete();
+            $test->serving->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+            $test->instance->update(['production_home' => '/home/shop', 'checkout_path' => '/home/shop/releases/1']);
+        }],
+        'app-prod Node' => [function ($test): void {
+            $test->serving->roles()->delete();
+            $test->serving->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
+        }],
     ]);
 
     it('allows sixteen open streams for each serving Node', function (): void {

@@ -76,7 +76,7 @@ beforeEach(function (): void {
     $this->instance = orb245_instance($this->orbitApp, $this->sourceNode, 'web', 'checkout');
     $this->route = orb245_route($this->instance, 'web.shop.dev.orbit', RouteProvenance::Generated);
     $this->process = Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $this->instance->id,
         'name' => 'queue',
         'runtime' => 'systemd',
@@ -141,7 +141,7 @@ beforeEach(function (): void {
 
 it('refuses transfer when schedules target the AppInstance', function (): void {
     Schedule::query()->create([
-        'target_type' => AppInstance::class,
+        'target_type' => AppInstance::MorphAlias,
         'target_id' => $this->instance->id,
         'host_node_id' => $this->sourceNode->id,
         'name' => 'nightly',
@@ -165,7 +165,7 @@ it('refuses transfer when schedules target the AppInstance', function (): void {
 it('rechecks Schedules created after reserve before transfer cutover', function (): void {
     $this->runtime->onPause = function (AppInstance $instance): void {
         Schedule::query()->create([
-            'target_type' => AppInstance::class,
+            'target_type' => AppInstance::MorphAlias,
             'target_id' => $instance->id,
             'host_node_id' => $this->sourceNode->id,
             'name' => 'late-nightly',
@@ -377,7 +377,11 @@ it('refuses ineligible sources and destinations before source mutation', functio
         ->and($instance->name)->toBe('web');
 })->with([
     'production' => [function (object $test): void {
-        $test->instance->update(['environment' => 'production']);
+        $test->sourceNode->roles()->where('role', RoleName::AppDev->value)->delete();
+        $test->sourceNode->roles()->create([
+            'role' => RoleName::AppProd,
+            'status' => LifecycleStatus::Active,
+        ]);
     }, 'instance.production_refused'],
     'inactive instance' => [function (object $test): void {
         $test->instance->update(['status' => AppInstanceState::Reserved]);
@@ -504,7 +508,7 @@ it('pauses before capture', function (): void {
 it('gracefully stops an owned Docker Process before removing it and capturing the checkout', function (): void {
     $this->process->update(['runtime' => ProcessRuntime::Docker]);
     $this->schedule = Schedule::query()->create([
-        'target_type' => AppInstance::class,
+        'target_type' => AppInstance::MorphAlias,
         'target_id' => $this->instance->id,
         'host_node_id' => $this->sourceNode->id,
         'name' => 'nightly',
@@ -550,7 +554,7 @@ it('gracefully stops an owned Docker Process before removing it and capturing th
 
 it('repeats native transfer pause after process artifacts are removed', function (): void {
     $this->schedule = Schedule::query()->create([
-        'target_type' => AppInstance::class,
+        'target_type' => AppInstance::MorphAlias,
         'target_id' => $this->instance->id,
         'host_node_id' => $this->sourceNode->id,
         'name' => 'nightly',
@@ -744,7 +748,7 @@ it('refuses a pre-cutover retry when schedules target the AppInstance', function
     $runtimeCalls = $this->runtime->calls;
 
     Schedule::query()->create([
-        'target_type' => AppInstance::class,
+        'target_type' => AppInstance::MorphAlias,
         'target_id' => $this->instance->id,
         'host_node_id' => $this->sourceNode->id,
         'name' => 'nightly',

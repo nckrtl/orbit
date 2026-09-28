@@ -439,6 +439,8 @@ function middleware_app(string $slug): OrbitApp
 
 function middleware_app_instance(OrbitApp $app, Node $node, string $name): AppInstance
 {
+    orbit_test_set_app_placement_role($node, false);
+
     return AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,

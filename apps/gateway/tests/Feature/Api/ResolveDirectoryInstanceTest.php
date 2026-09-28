@@ -13,6 +13,7 @@ use function Pest\Laravel\mock;
 function directory_resolution_fixture(): array
 {
     $caller = Node::query()->create(['name' => 'directory-caller', 'public_ssh_host' => '192.0.2.80', 'wireguard_ip' => '10.44.0.80', 'user' => 'orbit', 'status' => 'active']);
+    orbit_test_set_app_placement_role($caller, false);
     $caller->accessibleNodes()->attach($caller);
     $app = OrbitApp::query()->create(['name' => 'Directory', 'slug' => 'directory', 'repository_url' => 'https://example.test/app.git']);
     $instance = $app->appInstances()->create(['node_id' => $caller->id, 'name' => 'fixture', 'environment' => 'development', 'status' => 'active', 'checkout_path' => '/home/orbit/project']);
@@ -67,7 +68,9 @@ describe('caller directory resolution', function (): void {
 
     it('uses the registered production home rather than a stale checkout field', function (): void {
         [$caller, $instance] = directory_resolution_fixture();
-        $instance->update(['environment' => 'production', 'production_home' => '/home/orbit-app-1', 'production_user' => 'orbit-app-1']);
+        $instance->node->roles()->where('role', 'app-dev')->delete();
+        $instance->node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
+        $instance->update(['production_home' => '/home/orbit-app-1', 'production_user' => 'orbit-app-1']);
         $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->get('/api/v1/instances/resolve-directory?directory=/home/orbit-app-1/releases/release/public')
             ->assertOk()->assertJsonPath('data.instance_id', $instance->id)->assertJsonPath('data.environment', 'production');
         $this->get('/api/v1/instances/resolve-directory?directory=/home/orbit/project')->assertNotFound();

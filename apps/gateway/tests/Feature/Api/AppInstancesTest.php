@@ -2783,7 +2783,8 @@ it('updates the production deployment branch without changing deploy steps', fun
     expect($instance->fresh()->deployment_branch)->toBe('release/next')
         ->and(normalized_deploy_steps($instance->fresh()))->toHaveCount(1);
 
-    $instance->update(['environment' => 'development']);
+    $instance->node->roles()->delete();
+    $instance->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])

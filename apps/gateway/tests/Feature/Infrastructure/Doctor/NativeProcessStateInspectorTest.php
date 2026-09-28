@@ -229,6 +229,7 @@ function native_process_inspector(
         'user' => 'nckrtl',
         'wireguard_ip' => '10.44.0.51',
     ]);
+    orbit_test_set_app_placement_role($node, false);
     $app = OrbitApp::query()->create([
         'name' => fake()->word(),
         'slug' => fake()->unique()->slug(),
@@ -245,7 +246,7 @@ function native_process_inspector(
         'status' => 'active',
     ]);
     $process = Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => fake()->unique()->slug(2),
         'runtime' => $runtime,

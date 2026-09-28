@@ -156,3 +156,5 @@ Each step has its own create, update, and destroy, so you can change one step wi
 ### Clone is the only way in
 
 Every production Instance comes from a clone, and its first deployment builds the release layout. Orbit does not convert a production home that serves code from its checkout.
+
+The production home exists before the first release is selected. Deployment and runtime consumers must not treat that pre-release home as a selected release.

@@ -17,8 +17,6 @@ Creating Instance...
 │
 ├  Status               active
 │
-├  Environment          development
-│
 ├  Source layout        checkout
 │
 ├  Checkout             /srv/orbit/apps/acme/dev

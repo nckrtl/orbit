@@ -7,6 +7,9 @@ use App\Models\Node;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
+beforeEach(fn () => app_instance_environment_migration()->down());
+afterEach(fn () => restore_app_instance_environment_schema_for_migration_test());
+
 it('backfills prior production branches while preserving source evidence and null compatibility', function (): void {
     $records = app_instance_deploy_step_records_migration();
     $records->down();

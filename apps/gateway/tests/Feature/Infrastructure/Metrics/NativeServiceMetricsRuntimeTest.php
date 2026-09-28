@@ -221,6 +221,10 @@ function service_metrics_runtime_node(string $name, string $address, array $role
 
 function service_metrics_runtime_instance(Node $node): AppInstance
 {
+    $node->roles()->firstOrCreate(
+        ['role' => RoleName::AppProd],
+        ['status' => LifecycleStatus::Active],
+    );
     $app = OrbitApp::query()->create([
         'name' => 'Metrics fixture',
         'slug' => 'metrics-fixture',

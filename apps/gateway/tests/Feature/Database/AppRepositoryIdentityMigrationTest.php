@@ -6,6 +6,9 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
+beforeEach(fn () => app_instance_environment_migration()->down());
+afterEach(fn () => restore_app_instance_environment_schema_for_migration_test());
+
 it('reports every duplicate identity before changing the App schema or rows', function (): void {
     $removalMigration = app_repository_identity_removal_migration();
     $migration = require base_path(

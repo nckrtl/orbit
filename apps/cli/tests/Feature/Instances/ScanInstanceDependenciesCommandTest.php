@@ -91,7 +91,8 @@ function fleet_cli_listed_instance(int $id, string $name, string $environment, s
     $payload = instance_payload();
     $payload['id'] = $id;
     $payload['name'] = $name;
-    $payload['environment'] = $environment;
+    $payload['production_user'] = $environment === 'production' ? "orbit-instance-{$id}" : null;
+    $payload['production_home'] = $environment === 'production' ? "/home/orbit-instance-{$id}" : null;
     $payload['domain'] = $domain;
     $payload['url'] = 'https://'.$domain;
     $payload['route']['domain'] = $domain;
@@ -306,7 +307,7 @@ describe('fleet dependency scan', function (): void {
         'array rows' => [fleet_cli_listing_json('[[]]')],
         'empty object rows' => [fleet_cli_listing_json('[{}]')],
         'missing identity fields' => [fleet_cli_listing_json('[{"id":15}]')],
-        'invalid identity fields' => [fleet_cli_listing_json('[{"id":0,"project_id":1,"node_id":2,"name":"first","environment":"production","domain":null}]')],
+        'invalid identity fields' => [fleet_cli_listing_json('[{"id":0,"project_id":1,"node_id":2,"name":"first","production_user":"orbit-first","production_home":"/home/orbit-first","domain":null}]')],
         'null and scalar rows' => [fleet_cli_listing_json('[null,42]')],
         'malformed row after valid row' => [fleet_cli_listing_json('['.fleet_cli_listed_instance_json(17, 'first', 'production', 'first.example.test').',{}]')],
     ]);

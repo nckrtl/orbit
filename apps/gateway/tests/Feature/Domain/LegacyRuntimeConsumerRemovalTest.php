@@ -77,7 +77,7 @@ it('keeps AppInstance-owned Processes independent of leftover Instance owners', 
     [$node, $app] = leftover_runtime_models();
     $appInstance = leftover_runtime_app_instance($node, $app);
     $process = Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $appInstance->id,
         'name' => 'queue',
         'runtime' => 'systemd',
@@ -89,7 +89,7 @@ it('keeps AppInstance-owned Processes independent of leftover Instance owners', 
     ]);
 
     expect($process->refresh()->owner_type)
-        ->toBe(AppInstance::class)
+        ->toBe(AppInstance::MorphAlias)
         ->and(app(NodeRoleDependencyInspector::class)->inspect($node, RoleName::AppDev)->processIds)
         ->toBeEmpty();
 });

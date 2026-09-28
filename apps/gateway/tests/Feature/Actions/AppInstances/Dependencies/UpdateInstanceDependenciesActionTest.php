@@ -42,6 +42,7 @@ function dependency_update_instance(bool $production = false, ProjectType $type 
         'repository_url' => 'https://example.test/update.git',
     ]);
     $node = Node::query()->create(['name' => 'dependency-update', 'public_ssh_host' => '192.0.2.181', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit', 'status' => 'active']);
+    orbit_test_set_app_placement_role($node, $production);
 
     return $app->appInstances()->create([
         'node_id' => $node->id,
@@ -448,18 +449,17 @@ describe('coordinated development dependency updates', function (): void {
             if ($kind === 'collect' && ++$calls === 1) {
                 $instance->app->update(['repository_identity' => 'example.test/update']);
                 $instance->update(['root' => 'public', 'branch' => 'main', 'starting_commit' => str_repeat('a', 40)]);
-                $instance->node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
                 $route = Route::query()->create(['app_id' => $instance->app_id, 'node_id' => $instance->node_id, 'generation_basis_node_id' => $instance->node_id, 'domain' => 'update.test', 'provenance' => 'generated', 'publication' => 'private', 'status' => 'pending']);
                 $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
                 $route->update(['status' => 'active']);
                 $removal = AppInstanceRemoval::query()->create(['id' => (string) Str::uuid(), 'requested_app_instance_id' => $instance->id, 'requested_name' => $instance->name, 'force' => false, 'inventory_digest' => str_repeat('d', 64), 'total' => 1, 'status' => 'removing', 'current_step' => 'source_preparation']);
                 $removal->members()->create([
                     'position' => 0, 'app_instance_id' => $instance->id, 'app_id' => $instance->app_id, 'node_id' => $instance->node_id,
-                    'name' => $instance->name, 'environment' => $instance->environment, 'source_layout' => $instance->source_layout,
+                    'name' => $instance->name, 'environment' => $instance->defaultAppEnv(), 'source_layout' => $instance->source_layout,
                     'checkout_path' => $instance->checkout_path, 'linked_worktree_paths' => [], 'source_digest' => str_repeat('d', 64),
                     'route_id' => $route->id, 'repository_identity' => 'example.test/update', 'root' => 'public', 'branch' => 'main',
                     'starting_commit' => str_repeat('a', 40), 'source_commit' => str_repeat('a', 40),
-                    'common_repository_path' => $instance->checkout_path, 'source_identity' => '1:100',
+                    'common_repository_path' => $instance->checkout_path, 'source_identity' => "{$instance->app_id}:{$instance->id}",
                 ]);
                 $instance->update(['status' => 'removing']);
             }

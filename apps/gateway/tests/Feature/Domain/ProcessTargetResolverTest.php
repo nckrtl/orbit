@@ -63,7 +63,6 @@ it('derives production placement from the dedicated identity and current release
         'production_user' => 'orbit-docs',
         'production_home' => '/home/orbit-docs',
     ]);
-    $instance->node->roles()->create(['role' => 'app-prod', 'status' => LifecycleStatus::Active]);
 
     $target = app(ProcessTargetResolver::class)->forStart(process_target_process($instance));
 
@@ -80,6 +79,16 @@ it('derives production placement from the dedicated identity and current release
         ->and($target->productionReleaseLayout)
         ->toBeTrue();
 });
+
+it('refuses the legacy flat production home as a process working directory', function (): void {
+    $instance = process_target_instance('production', [
+        'checkout_path' => '/home/orbit-docs',
+        'production_user' => 'orbit-docs',
+        'production_home' => '/home/orbit-docs',
+    ]);
+
+    app(ProcessTargetResolver::class)->forStart(process_target_process($instance));
+})->throws(ResourceOperationException::class, 'no valid Process placement');
 
 it('rejects inactive AppInstances and Nodes for admission', function (array $instanceChanges, array $nodeChanges): void {
     $instance = process_target_instance();
@@ -220,11 +229,15 @@ function process_target_instance(string $environment = 'development', array $att
         'wireguard_ip' => '10.44.0.10',
     ]);
 
+    $node->roles()->create([
+        'role' => $environment === 'production' ? 'app-prod' : 'app-dev',
+        'status' => LifecycleStatus::Active,
+    ]);
+
     return AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
         'name' => 'main',
-        'environment' => $environment,
         'checkout_path' => '/srv/orbit/docs/main',
         'source_is_laravel' => false,
         'provisioning_step' => 'active',

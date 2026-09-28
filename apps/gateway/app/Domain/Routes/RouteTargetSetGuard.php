@@ -164,7 +164,7 @@ final readonly class RouteTargetSetGuard
 
             RouteTargetWebRoot::assertSupported($instance);
 
-            if ($instance->environment !== 'production') {
+            if (! $instance->placedOnAppProd()) {
                 $this->refuse('route.pool_unsupported', 'A production Route pool cannot include an app-dev target.');
             }
 

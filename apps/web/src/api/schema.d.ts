@@ -3125,7 +3125,6 @@ export interface components {
             project?: components["schemas"]["AppIdentity"];
             node?: components["schemas"]["NodeIdentity"];
             name?: string;
-            environment?: string;
             source_layout?: string;
             checkout_path?: string;
             production_user?: string | null;
@@ -11597,7 +11596,7 @@ export interface operations {
             content: {
                 "application/json": {
                     name: string;
-                    environments: ("development" | "production")[];
+                    environments: "production"[];
                     spec: {
                         /** @enum {string} */
                         runtime: "systemd" | "docker";
@@ -11744,7 +11743,7 @@ export interface operations {
             content: {
                 "application/json": {
                     name: string;
-                    environments: ("development" | "production")[];
+                    environments: "production"[];
                     spec: {
                         /** @enum {string} */
                         runtime: "systemd" | "docker";
@@ -11930,7 +11929,7 @@ export interface operations {
             content: {
                 "application/json": {
                     name: string;
-                    environments: ("development" | "production")[];
+                    environments: "production"[];
                     spec: {
                         command: string;
                         calendar: string;
@@ -12064,7 +12063,7 @@ export interface operations {
             content: {
                 "application/json": {
                     name: string;
-                    environments: ("development" | "production")[];
+                    environments: "production"[];
                     spec: {
                         command: string;
                         calendar: string;

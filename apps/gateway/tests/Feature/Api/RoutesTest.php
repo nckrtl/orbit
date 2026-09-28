@@ -121,7 +121,8 @@ it('creates a public instance route with the requested publication', function ()
 });
 
 it('projects a production instance route before marking it active', function (): void {
-    $this->target->update(['environment' => 'production']);
+    $this->node->roles()->where('role', RoleName::AppDev)->delete();
+    orbit_test_set_app_placement_role($this->node, true);
     $projection = Mockery::mock(ProductionRouteProjector::class);
     $projection->shouldReceive('prepareCertificate', 'prepareRuntime', 'prepareFirewall')->once();
     app()->instance(ProductionRouteProjector::class, $projection);
@@ -173,8 +174,7 @@ it('resumes an instance route after workload projection fails', function (): voi
 });
 
 it('rebuilds a separate Ingress from a persisted uncertain public-handler checkpoint', function (): void {
-    [, $router, $ingress, $workload] = route_public_topology($this->orbitApp, name: 'crash-edge');
-    $target = route_instance($this->orbitApp, $workload, 'crash-target');
+    [, $router, $ingress, $workload, $target] = route_public_topology($this->orbitApp, name: 'crash-edge', createRoute: false);
     $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
         appId: $this->orbitApp->id,
         domain: 'crash-edge.example.test',
@@ -214,8 +214,7 @@ it('rebuilds a separate Ingress from a persisted uncertain public-handler checkp
 });
 
 it('resumes a public instance route after an ingress step fails', function (string $failedStep): void {
-    [, , , $workload] = route_public_topology($this->orbitApp, name: 'retry-edge');
-    $target = route_instance($this->orbitApp, $workload, 'retry-public');
+    [, , , , $target] = route_public_topology($this->orbitApp, name: 'retry-edge', createRoute: false);
     $projection = Mockery::mock(ProductionRouteProjector::class);
     $projection->shouldReceive('prepareCertificate', 'prepareRuntime', 'prepareFirewall')->twice();
     app()->instance(ProductionRouteProjector::class, $projection);
@@ -867,8 +866,9 @@ it('keeps final cleanup failures bounded through the Route update API', function
 });
 
 it('updates an active explicit private production domain through a replacement Route', function (): void {
+    $this->target->node->roles()->where('role', RoleName::AppDev)->delete();
+    $this->target->node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $this->target->update([
-        'environment' => 'production',
         'source_is_laravel' => false,
         'provisioning_step' => 'active',
     ]);
@@ -1497,6 +1497,9 @@ function route_node(string $name, string $wireguardIp, ?string $tld): Node
 
 function route_instance(OrbitApp $app, Node $node, string $name): AppInstance
 {
+    $production = $node->roles()->where('role', RoleName::AppProd)->where('status', LifecycleStatus::Active)->exists();
+    orbit_test_set_app_placement_role($node, $production);
+
     return AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
@@ -1598,6 +1601,7 @@ function route_public_topology(
     RoutePublication $publication = RoutePublication::Public,
     string $domain = 'public.example.test',
     string $name = 'public',
+    bool $createRoute = true,
 ): array {
     [$cluster, $router] = route_cluster($name, "{$name}.test");
     $router->update(['lan_ip' => '10.10.0.20']);
@@ -1620,17 +1624,21 @@ function route_public_topology(
         'production_user' => 'orbit-acme',
         'selected_php_version' => '8.5',
     ]);
-    $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        appId: $app->id,
-        domain: $domain,
-        publication: $publication,
-        appInstanceId: $instance->id,
-        nodeId: null,
-        clusterId: null,
-    ))['route'];
-    $route->update(['status' => RouteStatus::Active]);
+    $route = null;
 
-    return [$cluster, $router->refresh(), $ingress->refresh(), $workload->refresh(), $instance->refresh(), $route->refresh()];
+    if ($createRoute) {
+        $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
+            appId: $app->id,
+            domain: $domain,
+            publication: $publication,
+            appInstanceId: $instance->id,
+            nodeId: null,
+            clusterId: null,
+        ))['route'];
+        $route->update(['status' => RouteStatus::Active]);
+    }
+
+    return [$cluster, $router->refresh(), $ingress->refresh(), $workload->refresh(), $instance->refresh(), $route?->refresh()];
 }
 
 /** @return array{Cluster, Node} */

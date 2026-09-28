@@ -1891,7 +1891,7 @@ function orb180_record_source(
             'node_id' => $instance->node_id,
             'route_id' => $route->id,
             'name' => $instance->name,
-            'environment' => $instance->environment,
+            'environment' => $instance->defaultAppEnv(),
             'source_layout' => $inventory->layout,
             'repository_identity' => $inventory->repositoryIdentity,
             'checkout_path' => $inventory->checkoutPath,
@@ -2014,7 +2014,7 @@ function orb182_record_sources(
                 'node_id' => $instance->node_id,
                 'route_id' => $route->id,
                 'name' => $instance->name,
-                'environment' => $instance->environment,
+                'environment' => $instance->defaultAppEnv(),
                 'source_layout' => $inventory->layout,
                 'repository_identity' => $inventory->repositoryIdentity,
                 'checkout_path' => $inventory->checkoutPath,
@@ -2225,6 +2225,10 @@ function orb76_source_instance(
     string $name,
     ?string $branchOverride = null,
 ): AppInstance {
+    if (! $node->roles()->where('role', 'app-dev')->exists()) {
+        $node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
+    }
+
     return AppInstance::query()
         ->create([
             'app_id' => $app->id,

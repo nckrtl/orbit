@@ -54,6 +54,7 @@ beforeEach(function (): void {
         'user' => 'nckrtl',
         'wireguard_ip' => '10.44.0.3',
     ]);
+    $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $this->orbitApp = OrbitApp::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
@@ -315,6 +316,8 @@ it('refuses a new desired-running production process before admission when no re
         'production_user' => 'orbit-docs',
         'production_home' => '/home/orbit-docs',
     ]);
+    $this->node->roles()->delete();
+    $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $this->runtime->startUnavailable = true;
     $data = new AddProcessData(
         targetType: ProcessTargetType::AppInstance,
@@ -354,8 +357,10 @@ it('refuses an idempotent desired-running production add without changing its re
         'production_user' => 'orbit-docs',
         'production_home' => '/home/orbit-docs',
     ]);
+    $this->node->roles()->delete();
+    $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $process = Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $this->instance->id,
         'name' => 'worker',
         'runtime' => ProcessRuntime::Docker,
@@ -494,6 +499,8 @@ it('uses an isolated app user for app-prod systemd processes', function (): void
         'production_user' => 'orbit-docs',
         'production_home' => '/home/orbit-docs',
     ]);
+    $this->node->roles()->delete();
+    $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
 
     $target = $this->targets->resolve(ProcessTargetType::AppInstance, $this->instance->id);
 
@@ -514,7 +521,7 @@ it('uses the node managed user and AppInstance certificate scope for app-dev tar
         ->toBe("app-instance-{$this->instance->id}");
 
     $removalTarget = $this->targets->forRemoval(Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $this->instance->id,
         'name' => 'removal-target',
         'runtime' => 'systemd',
@@ -1006,7 +1013,7 @@ it('retains the process definition when runtime removal fails', function (): voi
 
 function process_actions_runtime_lock_key(Process $process): string
 {
-    $nodeId = $process->owner_type === AppInstance::class
+    $nodeId = $process->owner_type === AppInstance::MorphAlias
         ? (int) AppInstance::query()->whereKey($process->owner_id)->value('node_id')
         : 0;
 
@@ -1016,7 +1023,7 @@ function process_actions_runtime_lock_key(Process $process): string
 function process_actions_record(AppInstance $instance): Process
 {
     return Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => 'queue',
         'runtime' => ProcessRuntime::Systemd,

@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Activity;
 
@@ -201,7 +203,8 @@ it('changes the deployment branch without changing steps and refuses development
     expect($this->instance->fresh()->deployment_branch)->toBe('release/next')
         ->and(normalized_deploy_steps($this->instance->fresh())[0]['name'])->toBe('migrate');
 
-    $this->instance->update(['environment' => 'development']);
+    $this->owner->roles()->where('role', RoleName::AppProd->value)->delete();
+    $this->owner->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])

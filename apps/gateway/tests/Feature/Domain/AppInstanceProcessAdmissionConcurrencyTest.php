@@ -199,6 +199,7 @@ function orb131_process_admission_instance(): AppInstance
         'wireguard_ip' => '10.44.0.61',
         'user' => 'orbit',
     ]);
+    orbit_test_set_app_placement_role($node, false);
     $instance = AppInstance::query()->create([
         'app_id' => $app->id,
         'node_id' => $node->id,
@@ -248,7 +249,7 @@ function orb131_accept_process_removal(AppInstance $instance): void
             'node_id' => $locked->node_id,
             'route_id' => $route->id,
             'name' => $locked->name,
-            'environment' => $locked->environment,
+            'environment' => $locked->defaultAppEnv(),
             'source_layout' => $locked->source_layout,
             'repository_identity' => $locked->app->repository_identity,
             'checkout_path' => $locked->checkout_path,

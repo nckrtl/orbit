@@ -37,6 +37,7 @@ function dependency_publication_instance(string $name = 'web'): AppInstance
         'public_ssh_host' => '192.0.2.180',
         'status' => 'active',
     ]);
+    orbit_test_set_app_placement_role($node, false);
 
     return $app->appInstances()->create([
         'node_id' => $node->id,
@@ -308,7 +309,6 @@ describe('publication failure and removal races', function (): void {
         $publisher->execute($instance->id, DependencyScanResult::refreshed($previous));
         $instance->app->update(['repository_identity' => 'example.test/dependency-publication']);
         $instance->update(['root' => 'public', 'branch' => 'main', 'starting_commit' => str_repeat('a', 40)]);
-        $instance->node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
         $route = Route::query()->create([
             'app_id' => $instance->app_id,
             'node_id' => $instance->node_id,
@@ -336,7 +336,7 @@ describe('publication failure and removal races', function (): void {
             'app_id' => $instance->app_id,
             'node_id' => $instance->node_id,
             'name' => $instance->name,
-            'environment' => $instance->environment,
+            'environment' => $instance->defaultAppEnv(),
             'source_layout' => $instance->source_layout,
             'checkout_path' => $instance->checkout_path,
             'linked_worktree_paths' => [],

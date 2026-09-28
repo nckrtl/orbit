@@ -143,3 +143,5 @@ A copied worker or Schedule can run before the new Instance's data is ready, for
 ### Managed environment as `Environment=` directives
 
 A Node Process has no Instance `.env` file, but Gateway-owned Processes need secrets. Values on `ExecStart`, for example through `/usr/bin/env`, would put secrets in the process list. So the unit carries the stored map as `Environment=` directives. The cost is that the values sit in the mode-`0644` unit file. A separate mode-`0600` environment file is a possible later change and is not built.
+
+The `vp-dev`, `agentation-mcp`, and `antigravity-watch` presets apply only to development Instance Processes. Runtime definitions are copied only to production Instances.

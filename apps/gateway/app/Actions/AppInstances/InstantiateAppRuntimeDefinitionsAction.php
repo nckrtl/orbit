@@ -40,19 +40,47 @@ final readonly class InstantiateAppRuntimeDefinitionsAction
         private ScheduleRuntimeManager $scheduleRuntime,
     ) {}
 
+    public function captureForClone(AppInstance $appInstance): AppInstance
+    {
+        $appInstanceId = $appInstance->id;
+
+        return $this->admissions->run(
+            [$appInstanceId],
+            fn (): AppInstance => $this->capture($appInstanceId),
+        );
+    }
+
+    public function installCaptured(AppInstance $appInstance): AppInstance
+    {
+        $appInstanceId = $appInstance->id;
+
+        return $this->admissions->run(
+            [$appInstanceId],
+            fn (): AppInstance => $this->installCapturedOwned($appInstanceId),
+        );
+    }
+
     public function execute(AppInstance $appInstance): AppInstance
     {
         $appInstanceId = $appInstance->id;
 
         return $this->admissions->run(
             [$appInstanceId],
-            fn (): AppInstance => $this->executeOwned($appInstanceId),
+            function () use ($appInstanceId): AppInstance {
+                $this->capture($appInstanceId);
+
+                return $this->installCapturedOwned($appInstanceId);
+            },
         );
     }
 
-    private function executeOwned(int $appInstanceId): AppInstance
+    private function installCapturedOwned(int $appInstanceId): AppInstance
     {
-        $appInstance = $this->capture($appInstanceId);
+        $appInstance = AppInstance::query()->with(['app', 'node'])->findOrFail($appInstanceId);
+
+        if ($appInstance->runtime_definitions_captured_at === null) {
+            return $appInstance;
+        }
 
         Process::query()
             ->whereIn('owner_type', AppInstance::morphTypes())
@@ -118,7 +146,7 @@ final readonly class InstantiateAppRuntimeDefinitionsAction
 
     private function assertProductionTarget(AppInstance $appInstance): void
     {
-        if ($appInstance->environment === DefinitionEnvironment::Production->value) {
+        if ($appInstance->placedOnAppProd()) {
             return;
         }
 

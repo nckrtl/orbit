@@ -40,6 +40,16 @@ beforeEach(function (): void {
         'wireguard_ip' => '10.44.0.3',
         'user' => 'orbit',
     ]);
+    $this->node->roles()->create(['role' => 'app-prod', 'status' => LifecycleStatus::Active]);
+    $this->developmentNode = Node::query()->create([
+        'name' => 'app-dev',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.31',
+        'wireguard_ip' => '10.44.0.4',
+        'user' => 'orbit',
+    ]);
+    $this->developmentNode->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
     $this->orbitApp = OrbitApp::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
@@ -47,7 +57,7 @@ beforeEach(function (): void {
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    $this->candidate = orb225_instance($this->orbitApp, $this->node, 'candidate', 'development');
+    $this->candidate = orb225_instance($this->orbitApp, $this->developmentNode, 'candidate', 'development');
     $this->target = orb225_instance($this->orbitApp, $this->node, 'target', 'production');
     $this->processRuntime = new Orb225ProcessRuntimeManager;
     $this->scheduleRuntime = new Orb225ScheduleRuntimeManager;
@@ -95,7 +105,7 @@ it('selects App production definitions instead of development or candidate overr
         ->toBeFalse();
 });
 
-it('creates independent stopped copies for both Process backends and a disabled Schedule without a release', function (): void {
+it('creates independent stopped copies for both Process backends and a disabled Schedule for a release-ready target', function (): void {
     $systemd = orb225_process_definition($this->orbitApp, 'queue', ['development', 'production'], [
         'runtime' => 'systemd',
         'command' => ['/usr/bin/php', 'artisan', 'queue:work'],
@@ -356,7 +366,7 @@ function orb225_instance(OrbitApp $app, Node $node, string $name, string $enviro
 function orb225_process(AppInstance $instance, string $name, array $command): Process
 {
     return Process::query()->create([
-        'owner_type' => AppInstance::class,
+        'owner_type' => AppInstance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => $name,
         'runtime' => ProcessRuntime::Systemd,
@@ -401,7 +411,7 @@ function orb225_schedule_definition(OrbitApp $app, string $name): ScheduleDefini
 function orb225_schedule(AppInstance $instance, string $name): Schedule
 {
     return Schedule::query()->create([
-        'target_type' => AppInstance::class,
+        'target_type' => AppInstance::MorphAlias,
         'target_id' => $instance->id,
         'host_node_id' => $instance->node_id,
         'name' => $name,

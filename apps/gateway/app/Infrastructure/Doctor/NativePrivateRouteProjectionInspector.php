@@ -351,7 +351,7 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
 
         return str_replace(
             ['{{app_instance.domain}}', '{{app_instance.environment}}'],
-            [$route->domain, $instance->environment],
+            [$route->domain, $instance->defaultAppEnv()],
             $stored,
         );
     }

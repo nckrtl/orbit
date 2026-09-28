@@ -29,6 +29,7 @@ use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
 use App\Models\Cluster;
 use App\Models\Node;
+use App\Models\NodeRole;
 use App\Models\Route;
 use App\Models\TaskGroup;
 use Illuminate\Support\Facades\DB;
@@ -917,6 +918,10 @@ function instance_probe_instance(
     Node $node,
     AppInstanceState $status = AppInstanceState::Active,
 ): AppInstance {
+    NodeRole::query()->firstOrCreate(
+        ['node_id' => $node->id, 'role' => RoleName::AppDev],
+        ['status' => LifecycleStatus::Active],
+    );
     $suffix = $app->appInstances()->count() + 1;
 
     return AppInstance::query()->create([
@@ -962,7 +967,7 @@ function instance_probe_mark_removing(AppInstance $instance): void
         'node_id' => $instance->node_id,
         'route_id' => $route->id,
         'name' => $instance->name,
-        'environment' => $instance->environment,
+        'environment' => $instance->defaultAppEnv(),
         'source_layout' => $instance->source_layout,
         'repository_identity' => $instance->app->repository_identity,
         'checkout_path' => $instance->checkout_path,
@@ -1013,6 +1018,10 @@ function instance_probe_task_workspace(App $app, Node $node, AppInstanceState $s
 
 function instance_probe_production_instance(App $app, Node $node): AppInstance
 {
+    NodeRole::query()->firstOrCreate(
+        ['node_id' => $node->id, 'role' => RoleName::AppProd],
+        ['status' => LifecycleStatus::Active],
+    );
     $user = "orbit-app-{$app->id}";
 
     return AppInstance::query()->create([

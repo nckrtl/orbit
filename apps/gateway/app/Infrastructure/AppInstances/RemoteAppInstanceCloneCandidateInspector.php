@@ -143,7 +143,7 @@ final readonly class RemoteAppInstanceCloneCandidateInspector implements AppInst
                         'bash',
                         '-seu',
                         '--',
-                        $candidate->environment,
+                        $candidate->defaultAppEnv(),
                         $basePath,
                         $executionUser,
                         $candidate->app->repository_url,
@@ -192,7 +192,7 @@ final readonly class RemoteAppInstanceCloneCandidateInspector implements AppInst
 
         return new CloneCandidateSource(
             appInstanceId: $candidate->id,
-            environment: $candidate->environment,
+            environment: $candidate->defaultAppEnv(),
             basePath: $parts[1],
             executionUser: $executionUser,
             branch: $configuredBranch,

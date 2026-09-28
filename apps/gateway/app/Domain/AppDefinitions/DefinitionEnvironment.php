@@ -6,6 +6,5 @@ namespace App\Domain\AppDefinitions;
 
 enum DefinitionEnvironment: string
 {
-    case Development = 'development';
     case Production = 'production';
 }

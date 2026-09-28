@@ -180,7 +180,7 @@ it('refuses malformed zero-exit completion evidence', function (
 
 function orb215_cache_node(): Node
 {
-    return Node::query()->create([
+    $node = Node::query()->create([
         'name' => 'php-cache',
         'status' => 'active',
         'platform' => 'linux',
@@ -188,6 +188,9 @@ function orb215_cache_node(): Node
         'wireguard_ip' => '10.44.0.215',
         'user' => 'orbit',
     ]);
+    $node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
+
+    return $node;
 }
 
 /** @return array{AppInstance, ProductionPhpRuntimeIdentity} */

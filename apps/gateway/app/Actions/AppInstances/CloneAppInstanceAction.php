@@ -121,7 +121,7 @@ final readonly class CloneAppInstanceAction
         if (
             $existing->clone_candidate_id !== $candidate->id
             || $existing->node_id !== $data->nodeId
-            || $existing->environment !== 'production'
+            || ! $existing->placedOnAppProd()
             || $existing->clone_preview_name !== $data->previewName
             || $existing->clone_requested_branch !== $data->branch
             || $existing->clone_sqlite_source_path !== $data->sqliteSourcePath
@@ -199,8 +199,10 @@ final readonly class CloneAppInstanceAction
 
         if (AppInstance::query()
             ->where('app_id', $candidate->app_id)
+            ->whereHas('node.roles', static fn ($query) => $query
+                ->where('role', RoleName::AppProd)
+                ->where('status', LifecycleStatus::Active))
             ->where('node_id', $node->id)
-            ->where('environment', 'production')
             ->exists()) {
             throw $this->conflict(
                 'instance.production_placement_conflict',
@@ -244,7 +246,6 @@ final readonly class CloneAppInstanceAction
                     'app_id' => $candidate->app_id,
                     'node_id' => $node->id,
                     'name' => $data->name,
-                    'environment' => 'production',
                     'source_layout' => AppInstanceSourceLayout::Checkout,
                     'checkout_path' => "{$home}/releases/initial",
                     'production_user' => $user,
@@ -367,7 +368,7 @@ final readonly class CloneAppInstanceAction
         }
 
         if ($target->provisioning_step === 'clone-sqlite-prepared') {
-            $this->definitions->execute($target);
+            $this->definitions->captureForClone($target);
             $this->checkpoint($target, 'clone-definitions-instantiated');
         }
 

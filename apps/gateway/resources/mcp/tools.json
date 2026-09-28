@@ -4287,7 +4287,6 @@
             "items": {
               "type": "string",
               "enum": [
-                "development",
                 "production"
               ]
             }
@@ -4525,7 +4524,6 @@
             "items": {
               "type": "string",
               "enum": [
-                "development",
                 "production"
               ]
             }
@@ -4666,7 +4664,6 @@
             "items": {
               "type": "string",
               "enum": [
-                "development",
                 "production"
               ]
             }
@@ -4835,7 +4832,6 @@
             "items": {
               "type": "string",
               "enum": [
-                "development",
                 "production"
               ]
             }

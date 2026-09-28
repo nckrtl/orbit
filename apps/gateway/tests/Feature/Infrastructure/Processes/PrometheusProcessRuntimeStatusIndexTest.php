@@ -201,7 +201,7 @@ describe(PrometheusProcessRuntimeStatusIndex::class, function (): void {
 });
 
 describe('listing the whole fleet', function (): void {
-    it('lists only Processes whose owner a target could name', function (): void {
+    it('lists Processes owned by supported targets', function (): void {
         activate_metrics_role();
         prometheus_unit_states([]);
 
@@ -218,21 +218,6 @@ describe('listing the whole fleet', function (): void {
             'owner_type' => Node::class,
             'owner_id' => $node->id,
             'name' => 'valkey',
-            'runtime' => ProcessRuntime::Systemd,
-            'working_directory' => '/srv',
-            'runtime_config' => [],
-            'restart_policy' => 'always',
-            'keep_alive' => false,
-            'desired_state' => 'running',
-            'status' => LifecycleStatus::Active,
-        ]);
-
-        // A real fleet carries Processes owned by a legacy model that no target selects; listing
-        // every target one by one never returned them, so listing the fleet must not either.
-        Process::query()->create([
-            'owner_type' => 'App\\Models\\Instance',
-            'owner_id' => 999,
-            'name' => 'legacy-worker',
             'runtime' => ProcessRuntime::Systemd,
             'working_directory' => '/srv',
             'runtime_config' => [],

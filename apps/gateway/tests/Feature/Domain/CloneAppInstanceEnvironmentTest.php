@@ -35,7 +35,6 @@ use App\Domain\AppInstances\ProductionPhpRuntimeManager;
 use App\Domain\AppInstances\ProductionRouteProjector;
 use App\Domain\AppInstances\Sqlite\AppInstanceSqliteSeeder;
 use App\Domain\Metrics\MetricsFleetReconciler;
-use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
@@ -115,10 +114,7 @@ it('clones and deploys an Instance without a route', function (): void {
     $targetRoute->delete();
     $reservedTarget->delete();
     $targetNode = Node::query()->findOrFail($reservedTarget->node_id);
-    $targetNode->roles()->create([
-        'role' => RoleName::AppProd,
-        'status' => LifecycleStatus::Active,
-    ]);
+    orbit_test_set_app_placement_role($targetNode, true);
     $candidate->environmentValues()->createMany([
         ['env_key' => 'APP_ENV', 'env_value' => '{{app_instance.environment}}'],
         ['env_key' => 'APP_KEY', 'env_value' => 'base64:literal-key'],
@@ -211,6 +207,7 @@ it('clones and deploys an Instance without a route', function (): void {
         ),
         $deployment,
         Mockery::mock(ProductionPhpRuntimeManager::class),
+        app(InstantiateAppRuntimeDefinitionsAction::class),
         new CommandDeadline,
     );
 
@@ -450,7 +447,7 @@ function clone_environment_fixture(string $suffix = 'primary'): array
 
 function clone_environment_node(string $name, int $address): Node
 {
-    return Node::query()->create([
+    $node = Node::query()->create([
         'name' => "clone-environment-{$name}",
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
@@ -458,6 +455,12 @@ function clone_environment_node(string $name, int $address): Node
         'wireguard_ip' => "10.44.0.{$address}",
         'user' => 'orbit',
     ]);
+    $node->roles()->create([
+        'role' => str_starts_with($name, 'target-') ? 'app-prod' : 'app-dev',
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    return $node;
 }
 
 /** @return array{Orb198CloneEnvironmentLock, Orb198CloneEnvironmentPreflight, Orb198CloneEnvironmentWriter} */

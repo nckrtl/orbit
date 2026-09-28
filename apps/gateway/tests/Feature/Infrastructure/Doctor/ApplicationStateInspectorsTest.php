@@ -8,6 +8,7 @@ use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\InstanceInspectionData;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\ProtectedPathCatalog;
@@ -36,6 +37,7 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\Node;
+use App\Models\NodeRole;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
@@ -1392,6 +1394,9 @@ function application_inspector_app(): App
 function application_app_instance(App $app, Node $node, string $name = 'development'): AppInstance
 {
     $app->update(['default_branch' => 'main', 'root' => 'public']);
+    if (! $node->roles()->whereIn('role', [RoleName::AppDev->value, RoleName::AppProd->value])->exists()) {
+        $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    }
 
     return AppInstance::query()->create([
         'app_id' => $app->id,
@@ -1447,6 +1452,10 @@ function application_instance_inspector(
 
 function application_production_app_instance(App $app, Node $node, string $secret): AppInstance
 {
+    NodeRole::query()->firstOrCreate(
+        ['node_id' => $node->id, 'role' => RoleName::AppProd],
+        ['status' => LifecycleStatus::Active],
+    );
     $app->update(['default_branch' => 'main', 'root' => 'public']);
     $user = "orbit-app-{$app->id}";
     $instance = AppInstance::query()->create([

@@ -57,7 +57,7 @@ orbit process:create <name> (--instance=ID-or-domain | --node=ID-or-name | --pro
 | `--node=ID-or-name` | none | Node ID or registered Node name. The CLI resolves a name through the Node list. |
 | `--project=ID` | none | Numeric Project ID for a definition. |
 | `--for=production` | none | Definition environments. Required with `--project`. Only definitions for `production` are copied. |
-| `--preset=PRESET` | none | `vp-dev`, `agentation-mcp`, or `antigravity-watch`, for an Instance Process. The CLI refuses it with `--node` and ignores it with `--project`. |
+| `--preset=PRESET` | none | Configure a development Instance Process. Supported values are `vp-dev`, `agentation-mcp`, and `antigravity-watch`. Refused with `--project`. |
 | `--runtime=RUNTIME` | `systemd` | `systemd` or `docker`. |
 | `--command=ARG` | none | One argument. Repeat it for each argument, at most 64 of 4,096 bytes each. A systemd command starts with an absolute executable. |
 | `--image=IMAGE` | none | Docker image. |
@@ -112,13 +112,7 @@ orbit process:create queue \
   --restart=on-failure
 ```
 
-An identical create returns the existing Process and keeps its desired state. A different specification with the same owner and name returns `process.name_taken`. To change a Process, destroy it and create it again.
-
-<Note>
-On a Node with the active `app-dev` role, a Docker Instance Process with `--restart=always` maps to Docker `unless-stopped`, so an idle stop survives a Docker daemon restart. A Node Process keeps `always`.
-</Note>
-
-On `app-prod`, an Instance with no selected release accepts a stopped Process. `--start` and a later `process:start` fail with `process.release_unavailable` until `instance:deploy` selects a release.
+A production Process can be installed only after `instance:deploy` selects a release. Starting a Process uses the release selected by `current`; changing `current` does not restart an already running Process.
 
 ## orbit process:list
 

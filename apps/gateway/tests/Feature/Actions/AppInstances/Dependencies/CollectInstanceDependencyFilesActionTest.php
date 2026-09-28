@@ -34,7 +34,9 @@ function dependency_collection_instance(bool $production = false): AppInstance
         'production_home' => $production ? '/home/app_sample' : null,
         'root' => 'public', 'migration_required' => false,
     ]);
-    $instance->setRelation('node', new Node(['user' => 'orbit', 'wireguard_ip' => '10.44.0.2']));
+    $node = new Node(['user' => 'orbit', 'wireguard_ip' => '10.44.0.2']);
+    orbit_test_set_app_placement_role($node, $production);
+    $instance->setRelation('node', $node);
 
     return $instance;
 }
@@ -73,18 +75,21 @@ describe('managed dependency collection transport', function (): void {
         expect($files->hashes['package.json'])->toBeNull();
     })->with([false, true]);
 
-    it('rejects invalid identities before SSH', function (array $attributes): void {
+    it('rejects invalid identities before SSH', function (array $attributes, bool $production = false): void {
         $instance = dependency_collection_instance();
+        if ($production) {
+            orbit_test_set_app_placement_role($instance->node, true);
+        }
         $instance->forceFill($attributes);
         mock(SshExecutor::class)->shouldNotReceive('execute');
 
         expect(fn () => app(CollectInstanceDependencyFilesAction::class)->execute($instance))
             ->toThrow(DependencyCollectionException::class, 'dependencies.unsafe_source');
     })->with([
-        [['checkout_path' => 'relative']], [['environment' => 'staging']],
+        [['checkout_path' => 'relative']],
         [['source_layout' => 'nested']], [['migration_required' => true]],
-        [['environment' => 'production', 'production_user' => '-root', 'production_home' => '/home/-root']],
-        [['environment' => 'production', 'production_user' => 'app_sample', 'production_home' => '/tmp/wrong']],
+        [['production_user' => '-root', 'production_home' => '/home/-root'], true],
+        [['production_user' => 'app_sample', 'production_home' => '/tmp/wrong'], true],
     ]);
 
     it('redacts failed and malformed remote results', function (string $kind, string $code): void {

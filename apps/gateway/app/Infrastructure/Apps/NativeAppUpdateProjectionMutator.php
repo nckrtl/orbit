@@ -137,7 +137,7 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
             }
 
             try {
-                if ($instance->environment === 'development' && $replacement instanceof Route) {
+                if ($instance->placementEnvironment() === 'development' && $replacement instanceof Route) {
                     $this->environment->synchronizeRouteDomain($instance, AppInstanceEnvironmentRouteDomain::Candidate);
                 }
 
@@ -147,7 +147,7 @@ final readonly class NativeAppUpdateProjectionMutator implements AppUpdateProjec
                     allowGenerated: true,
                 );
 
-                if ($instance->environment === 'development' && ! $replacement instanceof Route) {
+                if ($instance->placementEnvironment() === 'development' && ! $replacement instanceof Route) {
                     $this->environment->synchronizeRouteDomain($instance, AppInstanceEnvironmentRouteDomain::Authoritative);
                 }
             } catch (Throwable $exception) {

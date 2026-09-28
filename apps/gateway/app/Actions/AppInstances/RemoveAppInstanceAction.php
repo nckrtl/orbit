@@ -145,8 +145,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
 
         $query = AppInstance::query()
             ->where('app_id', $requested->app_id)
-            ->where('node_id', $requested->node_id)
-            ->where('environment', $requested->environment);
+            ->where('node_id', $requested->node_id);
         $paths = $requested->registration_worktree_paths;
 
         if (is_array($paths) && $paths !== []) {
@@ -343,7 +342,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
                             'node_id' => $member->node_id,
                             'route_id' => $member->routes->first()?->id,
                             'name' => $member->name,
-                            'environment' => $member->environment,
+                            'environment' => $member->defaultAppEnv(),
                             'source_layout' => $inventory->layout,
                             'repository_identity' => $inventory->repositoryIdentity,
                             'checkout_path' => $inventory->checkoutPath,
@@ -418,7 +417,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
                     'node_id' => $snapshot->node_id,
                     'route_id' => $route?->id,
                     'name' => $snapshot->name,
-                    'environment' => $snapshot->environment,
+                    'environment' => $snapshot->defaultAppEnv(),
                     'source_layout' => $inventory->layout,
                     'repository_identity' => $inventory->repositoryIdentity,
                     'checkout_path' => $inventory->checkoutPath,
@@ -487,7 +486,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
             );
         }
 
-        if (! in_array($appInstance->environment, ['development', 'production'], true)) {
+        if (! $appInstance->placedOnAppDev() && ! $appInstance->placedOnAppProd()) {
             throw new ResourceOperationException(
                 errorCode: 'instance.remove_refused',
                 message: 'The AppInstance environment cannot be removed.',
@@ -589,7 +588,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
             if (
                 $member->node_id !== $requested->node_id
                 || $member->app_id !== $requested->app_id
-                || $member->environment !== $requested->environment
+                || $member->defaultAppEnv() !== $requested->defaultAppEnv()
                 || $member->app->repository_identity !== $requested->app->repository_identity
             ) {
                 throw new ResourceOperationException(
@@ -778,7 +777,7 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
             if (
                 $target->position !== $position
                 || $instance->app_id !== $route->app_id
-                || $instance->environment !== 'production'
+                || ! $instance->placedOnAppProd()
                 || $instance->status !== AppInstanceState::Active
                 || $node->status !== LifecycleStatus::Active
                 || $node->cluster_id !== $route->cluster_id

@@ -18,7 +18,7 @@ final readonly class VitePortAllocator
 
     public function assign(AppInstance $instance, ?Node $node = null, bool $recheck = false): ?int
     {
-        if ($instance->environment !== 'development') {
+        if (! $instance->placedOnAppDev()) {
             return null;
         }
 

@@ -6,6 +6,9 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
+beforeEach(fn () => app_instance_environment_migration()->down());
+afterEach(fn () => restore_app_instance_environment_schema_for_migration_test());
+
 describe('cluster and node network migration', function (): void {
     it('preserves legacy node state and copies every WireGuard address to the canonical column', function (): void {
         $obsoleteMigration = require base_path('database/migrations/2026_09_07_091259_remove_obsolete_wireguard_address_from_nodes_table.php');
