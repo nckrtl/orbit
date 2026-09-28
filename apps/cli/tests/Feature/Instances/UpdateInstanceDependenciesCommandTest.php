@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use App\Support\Console\ConsoleInterrupted;
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
@@ -13,6 +14,7 @@ use Orbit\Sdk\Requests\AppInstances\ResolveDirectoryInstanceRequest;
 use Orbit\Sdk\Requests\AppInstances\UpdateInstanceDependenciesRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Symfony\Component\Console\Tester\CommandTester;
 
 beforeEach(function (): void {
     MockClient::destroyGlobal();
@@ -135,7 +137,7 @@ describe('single instance dependency update', function (): void {
         $envelope = update_cli_envelope();
         $mock = update_cli_mock($envelope);
         $code = Artisan::call('instance:dependencies:update', [
-            '--app' => 'fixture.example.test',
+            '--project' => 'fixture.example.test',
             '--json' => true,
             '--no-interaction' => true,
         ]);
@@ -159,7 +161,7 @@ describe('single instance dependency update', function (): void {
     it('shows truthful step statuses inventory and terminal outcomes', function (): void {
         update_cli_mock();
         expect(Artisan::call('instance:dependencies:update', [
-            '--app' => 'fixture.example.test',
+            '--project' => 'fixture.example.test',
             '--no-interaction' => true,
         ]))->toBe(0);
         $text = Artisan::output();
@@ -184,7 +186,7 @@ describe('single instance dependency update', function (): void {
         );
         update_cli_mock($envelope);
         expect(Artisan::call('instance:dependencies:update', [
-            '--app' => 'fixture.example.test',
+            '--project' => 'fixture.example.test',
             '--json' => true,
         ]))->toBe(1);
         $json = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
@@ -204,7 +206,7 @@ describe('single instance dependency update', function (): void {
         );
         update_cli_mock($envelope);
         expect(Artisan::call('instance:dependencies:update', [
-            '--app' => 'fixture.example.test',
+            '--project' => 'fixture.example.test',
             '--json' => true,
         ]))->toBe(1);
         $json = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
@@ -219,7 +221,7 @@ describe('single instance dependency update', function (): void {
         $envelope = update_cli_envelope(succeeded: false, inventory: update_cli_inventory(false));
         update_cli_mock($envelope);
         expect(Artisan::call('instance:dependencies:update', [
-            '--app' => 'fixture.example.test',
+            '--project' => 'fixture.example.test',
             '--no-interaction' => true,
         ]))->toBe(1);
         expect(Artisan::output())->toContain('Dependency update failed.', 'stale', 'dependencies.unreadable_source')
@@ -242,9 +244,28 @@ describe('single instance dependency update', function (): void {
 
     it('rejects an empty explicit domain without directory fallback', function (): void {
         $mock = MockClient::global();
-        expect(Artisan::call('instance:dependencies:update', ['--app' => '', '--json' => true]))->toBe(1)
+        expect(Artisan::call('instance:dependencies:update', ['--project' => '', '--json' => true]))->toBe(1)
             ->and(json_decode(Artisan::output(), true)['error']['code'])->toBe('dependencies.domain_invalid')
             ->and($mock->getLastPendingRequest())->toBeNull();
+    });
+
+    it('rejects the removed app option', function (): void {
+        $mock = MockClient::global();
+        $tester = new CommandTester(app(Kernel::class)->all()['instance:dependencies:update']);
+
+        expect($tester->execute([
+            '--app' => 'fixture.example.test',
+            '--json' => true,
+            '--no-interaction' => true,
+        ], ['interactive' => false]))->toBe(1);
+        expect(json_decode(trim($tester->getDisplay()), associative: true, flags: JSON_THROW_ON_ERROR))->toBe([
+            'error' => [
+                'code' => 'input.invalid',
+                'message' => 'The "--app" option does not exist.',
+                'request_id' => null,
+            ],
+        ]);
+        expect($mock->getLastPendingRequest())->toBeNull();
     });
 
     it('never updates after target refusal', function (): void {
@@ -254,7 +275,7 @@ describe('single instance dependency update', function (): void {
             ], 409, ['X-Orbit-Request-Id' => update_cli_id()]),
         ]);
         expect(Artisan::call('instance:dependencies:update', [
-            '--app' => 'fixture.example.test',
+            '--project' => 'fixture.example.test',
             '--json' => true,
         ]))->toBe(1);
         $json = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
@@ -270,7 +291,7 @@ describe('single instance dependency update', function (): void {
             },
         ]);
         expect(Artisan::call('instance:dependencies:update', [
-            '--app' => 'fixture.example.test',
+            '--project' => 'fixture.example.test',
             '--json' => true,
         ]))->toBe(130);
         $json = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
@@ -282,7 +303,7 @@ describe('single instance dependency update', function (): void {
     it('does not emit progress chrome for noninteractive JSON', function (): void {
         update_cli_mock();
         Artisan::call('instance:dependencies:update', [
-            '--app' => 'fixture.example.test',
+            '--project' => 'fixture.example.test',
             '--json' => true,
             '--no-interaction' => true,
         ]);

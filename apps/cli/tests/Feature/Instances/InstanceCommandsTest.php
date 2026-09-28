@@ -143,8 +143,8 @@ describe('instance:register', function (): void {
         $this
             ->artisan('instance:register', [
                 '--yes' => true,
-                '--app-name' => 'Confirmed',
-                '--app-slug' => 'confirmed',
+                '--project-name' => 'Confirmed',
+                '--project-slug' => 'confirmed',
                 '--default-branch' => 'trunk',
                 '--root' => 'web',
                 '--no-interaction' => true,

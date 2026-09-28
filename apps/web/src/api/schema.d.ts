@@ -5909,9 +5909,7 @@ export interface operations {
                     /** @description Adopt the checkout and every linked worktree */
                     include_worktrees?: boolean;
                     project_id?: number;
-                    /** @description Confirmed Project display name */
                     app_name?: string;
-                    /** @description Confirmed Project slug */
                     app_slug?: string;
                     /** @description Confirmed Project default branch */
                     default_branch?: string;

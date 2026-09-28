@@ -5,13 +5,17 @@ declare(strict_types=1);
 use App\Commands\Instances\CreateInstanceCommand;
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use App\Services\Git\GitRegistrationDiscovery;
+use App\Services\Git\GitRegistrationFacts;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
+use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Symfony\Component\Console\Tester\CommandTester;
 
 beforeEach(function (): void {
     MockClient::destroyGlobal();
@@ -125,5 +129,61 @@ describe('instance:create production refusal', function (): void {
             ->toBe('Create a development Instance on an app-dev Node.')
             ->and($commands['instance:create']->getHelp())
             ->toContain('New production Instances require a candidate. Use instance:clone.');
+    });
+});
+
+describe('instance registration project options', function (): void {
+    it('accepts the project name option and the project slug and rejects the app name option', function (): void {
+        app()->instance(GitRegistrationDiscovery::class, new class implements GitRegistrationDiscovery
+        {
+            public function inspect(string $path): ?GitRegistrationFacts
+            {
+                return new GitRegistrationFacts(
+                    path: '/work/acme',
+                    repositoryUrl: 'git@github.com:acme/acme.git',
+                    slug: 'acme',
+                    defaultBranch: 'main',
+                    branch: 'main',
+                    root: 'public',
+                    layout: 'checkout',
+                    commit: str_repeat(string: 'a', times: 40),
+                );
+            }
+        });
+        $mock = MockClient::global([
+            RegisterAppInstanceRequest::class => registration_mock_response(),
+        ]);
+
+        $this->artisan('instance:register', [
+            '--yes' => true,
+            '--project-name' => 'Confirmed',
+            '--project-slug' => 'confirmed',
+            '--no-interaction' => true,
+            '--json' => true,
+        ])->expectsOutput(registration_json())->assertExitCode(0);
+
+        expect($mock->getLastRequest()?->body()->all())->toBe([
+            'source_path' => '/work/acme',
+            'app_name' => 'Confirmed',
+            'app_slug' => 'confirmed',
+        ]);
+
+        MockClient::destroyGlobal();
+        $rejected = MockClient::global();
+        $tester = new CommandTester(app(Kernel::class)->all()['instance:register']);
+
+        expect($tester->execute([
+            '--app-name' => 'Legacy',
+            '--json' => true,
+            '--no-interaction' => true,
+        ], ['interactive' => false]))->toBe(1);
+        expect(json_decode(trim($tester->getDisplay()), associative: true, flags: JSON_THROW_ON_ERROR))->toBe([
+            'error' => [
+                'code' => 'input.invalid',
+                'message' => 'The "--app-name" option does not exist.',
+                'request_id' => null,
+            ],
+        ]);
+        expect($rejected->getLastPendingRequest())->toBeNull();
     });
 });

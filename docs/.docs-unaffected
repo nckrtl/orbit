@@ -28,3 +28,4 @@ docs/reference/gateway-response-fixtures.md: Fixture maintenance is unchanged. R
 docs/reference/php-runtime.md: PHP-FPM still seeds local.conf from its built-in defaults.
 docs/reference/schedules.md: Schedule placement and create rules are unchanged.
 docs/reference/web-app.md: The web app still generates its schema from OpenAPI. Navigation and layout are unchanged.
+docs/reference/cli-command-vocabulary.md: Option renames do not change verbs, family actions, noun-ending commands, or the command count.
