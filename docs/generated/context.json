@@ -1647,6 +1647,36 @@
             ]
         },
         {
+            "path": "docs/decisions/0181-run-task-groups-from-project-task-templates.md",
+            "title": "ADR 0181: Run task groups from Project task templates",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Activity",
+                "Deliverable",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Schedule",
+                "Task",
+                "Task check",
+                "Task group",
+                "Task workspace"
+            ],
+            "governing_adrs": [
+                "0133",
+                "0178",
+                "0181"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1726,7 +1756,8 @@
                 "0174",
                 "0175",
                 "0178",
-                "0180"
+                "0180",
+                "0181"
             ]
         },
         {

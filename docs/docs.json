@@ -592,7 +592,8 @@
               "decisions/0174-match-the-task-gate-to-ci-and-repeated-findings",
               "decisions/0175-docs-impact-check-in-orbit-repo",
               "decisions/0178-run-project-agnostic-tasks-without-a-planner",
-              "decisions/0180-absorb-built-decisions-into-the-docs"
+              "decisions/0180-absorb-built-decisions-into-the-docs",
+              "decisions/0181-run-task-groups-from-project-task-templates"
             ]
           }
         ]
