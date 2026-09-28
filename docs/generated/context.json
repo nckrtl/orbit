@@ -1664,6 +1664,7 @@
                 "Instance",
                 "Node",
                 "Project",
+                "Route",
                 "Schedule",
                 "Task",
                 "Task check",
@@ -1672,6 +1673,7 @@
             ],
             "governing_adrs": [
                 "0133",
+                "0173",
                 "0178",
                 "0181"
             ]
