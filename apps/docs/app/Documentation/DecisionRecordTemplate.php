@@ -14,7 +14,7 @@ final readonly class DecisionRecordTemplate
 {
     public const array SECTIONS = ['Status', 'Context', 'Decision', 'Rejected alternatives', 'Consequences', 'Affects'];
 
-    private const string STATUS_PATTERN = '/^(Proposed|Accepted on \d{4}-\d{2}-\d{2})\./';
+    private const string STATUS_PATTERN = '/^(In progress|Proposed|Accepted on \d{4}-\d{2}-\d{2})\./';
 
     public function __construct(
         private string $rule,
@@ -73,7 +73,7 @@ final readonly class DecisionRecordTemplate
                 $findings[] = $this->error(
                     $record,
                     (int) key($lines),
-                    'Status must start with `Proposed.` or `Accepted on YYYY-MM-DD.`.',
+                    'Status must start with `In progress.`, `Proposed.`, or `Accepted on YYYY-MM-DD.`.',
                 );
             }
         }

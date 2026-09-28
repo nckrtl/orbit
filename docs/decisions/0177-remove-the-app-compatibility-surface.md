@@ -10,7 +10,7 @@ Orbit exposes the repository record as a Project, not an App. Compatibility path
 
 ## Status
 
-Proposed. Amends [ADR 0105](/reference/apps#project-and-instance), which established a temporary `/apps` dual-read and dual-write surface, and [ADR 0112](/decisions/0112-isolate-agent-threads-behind-drivers) for the task agent driver environment variables.
+Proposed. Amends [ADR 0105](/reference/apps#project-and-instance), which established a temporary `/apps` dual-read and dual-write surface, and [ADR 0112](/reference/tasks#drivers) for the task agent driver environment variables.
 
 ## Context
 
@@ -56,6 +56,6 @@ The database's existing table names and foreign keys are not public aliases and 
 ## Affects
 
 - Components: apps/cli, apps/docs, apps/gateway, packages/php-sdk
-- ADRs: amends [ADR 0105](/reference/apps#project-and-instance) and [ADR 0112](/decisions/0112-isolate-agent-threads-behind-drivers)
+- ADRs: amends [ADR 0105](/reference/apps#project-and-instance) and [ADR 0112](/reference/tasks#drivers)
 - Detail: [Projects](/reference/apps), [project commands](/cli/project), [Tasks](/reference/tasks)
 - Verify: `composer docs-lint`; implementation and contract tests for Project routes, MCP tools, Instance payloads and inputs, CLI options, node WireGuard options, and task driver configuration

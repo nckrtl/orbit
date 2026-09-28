@@ -4,60 +4,38 @@ sidebarTitle: "Overview"
 description: "Every architecture decision record behind Orbit, with its status and the records it extends or amends."
 ---
 
-An architecture decision record (ADR) explains why Orbit chose a significant product or technical direction: a cross-component contract, a durable architecture boundary, a security or ownership model, or a costly-to-reverse operational choice. A substantive change becomes a new record that names the decision it extends, amends, or supersedes. Proposed decisions can ship with their feature; see the [ADR guide](https://github.com/nckrtl/orbit/blob/main/docs/decisions/README.md) for acceptance through maintainer-approved merge.
+The documentation is the single source of truth for Orbit's current architecture, components, behavior, and boundaries. An architecture decision record (ADR) holds a decision only while the decision is being built. The pull request that completes the decision writes it into the owning documentation page and retires the record. The [ADR guide](https://github.com/nckrtl/orbit/blob/main/docs/decisions/README.md) describes the steps.
 
-A record is not an implementation task, an issue lifecycle rule, or an agent instruction. Reference pages state current behavior and link the record that owns each decision; the record itself holds the context, the decision, and the consequences.
+Records lists the decisions in progress. Retired decisions lists every retired number and the page that now holds the decision.
+
+## Decision lifecycle
+
+The docs-first subtask writes an ADR when a feature needs an architectural decision, alongside the documentation that describes the intended behavior. A new ADR says `In progress.` in its Status section and names the [mission principle](/mission#principles) it serves. If the decision needs an exception to a principle, its Principle line names that principle and explains the exception and its reason. The ADR and documentation are the contract for implementation.
+
+The pull request that completes a decision writes its behavior into the owning page and its lasting reasons and rejected alternatives into that page's "Why it works this way" section. It deletes the ADR, removes it from Records, redirects the exact ADR path to the absorbing section, adds a Retired decisions row, and updates inbound links. A decision completed in one pull request never leaves an ADR on main; a record stays only while a decision spans multiple pull requests. Numbers are never reused. The retired table and redirects resolve old numbers and links, including those in code comments.
+
+`composer docs-lint` enforces this lifecycle: retired slugs have no matching file and each has a redirect from its exact path. Live ADRs numbered 0180 or later must say `In progress.` in their Status section and include a `Principle:` line. The committed allowlist for older live records can only shrink as those records retire. The [docs-impact check](/decisions/0175-docs-impact-check-in-orbit-repo) and `covers:` frontmatter keep pages in step with code between decisions.
+
+## Why it works this way
+
+Permanent ADRs made the current rule hard to find: amendments spread it across historical records, and built decisions still marked `Proposed.` misled readers. Domain pages now own the present behavior, while Git keeps the full history. Keeping superseded records would leave the same growing list and link chains; retiring them in periodic batches would leave documentation behind the code. Absorbing each decision in the completing pull request lets reviewers check the behavior, rationale, and redirect together. Keeping only the reasons that still matter in the owning page makes the documentation useful without requiring readers to reconstruct an ADR chain. An exact retired slug, rather than just its number, preserves the identity of older paths even when historical records share a number.
 
 ## Records
 
 | Record | Decision | Status |
 | --- | --- | --- |
-| [0051](/decisions/0051-select-discovery-only-feature-delivery) | Select discovery-only feature delivery | Accepted 2026-09-10 |
-| [0052](/decisions/0052-seed-worktrees-from-successful-main-test-baselines) | Seed worktrees from successful main test baselines | Accepted 2026-09-10 |
-| [0053](/decisions/0053-use-local-review-checks-for-feature-landing) | Use local review checks for feature landing | Accepted 2026-09-10 |
-| [0054](/decisions/0054-maintain-main-caches-asynchronously) | Maintain main caches asynchronously | Accepted 2026-09-10 |
-| [0058](/decisions/0058-separate-incus-requirements-from-delivery-flow) | Separate Incus requirements from delivery flow | Accepted 2026-09-10 |
-| [0059](/decisions/0059-make-the-builder-own-the-candidate-quality-gate) | Make the Builder own the candidate quality gate | Accepted 2026-09-10 |
-| [0076](/decisions/0076-deliver-features-through-complete-pull-requests) | Deliver features through complete pull requests | Proposed; accepted through merge |
 | [0097](/decisions/0097-publish-analytics-tracking-hosts-for-app-instances) | Publish analytics tracking hosts for App instances | Proposed |
-| [0103](/decisions/0103-absorb-commander-tasks-as-a-gateway-extension) | Absorb Commander tasks as a Gateway extension | Proposed; amended by 0122, 0160, and 0169; extended by 0165 |
 | [0104](/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension) | Own CLIProxyAPI quota through the proxycli extension | Proposed; amended by 0109 and 0150 |
 | [0109](/decisions/0109-publish-the-proxycli-collector-on-a-subdomain) | Publish the proxycli collector on collector.proxycli.orbit | Proposed; amended by 0145 |
-| [0110](/decisions/0110-route-task-sessions-with-laravel-ai-jev) | Route idle T3 task sessions with Laravel AI Jev | Proposed; amended by 0113, 0114, and 0132 |
-| [0112](/decisions/0112-isolate-agent-threads-behind-drivers) | Isolate agent threads behind drivers | Proposed; amended by 0116 and 0169; extended by 0165 |
-| [0113](/decisions/0113-gate-task-completion-on-validation-and-review) | Gate task completion on validation and review | Accepted; amended by 0114 |
-| [0114](/decisions/0114-judge-task-completion-as-separate-checks) | Judge task completion as separate checks | Proposed; amended by 0117, 0132, and 0173; extended by 0133 |
-| [0116](/decisions/0116-run-task-implementers-on-pi) | Run task implementers on Pi | Proposed; amended by 0134; extended by 0165, 0167, and 0168 |
-| [0117](/decisions/0117-judge-the-blocked-question-on-role-evidence) | Judge the blocked question on the role's own evidence | Proposed; behavior retired by 0173 |
-| [0173](/decisions/0173-record-and-label-jev-decisions) | Record and label every Jev decision | Proposed; amends 0117 |
-| [0121](/decisions/0121-end-agent-turns-with-a-run-receipt) | End agent turns with a run receipt | Proposed; amended by 0132, 0160, and 0169; extended by 0133 |
-| [0122](/decisions/0122-hold-task-groups-in-backlog-until-ready) | Hold task groups in Backlog until they are ready | Proposed; amended by 0178; extended by 0124 |
-| [0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner) | Plan Backlog groups with a T3 planner | Superseded by 0178; amended by 0169; extended by 0133 |
-| [0125](/decisions/0125-run-the-project-check-when-the-implementer-hands-off) | Run the Project check when the implementer hands off | Proposed; amended by 0178; extended by 0133 |
-| [0131](/decisions/0131-seed-task-workspace-clones-from-the-registered-main-cache-store) | Seed task workspace clones from the registered main cache store | Proposed; extended by 0135 |
-| [0132](/decisions/0132-pause-only-for-the-acting-thread-and-a-real-question) | Pause a task only for its acting thread or a real question | Proposed; amended by 0169 |
-| [0133](/decisions/0133-verify-typed-subtask-deliverables-at-handoff) | Verify typed subtask deliverables at handoff | Proposed; amended by 0178; extended by 0163 |
-| [0134](/decisions/0134-resume-pi-agent-streams-from-a-cursor) | Resume Pi agent streams from a cursor | Proposed |
-| [0140](/decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks) | Watch settling pull requests for conflicts and failed checks | Proposed; amended by 0164 |
 | [0145](/decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit) | Publish the proxycli collector on collector.cli-proxy-api.orbit | Proposed |
 | [0150](/decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop) | Keep extension commands local and confirm the proxycli fleet stop | Proposed |
-| [0160](/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone) | Push each approved subtask and remove the finished workspace clone | Proposed |
-| [0163](/decisions/0163-prove-a-failing-test-on-the-start-commit) | Prove a failing test on the start commit | Proposed; amended by 0178 and 0169 |
-| [0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask) | Heal a settling pull request with a fixup subtask | Proposed; amended by 0178, 0169, and 0171 |
-| [0165](/decisions/0165-record-per-thread-token-metrics) | Record per-thread token metrics | Proposed |
-| [0166](/decisions/0166-raise-phpstan-one-level-at-a-time) | Raise PHPStan one level at a time | Proposed |
-| [0167](/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart) | Resume a Pi turn interrupted by a server restart | Proposed |
-| [0168](/decisions/0168-offload-large-pi-tool-output) | Offload large Pi tool output | Proposed |
-| [0169](/decisions/0169-start-each-subtask-review-in-a-fresh-thread) | Start each subtask review in a fresh thread | Proposed |
 | [0174](/decisions/0174-match-the-task-gate-to-ci-and-repeated-findings) | Match the task gate to CI and repeated findings | Proposed |
-| [0170](/decisions/0170-edit-todo-subtasks-after-a-group-starts) | Edit Todo subtasks after a group starts | Proposed; amends 0122 |
-| [0171](/decisions/0171-reset-fixup-caps-after-operator-work) | Reset fixup caps after operator work | Proposed; amends 0164 |
 | [0175](/decisions/0175-docs-impact-check-in-orbit-repo) | Keep the docs-impact check in Orbit's repository | Proposed |
 | [0178](/decisions/0178-run-project-agnostic-tasks-without-a-planner) | Run project-agnostic Tasks without a planner | Proposed; supersedes 0124 and amends 0122, 0125, 0133, 0135, 0163, and 0164 |
 
 ## Retired decisions
 
-These decisions are built and absorbed into the documentation. The link goes to the page that now holds each one.
+These decisions are built, superseded, or withdrawn, and the documentation holds what still applies. The link goes to the page that holds each one.
 
 | Record | Decision | Now in |
 | --- | --- | --- |
@@ -109,9 +87,15 @@ These decisions are built and absorbed into the documentation. The link goes to 
 | 0048 | Copy App process and schedule definitions into AppInstances | [Processes and schedules: Production copies](/reference/app-processes-and-schedules#production-copies) |
 | 0049 | Keep delivery artifacts off the merge head (superseded) | [Contributor guide: Review reproduces on a discovery topology](/contributor-guide#review-reproduces-on-a-discovery-topology) |
 | 0050 | Release successful proof resources before landing (superseded) | [Contributor guide: Review reproduces on a discovery topology](/contributor-guide#review-reproduces-on-a-discovery-topology) |
+| 0051 | Select discovery-only feature delivery (superseded) | [Contributor guide: Review reproduces on a discovery topology](/contributor-guide#review-reproduces-on-a-discovery-topology) |
+| 0052 | Seed worktrees from successful main test baselines | [Feature delivery: Main caches come only from clean main](/reference/implementation-loop#main-caches-come-only-from-clean-main) |
+| 0053 | Use local review checks for feature landing (superseded) | [Feature delivery: The candidate gate](/reference/implementation-loop#the-candidate-gate) |
+| 0054 | Maintain main caches asynchronously | [Feature delivery: Maintenance runs in the background](/reference/implementation-loop#maintenance-runs-in-the-background) |
 | 0055 | Restrict Grafana access to authorized Gateway peers | [Metrics role: Grafana access](/reference/metrics#grafana-access) |
 | 0056 | Retain proof topologies for interactive review (superseded) | [Contributor guide: Review reproduces on a discovery topology](/contributor-guide#review-reproduces-on-a-discovery-topology) |
 | 0057 | Limit Metrics exporters to managed Nodes | [Metrics role: Exporter selection](/reference/metrics#exporter-selection) |
+| 0058 | Separate Incus requirements from delivery flow (superseded) | [Contributor guide: Review reproduces on a discovery topology](/contributor-guide#review-reproduces-on-a-discovery-topology) |
+| 0059 | Make the Builder own the candidate quality gate (superseded) | [Feature delivery: The candidate gate](/reference/implementation-loop#the-candidate-gate) |
 | 0060 | Record the latest Schedule run status | [Schedules: Latest run](/reference/schedules#latest-run) |
 | 0061 | Use VPN DNS by default on managed peers | [Private DNS: Resolver selection](/reference/private-dns#resolver-selection) |
 | 0062 | Select Cluster Router DNS addresses from LAN intent | [Private DNS: Cluster Router addresses](/reference/private-dns#cluster-router-addresses) |
@@ -128,6 +112,7 @@ These decisions are built and absorbed into the documentation. The link goes to 
 | 0073 | Store deploy steps as named AppInstance records | [Production release layout: Deploy steps](/reference/deployments#deploy-steps) |
 | 0074 | Hibernate idle app-dev AppInstance Processes | [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation) |
 | 0075 | Prune idle app-dev checkout dependencies | [App-dev runtime hibernation: Dependency prune](/reference/app-dev-runtime-hibernation#dependency-prune) |
+| 0076 | Deliver features through complete pull requests | [Contributor guide: Decisions ship with their feature](/contributor-guide#decisions-ship-with-their-feature) |
 | 0077 | Allow the database role beside router | [Database role: The remaining conflicts](/reference/database-role#the-remaining-conflicts) |
 | 0078 | Assign Vite ports to development App instances | [Assigned Vite ports](/reference/assigned-vite-ports) |
 | 0079 | Publish linux-x64 from hosted GitHub Actions and macos-arm64 from mini | [CLI binaries](/reference/cli-binaries) |
@@ -153,26 +138,43 @@ These decisions are built and absorbed into the documentation. The link goes to 
 | 0100 | Install Caddy from the pinned Caddy apt source | [Node provisioning: Package sources](/reference/node-provisioning#package-sources) |
 | 0101 | Keep one Route publication field and terminate public Ingress with Let's Encrypt | [Routes: Publish a public Route](/reference/routes#publish-a-public-route) |
 | 0102 | Read App instance analytics through a fleet driver | [Instance analytics stats](/reference/instance-analytics-stats) |
+| 0103 | Absorb Commander tasks as a Gateway extension | [Tasks: An optional, generic extension](/reference/tasks#an-optional-generic-extension) |
 | 0105 | Name applications as Project and Instance | [Projects: Project and Instance](/reference/apps#project-and-instance) |
 | 0106 | Derive instance capabilities from Project type | [Projects: Project types](/reference/apps#project-types) |
 | 0107 | Key isolation and releases to Node role | [Instance environment variables: Laravel mode](/reference/environment-variables#laravel-mode), [Production release layout](/reference/deployments), and [Instance cloning](/reference/appinstance-cloning) |
 | 0108 | Persist managed environment on systemd Processes | [Processes and schedules: Environment of a systemd Process](/reference/app-processes-and-schedules#environment-of-a-systemd-process) |
+| 0110 | Route task sessions with Laravel AI Jev | [Tasks: Session routing (Jev routing removed)](/reference/tasks#session-routing) |
 | 0111 | Retain completed transfer history through AppInstance removal | [Instance removal: Keep unfinished transfer history](/reference/appinstance-removal#keep-unfinished-transfer-history) |
+| 0112 | Isolate agent threads behind drivers | [Tasks: Agent threads](/reference/tasks#agent-threads) |
+| 0113 | Gate task completion on validation and review | [Tasks: Rubric and reminders](/reference/tasks#rubric-and-reminders) |
 | 0114 | Expand the three-node Incus Cluster | [Incus topology registry: Three Nodes](/reference/incus-topologies#three-nodes) |
+| 0114 | Judge task completion as separate checks | [Tasks: Rubric and reminders](/reference/tasks#rubric-and-reminders) |
 | 0115 | Run Project setup commands on development Instances | [Instance setup and teardown](/reference/instance-setup) |
+| 0116 | Run task implementers on Pi | [Tasks: Drivers](/reference/tasks#drivers) |
+| 0117 | Judge the blocked question on the role's own evidence | [Tasks: Rubric and reminders (Jev question removed)](/reference/tasks#rubric-and-reminders) |
 | 0118 | Skip selected Nodes for a Project | [Development node exclusions](/reference/development-node-exclusions) |
+| 0119 | Share caches after bootstrap | [Feature delivery: Publish from bootstrap](/reference/implementation-loop#publish-from-bootstrap) |
 | 0120 | Extract the agent annotation package | [Agent annotation package](/reference/agent-annotation) |
+| 0121 | End agent turns with a run receipt | [Tasks: Run receipt](/reference/tasks#run-receipt) |
+| 0122 | Hold task groups in Backlog until they are ready | [Tasks: Prepare a group in Backlog](/reference/tasks#prepare-a-group-in-backlog) |
 | 0123 | Serve the web app from the Gateway origin | [Web app: Why it works this way](/reference/web-app#why-it-works-this-way) |
+| 0124 | Plan Backlog groups with a T3 planner | [Tasks: Prepare a group in Backlog (planner removed)](/reference/tasks#prepare-a-group-in-backlog) |
+| 0125 | Run the Project check when the implementer hands off | [Tasks: Project check](/reference/tasks#project-check) |
 | 0126 | Limit browser API calls to Orbit origins | [Browser access to the Gateway](/reference/browser-access) |
 | 0127 | Share one SSH connection per Node | [Node provisioning: SSH connections](/reference/node-provisioning#ssh-connections) |
 | 0128 | Run a visibility-only agent on managed Nodes | [Node agent: The agent only observes](/reference/node-agent#the-agent-only-observes) |
 | 0129 | Publish Node presence and Process state on per-Node presence channels | [Realtime events: Node agent channels](/reference/events#node-agent-channels) |
 | 0130 | Publish agent binaries as GitHub releases | [Node agent: Releases](/reference/node-agent#releases) |
+| 0131 | Seed task workspace clones from the registered main cache store | [Feature delivery: Seed a checkout](/reference/implementation-loop#seed-a-checkout) |
+| 0132 | Pause a task only for its acting thread or a real question | [Tasks: Session routing](/reference/tasks#session-routing) |
+| 0133 | Verify typed subtask deliverables at handoff | [Tasks: Deliverables](/reference/tasks#deliverables) |
+| 0134 | Resume Pi agent streams from a cursor | [Tasks: Agent viewer](/reference/tasks#agent-viewer) |
 | 0135 | Run Incus topologies for task workspace clones through a bridge worktree | [Incus topology registry: Task workspace clones](/reference/incus-topologies#task-workspace-clones) |
 | 0136 | Run long-lived topology processes as transient units | [Incus topology registry: Long-lived processes as systemd units](/reference/incus-topologies#long-lived-processes-as-systemd-units) |
 | 0137 | Refuse carried Caddy global options | [Caddy configuration: Why it works this way](/reference/caddy-configuration#orbit-owns-the-global-options) |
 | 0138 | Opt public Ingress sites into Caddy certificate automation | [Caddy configuration: Public Ingress certificates](/reference/caddy-configuration#public-ingress-certificates) |
 | 0139 | Collect Caddy HTTP metrics on every Node | [Caddy configuration: Published layout](/reference/caddy-configuration#published-layout) |
+| 0140 | Watch settling pull requests for conflicts and failed checks | [Tasks: Fix a settling pull request](/reference/tasks#fix-a-settling-pull-request) |
 | 0141 | Build each Node's Caddyfile on the Gateway | [Caddy configuration: Node Caddy build](/reference/caddy-configuration#node-caddy-build) |
 | 0142 | Apply Plausible's ClickHouse configuration from the analytics role | [Analytics role: ClickHouse configuration](/reference/analytics#clickhouse-configuration) |
 | 0143 | Record topology evidence and sync without verification | [Incus topology registry: Evidence log](/reference/incus-topologies#evidence-log) |
@@ -190,5 +192,18 @@ These decisions are built and absorbed into the documentation. The link goes to 
 | 0157 | Keep private Caddy sites off the public listener | [Caddy configuration: Listener addresses](/reference/caddy-configuration#listener-addresses) |
 | 0158 | End interrupted Activity | [activity: Interrupted requests](/cli/activity#interrupted-requests) |
 | 0159 | Push Activity changes to the web app | [Realtime events: Activity](/reference/events#activity) |
+| 0160 | Push each approved subtask and remove the finished workspace clone | [Tasks: Pull request and settle metrics](/reference/tasks#pull-request-and-settle-metrics) |
 | 0161 | Set a stale Caddyfile aside when Caddy is absent | [Caddy configuration: When Caddy is absent](/reference/caddy-configuration#when-caddy-is-absent) |
 | 0162 | Verify web UI changes with bin/web-verify | [Web verification: Why it works this way](/reference/web-verification#why-it-works-this-way) |
+| 0163 | Prove a failing test on the start commit | [Tasks: Reproduce a bug on the start commit](/reference/tasks#reproduce-a-bug-on-the-start-commit) |
+| 0164 | Heal a settling pull request with a fixup subtask | [Tasks: Fix a settling pull request](/reference/tasks#fix-a-settling-pull-request) |
+| 0165 | Record per-thread token metrics | [Tasks: Thread token metrics](/reference/tasks#thread-token-metrics) |
+| 0166 | Raise PHPStan one level at a time | [Feature delivery: Findings are fixed, not silenced](/reference/implementation-loop#findings-are-fixed-not-silenced) |
+| 0167 | Resume a Pi turn interrupted by a server restart | [Tasks: Recover a Pi server restart](/reference/tasks#recover-a-pi-server-restart) |
+| 0168 | Offload large Pi tool output | [Pi server: Large tool output](/reference/pi-server#large-tool-output) |
+| 0169 | Start each subtask review in a fresh thread | [Tasks: Review a subtask](/reference/tasks#review-a-subtask) |
+| 0170 | Edit Todo subtasks after a group starts | [Tasks: Change subtasks](/reference/tasks#change-subtasks) |
+| 0171 | Reset fixup caps after operator work | [Tasks: Fix a settling pull request](/reference/tasks#fix-a-settling-pull-request) |
+| 0172 | Count every T3 model call in thread metrics | [Tasks: Thread token metrics](/reference/tasks#thread-token-metrics) |
+| 0173 | Record and label every Jev decision | [Tasks: Jev decision records](/reference/tasks#jev-decision-records) |
+| 0180 | Absorb built decisions into the documentation | [Architecture decisions: Why it works this way](/decisions/overview#why-it-works-this-way) |

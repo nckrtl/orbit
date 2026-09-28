@@ -17,9 +17,11 @@ Every group starts with a docs subtask, before any implementation subtask. Run t
 bin/docs-impact --base <start-commit> --paths <planned-path> --paths <another-planned-path>
 ```
 
-The start commit is the merge base with `origin/main`. Repeat `--paths` for every planned path. For `docs_required`, update the impacted pages or run the named generator. For `no_docs_change`, provide the complete JSON report as the subtask deliverable; the reviewer must confirm that the report and planned paths are complete before implementation begins. Follow the [Tasks impact-check contract](../../../docs/reference/tasks.md#run-the-docs-first-impact-check) for the report and handoff rules.
+The start commit is the merge base with `origin/main`. Repeat `--paths` for every planned path. For `docs_required`, update the impacted pages or run the named generator. For `no_docs_change`, provide the complete JSON report as the subtask deliverable; the reviewer must confirm that the report and planned paths are complete before implementation begins. Follow the [impact-check contract](../../../docs/contributor-guide.md#2-write-the-documentation) in the contributor guide for the report and handoff rules.
 
-Use the docs subtask to write or update the relevant maintained documentation when the report requires it. Record architectural decisions in an ADR, using the next available number and preserving the ADR process in `docs/decisions/README.md`. The ADRs and documentation changed against the group's base commit are the feature contract for later subtasks.
+Use the docs subtask to write or update the relevant maintained documentation when the report requires it. Record a significant decision in an ADR with the status `In progress.`, following `docs/decisions/README.md`. The ADRs and documentation changed against the group's base commit are the feature contract for later subtasks.
+
+Plan the absorption into the last subtask that completes a decision, with a `file` deliverable for the absorbing page. That subtask writes the behavior and lasting reasons into the owning page, deletes the ADR, and adds its redirect and "Retired decisions" row. An implementer absorbs an ADR only when its deliverables name that page. A decision that spans several groups keeps its ADR until the group that completes it.
 
 Keep the branch's documentation, ADRs, implementation, tests, and task briefs consistent. Focus the group on one feature and order subtasks by dependency.
 
@@ -37,7 +39,7 @@ A subtask that changes the web UI must include a screenshot `review` deliverable
 
 ## Bugs
 
-The first code-changing subtask in a bug group reproduces the failure before the fix. Add a `test` deliverable with `fails_on_base` set to the JSON boolean `true`. At least one test whose name contains the specified `name` must fail on the subtask's start commit, and every such test must pass on the working tree. A docs-only subtask does not count as the first code-changing subtask. [ADR 0163](../../../docs/decisions/0163-prove-a-failing-test-on-the-start-commit.md) and the [tasks reference](../../../docs/reference/tasks.md#reproduce-a-bug-on-the-start-commit) define the two runs.
+The first code-changing subtask in a bug group reproduces the failure before the fix. Add a `test` deliverable with `fails_on_base` set to the JSON boolean `true`. At least one test whose name contains the specified `name` must fail on the subtask's start commit, and every such test must pass on the working tree. A docs-only subtask does not count as the first code-changing subtask. The [tasks reference](../../../docs/reference/tasks.md#reproduce-a-bug-on-the-start-commit) defines the two runs.
 
 Use a deliverable like this in that subtask's `deliverables` array. Only a `test` deliverable may set `fails_on_base`:
 

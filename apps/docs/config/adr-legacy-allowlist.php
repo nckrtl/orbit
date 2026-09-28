@@ -1,0 +1,10 @@
+<?php
+
+declare(strict_types=1);
+
+// Unretired records below 0180 at the adoption of ADR 0180. Remove entries as records retire; never add one.
+return [
+    '0097',
+    '0104', '0109', '0145', '0150', '0174',
+    '0175', '0177', '0178',
+];
