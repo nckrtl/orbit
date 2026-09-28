@@ -550,13 +550,6 @@
           {
             "group": "Records",
             "pages": [
-              "decisions/0051-select-discovery-only-feature-delivery",
-              "decisions/0052-seed-worktrees-from-successful-main-test-baselines",
-              "decisions/0053-use-local-review-checks-for-feature-landing",
-              "decisions/0054-maintain-main-caches-asynchronously",
-              "decisions/0058-separate-incus-requirements-from-delivery-flow",
-              "decisions/0059-make-the-builder-own-the-candidate-quality-gate",
-              "decisions/0076-deliver-features-through-complete-pull-requests",
               "decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
               "decisions/0103-absorb-commander-tasks-as-a-gateway-extension",
               "decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension",
@@ -582,7 +575,6 @@
               "decisions/0163-prove-a-failing-test-on-the-start-commit",
               "decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask",
               "decisions/0165-record-per-thread-token-metrics",
-              "decisions/0166-raise-phpstan-one-level-at-a-time",
               "decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart",
               "decisions/0168-offload-large-pi-tool-output",
               "decisions/0169-start-each-subtask-review-in-a-fresh-thread",
@@ -1181,6 +1173,42 @@
     {
       "source": "/decisions/0180-absorb-built-decisions-into-the-docs",
       "destination": "/decisions/overview#why-it-works-this-way"
+    },
+    {
+      "source": "/decisions/0051-select-discovery-only-feature-delivery",
+      "destination": "/contributor-guide#review-reproduces-on-a-discovery-topology"
+    },
+    {
+      "source": "/decisions/0052-seed-worktrees-from-successful-main-test-baselines",
+      "destination": "/reference/implementation-loop#main-caches-come-only-from-clean-main"
+    },
+    {
+      "source": "/decisions/0053-use-local-review-checks-for-feature-landing",
+      "destination": "/reference/implementation-loop#the-candidate-gate"
+    },
+    {
+      "source": "/decisions/0054-maintain-main-caches-asynchronously",
+      "destination": "/reference/implementation-loop#maintenance-runs-in-the-background"
+    },
+    {
+      "source": "/decisions/0058-separate-incus-requirements-from-delivery-flow",
+      "destination": "/contributor-guide#review-reproduces-on-a-discovery-topology"
+    },
+    {
+      "source": "/decisions/0059-make-the-builder-own-the-candidate-quality-gate",
+      "destination": "/reference/implementation-loop#the-candidate-gate"
+    },
+    {
+      "source": "/decisions/0076-deliver-features-through-complete-pull-requests",
+      "destination": "/contributor-guide#decisions-ship-with-their-feature"
+    },
+    {
+      "source": "/decisions/0119-publish-main-caches-from-clean-bootstrap-runs",
+      "destination": "/reference/implementation-loop#publish-from-bootstrap"
+    },
+    {
+      "source": "/decisions/0166-raise-phpstan-one-level-at-a-time",
+      "destination": "/reference/implementation-loop#findings-are-fixed-not-silenced"
     }
   ]
 }

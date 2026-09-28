@@ -12,7 +12,7 @@ A store that publishes main caches registers itself for its repository's origin 
 
 Proposed.
 
-This amends [ADR 0119](/decisions/0119-publish-main-caches-from-clean-bootstrap-runs), which accepted that independent task workspace clones do not share the main cache store and rejected clone configuration. It keeps the publication format, validation, and privacy rules of [ADR 0052](/decisions/0052-seed-worktrees-from-successful-main-test-baselines) and [ADR 0054](/decisions/0054-maintain-main-caches-asynchronously).
+This amends [ADR 0119](/reference/implementation-loop#publish-from-bootstrap), which accepted that independent task workspace clones do not share the main cache store and rejected clone configuration. It keeps the publication format, validation, and privacy rules of [ADR 0052](/reference/implementation-loop#main-caches-come-only-from-clean-main) and [ADR 0054](/reference/implementation-loop#maintenance-runs-in-the-background).
 
 ## Context
 
@@ -49,6 +49,6 @@ A clone has its own Git common directory, so `bin/tia-cache seed` looked in an e
 ## Affects
 
 - Components: apps/e2e, apps/docs
-- ADRs: amends [ADR 0119](/decisions/0119-publish-main-caches-from-clean-bootstrap-runs); keeps [ADR 0052](/decisions/0052-seed-worktrees-from-successful-main-test-baselines) and [ADR 0054](/decisions/0054-maintain-main-caches-asynchronously)
-- Detail: [Feature delivery](/reference/implementation-loop#main-test-baselines)
+- ADRs: amends [ADR 0119](/reference/implementation-loop#publish-from-bootstrap); keeps [ADR 0052](/reference/implementation-loop#main-caches-come-only-from-clean-main) and [ADR 0054](/reference/implementation-loop#maintenance-runs-in-the-background)
+- Detail: [Feature delivery](/reference/implementation-loop#seed-a-checkout)
 - Verify: `apps/e2e/tests/Fixtures/tia-cache-tests.py` through `TiaCacheTest`; a baseline check on a new task workspace on beast
