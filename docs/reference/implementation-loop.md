@@ -2,6 +2,7 @@
 title: "Feature delivery"
 description: "How a change reaches main: review evidence, merge, CI, local checks, worktrees, and the shared main caches."
 covers:
+  - apps/docs/app/Documentation/AdrLifecycle.php
   - bin/{review-check,test,tia-cache,worktree-cache,worktree-create,worktree-remove}
   - .github/workflows/ci.yml
   - apps/gateway/tests/Support/TestDatabase{Environment,Guard}.php
@@ -53,6 +54,8 @@ GitHub CI runs on every pull request, on every push to `main`, and on manual dis
 On `main`, GitHub enforces two rules: the branch cannot be deleted, and it accepts no force pushes. GitHub requires no status check and no review, so the merge rules in [Merge and cleanup](#merge-and-cleanup) are delivery policy that the person who merges applies. The [contributor guide](/contributor-guide#3-implement-and-verify) describes how pull requests and pushes select tests.
 
 Each Composer project job checks out the branch by name with full history, so Pest can write its test-impact graph. On a detached HEAD, Pest does not save the graph. The Docs job's `composer check` also runs `composer docs-lint`. The E2E job runs `bin/bootstrap --skip-checks` to install every project, because its integration tests use the other projects. The Gateway job installs the Linux tools that the Gateway tests need and creates the `caddy` user.
+
+Docs-lint also checks the ADR lifecycle. A row in the decisions overview's lower table has no file with its recorded slug, and a redirect exists from that exact path. ADRs from 0180 onward have an `In progress.` Status and a `Principle:` line. The committed allowlist of older live ADRs can only shrink. The [contributor guide](/contributor-guide#checks-that-need-no-network) explains these checks.
 
 Each Composer project job caches three sets of files in GitHub Actions cache.
 
