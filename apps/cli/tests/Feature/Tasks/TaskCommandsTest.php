@@ -193,17 +193,17 @@ describe('requests', function (): void {
         $mock->assertNotSent(ShowTaskGroupRequest::class);
     });
 
-    it('sends fails_on_base when creating and updating a subtask', function (bool $failsOnBase): void {
+    it('sends fails_on_base and paths when creating and updating a subtask', function (bool $failsOnBase): void {
         $path = $this->orbitHome.'/deliverables.json';
         is_dir($this->orbitHome) || mkdir($this->orbitHome, 0700, true);
         file_put_contents($path, json_encode([[
             'id' => 'layout-repro',
-            'type' => 'test',
+            'type' => 'command',
             'description' => 'The layout fails before the fix',
-            'project' => 'apps/gateway',
-            'file' => 'tests/Feature/HomeScreenTest.php',
-            'name' => 'home screen layout',
+            'command' => "vendor/bin/pest tests/Feature/HomeScreenTest.php --filter='home screen layout'",
+            'directory' => 'apps/gateway',
             'fails_on_base' => $failsOnBase,
+            'paths' => ['apps/gateway/tests/Feature/HomeScreenTest.php'],
         ]], JSON_THROW_ON_ERROR));
         $mock = MockClient::global([
             ...gateway_fixture_mock('tasks/tasks-subtask-create/created'),
@@ -215,7 +215,8 @@ describe('requests', function (): void {
             ->and(Artisan::call('tasks:subtask:update', ['group' => '1', 'subtask' => '2', '--deliverables' => $path, '--json' => true]))->toBe(0);
 
         $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateSubtaskRequest
-            && str_contains((string) $request->body(), '"fails_on_base":'.$encoded));
+            && str_contains((string) $request->body(), '"fails_on_base":'.$encoded)
+            && str_contains((string) $request->body(), '"paths":["apps\\/gateway\\/tests\\/Feature\\/HomeScreenTest.php"]'));
         $mock->assertSent(static fn (Request $request): bool => $request instanceof UpdateSubtaskRequest
             && str_contains((string) $request->body(), '"fails_on_base":'.$encoded));
     })->with([
@@ -223,7 +224,7 @@ describe('requests', function (): void {
         'false' => [false],
     ]);
 
-    it('refuses fails_on_base on a deliverable that is not a test', function (string $type, array $extra): void {
+    it('refuses fails_on_base on a deliverable that is not a command', function (string $type, array $extra): void {
         $path = $this->orbitHome.'/deliverables.json';
         is_dir($this->orbitHome) || mkdir($this->orbitHome, 0700, true);
         file_put_contents($path, json_encode([[
@@ -236,7 +237,7 @@ describe('requests', function (): void {
         $mock = MockClient::global([]);
 
         expect(Artisan::call('tasks:subtask:update', ['group' => '1', 'subtask' => '2', '--deliverables' => $path, '--json' => true]))->toBe(1)
-            ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['message'])->toBe('The fails_on_base field is only allowed on a test deliverable (deliverable docs).');
+            ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['message'])->toBe('The fails_on_base field is only allowed on a command deliverable (deliverable docs).');
         $mock->assertNothingSent();
 
         MockClient::destroyGlobal();
@@ -247,9 +248,25 @@ describe('requests', function (): void {
         $mock->assertNothingSent();
     })->with([
         'a file' => ['file', ['path' => 'docs/a.md', 'change' => 'any']],
-        'a command' => ['command', ['command' => 'bun test']],
         'a review' => ['review', []],
     ]);
+
+    it('refuses paths that are not a list of strings', function (): void {
+        $path = $this->orbitHome.'/deliverables.json';
+        is_dir($this->orbitHome) || mkdir($this->orbitHome, 0700, true);
+        file_put_contents($path, json_encode([[
+            'id' => 'repro',
+            'type' => 'command',
+            'description' => 'Repro',
+            'command' => 'bun test',
+            'paths' => ['a.ts', 3],
+        ]], JSON_THROW_ON_ERROR));
+        $mock = MockClient::global([]);
+
+        expect(Artisan::call('tasks:subtask:update', ['group' => '1', 'subtask' => '2', '--deliverables' => $path, '--json' => true]))->toBe(1)
+            ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['message'])->toBe('The paths value for deliverable repro must be a list of strings.');
+        $mock->assertNothingSent();
+    });
 
     it('shows fails_on_base for a test deliverable', function (): void {
         $fixture = json_decode((string) file_get_contents(gateway_fixture_path('tasks/tasks-show/default')), true, flags: JSON_THROW_ON_ERROR);
