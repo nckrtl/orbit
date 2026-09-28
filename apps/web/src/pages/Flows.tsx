@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
+import { useCallback, useMemo } from "react";
 import { formatCompactCount, formatDurationMs } from "../api/tasks";
 import { lists } from "../api/queries";
 import { describeCron } from "../flows/cron";
@@ -8,6 +9,7 @@ import { FlowsPane } from "../flows/FlowsPane";
 import {
     DECIDE_MODEL,
     edges,
+    type Phase,
     type ProxyModel,
     findings,
     type TaskTemplate,
@@ -29,11 +31,15 @@ export function FlowsList() {
     );
 }
 
-type FlowSearch = { run?: number; task?: string };
+const NO_PHASES: Phase[] = [];
+
+/** `open` lists the open phases, comma-separated; "*" opens every phase. */
+type FlowSearch = { run?: number; task?: string; open?: string };
 
 export const validateFlowSearch = (search: Record<string, unknown>): FlowSearch => ({
     run: typeof search.run === "number" ? search.run : undefined,
     task: typeof search.task === "string" ? search.task : undefined,
+    open: typeof search.open === "string" && search.open !== "" ? search.open : undefined,
 });
 
 export function FlowPage() {
@@ -54,9 +60,62 @@ export function FlowPage() {
     const setSearch = (next: FlowSearch) =>
         void navigate({ search: (previous: FlowSearch) => ({ ...previous, ...next }), replace: true });
 
+    const phases = flow?.phases ?? NO_PHASES;
+    const open = useMemo(
+        () =>
+            new Set<string>(
+                search.open === "*"
+                    ? phases.map((phase) => phase.key)
+                    : (search.open?.split(",") ?? []),
+            ),
+        [search.open, phases],
+    );
+    const setOpen = (next: Set<string>) =>
+        setSearch({
+            open:
+                next.size === 0
+                    ? undefined
+                    : next.size === phases.length
+                      ? "*"
+                      : [...next].join(","),
+        });
+    const togglePhase = useCallback(
+        (phase: string) => {
+            const next = new Set(open);
+            if (next.has(phase)) next.delete(phase);
+            else next.add(phase);
+            setOpen(next);
+        },
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [open],
+    );
+    /** Selects a task and opens the phase it sits in. */
+    const selectTask = (key: string) => {
+        const phase = flow?.tasks.find((task) => task.key === key)?.phase;
+        if (phase === undefined || open.has(phase)) return setSearch({ task: key });
+        const next = new Set(open).add(phase);
+        setSearch({ task: key, open: next.size === phases.length ? "*" : [...next].join(",") });
+    };
+
     return (
         <div className="flex min-w-0 flex-col gap-[var(--panel-gap)] md:h-full">
             <PageHeader
+                actions={
+                    phases.length > 0 ? (
+                        <span className="flex gap-[2ch]">
+                            <button type="button" className="link" onClick={() => setOpen(new Set())}>
+                                Collapse phases
+                            </button>
+                            <button
+                                type="button"
+                                className="link"
+                                onClick={() => setOpen(new Set(phases.map((phase) => phase.key)))}
+                            >
+                                Open phases
+                            </button>
+                        </span>
+                    ) : undefined
+                }
                 trail={[
                     { label: "Flows", open: () => go.section("flows") },
                     {
@@ -82,6 +141,8 @@ export function FlowPage() {
                             run={run}
                             selected={selected?.key}
                             onSelect={(key) => setSearch({ task: key })}
+                            open={open}
+                            onTogglePhase={togglePhase}
                         />
                     </Frame>
                     <div className="flex min-h-0 flex-col gap-[var(--panel-gap)]">
@@ -116,7 +177,7 @@ export function FlowPage() {
                                         key={`${note.key}:${note.message}`}
                                         type="button"
                                         className="block w-full text-left"
-                                        onClick={() => setSearch({ task: note.key })}
+                                        onClick={() => selectTask(note.key)}
                                     >
                                         <span className="text-yellow">{note.key}</span>{" "}
                                         {note.message}
@@ -131,7 +192,7 @@ export function FlowPage() {
     );
 }
 
-const legend = "cyan: models · amber dashed: loops back · hidden defaults: failed → fail, skipped → complete";
+const legend = "click a phase to open it · cyan: models · amber dashed: loops back · hidden: failed → fail";
 
 function RunRow({
     label,

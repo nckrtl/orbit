@@ -36,9 +36,12 @@ export type Layout = { nodes: LayoutNode[]; edges: LayoutEdge[] };
  * take the columns to its right; each route that ends the group gets its own end node one row
  * below its task. Default routes to an end stay hidden unless a run took them.
  */
-export function layout(template: TaskTemplate, run?: TemplateRun): Layout {
-    const all = edges(template);
-    const taken = run === undefined ? null : takenEdges(template, run);
+export function layout(
+    template: TaskTemplate,
+    run?: TemplateRun,
+    all: Edge[] = edges(template),
+): Layout {
+    const taken = run === undefined ? null : takenEdges(template, run, all);
     const tasks = new Map(template.tasks.map((task) => [task.key, task]));
     const main = mainPath(template, all);
     const lastMain = main.at(-1);
@@ -57,10 +60,18 @@ export function layout(template: TaskTemplate, run?: TemplateRun): Layout {
 
     // Ranks: the longest path from the first task over forward routes. Those only point forward, so
     // list order is a topological order. Loops do not change a rank.
+    // A task that starts a new phase sits below every task of the phases before it, so each
+    // phase keeps its own band of rows.
     const rank = new Map<string, number>();
     template.tasks.forEach((task, index) => {
         if (!rank.has(task.key)) {
             rank.set(task.key, index === 0 ? 0 : (rank.get(template.tasks[index - 1]!.key) ?? 0) + 1);
+        }
+        const previous = template.tasks[index - 1];
+        if (previous !== undefined && previous.phase !== task.phase) {
+            const floor =
+                Math.max(...template.tasks.slice(0, index).map((t) => rank.get(t.key) ?? 0)) + 1;
+            rank.set(task.key, Math.max(rank.get(task.key)!, floor));
         }
         for (const edge of shown) {
             if (edge.from === task.key && tasks.has(edge.to) && !isLoop(edge)) {
@@ -149,7 +160,8 @@ export function mainPath(template: TaskTemplate, all: Edge[] = edges(template)):
 
 function isMainEdge(edge: Edge, task: TemplateTask, all: Edge[]): boolean {
     if (task.options === undefined) return edge.on === "passed";
-    const options = all.filter((candidate) => candidate.from === task.key).map((e) => e.on);
+    const leaving = new Set(all.filter((candidate) => candidate.from === task.key).map((e) => e.on));
+    const options = task.options.filter((option) => leaving.has(option));
     const counts = task.stats?.outcomes ?? {};
     const preferred = [...options].sort((a, b) => (counts[b] ?? 0) - (counts[a] ?? 0))[0];
     return edge.on === preferred;

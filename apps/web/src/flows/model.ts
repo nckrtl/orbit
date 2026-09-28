@@ -4,10 +4,19 @@
  */
 
 /**
- * The ADR 0181 kinds, plus `human` for a step a person takes. `human` exists only to draw today's
- * Orbit flow; it is not a kind that ADR 0181 proposes.
+ * The ADR 0181 kinds, plus two that only the viewer draws: `human` for a step a person takes in
+ * today's Orbit flow, and `phase` for a collapsed phase. ADR 0181 proposes neither.
  */
-export type TaskKind = "agent" | "check" | "merge" | "action" | "decide" | "human";
+export type TaskKind = "agent" | "check" | "merge" | "action" | "decide" | "human" | "phase";
+
+/** A named stretch of a flow that the viewer can collapse into one card. */
+export type Phase = {
+    key: string;
+    title: string;
+    brief?: string;
+    /** How the phase repeats, such as "once per Task". */
+    repeat?: string;
+};
 
 /** The outcomes every kind but `decide` can end with. A `decide` task ends with one of its options. */
 export const OUTCOMES = ["passed", "skipped", "failed"] as const;
@@ -46,6 +55,10 @@ export type TemplateTask = {
     routes?: Record<string, string>;
     /** Figures from past runs of this template. */
     stats?: TaskStats;
+    /** The phase this task belongs to. */
+    phase?: string;
+    /** `phase`: the tasks the collapsed phase stands for. */
+    inner?: TemplateTask[];
 };
 
 export type TaskStats = {
@@ -65,6 +78,7 @@ export type TaskTemplate = {
     cron: string | null;
     app: string | null;
     tasks: TemplateTask[];
+    phases?: Phase[];
 };
 
 export type RunTaskStatus = "todo" | "running" | "reviewing" | "completed" | "failed" | "cancelled";
@@ -110,6 +124,7 @@ export const DECIDE_MODEL = "TypeSafe Jev";
 
 /** The models a task calls: implementer then reviewer for `agent`, Jev for `decide`. */
 export function modelsOf(task: TemplateTask): string[] {
+    if (task.kind === "phase") return [...new Set((task.inner ?? []).flatMap(modelsOf))];
     if (task.kind === "decide") return [DECIDE_MODEL];
     if (task.kind !== "agent") return [];
     return [task.implementer_model, task.reviewer_model].filter(
@@ -198,10 +213,14 @@ export function findings(template: TaskTemplate, models?: ProxyModel[]): Finding
 }
 
 /** The edges a run took: each ended task's outcome, followed to its target. */
-export function takenEdges(template: TaskTemplate, run: TemplateRun): Set<string> {
+export function takenEdges(
+    template: TaskTemplate,
+    run: TemplateRun,
+    all: Edge[] = edges(template),
+): Set<string> {
     const outcomes = new Map(run.tasks.map((task) => [task.key, task.outcome]));
     return new Set(
-        edges(template)
+        all
             .filter((edge) => outcomes.get(edge.from) === edge.on)
             .map((edge) => edgeId(edge)),
     );

@@ -18,13 +18,14 @@ import {
 import { useMemo, useRef } from "react";
 import { formatCompactCount, formatDurationMs } from "../api/tasks";
 import { layout } from "./layout";
+import { flowView, phaseKey } from "./phases";
 import { modelsOf, type RunTask, type TaskTemplate, type TemplateRun, type TemplateTask } from "./model";
 
 /** Card size and the space between cards, in canvas pixels. */
 const WIDTH = 300;
 const HEIGHT = 102;
 const GAP_X = 72;
-const GAP_Y = 56;
+const GAP_Y = 64;
 const END_WIDTH = 120;
 const END_HEIGHT = 28;
 /** Space around the flow when it opens, and the smallest zoom it opens at. */
@@ -40,8 +41,12 @@ type TaskData = {
     selected: boolean;
 };
 type EndData = { end: "complete" | "fail"; state: "plain" | "taken" | "idle" };
+type FrameData = { title: string; repeat?: string; onCollapse: () => void };
 
-const nodeTypes = { task: TaskNode, end: EndNode };
+const nodeTypes = { task: TaskNode, end: EndNode, frame: PhaseFrame };
+/** Space between an open phase's frame and the cards inside it, and room for its title. */
+const FRAME_PAD = 12;
+const FRAME_TITLE = 20;
 const edgeTypes = { loop: LoopEdge };
 
 /**
@@ -53,15 +58,21 @@ export function FlowCanvas({
     run,
     selected,
     onSelect,
+    open,
+    onTogglePhase,
 }: {
     template: TaskTemplate;
     run?: TemplateRun;
     selected?: string;
     onSelect: (key: string) => void;
+    /** The phases drawn open; every other phase is one card. */
+    open: ReadonlySet<string>;
+    onTogglePhase: (phase: string) => void;
 }) {
     const wrapper = useRef<HTMLDivElement>(null);
     const { nodes, edges, width, left } = useMemo(() => {
-        const result = layout(template, run);
+        const view = flowView(template, open);
+        const result = layout(view.template, run, view.edges);
         const columns = Math.max(...result.nodes.map((node) => node.column)) + 1;
         const runTasks = new Map(run?.tasks.map((task) => [task.key, task]));
         const endState = new Map(result.edges.map((edge) => [edge.target, edge.state]));
@@ -87,6 +98,30 @@ export function FlowCanvas({
                       data: { end: node.end, state: endState.get(node.id) ?? "plain" } satisfies EndData,
                   };
         });
+        // A frame around the cards of each open phase, drawn behind them.
+        for (const frame of view.frames) {
+            const cells = result.nodes.filter(
+                (node) => node.type === "task" && frame.keys.includes(node.id),
+            );
+            if (cells.length === 0) continue;
+            const x = Math.min(...cells.map((c) => c.column)) * (WIDTH + GAP_X) - FRAME_PAD;
+            const y = Math.min(...cells.map((c) => c.rank)) * (HEIGHT + GAP_Y) - FRAME_PAD - FRAME_TITLE;
+            const right = (Math.max(...cells.map((c) => c.column)) + 1) * (WIDTH + GAP_X) - GAP_X + FRAME_PAD;
+            const bottom = (Math.max(...cells.map((c) => c.rank)) + 1) * (HEIGHT + GAP_Y) - GAP_Y + FRAME_PAD;
+            nodes.unshift({
+                id: phaseKey(frame.phase.key),
+                type: "frame",
+                position: { x, y },
+                style: { width: right - x, height: bottom - y },
+                zIndex: -1,
+                selectable: false,
+                data: {
+                    title: frame.phase.title,
+                    repeat: frame.phase.repeat,
+                    onCollapse: () => onTogglePhase(frame.phase.key),
+                } satisfies FrameData,
+            });
+        }
         let lanes = 0;
         const edges: Edge[] = result.edges.map((edge) => {
             const common = {
@@ -130,7 +165,7 @@ export function FlowCanvas({
         // Room left of the main column for the loop lanes and their labels.
         const left = lanes === 0 ? 0 : 28 + (lanes - 1) * 22 + LOOP_LABEL;
         return { nodes, edges, width: left + columns * WIDTH + (columns - 1) * GAP_X, left };
-    }, [template, run, selected]);
+    }, [template, run, selected, open, onTogglePhase]);
 
     return (
         <div ref={wrapper} className="flow-canvas h-[70vh] w-full lg:h-full" data-testid="flow-canvas">
@@ -141,7 +176,10 @@ export function FlowCanvas({
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
                 onNodeClick={(_, node) => {
-                    if (node.type === "task") onSelect(node.id);
+                    if (node.type !== "task") return;
+                    const task = (node.data as TaskData).task;
+                    if (task.kind === "phase" && task.phase !== undefined) onTogglePhase(task.phase);
+                    else onSelect(node.id);
                 }}
                 nodesDraggable={false}
                 nodesConnectable={false}
@@ -170,6 +208,7 @@ export function FlowCanvas({
 function TaskNode({ data }: NodeProps<Node<TaskData>>) {
     const { task, runTask, inRun, selected } = data;
     const models = modelLine(task, runTask);
+    if (task.kind === "phase") return <PhaseCard task={task} models={models} />;
     return (
         <div
             className="flow-card"
@@ -196,6 +235,59 @@ function TaskNode({ data }: NodeProps<Node<TaskData>>) {
             <Handle id="out" type="source" position={Position.Bottom} className="flow-handle" />
             <Handle id="loop-out" type="source" position={Position.Left} className="flow-handle" />
             <Handle id="loop-up" type="source" position={Position.Top} className="flow-handle" />
+        </div>
+    );
+}
+
+/** A collapsed phase: one card for its steps. A click opens it. */
+function PhaseCard({ task, models }: { task: TemplateTask; models: string | null }) {
+    const inner = task.inner ?? [];
+    const people = inner.filter((step) => step.kind === "human").length;
+    return (
+        <div
+            className="flow-card flow-phase-card"
+            style={{ width: WIDTH, height: HEIGHT }}
+            data-testid="flow-phase"
+            aria-label={`Phase: ${task.title}, ${inner.length} steps. Open it.`}
+            title="Open this phase"
+        >
+            <Handle id="in" type="target" position={Position.Top} className="flow-handle" />
+            <Handle id="loop-in" type="target" position={Position.Left} className="flow-handle" />
+            <Handle id="loop-in-right" type="target" position={Position.Right} className="flow-handle" />
+            <span className="flex items-baseline justify-between gap-[1ch]">
+                <span className="flow-kind" data-kind={people === inner.length ? "human" : "phase"}>
+                    {people === inner.length ? "people" : "phase"}
+                </span>
+                <span className="text-dim">+ {inner.length} steps</span>
+            </span>
+            <span className="block truncate">{task.title}</span>
+            <span className="flow-models" data-empty={models === null || undefined}>
+                {models ?? inner.map((step) => step.kind).filter((k, i, a) => a.indexOf(k) === i).join(" · ")}
+            </span>
+            <span className="flow-meta">{task.actor ?? "once"}</span>
+            <Handle id="out" type="source" position={Position.Bottom} className="flow-handle" />
+            <Handle id="loop-out" type="source" position={Position.Left} className="flow-handle" />
+            <Handle id="loop-up" type="source" position={Position.Top} className="flow-handle" />
+        </div>
+    );
+}
+
+/** The frame around an open phase, with a button in its title that collapses it. */
+function PhaseFrame({ data }: NodeProps<Node<FrameData>>) {
+    return (
+        <div className="flow-phase-frame" data-testid="flow-phase-frame">
+            <button
+                type="button"
+                className="flow-phase-title nodrag nopan"
+                onClick={(event) => {
+                    event.stopPropagation();
+                    data.onCollapse();
+                }}
+                aria-label={`Collapse phase ${data.title}`}
+            >
+                − {data.title}
+                {data.repeat !== undefined && <span className="text-dim"> · {data.repeat}</span>}
+            </button>
         </div>
     );
 }
