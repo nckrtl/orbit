@@ -22,6 +22,11 @@ export type LayoutEdge = {
     /** The outcome or option, or null for `passed`, which the drawing leaves unlabelled. */
     label: string | null;
     state: "plain" | "taken" | "idle";
+    /**
+     * `left` when the route points back from the main column, `up` when it points back from a side
+     * column, or null for a forward route.
+     */
+    loop: "left" | "up" | null;
 };
 
 export type Layout = { nodes: LayoutNode[]; edges: LayoutEdge[] };
@@ -46,15 +51,19 @@ export function layout(template: TaskTemplate, run?: TemplateRun): Layout {
             (edge.from === lastMain && isMainEdge(edge, tasks.get(edge.from)!, all)),
     );
 
-    // Ranks: the longest path from the first task. Routes only point forward, so list order is a
-    // topological order.
+    const position = new Map(template.tasks.map((task, index) => [task.key, index]));
+    const isLoop = (edge: Edge) =>
+        tasks.has(edge.to) && position.get(edge.to)! <= position.get(edge.from)!;
+
+    // Ranks: the longest path from the first task over forward routes. Those only point forward, so
+    // list order is a topological order. Loops do not change a rank.
     const rank = new Map<string, number>();
     template.tasks.forEach((task, index) => {
         if (!rank.has(task.key)) {
             rank.set(task.key, index === 0 ? 0 : (rank.get(template.tasks[index - 1]!.key) ?? 0) + 1);
         }
         for (const edge of shown) {
-            if (edge.from === task.key && tasks.has(edge.to)) {
+            if (edge.from === task.key && tasks.has(edge.to) && !isLoop(edge)) {
                 rank.set(edge.to, Math.max(rank.get(edge.to) ?? 0, rank.get(task.key)! + 1));
             }
         }
@@ -88,6 +97,9 @@ export function layout(template: TaskTemplate, run?: TemplateRun): Layout {
         });
     }
 
+    // Ends that branch off the main path get a column right of every task, so a loop that rises in
+    // a side column never runs through one.
+    const endColumn = Math.max(0, ...column.values()) + 1;
     const layoutEdges: LayoutEdge[] = [];
     for (const edge of shown) {
         let target = edge.to;
@@ -97,7 +109,7 @@ export function layout(template: TaskTemplate, run?: TemplateRun): Layout {
             const from = column.get(edge.from)!;
             const cell = place({
                 rank: rank.get(edge.from)! + 1,
-                column: onMain || !main.includes(edge.from) ? from : from + 1,
+                column: onMain || !main.includes(edge.from) ? from : endColumn,
             });
             nodes.push({ type: "end", id: target, end: edge.to as "complete" | "fail", ...cell });
         }
@@ -107,6 +119,11 @@ export function layout(template: TaskTemplate, run?: TemplateRun): Layout {
             target,
             label: edge.on === "passed" ? null : edge.on,
             state: taken === null ? "plain" : taken.has(edgeId(edge)) ? "taken" : "idle",
+            loop: !isLoop(edge)
+                ? null
+                : column.get(edge.from)! > column.get(edge.to)!
+                  ? "up"
+                  : "left",
         });
     }
 
@@ -114,7 +131,7 @@ export function layout(template: TaskTemplate, run?: TemplateRun): Layout {
 }
 
 /**
- * The path a run takes when every task passes: the `passed` route, or for a `decide` task the
+ * The path a run takes when every task passes: the `passed` route, or for a task with options the
  * option that past runs chose most, or its first option.
  */
 export function mainPath(template: TaskTemplate, all: Edge[] = edges(template)): string[] {
@@ -131,7 +148,7 @@ export function mainPath(template: TaskTemplate, all: Edge[] = edges(template)):
 }
 
 function isMainEdge(edge: Edge, task: TemplateTask, all: Edge[]): boolean {
-    if (task.kind !== "decide") return edge.on === "passed";
+    if (task.options === undefined) return edge.on === "passed";
     const options = all.filter((candidate) => candidate.from === task.key).map((e) => e.on);
     const counts = task.stats?.outcomes ?? {};
     const preferred = [...options].sort((a, b) => (counts[b] ?? 0) - (counts[a] ?? 0))[0];

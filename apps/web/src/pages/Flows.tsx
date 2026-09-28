@@ -131,7 +131,7 @@ export function FlowPage() {
     );
 }
 
-const legend = "cyan: implementer → reviewer model · hidden defaults: failed → fail, skipped → complete";
+const legend = "cyan: models · amber dashed: loops back · hidden defaults: failed → fail, skipped → complete";
 
 function RunRow({
     label,

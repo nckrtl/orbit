@@ -2,12 +2,16 @@ import "@xyflow/react/dist/base.css";
 import {
     Background,
     BackgroundVariant,
+    BaseEdge,
     Controls,
+    EdgeLabelRenderer,
+    getSmoothStepPath,
     Handle,
     MarkerType,
     Position,
     ReactFlow,
     type Edge,
+    type EdgeProps,
     type Node,
     type NodeProps,
 } from "@xyflow/react";
@@ -26,6 +30,8 @@ const END_HEIGHT = 28;
 /** Space around the flow when it opens, and the smallest zoom it opens at. */
 const MARGIN = 24;
 const MIN_START_ZOOM = 0.8;
+/** Room for the longest loop label, such as "changes requested". */
+const LOOP_LABEL = 120;
 
 type TaskData = {
     task: TemplateTask;
@@ -36,6 +42,7 @@ type TaskData = {
 type EndData = { end: "complete" | "fail"; state: "plain" | "taken" | "idle" };
 
 const nodeTypes = { task: TaskNode, end: EndNode };
+const edgeTypes = { loop: LoopEdge };
 
 /**
  * A template on a canvas. The main path runs down the middle column; detours and failure paths
@@ -53,7 +60,7 @@ export function FlowCanvas({
     onSelect: (key: string) => void;
 }) {
     const wrapper = useRef<HTMLDivElement>(null);
-    const { nodes, edges, width } = useMemo(() => {
+    const { nodes, edges, width, left } = useMemo(() => {
         const result = layout(template, run);
         const columns = Math.max(...result.nodes.map((node) => node.column)) + 1;
         const runTasks = new Map(run?.tasks.map((task) => [task.key, task]));
@@ -80,21 +87,49 @@ export function FlowCanvas({
                       data: { end: node.end, state: endState.get(node.id) ?? "plain" } satisfies EndData,
                   };
         });
-        const edges: Edge[] = result.edges.map((edge) => ({
-            id: edge.id,
-            source: edge.source,
-            target: edge.target,
-            type: "smoothstep",
-            label: edge.label ?? undefined,
-            className: "flow-edge",
-            data: { state: edge.state },
-            markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
-            labelBgPadding: [4, 2] as [number, number],
-            labelBgBorderRadius: 2,
-            ...(edge.state === "taken" ? { zIndex: 1 } : {}),
-            ariaLabel: `${edge.label ?? "passed"} route`,
-        })).map((edge) => ({ ...edge, className: `flow-edge flow-edge-${edge.data.state}` }));
-        return { nodes, edges, width: columns * WIDTH + (columns - 1) * GAP_X };
+        let lanes = 0;
+        const edges: Edge[] = result.edges.map((edge) => {
+            const common = {
+                id: edge.id,
+                source: edge.source,
+                target: edge.target,
+                label: edge.label ?? undefined,
+                className: `flow-edge flow-edge-${edge.state}${edge.loop ? " flow-edge-loop" : ""}`,
+                markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
+                ...(edge.state === "taken" ? { zIndex: 1 } : {}),
+                ariaLabel: `${edge.label ?? "passed"} route${edge.loop ? ", loops back" : ""}`,
+            };
+            if (edge.loop === null) {
+                return {
+                    ...common,
+                    sourceHandle: "out",
+                    targetHandle: "in",
+                    type: "smoothstep",
+                    labelBgPadding: [4, 2] as [number, number],
+                    labelBgBorderRadius: 2,
+                };
+            }
+            // A loop from the main column runs in its own lane on the left. A loop from a side
+            // column rises in that column and enters its target from the right.
+            return edge.loop === "left"
+                ? {
+                      ...common,
+                      type: "loop",
+                      sourceHandle: "loop-out",
+                      targetHandle: "loop-in",
+                      data: { offset: 28 + lanes++ * 22 },
+                  }
+                : {
+                      ...common,
+                      type: "loop",
+                      sourceHandle: "loop-up",
+                      targetHandle: "loop-in-right",
+                      data: { offset: 20 },
+                  };
+        });
+        // Room left of the main column for the loop lanes and their labels.
+        const left = lanes === 0 ? 0 : 28 + (lanes - 1) * 22 + LOOP_LABEL;
+        return { nodes, edges, width: left + columns * WIDTH + (columns - 1) * GAP_X, left };
     }, [template, run, selected]);
 
     return (
@@ -104,6 +139,7 @@ export function FlowCanvas({
                 nodes={nodes}
                 edges={edges}
                 nodeTypes={nodeTypes}
+                edgeTypes={edgeTypes}
                 onNodeClick={(_, node) => {
                     if (node.type === "task") onSelect(node.id);
                 }}
@@ -115,12 +151,13 @@ export function FlowCanvas({
                     // flow wider than that starts at the main path, and the branches pan in.
                     const available = (wrapper.current?.clientWidth ?? width) - 2 * MARGIN;
                     const zoom = Math.min(1, Math.max(MIN_START_ZOOM, available / width));
-                    const x = Math.max(MARGIN, (available + 2 * MARGIN - width * zoom) / 2);
+                    const x =
+                        Math.max(MARGIN, (available + 2 * MARGIN - width * zoom) / 2) + left * zoom;
                     void instance.setViewport({ x, y: MARGIN, zoom });
                 }}
                 minZoom={0.3}
                 maxZoom={1.5}
-                proOptions={{ hideAttribution: true }}
+                attributionPosition="bottom-left"
                 colorMode="dark"
             >
                 <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
@@ -142,7 +179,9 @@ function TaskNode({ data }: NodeProps<Node<TaskData>>) {
             data-testid="flow-card"
             aria-label={`${task.kind} task: ${task.title}`}
         >
-            <Handle type="target" position={Position.Top} className="flow-handle" />
+            <Handle id="in" type="target" position={Position.Top} className="flow-handle" />
+            <Handle id="loop-in" type="target" position={Position.Left} className="flow-handle" />
+            <Handle id="loop-in-right" type="target" position={Position.Right} className="flow-handle" />
             <span className="flex items-baseline justify-between gap-[1ch]">
                 <span className="flow-kind" data-kind={task.kind}>
                     {task.kind}
@@ -151,11 +190,58 @@ function TaskNode({ data }: NodeProps<Node<TaskData>>) {
             </span>
             <span className="block truncate">{task.title}</span>
             <span className="flow-models" data-empty={models === null || undefined}>
-                {models ?? "no model"}
+                {models ?? task.actor ?? "no model"}
             </span>
             <span className="flow-meta">{inRun ? runMeta(runTask) : templateMeta(task)}</span>
-            <Handle type="source" position={Position.Bottom} className="flow-handle" />
+            <Handle id="out" type="source" position={Position.Bottom} className="flow-handle" />
+            <Handle id="loop-out" type="source" position={Position.Left} className="flow-handle" />
+            <Handle id="loop-up" type="source" position={Position.Top} className="flow-handle" />
         </div>
+    );
+}
+
+/** A route back to an earlier task. Its label sits where the loop leaves its task. */
+function LoopEdge({
+    id,
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+    label,
+    markerEnd,
+    data,
+}: EdgeProps<Edge<{ offset: number }>>) {
+    const [path] = getSmoothStepPath({
+        sourceX,
+        sourceY,
+        sourcePosition,
+        targetX,
+        targetY,
+        targetPosition,
+        offset: data?.offset ?? 24,
+        borderRadius: 4,
+    });
+    const leavesLeft = sourcePosition === Position.Left;
+    return (
+        <>
+            <BaseEdge id={id} path={path} markerEnd={markerEnd} />
+            {label !== undefined && (
+                <EdgeLabelRenderer>
+                    <span
+                        className="flow-loop-label nodrag nopan"
+                        style={{
+                            transform: leavesLeft
+                                ? `translate(-100%, -100%) translate(${sourceX - 6}px, ${sourceY - 2}px)`
+                                : `translate(4px, -100%) translate(${sourceX}px, ${sourceY - 4}px)`,
+                        }}
+                    >
+                        {label}
+                    </span>
+                </EdgeLabelRenderer>
+            )}
+        </>
     );
 }
 
@@ -167,7 +253,7 @@ function EndNode({ data }: NodeProps<Node<EndData>>) {
             data-end={data.end}
             data-state={data.state}
         >
-            <Handle type="target" position={Position.Top} className="flow-handle" />
+            <Handle id="in" type="target" position={Position.Top} className="flow-handle" />
             {data.end}
         </div>
     );
@@ -175,12 +261,12 @@ function EndNode({ data }: NodeProps<Node<EndData>>) {
 
 /** The models a card names: the ones a run used, else the template's. */
 function modelLine(task: TemplateTask, runTask: RunTask | undefined): string | null {
-    const [implementer, reviewer] =
+    const models =
         runTask?.implementer_model !== undefined
-            ? [runTask.implementer_model, runTask.reviewer_model]
+            ? [runTask.implementer_model, runTask.reviewer_model].filter(Boolean)
             : modelsOf(task);
-    if (implementer === undefined) return null;
-    return reviewer === undefined ? implementer : `${implementer} → ${reviewer}`;
+    if (models.length === 0) return null;
+    return models.join(" → ");
 }
 
 function cardState(task: RunTask | undefined): string {

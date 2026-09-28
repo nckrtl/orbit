@@ -3,7 +3,11 @@
  * so the demo Gateway serves these shapes.
  */
 
-export type TaskKind = "agent" | "check" | "merge" | "action" | "decide";
+/**
+ * The ADR 0181 kinds, plus `human` for a step a person takes. `human` exists only to draw today's
+ * Orbit flow; it is not a kind that ADR 0181 proposes.
+ */
+export type TaskKind = "agent" | "check" | "merge" | "action" | "decide" | "human";
 
 /** The outcomes every kind but `decide` can end with. A `decide` task ends with one of its options. */
 export const OUTCOMES = ["passed", "skipped", "failed"] as const;
@@ -17,6 +21,8 @@ export type TemplateTask = {
     title: string;
     kind: TaskKind;
     brief?: string;
+    /** Who acts in this step, when that is not clear from the kind and models. */
+    actor?: string;
     /** `agent`: the models of its implementer and reviewer threads. */
     implementer_model?: string;
     reviewer_model?: string;
@@ -25,12 +31,18 @@ export type TemplateTask = {
     /** `action`: the Gateway operation and its arguments. */
     operation?: string;
     arguments?: Record<string, unknown>;
-    /** `decide`: the question, its options, the tasks it reads, and the threshold. */
+    /**
+     * `decide`: the question, its options, the tasks it reads, and the threshold. Another kind with
+     * `options` ends with one of them instead of its usual outcomes.
+     */
     question?: string;
     options?: string[];
     evidence?: string[];
     min_probability?: number;
-    /** Outcome or option → target. A missing outcome uses its default. */
+    /**
+     * Outcome or option → target. A missing outcome uses its default. A target before this task is
+     * a loop, which ADR 0181 refuses; today's flow has them.
+     */
     routes?: Record<string, string>;
     /** Figures from past runs of this template. */
     stats?: TaskStats;
@@ -110,7 +122,9 @@ export const MODEL_KINDS: readonly TaskKind[] = ["agent", "decide"];
 
 /** The outcomes or options a task can end with. */
 export function outcomesOf(task: TemplateTask): string[] {
-    if (task.kind === "decide") return task.options ?? [];
+    if (task.options !== undefined) return task.options;
+    if (task.kind === "decide") return [];
+    if (task.kind === "human") return ["passed"];
     if (task.kind === "action") return ["passed", "failed"];
     return [...OUTCOMES];
 }
@@ -128,7 +142,7 @@ export function edges(template: TaskTemplate): Edge[] {
 }
 
 function defaultTarget(template: TaskTemplate, index: number, on: string): string | null {
-    if (template.tasks[index]?.kind === "decide") return null;
+    if (template.tasks[index]?.options !== undefined) return null;
     if (on === "passed") return template.tasks[index + 1]?.key ?? "complete";
     if (on === "skipped") return "complete";
     if (on === "failed") return "fail";

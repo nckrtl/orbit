@@ -684,6 +684,10 @@ body {
     color: var(--cyan);
 }
 
+.flow-kind[data-kind="human"] {
+    color: var(--yellow);
+}
+
 .flow-models {
     display: block;
     overflow: hidden;
@@ -737,6 +741,32 @@ body {
 
 .flow-edge-idle .react-flow__edge-path {
     stroke-dasharray: 4 4;
+}
+
+.flow-edge-loop .react-flow__edge-path {
+    stroke: color-mix(in srgb, var(--yellow) 55%, var(--line));
+    stroke-dasharray: 5 3;
+}
+
+.flow-edge-loop .react-flow__edge-text {
+    fill: color-mix(in srgb, var(--yellow) 75%, var(--dim));
+}
+
+.flow-loop-label {
+    position: absolute;
+    font-size: 11px;
+    white-space: nowrap;
+    color: color-mix(in srgb, var(--yellow) 75%, var(--dim));
+    pointer-events: none;
+}
+
+.flow-canvas .react-flow__attribution {
+    background: transparent;
+    color: var(--dim);
+}
+
+.flow-canvas .react-flow__attribution a {
+    color: var(--dim);
 }
 
 .flow-edge .react-flow__edge-text {
