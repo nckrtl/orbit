@@ -30,9 +30,9 @@ Read the [mission](/mission), the [architecture](/architecture), and the [concep
 
 Find the pages for a component with `composer docs-context -- --component=apps/cli`. `--concept=Cluster` selects pages by concept. The command returns an ordered reading list. It does not decide what the feature must do.
 
-When the feature makes a significant architecture decision, draft an architecture decision record (ADR) on the same branch. A decision is significant when it sets a contract between components, an architecture boundary, a security or ownership model, or a choice that is costly to reverse. Explain the alternatives and the consequences, and name any record it extends, amends, or supersedes. Implementation details stay in code and tests.
+When the feature makes a significant architecture decision, draft an architecture decision record (ADR) on the same branch. A decision is significant when it sets a contract between components, an architecture boundary, a security or ownership model, or a choice that is costly to reverse. Explain the alternatives and the consequences, and name the mission principle it serves. Implementation details stay in code and tests.
 
-Mark the draft `Proposed.` Reviewers assess it with the implementation and the documentation. The maintainer accepts it by approving and merging the pull request. The [ADR guide](https://github.com/nckrtl/orbit/blob/main/docs/decisions/README.md) covers numbering, format, and status.
+Mark the draft `In progress.` Reviewers assess it with the implementation and the documentation. The pull request that completes the decision absorbs it into the owning page and retires the record, so the documentation stays the single source of truth. The [ADR guide](https://github.com/nckrtl/orbit/blob/main/docs/decisions/README.md) covers the steps, numbering, and format.
 
 ## 2. Write the documentation
 
@@ -63,7 +63,7 @@ Commit `docs/generated/context.json` when `docs-build` changes it. For Mintlify 
 
 ## 3. Implement and verify
 
-Build the feature and its tests against the documented behavior. Keep the proposed ADRs and the documentation in line with what the implementation delivers. Explain any change of direction in the pull request.
+Build the feature and its tests against the documented behavior. Keep the in-progress ADRs and the documentation in line with what the implementation delivers. Explain any change of direction in the pull request.
 
 `composer test:affected` selects tests with Pest test-impact analysis (TIA), which needs PCOV or Xdebug. Without a coverage driver, TIA is skipped and every test runs. On macOS, install PCOV with `brew install shivammathur/extensions/pcov@8.5`. Every project sets Composer's `process-timeout` to `0`, so Composer never stops a long test or check run.
 
@@ -139,7 +139,7 @@ These reasons explain the process. Check them before you propose a change.
 
 ### Decisions ship with their feature
 
-A pull request carries the proposed ADR, the implementation, and the documentation together. The maintainer then reviews a decision with the code that shows its consequences. Merging ADRs before their implementation is a rejected alternative, because it separates the decision from the evidence. A required plan in every pull request is also rejected, because the implementation, the documentation, and the decisions already describe the feature.
+A pull request carries the ADR, the implementation, and the documentation together, and absorbs the ADR when it completes the decision. The maintainer then reviews a decision with the code that shows its consequences. Merging ADRs before their implementation is a rejected alternative, because it separates the decision from the evidence. A required plan in every pull request is also rejected, because the implementation, the documentation, and the decisions already describe the feature.
 
 ### Review reproduces on a discovery topology
 

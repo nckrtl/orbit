@@ -19,7 +19,9 @@ bin/docs-impact --base <start-commit> --paths <planned-path> --paths <another-pl
 
 The start commit is the merge base with `origin/main`. Repeat `--paths` for every planned path. For `docs_required`, update the impacted pages or run the named generator. For `no_docs_change`, provide the complete JSON report as the subtask deliverable; the reviewer must confirm that the report and planned paths are complete before implementation begins. Follow the [Tasks impact-check contract](../../../docs/reference/tasks.md#run-the-docs-first-impact-check) for the report and handoff rules.
 
-Use the docs subtask to write or update the relevant maintained documentation when the report requires it. Record architectural decisions in an ADR, using the next available number and preserving the ADR process in `docs/decisions/README.md`. The ADRs and documentation changed against the group's base commit are the feature contract for later subtasks.
+Use the docs subtask to write or update the relevant maintained documentation when the report requires it. Record a significant decision in an ADR with the status `In progress.`, following `docs/decisions/README.md`. The ADRs and documentation changed against the group's base commit are the feature contract for later subtasks.
+
+The last subtask that completes a decision also absorbs its ADR: it writes the behavior and lasting reasons into the owning page, deletes the ADR, and adds its redirect and "Retired decisions" row. Give that subtask a `file` deliverable for the absorbing page. A decision that spans several groups keeps its ADR until the group that completes it.
 
 Keep the branch's documentation, ADRs, implementation, tests, and task briefs consistent. Focus the group on one feature and order subtasks by dependency.
 

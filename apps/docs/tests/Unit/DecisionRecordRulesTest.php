@@ -73,6 +73,14 @@ it('accepts a record that follows the template', function (): void {
     expect($rule->check())->toBe([]);
 });
 
+it('accepts an in-progress status', function (): void {
+    writeRecord($this->root, '0019-register-worktrees.md', str_replace('Accepted on 2026-09-03.', 'In progress.', VALID_RECORD));
+
+    $rule = new DecisionRecordStructureRule($this->snapshot, 19, ['apps/cli', 'apps/gateway']);
+
+    expect($rule->check())->toBe([]);
+});
+
 it('exempts records numbered before the configured start', function (): void {
     writeRecord($this->root, '0018-legacy.md', "# ADR 0018: Legacy\n\n## Status\n\nAccepted.\n");
     writeRecord($this->root, 'README.md', "# Architecture decisions\n\nShould be ignored later.\n");
@@ -130,7 +138,7 @@ it('rejects an empty section, a malformed status, and missing affects fields', f
     );
 
     expect($messages)
-        ->toContain('Status must start with `Proposed.` or `Accepted on YYYY-MM-DD.`.')
+        ->toContain('Status must start with `In progress.`, `Proposed.`, or `Accepted on YYYY-MM-DD.`.')
         ->toContain('The required section [Consequences] is empty.')
         ->toContain('Affects must list `- Detail: <value>`.')
         ->toHaveCount(3);
