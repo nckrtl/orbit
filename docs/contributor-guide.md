@@ -86,7 +86,7 @@ Each test process copies `apps/gateway` to the host with rsync once and reuses t
 
 Add regression tests for behavior changes and their important failure modes. Confirm that the tests that exercise the new behavior ran.
 
-GitHub CI runs quality checks and affected tests for all five projects, including documentation lint. Root `composer check` runs `bin/review-check`. It runs `composer validate --strict`, `composer check`, and `composer test:affected` in each of the five projects. It checks the working tree as it is, uncommitted changes included, and writes a report under `<git-common-dir>/orbit-checks/<HEAD>/`.
+GitHub CI runs quality checks and affected tests for all five projects, including documentation lint. Root `composer check` runs `bin/review-check`. It runs `composer validate --strict`, `composer check`, and `composer test:affected` in each of the five projects. It checks the working tree as it is, uncommitted changes included, and writes a report under `<git-common-dir>/orbit-checks/<HEAD>/`. For changed paths it also runs the web and Pi server CI profiles, every changed Pest file that the affected selection missed, and a PHP finding pack. [ADR 0174](/decisions/0174-match-the-task-gate-to-ci-and-repeated-findings) records these gate rules. Orbit's Project task check runs this gate at every task handoff.
 
 ## Static analysis
 

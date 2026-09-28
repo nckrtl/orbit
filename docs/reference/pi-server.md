@@ -5,7 +5,7 @@ description: "How the Pi server runs Pi agent sessions on a Node for the Gateway
 
 # Pi server
 
-The Pi server runs [Pi](https://github.com/earendil-works/pi) coding-agent sessions on a Node. The Gateway's `pi` driver creates sessions, starts turns, and reads transcripts through it. [ADR 0116](/decisions/0116-run-task-implementers-on-pi) records the decision. The source lives in `apps/pi-server`.
+The Pi server runs [Pi](https://github.com/earendil-works/pi) coding-agent sessions on a Node. The Gateway's `pi` driver creates sessions, starts turns, and reads transcripts through it. The [Tasks reference](/reference/tasks#drivers) describes the driver. The source lives in `apps/pi-server`.
 
 ## Configure the server
 
@@ -96,7 +96,7 @@ The tool stops Boost after the answer, after 60 seconds, or when the turn is int
 
 ## Large tool output
 
-A `read` or `bash` result larger than 8 KiB does not enter the model context. The server writes the full text to a file and stores a short notice in the session. The stream shows that notice. [ADR 0168](/decisions/0168-offload-large-pi-tool-output) records the decision. `edit`, `write`, `search_docs`, and an image `read` are unchanged.
+A `read` or `bash` result larger than 8 KiB does not enter the model context. The server writes the full text to a file and stores a short notice in the session. The stream shows that notice. `edit`, `write`, `search_docs`, and an image `read` are unchanged.
 
 8 KiB is 8,192 UTF-8 bytes. `read` measures the selected lines when the call sets `offset` or `limit`, and the whole file otherwise. `bash` measures stdout and stderr in the order the tool read them, without the exit line. A result of 8,192 bytes or fewer is returned in full. There is no line cap on that result.
 
@@ -146,7 +146,7 @@ The turn ID is the key of the latest accepted send. The Gateway uses a new key f
 
 ## Token usage
 
-The snapshot and each stream `state` event include `usage`. The sums cover every assistant message that has numeric `input`, `output`, `cacheRead`, and `cacheWrite`. A message without that usage is not a call. [ADR 0165](/decisions/0165-record-per-thread-token-metrics) records how the Gateway stores these numbers on the agent thread.
+The snapshot and each stream `state` event include `usage`. The sums cover every assistant message that has numeric `input`, `output`, `cacheRead`, and `cacheWrite`. A message without that usage is not a call. [Thread token metrics](/reference/tasks#thread-token-metrics) describes how the Gateway stores these numbers on the agent thread.
 
 | Field | Meaning |
 | --- | --- |
@@ -196,7 +196,7 @@ Transcripts persist as Pi session files. After a restart, the server reloads a s
 
 ## Roll out a new binary
 
-Stop the Gateway scheduler before you replace `pi-server` on a Node. A restart kills every turn that is `working` on that server. Pausing first keeps those turns alive. [Recover a Pi server restart](/reference/tasks#recover-a-pi-server-restart) still heals a turn the wait missed. [ADR 0167](/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart) records the pause and the resume.
+Stop the Gateway scheduler before you replace `pi-server` on a Node. A restart kills every turn that is `working` on that server. Pausing first keeps those turns alive. [Recover a Pi server restart](/reference/tasks#recover-a-pi-server-restart) still heals a turn the wait missed.
 
 1. Stop the Process that runs `php artisan schedule:work` in the Gateway checkout. Find its numeric id with [`process:list`](/cli/process#orbit-processlist). [`process:stop`](/cli/process#orbit-processstop) stops that unit.
 2. On the host that runs the Gateway checkout, confirm that no process is running `artisan tasks:tick`.
@@ -213,3 +213,19 @@ For a `pi` thread, `GET /sessions/{external_id}` on that Node is the live snapsh
 The [install steps](#install-on-a-node) copy the binary to `~/.local/bin/pi-server`. Replace the file that Process actually runs.
 
 A turn still `working` at the restart fails with the restart error. The next tick resumes it, at most twice for that subtask. Do not post a resolution comment for that failure.
+
+## Why it works this way
+
+These reasons explain the design. Check them before you propose a change.
+
+### A long-lived server, not RPC over SSH
+
+A Pi process started over SSH would live only as long as that connection, and a reconnect would lose the live event stream. Reading session files over SSH gives history without live events. So one server on the Node owns the sessions and serves snapshots and streams.
+
+### The server owns the stream cursor
+
+The server already holds the transcript and its order, so it resumes a stream after a cursor. A cursor in the Gateway would need a store of what each browser has seen. A snapshot on every connection would cost more with every conversation and every open tab.
+
+### Large tool output goes to a file
+
+Tool output was more than half of all tokens that task threads spent, and each later call sends that text again. Cutting the result would lose the rest for good. So a large result goes to a file that a later turn can read. The file sits inside `.git`, so diffs and the review tree never include it. When the file cannot be written, the result is an error, because inlining it would bring back the cost.

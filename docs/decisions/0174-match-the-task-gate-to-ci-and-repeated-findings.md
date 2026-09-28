@@ -12,7 +12,7 @@ Orbit's task gate runs the checks that CI runs for each project a change touches
 
 Proposed.
 
-This amends [ADR 0125](/decisions/0125-run-the-project-check-when-the-implementer-hands-off) for the checks performed by `composer check` and the `bin/review-check` gate. The handoff, detached-process, tree-integrity, and scheduler rules in ADR 0125 stay unchanged.
+This amends [ADR 0125](/reference/tasks#project-check) for the checks performed by `composer check` and the `bin/review-check` gate. The handoff, detached-process, tree-integrity, and scheduler rules in ADR 0125 stay unchanged.
 
 ## Context
 
@@ -74,6 +74,6 @@ The static checks run as part of the gate's PHP quality checks, and the classifi
 ## Affects
 
 - Components: apps/cli, apps/docs, apps/e2e, apps/gateway, apps/web, packages/php-sdk
-- ADRs: [ADR 0125](/decisions/0125-run-the-project-check-when-the-implementer-hands-off)
+- ADRs: [ADR 0125](/reference/tasks#project-check)
 - Detail: [Tasks](/reference/tasks), [CI workflow](https://github.com/nckrtl/orbit/blob/main/.github/workflows/ci.yml), and `bin/review-check`
 - Verify: `composer check`, `composer docs-lint`, `composer docs-build`, changed-Pest-file tests with `--list-tests`, the web and Pi server command profiles, missing-tool failures, the generated schema diff, and each of the three finding checks
