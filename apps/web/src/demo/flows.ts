@@ -1,4 +1,28 @@
-import type { TaskTemplate, TemplateRun } from "../flows/model";
+import type { ProxyModel, TaskTemplate, TemplateRun } from "../flows/model";
+
+/** The models CLIProxyAPI listed on 2026-09-28, by the ProxyCli provider that serves them. */
+export const proxyModels: ProxyModel[] = [
+    { id: "codex-auto-review", provider: "codex" },
+    { id: "gpt-5.5", provider: "codex" },
+    { id: "gpt-5.6-luna", provider: "codex" },
+    { id: "gpt-5.6-sol", provider: "codex" },
+    { id: "gpt-5.6-terra", provider: "codex" },
+    { id: "gpt-6-astra", provider: "codex" },
+    { id: "gpt-6-luna", provider: "codex" },
+    { id: "gpt-6-sol", provider: "codex" },
+    { id: "gemini-3.7-flash-high", provider: "antigravity" },
+    { id: "gemini-3.8-flash-high", provider: "antigravity" },
+    { id: "grok-4.6", provider: "grok" },
+    { id: "grok-4.7", provider: "grok" },
+    { id: "grok-4.7-build-fast", provider: "grok" },
+    { id: "grok-composer-2.5-fast", provider: "grok" },
+    { id: "kimi-k2.6", provider: "kimi" },
+    { id: "kimi-k2.7-code", provider: "kimi" },
+    { id: "kimi-k2.7-code-highspeed", provider: "kimi" },
+    { id: "kimi-k2.8", provider: "kimi" },
+    { id: "kimi-k2.8-code", provider: "kimi" },
+    { id: "kimi-k3", provider: "kimi" },
+];
 
 /** Hand-written templates and runs for the flow viewer, until the Gateway serves them. */
 export const templates: TaskTemplate[] = [
@@ -14,6 +38,8 @@ export const templates: TaskTemplate[] = [
                 key: "update",
                 title: "Update dependencies",
                 kind: "agent",
+                implementer_model: "gpt-5.6-luna",
+                reviewer_model: "gpt-6-sol",
                 brief: "Update the Composer and npm dependencies, and fix what the update breaks.",
                 stats: {
                     runs: 12,
@@ -42,6 +68,8 @@ export const templates: TaskTemplate[] = [
                 key: "review",
                 title: "Adapt to major upgrades",
                 kind: "agent",
+                implementer_model: "gpt-6-luna",
+                reviewer_model: "gpt-6-sol",
                 brief: "Read the changelogs of the major upgrades and adapt the App.",
                 stats: {
                     runs: 2,
@@ -127,12 +155,16 @@ export const templates: TaskTemplate[] = [
                 key: "docs",
                 title: "ADRs and documentation",
                 kind: "agent",
+                implementer_model: "gpt-6-sol",
+                reviewer_model: "claude-opus-5",
                 brief: "Write the ADR and update the documentation that the feature changes.",
             },
             {
                 key: "implement",
                 title: "Implementation",
                 kind: "agent",
+                implementer_model: "gpt-5.6-luna",
+                reviewer_model: "claude-opus-5",
                 brief: "Build the behavior the documentation describes.",
             },
             { key: "merge", title: "Merge the pull request", kind: "merge" },
@@ -150,6 +182,8 @@ export const templates: TaskTemplate[] = [
                 key: "draft",
                 title: "Draft the article",
                 kind: "agent",
+                implementer_model: "kimi-k2.8",
+                reviewer_model: "gpt-5.6-sol",
                 brief: "Write the article in the website repository from the brief.",
             },
             {
@@ -180,7 +214,7 @@ export const runs: TemplateRun[] = [
         status: "running",
         started_at: "2026-09-28T03:00:00Z",
         tasks: [
-            { key: "update", status: "completed", outcome: "passed", duration_ms: minutes(12), tokens: 164_000 },
+            { key: "update", status: "completed", outcome: "passed", duration_ms: minutes(12), tokens: 164_000, implementer_model: "gpt-5.6-luna", reviewer_model: "gpt-6-sol" },
             {
                 key: "size",
                 status: "completed",
@@ -204,7 +238,7 @@ export const runs: TemplateRun[] = [
         status: "failed",
         started_at: "2026-09-21T03:00:00Z",
         tasks: [
-            { key: "update", status: "completed", outcome: "passed", duration_ms: minutes(16), tokens: 201_000 },
+            { key: "update", status: "completed", outcome: "passed", duration_ms: minutes(16), tokens: 201_000, implementer_model: "gpt-5.6-luna", reviewer_model: "gpt-6-sol" },
             {
                 key: "size",
                 status: "completed",
@@ -213,7 +247,7 @@ export const runs: TemplateRun[] = [
                 tokens: 1_500,
                 probabilities: { major: 0.88, minor: 0.12 },
             },
-            { key: "review", status: "completed", outcome: "passed", duration_ms: minutes(34), tokens: 452_000 },
+            { key: "review", status: "completed", outcome: "passed", duration_ms: minutes(34), tokens: 452_000, implementer_model: "gpt-6-luna", reviewer_model: "gpt-6-sol" },
             { key: "browser", status: "completed", outcome: "passed", duration_ms: minutes(3), tokens: null },
             { key: "merge", status: "completed", outcome: "passed", duration_ms: minutes(7), tokens: null },
             { key: "deploy", status: "completed", outcome: "passed", duration_ms: 95_000, tokens: null },
@@ -228,7 +262,7 @@ export const runs: TemplateRun[] = [
         status: "completed",
         started_at: "2026-09-14T03:00:00Z",
         tasks: [
-            { key: "update", status: "completed", outcome: "skipped", duration_ms: minutes(4), tokens: 38_000 },
+            { key: "update", status: "completed", outcome: "skipped", duration_ms: minutes(4), tokens: 38_000, implementer_model: "gpt-5.6-luna", reviewer_model: "gpt-6-sol" },
             { key: "size", status: "cancelled", outcome: null, duration_ms: null, tokens: null },
             { key: "review", status: "cancelled", outcome: null, duration_ms: null, tokens: null },
             { key: "browser", status: "cancelled", outcome: null, duration_ms: null, tokens: null },

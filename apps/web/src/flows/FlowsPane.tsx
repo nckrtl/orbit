@@ -3,7 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { lists } from "../api/queries";
 import { Pane, type Column } from "../ui/Pane";
 import { describeCron } from "./cron";
-import { MODEL_KINDS, type TaskTemplate } from "./model";
+import { modelsOf, type TaskTemplate } from "./model";
 import { templatesQuery } from "./queries";
 
 /**
@@ -38,12 +38,9 @@ export function FlowsPane({
         },
         { header: "Tasks", width: 1, fit: true, align: "right", value: (row) => String(row.tasks.length) },
         {
-            header: "Model",
-            width: 1,
-            fit: true,
-            align: "right",
-            value: (row) =>
-                String(row.tasks.filter((task) => MODEL_KINDS.includes(task.kind)).length),
+            header: "Models",
+            width: 3,
+            value: (row) => [...new Set(row.tasks.flatMap(modelsOf))].join(", ") || "none",
             hideOnMobile: true,
         },
         { header: "Starts in", width: 1, fit: true, value: (row) => row.status, hideOnMobile: true },

@@ -12,7 +12,7 @@ import type {
 } from "../api/types";
 import type { Activity } from "../api/activities";
 import type { TaskGroup } from "../api/tasks";
-import { runs as flowRuns, templates as flowTemplates } from "./flows";
+import { proxyModels, runs as flowRuns, templates as flowTemplates } from "./flows";
 
 type Fixture = { route: string; status: number; body: { data: unknown } };
 type Answer = { status: number; payload: unknown };
@@ -295,6 +295,7 @@ export function createDemoGateway() {
             ["GET", /^\/api\/v1\/schedules$/, () => ok(schedules)],
             ["GET", /^\/api\/v1\/database-connections$/, () => ok(databases)],
             ["GET", /^\/api\/v1\/task-groups$/, () => ok(taskGroups)],
+            ["GET", /^\/api\/v1\/proxycli\/models$/, () => ok(proxyModels)],
             ["GET", /^\/api\/v1\/task-templates$/, () => ok(flowTemplates)],
             [
                 "GET",

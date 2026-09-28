@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { runs, templates } from "../demo/flows";
+import { proxyModels, runs, templates } from "../demo/flows";
 import { edges, findings, takenEdges, type TaskTemplate } from "./model";
 
 const maintenance = templates.find((template) => template.name === "maintenance")!;
@@ -69,5 +69,14 @@ describe("findings", () => {
         expect(findings(template)).toEqual([
             { key: "a", message: "Every option leads to the same task." },
         ]);
+    });
+
+    it("reports a model that ProxyCli does not offer", () => {
+        const feature = templates.find((template) => template.name === "feature")!;
+        expect(findings(feature, proxyModels)).toEqual([
+            { key: "docs", message: "ProxyCli does not offer claude-opus-5." },
+            { key: "implement", message: "ProxyCli does not offer claude-opus-5." },
+        ]);
+        expect(findings(maintenance, proxyModels)).toEqual([]);
     });
 });

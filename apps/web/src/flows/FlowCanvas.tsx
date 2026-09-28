@@ -14,11 +14,11 @@ import {
 import { useMemo, useRef } from "react";
 import { formatCompactCount, formatDurationMs } from "../api/tasks";
 import { layout } from "./layout";
-import { MODEL_KINDS, type RunTask, type TaskTemplate, type TemplateRun, type TemplateTask } from "./model";
+import { modelsOf, type RunTask, type TaskTemplate, type TemplateRun, type TemplateTask } from "./model";
 
 /** Card size and the space between cards, in canvas pixels. */
 const WIDTH = 300;
-const HEIGHT = 84;
+const HEIGHT = 102;
 const GAP_X = 72;
 const GAP_Y = 56;
 const END_WIDTH = 120;
@@ -132,7 +132,7 @@ export function FlowCanvas({
 
 function TaskNode({ data }: NodeProps<Node<TaskData>>) {
     const { task, runTask, inRun, selected } = data;
-    const model = MODEL_KINDS.includes(task.kind);
+    const models = modelLine(task, runTask);
     return (
         <div
             className="flow-card"
@@ -146,11 +146,13 @@ function TaskNode({ data }: NodeProps<Node<TaskData>>) {
             <span className="flex items-baseline justify-between gap-[1ch]">
                 <span className="flow-kind" data-kind={task.kind}>
                     {task.kind}
-                    {model && <span title="Calls a model"> ◆</span>}
                 </span>
                 <span className="text-dim">{task.key}</span>
             </span>
             <span className="block truncate">{task.title}</span>
+            <span className="flow-models" data-empty={models === null || undefined}>
+                {models ?? "no model"}
+            </span>
             <span className="flow-meta">{inRun ? runMeta(runTask) : templateMeta(task)}</span>
             <Handle type="source" position={Position.Bottom} className="flow-handle" />
         </div>
@@ -169,6 +171,16 @@ function EndNode({ data }: NodeProps<Node<EndData>>) {
             {data.end}
         </div>
     );
+}
+
+/** The models a card names: the ones a run used, else the template's. */
+function modelLine(task: TemplateTask, runTask: RunTask | undefined): string | null {
+    const [implementer, reviewer] =
+        runTask?.implementer_model !== undefined
+            ? [runTask.implementer_model, runTask.reviewer_model]
+            : modelsOf(task);
+    if (implementer === undefined) return null;
+    return reviewer === undefined ? implementer : `${implementer} → ${reviewer}`;
 }
 
 function cardState(task: RunTask | undefined): string {

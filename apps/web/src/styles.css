@@ -684,6 +684,18 @@ body {
     color: var(--cyan);
 }
 
+.flow-models {
+    display: block;
+    overflow: hidden;
+    color: var(--cyan);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.flow-models[data-empty] {
+    color: var(--dim);
+}
+
 .flow-meta {
     display: block;
     overflow: hidden;

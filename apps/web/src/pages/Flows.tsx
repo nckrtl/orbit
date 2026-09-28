@@ -6,13 +6,15 @@ import { describeCron } from "../flows/cron";
 import { FlowCanvas } from "../flows/FlowCanvas";
 import { FlowsPane } from "../flows/FlowsPane";
 import {
+    DECIDE_MODEL,
     edges,
+    type ProxyModel,
     findings,
     type TaskTemplate,
     type TemplateRun,
     type TemplateTask,
 } from "../flows/model";
-import { templateQuery, templateRunsQuery } from "../flows/queries";
+import { proxyModelsQuery, templateQuery, templateRunsQuery } from "../flows/queries";
 import { Frame } from "../ui/Frame";
 import { PageHeader } from "../ui/PageHeader";
 import { Properties, type Property } from "../ui/Properties";
@@ -46,7 +48,8 @@ export function FlowPage() {
     const run = runs.data?.find((candidate) => candidate.id === search.run);
     const flow = template.data;
     const selected = flow?.tasks.find((task) => task.key === search.task) ?? flow?.tasks[0];
-    const notes = flow === undefined ? [] : findings(flow);
+    const models = useQuery(proxyModelsQuery).data;
+    const notes = flow === undefined ? [] : findings(flow, models);
 
     const setSearch = (next: FlowSearch) =>
         void navigate({ search: (previous: FlowSearch) => ({ ...previous, ...next }), replace: true });
@@ -85,7 +88,7 @@ export function FlowPage() {
                         {selected && (
                             <Properties
                                 title="Task"
-                                properties={taskProperties(flow, selected, run)}
+                                properties={taskProperties(flow, selected, run, models)}
                             />
                         )}
                         <Frame title="Runs" topRight={runs.data?.length ?? 0} className="w-full">
@@ -128,7 +131,7 @@ export function FlowPage() {
     );
 }
 
-const legend = "◆ model · hidden defaults: failed → fail, skipped → complete";
+const legend = "cyan: implementer → reviewer model · hidden defaults: failed → fail, skipped → complete";
 
 function RunRow({
     label,
@@ -184,10 +187,21 @@ function runSummary(template: TaskTemplate, run: TemplateRun): string {
         .join(" · ");
 }
 
+/** A model with the ProxyCli provider that serves it, or a warning when ProxyCli does not offer it. */
+function modelProperty(name: string, model: string | undefined, models?: ProxyModel[]): Property {
+    if (model === undefined) return { name, value: null };
+    if (models === undefined) return { name, value: model };
+    const offered = models.find((candidate) => candidate.id === model);
+    return offered === undefined
+        ? { name, value: `${model} · not in ProxyCli`, warn: true }
+        : { name, value: `${model} · ${offered.provider}` };
+}
+
 function taskProperties(
     template: TaskTemplate,
     task: TemplateTask,
     run: TemplateRun | undefined,
+    models?: ProxyModel[],
 ): Property[] {
     const routes = edges(template)
         .filter((edge) => edge.from === task.key)
@@ -197,7 +211,12 @@ function taskProperties(
         }));
     const runTask = run?.tasks.find((candidate) => candidate.key === task.key);
     const kindFields: Property[] =
-        task.kind === "check"
+        task.kind === "agent"
+            ? [
+                  modelProperty("Implementer", runTask?.implementer_model ?? task.implementer_model, models),
+                  modelProperty("Reviewer", runTask?.reviewer_model ?? task.reviewer_model, models),
+              ]
+            : task.kind === "check"
             ? [{ name: "Commands", value: task.commands }]
             : task.kind === "action"
               ? [
@@ -206,6 +225,7 @@ function taskProperties(
                 ]
               : task.kind === "decide"
                 ? [
+                      { name: "Model", value: DECIDE_MODEL },
                       { name: "Question", value: task.question },
                       { name: "Options", value: task.options },
                       { name: "Evidence", value: task.evidence },

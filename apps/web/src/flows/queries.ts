@@ -1,6 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import { get } from "../api/client";
-import type { TaskTemplate, TemplateRun } from "./model";
+import type { ProxyModel, TaskTemplate, TemplateRun } from "./model";
 
 export const templatesQuery = queryOptions({
     queryKey: ["task-templates"],
@@ -24,3 +24,10 @@ export const templateRunsQuery = (project: string, name: string) =>
         queryFn: () => get<TemplateRun[]>(`${path(project, name)}/runs`),
         retry: false,
     });
+
+/** The models ProxyCli offers. The Gateway has no such route yet; the demo Gateway serves it. */
+export const proxyModelsQuery = queryOptions({
+    queryKey: ["proxycli", "models"],
+    queryFn: () => get<ProxyModel[]>("/api/v1/proxycli/models"),
+    retry: false,
+});

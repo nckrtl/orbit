@@ -17,6 +17,9 @@ export type TemplateTask = {
     title: string;
     kind: TaskKind;
     brief?: string;
+    /** `agent`: the models of its implementer and reviewer threads. */
+    implementer_model?: string;
+    reviewer_model?: string;
     /** `check`: the commands it runs. */
     commands?: string[];
     /** `action`: the Gateway operation and its arguments. */
@@ -60,6 +63,9 @@ export type RunTask = {
     outcome: string | null;
     duration_ms: number | null;
     tokens: number | null;
+    /** `agent`: the models the run used. */
+    implementer_model?: string;
+    reviewer_model?: string;
     /** `decide`: the probability of each option. */
     probabilities?: Record<string, number>;
 };
@@ -83,6 +89,21 @@ export type Edge = {
     /** True when the template does not name this route and the default applies. */
     implicit: boolean;
 };
+
+/** A model that ProxyCli offers, and the ProxyCli provider whose accounts serve it. */
+export type ProxyModel = { id: string; provider: string };
+
+/** The model a `decide` task asks. Jev runs on TypeSafe, not through ProxyCli. */
+export const DECIDE_MODEL = "TypeSafe Jev";
+
+/** The models a task calls: implementer then reviewer for `agent`, Jev for `decide`. */
+export function modelsOf(task: TemplateTask): string[] {
+    if (task.kind === "decide") return [DECIDE_MODEL];
+    if (task.kind !== "agent") return [];
+    return [task.implementer_model, task.reviewer_model].filter(
+        (model): model is string => model !== undefined,
+    );
+}
 
 /** Kinds that call a model, and so cost tokens. */
 export const MODEL_KINDS: readonly TaskKind[] = ["agent", "decide"];
@@ -116,8 +137,11 @@ function defaultTarget(template: TaskTemplate, index: number, on: string): strin
 
 export type Finding = { key: string; message: string };
 
-/** What a template author should look at: tasks no path reaches, and routing that decides nothing. */
-export function findings(template: TaskTemplate): Finding[] {
+/**
+ * What a template author should look at: tasks no path reaches, routing that decides nothing, and
+ * models that ProxyCli does not offer. Without `models`, models are not checked.
+ */
+export function findings(template: TaskTemplate, models?: ProxyModel[]): Finding[] {
     const all = edges(template);
     const reached = new Set<string>([template.tasks[0]?.key ?? ""]);
     for (const task of template.tasks) {
@@ -133,6 +157,13 @@ export function findings(template: TaskTemplate): Finding[] {
             const targets = new Set(all.filter((edge) => edge.from === task.key).map((e) => e.to));
             if (targets.size === 1) {
                 result.push({ key: task.key, message: "Every option leads to the same task." });
+            }
+        }
+        if (models !== undefined && task.kind === "agent") {
+            for (const model of modelsOf(task)) {
+                if (!models.some((candidate) => candidate.id === model)) {
+                    result.push({ key: task.key, message: `ProxyCli does not offer ${model}.` });
+                }
             }
         }
         const stats = task.stats;
