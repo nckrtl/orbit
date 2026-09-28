@@ -41,7 +41,7 @@ final readonly class ResolveDirectoryInstanceAction
                 throw new ResourceOperationException('dependencies.target_ambiguous', 'The directory does not select one instance.', 409);
             }
             $instance = $matches->sole();
-            if ($instance->status !== AppInstanceState::Active || $instance->migration_required || $instance->removalMember()->exists()) {
+            if ($instance->status !== AppInstanceState::Active || $instance->removalMember()->exists()) {
                 throw new ResourceOperationException('dependencies.instance_unavailable', 'The instance is unavailable for dependency inventory.', 409);
             }
 

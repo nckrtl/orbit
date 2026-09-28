@@ -10,6 +10,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
+beforeEach(fn () => restore_app_era_instance_leftovers_for_migration_test());
+afterEach(fn () => drop_app_era_instance_leftovers_for_migration_test());
+
 it('refuses to discard base registration evidence while an operation is incomplete', function (): void {
     $instance = orb105_registration_migration_instance('reserved');
     $cleanup = orb105_cleanup_identity_migration();
@@ -78,11 +81,11 @@ it('refuses to discard source identity while verified original cleanup is incomp
 
 it('refuses to discard durable manual migration recovery', function (): void {
     $instance = orb105_registration_migration_instance('relocated');
-    $instance->update([
-        'registration_migration_recovery' => [
+    DB::table('app_instances')->where('id', $instance->id)->update([
+        'registration_migration_recovery' => json_encode([
             'app_instance' => ['name' => '13.x'],
             'route' => ['id' => 41, 'domain' => 'preserved.test', 'provenance' => 'explicit'],
-        ],
+        ], JSON_THROW_ON_ERROR),
     ]);
     $migration = orb105_migration_recovery_migration();
 
@@ -97,7 +100,9 @@ it('refuses to discard durable manual migration recovery', function (): void {
             ->and($instance->refresh()->registration_migration_recovery)
             ->not->toBeNull();
     } finally {
-        $instance->update(['registration_migration_recovery' => null]);
+        DB::table('app_instances')->where('id', $instance->id)->update([
+            'registration_migration_recovery' => null,
+        ]);
         $migration->down();
         $migration->up();
     }

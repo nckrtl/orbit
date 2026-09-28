@@ -630,7 +630,6 @@ function app_payload(): array
         'default_branch' => 'main',
         'root' => 'public',
         'task_check' => 'composer check',
-        'defaults' => ['php_version' => '8.5'],
     ];
 }
 

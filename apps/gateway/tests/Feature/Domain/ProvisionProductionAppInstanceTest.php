@@ -63,18 +63,17 @@ it('refuses new production placement before user home source environment or Rout
         ->toBeFalse();
 });
 
-it('returns a completed historical production AppInstance without fetching or overwriting it', function (): void {
+it('refuses a repeat for an existing production Instance before mutation', function (): void {
     $instance = provision_production_active_instance($this->orbitApp, $this->node, 'live');
     $before = $instance->getAttributes();
     $routeBefore = Route::query()->sole()->getAttributes();
 
-    $result = $this->provisioner->execute($this->data, $this->orbitApp, $this->node, null);
+    expect(fn () => $this->provisioner->execute($this->data, $this->orbitApp, $this->node, null))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('instance.candidate_required');
+        });
 
-    expect($result['created'])
-        ->toBeFalse()
-        ->and($result['appInstance']->id)
-        ->toBe($instance->id)
-        ->and($instance->refresh()->getAttributes())
+    expect($instance->refresh()->getAttributes())
         ->toBe($before)
         ->and(Route::query()->sole()->getAttributes())
         ->toBe($routeBefore);
@@ -104,13 +103,15 @@ it('refuses an incomplete production record without resuming retired creation', 
         ->toBeFalse();
 });
 
-it('refuses production recovery outside the recorded home release boundary', function (string $path): void {
+it('refuses production creation outside the recorded home release boundary', function (string $path): void {
     $instance = provision_production_active_instance($this->orbitApp, $this->node, 'live');
     $instance->update(['checkout_path' => $instance->production_home.$path]);
+    $before = $instance->refresh()->getAttributes();
     expect(fn () => $this->provisioner->execute($this->data, $this->orbitApp, $this->node, null))
         ->toThrow(function (ResourceOperationException $exception): void {
-            expect($exception->errorCode)->toBe('instance.placement_conflict');
+            expect($exception->errorCode)->toBe('instance.candidate_required');
         });
+    expect($instance->refresh()->getAttributes())->toBe($before);
 })->with(['/releases/../foreign', '/releases/two/nested', '/releases/.hidden', '/other/release']);
 
 function provision_production_active_instance(OrbitApp $app, Node $node, string $name): AppInstance

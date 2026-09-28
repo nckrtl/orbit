@@ -3,33 +3,31 @@ Fetching Processes...
 
 ┌  Instance: dev
 │
-├  ID                   1
+├  ID                1
 │
-├  Project              acme
+├  Project           acme
 │
-├  Node                 app-dev
+├  Node              app-dev
 │
-├  Status               active
+├  Status            active
 │
-├  Source layout        checkout
+├  Source layout     checkout
 │
-├  Checkout             /srv/orbit/apps/acme/dev
+├  Checkout          /srv/orbit/apps/acme/dev
 │
-├  Vite port            5173
+├  Vite port         5173
 │
-├  Root override        —
+├  Root override     —
 │
-├  Effective root       public
+├  Effective root    public
 │
-├  Selected branch      dev
+├  Selected branch   dev
 │
-├  Branch override      —
+├  Branch override   —
 │
-├  Migration required   no
+├  Domain            dev.acme.test
 │
-├  Domain               dev.acme.test
-│
-└  URL                  https://dev.acme.test
+└  URL               https://dev.acme.test
 
  ┌────┬───────────┬─────────┬─────────┬────────────────┬────────┐
  │ ID │ NAME      │ RUNTIME │ DESIRED │ RUNTIME STATUS │ STATUS │

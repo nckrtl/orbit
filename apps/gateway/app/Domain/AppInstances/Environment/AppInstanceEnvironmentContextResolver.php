@@ -27,7 +27,6 @@ final readonly class AppInstanceEnvironmentContextResolver
 
         if (
             $instance->status !== AppInstanceState::Active
-            || $instance->migration_required
             || $instance->provisioning_step !== 'active'
             || $environment === null
         ) {
@@ -105,7 +104,6 @@ final readonly class AppInstanceEnvironmentContextResolver
                 strict: true,
             )
             || $environment !== 'production'
-            || $instance->migration_required
             || ! is_bool($sourceIsLaravel)
             || ! is_string($instance->provisioning_step)
             || ! str_starts_with($instance->provisioning_step, 'clone-')
@@ -177,7 +175,6 @@ final readonly class AppInstanceEnvironmentContextResolver
         if (
             $instance->status !== AppInstanceState::Active
             || ! in_array($environment, ['development', 'production'], true)
-            || $instance->migration_required
             || $instance->provisioning_step !== 'active'
             || ! is_bool($sourceIsLaravel)
         ) {

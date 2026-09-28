@@ -479,7 +479,6 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         if (
             ! $appInstance->placedOnAppProd()
             || $appInstance->status !== AppInstanceState::Active
-            || $appInstance->migration_required
             || $appInstance->provisioning_step !== 'active'
             || ! $appInstance->usesProductionReleaseLayout()
             || ! is_string($user)

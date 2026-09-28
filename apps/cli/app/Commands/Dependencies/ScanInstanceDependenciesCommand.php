@@ -81,7 +81,7 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
         if ($this->option('json') === true) {
             $this->writeJson($result->toArray());
         } else {
-            $this->renderIdentity($result->instanceId, $target->appId, $target->nodeId, $target->environment, $succeeded, $result->requestId);
+            $this->renderIdentity($result->instanceId, $target->projectId, $target->nodeId, $target->environment, $succeeded, $result->requestId);
             $this->renderEcosystem('Composer', $result->composer);
             $this->renderEcosystem('JavaScript', $result->javascript);
         }

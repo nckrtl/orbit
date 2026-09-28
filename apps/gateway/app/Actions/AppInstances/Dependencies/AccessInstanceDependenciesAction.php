@@ -79,7 +79,7 @@ final readonly class AccessInstanceDependenciesAction
         if (! $this->authorizer->allows($consumer, $current->node)) {
             throw new ResourceOperationException('node_access.required', 'Node access is required.', 403);
         }
-        if ($current->status !== AppInstanceState::Active || $current->migration_required || $current->removalMember()->exists()) {
+        if ($current->status !== AppInstanceState::Active || $current->removalMember()->exists()) {
             throw new ResourceOperationException('dependencies.instance_unavailable', 'The instance is unavailable for dependency inventory.', 409);
         }
 

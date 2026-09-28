@@ -145,6 +145,6 @@ final readonly class UpdateInstanceDependenciesAction
     private function available(?AppInstance $instance): bool
     {
         return $instance !== null && $instance->status === AppInstanceState::Active
-            && ! $instance->migration_required && ! $instance->removalMember()->exists();
+            && ! $instance->removalMember()->exists();
     }
 }

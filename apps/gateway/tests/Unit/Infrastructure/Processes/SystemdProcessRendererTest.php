@@ -316,11 +316,13 @@ it('pins the Route development-server origin after the app environment file', fu
         'restart_policy' => 'never',
     ]);
     $process->id = 11;
+    $instance = new AppInstance(['vite_port' => 5173]);
     $target = new ProcessTarget(
         node: new Node(['name' => 'dev']),
         user: 'orbit',
         checkoutPath: '/tmp',
         certificateScope: 'app-instance-6',
+        appInstance: $instance,
         routeDomain: 'tasks.commander.test',
     );
 

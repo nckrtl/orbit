@@ -9,7 +9,6 @@ use SensitiveParameter;
 
 final readonly class AppResponse
 {
-    /** @param array<array-key, mixed>|null $defaults */
     public function __construct(
         public int $id,
         public string $name,
@@ -18,7 +17,6 @@ final readonly class AppResponse
         public string $repositoryUrl,
         public ?string $defaultBranch,
         public ?string $root,
-        public ?array $defaults,
         public string $requestId,
         /** @var list<array{project_id: int, project_slug: string, node_id: int, node_name: string, development_instance_count: int}>|null */
         public ?array $excludedNodes = null,
@@ -33,7 +31,6 @@ final readonly class AppResponse
         string $requestId,
     ): self {
         $redactor = new CredentialRedactor;
-        $defaults = self::arrayValue($data['defaults'] ?? null);
 
         return new self(
             id: is_int($data['id'] ?? null) ? $data['id'] : 0,
@@ -45,7 +42,6 @@ final readonly class AppResponse
                 : '',
             defaultBranch: is_string($data['default_branch'] ?? null) ? $data['default_branch'] : null,
             root: is_string($data['root'] ?? null) ? $data['root'] : null,
-            defaults: $defaults === null ? null : $redactor->redactTransportArray($defaults),
             requestId: $requestId,
             excludedNodes: self::exclusions($data['excluded_nodes'] ?? null),
             taskCheck: is_string($data['task_check'] ?? null) ? $data['task_check'] : null,
@@ -64,7 +60,6 @@ final readonly class AppResponse
             'default_branch' => $this->defaultBranch,
             'root' => $this->root,
             'task_check' => $this->taskCheck,
-            'defaults' => $this->defaults,
             'request_id' => $this->requestId,
             ...($this->excludedNodes === null ? [] : ['excluded_nodes' => $this->excludedNodes]),
         ];
@@ -106,13 +101,5 @@ final readonly class AppResponse
         }
 
         return $result;
-    }
-
-    /**
-     * @return array<array-key, mixed>|null
-     */
-    private static function arrayValue(#[SensitiveParameter] mixed $value): ?array
-    {
-        return is_array($value) ? $value : null;
     }
 }

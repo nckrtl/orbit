@@ -33,7 +33,6 @@ final class StoreAppRequest extends FormRequest
             'repository_url' => ['required', 'string', 'max:2048'],
             'default_branch' => ['sometimes', 'string', 'max:255'],
             'root' => ['required', 'string', 'max:255'],
-            'defaults' => ['nullable', 'array'],
             'task_check' => ['sometimes', 'nullable', 'string', 'max:4096'],
         ];
     }
@@ -44,7 +43,7 @@ final class StoreAppRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['code', 'name', 'slug', 'type', 'repository_url', 'default_branch', 'root', 'defaults', 'task_check'],
+                ['code', 'name', 'slug', 'type', 'repository_url', 'default_branch', 'root', 'task_check'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -76,7 +75,6 @@ final class StoreAppRequest extends FormRequest
     {
         $validated = $this->validated();
         $slug = is_string($validated['slug'] ?? null) ? $validated['slug'] : '';
-        $defaults = is_array($validated['defaults'] ?? null) ? $validated['defaults'] : null;
 
         return new CreateAppData(
             code: is_string($validated['code'] ?? null) ? $validated['code'] : null,
@@ -86,7 +84,6 @@ final class StoreAppRequest extends FormRequest
             repositoryUrl: is_string($validated['repository_url'] ?? null) ? $validated['repository_url'] : '',
             defaultBranch: is_string($validated['default_branch'] ?? null) ? $validated['default_branch'] : null,
             root: is_string($validated['root'] ?? null) ? $validated['root'] : '',
-            defaults: $defaults,
             taskCheckProvided: array_key_exists('task_check', $validated),
             taskCheck: is_string($validated['task_check'] ?? null) ? $validated['task_check'] : null,
         );

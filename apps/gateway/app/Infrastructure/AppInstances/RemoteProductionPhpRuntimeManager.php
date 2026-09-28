@@ -28,17 +28,16 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
 
     public function converge(AppInstance $appInstance): void
     {
-        $this->convergeWithTuning($appInstance, null);
+        $this->convergeWithTuning($appInstance);
     }
 
     public function convergeMonitoring(AppInstance $appInstance, bool $enabled): void
     {
-        $this->convergeWithTuning($appInstance, null, $enabled, 'monitor');
+        $this->convergeWithTuning($appInstance, $enabled, 'monitor');
     }
 
     private function convergeWithTuning(
         AppInstance $appInstance,
-        ?string $initialLocalTuning,
         ?bool $metricsEnabled = null,
         string $operation = 'converge',
     ): void {
@@ -81,8 +80,6 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
                     base64_encode($configuration->masterIni),
                     base64_encode($configuration->unit),
                     base64_encode($identity->marker()),
-                    base64_encode($initialLocalTuning ?? ''),
-                    $initialLocalTuning === null ? '0' : '1',
                 ],
                 input: $this->convergeScript(),
             ),
@@ -643,8 +640,6 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
             master_ini=${17}
             unit_configuration=${18}
             marker_configuration=${19}
-            initial_local_tuning=${20}
-            has_initial_local_tuning=${21}
             case "$operation" in converge|monitor) ;; *) exit 1 ;; esac
             if [ "$operation" = monitor ] && { ! test -f "$marker_path" || test -L "$marker_path" || ! test -d "$generated_directory" || test -L "$generated_directory"; }; then
                 exit 0
@@ -719,11 +714,7 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
 
             if [ ! -e "$local_tuning" ]; then
                 test ! -L "$local_tuning"
-                if [ "$has_initial_local_tuning" = 1 ]; then
-                    printf '%s' "$initial_local_tuning" | base64 --decode > "$work_directory/local.defaults"
-                else
-                    printf '%s' "$local_defaults" | base64 --decode > "$work_directory/local.defaults"
-                fi
+                printf '%s' "$local_defaults" | base64 --decode > "$work_directory/local.defaults"
                 local_candidate="$runtime_directory/.local.conf.$$.candidate"
                 install -o root -g root -m 0644 -- "$work_directory/local.defaults" "$local_candidate"
                 mv -fT -- "$local_candidate" "$local_tuning"
@@ -731,10 +722,6 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
                 test -f "$local_tuning"
                 test ! -L "$local_tuning"
                 test "$(stat -c '%U:%G:%a' -- "$local_tuning")" = root:root:644
-                if [ "$has_initial_local_tuning" = 1 ]; then
-                    printf '%s' "$initial_local_tuning" | base64 --decode > "$work_directory/local.expected"
-                    cmp -s -- "$work_directory/local.expected" "$local_tuning"
-                fi
             fi
             local_before=$(sha256sum -- "$local_tuning" | awk '{print $1}')
 

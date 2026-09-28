@@ -224,15 +224,6 @@ final readonly class ProjectLifecycleStepStore
 
     private function toDomain(ProjectLifecycleStep $row): LifecycleStep
     {
-        if ($row->timeout_seconds > LifecycleStep::MaxTimeoutSeconds) {
-            throw new ResourceOperationException(
-                errorCode: 'lifecycle_step.migration_pending',
-                message: "Lifecycle step [{$row->name}] stores a {$row->timeout_seconds}-second timeout, above the "
-                    .LifecycleStep::MaxTimeoutSeconds.'-second limit. Run the Gateway database migrations.',
-                status: 409,
-            );
-        }
-
         return new LifecycleStep($row->name, $row->command, $row->timeout_seconds);
     }
 

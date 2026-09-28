@@ -339,7 +339,6 @@ it('persists relocation checkpoints without publishing dirty migration fields', 
             ->update([
                 'name' => 'main',
                 'checkout_path' => $fixture['source'],
-                'migration_required' => true,
             ]);
         $fixture['instance']->refresh();
         $fixture['instance']->name = 'default';
@@ -352,13 +351,11 @@ it('persists relocation checkpoints without publishing dirty migration fields', 
             ->only([
                 'name',
                 'checkout_path',
-                'migration_required',
                 'registration_relocation_state',
                 'registration_authoritative_path',
             ]))->toBe([
                 'name' => 'main',
                 'checkout_path' => $fixture['source'],
-                'migration_required' => true,
                 'registration_relocation_state' => 'relocated',
                 'registration_authoritative_path' => $fixture['destination'],
             ]);

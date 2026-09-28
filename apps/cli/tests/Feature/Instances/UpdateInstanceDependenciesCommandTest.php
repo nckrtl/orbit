@@ -116,7 +116,7 @@ function update_cli_envelope(
 function update_cli_mock(?array $envelope = null, bool $domain = true): MockClient
 {
     $envelope ??= update_cli_envelope();
-    $target = ['instance_id' => 17, 'app_id' => 3, 'node_id' => 9, 'environment' => 'development'];
+    $target = ['instance_id' => 17, 'project_id' => 3, 'node_id' => 9, 'environment' => 'development'];
     if ($domain) {
         $target = ['domain' => 'fixture.example.test', ...$target];
     }

@@ -1104,7 +1104,6 @@ final readonly class RecordCommandActivity
                 ...$properties,
                 'source_layout' => $appInstance->source_layout,
                 'branch_override' => $appInstance->branch_override,
-                'migration_required' => $appInstance->migration_required,
             ],
         ];
     }

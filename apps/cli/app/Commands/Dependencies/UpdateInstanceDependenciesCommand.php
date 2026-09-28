@@ -95,7 +95,7 @@ final class UpdateInstanceDependenciesCommand extends GatewayCommand
         } else {
             $this->renderIdentity(
                 $result->instanceId,
-                $target->appId,
+                $target->projectId,
                 $target->nodeId,
                 $target->environment,
                 $succeeded,

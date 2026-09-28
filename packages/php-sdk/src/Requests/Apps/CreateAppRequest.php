@@ -18,9 +18,6 @@ final class CreateAppRequest extends GatewayRequest implements HasBody
     #[\Override]
     protected Method $method = Method::POST;
 
-    /**
-     * @param  array<array-key, mixed>|null  $defaults
-     */
     public function __construct(
         private readonly string $slug,
         #[\SensitiveParameter]
@@ -29,8 +26,6 @@ final class CreateAppRequest extends GatewayRequest implements HasBody
         private readonly string $type = 'laravel-app',
         private readonly ?string $name = null,
         private readonly ?string $defaultBranch = null,
-        #[\SensitiveParameter]
-        private readonly ?array $defaults = null,
         private readonly ?string $taskCheck = null,
         private readonly bool $taskCheckProvided = false,
     ) {}
@@ -59,7 +54,6 @@ final class CreateAppRequest extends GatewayRequest implements HasBody
                 'repository_url' => $this->repositoryUrl,
                 'default_branch' => $this->defaultBranch,
                 'root' => $this->root,
-                'defaults' => $this->defaults,
                 ...($this->taskCheckProvided ? ['task_check' => $this->taskCheck] : []),
             ],
             static fn (mixed $value, string $key): bool => $key === 'task_check' || $value !== null,

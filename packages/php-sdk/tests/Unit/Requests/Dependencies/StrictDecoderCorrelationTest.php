@@ -104,7 +104,7 @@ function strict_decoder_fixture(string $factory): array
     $failed = ['state' => 'unknown', 'succeeded' => false, 'attempted_at' => '2026-09-16T17:00:00+00:00',
         'error_code' => 'dependencies.unreadable_source', 'snapshot' => null];
     $notRun = ['status' => 'not_run', 'may_have_mutated' => false, 'error_code' => null];
-    $ownership = ['instance_id' => 17, 'app_id' => 3, 'node_id' => 9, 'environment' => 'development'];
+    $ownership = ['instance_id' => 17, 'project_id' => 3, 'node_id' => 9, 'environment' => 'development'];
     $data = match ($factory) {
         'show', 'scan' => ['instance_id' => 17, 'succeeded' => false,
             'composer' => ['ecosystem' => 'composer', ...$failed], 'javascript' => ['ecosystem' => 'npm', ...$failed]],

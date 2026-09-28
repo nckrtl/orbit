@@ -10,7 +10,7 @@ final class ResolvedDirectoryInstanceData extends Data
 {
     public function __construct(
         public readonly int $instance_id,
-        public readonly int $app_id,
+        public readonly int $project_id,
         public readonly int $node_id,
         public readonly string $environment,
     ) {}

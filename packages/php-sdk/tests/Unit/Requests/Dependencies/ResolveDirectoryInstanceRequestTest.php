@@ -11,7 +11,7 @@ use Saloon\Http\Faking\MockResponse;
 
 function directory_response_body(): string
 {
-    return '{"data":{"instance_id":17,"app_id":3,"node_id":9,"environment":"development"},"meta":{"request_id":"11111111-1111-4111-8111-111111111111"}}';
+    return '{"data":{"instance_id":17,"project_id":3,"node_id":9,"environment":"development"},"meta":{"request_id":"11111111-1111-4111-8111-111111111111"}}';
 }
 
 describe('directory resolution transport', function (): void {
@@ -20,7 +20,7 @@ describe('directory resolution transport', function (): void {
         $connector = new GatewayConnector('https://gateway.test', caPemPath: '/tmp/fixture-ca.pem');
         $connector->withMockClient($mock);
         $target = $connector->send(new ResolveDirectoryInstanceRequest('/home/orbit/child directory'))->dtoOrFail();
-        expect($target->toArray())->toBe(['instance_id' => 17, 'app_id' => 3, 'node_id' => 9, 'environment' => 'development', 'request_id' => '11111111-1111-4111-8111-111111111111']);
+        expect($target->toArray())->toBe(['instance_id' => 17, 'project_id' => 3, 'node_id' => 9, 'environment' => 'development', 'request_id' => '11111111-1111-4111-8111-111111111111']);
         $pending = $mock->getLastPendingRequest();
         expect($pending?->getMethod())->toBe(Method::GET)->and($pending?->getUrl())->toBe('https://gateway.test/api/v1/instances/resolve-directory')
             ->and($pending?->query()->all())->toBe(['directory' => '/home/orbit/child directory'])->and($pending?->body())->toBeNull()
@@ -43,7 +43,7 @@ describe('directory resolution transport', function (): void {
         [str_replace('"instance_id":17', '"instance_id":17,"instance_\\u0069d":18', directory_response_body()), null],
         [str_replace('"instance_id":17', '"instance_id":"17"', directory_response_body()), null],
         [str_replace('"node_id":9', '"node_id":0', directory_response_body()), null],
-        [str_replace('"app_id":3', '"app_id":false', directory_response_body()), null],
+        [str_replace('"project_id":3', '"project_id":false', directory_response_body()), null],
         [str_replace('development', 'unknown', directory_response_body()), null],
         [str_replace('"data":{', '"data":{"extra":"sentinel",', directory_response_body()), null],
         [directory_response_body(), '22222222-2222-4222-8222-222222222222'],

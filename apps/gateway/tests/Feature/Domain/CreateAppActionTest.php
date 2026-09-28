@@ -16,7 +16,6 @@ it('rejects an unsafe repository origin before app persistence', function (): vo
         repositoryUrl: "ssh://git:{$sentinel}@example.test/acme/site.git",
         defaultBranch: 'main',
         root: 'public',
-        defaults: null,
     );
 
     expect(fn (): array => app(CreateAppAction::class)->execute($data))

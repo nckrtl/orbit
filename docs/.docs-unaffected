@@ -19,3 +19,12 @@ docs/reference/tasks.md: Task lifecycle behavior is unchanged; task target seria
 docs/reference/topology-snapshot.md: The topology snapshot procedure is unchanged; runtime target aliases are an implementation detail.
 docs/reference/web-app.md: The web app reference documents navigation and layout; Instance fields are visible in the app itself.
 docs/solutions/doctor-incus-proof.md: The Incus proof procedure is unchanged by the Instance runtime changes.
+docs/cli/activity.mdx: Activity still records source defaults and the task check. This change adds no Activity field.
+docs/cli/project.mdx: Project commands still show source defaults as the default branch and root.
+docs/reference/appinstance-removal.md: The removal checks on this page are unchanged.
+docs/reference/cli-ux.md: Instance and Project presentation stays in the command references.
+docs/reference/deployments.md: Deployment phases are unchanged.
+docs/reference/gateway-response-fixtures.md: Fixture maintenance is unchanged. Response shapes are in the OpenAPI document.
+docs/reference/php-runtime.md: PHP-FPM still seeds local.conf from its built-in defaults.
+docs/reference/schedules.md: Schedule placement and create rules are unchanged.
+docs/reference/web-app.md: The web app still generates its schema from OpenAPI. Navigation and layout are unchanged.

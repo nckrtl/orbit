@@ -150,7 +150,6 @@ function clone_instance_envelope(): array
             'effective_root' => '/home/orbit-app-29/current/public',
             'selected_branch' => 'release',
             'branch_override' => 'release',
-            'migration_required' => false,
             'starting_commit' => str_repeat('a', 40),
             'detached' => false,
             'status' => 'active',

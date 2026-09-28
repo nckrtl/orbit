@@ -21,7 +21,6 @@ it('reads the recorded instance summary', function (): void {
         'effective_root' => 'web/public',
         'selected_branch' => 'dev',
         'branch_override' => null,
-        'migration_required' => false,
         'domain' => 'dev.charlie-shop.test',
         'url' => 'https://dev.charlie-shop.test',
     ]);
@@ -51,7 +50,6 @@ it('refuses a fixture whose shape cannot be shown', function (string $method, st
     'instance data is a list' => ['instanceSummary', show_flow_fixture([])],
     'instance project is missing' => ['instanceSummary', show_flow_fixture(show_flow_instance(project: null))],
     'instance id is text' => ['instanceSummary', show_flow_fixture(show_flow_instance(id: '1'))],
-    'migration flag is text' => ['instanceSummary', show_flow_fixture(show_flow_instance(migration: 'no'))],
     'process data is an object' => ['processRows', show_flow_fixture(['id' => 1])],
     'process row is a list' => ['processRows', show_flow_fixture([['queue']])],
     'process name is a number' => ['processRows', show_flow_fixture([show_flow_process(name: 1)])],
@@ -82,7 +80,7 @@ function show_flow_fixture(mixed $data): string
 /**
  * @return array<string, mixed>
  */
-function show_flow_instance(mixed $id = 1, mixed $project = ['slug' => 'charlie-shop'], mixed $migration = false): array
+function show_flow_instance(mixed $id = 1, mixed $project = ['slug' => 'charlie-shop']): array
 {
     return [
         'id' => $id,
@@ -97,7 +95,6 @@ function show_flow_instance(mixed $id = 1, mixed $project = ['slug' => 'charlie-
         'effective_root' => 'web/public',
         'selected_branch' => 'dev',
         'branch_override' => null,
-        'migration_required' => $migration,
         'domain' => 'dev.charlie-shop.test',
         'url' => 'https://dev.charlie-shop.test',
     ];

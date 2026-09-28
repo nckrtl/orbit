@@ -121,7 +121,7 @@ function fleet_cli_scan_id(PendingRequest $pending): int
 
 function scan_cli_mock(string $state = 'present', bool $domain = true): MockClient
 {
-    $target = ['instance_id' => 17, 'app_id' => 3, 'node_id' => 9, 'environment' => 'development'];
+    $target = ['instance_id' => 17, 'project_id' => 3, 'node_id' => 9, 'environment' => 'development'];
     if ($domain) {
         $target = ['domain' => 'fixture.example.test', ...$target];
     }
@@ -176,7 +176,7 @@ describe('single instance dependency scan', function (): void {
         $inventory = scan_cli_inventory('unknown');
         $inventory['data']['javascript']['error_code'] = $code;
         MockClient::global([
-            ResolveAppInstanceRequest::class => MockResponse::make(['data' => ['domain' => 'fixture.example.test', 'instance_id' => 17, 'app_id' => 3, 'node_id' => 9, 'environment' => 'development'], 'meta' => ['request_id' => scan_cli_id()]]),
+            ResolveAppInstanceRequest::class => MockResponse::make(['data' => ['domain' => 'fixture.example.test', 'instance_id' => 17, 'project_id' => 3, 'node_id' => 9, 'environment' => 'development'], 'meta' => ['request_id' => scan_cli_id()]]),
             ScanInstanceDependenciesRequest::class => MockResponse::make($inventory),
         ]);
 

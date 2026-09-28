@@ -231,7 +231,6 @@ function transfer_cli_payload(): array
         'effective_root' => 'public',
         'selected_branch' => 'main',
         'branch_override' => null,
-        'migration_required' => false,
         'starting_commit' => str_repeat('a', 40),
         'detached' => true,
         'status' => 'active',

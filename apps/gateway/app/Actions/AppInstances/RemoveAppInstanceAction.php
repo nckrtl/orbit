@@ -289,7 +289,6 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
                     if (
                         ! $lockedMember instanceof AppInstance
                         || ! $this->removableState($lockedMember)
-                        || $lockedMember->migration_required
                         || $lockedMember->app_id !== $member->app_id
                         || $lockedMember->node_id !== $member->node_id
                         || $lockedMember->checkout_path !== $member->checkout_path
@@ -466,14 +465,6 @@ final readonly class RemoveAppInstanceAction implements AppInstanceRemover
             throw new ResourceOperationException(
                 errorCode: 'analytics.tracking_hosts_exist',
                 message: "AppInstance [{$appInstance->name}] still publishes a tracking host. Disable its analytics first.",
-                status: 409,
-            );
-        }
-
-        if ($appInstance->migration_required) {
-            throw new ResourceOperationException(
-                errorCode: 'instance.migration_required',
-                message: "AppInstance [{$appInstance->name}] requires manual source migration.",
                 status: 409,
             );
         }

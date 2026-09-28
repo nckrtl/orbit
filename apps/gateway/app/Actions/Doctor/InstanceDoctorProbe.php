@@ -134,19 +134,6 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
                 continue;
             }
 
-            if ($instance->migration_required) {
-                $issues[] = new DoctorIssueData(
-                    InstanceDoctorIssueCode::MigrationRequired,
-                    DoctorIssueKind::Drift,
-                    'instance',
-                    $instance->id,
-                    $instance->name,
-                    'Instance source requires manual migration.',
-                    'migration complete',
-                    'migration required',
-                );
-            }
-
             if ($instance->placedOnAppProd() && $this->productionAssociationMissing($instance)) {
                 $issues[] = $this->projectionIssue($instance, InstanceDoctorIssueCode::PhpFpmAssociationMissing);
             }

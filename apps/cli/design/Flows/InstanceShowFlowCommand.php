@@ -50,7 +50,6 @@ final class InstanceShowFlowCommand extends GatewayCommand
             'Effective root' => $instance['effective_root'],
             'Selected branch' => $instance['selected_branch'],
             'Branch override' => $instance['branch_override'],
-            'Migration required' => $instance['migration_required'] ? 'yes' : 'no',
             'Domain' => $instance['domain'],
             'URL' => $instance['url'],
         ]);
@@ -117,7 +116,6 @@ final class InstanceShowFlowCommand extends GatewayCommand
      *     effective_root: string|null,
      *     selected_branch: string|null,
      *     branch_override: string|null,
-     *     migration_required: bool,
      *     domain: string|null,
      *     url: string|null
      * }
@@ -145,7 +143,6 @@ final class InstanceShowFlowCommand extends GatewayCommand
             'effective_root' => $this->fixtureNullableString($record, 'effective_root', $name),
             'selected_branch' => $this->fixtureNullableString($record, 'selected_branch', $name),
             'branch_override' => $this->fixtureNullableString($record, 'branch_override', $name),
-            'migration_required' => $this->fixtureBool($record, 'migration_required', $name),
             'domain' => $this->fixtureNullableString($record, 'domain', $name),
             'url' => $this->fixtureNullableString($record, 'url', $name),
         ];
@@ -297,17 +294,5 @@ final class InstanceShowFlowCommand extends GatewayCommand
         }
 
         return $this->fixtureInt($record, $key, $name);
-    }
-
-    /** @param  array<string, mixed>  $record */
-    private function fixtureBool(array $record, string $key, string $name): bool
-    {
-        $value = $record[$key] ?? null;
-
-        if (! is_bool($value)) {
-            throw new RuntimeException("Gateway fixture {$name} is not recorded.");
-        }
-
-        return $value;
     }
 }

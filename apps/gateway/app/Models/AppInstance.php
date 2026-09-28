@@ -38,7 +38,6 @@ use Illuminate\Support\Carbon;
  * @property string|null $branch
  * @property string|null $deployment_branch
  * @property string|null $branch_override
- * @property bool $migration_required
  * @property int|null $clone_candidate_id
  * @property string|null $clone_candidate_commit
  * @property string|null $clone_requested_branch
@@ -65,7 +64,6 @@ use Illuminate\Support\Carbon;
  * @property string|null $registration_route_provenance
  * @property int|null $registration_source_device
  * @property int|null $registration_source_inode
- * @property array<string, mixed>|null $registration_migration_recovery
  * @property Carbon|null $registration_completed_at
  * @property string|null $starting_commit
  * @property string|null $selected_php_version
@@ -96,7 +94,6 @@ final class AppInstance extends Model
     #[\Override]
     protected $attributes = [
         'source_layout' => 'checkout',
-        'migration_required' => false,
         'registration_detached' => false,
         'registration_primary' => false,
         'registration_include_worktrees' => false,
@@ -122,7 +119,6 @@ final class AppInstance extends Model
         'branch',
         'deployment_branch',
         'branch_override',
-        'migration_required',
         'clone_candidate_id',
         'clone_candidate_commit',
         'clone_requested_branch',
@@ -149,7 +145,6 @@ final class AppInstance extends Model
         'registration_route_provenance',
         'registration_source_device',
         'registration_source_inode',
-        'registration_migration_recovery',
         'registration_completed_at',
         'starting_commit',
         'selected_php_version',
@@ -385,7 +380,6 @@ final class AppInstance extends Model
     protected function casts(): array
     {
         return [
-            'migration_required' => 'boolean',
             'vite_port' => 'integer',
             'agentation_port' => 'integer',
             'clone_candidate_id' => 'integer',
@@ -396,7 +390,6 @@ final class AppInstance extends Model
             'registration_worktree_paths' => 'array',
             'registration_source_device' => 'integer',
             'registration_source_inode' => 'integer',
-            'registration_migration_recovery' => 'array',
             'registration_completed_at' => 'immutable_datetime',
             'runtime_definitions_captured_at' => 'immutable_datetime',
             'source_is_laravel' => 'boolean',

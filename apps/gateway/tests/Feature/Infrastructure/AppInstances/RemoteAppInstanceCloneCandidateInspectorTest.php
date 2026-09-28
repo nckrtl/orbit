@@ -210,9 +210,6 @@ it('refuses invalid local candidate and Node identities before SSH', function (C
     'candidate lifecycle incomplete' => function (AppInstance $candidate): void {
         $candidate->provisioning_step = 'source-resolved';
     },
-    'candidate migration pending' => function (AppInstance $candidate): void {
-        $candidate->migration_required = true;
-    },
     'Node inactive' => function (AppInstance $candidate): void {
         $candidate->node->update(['status' => LifecycleStatus::Failed]);
     },

@@ -159,35 +159,22 @@ describe('gateway object-state boundary', function (): void {
 
     it('hides app request credentials while preserving the exact fake transport body', function (): void {
         $repositoryCredential = gateway_object_state_credential('repository');
-        $defaultCredential = gateway_object_state_credential('defaults');
         $repositoryUrl = "https://operator:{$repositoryCredential}@git.example.test/orbit.git?access_token={$repositoryCredential}";
-        $defaults = [
-            'services' => [[
-                'name' => 'web',
-                'environment' => [
-                    'DATABASE_URL' => "postgres://orbit:{$defaultCredential}@database.test/orbit",
-                    'APP_KEY' => $defaultCredential,
-                ],
-            ]],
-        ];
         $expectedBody = [
             'name' => 'Orbit',
             'slug' => 'orbit',
             'type' => 'laravel-app',
             'repository_url' => $repositoryUrl,
             'root' => 'public',
-            'defaults' => $defaults,
         ];
         $request = new CreateAppRequest(
             slug: 'orbit',
             repositoryUrl: $repositoryUrl,
             root: 'public',
             name: 'Orbit',
-            defaults: $defaults,
         );
         $needles = [
             'repository credential' => $repositoryCredential,
-            'defaults credential' => $defaultCredential,
             'repository URL' => $repositoryUrl,
         ];
         $debugBeforeBody = gateway_object_state_debug_outputs($request);
@@ -206,7 +193,7 @@ describe('gateway object-state boundary', function (): void {
             'serialization SDK trace' => gateway_object_state_sdk_trace($serializationException),
         ], $needles))->toBeEmpty();
 
-        $constructorException = gateway_object_state_app_constructor_exception($repositoryUrl, $defaults);
+        $constructorException = gateway_object_state_app_constructor_exception($repositoryUrl);
         $constructorTrace = gateway_object_state_sdk_trace($constructorException);
 
         expect($constructorTrace)->toContain('SensitiveParameterValue');
@@ -476,8 +463,7 @@ function gateway_object_state_serialization_exception(
     throw new RuntimeException('Expected gateway request serialization to fail closed.');
 }
 
-/** @param array<string, mixed> $defaults */
-function gateway_object_state_app_constructor_exception(string $repositoryUrl, array $defaults): TypeError
+function gateway_object_state_app_constructor_exception(string $repositoryUrl): TypeError
 {
     try {
         new CreateAppRequest(
@@ -485,7 +471,6 @@ function gateway_object_state_app_constructor_exception(string $repositoryUrl, a
             repositoryUrl: $repositoryUrl,
             root: 'public',
             name: [],
-            defaults: $defaults,
         );
     } catch (TypeError $exception) {
         return $exception;

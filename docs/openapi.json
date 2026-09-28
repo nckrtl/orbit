@@ -14071,12 +14071,6 @@
                     "maxLength": 255,
                     "description": "Repository-relative root; defaults to . for package types and public otherwise"
                   },
-                  "defaults": {
-                    "type": [
-                      "array",
-                      "null"
-                    ]
-                  },
                   "task_check": {
                     "type": [
                       "string",
@@ -22363,9 +22357,6 @@
               "null"
             ]
           },
-          "migration_required": {
-            "type": "boolean"
-          },
           "starting_commit": {
             "type": [
               "string",
@@ -22787,13 +22778,6 @@
               "string",
               "null"
             ]
-          },
-          "defaults": {
-            "type": [
-              "object",
-              "null"
-            ],
-            "additionalProperties": true
           },
           "task_check": {
             "type": [

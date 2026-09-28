@@ -3133,7 +3133,6 @@ export interface components {
             effective_root?: string | null;
             selected_branch?: string | null;
             branch_override?: string | null;
-            migration_required?: boolean;
             starting_commit?: string | null;
             detached?: boolean;
             status?: string;
@@ -3240,9 +3239,6 @@ export interface components {
             repository_url?: string;
             default_branch?: string | null;
             root?: string | null;
-            defaults?: {
-                [key: string]: unknown;
-            } | null;
             task_check?: string | null;
         };
         Annotation: {
@@ -11129,7 +11125,6 @@ export interface operations {
                     default_branch?: string;
                     /** @description Repository-relative root; defaults to . for package types and public otherwise */
                     root: string;
-                    defaults?: unknown[] | null;
                     /** @description Task check command; defaults to composer check for Laravel types and none otherwise */
                     task_check?: string | null;
                 };

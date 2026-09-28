@@ -3,33 +3,31 @@ Fetching Processes...
 
 ┌  Instance: dev
 │
-├  ID                   1
+├  ID                1
 │
-├  Project              charlie-shop
+├  Project           charlie-shop
 │
-├  Node                 app-dev
+├  Node              app-dev
 │
-├  Status               active
+├  Status            active
 │
-├  Source layout        checkout
+├  Source layout     checkout
 │
-├  Checkout             /srv/orbit/apps/charlie-shop/dev
+├  Checkout          /srv/orbit/apps/charlie-shop/dev
 │
-├  Vite port            5173
+├  Vite port         5173
 │
-├  Root override        —
+├  Root override     —
 │
-├  Effective root       web/public
+├  Effective root    web/public
 │
-├  Selected branch      dev
+├  Selected branch   dev
 │
-├  Branch override      —
+├  Branch override   —
 │
-├  Migration required   no
+├  Domain            dev.charlie-shop.test
 │
-├  Domain               dev.charlie-shop.test
-│
-└  URL                  https://dev.charlie-shop.test
+└  URL               https://dev.charlie-shop.test
 
  ┌────┬───────────┬─────────┬─────────┬────────────────┬────────┐
  │ ID │ NAME      │ RUNTIME │ DESIRED │ RUNTIME STATUS │ STATUS │

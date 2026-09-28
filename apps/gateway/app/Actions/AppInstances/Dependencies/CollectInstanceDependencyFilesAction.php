@@ -34,7 +34,6 @@ final readonly class CollectInstanceDependencyFilesAction
         $user = $production ? $instance->production_user : $node->user;
         if ((! $instance->placedOnAppDev() && ! $production)
             || ! in_array($instance->source_layout, array_column(AppInstanceSourceLayout::cases(), 'value'), true)
-            || $instance->migration_required
             || ! is_string($path) || ! str_starts_with($path, '/') || str_contains($path, "\0")
             || ! is_string($user) || preg_match('/\A[a-z_][a-z0-9_-]*\z/D', $user) !== 1
             || ($production && $path !== '/home/'.$user)

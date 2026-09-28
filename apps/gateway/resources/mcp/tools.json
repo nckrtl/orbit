@@ -4093,12 +4093,6 @@
             "maxLength": 255,
             "description": "Repository-relative root; defaults to . for package types and public otherwise"
           },
-          "defaults": {
-            "type": [
-              "array",
-              "null"
-            ]
-          },
           "task_check": {
             "type": [
               "string",
