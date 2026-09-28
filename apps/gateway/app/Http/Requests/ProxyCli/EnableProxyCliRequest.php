@@ -7,6 +7,7 @@ namespace App\Http\Requests\ProxyCli;
 use App\Data\ProxyCli\EnableProxyCliData;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\Node;
+use App\Support\ValidatedData;
 use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -44,14 +45,13 @@ final class EnableProxyCliRequest extends FormRequest
 
     public function payload(): EnableProxyCliData
     {
-        /** @var array{node_id: int, cache_connection: string, cliproxy_url: string, cliproxy_management_key: string} $validated */
         $validated = $this->validated();
 
         return new EnableProxyCliData(
-            $validated['node_id'],
-            $validated['cache_connection'],
-            $validated['cliproxy_url'],
-            $validated['cliproxy_management_key'],
+            ValidatedData::integer($validated['node_id'] ?? null),
+            ValidatedData::string($validated['cache_connection'] ?? null),
+            ValidatedData::string($validated['cliproxy_url'] ?? null),
+            ValidatedData::string($validated['cliproxy_management_key'] ?? null),
         );
     }
 

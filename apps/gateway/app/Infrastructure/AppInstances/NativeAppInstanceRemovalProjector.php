@@ -167,7 +167,6 @@ final readonly class NativeAppInstanceRemovalProjector implements AppInstanceRem
         $nodes->put($departing->node->id, $departing->node);
 
         foreach ($nodes as $node) {
-            /** @var Node $node */
             $this->caddy->build($node);
         }
 

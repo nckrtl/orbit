@@ -85,7 +85,6 @@ final readonly class NativeServiceMetricsRuntime implements ServiceMetricsRuntim
             throw new ResourceOperationException('metrics.service_inspection_failed', 'FPM monitoring snapshot is missing exporter state.', 502);
         }
         $poolSnapshots = is_array($state['pools'] ?? null) ? $state['pools'] : [];
-        /** @var array<string, array{enabled: bool}> $pools */
         $pools = [];
         foreach ($target->instances as $instance) {
             $pool = $poolSnapshots[(string) $instance->id] ?? null;

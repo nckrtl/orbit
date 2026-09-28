@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Mcp;
 
+use App\Support\ValidatedData;
 use JsonException;
 
 /** The status and body an API operation answered an MCP tool call with. */
@@ -61,7 +62,6 @@ final readonly class ApiResult
             return null;
         }
 
-        /** @var array<string, mixed> $decoded */
-        return $decoded;
+        return ValidatedData::object($decoded);
     }
 }

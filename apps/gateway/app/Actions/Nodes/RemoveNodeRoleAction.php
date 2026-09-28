@@ -335,9 +335,7 @@ final readonly class RemoveNodeRoleAction
     /** @return array{NodeRole, NodeRoleDependencySet} */
     private function claim(Node $node, RoleName $role): array
     {
-        /**
-         * @var array{NodeRole, NodeRoleDependencySet} $claim
-         */
+
         $claim = DB::transaction(function () use ($node, $role): array {
             $assignment = NodeRole::query()
                 ->where('node_id', $node->id)

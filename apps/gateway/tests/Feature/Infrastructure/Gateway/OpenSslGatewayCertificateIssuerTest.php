@@ -372,6 +372,57 @@ it('renews gateway leaves when they expire within 30 days', function (): void {
         ], timeout: 60.0));
 });
 
+it('rejects otherwise usable leaves when the parsed validity spans ten years', function (): void {
+    $orbitHome = gateway_certificate_test_home();
+    $nativeProcesses = new NativeProcessRunner;
+    $issuer = new OpenSslGatewayCertificateIssuer(
+        processes: $nativeProcesses,
+        validator: new OpenSslGatewayCertificateValidator($nativeProcesses),
+        links: new NativeAtomicSymlinkPublisher,
+        orbitHome: $orbitHome,
+    );
+
+    try {
+        $paths = $issuer->issue('gateway.orbit', '10.44.0.1');
+        $processes = new class($nativeProcesses) implements ProcessRunner
+        {
+            /** @var list<ProcessInvocation> */
+            public array $invocations = [];
+
+            public function __construct(private readonly NativeProcessRunner $nativeProcesses) {}
+
+            public function run(ProcessInvocation $invocation): CommandResult
+            {
+                $this->invocations[] = $invocation;
+
+                if (in_array('-dates', $invocation->arguments, strict: true)) {
+                    return new CommandResult(
+                        0,
+                        "notBefore=Jan  1 00:00:00 2026 GMT\nnotAfter=Jan  1 00:00:00 2036 GMT\n",
+                        '',
+                        1,
+                        false,
+                    );
+                }
+
+                return $this->nativeProcesses->run($invocation);
+            }
+        };
+
+        expect((new OpenSslGatewayCertificateValidator($processes))->matches(
+            $paths,
+            'gateway.orbit',
+            '10.44.0.1',
+            $orbitHome.'/ca/root.pem',
+        ))->toBeFalse()
+            ->and(collect($processes->invocations)->contains(
+                static fn (ProcessInvocation $invocation): bool => in_array('-dates', $invocation->arguments, strict: true),
+            ))->toBeTrue();
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
+
 it('rejects legacy gateway leaves whose lifetime exceeds 397 days', function (): void {
     $processes = new class implements ProcessRunner
     {

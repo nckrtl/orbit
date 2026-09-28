@@ -123,6 +123,9 @@ jobs:
       - name: Run project quality checks
         run: composer check
 
+      - name: Check classification fakes
+        run: php ../../bin/check-classification-fakes tests
+
       - name: Save PHPStan result cache
         if: success()
         uses: actions/cache/save@v6

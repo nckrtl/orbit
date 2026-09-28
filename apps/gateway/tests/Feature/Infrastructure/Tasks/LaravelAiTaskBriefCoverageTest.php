@@ -45,7 +45,7 @@ it('names each subtask that no listed change delivers', function (): void {
     Classification::fake([[
         'subtask_'.$export->id => new BooleanAnswer(0.97),
         'subtask_'.$route->id => new BooleanAnswer(0.2),
-    ]]);
+    ]])->preventStrayClassifications();
 
     expect(app(LaravelAiTaskBriefCoverage::class)->missing($group, coverage_pull_request()))->toBe(['Route']);
     Classification::assertClassified(static fn (ClassificationPrompt $prompt): bool => is_array($prompt->state)
@@ -59,7 +59,7 @@ it('counts a subtask as covered from a probability of one half', function (): vo
     Classification::fake([[
         'subtask_'.$export->id => new BooleanAnswer(0.69),
         'subtask_'.$route->id => new BooleanAnswer(0.4),
-    ]]);
+    ]])->preventStrayClassifications();
 
     expect(app(LaravelAiTaskBriefCoverage::class)->missing($group, coverage_pull_request()))->toBe(['Route']);
 });
@@ -69,7 +69,7 @@ it('records the Jev call', function (): void {
     Classification::fake([[
         'subtask_'.$export->id => new BooleanAnswer(0.97),
         'subtask_'.$route->id => new BooleanAnswer(0.2),
-    ]]);
+    ]])->preventStrayClassifications();
 
     app(LaravelAiTaskBriefCoverage::class)->missing($group, coverage_pull_request());
 
@@ -94,7 +94,7 @@ it('redacts secrets from persisted state and questions', function (): void {
     Classification::fake([[
         'subtask_'.$export->id => new BooleanAnswer(0.97),
         'subtask_'.$route->id => new BooleanAnswer(0.2),
-    ]]);
+    ]])->preventStrayClassifications();
 
     app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskRunPullRequest(
         'Authorization: Bearer summary-secret',
@@ -119,7 +119,7 @@ it('records the Jev call failure without provider body or input secrets', functi
     $export->update(['brief' => 'Authorization: Basic ZmFpbHVyZTpwYXNzd29yZA==']);
     $route->update(['brief' => 'Use API_KEY=failure-question-secret.']);
     config()->set('ai.providers.typesafe.key', 'typesafe-test-key');
-    Classification::fake(fn () => throw new ConnectionException('SECRET PROVIDER BODY'));
+    Classification::fake(fn () => throw new ConnectionException('SECRET PROVIDER BODY'))->preventStrayClassifications();
 
     expect(fn () => app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskRunPullRequest(
         'Authorization: Bearer failure-summary-secret',
@@ -203,7 +203,7 @@ it('continues a successful classification when the bookkeeping reporter fails', 
 });
 
 it('leaves selected Choice probability null when the selected option has no distribution entry', function (): void {
-    Classification::fake([['decision' => new ChoiceAnswer('selected', ['other' => 0.7], 0.8)]]);
+    Classification::fake([['decision' => new ChoiceAnswer('selected', ['other' => 0.7], 0.8)]])->preventStrayClassifications();
     $question = new Choice('Choose one.', ['selected' => null, 'other' => null]);
     $state = ['input' => 'value'];
     $classification = Classification::of($state)->question('decision', $question);
@@ -220,7 +220,7 @@ it('leaves selected Choice probability null when the selected option has no dist
 });
 
 it('preserves an explicit zero selected Choice probability', function (): void {
-    Classification::fake([['decision' => new ChoiceAnswer('selected', ['selected' => 0.0, 'other' => 1.0], 0.8)]]);
+    Classification::fake([['decision' => new ChoiceAnswer('selected', ['selected' => 0.0, 'other' => 1.0], 0.8)]])->preventStrayClassifications();
     $question = new Choice('Choose one.', ['selected' => null, 'other' => null]);
     $state = ['input' => 'value'];
     $classification = Classification::of($state)->question('decision', $question);
@@ -236,7 +236,7 @@ it('preserves an explicit zero selected Choice probability', function (): void {
 it('reports a failed or incomplete Jev answer as a classification failure', function (): void {
     [$group] = coverage_group();
     config()->set('ai.providers.typesafe.key', 'typesafe-test-key');
-    Classification::fake(fn () => throw new ConnectionException('Connection refused'));
+    Classification::fake(fn () => throw new ConnectionException('Connection refused'))->preventStrayClassifications();
 
     expect(fn () => app(LaravelAiTaskBriefCoverage::class)->missing($group, coverage_pull_request()))
         ->toThrow(TaskSessionClassificationException::class, 'TypeSafe Jev request failed (ConnectionException).');

@@ -10,7 +10,6 @@ use App\Domain\Metrics\MetricsFirewallExpectationProvider;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
-use App\Models\NodeRole;
 
 final readonly class NodeFirewallDesiredRules
 {
@@ -42,7 +41,6 @@ final readonly class NodeFirewallDesiredRules
             ->get();
 
         foreach ($assignments as $assignment) {
-            /** @var NodeRole $assignment */
             try {
                 foreach ($this->catalog->forRole($node, $assignment->role) as $rule) {
                     $rows[] = new DesiredFirewallRule(

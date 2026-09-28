@@ -457,9 +457,18 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
             && ! GitBranchName::isValid($defaultBranch)
             || ! is_bool($row['detached'] ?? null)
             || ! is_array($worktreePaths)
+            || ! array_is_list($worktreePaths)
             || array_filter($worktreePaths, static fn (mixed $value): bool => ! is_string($value)) !== []
         ) {
             throw $this->invalidSource();
+        }
+
+        $validatedWorktreePaths = [];
+        foreach ($worktreePaths as $worktreePath) {
+            if (! is_string($worktreePath)) {
+                throw $this->invalidSource();
+            }
+            $validatedWorktreePaths[] = $worktreePath;
         }
 
         $commit = $this->requiredString($row, 'commit');
@@ -473,7 +482,6 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
             throw $this->invalidSource();
         }
 
-        /** @var list<string> $worktreePaths */
         return new RegistrationSourceFacts(
             path: $path,
             layout: $layout,
@@ -486,7 +494,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
             inferredSlug: $this->requiredString($row, 'inferred_slug'),
             inferredRoot: is_string($row['inferred_root'] ?? null) ? $row['inferred_root'] : null,
             commonRepositoryPath: $this->requiredString($row, 'common_repository_path'),
-            worktreePaths: $worktreePaths,
+            worktreePaths: $validatedWorktreePaths,
             sourceDigest: $digest,
         );
     }

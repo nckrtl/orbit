@@ -57,7 +57,6 @@ final readonly class PiClient
             throw new AgentDriverException('The Pi server returned an invalid snapshot.');
         }
 
-        /** @var array<string, mixed> $payload */
         return $payload;
     }
 

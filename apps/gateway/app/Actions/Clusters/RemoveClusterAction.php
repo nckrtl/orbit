@@ -17,9 +17,7 @@ final readonly class RemoveClusterAction
 
     public function execute(Cluster $cluster): Cluster
     {
-        /**
-         * @var Cluster $removed
-         */
+
         $removed = DB::transaction(function () use ($cluster): Cluster {
             $locked = Cluster::query()->lockForUpdate()->findOrFail($cluster->id);
 

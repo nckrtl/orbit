@@ -46,7 +46,6 @@ final readonly class NodeCaddyfileRenderer
         $blocks = [];
         $rendered = [];
         $listenAddresses = [];
-        /** @var array<string, CaddySite> $addresses */
         $addresses = [];
 
         foreach ($sites as $site) {

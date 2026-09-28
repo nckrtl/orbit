@@ -63,7 +63,6 @@ final readonly class NodeAccessResponse
         $nodes = [];
 
         foreach ($value as $item) {
-            /** @var mixed $item */
             $node = NodeAccessNodeResponse::tryFromGatewayData($item);
 
             if (! $node instanceof NodeAccessNodeResponse) {

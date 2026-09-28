@@ -34,7 +34,6 @@ final readonly class ToolsResponse
             }
         }
 
-        /** @var list<ToolResponse> $tools */
         $this->tools = $tools;
         $this->requestId = GatewayRequestId::fromTransport($requestId) ?? '';
     }

@@ -44,17 +44,16 @@ final readonly class NodeRoleMutationResponse
 
         $nodeName = $data['node_name'] ?? null;
 
-        if (! self::isSafeNodeName($nodeName)) {
+        if (! is_string($nodeName) || ! self::isSafeNodeName($nodeName)) {
             throw new GatewayApiException(
                 'Gateway response contains an invalid node role mutation node_name.',
                 requestId: $requestId,
             );
         }
 
-        /** @var string $nodeName */
         $role = $data['role'] ?? null;
 
-        if (! self::isSafeRole($role)) {
+        if (! is_string($role) || ! self::isSafeRole($role)) {
             throw new GatewayApiException(
                 'Gateway response contains an invalid node role mutation role.',
                 requestId: $requestId,
@@ -126,7 +125,6 @@ final readonly class NodeRoleMutationResponse
             );
         }
 
-        /** @var string $role */
         return new self(
             nodeId: $nodeId,
             nodeName: $nodeName,
@@ -174,11 +172,9 @@ final readonly class NodeRoleMutationResponse
      */
     private static function stringKeyedArray(array $value): array
     {
-        /** @var array<string, mixed> $result */
         $result = [];
 
         foreach ($value as $key => $item) {
-            /** @var mixed $item */
             if (! is_string($key)) {
                 continue;
             }

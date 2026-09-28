@@ -26,7 +26,8 @@
         "nckrtl/pestphp-monorepo": "dev-main",
         "phpunit/phpunit": "^13.0",
         "rector/rector": "^2.3",
-        "spatie/guidelines-skills": "^1.1"
+        "spatie/guidelines-skills": "^1.1",
+        "spaze/phpstan-disallowed-calls": "^4.14"
     },
     "autoload": {
         "psr-4": {
@@ -38,7 +39,8 @@
     "autoload-dev": {
         "psr-4": {
             "Tests\\": "tests/",
-            "Design\\": "design/"
+            "Design\\": "design/",
+            "Orbit\\PHPStan\\": "../../tools/phpstan/"
         }
     },
     "repositories": [

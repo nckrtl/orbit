@@ -68,12 +68,10 @@ final readonly class ListProcessesAction
         $statuses = $this->statuses->statuses($processes);
         $usage = $this->usage->usage($processes);
 
-        /** @var Collection<int, array<string, mixed>> $result */
         $result = new Collection;
 
         foreach ($processes as $process) {
             $processUsage = $usage[(int) $process->id] ?? ['cpu' => null, 'memory_bytes' => null];
-            /** @var array<string, mixed> $data */
             $data = ProcessData::fromModel(
                 $process,
                 $statuses[(int) $process->id] ?? 'unknown',

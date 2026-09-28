@@ -89,7 +89,7 @@ uses(TestCase::class, RefreshDatabase::class)
         app()->instance(LogStreamStore::class, new CacheLogStreamStore(Cache::store('array')));
         // The same holds for the Node locks' file store.
         app()->instance(NodeLocks::class, new NodeLocks(Cache::store('array')));
-        Classification::fake();
+        Classification::fake()->preventStrayClassifications();
         // Transitions wait for private DNS answers to expire; tests assert those waits instead.
         Sleep::fake(syncWithCarbon: true);
         // A streamed response a test never consumed stays armed; each test starts with none.

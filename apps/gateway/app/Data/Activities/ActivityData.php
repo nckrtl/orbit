@@ -103,8 +103,14 @@ final readonly class ActivityData
             return [];
         }
 
-        /** @var array<string, mixed> $sanitized */
-        return $sanitized;
+        $sanitizedProperties = [];
+        foreach ($sanitized as $key => $value) {
+            if (is_string($key)) {
+                $sanitizedProperties[$key] = $value;
+            }
+        }
+
+        return $sanitizedProperties;
     }
 
     private static function publicSubjectType(?string $subjectType): ?string

@@ -7,6 +7,7 @@ namespace App\Infrastructure\Certificates;
 use App\Domain\Certificates\GatewayCertificatePaths;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use Illuminate\Support\Carbon;
 
 final readonly class OpenSslGatewayCertificateValidator
 {
@@ -81,9 +82,7 @@ final readonly class OpenSslGatewayCertificateValidator
             '-noout',
             '-dates',
         ], timeout: 60.0));
-        /** @var array<int, string> $notBefore */
         $notBefore = [];
-        /** @var array<int, string> $notAfter */
         $notAfter = [];
 
         if (
@@ -94,14 +93,12 @@ final readonly class OpenSslGatewayCertificateValidator
             return false;
         }
 
-        $validFrom = strtotime($notBefore[1]);
-        $validTo = strtotime($notAfter[1]);
+        $validFrom = Carbon::parse($notBefore[1]);
+        $validTo = Carbon::parse($notAfter[1]);
 
         return
-            is_int($validFrom)
-            && is_int($validTo)
-            && $validTo >= $validFrom
-            && ($validTo - $validFrom) <= self::MAXIMUM_VALIDITY_SECONDS
+            $validTo->greaterThanOrEqualTo($validFrom)
+            && $validFrom->diffInSeconds($validTo, absolute: false) <= self::MAXIMUM_VALIDITY_SECONDS
             && $this->hasExpectedExtensions($paths->certificatePath, $hostname, $wireguardIp);
     }
 

@@ -143,7 +143,7 @@ it('labels a false negative from a pull request observed merged and records both
 
 it('does not treat breaking-change lines as coverage when the Changes section is empty', function (): void {
     [$group, $cancelled, $failed, $completed] = cancelled_brief_coverage_group();
-    Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.2)]]);
+    Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.2)]])->preventStrayClassifications();
     app(LaravelAiTaskBriefCoverage::class)->missing($group, cancelled_brief_coverage_pull_request(), 80, ['Orders export as CSV.']);
     app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(
         state: 'merged', pullRequestNumber: 42,
@@ -158,7 +158,7 @@ it('does not treat breaking-change lines as coverage when the Changes section is
 
 it('leaves labels unknown when merge evidence is missing and uses the changed merge snapshot when known', function (): void {
     [$group, $cancelled, $failed, $completed] = cancelled_brief_coverage_group();
-    Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.2)]]);
+    Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.2)]])->preventStrayClassifications();
     app(LaravelAiTaskBriefCoverage::class)->missing($group, cancelled_brief_coverage_pull_request(), 82, ['Orders export as CSV.']);
     app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(state: 'merged', pullRequestNumber: 42));
     expect(JevDecision::query()->sole()->labels)->toBeNull();
@@ -175,7 +175,7 @@ it('leaves labels unknown when merge evidence is missing and uses the changed me
 
 it('labels correct answers, call outcomes, and leaves failures unlabeled', function (): void {
     [$group, $cancelled, $failed, $completed] = cancelled_brief_coverage_group();
-    Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.97)]]);
+    Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.97)]])->preventStrayClassifications();
     app(LaravelAiTaskBriefCoverage::class)->missing($group, cancelled_brief_coverage_pull_request(), 83, ['Orders export as CSV.']);
     $merge = new TaskPullRequestHealth(
         state: 'merged',
@@ -201,7 +201,7 @@ it('labels correct answers, call outcomes, and leaves failures unlabeled', funct
 it('normalizes compatibility characters with Unicode NFKC before matching', function (): void {
     [$group, $cancelled, $failed, $completed] = cancelled_brief_coverage_group();
     $completed->update(['title' => 'Ｅｘｐｏｒｔ']);
-    Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.2)]]);
+    Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.2)]])->preventStrayClassifications();
     app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskRunPullRequest('Summary.', ['Export'], []), 89, ['Export']);
     app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(state: 'merged', pullRequestNumber: 42, mergeBody: "## Changes\n\n- Export\n", mergeSha: 'merge-sha', mergedAt: '2026-10-01T10:00:00Z'));
 
@@ -213,7 +213,7 @@ it('does not assign a call-level label to a mixed-answer coverage call', functio
     $other = Task::query()->create(['task_group_id' => $group->id, 'position' => 4, 'title' => 'Route', 'brief' => 'Add a route.', 'status' => TaskStatus::Completed]);
     Classification::fake([
         ['subtask_'.$completed->id => new BooleanAnswer(0.97), 'subtask_'.$other->id => new BooleanAnswer(0.2)],
-    ]);
+    ])->preventStrayClassifications();
     app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskRunPullRequest('Summary.', ['Export', 'Route'], []), 88, ['Export', 'Route']);
     app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(
         state: 'merged', pullRequestNumber: 42, mergeBody: "## Changes\n\n- Export\n- Route\n",
@@ -229,7 +229,7 @@ it('uses normalized title uniqueness and Unicode case folding before labeling', 
     Task::query()->create(['task_group_id' => $group->id, 'position' => 4, 'title' => 'STRASSE', 'brief' => 'Same after normalization.', 'status' => TaskStatus::Completed]);
     Classification::fake([
         ['subtask_'.$completed->id => new BooleanAnswer(0.2), 'subtask_'.Task::query()->where('title', 'STRASSE')->value('id') => new BooleanAnswer(0.2)],
-    ]);
+    ])->preventStrayClassifications();
     app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskRunPullRequest('Summary.', ['Straße'], []), 85, ['Straße']);
     app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(state: 'merged', pullRequestNumber: 42, mergeBody: "## Changes\n\n- STRASSE\n", mergeSha: 'merge-sha', mergedAt: '2026-10-01T10:00:00Z'));
 
@@ -239,7 +239,7 @@ it('uses normalized title uniqueness and Unicode case folding before labeling', 
 it('case-folds Unicode titles when matching merge change lines', function (): void {
     [$group, $cancelled, $failed, $completed] = cancelled_brief_coverage_group();
     $completed->update(['title' => 'Straße']);
-    Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.2)]]);
+    Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.2)]])->preventStrayClassifications();
     app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskRunPullRequest('Summary.', ['Fix STRASSE behavior'], []), 86, ['Fix STRASSE behavior']);
     app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(state: 'merged', pullRequestNumber: 42, mergeBody: "## Changes\n\n- Fix STRASSE behavior\n", mergeSha: 'merge-sha', mergedAt: '2026-10-01T10:00:00Z'));
 
@@ -248,7 +248,7 @@ it('case-folds Unicode titles when matching merge change lines', function (): vo
 
 it('labels only from merged pull-request change evidence', function (): void {
     [$group, $cancelled, $failed, $completed] = cancelled_brief_coverage_group();
-    Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.2)]]);
+    Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.2)]])->preventStrayClassifications();
     app(LaravelAiTaskBriefCoverage::class)->missing($group, cancelled_brief_coverage_pull_request(), 87, ['Orders export as CSV.']);
     $decision = JevDecision::query()->sole();
     $health = new TaskPullRequestHealth(state: 'merged', pullRequestNumber: 42, mergeBody: "## Changes\n\n- Orders export as CSV.\n", mergeSha: 'merge-sha', mergedAt: '2026-10-01T10:00:00Z');
