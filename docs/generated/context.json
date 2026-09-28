@@ -1631,26 +1631,12 @@
             ]
         },
         {
-            "path": "docs/decisions/0180-absorb-built-decisions-into-the-docs.md",
-            "title": "ADR 0180: Absorb built decisions into the documentation",
+            "path": "docs/decisions/README.md",
+            "title": "Architecture decisions",
             "kind": "decision",
             "components": [
                 "apps/docs"
             ],
-            "concepts": [
-                "Task",
-                "Task group"
-            ],
-            "governing_adrs": [
-                "0175",
-                "0180"
-            ]
-        },
-        {
-            "path": "docs/decisions/README.md",
-            "title": "Architecture decisions",
-            "kind": "decision",
-            "components": [],
             "concepts": [
                 "Task",
                 "Task group"
@@ -1725,8 +1711,7 @@
                 "0173",
                 "0174",
                 "0175",
-                "0178",
-                "0180"
+                "0178"
             ]
         },
         {

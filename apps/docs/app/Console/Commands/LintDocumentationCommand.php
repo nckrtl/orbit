@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Documentation\AdrLifecycle;
 use App\Documentation\DocsImpact;
 use App\Documentation\DocumentationLintPolicy;
 use HardImpact\Librarian\Linting\Finding;
@@ -42,6 +43,7 @@ final class LintDocumentationCommand extends Command
             return self::FAILURE;
         }
         $root = dirname($docsPath);
+        $result = new LintResult([...$result->findings, ...new AdrLifecycle($root)->findings()]);
         $coverageFindings = new DocsImpact($root)->coverageFindings();
         if ($coverageFindings !== []) {
             $result = new LintResult([...$result->findings, ...array_map(
