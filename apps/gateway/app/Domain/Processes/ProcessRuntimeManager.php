@@ -14,7 +14,8 @@ interface ProcessRuntimeManager
     /** Reconcile the runtime artifact under the Process runtime lease. */
     public function converge(Process $process): void;
 
-    public function start(Process $process): void;
+    /** Start a Process, publishing development-site awake state only for explicit starts. */
+    public function start(Process $process, bool $explicit = false): void;
 
     public function stop(Process $process): void;
 

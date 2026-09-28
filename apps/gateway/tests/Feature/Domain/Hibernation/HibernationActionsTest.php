@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Hibernation\ActivateAppInstanceRuntimeAction;
 use App\Actions\Hibernation\SweepIdleAppDevRuntimesAction;
 use App\Domain\AppDev\AppDevPhpFpmManager;
+use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\Hibernation\AppDevHibernationPolicy;
 use App\Domain\Hibernation\AppInstanceCheckoutInspector;
 use App\Domain\Hibernation\AppInstanceRuntimeReadiness;
@@ -12,10 +13,21 @@ use App\Domain\Hibernation\HibernationException;
 use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\Hibernation\RuntimeDependencyState;
 use App\Domain\Hibernation\RuntimeHibernation;
+use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessRuntimeManager;
+use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\DockerProcessRenderer;
+use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
+use App\Infrastructure\Processes\SystemdProcessRenderer;
+use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
+use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\Node;
@@ -24,6 +36,7 @@ use App\Models\Schedule;
 use Illuminate\Support\Carbon;
 use Tests\Support\FakeAppInstanceCheckoutInspector;
 use Tests\Support\FakeAppInstanceRuntimeReadiness;
+use Tests\Support\FakeVitePortRuntime;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 beforeEach(function (): void {
@@ -123,6 +136,61 @@ it('does not write the awake marker when readiness fails', function (): void {
     expect(fn () => app(ActivateAppInstanceRuntimeAction::class)->execute($this->instance))
         ->toThrow(HibernationException::class);
     expect($this->markers->awake)->toBe([]);
+});
+
+it('does not expose a ready Vite site when another Process fails during automatic wake', function (): void {
+    $vite = hibernation_action_process($this->instance, 'vite', DesiredProcessState::Running);
+    hibernation_action_process($this->instance, 'queue', DesiredProcessState::Running);
+    $vite->update(['runtime_config' => [
+        'preset' => 'vp-dev',
+        'command' => ['vp', 'dev'],
+        'environment_file' => '/etc/orbit/vite/app-instance-'.$this->instance->id.'.env',
+    ]]);
+    $viteRuntime = new FakeVitePortRuntime;
+    app()->instance(VitePortRuntime::class, $viteRuntime);
+    $ssh = Mockery::mock(SshExecutor::class);
+    $ssh->shouldReceive('execute')->andReturnUsing(function (SshConnection $connection, RemoteCommand $command) use ($vite, $viteRuntime): CommandResult {
+        $arguments = implode(' ', $command->arguments);
+        if (str_contains($arguments, "orbit-process-{$vite->id}-vite.service") && in_array('start', $command->arguments, true)) {
+            $viteRuntime->events[] = 'vite-launch';
+        }
+        if ($command->arguments[0] === 'sudo' && $command->arguments[1] === 'test' && str_contains($arguments, 'queue.service')) {
+            $viteRuntime->events[] = 'queue-start-failed';
+
+            return new CommandResult(1, '', '', 1, false);
+        }
+        if ($command->arguments[0] === 'sudo' && $command->arguments[1] === 'cat') {
+            return new CommandResult(0, "[Unit]\nX-Orbit-Process-ID={$vite->id}\n", '', 1, false);
+        }
+
+        return new CommandResult(0, '', '', 1, false);
+    });
+    $keys = Mockery::mock(SshKeyProvider::class);
+    $keys->shouldReceive('privateKeyPath')->andReturn('/test/id');
+    $knownHosts = Mockery::mock(KnownHostsStore::class);
+    $knownHosts->shouldReceive('path')->andReturn('/test/known-hosts');
+    $runtime = new RemoteProcessRuntimeManager(
+        targets: new ProcessTargetResolver,
+        accounts: Mockery::mock(ManagedUserAccountResolver::class),
+        ssh: $ssh,
+        keys: $keys,
+        knownHosts: $knownHosts,
+        systemd: new SystemdProcessRenderer,
+        docker: new DockerProcessRenderer,
+    );
+    app()->instance(ProcessRuntimeManager::class, $runtime);
+
+    $failure = null;
+    try {
+        app(ActivateAppInstanceRuntimeAction::class)->execute($this->instance);
+    } catch (HibernationException $exception) {
+        $failure = $exception;
+    }
+
+    expect($failure?->errorCode)->toBe('process.runtime_not_found')
+        ->and($viteRuntime->events)->toBe(['vite-launch', 'vite-ready', 'queue-start-failed'])
+        ->and($viteRuntime->awakeInstances)->toBe([])
+        ->and($this->markers->awake)->toBe([]);
 });
 
 it('halts idle desired-running Processes without changing desired state or Schedules', function (): void {

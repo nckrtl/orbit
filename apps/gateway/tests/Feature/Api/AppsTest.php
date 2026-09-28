@@ -20,6 +20,7 @@ use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
+use App\Models\TaskGroup;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Apps\CreateAppRequest;
 use Orbit\Sdk\Requests\Apps\DestroyAppRequest;
@@ -479,6 +480,33 @@ describe('app lifecycle', function (): void {
             ->toBeNull()
             ->and(AppInstance::query()->count())
             ->toBe(1);
+    });
+
+    it('refuses removal when the Project has task groups', function (): void {
+        $app = OrbitApp::query()->create([
+            'name' => 'Acme',
+            'slug' => 'acme',
+            'repository_url' => 'https://github.com/acme/site.git',
+            'default_branch' => 'main',
+            'root' => 'public',
+        ]);
+        $taskGroup = TaskGroup::query()->create([
+            'app_id' => $app->id,
+            'title' => 'Ship the feature',
+            'brief' => 'Implement and verify the feature.',
+        ]);
+
+        $this
+            ->deleteJson("/api/v1/projects/{$app->id}")
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'project.has_task_groups');
+
+        expect($app->fresh())
+            ->not
+            ->toBeNull()
+            ->and($taskGroup->fresh())
+            ->not
+            ->toBeNull();
     });
 
     it('refuses removal for owned AppInstances before owned Routes whatever the Route status', function (): void {

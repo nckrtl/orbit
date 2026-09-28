@@ -104,7 +104,7 @@ final readonly class CreateAppInstanceAction
                 $this->nodeSettings->fromStored($requestedNode->settings),
                 $account,
             );
-            $checkout = $roots->instance->append($app->slug, $data->name);
+            $checkout = $roots->append($app->slug, $data->name);
             $this->checkoutOverlap->assertAvailable(
                 $requestedNode->id,
                 $checkout,
@@ -145,7 +145,7 @@ final readonly class CreateAppInstanceAction
                         $result = $this->provisioner->complete(
                             $resolved,
                             $data->domain,
-                            $data->recoverSourceProfile,
+                            setupPending: ! $wasActive,
                         );
 
                     } catch (Throwable $exception) {
@@ -178,7 +178,14 @@ final readonly class CreateAppInstanceAction
                 self::RollbackTeardownSeconds + self::RollbackRemovalSeconds,
                 fn (): bool => $runner->run($instance, LifecyclePhase::Setup),
             );
+            $instance->update(['failed_step' => null, 'error_code' => null]);
         } catch (ResourceOperationException $setupFailure) {
+            if (($setupFailure->details['outcome'] ?? null) === 'busy') {
+                $instance->update(['failed_step' => 'setup', 'error_code' => 'instance.lifecycle_busy']);
+
+                throw $setupFailure;
+            }
+
             $details = $setupFailure->details;
             // A step the request deadline stopped keeps that code, so it reads apart from a failed command.
             $deadlineCut = $setupFailure->errorCode === 'command.deadline_exceeded';
@@ -197,6 +204,10 @@ final readonly class CreateAppInstanceAction
                     fn (): bool => $runner->run($instance->fresh() ?? $instance, LifecyclePhase::Teardown),
                 );
             } catch (ResourceOperationException $teardownFailure) {
+                if (($teardownFailure->details['outcome'] ?? null) === 'busy') {
+                    throw $teardownFailure;
+                }
+
                 if (($teardownFailure->details['outcome'] ?? null) === 'unconfirmed') {
                     throw new ResourceOperationException(
                         errorCode: $code,

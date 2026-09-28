@@ -1021,7 +1021,7 @@ EXAMPLE_BY_NAME = {
     'calendar': 'daily', 'timeout_seconds': 3600, 'target_type': 'node', 'families': ['node', 'instance'], 'limit': 25, 'lines': 100,
     'manager': 'vp', 'package': '@openai/codex', 'version_constraint': '^0.150',
     'php_version': '8.5', 'source_path': '/srv/orbit/apps/acme/main', 'environments': ['production'], 'phase': 'before_activation', 'release': '20260914T101500Z', 'value': 'log', 'status': 'success', 'state': 'active',
-    'force': True, 'offline': False, 'replace': True, 'converge': False, 'purge_data': False, 'include_worktrees': False, 'recover_source_profile': False,
+    'force': True, 'offline': False, 'replace': True, 'converge': False, 'purge_data': False, 'include_worktrees': False,
     'source': '10.6.0.0/24', 'protocol': 'tcp', 'instance_id': 4, 'sqlite_source_path': '/home/acme/database/database.sqlite', 'apps': {'path': '/srv/orbit/apps'}, 'settings': {'apps': {'path': '/srv/orbit/apps'}},
     'title': 'Absorb Commander', 'brief': 'Persist groups. Accept when create and list work.',
 }
@@ -1300,6 +1300,15 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
                 query.append(k)
         else:
             body_schema = sch
+            if route['name'] == 'route:create':
+                # StoreRouteRequest has separate app and custom-proxy rule sets.
+                # The generic parser sees only its first return (the proxy).
+                app_rules = 'return [' + rules_text.split('return [', 2)[2]
+                app_schema, _ = rules_to_schema(app_rules, route['name'])
+                sch['properties']['publication']['enum'] = ['private']
+                sch['oneOf'] = [{'required': ['upstream']}, {'required': ['process_id']}]
+                body_schema = {'oneOf': [app_schema, sch]}
+                body_required = True
     elif route['method'] == 'GET' and sdkreq and sdkreq.get('query'):
         for k in re.findall(r"'([a-z_]+)'\s*=>", sdkreq['query']):
             op['parameters'].append({'name': k, 'in': 'query', 'required': True, 'schema': {'type': 'integer' if k.endswith('_id') else 'string'}})
@@ -1308,6 +1317,9 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         keys = re.findall(r"'([a-z_]+)'\s*=>", sdkreq['body'])
         if keys:
             body_schema = {'type': 'object', 'properties': {k: {'type': 'boolean' if k in BOOLEAN_FIELDS else 'string'} for k in keys}}
+    if body_schema and 'oneOf' in body_schema:
+        for variant in body_schema['oneOf']:
+            variant['additionalProperties'] = False
     if body_schema and cmd:
         def items(x):
             return list(x.items()) if isinstance(x, dict) else [(o.get('name'), o) for o in x]
@@ -1318,7 +1330,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             if d and 'description' not in v:
                 v['description'] = d
     if body_schema is not None:
-        body_schema['additionalProperties'] = False
+        if 'oneOf' not in body_schema:
+            body_schema['additionalProperties'] = False
         op['requestBody'] = {'required': body_required or bool(body_schema.get('required')), 'content': {'application/json': {'schema': body_schema}}}
     stream = route['name'] in ('instance:deploy', 'instance:rollback')
     responses = {}
@@ -1425,7 +1438,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     if route['method'] in ('POST', 'PUT', 'PATCH', 'DELETE') and route['name'] not in INTERNAL:
         responses['409'] = error_response('A guard refused the change and the Gateway changed nothing; `error.code` names the guard.')
     if route['name'] in ('instance:log-stream:create', 'process:log-stream:create'):
-        responses['409'] = error_response('The live log path is not available (`logs.live_unavailable`); `details.reason` is `ssh_only` for a production Instance, or `realtime_not_configured`, `subscriber_down`, `agent_unavailable`, `agent_not_joined`, or `agent_outdated`.')
+        responses['409'] = error_response('The live log path is not available (`logs.live_unavailable`); `details.reason` is `ssh_only` for a production Instance, or `realtime_not_configured`, `subscriber_down`, `agent_unavailable`, or `agent_not_joined`.')
     if route['name'] in ('instance:log-stream:renew', 'instance:log-stream:destroy', 'process:log-stream:renew', 'process:log-stream:destroy'):
         responses['404'] = error_response('The stream does not exist, has ended, belongs to another record, or was opened by another Node (`logs.stream_not_found`).')
     if route['name'] in ('tasks:list', 'tasks:show', 'tasks:agents', 'tasks:agent-stream'):
@@ -1470,6 +1483,42 @@ spec['components']['schemas']['Annotation'] = {'type': 'object', 'properties': {
     'delivery': {'type': 'string', 'enum': ['queued', 'sending', 'sent', 'error', 'cancelled']},
     'syncError': {'type': ['string', 'null']}, 'summary': {'type': ['string', 'null']},
 }}
+
+def route_create_accepts(schema, payload):
+    """Exercise the emitted Route create schema's object, oneOf, required and enum semantics."""
+    if schema.get('type', 'object') != 'object' or not isinstance(payload, dict):
+        return False
+    if any(key not in payload for key in schema.get('required', [])):
+        return False
+    properties = schema.get('properties', {})
+    if schema.get('additionalProperties') is False and any(key not in properties for key in payload):
+        return False
+    for key, value in payload.items():
+        rule = properties.get(key, {})
+        if rule.get('type') == 'integer' and (not isinstance(value, int) or isinstance(value, bool)):
+            return False
+        if rule.get('type') == 'string' and not isinstance(value, str):
+            return False
+        if 'enum' in rule and value not in rule['enum']:
+            return False
+    return 'oneOf' not in schema or sum(route_create_accepts(option, payload) for option in schema['oneOf']) == 1
+
+
+route_create_schema = spec['paths']['/api/v1/routes']['post']['requestBody']['content']['application/json']['schema']
+for payload, expected in [
+    ({'app_instance_id': 12, 'domain': 'shop.example.test'}, True),
+    ({'app_instance_id': 12, 'domain': 'shop.example.test', 'publication': 'public'}, True),
+    ({'node_id': 4, 'domain': 'executor.orbit', 'upstream': 'http://127.0.0.1:4788'}, True),
+    ({'node_id': 4, 'domain': 'executor.orbit', 'process_id': 7}, True),
+    ({'app_id': 3, 'app_instance_id': 12, 'domain': 'shop.example.test'}, False),
+    ({'node_id': 4, 'domain': 'shop.example.test'}, False),
+    ({'cluster_id': 5, 'domain': 'shop.example.test'}, False),
+    ({'app_instance_id': 12, 'domain': 'shop.example.test', 'node_id': 4}, False),
+    ({'node_id': 4, 'domain': 'executor.orbit', 'upstream': 'http://127.0.0.1:4788', 'process_id': 7}, False),
+    ({'node_id': 4, 'domain': 'executor.orbit', 'upstream': 'http://127.0.0.1:4788', 'publication': 'public'}, False),
+]:
+    if route_create_accepts(route_create_schema, payload) != expected:
+        sys.exit(f'route:create OpenAPI schema disagrees with the Gateway contract for {payload!r}')
 
 outputs = {OUTPUT: json.dumps(spec, indent=2) + '\n'}
 

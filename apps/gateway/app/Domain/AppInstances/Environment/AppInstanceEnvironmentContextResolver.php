@@ -7,7 +7,6 @@ namespace App\Domain\AppInstances\Environment;
 use App\Domain\AppInstances\AppInstanceSourceProfileGuard;
 use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Routes\PublicRouteEligibility;
-use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -56,20 +55,20 @@ final readonly class AppInstanceEnvironmentContextResolver
 
         $routes = $routeQuery->get();
 
-        if ($routes->count() !== 1) {
+        if ($routes->count() > 1) {
             $this->conflict();
         }
 
-        $route = $routes->sole();
+        $route = $routes->first();
 
-        if (
+        if ($route instanceof Route && (
             ! $route->isAuthoritative()
             || $route->replaced_by_route_id !== null
             || $route->replaces_route_id !== null
             || $route->failed_step !== null
             || $route->error_code !== null
             || ($route->replacement_step !== null && ! new PublicRouteEligibility()->publicEdgeIsLive($route))
-        ) {
+        )) {
             $this->conflict();
         }
 
@@ -83,8 +82,8 @@ final readonly class AppInstanceEnvironmentContextResolver
             path: $path,
             executionUser: $executionUser,
             laravel: $sourceIsLaravel,
-            routeId: $route->id,
-            routeDomain: $route->domain,
+            routeId: $route?->id,
+            routeDomain: $route?->domain,
             nodeStatus: $node->status->value,
             node: $node,
         );
@@ -131,19 +130,19 @@ final readonly class AppInstanceEnvironmentContextResolver
 
         $routes = $routeQuery->get();
 
-        if ($routes->count() !== 1) {
+        if ($routes->count() > 1) {
             $this->conflict();
         }
 
-        $route = $routes->sole();
+        $route = $routes->first();
 
-        if (
+        if ($route instanceof Route && (
             $route->status !== RouteStatus::Pending
             || $route->domain !== $instance->clone_preview_domain
             || $route->replaced_by_route_id !== null
             || $route->replaces_route_id !== null
             || $route->replacement_step !== null
-        ) {
+        )) {
             $this->conflict();
         }
 
@@ -157,8 +156,8 @@ final readonly class AppInstanceEnvironmentContextResolver
             path: $path,
             executionUser: $executionUser,
             laravel: $sourceIsLaravel,
-            routeId: $route->id,
-            routeDomain: $route->domain,
+            routeId: $route?->id,
+            routeDomain: $route?->domain,
             nodeStatus: $node->status->value,
             node: $node,
         );
@@ -174,7 +173,7 @@ final readonly class AppInstanceEnvironmentContextResolver
 
         if (
             $instance->status !== AppInstanceState::Active
-            || $instance->environment !== 'production'
+            || ! in_array($instance->environment, ['development', 'production'], true)
             || $instance->migration_required
             || $instance->provisioning_step !== 'active'
             || ! is_bool($sourceIsLaravel)
@@ -221,7 +220,7 @@ final readonly class AppInstanceEnvironmentContextResolver
         $routeDomain = $route->domain;
 
         if (
-            $authoritative->provenance !== RouteProvenance::Explicit
+            $route->provenance !== $authoritative->provenance
             || $routeDomain === ''
         ) {
             $this->conflict();

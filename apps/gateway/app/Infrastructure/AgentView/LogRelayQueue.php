@@ -126,7 +126,6 @@ final class LogRelayQueue
             return;
         }
 
-        /** @var list<string> $lines */
         [$kept, $limited] = $this->limit($stream, array_map($this->line(...), $lines));
         $dropped += $limited;
 

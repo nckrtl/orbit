@@ -135,6 +135,14 @@ final readonly class RemoteVitePortRuntime implements VitePortRuntime
         $this->ssh->execute($instance->node, new RemoteCommand(arguments: ['sudo', 'rm', '-f', '--', RuntimeHibernation::awakePath(RuntimeHibernation::key($instance->id))], timeout: 10), 'vite-suspend-traffic', 'vite.suspend_failed');
     }
 
+    public function markAwake(AppInstance $instance): void
+    {
+        $marker = RuntimeHibernation::awakePath(RuntimeHibernation::key($instance->id));
+        $this->ssh->execute($instance->node, new RemoteCommand(arguments: ['sudo', 'install', '-d', '-o', 'root', '-g', 'caddy', '-m', '0755', '--', RuntimeHibernation::MarkerDirectory], timeout: 10), 'vite-awake-directory', 'vite.awake_failed');
+        $this->ssh->execute($instance->node, new RemoteCommand(arguments: ['sudo', 'touch', '--', $marker], timeout: 10), 'vite-mark-awake', 'vite.awake_failed');
+        $this->ssh->execute($instance->node, new RemoteCommand(arguments: ['sudo', 'chmod', '0644', '--', $marker], timeout: 10), 'vite-mark-awake-mode', 'vite.awake_failed');
+    }
+
     public function prepare(Process $process, AppInstance $instance): void
     {
         $path = SystemdProcessRenderer::viteEnvironmentPath($instance->id);

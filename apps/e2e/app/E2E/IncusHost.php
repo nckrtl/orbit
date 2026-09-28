@@ -12,8 +12,10 @@ use App\E2E\Value\IncusNetwork;
 use App\E2E\Value\MountPath;
 use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyTarget;
+use Carbon\Exceptions\InvalidFormatException;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\Pool;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Process;
 use InvalidArgumentException;
 use JsonException;
@@ -375,10 +377,8 @@ final class IncusHost implements GuestTransport
         string $target,
         array $acquisitionMetadata = [],
     ): IncusInstance {
-        /** @var array{0:list<string>,1:IncusInstance} $copy */
         $copy = $this->snapshotCopy($source, $snapshot, $target, $acquisitionMetadata);
         [$command, $instance] = $copy;
-        /** @var list<string> $command */
         $this->run($command, 300);
 
         return $instance;
@@ -394,9 +394,7 @@ final class IncusHost implements GuestTransport
             throw new RuntimeException('Incus snapshot copy batch must be non-empty.');
         }
 
-        /** @var array<string, list<string>> $commands */
         $commands = [];
-        /** @var array<string, IncusInstance> $instances */
         $instances = [];
         $targets = [];
         foreach ($copies as $label => $copy) {
@@ -412,7 +410,6 @@ final class IncusHost implements GuestTransport
         }
         $this->validateSnapshotCopies($copies);
         foreach ($copies as $label => $copy) {
-            /** @var array{0:list<string>,1:IncusInstance} $copyResult */
             $copyResult = $this->snapshotCopy(
                 $copy['source'],
                 $copy['snapshot'],
@@ -453,9 +450,7 @@ final class IncusHost implements GuestTransport
             }
         }
 
-        /** @var array<string, list<string>> $commands */
         $commands = [];
-        /** @var array<string, IncusInstance> $instances */
         $instances = [];
         $targets = [];
         foreach ($copies as $label => $copy) {
@@ -464,7 +459,6 @@ final class IncusHost implements GuestTransport
                 throw new RuntimeException('Incus instance copy targets must be unique.');
             }
             $targets[$copy['target']] = true;
-            /** @var array{0:list<string>,1:IncusInstance} $copyResult */
             $copyResult = $this->snapshotCopy(
                 $copy['source'],
                 null,
@@ -991,14 +985,12 @@ final class IncusHost implements GuestTransport
     public function waitForRestoredHostStates(array $instances): void
     {
         assert(array_is_list($instances));
-        /** @var list<string> $instances */
         $this->validateUniqueInstances($instances, 'restored host-state readiness');
         $this->operationOwnedInstances($instances, 'restored host-state readiness');
 
         $states = array_fill_keys($instances, 'agent');
         $deadline = microtime(true) + $this->guestReadinessTimeoutSeconds;
         while ($states !== [] && microtime(true) < $deadline) {
-            /** @var array<string, list<string>> $commands */
             $commands = [];
             foreach ($states as $instance => $state) {
                 $commands[$instance] = match ($state) {
@@ -1286,7 +1278,12 @@ final class IncusHost implements GuestTransport
                     throw new RuntimeException('Incus snapshot identity appears more than once.');
                 }
                 $createdAt = $resource['created_at'] ?? null;
-                if (! is_string($createdAt) || $createdAt === '' || strtotime($createdAt) === false) {
+                if (! is_string($createdAt) || $createdAt === '') {
+                    throw new RuntimeException('Incus snapshot creation metadata is invalid.');
+                }
+                try {
+                    Carbon::parse($createdAt);
+                } catch (InvalidFormatException) {
                     throw new RuntimeException('Incus snapshot creation metadata is invalid.');
                 }
                 $names[$name] = ['name' => $name, 'created_at' => $createdAt];

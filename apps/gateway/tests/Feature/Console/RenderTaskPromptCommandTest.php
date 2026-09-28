@@ -370,6 +370,28 @@ it('omits the group start lines when the workspace commit is missing or not a re
     }
 });
 
+it('renders the exact injected failure instruction after the reviewer approval warning but not for implementers', function (): void {
+    $sentence = 'Report a missing guarantee against injected failures, such as a lost response or a crash between two writes, as a finding when this subtask adds or changes that state transition, or when the brief, an ADR, or a deliverable names it; otherwise list it as a follow-up in your summary.';
+    $payload = [
+        'group' => render_task_prompt_group(),
+        'subtask' => render_task_prompt_subtask(),
+        'thread_id' => 32,
+        'review_packet' => render_task_prompt_review_packet(),
+    ];
+    $continuedPayload = $payload;
+    $continuedPayload['review_packet'] = render_task_prompt_review_packet(continued: true);
+
+    expect(render_task_prompt('reviewer', $payload)['prompt'])
+        ->toContain('Do not commit; Orbit commits after you approve. '.$sentence.' ');
+    expect(render_task_prompt('reviewer-continue', $continuedPayload)['prompt'])
+        ->toContain('Do not commit; Orbit commits after you approve. '.$sentence.' ');
+    expect(render_task_prompt('implementer', [
+        'group' => render_task_prompt_group(),
+        'subtask' => render_task_prompt_subtask(),
+        'thread_id' => 31,
+    ])['prompt'])->not->toContain($sentence);
+});
+
 it('preserves literal formatter tags in prompt JSON', function (): void {
     $review = render_task_prompt_review_packet();
     $review['diff_body'] = "diff --git a/app/Prompt.php b/app/Prompt.php\n+<info>literal</info>\n";

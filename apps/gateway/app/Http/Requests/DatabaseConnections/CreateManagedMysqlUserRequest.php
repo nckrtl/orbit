@@ -7,6 +7,7 @@ namespace App\Http\Requests\DatabaseConnections;
 use App\Data\DatabaseConnections\CreateManagedMysqlUserData;
 use App\Domain\DatabaseConnections\ManagedMysqlUserStatements;
 use App\Http\Requests\TopLevelJsonObjectInspector;
+use App\Support\ValidatedData;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\ValidationException;
 use UnexpectedValueException;
@@ -36,14 +37,13 @@ final class CreateManagedMysqlUserRequest extends FormRequest
 
     public function payload(): CreateManagedMysqlUserData
     {
-        /** @var array{slug: string, database: string, username: string, password: string} $validated */
         $validated = $this->validated();
 
         return new CreateManagedMysqlUserData(
-            slug: $validated['slug'],
-            database: $validated['database'],
-            username: $validated['username'],
-            password: $validated['password'],
+            slug: ValidatedData::string($validated['slug'] ?? null),
+            database: ValidatedData::string($validated['database'] ?? null),
+            username: ValidatedData::string($validated['username'] ?? null),
+            password: ValidatedData::string($validated['password'] ?? null),
         );
     }
 }

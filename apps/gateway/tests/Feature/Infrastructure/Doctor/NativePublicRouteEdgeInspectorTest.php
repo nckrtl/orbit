@@ -287,6 +287,32 @@ describe('an Ingress that shares the Router and the workload', function (): void
         expect(public_edge_observe($this))->toBe([true, false, true]);
     });
 
+    it('reports an untrusted, wrong-domain, missing, or expiring served certificate as a TLS mismatch', function (string $certificate): void {
+        public_edge_publish($this->caddy, $this->ingress);
+        $this->ssh->certificateStatus = $certificate;
+
+        expect(public_edge_observe($this))->toBe([true, false, true]);
+    })->with([
+        'missing certificate' => 'missing',
+        'expiring certificate' => 'expiring',
+        'locally trusted Orbit CA certificate' => 'missing',
+        'public certificate for another hostname' => 'missing',
+    ]);
+
+    it('validates the public certificate hostname against public-only trust anchors', function (): void {
+        public_edge_publish($this->caddy, $this->ingress);
+
+        public_edge_observe($this);
+        $script = $this->ssh->commands[0]->input;
+
+        expect($script)
+            ->toContain('-verify_hostname "$domain"')
+            ->toContain('-CAfile "$public_roots"')
+            ->toContain('-no-CApath -no-CAstore')
+            ->toContain('/usr/share/ca-certificates/mozilla')
+            ->not->toContain('/etc/ssl/certs/ca-certificates.crt');
+    });
+
     it('reports a public site that pins an Orbit CA leaf', function (): void {
         $scope = "route-{$this->route->id}-ingress";
         public_edge_publish($this->caddy, $this->ingress, static fn (string $site): string => str_replace(

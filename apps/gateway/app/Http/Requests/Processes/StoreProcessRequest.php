@@ -8,6 +8,7 @@ use App\Data\Processes\AddProcessData;
 use App\Domain\Processes\ProcessPresets;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessTargetType;
+use App\Support\ValidatedData;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -104,14 +105,18 @@ final class StoreProcessRequest extends FormRequest
 
     public function payload(): AddProcessData
     {
-        /** @var array<string, mixed> $validated */
         $validated = $this->validated();
-        /** @var list<string> $command */
-        $command = isset($validated['preset']) ? ProcessPresets::command($this->string('preset')->toString()) : $validated['command'];
-        /** @var array<string, string> $environment */
-        $environment = is_array($validated['environment'] ?? null) ? $validated['environment'] : [];
-        /** @var list<string> $ports */
-        $ports = is_array($validated['ports'] ?? null) ? array_values($validated['ports']) : [];
+        $command = isset($validated['preset'])
+            ? ProcessPresets::command($this->string('preset')->toString())
+            : ValidatedData::stringList(array_values(is_array($validated['command'] ?? null)
+                ? $validated['command']
+                : []));
+        $environment = is_array($validated['environment'] ?? null)
+            ? ValidatedData::stringMap($validated['environment'])
+            : [];
+        $ports = is_array($validated['ports'] ?? null)
+            ? ValidatedData::stringList(array_values($validated['ports']))
+            : [];
         $volumes = $this->volumes($validated['volumes'] ?? []);
 
         return new AddProcessData(

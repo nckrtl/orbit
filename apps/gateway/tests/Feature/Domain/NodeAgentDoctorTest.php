@@ -7,7 +7,6 @@ use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentView\CacheAgentStateView;
-use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Models\Node;
 
 it('reports node.agent_missing when the binary or unit is absent', function (bool $binaryExists, bool $unitExists): void {
@@ -20,15 +19,7 @@ it('reports node.agent_missing when the binary or unit is absent', function (boo
 
     $codes = array_map(static fn ($issue): string => $issue->code, $report->issues);
 
-    expect($codes)
-        ->toContain('node.agent_missing')
-        ->not->toContain('node.agent_inactive');
-
-    if ($binaryExists) {
-        expect($codes)->toContain('node.agent_outdated');
-    } else {
-        expect($codes)->not->toContain('node.agent_outdated');
-    }
+    expect($codes)->toContain('node.agent_missing')->not->toContain('node.agent_inactive');
 })->with([
     'binary absent' => [false, true],
     'unit absent' => [true, false],
@@ -44,31 +35,6 @@ it('reports node.agent_inactive when the unit exists but is not active', functio
 
     expect(array_map(static fn ($issue): string => $issue->code, $report->issues))
         ->toContain('node.agent_inactive');
-});
-
-it('reports both inactive and outdated when the inactive binary differs from the pin', function (): void {
-    $report = (new NodeDoctorProbe)->inspect(node_agent_doctor_context(
-        binaryExists: true,
-        unitExists: true,
-        active: false,
-        checksumMatches: false,
-    ));
-
-    expect(array_map(static fn ($issue): string => $issue->code, $report->issues))
-        ->toContain('node.agent_inactive')
-        ->toContain('node.agent_outdated');
-});
-
-it('reports node.agent_outdated when the binary checksum differs from the pin', function (): void {
-    $report = (new NodeDoctorProbe)->inspect(node_agent_doctor_context(
-        binaryExists: true,
-        unitExists: true,
-        active: true,
-        checksumMatches: false,
-    ));
-
-    expect(array_map(static fn ($issue): string => $issue->code, $report->issues))
-        ->toContain('node.agent_outdated');
 });
 
 it('skips a non-active managed node outside the install boundary', function (): void {
@@ -88,8 +54,7 @@ it('skips a non-active managed node outside the install boundary', function (): 
     expect(array_map(static fn ($issue): string => $issue->code, $report->issues))
         ->toContain('node.lifecycle_not_active')
         ->not->toContain('node.agent_missing')
-        ->not->toContain('node.agent_inactive')
-        ->not->toContain('node.agent_outdated');
+        ->not->toContain('node.agent_inactive');
 });
 
 it('skips a node outside the managed boundary', function (): void {
@@ -153,9 +118,9 @@ function node_agent_view_doctor_context(): array
 }
 
 /** @return list<string> */
-function node_agent_view_codes(DoctorNodeContext $context, string $agentVersion = NodeAgentFootprint::SecretSince): array
+function node_agent_view_codes(DoctorNodeContext $context): array
 {
-    return array_map(static fn ($issue): string => $issue->code.'='.json_encode($issue->observed), (new NodeDoctorProbe(agentVersion: $agentVersion))->inspect($context)->issues);
+    return array_map(static fn ($issue): string => $issue->code.'='.json_encode($issue->observed), (new NodeDoctorProbe)->inspect($context)->issues);
 }
 
 describe('the Gateway view of an active agent', function (): void {
@@ -212,9 +177,9 @@ describe('the Gateway view of an active agent', function (): void {
 });
 
 /** @return list<string> */
-function node_agent_secret_codes(Node $node, ?string $checksum, bool $binaryExists = true, string $agentVersion = NodeAgentFootprint::SecretSince): array
+function node_agent_secret_codes(Node $node, ?string $checksum, bool $binaryExists = true): array
 {
-    $codes = node_agent_view_codes(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true, $binaryExists, true, true, true, $checksum)), $agentVersion);
+    $codes = node_agent_view_codes(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true, $binaryExists, true, true, true, $checksum)));
 
     return array_values(array_filter($codes, static fn (string $code): bool => str_starts_with($code, 'node.agent_secret')));
 }
@@ -232,46 +197,10 @@ describe('the agent secret', function (): void {
 
     it('reports a Node that must send a secret but has none recorded', function (): void {
         [$context] = node_agent_view_doctor_context();
-        $node = $context->node->forceFill(['agent_secret_hash' => null, 'agent_secret_exempt' => false]);
+        $node = $context->node->forceFill(['agent_secret_hash' => null]);
 
         expect(node_agent_secret_codes($node, hash('sha256', 'any')))->toBe(['node.agent_secret_mismatch="mismatch"'])
             ->and(node_agent_secret_codes($node, null))->toBe(['node.agent_secret_mismatch="missing"']);
-    });
-
-    it('skips an exempt Node while agent 0.2.0 sends no secret', function (): void {
-        [$context] = node_agent_view_doctor_context();
-        $node = $context->node->forceFill(['agent_secret_hash' => null, 'agent_secret_exempt' => true]);
-
-        expect(NodeAgentFootprint::sendsSecret('0.2.0'))->toBeFalse()
-            ->and(node_agent_secret_codes($node, null, agentVersion: '0.2.0'))->toBe([]);
-    });
-
-    it('reports a Node that is not exempt while agent 0.2.0 sends no secret', function (?string $hash, bool $exempt, array $expected): void {
-        [$context] = node_agent_view_doctor_context();
-        $node = $context->node->forceFill(['agent_secret_hash' => $hash, 'agent_secret_exempt' => $exempt]);
-        $codes = node_agent_view_codes(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true, true, true, true, true, $hash)), '0.2.0');
-
-        expect(NodeAgentFootprint::sendsSecret('0.2.0'))->toBeFalse()
-            ->and(array_values(array_filter($codes, static fn (string $code): bool => str_starts_with($code, 'node.agent_secret'))))->toBe($expected);
-    })->with([
-        'exempt' => [null, true, []],
-        'not exempt, no hash' => [null, false, ['node.agent_secret_mismatch="not_exempt"']],
-        'a stored hash that matches the file' => [str_repeat('a', 64), false, ['node.agent_secret_mismatch="not_exempt"']],
-    ]);
-
-    it('reports a Node that is still exempt once the agent sends a secret', function (): void {
-        [$context] = node_agent_view_doctor_context();
-        $node = $context->node->forceFill(['agent_secret_hash' => null, 'agent_secret_exempt' => true]);
-        $probe = new NodeDoctorProbe(agentVersion: NodeAgentFootprint::SecretSince);
-
-        foreach ([null, hash('sha256', 'any')] as $checksum) {
-            $issues = $probe->inspect(new DoctorNodeContext($node, new NodeInspectionData(true, 'linux', 'x86_64', true, true, true, true, true, $checksum)))->issues;
-            $secret = array_values(array_filter($issues, static fn ($issue): bool => $issue->code === 'node.agent_secret_mismatch'));
-
-            expect($secret)->toHaveCount(1)
-                ->and($secret[0]->observed)->toBe('exempt')
-                ->and($secret[0]->summary)->toBe('Node agent is still exempt from its secret.');
-        }
     });
 
     it('never puts the secret hash in the report', function (): void {

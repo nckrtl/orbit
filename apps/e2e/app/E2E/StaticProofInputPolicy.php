@@ -102,7 +102,7 @@ final readonly class StaticProofInputPolicy
         if (str_starts_with($path, 'bin/e2e-')) {
             return ProofInputClassification::Runtime;
         }
-        if (str_starts_with($path, 'bin/')) {
+        if (str_starts_with($path, 'bin/') || str_starts_with($path, 'tools/')) {
             return ProofInputClassification::NonRuntime;
         }
         if ($this->isTestOrTooling($path)) {

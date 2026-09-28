@@ -141,6 +141,24 @@ final class FakeAppUpdateProjectionMutator implements AppUpdateProjectionMutator
             $replacement = Route::query()->find((int) $row['replacement_id']);
             $current = Route::query()->find((int) $row['route_id']);
 
+            $instanceId = (int) ($row['instance_id'] ?? 0);
+
+            if ($instanceId > 0) {
+                $url = 'https://'.$row['proposed_domain'];
+                $this->laravelUrls[] = ['instance_id' => $instanceId, 'url' => $url];
+                $this->writeEnvironment($instanceId, $url);
+
+                if ($this->applicationErrorOnUrl) {
+                    throw new ResourceOperationException(
+                        errorCode: 'app.slug_projection_failed',
+                        message: "Project slug projection failed for Instance [{$instanceId}].",
+                        status: 409,
+                    );
+                }
+
+                $this->projectRuntime($instanceId);
+            }
+
             if ($current instanceof Route) {
                 $current->update(['status' => RouteStatus::Retiring]);
             }
@@ -164,22 +182,6 @@ final class FakeAppUpdateProjectionMutator implements AppUpdateProjectionMutator
                     'replacement_step' => null,
                 ]);
             }
-
-            $instanceId = (int) ($row['instance_id'] ?? 0);
-
-            if ($instanceId < 1) {
-                continue;
-            }
-
-            $url = 'https://'.$row['proposed_domain'];
-            $this->laravelUrls[] = ['instance_id' => $instanceId, 'url' => $url];
-            $this->writeEnvironment($instanceId, $url);
-
-            if ($this->applicationErrorOnUrl) {
-                continue;
-            }
-
-            $this->projectRuntime($instanceId);
         }
     }
 

@@ -469,13 +469,16 @@ final readonly class TopologyVerifier
             ]
             || ($evidence['probe'] ?? null) !== $name
             || ($evidence['passed'] ?? null) !== true
+            || ! is_string($evidence['checked_at'] ?? null)
+            || ! is_string($evidence['expected'] ?? null)
+            || ! is_string($evidence['observed'] ?? null)
+            || ! is_string($evidence['evidence_ref'] ?? null)
             || ($evidence['identity'] ?? null) !== $identity
-            || ($evidence['evidence_ref'] ?? null) !== "incus://{$instance}/{$name}"
+            || $evidence['evidence_ref'] !== "incus://{$instance}/{$name}"
         ) {
             return null;
         }
 
-        /** @var array{passed:bool,checked_at:string,expected:string,observed:string,evidence_ref:string} $probe */
         $probe = [
             'passed' => $evidence['passed'],
             'checked_at' => $evidence['checked_at'],

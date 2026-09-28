@@ -12,7 +12,8 @@ final readonly class MetricsStatusResponse
 {
     /**
      * @param  array{id:int,node_id:int,node_name:string,status:string,failed_step:?string,error_code:?string}|null  $assignment
-     * @param  list<array{id:int,name:string,desired:bool,actual:string,reason:string,degraded_reason:?string}>  $exporters
+     * @param  list<array{id:int,name:string,desired:bool,actual:string,reason:string,degraded_reason:?string,degraded_error_code:?string}>  $exporters
+     * @param  'healthy'|'degraded'  $reconcileStatus
      */
     private function __construct(
         public bool $enabled,
@@ -21,6 +22,8 @@ final readonly class MetricsStatusResponse
         public string $prometheus,
         public string $grafana,
         public array $exporters,
+        public string $reconcileStatus,
+        public ?string $reconcileErrorCode,
         public string $requestId,
     ) {}
 
@@ -47,6 +50,11 @@ final readonly class MetricsStatusResponse
         $prometheus = self::health($data['prometheus'] ?? null, $requestId);
         $grafana = self::health($data['grafana'] ?? null, $requestId);
         $exporters = self::exporters($data['exporters'] ?? [], $requestId);
+        $reconcileErrorCode = GatewayErrorCode::fromTransport($data['reconcile_error_code'] ?? null);
+        $reconcileStatus = $data['reconcile_status'] ?? ($reconcileErrorCode === null ? 'healthy' : 'degraded');
+        if (! is_string($reconcileStatus) || ! in_array($reconcileStatus, ['healthy', 'degraded'], strict: true)) {
+            throw new GatewayApiException('Gateway response contains invalid metrics status.', requestId: $requestId);
+        }
 
         if (
             $enabled
@@ -71,6 +79,8 @@ final readonly class MetricsStatusResponse
             $prometheus,
             $grafana,
             $exporters,
+            $reconcileStatus,
+            $reconcileErrorCode,
             $requestId,
         );
     }
@@ -83,15 +93,29 @@ final readonly class MetricsStatusResponse
         if ($value === null) {
             return null;
         }
+        if (! is_array($value)) {
+            throw new GatewayApiException(
+                'Gateway response contains invalid metrics assignment.',
+                requestId: $requestId,
+            );
+        }
+        $id = $value['id'] ?? null;
+        $nodeId = $value['node_id'] ?? null;
+        $nodeName = $value['node_name'] ?? null;
+        $status = $value['status'] ?? null;
+        $failedStep = $value['failed_step'] ?? null;
         if (
-            ! is_array($value)
-            || ! self::positiveId($value['id'] ?? null)
-            || ! self::positiveId($value['node_id'] ?? null)
-            || ! is_string($value['node_name'] ?? null)
-            || $value['node_name'] === ''
-            || strlen($value['node_name']) > 255
-            || ! self::validAssignmentStatus($value['status'] ?? null)
-            || ! self::nullableText($value['failed_step'] ?? null)
+            ! is_int($id)
+            || ! self::positiveId($id)
+            || ! is_int($nodeId)
+            || ! self::positiveId($nodeId)
+            || ! is_string($nodeName)
+            || $nodeName === ''
+            || strlen($nodeName) > 255
+            || ! is_string($status)
+            || ! self::validAssignmentStatus($status)
+            || ($failedStep !== null && ! is_string($failedStep))
+            || ! self::nullableText($failedStep)
         ) {
             throw new GatewayApiException(
                 'Gateway response contains invalid metrics assignment.',
@@ -99,13 +123,12 @@ final readonly class MetricsStatusResponse
             );
         }
 
-        /** @var array{id:int,node_id:int,node_name:string,status:string,failed_step:?string,error_code:?string} $assignment */
         $assignment = [
-            'id' => $value['id'],
-            'node_id' => $value['node_id'],
-            'node_name' => $value['node_name'],
-            'status' => $value['status'],
-            'failed_step' => $value['failed_step'] ?? null,
+            'id' => $id,
+            'node_id' => $nodeId,
+            'node_name' => $nodeName,
+            'status' => $status,
+            'failed_step' => $failedStep,
             'error_code' => GatewayErrorCode::fromTransport($value['error_code'] ?? null),
         ];
 
@@ -133,7 +156,7 @@ final readonly class MetricsStatusResponse
     }
 
     /**
-     * @return list<array{id:int,name:string,desired:bool,actual:string,reason:string,degraded_reason:?string}>
+     * @return list<array{id:int,name:string,desired:bool,actual:string,reason:string,degraded_reason:?string,degraded_error_code:?string}>
      */
     private static function exporters(mixed $value, string $requestId): array
     {
@@ -151,9 +174,13 @@ final readonly class MetricsStatusResponse
             $actual = is_array($row) ? $row['actual'] ?? null : null;
             $reason = is_array($row) ? $row['reason'] ?? null : null;
             $degradedReason = is_array($row) ? $row['degraded_reason'] ?? null : null;
+            $degradedErrorCode = is_array($row)
+                ? GatewayErrorCode::fromTransport($row['degraded_error_code'] ?? null)
+                : null;
 
             if (
                 ! is_array($row)
+                || ! is_int($id)
                 || ! self::positiveId($id)
                 || ! is_string($name)
                 || $name === ''
@@ -163,6 +190,7 @@ final readonly class MetricsStatusResponse
                 || ! self::validActual($actual)
                 || ! is_string($reason)
                 || ! self::validReason($reason)
+                || ($degradedReason !== null && ! is_string($degradedReason))
                 || ! self::validDegradedReason($degradedReason)
             ) {
                 throw new GatewayApiException(
@@ -171,8 +199,6 @@ final readonly class MetricsStatusResponse
                 );
             }
 
-            /** @var int $id */
-            /** @var ?string $degradedReason */
             $rows[] = [
                 'id' => $id,
                 'name' => $name,
@@ -180,6 +206,7 @@ final readonly class MetricsStatusResponse
                 'actual' => $actual,
                 'reason' => $reason,
                 'degraded_reason' => $degradedReason,
+                'degraded_error_code' => $degradedErrorCode,
             ];
         }
 
@@ -227,7 +254,11 @@ final readonly class MetricsStatusResponse
     {
         return
             $value === null
-            || is_string($value) && in_array($value, ['unreachable', 'firewall_inactive'], strict: true);
+            || is_string($value) && in_array(
+                $value,
+                ['unreachable', 'firewall_inactive', 'reconcile_failed'],
+                strict: true,
+            );
     }
 
     private static function validatedHealth(string $status, string $requestId): string
@@ -249,7 +280,9 @@ final readonly class MetricsStatusResponse
      *     assignment: array{id:int,node_id:int,node_name:string,status:string,failed_step:?string,error_code:?string}|null,
      *     prometheus: string,
      *     grafana: string,
-     *     exporters: list<array{id:int,name:string,desired:bool,actual:string,reason:string,degraded_reason:?string}>,
+     *     exporters: list<array{id:int,name:string,desired:bool,actual:string,reason:string,degraded_reason:?string,degraded_error_code:?string}>,
+     *     reconcile_status: 'healthy'|'degraded',
+     *     reconcile_error_code: ?string,
      *     request_id: string
      * }
      */
@@ -262,6 +295,8 @@ final readonly class MetricsStatusResponse
             'prometheus' => $this->prometheus,
             'grafana' => $this->grafana,
             'exporters' => $this->exporters,
+            'reconcile_status' => $this->reconcileStatus,
+            'reconcile_error_code' => $this->reconcileErrorCode,
             'request_id' => $this->requestId,
         ];
     }

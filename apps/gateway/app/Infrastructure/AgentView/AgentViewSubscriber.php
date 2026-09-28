@@ -14,6 +14,7 @@ use App\Domain\WebSocket\WebSocketCredentials;
 use App\Domain\WebSocket\WebSocketHostname;
 use App\Infrastructure\Shared\StoredValue;
 use App\Models\Node;
+use App\Support\ValidatedData;
 use Closure;
 use Psr\Log\LoggerInterface;
 use Throwable;
@@ -79,8 +80,6 @@ final class AgentViewSubscriber
     private const string CHANNEL = '/\Apresence-node\.([1-9][0-9]*)\z/D';
 
     private const string LOG_CHANNEL = '/\Apresence-node-logs\.([1-9][0-9]*)\z/D';
-
-    private const string VERSION = '/\A[0-9A-Za-z.+-]{1,32}\z/D';
 
     /** @var array<string, AgentViewLink> Links keyed by Reverb address, the serving address first. */
     private array $links = [];
@@ -453,7 +452,7 @@ final class AgentViewSubscriber
             foreach (array_diff(array_keys($link->channels), $this->nodeIds) as $nodeId) {
                 $this->send($link, ['event' => 'pusher:unsubscribe', 'data' => ['channel' => "presence-node.{$nodeId}"]]);
                 $this->send($link, ['event' => 'pusher:unsubscribe', 'data' => ['channel' => "presence-node-logs.{$nodeId}"]]);
-                unset($link->channels[$nodeId], $link->snapshotRequestedAt[$nodeId], $link->viewers[$nodeId], $link->logMembers[$nodeId], $link->agentVersions[$nodeId]);
+                unset($link->channels[$nodeId], $link->snapshotRequestedAt[$nodeId], $link->viewers[$nodeId], $link->logMembers[$nodeId]);
                 $this->dirty[$nodeId] = true;
             }
 
@@ -586,9 +585,6 @@ final class AgentViewSubscriber
                 $this->dirty[$nodeId] = true;
             }
 
-            $hash = is_array($presence['hash'] ?? null) ? $presence['hash'] : [];
-            $this->setAgentVersion($link, $nodeId, is_array($hash[$agent] ?? null) ? $hash[$agent] : null);
-
             return;
         }
 
@@ -599,8 +595,6 @@ final class AgentViewSubscriber
             if ($member === $agent) {
                 $state->reset();
                 $this->dirty[$nodeId] = true;
-                $info = $data['user_info'] ?? null;
-                $this->setAgentVersion($link, $nodeId, $event === 'pusher_internal:member_added' && is_array($info) ? $info : null);
             } elseif (is_string($member) && str_starts_with($member, 'viewer.')) {
                 if ($event === 'pusher_internal:member_added') {
                     $link->viewers[$nodeId][$member] = true;
@@ -663,39 +657,6 @@ final class AgentViewSubscriber
         if (($message['user_id'] ?? null) === $agent && in_array($event, ['client-log', 'client-log-end'], strict: true)) {
             $this->publisher?->queueLog($nodeId, $event, $data);
         }
-    }
-
-    /**
-     * Records the version the agent signed into its membership of `presence-node.{id}` on one server, so
-     * the Gateway can tell an agent before 0.3.0 from one that has not joined its log channel yet.
-     *
-     * @param  array<mixed>|null  $info  The member's `user_info`, or null when the agent is not a member.
-     */
-    private function setAgentVersion(AgentViewLink $link, int $nodeId, ?array $info): void
-    {
-        $version = $info['version'] ?? null;
-
-        if (is_string($version) && preg_match(self::VERSION, $version) === 1) {
-            $link->agentVersions[$nodeId] = $version;
-        } else {
-            unset($link->agentVersions[$nodeId]);
-        }
-    }
-
-    /** The newest agent version any live server reports for the Node, or null when none does. */
-    private function agentVersion(int $nodeId): ?string
-    {
-        $newest = null;
-
-        foreach ($this->links as $link) {
-            $version = $link->agentVersions[$nodeId] ?? null;
-
-            if ($version !== null && ($newest === null || version_compare($version, $newest, '>'))) {
-                $newest = $version;
-            }
-        }
-
-        return $newest;
     }
 
     /** Records the agent's log channel membership on one server. The Node streams while any server has it. */
@@ -768,7 +729,7 @@ final class AgentViewSubscriber
                 }
 
                 $changed = array_values(array_unique([...($this->unwrittenWorkspaces[$nodeId] ?? []), ...$changed]));
-                $this->view->putNode($nodeId, $newest->units, $newest->docker, $newest->sequence, (float) $newest->lastEventAt, $newest->agentAt, $newest->workspaces, $this->logMember($nodeId), $this->agentVersion($nodeId));
+                $this->view->putNode($nodeId, $newest->units, $newest->docker, $newest->sequence, (float) $newest->lastEventAt, $newest->agentAt, $newest->workspaces, $this->logMember($nodeId));
                 $this->stored[$nodeId] = true;
                 unset($this->unwrittenWorkspaces[$nodeId]);
 
@@ -937,8 +898,7 @@ final class AgentViewSubscriber
             return [];
         }
 
-        /** @var array<string, mixed> $data */
-        return $data;
+        return ValidatedData::object($data);
     }
 
     private function now(): float

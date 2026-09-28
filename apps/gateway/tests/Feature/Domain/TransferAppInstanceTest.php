@@ -20,14 +20,20 @@ use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Processes\DesiredProcessState;
+use App\Domain\Processes\ProcessAdmissionLock;
+use App\Domain\Processes\ProcessRuntime;
+use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Schedules\DesiredTimerState;
+use App\Domain\Schedules\ScheduleRuntimeManager;
+use App\Domain\Schedules\ScheduleTargetUseGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AppInstances\NativeAppInstanceTransferRuntime;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceTransfer;
@@ -80,17 +86,6 @@ beforeEach(function (): void {
         'desired_state' => DesiredProcessState::Running,
         'status' => LifecycleStatus::Active,
     ]);
-    $this->schedule = Schedule::query()->create([
-        'target_type' => AppInstance::class,
-        'target_id' => $this->instance->id,
-        'host_node_id' => $this->sourceNode->id,
-        'name' => 'nightly',
-        'calendar' => '*-*-* 02:00:00',
-        'command' => 'php artisan schedule:run',
-        'timeout_seconds' => 60,
-        'desired_timer_state' => DesiredTimerState::Enabled,
-        'status' => LifecycleStatus::Active,
-    ]);
     $this->instance->environmentValues()->create([
         'env_key' => 'APP_KEY',
         'env_value' => 'base64:stored-app-key',
@@ -134,12 +129,59 @@ beforeEach(function (): void {
         $this->projection,
         app(DevelopmentProjectionOperationLock::class),
         $this->routerLock,
+        app(ScheduleTargetUseGuard::class),
+        app(ProcessAdmissionLock::class),
     );
     $this->data = new TransferAppInstanceData(
         nodeId: $this->destinationNode->id,
         name: null,
         sqliteSourcePath: null,
     );
+});
+
+it('refuses transfer when schedules target the AppInstance', function (): void {
+    Schedule::query()->create([
+        'target_type' => AppInstance::class,
+        'target_id' => $this->instance->id,
+        'host_node_id' => $this->sourceNode->id,
+        'name' => 'nightly',
+        'calendar' => '*-*-* 02:00:00',
+        'command' => 'php artisan schedule:run',
+        'timeout_seconds' => 60,
+        'desired_timer_state' => DesiredTimerState::Enabled,
+        'status' => LifecycleStatus::Active,
+    ]);
+
+    expect(fn () => $this->action->execute($this->instance, $this->data))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('schedule.target_in_use');
+        });
+
+    expect($this->instance->refresh()->node_id)->toBe($this->sourceNode->id)
+        ->and(AppInstanceTransfer::query()->exists())->toBeFalse()
+        ->and($this->sources->calls)->toBeEmpty();
+});
+
+it('rechecks Schedules created after reserve before transfer cutover', function (): void {
+    $this->runtime->onPause = function (AppInstance $instance): void {
+        Schedule::query()->create([
+            'target_type' => AppInstance::class,
+            'target_id' => $instance->id,
+            'host_node_id' => $this->sourceNode->id,
+            'name' => 'late-nightly',
+            'calendar' => '*-*-* 02:00:00',
+            'command' => 'php artisan schedule:run',
+            'timeout_seconds' => 60,
+            'desired_timer_state' => DesiredTimerState::Enabled,
+            'status' => LifecycleStatus::Active,
+        ]);
+    };
+
+    expect(fn () => $this->action->execute($this->instance, $this->data))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('schedule.target_in_use'));
+
+    expect($this->instance->refresh()->node_id)->toBe($this->sourceNode->id)
+        ->and(AppInstanceTransfer::query()->whereNull('cutover_at')->exists())->toBeTrue();
 });
 
 it('transfers a development AppInstance to another app-dev Node in the same Cluster', function (): void {
@@ -172,9 +214,6 @@ it('transfers a development AppInstance to another app-dev Node in the same Clus
         ->and($this->process->refresh()->id)->toBe($this->process->id)
         ->and($this->process->desired_state)->toBe(DesiredProcessState::Running)
         ->and($this->process->working_directory)->toBe('/srv/orbit/apps/shop/web')
-        ->and($this->schedule->refresh()->id)->toBe($this->schedule->id)
-        ->and($this->schedule->host_node_id)->toBe($this->destinationNode->id)
-        ->and($this->schedule->desired_timer_state)->toBe(DesiredTimerState::Enabled)
         ->and($this->writer->path)->toBe('/srv/orbit/apps/shop/web')
         ->and($this->writer->domain)->toBe('web.shop.dev.orbit')
         ->and($this->writer->contents)
@@ -417,6 +456,127 @@ it('rejects a colliding rename identity and leaves the original name unchanged',
         ->and($this->sources->calls)->toBeEmpty();
 });
 
+it('resumes a SourceCaptured transfer after source process artifacts were removed', function (): void {
+    $transfer = AppInstanceTransfer::query()->create([
+        'app_instance_id' => $this->instance->id,
+        'source_node_id' => $this->sourceNode->id,
+        'source_router_node_id' => $this->sourceCluster->routerAssignment->node_id,
+        'destination_node_id' => $this->destinationNode->id,
+        'requested_name' => null,
+        'destination_name' => 'web',
+        'destination_path' => '/srv/orbit/apps/shop/web',
+        'destination_domain' => 'web.shop.other.orbit',
+        'sqlite_source_path' => null,
+        'source_layout' => AppInstanceSourceLayout::Checkout,
+        'source_path' => $this->instance->checkout_path,
+        'common_repository_path' => null,
+        'source_route_id' => $this->route->id,
+        'status' => AppInstanceTransferStatus::InProgress,
+        'current_step' => AppInstanceTransferStep::SourceCaptured,
+    ]);
+    $this->runtime->processArtifactsRemoved = true;
+
+    $result = $this->action->execute($this->instance, $this->data);
+
+    expect($result['created'])->toBeFalse()
+        ->and($result['transfer']->id)->toBe($transfer->id)
+        ->and($result['transfer']->status)->toBe(AppInstanceTransferStatus::Completed)
+        ->and($this->runtime->processArtifactsRemoved)->toBeTrue()
+        ->and($this->runtime->pauseOutcomes)->toBe(['already-removed'])
+        ->and($this->sources->calls)->toBe(['capture', 'materialize', 'cleanup']);
+});
+
+it('pauses before capture', function (): void {
+    $events = [];
+    $this->runtime->onCall = function (string $call) use (&$events): void {
+        $events[] = $call;
+    };
+    $this->sources->onCall = function (string $call) use (&$events): void {
+        $events[] = $call;
+    };
+
+    $this->action->execute($this->instance, $this->data);
+
+    expect(array_search('pause', $events, true))
+        ->toBeLessThan(array_search('capture', $events, true));
+});
+
+it('gracefully stops an owned Docker Process before removing it and capturing the checkout', function (): void {
+    $this->process->update(['runtime' => ProcessRuntime::Docker]);
+    $this->schedule = Schedule::query()->create([
+        'target_type' => AppInstance::class,
+        'target_id' => $this->instance->id,
+        'host_node_id' => $this->sourceNode->id,
+        'name' => 'nightly',
+        'calendar' => '*-*-* 02:00:00',
+        'command' => 'php artisan schedule:run',
+        'timeout_seconds' => 60,
+        'desired_timer_state' => DesiredTimerState::Enabled,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $events = [];
+    $processes = Mockery::mock(ProcessRuntimeManager::class);
+    $processes->shouldReceive('status')->once()->with(Mockery::on(
+        fn (Process $process): bool => $process->is($this->process),
+    ))->andReturnUsing(function () use (&$events): string {
+        $events[] = 'status';
+
+        return 'running';
+    });
+    $processes->shouldReceive('stop')->once()->with(Mockery::on(
+        fn (Process $process): bool => $process->is($this->process),
+    ))->andReturnUsing(function () use (&$events): void {
+        $events[] = 'stop';
+    });
+    $processes->shouldReceive('remove')->once()->with(Mockery::on(
+        fn (Process $process): bool => $process->is($this->process),
+    ))->andReturnUsing(function () use (&$events): void {
+        $events[] = 'remove';
+    });
+
+    $schedules = Mockery::mock(ScheduleRuntimeManager::class);
+    $schedules->shouldReceive('remove')->once()->with(Mockery::on(
+        fn (Schedule $schedule): bool => $schedule->is($this->schedule),
+    ), true)->andReturnTrue();
+
+    $this->sources->onCall = function (string $call) use (&$events): void {
+        $events[] = $call;
+    };
+    (new NativeAppInstanceTransferRuntime($processes, $schedules))->pause($this->instance);
+    $this->sources->capture($this->instance);
+
+    expect($events)->toBe(['status', 'stop', 'remove', 'capture']);
+});
+
+it('repeats native transfer pause after process artifacts are removed', function (): void {
+    $this->schedule = Schedule::query()->create([
+        'target_type' => AppInstance::class,
+        'target_id' => $this->instance->id,
+        'host_node_id' => $this->sourceNode->id,
+        'name' => 'nightly',
+        'calendar' => '*-*-* 02:00:00',
+        'command' => 'php artisan schedule:run',
+        'timeout_seconds' => 60,
+        'desired_timer_state' => DesiredTimerState::Enabled,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $processes = Mockery::mock(ProcessRuntimeManager::class);
+    $processes->shouldReceive('status')->twice()->andReturn('absent');
+    $processes->shouldNotReceive('stop');
+    $processes->shouldReceive('remove')->twice()->with(Mockery::on(
+        fn (Process $process): bool => $process->is($this->process),
+    ));
+
+    $schedules = Mockery::mock(ScheduleRuntimeManager::class);
+    $schedules->shouldReceive('remove')->twice()->with(Mockery::on(
+        fn (Schedule $schedule): bool => $schedule->is($this->schedule),
+    ), true)->andReturnTrue();
+
+    $runtime = new NativeAppInstanceTransferRuntime($processes, $schedules);
+    $runtime->pause($this->instance);
+    $runtime->pause($this->instance);
+});
+
 it('captures source as an independent destination checkout without mutating source Git', function (): void {
     $this->action->execute($this->instance, $this->data);
 
@@ -461,6 +621,32 @@ it('transfers only the selected SQLite snapshot after the source pause', functio
         ->toBeLessThan(array_search('relocate', $this->runtime->calls, true));
 });
 
+it('refuses an unreadable env instead of silently transferring without it', function (): void {
+    $this->reader->failure = new ResourceOperationException(
+        'env.import_preflight_failed',
+        'The recorded AppInstance environment file cannot be read safely.',
+        409,
+    );
+
+    expect(fn () => $this->action->execute($this->instance, $this->data))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('env.import_preflight_failed'));
+
+    expect($this->instance->environmentValues()->where('env_key', 'NEW_FROM_ENV')->exists())->toBeFalse()
+        ->and(AppInstanceTransfer::query()->sole()->status)->toBe(AppInstanceTransferStatus::Failed);
+});
+
+it('imports no environment values when the source env is missing', function (): void {
+    $this->reader->failure = new ResourceOperationException(
+        'env.import_source_missing',
+        'The recorded AppInstance environment file does not exist.',
+        404,
+    );
+
+    $this->action->execute($this->instance, $this->data);
+
+    expect($this->instance->environmentValues()->pluck('env_key')->all())->toBe(['APP_KEY', 'APP_URL']);
+});
+
 it('imports source .env without overwriting stored keys and rebuilds destination values', function (): void {
     $this->reader->contents = "APP_KEY=from-file\nNEW_FROM_ENV=imported\n";
     $this->action->execute($this->instance, $this->data);
@@ -483,7 +669,7 @@ it('restores the source and discards destination state when transfer fails befor
 
     expect($this->instance->refresh()->node_id)->toBe($this->sourceNode->id)
         ->and($this->instance->name)->toBe('web')
-        ->and($this->runtime->calls)->toBe(['restore'])
+        ->and($this->runtime->calls)->toBe(['pause', 'restore'])
         ->and($this->sources->discarded)->toBe(['/srv/orbit/apps/shop/web'])
         ->and($transfer->cutover_at)->toBeNull()
         ->and($transfer->current_step)->toBe(AppInstanceTransferStep::Reserved)
@@ -501,6 +687,85 @@ it('restores the source and discards destination state when transfer fails befor
     expect($result['created'])->toBeFalse()
         ->and($result['transfer']->status)->toBe(AppInstanceTransferStatus::Completed)
         ->and($result['appInstance']->node_id)->toBe($this->destinationNode->id);
+});
+
+it('rolls back imported env when route preparation fails before cutover', function (): void {
+    $this->reader->contents = "APP_KEY=from-file\nNEW_FROM_ENV=imported\n";
+    Route::creating(static function (Route $route): void {
+        if ($route->status === RouteStatus::Pending) {
+            throw new ResourceOperationException('route.prepare_failed', 'Route preparation failed.', 409);
+        }
+    });
+
+    expect(fn () => $this->action->execute($this->instance, $this->data))
+        ->toThrow(ResourceOperationException::class);
+
+    expect($this->instance->environmentValues()->pluck('env_key')->all())->toBe(['APP_KEY', 'APP_URL'])
+        ->and(AppInstanceTransfer::query()->sole()->imported_environment_keys)->toBe([]);
+});
+
+it('rolls back previously imported env keys after retry adds new imports', function (): void {
+    Route::creating(static function (Route $route): void {
+        if ($route->status === RouteStatus::Pending) {
+            throw new ResourceOperationException('route.prepare_failed', 'Route preparation failed.', 409);
+        }
+    });
+    $this->reader->contents = "IMPORTED_A=one\n";
+
+    expect(fn () => $this->action->execute($this->instance, $this->data))
+        ->toThrow(ResourceOperationException::class);
+
+    $transfer = AppInstanceTransfer::query()->sole();
+    expect($this->instance->environmentValues()->where('env_key', 'IMPORTED_A')->exists())->toBeFalse();
+
+    // Simulate A surviving an incomplete rollback; the transfer must retain ownership of it.
+    $this->instance->environmentValues()->create([
+        'env_key' => 'IMPORTED_A',
+        'env_value' => 'one',
+    ]);
+    $transfer->update(['imported_environment_keys' => ['IMPORTED_A']]);
+    $this->reader->contents = "IMPORTED_B=two\n";
+
+    expect(fn () => $this->action->execute($this->instance->refresh(), $this->data))
+        ->toThrow(ResourceOperationException::class);
+
+    expect($this->instance->environmentValues()->pluck('env_key')->all())->toBe(['APP_KEY', 'APP_URL'])
+        ->and($transfer->refresh()->imported_environment_keys)->toBe([]);
+});
+
+it('refuses a pre-cutover retry when schedules target the AppInstance', function (): void {
+    $this->sources->failMaterialize = true;
+
+    expect(fn () => $this->action->execute($this->instance, $this->data))
+        ->toThrow(ResourceOperationException::class);
+
+    $transfer = AppInstanceTransfer::query()->where('app_instance_id', $this->instance->id)->sole();
+    $sourceCalls = $this->sources->calls;
+    $runtimeCalls = $this->runtime->calls;
+
+    Schedule::query()->create([
+        'target_type' => AppInstance::class,
+        'target_id' => $this->instance->id,
+        'host_node_id' => $this->sourceNode->id,
+        'name' => 'nightly',
+        'calendar' => '*-*-* 02:00:00',
+        'command' => 'php artisan schedule:run',
+        'timeout_seconds' => 60,
+        'desired_timer_state' => DesiredTimerState::Enabled,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $this->sources->failMaterialize = false;
+
+    expect(fn () => $this->action->execute($this->instance->refresh(), $this->data))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('schedule.target_in_use');
+        });
+
+    expect($this->instance->refresh()->node_id)->toBe($this->sourceNode->id)
+        ->and($transfer->refresh()->cutover_at)->toBeNull()
+        ->and($transfer->refresh()->current_step)->toBe(AppInstanceTransferStep::Reserved)
+        ->and($this->sources->calls)->toBe($sourceCalls)
+        ->and($this->runtime->calls)->toBe($runtimeCalls);
 });
 
 it('continues only forward after cutover and does not recopy source', function (): void {

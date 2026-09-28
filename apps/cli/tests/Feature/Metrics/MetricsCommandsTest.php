@@ -82,6 +82,8 @@ it('renders status exporter rows in JSON', function (): void {
                 ],
                 'prometheus' => 'healthy',
                 'grafana' => 'healthy',
+                'reconcile_status' => 'degraded',
+                'reconcile_error_code' => 'metrics.cadvisor_fleet_rollback_failed',
                 'exporters' => [
                     [
                         'id' => 2,
@@ -97,7 +99,8 @@ it('renders status exporter rows in JSON', function (): void {
                         'desired' => true,
                         'actual' => 'unknown',
                         'reason' => 'role_default',
-                        'degraded_reason' => 'unreachable',
+                        'degraded_reason' => 'reconcile_failed',
+                        'degraded_error_code' => 'metrics.cadvisor_fleet_rollback_failed',
                     ],
                 ],
             ],
@@ -128,6 +131,7 @@ it('renders status exporter rows in JSON', function (): void {
                     'actual' => 'active',
                     'reason' => 'metrics_node',
                     'degraded_reason' => null,
+                    'degraded_error_code' => null,
                 ],
                 [
                     'id' => 5,
@@ -135,9 +139,12 @@ it('renders status exporter rows in JSON', function (): void {
                     'desired' => true,
                     'actual' => 'unknown',
                     'reason' => 'role_default',
-                    'degraded_reason' => 'unreachable',
+                    'degraded_reason' => 'reconcile_failed',
+                    'degraded_error_code' => 'metrics.cadvisor_fleet_rollback_failed',
                 ],
             ],
+            'reconcile_status' => 'degraded',
+            'reconcile_error_code' => 'metrics.cadvisor_fleet_rollback_failed',
             'request_id' => $requestId,
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
         ->assertExitCode(0);
@@ -522,6 +529,8 @@ it('renders complete human status tables', function (): void {
                 'url' => 'https://metrics.orbit',
                 'prometheus' => 'healthy',
                 'grafana' => 'healthy',
+                'reconcile_status' => 'degraded',
+                'reconcile_error_code' => 'metrics.cadvisor_fleet_rollback_failed',
                 'exporters' => [
                     [
                         'id' => 7,
@@ -536,7 +545,8 @@ it('renders complete human status tables', function (): void {
                         'desired' => true,
                         'actual' => 'unknown',
                         'reason' => 'role_default',
-                        'degraded_reason' => 'unreachable',
+                        'degraded_reason' => 'reconcile_failed',
+                        'degraded_error_code' => 'metrics.cadvisor_fleet_rollback_failed',
                     ],
                 ],
             ],
@@ -556,10 +566,12 @@ it('renders complete human status tables', function (): void {
         ->and($flat)->toContain('Assignment node app-dev')
         ->and($flat)->toContain('Prometheus healthy')
         ->and($flat)->toContain('Grafana healthy')
-        ->and($output)->toContain('DESIRED')
+        ->and($flat)->toContain('Reconcile status degraded')
+        ->and($flat)->toContain('Reconcile error code metrics.cadvisor_fleet_rollback_failed')
+        ->and($output)->toContain('ERROR CODE')
         ->and($output)->toContain('DEGRADED')
-        ->and($flat)->toContain('│ 7 │ orbit-ops │ yes │ active │ explicit_enabled │ — │')
-        ->and($flat)->toContain('│ 9 │ unreachable-node │ yes │ unknown │ role_default │ unreachable │')
+        ->and($flat)->toContain('│ 7 │ orbit-ops │ yes │ active │ explicit_enabled │ — │ — │')
+        ->and($flat)->toContain('│ 9 │ unreachable-node │ yes │ unknown │ role_default │ reconcile_failed │ metrics.cadvisor_fleet_rollback_failed │')
         ->and($flat)->toContain('Request ID: '.metrics_cli_request_id());
 });
 

@@ -1,38 +1,45 @@
 ---
 title: "Architecture decisions"
-description: "How Orbit proposes, reviews, and accepts architectural decisions with feature pull requests."
+description: "How Orbit records a decision while it is being built, and how the decision moves into the documentation once it is built."
 ---
 
 # Architecture decisions
 
-Architecture decision records explain why Orbit chose a significant product or technical direction. They preserve rationale and alternatives. Code, tests, and user-facing documentation describe the delivered behavior.
+The documentation is the single source of truth for Orbit's current architecture, components, behavior, and boundaries. An architecture decision record (ADR) holds a decision only while that decision is being built. When the decision is built, the pull request that completes it moves the decision into the documentation and retires the record.
 
 ## When to write a record
 
 Write an ADR for a cross-component contract, an architecture boundary, a security or ownership model, or an operational choice that is costly to reverse. Tactical implementation choices belong in code and tests.
 
-Read affected decisions before writing documentation and implementing the feature. When changing a decision, explain the departure and its consequences in a new ADR that names the decision it extends, amends, or supersedes. Preserve the original rationale. Editorial corrections can update an accepted record while preserving its decision.
+Read the [mission](/mission) and the affected documentation pages first. Every ADR names the mission principle that it serves. A decision that needs an exception to a principle states the exception on its Principle line, so that the maintainer can see it.
 
-## Propose and accept
+## Write and review
 
-Draft an ADR as `Proposed.` on the feature branch. The feature PR contains the proposed decision, implementation, tests, and documentation.
+The docs-first subtask of a task group writes the ADR, when one is needed, together with the documentation change. The ADR and the changed pages are the contract for the later subtasks. The [contributor guide](/contributor-guide) describes the docs-first subtask and the docs-impact check.
 
-The maintainer reviews the complete feature. Merging the approved PR accepts the exact proposed decision together with its implementation.
+A new ADR has the status `In progress.` The maintainer reviews it together with the feature. A change to a decision that is still in progress edits that ADR. A change to built behavior edits the documentation directly, and needs a new ADR only when it is itself a significant decision.
 
-For records introduced under this convention, `Proposed.` describes the proposal at submission. A PR approved and merged by the maintainer establishes its acceptance on main; the merged PR records the date and approved revision. Existing `Accepted on YYYY-MM-DD.` records keep their recorded acceptance. Reviewers use the branch and merge history to establish decision status.
+## Absorb and retire
 
-A standalone ADR PR is available when agreement would help several dependent changes. It follows the same maintainer review and merge convention.
+The pull request that completes a decision absorbs it into the documentation and retires the ADR in the same change:
+
+1. Write the behavior into the page that owns it.
+2. Write the reasons and the rejected alternatives that still matter into that page's "Why it works this way" section.
+3. Delete the ADR file and remove it from the Records navigation.
+4. Add a redirect from the ADR path to the section that absorbed it.
+5. Add a row to "Retired decisions" in the [overview](/decisions/overview). Record the deleted filename slug in the number's list in `apps/docs/config/adr-retired-slugs.php`.
+6. Point every inbound link to the absorbing section.
+
+Older records can share a number. Record each retired slug separately under that number, and keep a live record in the legacy allowlist until it retires. Docs-lint checks the redirect against each slug, not against any redirect that shares the number. This keeps a deleted Incus ADR distinct from a live Tasks ADR that used the same number.
+
+Most decisions are built in one task group, so their ADR is retired in the same pull request that adds it. An ADR stays on main only while its decision spans more than one pull request. A code comment can keep an ADR number, because the overview resolves every retired number.
 
 ## Record format
 
-Use the next available four-digit number and a short kebab-case name. Check for a collision before merging concurrent additions.
+Use the next available four-digit number and a short kebab-case name. A number is never reused. Check for a collision before merging concurrent additions.
 
 ```text
 0001-short-decision-name.md
 ```
 
-Use the [ADR template](https://github.com/nckrtl/orbit/blob/main/.agents/skills/writing-documentation/templates/adr.md). Records contain `Status`, `Context`, `Decision`, `Rejected alternatives`, `Consequences`, and `Affects`. Historical records before 0020 retain their original structure.
-
-Keep one decision in each record. Explain why it won, the alternatives, and the costs. Link mechanisms such as CLI syntax, field lists, error behavior, and verification procedures from the affected maintained reference page. Run `composer docs-build` when context changes and `composer docs-lint` before submitting.
-
-The [feature delivery reference](/reference/implementation-loop) describes contribution and review. [ADR 0076](/decisions/0076-deliver-features-through-complete-pull-requests) records this decision and the contributor rules it replaces. Historical ADRs remain available as decision history.
+Use the [ADR template](https://github.com/nckrtl/orbit/blob/main/.agents/skills/writing-documentation/templates/adr.md). Keep one decision in each record. Run `composer docs-build` when context changes and `composer docs-lint` before submitting.

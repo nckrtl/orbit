@@ -12,10 +12,13 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Firewall\FirewallOperationException;
-use App\Domain\Nodes\DatabaseRoleSettings;
+use App\Domain\Nodes\NodeConverger;
+use App\Domain\Nodes\NodeObservation;
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Domain\Nodes\NodeProvisioningIdentity;
 use App\Domain\Nodes\NodeRoleFollowUpReport;
 use App\Domain\Nodes\NodeRoleOperationException;
+use App\Domain\Nodes\RecoverableNodeConverger;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
@@ -39,6 +42,7 @@ final readonly class AddNodeRoleAction
         private AssignRoleAction $assignRole,
         private RoleRegistry $registry,
         private RoleBaselineConverger $baselines,
+        private NodeConverger $converger,
         private ToolManagerMaterializer $toolManagers,
         private ToolManagerScopeLock $managerScope,
         private ?RecordEventBroadcaster $broadcaster = null,
@@ -60,7 +64,6 @@ final readonly class AddNodeRoleAction
         ?AnalyticsRoleSettings $analytics = null,
     ): array {
         $this->guardActiveNode($node);
-        $this->guardEmptyDatabaseSettings($role);
         $this->guardAnalyticsStorage($node, $role, $analytics);
 
         if (! $this->registry->definition($role)->mutable) {
@@ -68,6 +71,26 @@ final readonly class AddNodeRoleAction
         }
 
         $result = $this->withAppManagerScope($node, $role, fn (): array => $this->nodeLock()->run($node, function () use ($node, $role, $convergeExisting, $analytics): array {
+            $assignedRoles = $node->roles()->get();
+
+            if ($assignedRoles->every(static fn (NodeRole $assignment): bool => $assignment->status !== LifecycleStatus::Active)) {
+                $assignment = $assignedRoles->firstWhere('role', $role);
+
+                if ($assignment instanceof NodeRole && $assignment->role === $role) {
+                    if (! $convergeExisting) {
+                        throw new RoleAssignmentException("Role [{$role->value}] is already assigned; explicit convergence is required.");
+                    }
+
+                    if (! $assignment->canClaimConvergence()) {
+                        throw new RoleAssignmentException("Role [{$role->value}] cannot converge from status [{$assignment->status->value}].");
+                    }
+                } else {
+                    $this->assignRole->preflight($node, $role, [$role]);
+                }
+
+                return $this->convergeManagedDnsTransition($node, $role, $analytics, $assignment instanceof NodeRole && $assignment->role === $role);
+            }
+
             $claim = $convergeExisting ? $this->claimExisting($node, $role) : $this->claimNew($node, $role);
 
             if ($analytics instanceof AnalyticsRoleSettings) {
@@ -94,11 +117,52 @@ final readonly class AddNodeRoleAction
         return $result;
     }
 
+    /** @return array{assignment: NodeRole, created: bool, follow_up: ?string} */
+    private function convergeManagedDnsTransition(Node $node, RoleName $role, ?AnalyticsRoleSettings $analytics, bool $retryExisting): array
+    {
+        $identity = new NodeProvisioningIdentity($node->user, $node->user);
+        $result = null;
+        $completion = function (NodeObservation $observation) use ($node, $role, $analytics, $retryExisting, &$result): void {
+            $claim = $retryExisting ? $this->claimExisting($node, $role) : $this->claimNew($node, $role);
+
+            if ($analytics instanceof AnalyticsRoleSettings) {
+                $this->analyticsSettings()->store($node, $analytics);
+            }
+
+            $result = $this->convergeClaim($node, $role, $claim);
+        };
+
+        if (! $this->converger instanceof RecoverableNodeConverger) {
+            throw new \LogicException('The Node converger must support recoverable convergence for the managed DNS transition.');
+        }
+
+        try {
+            $this->converger->convergeRecoverably($node, $identity, null, $completion, false);
+        } catch (NodeProvisioningException $exception) {
+            if ($result !== null) {
+                DB::transaction(static fn () => $result['assignment']->markConvergenceFailed($exception->step, $exception->errorCode));
+            }
+
+            throw new NodeRoleOperationException(
+                step: "converge:{$exception->step}",
+                errorCode: 'node_role.convergence_failed',
+                underlyingErrorCode: $exception->errorCode,
+                message: $exception->getMessage(),
+                result: $exception->result,
+                previous: $exception,
+            );
+        }
+
+        if ($result === null) {
+            throw new \LogicException('Node convergence did not complete the role assignment.');
+        }
+
+        return $result;
+    }
+
     public function executeDuringProvisioning(Node $node, RoleName $role): NodeRole
     {
         $this->guardProvisioningNode($node);
-        $this->guardEmptyDatabaseSettings($role);
-
         if (! $this->registry->definition($role)->assignableDuringProvisioning) {
             throw new RoleAssignmentException("Role [{$role->value}] cannot be assigned during provisioning.");
         }
@@ -127,9 +191,7 @@ final readonly class AddNodeRoleAction
     /** @return array{assignment: NodeRole, created: bool} */
     private function claimNew(Node $node, RoleName $role): array
     {
-        /**
-         * @var array{assignment: NodeRole, created: bool} $claim
-         */
+
         $claim = DB::transaction(function () use ($node, $role): array {
             $assignment = $this->assignRole->execute($node, $role);
 
@@ -152,9 +214,7 @@ final readonly class AddNodeRoleAction
     /** @return array{assignment: NodeRole, created: bool} */
     private function claimExisting(Node $node, RoleName $role): array
     {
-        /**
-         * @var array{assignment: NodeRole, created: bool} $claim
-         */
+
         $claim = DB::transaction(function () use ($node, $role): array {
             $assignment = $this->assignRole->execute($node, $role);
 
@@ -243,15 +303,6 @@ final readonly class AddNodeRoleAction
     private function followUps(): NodeRoleFollowUpReport
     {
         return $this->followUps ?? app(NodeRoleFollowUpReport::class);
-    }
-
-    private function guardEmptyDatabaseSettings(RoleName $role): void
-    {
-        if ($role !== RoleName::Database) {
-            return;
-        }
-
-        DatabaseRoleSettings::from([]);
     }
 
     /**

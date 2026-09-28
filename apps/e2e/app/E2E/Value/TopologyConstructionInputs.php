@@ -235,8 +235,8 @@ final readonly class TopologyConstructionInputs
             new AttemptId($value['attempt_id']),
             $recipe,
         );
-        /** @var array<string, array{source:string,instance:string,incus_address:string,wireguard_address:string}> $nodes */
-        $nodes = $value['nodes'];
+
+        $nodes = self::decodeNodes($value['nodes']);
 
         return new self(
             $target,
@@ -249,6 +249,38 @@ final readonly class TopologyConstructionInputs
             $nodes,
             $schema,
         );
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $nodes
+     * @return array<string, array{source: string, instance: string, incus_address: string, wireguard_address: string}>
+     */
+    private static function decodeNodes(array $nodes): array
+    {
+        $decoded = [];
+        foreach (SerializedArrays::stringKeyed($nodes) as $key => $node) {
+            if (! is_array($node)) {
+                throw new InvalidArgumentException('The topology construction Node inventory is invalid.');
+            }
+            $node = SerializedArrays::stringKeyed($node);
+            if (
+                array_keys($node) !== ['source', 'instance', 'incus_address', 'wireguard_address']
+                || ! is_string($node['source'])
+                || ! is_string($node['instance'])
+                || ! is_string($node['incus_address'])
+                || ! is_string($node['wireguard_address'])
+            ) {
+                throw new InvalidArgumentException('The topology construction Node inventory is invalid.');
+            }
+            $decoded[$key] = [
+                'source' => $node['source'],
+                'instance' => $node['instance'],
+                'incus_address' => $node['incus_address'],
+                'wireguard_address' => $node['wireguard_address'],
+            ];
+        }
+
+        return $decoded;
     }
 
     /** @param array<string, array<array-key, mixed>> $nodes */

@@ -16,6 +16,7 @@ enum ExporterDegradationReason: string
 {
     case Unreachable = 'unreachable';
     case FirewallInactive = 'firewall_inactive';
+    case ReconcileFailed = 'reconcile_failed';
 
     /**
      * Maps a stable exporter error code onto the degradation it justifies.

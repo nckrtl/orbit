@@ -22,7 +22,6 @@ final readonly class ActivityBroadcastObserver
 
     public function updated(Activity $activity): void
     {
-        /** @var list<string> $columns */
         $columns = array_keys($activity->getChanges());
 
         $this->broadcaster->updated($activity, $columns);

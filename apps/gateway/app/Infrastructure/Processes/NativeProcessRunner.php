@@ -49,7 +49,6 @@ final readonly class NativeProcessRunner implements ProcessRunner
             $truncated = false;
             $maxOutputBytes = $invocation->maxOutputBytes ?? $this->maxOutputBytes;
             $startedAt = microtime(true);
-            /** @var list<ProcessOutput> $pendingOutput */
             $pendingOutput = [];
 
             $consume = function (ProcessOutputStream $stream, string $buffer) use (

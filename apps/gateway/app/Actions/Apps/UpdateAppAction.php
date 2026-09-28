@@ -423,16 +423,16 @@ final readonly class UpdateAppAction
             $attributes['root'] = $update->requested_root;
         }
 
-        if ($attributes !== []) {
-            $app->fill($attributes);
-            $app->save();
-        }
-
         $evidence = $update->evidence ?? [];
 
         $slugEvidence = $this->storedMap($evidence['slug'] ?? null);
         if ($slugEvidence !== null && is_string($update->requested_slug)) {
-            $this->projections->publishSlug($app->refresh(), $update->requested_slug, $slugEvidence);
+            $this->projections->publishSlug($app, $update->requested_slug, $slugEvidence);
+        }
+
+        if ($attributes !== []) {
+            $app->fill($attributes);
+            $app->save();
         }
 
         $rootEvidence = $this->storedMap($evidence['root'] ?? null);

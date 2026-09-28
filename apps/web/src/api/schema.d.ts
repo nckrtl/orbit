@@ -3306,6 +3306,8 @@ export interface components {
             prometheus?: string;
             grafana?: string;
             exporters?: components["schemas"]["MetricsExporter"][];
+            reconcile_status?: string;
+            reconcile_error_code?: string | null;
         };
         MetricsAssignment: {
             id?: number;
@@ -3323,7 +3325,8 @@ export interface components {
             /** @enum {string} */
             reason?: "ineligible" | "metrics_node" | "explicit_enabled" | "role_default" | "explicit_disabled" | "roleless_default_excluded";
             /** @enum {string|null} */
-            degraded_reason?: "unreachable" | "firewall_inactive" | null;
+            degraded_reason?: "unreachable" | "firewall_inactive" | "reconcile_failed" | null;
+            degraded_error_code?: string | null;
         };
         Node: {
             id?: number;
@@ -3596,7 +3599,6 @@ export interface components {
             manager?: string;
             package?: string;
             version_constraint?: string | null;
-            protected?: boolean;
             status?: string;
             installed_version?: string | null;
             failed_operation?: string | null;
@@ -5680,8 +5682,6 @@ export interface operations {
                     domain?: string;
                     /** @description Optional explicit source branch */
                     branch?: string;
-                    /** @description Adopt complete source evidence for a legacy incomplete checkpoint */
-                    recover_source_profile?: boolean;
                 };
             };
         };
@@ -7784,7 +7784,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description The live log path is not available (`logs.live_unavailable`); `details.reason` is `ssh_only` for a production Instance, or `realtime_not_configured`, `subscriber_down`, `agent_unavailable`, `agent_not_joined`, or `agent_outdated`. */
+            /** @description The live log path is not available (`logs.live_unavailable`); `details.reason` is `ssh_only` for a production Instance, or `realtime_not_configured`, `subscriber_down`, `agent_unavailable`, or `agent_not_joined`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -10550,7 +10550,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description The live log path is not available (`logs.live_unavailable`); `details.reason` is `ssh_only` for a production Instance, or `realtime_not_configured`, `subscriber_down`, `agent_unavailable`, `agent_not_joined`, or `agent_outdated`. */
+            /** @description The live log path is not available (`logs.live_unavailable`); `details.reason` is `ssh_only` for a production Instance, or `realtime_not_configured`, `subscriber_down`, `agent_unavailable`, or `agent_not_joined`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -12884,18 +12884,18 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @description Route domain */
                     domain: string;
-                    /**
-                     * @description Publication intent
-                     * @enum {string}
-                     */
+                    /** @enum {string} */
                     publication?: "private" | "public";
+                    app_instance_id: number;
+                } | ({
+                    domain: string;
+                    /** @enum {string} */
+                    publication?: "private";
                     node_id: number;
-                    /** @description Loopback HTTP URL for a custom proxy Route */
                     upstream?: string;
                     process_id?: number;
-                };
+                } & (unknown | unknown));
             };
         };
         responses: {

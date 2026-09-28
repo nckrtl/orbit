@@ -11,6 +11,7 @@ use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteAssociationGuard;
+use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteReconciliationGuard;
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Routes\RouteRemovalStep;
@@ -35,7 +36,24 @@ final readonly class RemoveRouteAction
 
     public function execute(Route $route): Route
     {
-        /** @var list<int> $expectedTargetIds */
+        return $this->remove($route, allowTracking: false);
+    }
+
+    public function executeTrackingRoute(Route $route): Route
+    {
+        if ($route->kind !== RouteKind::AnalyticsTracking) {
+            throw new ResourceOperationException(
+                errorCode: 'route.kind_invalid',
+                message: 'Only analytics tracking Routes can use the analytics removal path.',
+                status: 409,
+            );
+        }
+
+        return $this->remove($route, allowTracking: true);
+    }
+
+    private function remove(Route $route, bool $allowTracking): Route
+    {
         $expectedTargetIds = $route
             ->targets()
             ->orderBy('app_instance_id')
@@ -43,11 +61,11 @@ final readonly class RemoveRouteAction
             ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->values()
             ->all();
-
+        $expectedTargetIds = array_values($expectedTargetIds);
         $result = $this->environmentOperations->run(
             $expectedTargetIds,
             fn (): Route => $this->owner->run(
-                fn (): Route => $this->executeOwned($route, $expectedTargetIds),
+                fn (): Route => $this->executeOwned($route, $expectedTargetIds, $allowTracking),
             ),
         );
 
@@ -63,7 +81,7 @@ final readonly class RemoveRouteAction
     }
 
     /** @param list<int> $expectedTargetIds */
-    private function executeOwned(Route $route, array $expectedTargetIds): Route
+    private function executeOwned(Route $route, array $expectedTargetIds, bool $allowTracking): Route
     {
         $locked = $this->lockAndGuard($route, $expectedTargetIds);
 
@@ -83,7 +101,7 @@ final readonly class RemoveRouteAction
             return $locked;
         }
 
-        $this->assertStandaloneRemovalAllowed($locked);
+        $this->assertStandaloneRemovalAllowed($locked, $allowTracking);
         $this->beginRemoval($locked);
 
         try {
@@ -105,7 +123,7 @@ final readonly class RemoveRouteAction
             });
             $failureStep = RouteRemovalStep::Record;
 
-            return $this->deleteRecord($locked, $expectedTargetIds);
+            return $this->deleteRecord($locked, $expectedTargetIds, $allowTracking);
         } catch (Throwable $exception) {
             $this->recordFailure($locked, $failureStep, $this->errorCode($exception));
 
@@ -116,7 +134,6 @@ final readonly class RemoveRouteAction
     /** @param list<int> $expectedTargetIds */
     private function lockAndGuard(Route $route, array $expectedTargetIds): Route
     {
-        /** @var Route $locked */
         $locked = DB::transaction(function () use ($route, $expectedTargetIds): Route {
             $locked = Route::query()->with('targets')->lockForUpdate()->findOrFail($route->id);
             $this->assertTargetsUnchanged($locked, $expectedTargetIds);
@@ -127,8 +144,16 @@ final readonly class RemoveRouteAction
         return $locked;
     }
 
-    private function assertStandaloneRemovalAllowed(Route $route): void
+    private function assertStandaloneRemovalAllowed(Route $route, bool $allowTracking): void
     {
+        if ($route->kind === RouteKind::AnalyticsTracking && ! $allowTracking) {
+            throw new ResourceOperationException(
+                errorCode: 'route.tracking_managed',
+                message: 'Tracking Routes are managed by the analytics role and cannot be destroyed directly.',
+                status: 409,
+            );
+        }
+
         if (new PublicRouteEligibility()->publicEdgeIsLive($route)) {
             $this->reconciliation->refuse();
         }
@@ -192,13 +217,12 @@ final readonly class RemoveRouteAction
     }
 
     /** @param list<int> $expectedTargetIds */
-    private function deleteRecord(Route $route, array $expectedTargetIds): Route
+    private function deleteRecord(Route $route, array $expectedTargetIds, bool $allowTracking): Route
     {
-        /** @var Route $removed */
-        $removed = DB::transaction(function () use ($route, $expectedTargetIds): Route {
+        $removed = DB::transaction(function () use ($route, $expectedTargetIds, $allowTracking): Route {
             $locked = Route::query()->with('targets')->lockForUpdate()->findOrFail($route->id);
             $this->assertTargetsUnchanged($locked, $expectedTargetIds);
-            $this->assertStandaloneRemovalAllowed($locked);
+            $this->assertStandaloneRemovalAllowed($locked, $allowTracking);
             $locked->delete();
 
             return $locked;

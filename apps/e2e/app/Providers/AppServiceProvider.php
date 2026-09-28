@@ -145,8 +145,6 @@ final class AppServiceProvider extends ServiceProvider
                 }
             }
 
-            /** @var array<string, string> $ownership */
-
             return new IncusHost(
                 remote: $remote,
                 project: $project,

@@ -73,6 +73,8 @@ function service_metrics_recording_runtime(): ServiceMetricsRuntime
 
         public bool $lockLost = false;
 
+        public bool $failRestore = false;
+
         public function snapshot(ServiceMetricsNode $target): string
         {
             $this->events[] = 'snapshot:'.$target->node->id;
@@ -95,6 +97,9 @@ function service_metrics_recording_runtime(): ServiceMetricsRuntime
 
             if ($this->lockLost) {
                 throw NodeLockLoss::exception('node-role:id:1');
+            }
+            if ($this->failRestore) {
+                throw new RuntimeException('monitoring recovery reload failed');
             }
         }
     };

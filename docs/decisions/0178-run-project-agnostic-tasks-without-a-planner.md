@@ -59,6 +59,6 @@ The following examples identify Project-specific behavior that the planned imple
 ## Affects
 
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/web
-- ADRs: [0122](/decisions/0122-hold-task-groups-in-backlog-until-ready), [0124](/decisions/0124-plan-backlog-groups-with-a-t3-planner), [0125](/decisions/0125-run-the-project-check-when-the-implementer-hands-off), [0133](/decisions/0133-verify-typed-subtask-deliverables-at-handoff), [0135](/decisions/0135-run-incus-topologies-for-task-workspace-clones-through-a-bridge-worktree), [0163](/decisions/0163-prove-a-failing-test-on-the-start-commit), [0164](/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask)
+- ADRs: [0122](/reference/tasks#prepare-a-group-in-backlog), [0124](/reference/tasks#prepare-a-group-in-backlog), [0125](/reference/tasks#project-check), [0133](/reference/tasks#deliverables), [0135](/reference/incus-topologies#task-workspace-clones), [0163](/reference/tasks#reproduce-a-bug-on-the-start-commit), [0164](/reference/tasks#fix-a-settling-pull-request)
 - Detail: [Tasks reference](/reference/tasks), [Tasks CLI](/cli/tasks), [Orbit task policy](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md)
 - Verify: `composer docs-lint`; implementation groups verify each Project's task check and generic deliverables

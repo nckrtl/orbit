@@ -37,12 +37,14 @@ use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
+use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Projects\DevelopmentNodeExclusion;
 use App\Domain\Routes\RoutePlacement;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Schedules\ScheduleTargetUseGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
@@ -79,6 +81,8 @@ final readonly class TransferAppInstanceAction
         private AppInstanceTransferRouteProjector $transferProjection,
         private DevelopmentProjectionOperationLock $projectionOwner,
         private ClusterRouterOperationLock $routerOwner,
+        private ScheduleTargetUseGuard $schedules,
+        private ProcessAdmissionLock $processAdmissions,
     ) {}
 
     /** @return array{appInstance: AppInstance, transfer: AppInstanceTransfer, created: bool} */
@@ -121,8 +125,12 @@ final readonly class TransferAppInstanceAction
         ?int $sourceClusterId,
     ): array {
         if ($existing instanceof AppInstanceTransfer) {
-            $transfer = $existing;
+            $transfer = $existing->refresh();
             $created = false;
+
+            if ($transfer->cutover_at === null) {
+                $this->schedules->assertAppInstanceStable($instance);
+            }
         } else {
             $transfer = $this->environmentOperations->run(
                 [$instance->id],
@@ -203,6 +211,7 @@ final readonly class TransferAppInstanceAction
 
     private function reserve(AppInstance $instance, TransferAppInstanceData $data): AppInstanceTransfer
     {
+        $this->schedules->assertAppInstanceStable($instance);
         [$destination, $path, $domain, $route] = $this->preflight($instance, $data);
 
         return AppInstanceTransfer::query()->create([
@@ -327,7 +336,7 @@ final readonly class TransferAppInstanceAction
             $account,
         );
 
-        return $roots->instance->append($appSlug, $name);
+        return $roots->append($appSlug, $name);
     }
 
     private function assertDestinationAvailable(Node $destination, StoragePath $path): void
@@ -430,17 +439,18 @@ final readonly class TransferAppInstanceAction
         if ($transfer->current_step === AppInstanceTransferStep::Reserved) {
             app(VitePortAllocator::class)->assign($instance);
             app(VitePortAllocator::class)->assign($instance, $destination);
+            $this->runtime->pause($instance);
             $capture = $this->sources->capture($instance);
             $this->checkpoint($transfer, AppInstanceTransferStep::SourceCaptured, [
                 'common_repository_path' => $capture->commonRepositoryPath ?? $transfer->common_repository_path,
             ]);
             $this->materializeDestination($capture, $destination, $path, $transfer);
         } elseif ($transfer->current_step === AppInstanceTransferStep::SourceCaptured) {
+            $this->runtime->pause($instance);
             $this->materializeDestination($this->sources->capture($instance), $destination, $path, $transfer);
         }
 
         if ($transfer->current_step === AppInstanceTransferStep::DestinationCheckoutCreated) {
-            $this->runtime->pause($instance);
             $this->checkpoint($transfer, AppInstanceTransferStep::SourcePaused);
         }
 
@@ -450,7 +460,7 @@ final readonly class TransferAppInstanceAction
         }
 
         if ($transfer->current_step === AppInstanceTransferStep::SqliteTransferred) {
-            $this->importEnvironment($instance);
+            $this->importEnvironment($instance, $transfer);
             $this->checkpoint($transfer, AppInstanceTransferStep::EnvironmentImported);
         }
 
@@ -469,7 +479,13 @@ final readonly class TransferAppInstanceAction
         }
 
         if ($transfer->current_step === AppInstanceTransferStep::RoutePrepared) {
-            $this->cutover($instance, $destination, $transfer, $sourceClusterId);
+            $this->processAdmissions->run(
+                [$instance->id],
+                function () use ($instance, $destination, $transfer, $sourceClusterId): void {
+                    $this->schedules->assertAppInstanceStable($instance->refresh());
+                    $this->cutover($instance, $destination, $transfer, $sourceClusterId);
+                },
+            );
         }
 
         $instance = AppInstance::query()->with(['app', 'node', 'routes.targets'])->findOrFail($instanceId);
@@ -536,14 +552,18 @@ final readonly class TransferAppInstanceAction
         }
     }
 
-    private function importEnvironment(AppInstance $instance): void
+    private function importEnvironment(AppInstance $instance, AppInstanceTransfer $transfer): void
     {
         $context = $this->contexts->resolve($instance->refresh(), requireActiveNode: true);
         $imported = [];
 
         try {
             $imported = $this->environmentImporter->parse($this->environmentReader->read($context));
-        } catch (ResourceOperationException) {
+        } catch (ResourceOperationException $exception) {
+            if ($exception->errorCode !== 'env.import_source_missing') {
+                throw $exception;
+            }
+
             $imported = [];
         }
 
@@ -559,6 +579,13 @@ final readonly class TransferAppInstanceAction
         $toImport = array_diff_key($imported, $stored);
 
         if ($toImport !== []) {
+            $previouslyImportedKeys = $transfer->imported_environment_keys ?? [];
+            $transfer->update([
+                'imported_environment_keys' => array_values(array_unique([
+                    ...$previouslyImportedKeys,
+                    ...array_keys($toImport),
+                ])),
+            ]);
             $this->environmentStore->import($context, $toImport, replace: false);
         }
     }
@@ -912,6 +939,20 @@ final readonly class TransferAppInstanceAction
                 } catch (Throwable) {
                     $incomplete[] = 'destination-route';
                 }
+            }
+        }
+
+        $importedKeys = $transfer->imported_environment_keys ?? [];
+
+        if ($importedKeys !== []) {
+            try {
+                AppInstanceEnvironmentValue::query()
+                    ->where('app_instance_id', $instance->id)
+                    ->whereIn('env_key', $importedKeys)
+                    ->delete();
+                $transfer->update(['imported_environment_keys' => []]);
+            } catch (Throwable) {
+                $incomplete[] = 'imported-environment';
             }
         }
 

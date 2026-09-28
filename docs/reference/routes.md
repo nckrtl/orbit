@@ -8,6 +8,7 @@ covers:
   - apps/gateway/app/Infrastructure/AppDev/{AppDevCaddyConfigRenderer,AppDevSiteRepository,NativeDevelopmentProjectionOperationLock}.php
   - apps/gateway/app/Domain/AppDev/{DevelopmentServerEndpoint,AgentationEndpoint,PrivateDnsAnswerExpiry}.php
   - apps/gateway/app/Infrastructure/Clusters/NativeClusterRouterOperationLock.php
+  - apps/gateway/app/Infrastructure/AppInstances/NativeProductionRouteProjector.php
 ---
 
 # Routes
@@ -71,13 +72,39 @@ The source branch does not change the generated domain. `instance:create <projec
 
 Cluster membership decides routing scope, independently of the domain. A Node in an active Cluster uses Cluster scope, also when the Cluster has no TLD and the domain uses the Node TLD. Every other Node uses Node scope. A Cluster that owns Routes needs exactly one active Router.
 
+A Node keeps its own TLD while it belongs to a Cluster. [cluster](/cli/cluster#placement-and-tlds) lists which Node or Cluster may own a TLD.
+
 ### Generated domains after a Project slug update
 
 A Project slug update recomputes every generated development Route domain from the new slug, the Instance name, and the effective TLD. Orbit creates a replacement Route for each domain that changes. The replacement keeps the Project, scope, provenance, publication, and target. Explicit domains never change. A default-branch update changes no Route. [Projects](/reference/apps#update-a-project) owns the update lifecycle.
 
 ## Create and change targets
 
-`route:create` stores an explicit `app` Route with `pending` status, for a target Instance or with a Node or Cluster scope. It sets up no traffic path. The only step that activates such a Route is a production target-set change on another Route that reassigns an Instance to it, as [Change a production target set](#change-a-production-target-set) describes. Until then Doctor reports it as `route.lifecycle_not_active`. A second identical request returns the existing Route. A request that changes the Project, publication, scope, or target fails with `route.retry_conflict`. The Gateway refuses a reserved platform name: `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, `analytics.orbit`, and `collector.cli-proxy-api.orbit`.
+Create an explicit app Route for an Instance with `route:create <instance> <domain> [--publication=private|public]`. The Instance ID determines the owning Project and the Node or active Cluster scope. Publication defaults to `private`. The Route targets that Instance and becomes active; an identical retry for an existing active Route returns that Route.
+
+Creation keeps the Route `activating` until workload projection and any public edge activation finish. If either step fails, an identical retry resumes convergence, including rebuilding the public Ingress when its handler-build checkpoint may have been written before a crash. It does not adopt an older pending Route created by Instance provisioning. This form does not accept a Project argument, `--target`, `--node`, or `--cluster`. The custom proxy form is `route:create <domain> --node=NODE --upstream=URL` or `route:create <domain> --node=NODE --process=PROCESS`; it is private only.
+
+```bash
+orbit route:create 12 shop.example.test
+orbit route:create 12 shop.example.com --publication=public
+```
+
+The Gateway API accepts `POST /api/v1/routes` with an app Route body such as `{"app_instance_id":12,"domain":"shop.example.test","publication":"private"}`. The Instance ID implies the Project and scope; the app Route request does not take `app_id`, `node_id`, or `cluster_id`. For a custom proxy Route, the request instead supplies `domain`, `node_id`, and exactly one of `upstream` or `process_id`. Custom proxy creation remains separate and converges its Node-local serving path.
+
+| Creation refusal | Meaning |
+| --- | --- |
+| `route.domain_invalid` | The domain is not a valid domain. |
+| `route.domain_conflict` | Another Route owns the domain, or it is a reserved name: `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, `analytics.orbit`, or `collector.cli-proxy-api.orbit`. |
+| `route.retry_conflict` | A Route with this domain exists with a different Instance, publication, or custom proxy configuration. |
+| `route.scope_required` | A custom proxy Route needs a serving Node and uses the domain as its only positional argument. |
+| `route.target_inactive` | The Instance is not active. |
+| `route.target_web_root_unsupported` | The Instance has no supported relative web root, such as a package rooted at `.`. |
+| `route.target_conflict` | The target Instance already belongs to another Route. |
+| `route.router_required` | The Cluster has no active Router. |
+| `route.node_inactive`, `route.cluster_inactive` | The Instance's Node or Cluster, or the custom proxy's Node, is not active. |
+| `route.upstream_invalid` | The upstream is not a loopback HTTP URL. |
+| `route.upstream_unresolved` | The Process has no single Node-local listener. |
+| `route.process_conflict` | The Process is not a Node Process on the serving Node. |
 
 A Route target must have a supported relative web root. An Instance rooted at `.`, such as a package, returns `route.target_web_root_unsupported` until an operator sets a web-root override.
 
@@ -258,7 +285,7 @@ The Ingress firewall opens `orbit:ingress-http` (port 80) and `orbit:ingress-htt
 
 A publication-only change keeps the Route ID and the domain. To publish, the Gateway verifies the private hops, stores `public-activated`, and builds the Ingress Node, so Caddy can obtain the certificate. Then it opens the Ingress firewall and stores `ingress-firewall`. The public site stays unreachable until those steps succeed, also when another Route already keeps the Ingress ports open. A failed step returns its error to the caller. On a Route that is not `active`, it also stores `failed_step` and `error_code`.
 
-Nothing in Orbit waits for or watches certificate issuance. Caddy requests the certificate after the build and retries on its own. Doctor checks only that the site asks Caddy to manage its certificate. So a Let's Encrypt failure shows only in Caddy's log on the Ingress Node, and as a TLS failure for clients.
+Nothing in Orbit waits for or watches certificate issuance. Caddy requests the certificate after the build and retries on its own. Doctor reports a public Route whose Let's Encrypt certificate is missing or expires within the renewal margin, in addition to checking that the site asks Caddy to manage its certificate. Other issuance failures appear in Caddy's log on the Ingress Node and as a TLS failure for clients.
 
 A change of both domain and publication reserves a replacement Route with the new publication. The current Route stays authoritative until cutover, as in [Change an explicit domain](#change-an-explicit-domain). Only a Route whose targets are production Instances can be public.
 
@@ -315,7 +342,7 @@ Clearing a Router while the Cluster owns Routes returns `route.reconciliation_re
 
 `route:update ROUTE --domain=DOMAIN` changes the domain of an `active`, explicit Route. For a `pending` explicit Route, it creates the replacement Route at once, with no projection steps. The Route can be development or production. A shared production Route moves its whole ordered pool to one replacement. This is how a production clone swaps its preview domain for its real domain.
 
-The Gateway reserves a `pending` replacement Route for the same Project and targets. The current Route stays the only authoritative Route. The Gateway refuses an invalid, occupied, or conflicting domain before it changes anything. It prepares the replacement's workload certificate and Caddy site, then the Router certificate, firewall rules, and Router Caddy site, then the Laravel URL or production environment. It publishes the new domain in private DNS last.
+The Gateway reserves a `pending` replacement Route for the same Project and targets. The current Route stays the only authoritative Route. The Gateway refuses an invalid, occupied, or conflicting domain before it changes anything. It prepares the replacement's workload certificate and Caddy site, then the Router certificate, firewall rules, and Router Caddy site, then the Laravel URL or production environment. It publishes the new domain in private DNS last. When a target has no recorded source profile, the Gateway returns HTTP 409 `instance.source_profile_missing`; Orbit does not recover missing profiles on older Instances, as ADR 0177 explains.
 
 Cutover is one database transition: the replacement becomes `activating` and the old Route `retiring`. Instance output shows only the new domain, and Route inspection shows both records. Cleanup removes the old projections, deletes the retiring Route, releases its domain, and marks the replacement `active`. A successful change therefore produces a new Route ID.
 
@@ -412,13 +439,15 @@ Doctor skips an Instance in `removing`. A removal that lasts 10 minutes or more 
 | `instance.target_set_mismatch` | Router Caddy does not publish the Route's ordered target set. |
 | `instance.route_association_mismatch` | An Instance has no Route, or more than one. |
 | `instance.public_ingress_mismatch` | The Ingress Caddyfile lacks the public site that a build renders for it. |
-| `instance.public_tls_mismatch` | The public site pins an Orbit CA leaf, or it lacks `tls force_automate` while the Node disables certificate management. |
+| `instance.public_tls_mismatch` | The public site pins an Orbit CA leaf, lacks `tls force_automate` while the Node disables certificate management, or its Let's Encrypt certificate is missing or expires within the renewal margin. |
 | `instance.private_forwarding_mismatch` | The Ingress cannot open a TCP connection to an address its public site forwards to. |
 | `instance.public_firewall_mismatch` | The Ingress firewall is inactive, or it lacks a managed rule for port 80 or 443. |
 | `instance.related_node_unverifiable` | A required related Node is outside the selected set. |
 | `instance.inspection_failed` | A required observation is missing, malformed, or unreachable. |
 
-Doctor builds the expected public site the same way the build does. The forwarding check dials the Router, or the workload Nodes when the Ingress is also the Router. A site that serves the target directly forwards nowhere, so it always passes.
+Doctor builds the expected public site the same way the build does. It also checks that a public Route's Let's Encrypt certificate exists and does not expire within the renewal margin, defined as one sixth of that certificate's lifetime from `notBefore` to `notAfter`. This relative margin avoids raising an alarm at Caddy's own renewal point and scales to shorter certificate lifetimes. While a public Route is mid-issuance and the Ingress serves no valid public certificate yet, Doctor can report a transient TLS issue; it clears once issuance completes.
+
+The forwarding check dials the Router, or the workload Nodes when the Ingress is also the Router. A site that serves the target directly forwards nowhere, so it always passes.
 
 ## Why it works this way
 

@@ -46,11 +46,11 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
     public function complete(
         AppInstance $appInstance,
         ?string $domain,
-        bool $recoverSourceProfile = false,
+        bool $setupPending = false,
     ): AppInstance {
         if (! $appInstance->requiresRoute()) {
             return $this->owner()->run(
-                fn (): AppInstance => $this->completeWithoutRoute($appInstance->id, $recoverSourceProfile),
+                fn (): AppInstance => $this->completeWithoutRoute($appInstance->id, $setupPending),
             );
         }
 
@@ -60,28 +60,28 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
             fn (): AppInstance => $this->completeOwned(
                 $appInstance->id,
                 $route->id,
-                $recoverSourceProfile,
+                $setupPending,
             ),
         );
     }
 
-    private function completeWithoutRoute(int $appInstanceId, bool $recoverSourceProfile): AppInstance
+    private function completeWithoutRoute(int $appInstanceId, bool $setupPending): AppInstance
     {
         $appInstance = AppInstance::query()->with(['app', 'node'])->findOrFail($appInstanceId);
 
         if ($appInstance->status === AppInstanceState::Active) {
-            return $this->recoverActiveSourceProfile($appInstance, $recoverSourceProfile);
+            return $appInstance->load('routes.targets');
         }
 
         $profile = $this->configuration->inspect($appInstance);
         $this->recordProfile($appInstance, $profile);
 
-        DB::transaction(static function () use ($appInstance): void {
+        DB::transaction(static function () use ($appInstance, $setupPending): void {
             $lockedInstance = AppInstance::query()->lockForUpdate()->findOrFail($appInstance->id);
             $lockedInstance->update([
                 'status' => AppInstanceState::Active,
                 'provisioning_step' => 'active',
-                'failed_step' => null,
+                'failed_step' => $setupPending ? 'setup' : null,
                 'error_code' => null,
             ]);
         });
@@ -92,7 +92,7 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
     private function completeOwned(
         int $appInstanceId,
         int $routeId,
-        bool $recoverSourceProfile,
+        bool $setupPending,
     ): AppInstance {
         $appInstance = AppInstance::query()->with('node')->findOrFail($appInstanceId);
         $route = Route::query()
@@ -110,7 +110,7 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
         }
 
         if ($appInstance->status === AppInstanceState::Active && $route->status === RouteStatus::Active) {
-            return $this->recoverActiveSourceProfile($appInstance, $recoverSourceProfile);
+            return $appInstance->load('routes.targets');
         }
 
         if (
@@ -120,15 +120,13 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
             throw $this->sourceEvidenceChanged();
         }
 
-        $legacyIncompleteProfile = $appInstance->provisioning_step !== null && $appInstance->source_is_laravel === null;
-
-        if ($legacyIncompleteProfile && ! $recoverSourceProfile) {
+        if ($appInstance->provisioning_step !== null && $appInstance->source_is_laravel === null) {
             throw $this->sourceEvidenceChanged();
         }
 
         $profile = $this->configuration->inspect($appInstance);
 
-        if ($appInstance->provisioning_step === null || $legacyIncompleteProfile) {
+        if ($appInstance->provisioning_step === null) {
             $this->recordProfile($appInstance, $profile);
         } elseif (
             $appInstance->selected_php_version !== $profile->phpVersion
@@ -146,7 +144,7 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
         }
         $this->projection->converge($appInstance->refresh(), $route->refresh());
 
-        DB::transaction(static function () use ($appInstance, $route): void {
+        DB::transaction(static function () use ($appInstance, $route, $setupPending): void {
             $lockedInstance = AppInstance::query()->lockForUpdate()->findOrFail($appInstance->id);
             $lockedRoute = Route::query()->lockForUpdate()->findOrFail($route->id);
             $lockedRoute->update([
@@ -157,7 +155,7 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
             $lockedInstance->update([
                 'status' => AppInstanceState::Active,
                 'provisioning_step' => 'active',
-                'failed_step' => null,
+                'failed_step' => $setupPending ? 'setup' : null,
                 'error_code' => null,
             ]);
         });
@@ -168,23 +166,6 @@ final readonly class NativeDevelopmentAppInstanceProvisioner implements Developm
     private function owner(): DevelopmentProjectionOperationLock
     {
         return $this->projectionOwner ?? app(DevelopmentProjectionOperationLock::class);
-    }
-
-    private function recoverActiveSourceProfile(
-        AppInstance $appInstance,
-        bool $recoverSourceProfile,
-    ): AppInstance {
-        if (! $recoverSourceProfile || $appInstance->source_is_laravel !== null) {
-            return $appInstance->load('routes.targets');
-        }
-
-        $profile = $this->configuration->inspect($appInstance);
-        $appInstance->update([
-            'source_is_laravel' => $profile->laravel,
-            ...($appInstance->selected_php_version === null ? ['selected_php_version' => $profile->phpVersion] : []),
-        ]);
-
-        return $appInstance->refresh()->load('routes.targets');
     }
 
     private function recordProfile(

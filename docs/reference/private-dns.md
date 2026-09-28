@@ -4,7 +4,7 @@ description: "How a managed Node selects its resolver, how the Gateway answers C
 covers:
   - apps/gateway/app/Infrastructure/AppDev/{DnsmasqPrivateDnsManager,AppDevDnsConfigRenderer,PrivateDns*,*PrivateDns*,*DnsRequester*,DnsAddress,DecodedDnsQuery,VpnDnsmasqBackendListen,NativeClusterRouterDnsSelectionReconciler}.php
   - apps/gateway/app/Domain/AppDev/{ClusterRouterDnsSelection*,Dns*,PrivateDns*}.php
-  - apps/gateway/app/Infrastructure/WireGuard/{NativeWireGuardPeerConverger,NativeWireGuardPeerDnsRepairer,UplinkDnsResolvers,RetiredDnsmasqSnippets}.php
+  - apps/gateway/app/Infrastructure/WireGuard/{NativeWireGuardPeerConverger,NativeWireGuardPeerDnsRepairer,UplinkDnsResolvers}.php
   - apps/gateway/app/Infrastructure/Gateway/GatewayPrivateDnsResolver.php
   - apps/gateway/app/Domain/Nodes/GatewayPrivateDnsRoute.php
   - apps/gateway/app/{Actions/Nodes/RepairNodeDnsAction,Console/Commands/RepairNodeDnsCommand}.php
@@ -12,7 +12,7 @@ covers:
 
 # Private DNS
 
-Orbit VPN DNS answers private names, such as Route domains and `gateway.orbit`, and forwards every other query to ordinary resolvers. It runs on the Node with the `vpn` role. Managed Linux Nodes use it as their resolver by default. This page explains resolver selection, the Gateway machine's resolver, the listener, Cluster Router addresses, and how to inspect or repair one peer.
+Orbit VPN DNS answers private names, such as Route domains and `gateway.orbit`, and forwards every other query to ordinary resolvers. It runs on the Node with the `vpn` role. Managed Linux Nodes use it as their resolver by default. This page explains resolver selection, the Gateway machine's resolver, the listener, Cluster Router addresses, and how to inspect or repair one peer. The active WireGuard manager projects VPN DNS behavior without creating local dnsmasq snippet files.
 
 ## Resolver selection
 
@@ -23,7 +23,9 @@ The Gateway selects the resolver policy when it provisions a managed Linux peer.
 | No per-Node DNS override | Orbit VPN DNS | `~.` | The normal resolver sends every query, private and ordinary, to Orbit VPN DNS. Node and Cluster TLDs do not change this. |
 | Per-Node `--dns-server` override | The supplied address | The private VPN domain, and the Node TLD when the Node has one | Only those suffixes go to the supplied server, also when its address is inside the WireGuard subnet. |
 
-The `~.` routing domain makes Orbit VPN DNS the preferred resolver. It leaves `/etc/resolv.conf` alone and needs no local DNS server, host records, or list of Route suffixes on the peer. Operator-owned clients are not managed peers. On a Mac, use [`dns:resolve`](/cli/dns) for a local override. A peer changes its resolver only when you provision it again or [repair](#repair-one-peer) it.
+The `~.` routing domain makes Orbit VPN DNS the preferred resolver. It leaves `/etc/resolv.conf` alone and needs no local DNS server, host records, or list of Route suffixes on the peer. On a Mac outside the fleet, use [`dns:resolve`](/cli/dns) for a local override. A peer changes its resolver only when you provision it again or [repair](#repair-one-peer) it.
+
+A [Node without roles](/reference/node-provisioning#nodes-without-roles) uses neither row. Its tunnel configuration has a `DNS =` line with the WireGuard address of the `vpn` Node, and no `PostUp` hook or `orbit.dns-link`. It ignores a `--dns-server` override.
 
 If Orbit VPN DNS is down, a peer that uses it by default loses both private and ordinary name resolution. Existing IP connections and routes stay. New lookups can fail until the DNS service or the tunnel recovers.
 
@@ -172,7 +174,7 @@ Run this command on the Gateway to update the resolver settings of one active ma
 php artisan orbit:node-dns-repair <node-name>
 ```
 
-The command refuses a missing or inactive Node, an operator-owned client without roles, and the Node that holds `vpn`, before it opens SSH. It also refuses a peer without a complete managed WireGuard and SSH identity.
+The command refuses a missing or inactive Node, a [Node without roles](/reference/node-provisioning#nodes-without-roles), and the Node that holds `vpn`, before it opens SSH. It also refuses a peer without a complete managed WireGuard and SSH identity.
 
 Record the [inspect](#inspect-a-peer) commands, `systemctl is-active wg-quick@orbit`, each role's service state, and a fingerprint of `wg show orbit public-key` before and after the repair. The DNS server, routing domains, hooks, and saved DNS state can change. The key fingerprint, role services, tunnel state, application placement, and `ip route` stay the same.
 

@@ -38,9 +38,9 @@ final readonly class DocumentationRepository
             new RecursiveDirectoryIterator($this->docsPath, RecursiveDirectoryIterator::SKIP_DOTS),
         );
 
-        /** @var SplFileInfo $file */
         foreach ($iterator as $file) {
-            if (! $file->isFile() || ! in_array(strtolower($file->getExtension()), ['md', 'mdx'], true)) {
+            if (! $file instanceof SplFileInfo || ! $file->isFile()
+                || ! in_array(strtolower($file->getExtension()), ['md', 'mdx'], true)) {
                 continue;
             }
 

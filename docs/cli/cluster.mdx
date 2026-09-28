@@ -33,6 +33,22 @@ Destructive Cluster commands take `--force` as consent. The confirmation names t
 
 A new Cluster is `inactive`. Membership, name, and TLD can be prepared while it is inactive without changing any traffic. Activating a Cluster that has a TLD, or giving an active Cluster a TLD, is the routing cutover: it requires exactly one active Router and reconciles every affected Route before the change becomes authoritative.
 
+## Placement and TLDs
+
+A Node belongs to at most one Cluster. A standalone Node is a full placement, not a step toward a Cluster. An Instance never selects a Cluster: its routing scope follows its Node. Joining a Cluster adds no role. Leaving it removes only a `router` assignment of the Node that never became active, as [`cluster:node:remove`](#orbit-clusternoderemove) describes.
+
+A Node keeps its own TLD while it belongs to a Cluster, and membership never changes it. While the Cluster is active and has a TLD, that TLD wins for generated domains. Otherwise the Node TLD applies. [Routes](/reference/routes#select-a-domain-and-scope) owns domain generation.
+
+| Rule | Refusal |
+| --- | --- |
+| Node TLDs are unique among Nodes. | `node.tld_taken` |
+| Cluster TLDs are unique among Clusters. | A validation error on `tld` |
+| A Node outside an active Cluster cannot own that Cluster's TLD. Activating a Cluster with a TLD, or giving an active Cluster a TLD, checks this. | `cluster.tld_conflict` |
+| A Node cannot take the TLD of an active Cluster that it is not a member of. | `node.tld_conflict` |
+| A member that shares the active Cluster TLD cannot leave while that TLD is active. | `cluster.tld_conflict` |
+
+An inactive Cluster owns no TLD, so it can share one with any Node. Prepare a Cluster with the TLD of a Node that joins it later, and activate it after the Node joins. A member Node can keep the same TLD as its active Cluster, because both name one routing scope.
+
 ## orbit cluster:create
 
 Create a Cluster in the `inactive` state.
@@ -53,7 +69,7 @@ orbit cluster:create <name> [--tld=TLD]
 orbit cluster:create lab --tld=test
 ```
 
-The CLI refuses a TLD that is not one lowercase DNS label with `cluster.tld_invalid` before it sends a request. Cluster TLDs are unique among Clusters; an inactive Cluster may share a TLD with a Node that later joins it.
+The CLI refuses a TLD that is not one lowercase DNS label with `cluster.tld_invalid` before it sends a request. [Placement and TLDs](#placement-and-tlds) lists the ownership rules.
 
 ## orbit cluster:list
 
@@ -136,7 +152,7 @@ Attaching to an inactive Cluster records membership and leaves Node routing and 
 
 ## orbit cluster:node:remove
 
-Detach a Node from a Cluster. Routes on that Node return to Node scope before membership ends. Generated domains fall back to the Node TLD.
+Detach a Node from a Cluster. Routes on that Node return to Node scope before membership ends. Generated domains fall back to the Node TLD. The Gateway deletes the Node's `router` assignments that never became active. Any other `router` assignment blocks the detach with `cluster.router_detach_forbidden`.
 
 ```bash
 orbit cluster:node:remove <cluster> <node> [--force]
@@ -210,6 +226,18 @@ orbit cluster:destroy 3 --force
 ```
 
 The Gateway refuses a Cluster that still has member Nodes (`cluster.not_empty`) or still scopes Routes (`cluster.has_routes`).
+
+## Why it works this way
+
+These reasons explain the design. Check them before you propose a change.
+
+### Standalone Nodes
+
+A useful one-Node fleet needs no Cluster, Router, or Ingress. A mandatory Cluster would make grouping a step before the first workload. So a Node can join a Cluster later, and its Instances keep their source and placement.
+
+### The Node keeps its TLD
+
+The Node TLD is the fallback when the Cluster becomes inactive, loses its TLD, or the Node leaves. Deleting it at attach time would leave detach with no namespace to return to.
 
 ## Related
 

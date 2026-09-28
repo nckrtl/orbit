@@ -174,14 +174,10 @@ final readonly class TopologySnapshotReplacementInstallation
             throw new InvalidArgumentException('The topology snapshot replacement installation schema is invalid.');
         }
 
-        /** @var array<string, string> $temporaryInstances */
-        $temporaryInstances = $value['temporary_instances'];
-        /** @var array<string, string> $canonicalInstances */
-        $canonicalInstances = $value['canonical_instances'];
-        /** @var array<string, string> $nextInstances */
-        $nextInstances = $value['next_instances'];
-        /** @var array<string, string> $oldInstances */
-        $oldInstances = $value['old_instances'];
+        $temporaryInstances = SerializedArrays::stringMap($value['temporary_instances']);
+        $canonicalInstances = SerializedArrays::stringMap($value['canonical_instances']);
+        $nextInstances = SerializedArrays::stringMap($value['next_instances']);
+        $oldInstances = SerializedArrays::stringMap($value['old_instances']);
         $installation = new self(
             $value['issue'],
             new AttemptId($value['proof_attempt_id']),

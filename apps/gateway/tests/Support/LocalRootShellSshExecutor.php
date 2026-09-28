@@ -26,6 +26,7 @@ final class LocalRootShellSshExecutor implements SshExecutor
         private readonly string $rootOnlyDirectory,
         public string $ufwStatus = "Status: inactive\n",
         public int $ufwExitCode = 0,
+        public string $certificateStatus = 'ok',
     ) {}
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
@@ -35,6 +36,15 @@ final class LocalRootShellSshExecutor implements SshExecutor
 
         if ($arguments === ['sudo', 'ufw', 'status', 'numbered']) {
             return new CommandResult($this->ufwExitCode, $this->ufwStatus, '', 1, false);
+        }
+
+        if (($arguments[0] ?? null) === 'sudo' && str_contains($command->input, 'openssl s_client')) {
+            $commandInput = preg_replace_callback(
+                '/# Inspect the certificate actually served.*?(?=# The Ingress must reach)/s',
+                fn (): string => "printf 'certificate={$this->certificateStatus}\\n'\n",
+                $command->input,
+            );
+            $command = new RemoteCommand($command->arguments, input: is_string($commandInput) ? $commandInput : $command->input);
         }
 
         $privileged = $arguments[0] === 'sudo';

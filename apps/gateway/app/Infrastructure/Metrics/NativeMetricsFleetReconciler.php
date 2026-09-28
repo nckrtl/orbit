@@ -4,13 +4,20 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Metrics;
 
+use App\Domain\Metrics\ExporterDegradationReason;
+use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\MetricsCadvisorLifecycle;
 use App\Domain\Metrics\MetricsExporterLifecycle;
+use App\Domain\Metrics\MetricsFleetReconcileException;
 use App\Domain\Metrics\MetricsFleetReconciler;
+use App\Domain\Metrics\MetricsReconcileComponent;
+use App\Domain\Metrics\MetricsReconcileDegradationRepository;
+use App\Domain\Metrics\MetricsResourceFailure;
 use App\Domain\Metrics\MetricsRuntimeLifecycle;
 use App\Domain\Metrics\ServiceMetricsLifecycle;
 use App\Domain\Nodes\RoleAssignmentException;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Settings\SettingRepository;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -23,6 +30,8 @@ final readonly class NativeMetricsFleetReconciler implements MetricsFleetReconci
         private MetricsCadvisorLifecycle $cadvisors,
         private MetricsRuntimeLifecycle $runtime,
         private ?ServiceMetricsLifecycle $services = null,
+        private MetricsReconcileDegradationRepository $degradations = new MetricsReconcileDegradationRepository,
+        private ExporterDegradationRepository $exporterDegradations = new ExporterDegradationRepository(new SettingRepository),
     ) {}
 
     public function reconcile(): void
@@ -35,13 +44,30 @@ final readonly class NativeMetricsFleetReconciler implements MetricsFleetReconci
 
         $node = $assignment->node;
 
-        $this->exporters->converge($node, $assignment);
-        $this->cadvisors->converge($node, $assignment);
-        if ($this->services !== null) {
-            $this->services->converge($node, fn () => $this->runtime->converge($node, $assignment));
-        } else {
-            $this->runtime->converge($node, $assignment);
+        try {
+            $this->exporters->converge($node, $assignment);
+        } catch (Throwable $exception) {
+            throw $this->componentFailure(MetricsReconcileComponent::Exporter, $node->id, $exception);
         }
+
+        try {
+            $this->cadvisors->converge($node, $assignment);
+        } catch (Throwable $exception) {
+            throw $this->componentFailure(MetricsReconcileComponent::Cadvisor, $node->id, $exception);
+        }
+
+        try {
+            if ($this->services !== null) {
+                $this->services->converge($node, fn () => $this->runtime->converge($node, $assignment));
+            } else {
+                $this->runtime->converge($node, $assignment);
+            }
+        } catch (Throwable $exception) {
+            throw $this->componentFailure(MetricsReconcileComponent::Runtime, $node->id, $exception);
+        }
+
+        $this->degradations->forgetAll();
+        $this->exporterDegradations->forgetReconcileFailures();
     }
 
     public function retire(Node $node): void
@@ -81,6 +107,39 @@ final readonly class NativeMetricsFleetReconciler implements MetricsFleetReconci
         } else {
             $this->runtime->converge($metricsNode, $assignment);
         }
+
+        $this->degradations->forgetAll();
+        $this->exporterDegradations->forgetReconcileFailures();
+    }
+
+    private function componentFailure(
+        MetricsReconcileComponent $component,
+        int $nodeId,
+        Throwable $exception,
+    ): MetricsFleetReconcileException {
+        $failure = $exception instanceof MetricsFleetReconcileException
+            ? $exception
+            : null;
+        $structured = MetricsResourceFailure::find($exception);
+
+        $failure ??= new MetricsFleetReconcileException(
+            $component,
+            $nodeId,
+            $structured->errorCode ?? 'metrics.'.$component->value.'_reconcile_failed',
+            $structured === null
+                ? 'Metrics '.$component->value.' reconciliation failed.'
+                : $structured->getMessage(),
+            $structured->status ?? 502,
+            $exception,
+            $structured->details ?? [],
+        );
+
+        if ($failure->component !== MetricsReconcileComponent::Runtime) {
+            $this->exporterDegradations->put($failure->nodeId, ExporterDegradationReason::ReconcileFailed);
+            $this->degradations->put($failure->nodeId, $failure->errorCode);
+        }
+
+        return $failure;
     }
 
     private function activeAssignment(): ?NodeRole

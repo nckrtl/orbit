@@ -169,7 +169,6 @@ final readonly class ObservedPhpInputCollector
         foreach ($runtimes as $runtime) {
             $runtimeByRole[$runtime['role']] = $runtime;
         }
-        /** @var array<string, array{role:string,process_type:string,processes:list<array{id:string,started_at:string,finished_at:string}>,paths:array<string,true>}> $surfaces */
         $surfaces = [];
         foreach (PhpRuntimeInventory::ROLES as $role) {
             $result = $results[$role] ?? null;

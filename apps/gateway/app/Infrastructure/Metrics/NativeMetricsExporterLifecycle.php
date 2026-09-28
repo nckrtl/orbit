@@ -9,6 +9,9 @@ use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\MetricsExporterLifecycle;
 use App\Domain\Metrics\MetricsExporterProjection;
 use App\Domain\Metrics\MetricsExporterProjectionItem;
+use App\Domain\Metrics\MetricsFleetReconcileException;
+use App\Domain\Metrics\MetricsReconcileComponent;
+use App\Domain\Metrics\MetricsResourceFailure;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
@@ -97,10 +100,14 @@ final readonly class NativeMetricsExporterLifecycle implements MetricsExporterLi
         return $targets;
     }
 
-    /** @param Closure(MetricsExporterProjectionItem): mixed $mutation */
+    /**
+     * Snapshots each candidate before mutation and skips candidates that cannot take part.
+     * A candidate skipped here is never mutated, preserving rollback over the remaining fleet.
+     *
+     * @param  Closure(MetricsExporterProjectionItem): mixed  $mutation
+     */
     private function mutateFleet(Node $metricsNode, Closure $mutation): void
     {
-        /** @var list<array{item: MetricsExporterProjectionItem, state: MetricsExporterState}> $snapshots */
         $snapshots = [];
 
         foreach ($this->projection->for($metricsNode) as $item) {
@@ -108,8 +115,16 @@ final readonly class NativeMetricsExporterLifecycle implements MetricsExporterLi
 
             try {
                 $state = $this->executor->snapshot($candidate, $metricsNode);
-            } catch (ResourceOperationException $exception) {
-                $this->degrade($candidate, $metricsNode, $exception);
+            } catch (Throwable $exception) {
+                if (! $exception instanceof ResourceOperationException) {
+                    throw $this->failure($candidate, $exception);
+                }
+
+                try {
+                    $this->degrade($candidate, $metricsNode, $exception);
+                } catch (Throwable $failure) {
+                    throw $this->failure($candidate, $failure);
+                }
 
                 continue;
             }
@@ -119,43 +134,59 @@ final readonly class NativeMetricsExporterLifecycle implements MetricsExporterLi
         }
 
         $mutated = [];
+        $failedNode = $metricsNode;
 
         try {
             foreach ($snapshots as $snapshot) {
+                $failedNode = $snapshot['item']->node;
                 $mutated[] = $snapshot;
                 $mutation($snapshot['item']);
             }
         } catch (Throwable $exception) {
+            $mutationFailedNode = $failedNode;
+            $rollbackFailedNode = null;
+
             try {
                 foreach (array_reverse($mutated) as $snapshot) {
-                    $this->executor->restore($snapshot['item']->node, $metricsNode, $snapshot['state']);
+                    $rollbackFailedNode = $snapshot['item']->node;
+                    $this->executor->restore($rollbackFailedNode, $metricsNode, $snapshot['state']);
                 }
             } catch (Throwable $rollback) {
-                throw new ResourceOperationException(
-                    'metrics.exporter_fleet_rollback_failed',
-                    'Metrics exporter fleet state could not be restored.',
-                    502,
+                throw $this->failure(
+                    $rollbackFailedNode ?? $mutationFailedNode,
                     new ResourceOperationException(
-                        'metrics.exporter_fleet_convergence_failed',
-                        $exception->getMessage(),
+                        'metrics.exporter_fleet_rollback_failed',
+                        'Metrics exporter fleet state could not be restored.',
                         502,
-                        $rollback,
+                        new ResourceOperationException(
+                            'metrics.exporter_fleet_convergence_failed',
+                            $exception->getMessage(),
+                            502,
+                            $rollback,
+                        ),
                     ),
                 );
             }
 
-            throw $exception;
+            throw $this->failure($mutationFailedNode, $exception);
         }
     }
 
-    /**
-     * Records why one candidate is left out of this mutation, or rethrows.
-     *
-     * The snapshot is the only place a candidate is inspected before anything
-     * is mutated, so it is the one honest point to decide that a node cannot
-     * take part. A node skipped here is never mutated, which leaves the
-     * all-or-nothing rollback over the remaining nodes intact.
-     */
+    private function failure(Node $node, Throwable $exception): MetricsFleetReconcileException
+    {
+        $structured = MetricsResourceFailure::find($exception);
+
+        return new MetricsFleetReconcileException(
+            MetricsReconcileComponent::Exporter,
+            $node->id,
+            $structured->errorCode ?? 'metrics.exporter_reconcile_failed',
+            $structured === null ? 'Metrics exporter reconciliation failed.' : $structured->getMessage(),
+            $structured->status ?? 502,
+            $exception,
+            $structured->details ?? [],
+        );
+    }
+
     private function degrade(Node $candidate, Node $metricsNode, ResourceOperationException $exception): void
     {
         $reason = ExporterDegradationReason::fromErrorCode($exception->errorCode);

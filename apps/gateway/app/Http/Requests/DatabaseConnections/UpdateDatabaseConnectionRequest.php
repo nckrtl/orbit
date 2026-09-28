@@ -48,7 +48,6 @@ final class UpdateDatabaseConnectionRequest extends FormRequest
 
     public function payload(): UpdateDatabaseConnectionData
     {
-        /** @var array<string, mixed> $validated */
         $validated = $this->validated();
 
         return new UpdateDatabaseConnectionData(

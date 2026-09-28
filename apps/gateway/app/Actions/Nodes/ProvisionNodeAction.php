@@ -16,7 +16,12 @@ use App\Domain\Clusters\ActiveTldScopeGuard;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\RouterLanIngressReconciler;
+use App\Domain\Metrics\ExporterDegradationReason;
+use App\Domain\Metrics\ExporterDegradationRepository;
+use App\Domain\Metrics\MetricsFleetReconcileException;
 use App\Domain\Metrics\MetricsFleetReconciler;
+use App\Domain\Metrics\MetricsReconcileComponent;
+use App\Domain\Metrics\MetricsReconcileDegradationRepository;
 use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -63,6 +68,8 @@ final readonly class ProvisionNodeAction
         private NodeProvisioningLock $provisioningLock,
         private AppDevTldConverger $appDevTldConverger,
         private MetricsFleetReconciler $metrics,
+        private ExporterDegradationRepository $exporterDegradations,
+        private MetricsReconcileDegradationRepository $metricsDegradation,
         private NodeAgentRuntime $agent,
         private ManagedNodeEligibility $managedNodeEligibility,
         private ConfiguredStoragePathValidator $storagePaths,
@@ -249,15 +256,10 @@ final readonly class ProvisionNodeAction
         $requestedAddress = $data->wireguardIp ?? (is_string($node->wireguard_ip) ? $node->wireguard_ip : null);
         $wireguardIp = $this->addresses->forProvisioning($requestedAddress, $node);
         $publicSshHost = $data->publicSshHost;
-        /** @var ?string $failedStep */
         $failedStep = $node->getAttribute('failed_step');
-        /** @var ?string $errorCode */
         $errorCode = $node->getAttribute('error_code');
-        /** @var ?string $sshHostKeyType */
         $sshHostKeyType = $node->getAttribute('ssh_host_key_type');
-        /** @var ?string $sshHostKey */
         $sshHostKey = $node->getAttribute('ssh_host_key');
-        /** @var ?array<string, mixed> $priorActiveState */
         $priorActiveState = $node->exists && $node->status === LifecycleStatus::Active
             ? [
                 'status' => $node->status,
@@ -473,15 +475,18 @@ final readonly class ProvisionNodeAction
         try {
             $this->metrics->reconcile();
         } catch (Throwable $exception) {
-            $failure = new NodeProvisioningException(
-                step: 'metrics-exporters',
-                errorCode: 'node.metrics_reconcile_failed',
-                message: 'Metrics fleet reconciliation failed.',
-                previous: $exception,
-            );
-            $this->markFailed($node, $failure);
+            if ($exception instanceof MetricsFleetReconcileException) {
+                if ($exception->component !== MetricsReconcileComponent::Runtime) {
+                    $this->exporterDegradations->put(
+                        $exception->nodeId,
+                        ExporterDegradationReason::ReconcileFailed,
+                    );
+                }
 
-            throw $failure;
+                $this->metricsDegradation->put($exception->nodeId, $exception->errorCode);
+            } else {
+                $this->metricsDegradation->put($node->id, 'metrics.reconcile_failed');
+            }
         }
 
         $node->refresh();

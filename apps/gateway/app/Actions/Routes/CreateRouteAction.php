@@ -6,9 +6,14 @@ namespace App\Actions\Routes;
 
 use App\Data\Routes\CreateRouteData;
 use App\Data\Routes\RouteData;
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\AppInstances\DevelopmentRouteProjector;
+use App\Domain\AppInstances\ProductionCloneRouteProjector;
+use App\Domain\AppInstances\ProductionRouteProjector;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Routes\CustomProxyProcessListener;
 use App\Domain\Routes\CustomProxyRouteProjector;
 use App\Domain\Routes\CustomProxyUpstream;
@@ -25,7 +30,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
-use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Route;
@@ -43,17 +47,93 @@ final readonly class CreateRouteAction
         private CustomProxyRouteProjector $customProxies,
         private CustomProxyProcessListener $listeners = new CustomProxyProcessListener,
         private ?RecordEventBroadcaster $broadcaster = null,
+        private ?MetricsFleetReconciler $metrics = null,
+        private ?DevelopmentRouteProjector $developmentRoutes = null,
+        private ?ProductionRouteProjector $productionRoutes = null,
+        private ?ProductionCloneRouteProjector $productionCloneRoutes = null,
+        private ?DevelopmentProjectionOperationLock $projectionOwner = null,
+        private ?PublishPublicRouteAction $publishPublic = null,
     ) {}
 
     /** @return array{route: Route, created: bool} */
     public function execute(CreateRouteData $data): array
+    {
+        return $this->run($data);
+    }
+
+    /** @return array{route: Route, created: bool} */
+    public function executeForRouteCreate(CreateRouteData $data): array
+    {
+        if ($data->isCustomProxy()) {
+            return $this->run($data);
+        }
+
+        if ($data->appInstanceId === null || $data->appId !== null || $data->nodeId !== null || $data->clusterId !== null) {
+            throw new ResourceOperationException('route.scope_required', 'An app Route requires an Instance and no explicit Project or scope.');
+        }
+
+        return ($this->projectionOwner ?? app(DevelopmentProjectionOperationLock::class))->run(
+            fn (): array => $this->activateExplicitRoute($data),
+        );
+    }
+
+    /** @return array{route: Route, created: bool} */
+    private function activateExplicitRoute(CreateRouteData $data): array
+    {
+        $instance = AppInstance::query()->with(['app', 'node'])->findOrFail($data->appInstanceId);
+        $result = $this->run(new CreateRouteData(
+            domain: $data->domain,
+            publication: $data->publication,
+            appId: $instance->app_id,
+            appInstanceId: $instance->id,
+        ), activating: true);
+
+        if (! $result['created']) {
+            if ($result['route']->status === RouteStatus::Active) {
+                return $result;
+            }
+
+            // Only this creation path stores Activating before touching the serving path.
+            // Older pending Routes remain unchanged and are not adopted on retry.
+            if ($result['route']->status !== RouteStatus::Activating) {
+                throw new ResourceOperationException('route.activation_unsupported', 'The existing Route is not active.', 409);
+            }
+        }
+
+        $route = $result['route'];
+        if ($instance->placedOnAppProd()) {
+            $projection = $this->productionRoutes ?? app(ProductionRouteProjector::class);
+            $projection->prepareCertificate($instance, $route);
+            $projection->prepareRuntime($instance, $route);
+            $projection->prepareFirewall($instance);
+            $steps = $this->productionCloneRoutes ?? app(ProductionCloneRouteProjector::class);
+            $steps->prepareWorkloadCaddy($instance, $route);
+            $steps->prepareRouterCertificate($instance, $route);
+            $steps->prepareRouteFirewall($instance, $route);
+            $steps->verifyWorkload($instance, $route);
+            $steps->prepareRouterCaddy($instance, $route);
+            $steps->prepareDns($route);
+        } else {
+            ($this->developmentRoutes ?? app(DevelopmentRouteProjector::class))->converge($instance, $route);
+        }
+        if ($data->publication === RoutePublication::Public) {
+            $route = ($this->publishPublic ?? app(PublishPublicRouteAction::class))->execute($route, RoutePublication::Public);
+        }
+
+        $route->update(['status' => RouteStatus::Active]);
+
+        return ['route' => $route->refresh()->load('targets'), 'created' => $result['created']];
+    }
+
+    /** @return array{route: Route, created: bool} */
+    private function run(CreateRouteData $data, bool $activating = false): array
     {
         $domain = RouteDomain::validate($data->domain);
         ReservedPrivateHostname::assertAvailable($domain);
 
         $result = $data->isCustomProxy()
             ? $this->persistCustomProxy($data, $domain)
-            : $this->persistExplicit($data, $domain);
+            : $this->persistExplicit($data, $domain, $activating);
 
         if ($result['created']) {
             ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
@@ -61,6 +141,10 @@ final readonly class CreateRouteAction
                 $result['route']->id,
                 RouteData::fromModel($result['route'])->toArray(),
             );
+
+            if ($result['route']->publication === RoutePublication::Public) {
+                $this->metrics?->reconcile();
+            }
         }
 
         return $result;
@@ -206,7 +290,6 @@ final readonly class CreateRouteAction
         }
 
         try {
-            /** @var Route $route */
             $route = DB::transaction(function () use ($domain, $node, $process, $upstream): Route {
                 $route = Route::query()->create([
                     'kind' => RouteKind::CustomProxy,
@@ -278,7 +361,7 @@ final readonly class CreateRouteAction
     }
 
     /** @return array{route: Route, created: bool} */
-    private function persistExplicit(CreateRouteData $data, string $domain): array
+    private function persistExplicit(CreateRouteData $data, string $domain, bool $activating): array
     {
         if ($data->appId === null) {
             throw new ResourceOperationException(
@@ -288,20 +371,16 @@ final readonly class CreateRouteAction
         }
 
         OrbitApp::query()->findOrFail($data->appId);
-        $target = $data->appInstanceId === null
-            ? null
-            : AppInstance::query()->with('node')->findOrFail($data->appInstanceId);
-
-        if ($target instanceof AppInstance) {
-            $this->assertTarget($target, $data->appId);
-            $placement = $this->state->forNode($target->node);
-            $nodeId = $placement->nodeId;
-            $clusterId = $placement->clusterId;
-        } else {
-            $nodeId = $data->nodeId;
-            $clusterId = $data->clusterId;
-            $this->assertSuppliedScope($nodeId, $clusterId);
+        if ($data->appInstanceId === null || $data->nodeId !== null || $data->clusterId !== null) {
+            throw new ResourceOperationException('route.scope_required', 'An app Route requires an Instance and derives its scope from it.');
         }
+
+        $target = AppInstance::query()->with('node')->findOrFail($data->appInstanceId);
+        $this->assertTarget($target, $data->appId);
+        RouteTargetWebRoot::assertSupported($target);
+        $placement = $this->state->forNode($target->node);
+        $nodeId = $placement->nodeId;
+        $clusterId = $placement->clusterId;
 
         if ($clusterId !== null) {
             $this->state->assertRouter($clusterId);
@@ -325,6 +404,7 @@ final readonly class CreateRouteAction
                 clusterId: $clusterId,
                 generationBasisNodeId: null,
                 appInstance: $target,
+                initialStatus: $activating ? RouteStatus::Activating : RouteStatus::Pending,
             ),
             'created' => true,
         ];
@@ -338,14 +418,12 @@ final readonly class CreateRouteAction
         ?int $nodeId,
         ?int $clusterId,
         ?int $generationBasisNodeId,
-        ?AppInstance $appInstance,
+        AppInstance $appInstance,
+        RouteStatus $initialStatus = RouteStatus::Pending,
     ): Route {
-        if ($appInstance instanceof AppInstance) {
-            RouteTargetWebRoot::assertSupported($appInstance);
-        }
+        RouteTargetWebRoot::assertSupported($appInstance);
 
         try {
-            /** @var Route $route */
             $route = DB::transaction(function () use (
                 $appId,
                 $domain,
@@ -355,10 +433,9 @@ final readonly class CreateRouteAction
                 $clusterId,
                 $generationBasisNodeId,
                 $appInstance,
+                $initialStatus,
             ): Route {
-                if ($appInstance instanceof AppInstance) {
-                    $this->associations->assertTargetUnassociated($appInstance);
-                }
+                $this->associations->assertTargetUnassociated($appInstance);
 
                 $route = Route::query()->create([
                     'kind' => RouteKind::App,
@@ -374,13 +451,15 @@ final readonly class CreateRouteAction
                     'error_code' => null,
                 ]);
 
-                if ($appInstance instanceof AppInstance) {
-                    $route
-                        ->targets()
-                        ->create([
-                            'app_instance_id' => $appInstance->id,
-                            'position' => 0,
-                        ]);
+                $route
+                    ->targets()
+                    ->create([
+                        'app_instance_id' => $appInstance->id,
+                        'position' => 0,
+                    ]);
+
+                if ($initialStatus !== RouteStatus::Pending) {
+                    $route->update(['status' => $initialStatus]);
                 }
 
                 return $route->load(['targets', 'customProxy']);
@@ -408,32 +487,6 @@ final readonly class CreateRouteAction
                 message: 'The Route target must be active.',
                 status: 409,
             );
-        }
-    }
-
-    private function assertSuppliedScope(?int $nodeId, ?int $clusterId): void
-    {
-        if (($nodeId === null) === ($clusterId === null)) {
-            throw new ResourceOperationException(
-                errorCode: 'route.scope_required',
-                message: 'A targetless Route requires exactly one Node or Cluster scope.',
-            );
-        }
-
-        if ($nodeId !== null) {
-            $node = Node::query()->findOrFail($nodeId);
-
-            if ($node->status !== LifecycleStatus::Active) {
-                throw new ResourceOperationException('route.node_inactive', 'The Route Node must be active.', 409);
-            }
-
-            return;
-        }
-
-        $cluster = Cluster::query()->findOrFail((int) $clusterId);
-
-        if ($cluster->state->value !== 'active') {
-            throw new ResourceOperationException('route.cluster_inactive', 'The Route Cluster must be active.', 409);
         }
     }
 

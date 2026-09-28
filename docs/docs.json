@@ -128,7 +128,6 @@
               "contributor-guide",
               "reference/implementation-loop",
               "reference/incus-topologies",
-              "reference/proof-plans",
               "reference/gateway-response-fixtures",
               "reference/topology-snapshot",
               "reference/cli-command-vocabulary",
@@ -195,8 +194,7 @@
               "cli/realtime",
               "cli/extension",
               "cli/tasks",
-              "cli/proxycli",
-              "cli/workspace"
+              "cli/proxycli"
             ]
           }
         ]
@@ -552,107 +550,13 @@
           {
             "group": "Records",
             "pages": [
-              "decisions/0002-candidate-deployment-proof-boundary",
-              "decisions/0005-rolling-incus-development-topology",
-              "decisions/0006-topology-led-feature-development",
-              "decisions/0010-record-decisions-before-implementation-issues",
-              "decisions/0014-maintain-verified-documentation-context",
-              "decisions/0015-retain-incus-proof-by-recorded-input-equivalence",
-              "decisions/0016-reconcile-app-identity-and-source-default-updates",
-              "decisions/0017-optional-cluster-placement-and-tld-precedence",
-              "decisions/0018-register-caller-local-development-worktrees",
-              "decisions/0019-run-disposable-incus-scenario-lanes",
-              "decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role",
-              "decisions/0022-track-the-issue-workspace-and-delete-it-before-merge",
-              "decisions/0025-stabilize-the-default-appinstance-identity",
-              "decisions/0026-identify-each-app-by-one-repository",
-              "decisions/0027-adopt-local-git-sources-into-appinstance-ownership",
-              "decisions/0029-manage-laravel-application-urls-through-orbit",
-              "decisions/0030-complete-appinstance-provisioning-without-application-health-gates",
-              "decisions/0031-clone-initial-production-source-during-provisioning",
-              "decisions/0032-preserve-explicit-appinstance-branch-selection",
-              "decisions/0034-select-appinstance-php-from-composer-constraints",
-              "decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot",
-              "decisions/0036-support-only-appinstances",
-              "decisions/0037-promote-fresh-three-node-topology-snapshots",
-              "decisions/0038-cascade-appinstance-removal-through-processes-and-schedules",
-              "decisions/0040-extend-issue-proof-with-one-app-prod-node",
-              "decisions/0045-isolate-production-php-fpm-by-unix-user",
-              "decisions/0047-create-production-appinstances-from-candidates",
-              "decisions/0049-keep-delivery-artifacts-off-the-merge-head",
-              "decisions/0050-release-successful-proof-resources-before-landing",
-              "decisions/0051-select-discovery-only-feature-delivery",
-              "decisions/0052-seed-worktrees-from-successful-main-test-baselines",
-              "decisions/0053-use-local-review-checks-for-feature-landing",
-              "decisions/0054-maintain-main-caches-asynchronously",
-              "decisions/0056-retain-proof-topologies-for-interactive-review",
-              "decisions/0058-separate-incus-requirements-from-delivery-flow",
-              "decisions/0059-make-the-builder-own-the-candidate-quality-gate",
-              "decisions/0066-transfer-development-appinstances-between-nodes",
-              "decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk",
-              "decisions/0074-hibernate-idle-app-dev-appinstance-processes",
-              "decisions/0075-prune-idle-app-dev-checkout-dependencies",
-              "decisions/0076-deliver-features-through-complete-pull-requests",
-              "decisions/0078-assign-vite-ports-to-development-appinstances",
-              "decisions/0082-wire-agentation-watch-mode-through-appinstance-processes",
-              "decisions/0083-default-sqlite-journal-mode-to-wal",
-              "decisions/0084-broadcast-record-changes-through-reverb",
-              "decisions/0085-build-orbit-top-as-a-thin-tui-client",
-              "decisions/0086-offer-the-api-as-mcp-tools",
-              "decisions/0087-run-reverb-through-a-websocket-role",
-              "decisions/0089-index-appinstance-dependencies",
-              "decisions/0092-publish-private-dns-on-the-vpn-node-after-gateway-relocate",
-              "decisions/0095-relocate-relocatable-singleton-roles",
               "decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
-              "decisions/0098-read-github-repositories-through-a-gateway-owned-github-app",
-              "decisions/0103-absorb-commander-tasks-as-a-gateway-extension",
               "decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension",
-              "decisions/0105-name-applications-as-project-and-instance",
-              "decisions/0106-derive-instance-capabilities-from-project-type",
               "decisions/0109-publish-the-proxycli-collector-on-a-subdomain",
-              "decisions/0110-route-task-sessions-with-laravel-ai-jev",
-              "decisions/0112-isolate-agent-threads-behind-drivers",
-              "decisions/0113-gate-task-completion-on-validation-and-review",
-              "decisions/0114-judge-task-completion-as-separate-checks",
-              "decisions/0115-run-project-setup-commands-on-development-instances",
-              "decisions/0116-run-task-implementers-on-pi",
-              "decisions/0117-judge-the-blocked-question-on-role-evidence",
-              "decisions/0118-exclude-app-dev-nodes-per-project",
-              "decisions/0120-extract-agent-annotation-package",
-              "decisions/0121-end-agent-turns-with-a-run-receipt",
-              "decisions/0122-hold-task-groups-in-backlog-until-ready",
-              "decisions/0123-serve-the-web-app-from-the-gateway-origin",
-              "decisions/0124-plan-backlog-groups-with-a-t3-planner",
-              "decisions/0125-run-the-project-check-when-the-implementer-hands-off",
-              "decisions/0127-share-one-ssh-connection-per-node",
-              "decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels",
-              "decisions/0131-seed-task-workspace-clones-from-the-registered-main-cache-store",
-              "decisions/0132-pause-only-for-the-acting-thread-and-a-real-question",
-              "decisions/0133-verify-typed-subtask-deliverables-at-handoff",
-              "decisions/0134-resume-pi-agent-streams-from-a-cursor",
-              "decisions/0135-run-incus-topologies-for-task-workspace-clones-through-a-bridge-worktree",
-              "decisions/0136-run-long-lived-topology-processes-as-transient-units",
-              "decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks",
-              "decisions/0143-record-topology-evidence-and-sync-without-verification",
               "decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit",
-              "decisions/0147-retire-orbit-top",
               "decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop",
-              "decisions/0151-push-task-and-process-usage-changes-over-realtime",
-              "decisions/0152-sample-successful-read-activity",
-              "decisions/0158-end-interrupted-activity",
-              "decisions/0159-push-activity-changes-to-the-web-app",
-              "decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone",
-              "decisions/0162-verify-web-ui-changes-with-bin-web-verify",
-              "decisions/0163-prove-a-failing-test-on-the-start-commit",
-              "decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask",
-              "decisions/0165-record-per-thread-token-metrics",
-              "decisions/0166-raise-phpstan-one-level-at-a-time",
-              "decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart",
-              "decisions/0168-offload-large-pi-tool-output",
-              "decisions/0169-start-each-subtask-review-in-a-fresh-thread",
-              "decisions/0170-edit-todo-subtasks-after-a-group-starts",
-              "decisions/0171-reset-fixup-caps-after-operator-work",
-              "decisions/0173-record-and-label-jev-decisions",
+              "decisions/0174-match-the-task-gate-to-ci-and-repeated-findings",
+              "decisions/0175-docs-impact-check-in-orbit-repo",
               "decisions/0178-run-project-agnostic-tasks-without-a-planner"
             ]
           }
@@ -975,6 +879,418 @@
     {
       "source": "/decisions/0161-set-a-stale-caddyfile-aside-when-caddy-is-absent",
       "destination": "/reference/caddy-configuration#when-caddy-is-absent"
+    },
+    {
+      "source": "/decisions/0002-candidate-deployment-proof-boundary",
+      "destination": "/reference/incus-topologies#exact-ownership"
+    },
+    {
+      "source": "/decisions/0005-rolling-incus-development-topology",
+      "destination": "/reference/topology-snapshot#why-it-works-this-way"
+    },
+    {
+      "source": "/decisions/0006-topology-led-feature-development",
+      "destination": "/reference/incus-topologies#a-live-mount"
+    },
+    {
+      "source": "/decisions/0010-record-decisions-before-implementation-issues",
+      "destination": "/contributor-guide#decisions-ship-with-their-feature"
+    },
+    {
+      "source": "/decisions/0014-maintain-verified-documentation-context",
+      "destination": "/contributor-guide#one-documentation-corpus"
+    },
+    {
+      "source": "/decisions/0015-retain-incus-proof-by-recorded-input-equivalence",
+      "destination": "/contributor-guide#review-reproduces-on-a-discovery-topology"
+    },
+    {
+      "source": "/decisions/0019-run-disposable-incus-scenario-lanes",
+      "destination": "/reference/incus-topologies#on-demand-scenarios"
+    },
+    {
+      "source": "/decisions/0022-track-the-issue-workspace-and-delete-it-before-merge",
+      "destination": "/contributor-guide#review-reproduces-on-a-discovery-topology"
+    },
+    {
+      "source": "/decisions/0035-close-out-mutating-proofs-by-refreshing-the-topology-snapshot",
+      "destination": "/reference/topology-snapshot#refresh"
+    },
+    {
+      "source": "/decisions/0037-promote-fresh-three-node-topology-snapshots",
+      "destination": "/reference/topology-snapshot#rebuild-and-recover"
+    },
+    {
+      "source": "/decisions/0040-extend-issue-proof-with-one-app-prod-node",
+      "destination": "/reference/incus-topologies#the-app-prod-2-extension"
+    },
+    {
+      "source": "/decisions/0049-keep-delivery-artifacts-off-the-merge-head",
+      "destination": "/contributor-guide#review-reproduces-on-a-discovery-topology"
+    },
+    {
+      "source": "/decisions/0050-release-successful-proof-resources-before-landing",
+      "destination": "/contributor-guide#review-reproduces-on-a-discovery-topology"
+    },
+    {
+      "source": "/decisions/0056-retain-proof-topologies-for-interactive-review",
+      "destination": "/contributor-guide#review-reproduces-on-a-discovery-topology"
+    },
+    {
+      "source": "/decisions/0071-use-one-verb-vocabulary-across-cli-routes-and-sdk",
+      "destination": "/reference/cli-command-vocabulary#why-it-works-this-way"
+    },
+    {
+      "source": "/decisions/0114-expand-the-three-node-incus-cluster",
+      "destination": "/reference/incus-topologies#three-nodes"
+    },
+    {
+      "source": "/decisions/0135-run-incus-topologies-for-task-workspace-clones-through-a-bridge-worktree",
+      "destination": "/reference/incus-topologies#task-workspace-clones"
+    },
+    {
+      "source": "/decisions/0136-run-long-lived-topology-processes-as-transient-units",
+      "destination": "/reference/incus-topologies#long-lived-processes-as-systemd-units"
+    },
+    {
+      "source": "/decisions/0143-record-topology-evidence-and-sync-without-verification",
+      "destination": "/reference/incus-topologies#evidence-log"
+    },
+    {
+      "source": "/decisions/0162-verify-web-ui-changes-with-bin-web-verify",
+      "destination": "/reference/web-verification#why-it-works-this-way"
+    },
+    {
+      "source": "/reference/proof-plans",
+      "destination": "/reference/incus-topologies"
+    },
+    {
+      "source": "/decisions/0083-default-sqlite-journal-mode-to-wal",
+      "destination": "/solutions/sqlite-wal-default"
+    },
+    {
+      "source": "/decisions/0084-broadcast-record-changes-through-reverb",
+      "destination": "/reference/events"
+    },
+    {
+      "source": "/decisions/0085-build-orbit-top-as-a-thin-tui-client",
+      "destination": "/reference/web-app#one-live-fleet-view"
+    },
+    {
+      "source": "/decisions/0086-offer-the-api-as-mcp-tools",
+      "destination": "/reference/mcp#why-it-works-this-way"
+    },
+    {
+      "source": "/decisions/0087-run-reverb-through-a-websocket-role",
+      "destination": "/solutions/realtime-reverb"
+    },
+    {
+      "source": "/decisions/0092-publish-private-dns-on-the-vpn-node-after-gateway-relocate",
+      "destination": "/solutions/relocate-gateway-role"
+    },
+    {
+      "source": "/decisions/0095-relocate-relocatable-singleton-roles",
+      "destination": "/cli/node#orbit-noderolerelocate"
+    },
+    {
+      "source": "/decisions/0098-read-github-repositories-through-a-gateway-owned-github-app",
+      "destination": "/reference/github-app#why-it-works-this-way"
+    },
+    {
+      "source": "/decisions/0123-serve-the-web-app-from-the-gateway-origin",
+      "destination": "/reference/web-app#why-it-works-this-way"
+    },
+    {
+      "source": "/decisions/0129-publish-node-presence-and-process-state-on-per-node-presence-channels",
+      "destination": "/reference/events#node-agent-channels"
+    },
+    {
+      "source": "/decisions/0151-push-task-and-process-usage-changes-over-realtime",
+      "destination": "/reference/events#tasks"
+    },
+    {
+      "source": "/decisions/0152-sample-successful-read-activity",
+      "destination": "/cli/activity#what-the-gateway-records"
+    },
+    {
+      "source": "/decisions/0158-end-interrupted-activity",
+      "destination": "/cli/activity#interrupted-requests"
+    },
+    {
+      "source": "/decisions/0159-push-activity-changes-to-the-web-app",
+      "destination": "/reference/events#activity"
+    },
+    {
+      "source": "/decisions/0016-reconcile-app-identity-and-source-default-updates",
+      "destination": "/reference/apps#update-a-project"
+    },
+    {
+      "source": "/decisions/0018-register-caller-local-development-worktrees",
+      "destination": "/domains/applications#registration-takes-ownership"
+    },
+    {
+      "source": "/decisions/0021-pin-sury-php-fpm-with-opcache-profiles-per-role",
+      "destination": "/reference/php-runtime#why-it-works-this-way"
+    },
+    {
+      "source": "/decisions/0025-stabilize-the-default-appinstance-identity",
+      "destination": "/domains/applications#the-default-instance-keeps-its-name"
+    },
+    {
+      "source": "/decisions/0026-identify-each-app-by-one-repository",
+      "destination": "/reference/apps#repository-identity"
+    },
+    {
+      "source": "/decisions/0027-adopt-local-git-sources-into-appinstance-ownership",
+      "destination": "/domains/applications#register-an-existing-checkout"
+    },
+    {
+      "source": "/decisions/0029-manage-laravel-application-urls-through-orbit",
+      "destination": "/domains/applications#laravel-application-url"
+    },
+    {
+      "source": "/decisions/0030-complete-appinstance-provisioning-without-application-health-gates",
+      "destination": "/domains/applications#active-does-not-mean-healthy"
+    },
+    {
+      "source": "/decisions/0031-clone-initial-production-source-during-provisioning",
+      "destination": "/reference/appinstance-cloning"
+    },
+    {
+      "source": "/decisions/0032-preserve-explicit-appinstance-branch-selection",
+      "destination": "/domains/applications#an-explicit-branch-stays-explicit"
+    },
+    {
+      "source": "/decisions/0034-select-appinstance-php-from-composer-constraints",
+      "destination": "/reference/php-runtime#select-the-php-version"
+    },
+    {
+      "source": "/decisions/0036-support-only-appinstances",
+      "destination": "/domains/applications#one-application-model"
+    },
+    {
+      "source": "/decisions/0038-cascade-appinstance-removal-through-processes-and-schedules",
+      "destination": "/reference/appinstance-removal#processes-and-schedules"
+    },
+    {
+      "source": "/decisions/0045-isolate-production-php-fpm-by-unix-user",
+      "destination": "/reference/php-runtime#production-runtime"
+    },
+    {
+      "source": "/decisions/0047-create-production-appinstances-from-candidates",
+      "destination": "/reference/appinstance-cloning"
+    },
+    {
+      "source": "/decisions/0066-transfer-development-appinstances-between-nodes",
+      "destination": "/reference/appinstance-transfer"
+    },
+    {
+      "source": "/decisions/0074-hibernate-idle-app-dev-appinstance-processes",
+      "destination": "/reference/app-dev-runtime-hibernation"
+    },
+    {
+      "source": "/decisions/0075-prune-idle-app-dev-checkout-dependencies",
+      "destination": "/reference/app-dev-runtime-hibernation#dependency-prune"
+    },
+    {
+      "source": "/decisions/0078-assign-vite-ports-to-development-appinstances",
+      "destination": "/reference/assigned-vite-ports"
+    },
+    {
+      "source": "/decisions/0089-index-appinstance-dependencies",
+      "destination": "/reference/instance-dependencies"
+    },
+    {
+      "source": "/decisions/0105-name-applications-as-project-and-instance",
+      "destination": "/reference/apps#project-and-instance"
+    },
+    {
+      "source": "/decisions/0106-derive-instance-capabilities-from-project-type",
+      "destination": "/reference/apps#project-types"
+    },
+    {
+      "source": "/decisions/0111-retain-transfer-history-through-instance-removal",
+      "destination": "/reference/appinstance-removal#keep-unfinished-transfer-history"
+    },
+    {
+      "source": "/decisions/0115-run-project-setup-commands-on-development-instances",
+      "destination": "/reference/instance-setup"
+    },
+    {
+      "source": "/decisions/0118-exclude-app-dev-nodes-per-project",
+      "destination": "/reference/development-node-exclusions"
+    },
+    {
+      "source": "/cli/workspace",
+      "destination": "/cli/instance#orbit-instanceregister"
+    },
+    {
+      "source": "/decisions/0017-optional-cluster-placement-and-tld-precedence",
+      "destination": "/cli/cluster#placement-and-tlds"
+    },
+    {
+      "source": "/decisions/0082-wire-agentation-watch-mode-through-appinstance-processes",
+      "destination": "/reference/agentation"
+    },
+    {
+      "source": "/decisions/0120-extract-agent-annotation-package",
+      "destination": "/reference/agent-annotation"
+    },
+    {
+      "source": "/decisions/0127-share-one-ssh-connection-per-node",
+      "destination": "/reference/node-provisioning#ssh-connections"
+    },
+    {
+      "source": "/decisions/0147-retire-orbit-top",
+      "destination": "/reference/web-app#one-live-fleet-view"
+    },
+    {
+      "source": "/decisions/0180-absorb-built-decisions-into-the-docs",
+      "destination": "/decisions/overview#why-it-works-this-way"
+    },
+    {
+      "source": "/decisions/0051-select-discovery-only-feature-delivery",
+      "destination": "/contributor-guide#review-reproduces-on-a-discovery-topology"
+    },
+    {
+      "source": "/decisions/0052-seed-worktrees-from-successful-main-test-baselines",
+      "destination": "/reference/implementation-loop#main-caches-come-only-from-clean-main"
+    },
+    {
+      "source": "/decisions/0053-use-local-review-checks-for-feature-landing",
+      "destination": "/reference/implementation-loop#the-candidate-gate"
+    },
+    {
+      "source": "/decisions/0054-maintain-main-caches-asynchronously",
+      "destination": "/reference/implementation-loop#maintenance-runs-in-the-background"
+    },
+    {
+      "source": "/decisions/0058-separate-incus-requirements-from-delivery-flow",
+      "destination": "/contributor-guide#review-reproduces-on-a-discovery-topology"
+    },
+    {
+      "source": "/decisions/0059-make-the-builder-own-the-candidate-quality-gate",
+      "destination": "/reference/implementation-loop#the-candidate-gate"
+    },
+    {
+      "source": "/decisions/0076-deliver-features-through-complete-pull-requests",
+      "destination": "/contributor-guide#decisions-ship-with-their-feature"
+    },
+    {
+      "source": "/decisions/0119-publish-main-caches-from-clean-bootstrap-runs",
+      "destination": "/reference/implementation-loop#publish-from-bootstrap"
+    },
+    {
+      "source": "/decisions/0166-raise-phpstan-one-level-at-a-time",
+      "destination": "/reference/implementation-loop#findings-are-fixed-not-silenced"
+    },
+    {
+      "source": "/decisions/0103-absorb-commander-tasks-as-a-gateway-extension",
+      "destination": "/reference/tasks#an-optional-generic-extension"
+    },
+    {
+      "source": "/decisions/0110-route-task-sessions-with-laravel-ai-jev",
+      "destination": "/reference/tasks#session-routing"
+    },
+    {
+      "source": "/decisions/0112-isolate-agent-threads-behind-drivers",
+      "destination": "/reference/tasks#agent-threads"
+    },
+    {
+      "source": "/decisions/0113-gate-task-completion-on-validation-and-review",
+      "destination": "/reference/tasks#rubric-and-reminders"
+    },
+    {
+      "source": "/decisions/0114-judge-task-completion-as-separate-checks",
+      "destination": "/reference/tasks#rubric-and-reminders"
+    },
+    {
+      "source": "/decisions/0116-run-task-implementers-on-pi",
+      "destination": "/reference/tasks#drivers"
+    },
+    {
+      "source": "/decisions/0117-judge-the-blocked-question-on-role-evidence",
+      "destination": "/reference/tasks#rubric-and-reminders"
+    },
+    {
+      "source": "/decisions/0121-end-agent-turns-with-a-run-receipt",
+      "destination": "/reference/tasks#run-receipt"
+    },
+    {
+      "source": "/decisions/0122-hold-task-groups-in-backlog-until-ready",
+      "destination": "/reference/tasks#prepare-a-group-in-backlog"
+    },
+    {
+      "source": "/decisions/0124-plan-backlog-groups-with-a-t3-planner",
+      "destination": "/reference/tasks#prepare-a-group-in-backlog"
+    },
+    {
+      "source": "/decisions/0125-run-the-project-check-when-the-implementer-hands-off",
+      "destination": "/reference/tasks#project-check"
+    },
+    {
+      "source": "/decisions/0131-seed-task-workspace-clones-from-the-registered-main-cache-store",
+      "destination": "/reference/implementation-loop#seed-a-checkout"
+    },
+    {
+      "source": "/decisions/0132-pause-only-for-the-acting-thread-and-a-real-question",
+      "destination": "/reference/tasks#session-routing"
+    },
+    {
+      "source": "/decisions/0133-verify-typed-subtask-deliverables-at-handoff",
+      "destination": "/reference/tasks#deliverables"
+    },
+    {
+      "source": "/decisions/0134-resume-pi-agent-streams-from-a-cursor",
+      "destination": "/reference/tasks#agent-viewer"
+    },
+    {
+      "source": "/decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks",
+      "destination": "/reference/tasks#fix-a-settling-pull-request"
+    },
+    {
+      "source": "/decisions/0160-push-each-approved-subtask-and-remove-the-finished-workspace-clone",
+      "destination": "/reference/tasks#pull-request-and-settle-metrics"
+    },
+    {
+      "source": "/decisions/0163-prove-a-failing-test-on-the-start-commit",
+      "destination": "/reference/tasks#reproduce-a-bug-on-the-start-commit"
+    },
+    {
+      "source": "/decisions/0164-heal-a-settling-pull-request-with-a-fixup-subtask",
+      "destination": "/reference/tasks#fix-a-settling-pull-request"
+    },
+    {
+      "source": "/decisions/0165-record-per-thread-token-metrics",
+      "destination": "/reference/tasks#thread-token-metrics"
+    },
+    {
+      "source": "/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart",
+      "destination": "/reference/tasks#recover-a-pi-server-restart"
+    },
+    {
+      "source": "/decisions/0168-offload-large-pi-tool-output",
+      "destination": "/reference/pi-server#large-tool-output"
+    },
+    {
+      "source": "/decisions/0169-start-each-subtask-review-in-a-fresh-thread",
+      "destination": "/reference/tasks#review-a-subtask"
+    },
+    {
+      "source": "/decisions/0170-edit-todo-subtasks-after-a-group-starts",
+      "destination": "/reference/tasks#change-subtasks"
+    },
+    {
+      "source": "/decisions/0171-reset-fixup-caps-after-operator-work",
+      "destination": "/reference/tasks#fix-a-settling-pull-request"
+    },
+    {
+      "source": "/decisions/0172-count-every-t3-model-call-in-thread-metrics",
+      "destination": "/reference/tasks#thread-token-metrics"
+    },
+    {
+      "source": "/decisions/0173-record-and-label-jev-decisions",
+      "destination": "/reference/tasks#jev-decision-records"
     }
   ]
 }

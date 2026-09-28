@@ -9,6 +9,7 @@ use App\Domain\Routes\RouteDomain;
 use App\Domain\SourceControl\GitBranchName;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\Node;
+use App\Support\ValidatedData;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -73,13 +74,12 @@ final class CloneAppInstanceRequest extends FormRequest
 
     public function payload(): CloneAppInstanceData
     {
-        /** @var array{node_id: int, name: string, preview_name: string, branch?: string, sqlite_source_path?: string} $validated */
         $validated = $this->validated();
 
         return new CloneAppInstanceData(
-            nodeId: $validated['node_id'],
-            name: $validated['name'],
-            previewName: RouteDomain::normalize($validated['preview_name']),
+            nodeId: ValidatedData::integer($validated['node_id'] ?? null),
+            name: ValidatedData::string($validated['name'] ?? null),
+            previewName: RouteDomain::normalize(ValidatedData::string($validated['preview_name'] ?? null)),
             branch: is_string($validated['branch'] ?? null) ? $validated['branch'] : null,
             sqliteSourcePath: is_string($validated['sqlite_source_path'] ?? null)
                 ? $validated['sqlite_source_path']

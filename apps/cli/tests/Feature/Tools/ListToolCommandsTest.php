@@ -91,7 +91,7 @@ it('renders an empty manager table with its request id', function (): void {
         ->and($output)->toContain("Request ID: {$id}");
 });
 
-it('renders the complete tool table with null and protected values', function (): void {
+it('renders the complete tool table with nullable values', function (): void {
     $id = '22222222-2222-4222-8222-222222222222';
     $mock = MockClient::global([
         ListToolsRequest::class => MockResponse::make([
@@ -102,7 +102,6 @@ it('renders the complete tool table with null and protected values', function ()
                     'manager' => 'composer',
                     'package' => 'vendor/tool',
                     'version_constraint' => '^1.2',
-                    'protected' => true,
                     'status' => 'failed',
                     'installed_version' => '1.3.0',
                     'error_code' => 'tool.failed',
@@ -117,9 +116,8 @@ it('renders the complete tool table with null and protected values', function ()
 
     expect($exit)->toBe(0)
         ->and($output)->toContain('PACKAGE')
-        ->and($output)->toContain('PROTECTED')
-        ->and($flat)->toContain('│ 41 │ vp │ @openai/codex │ — │ installed │ — │ no │ — │')
-        ->and($flat)->toContain('│ 42 │ composer │ vendor/tool │ ^1.2 │ failed │ 1.3.0 │ yes │ tool.failed │')
+        ->and($flat)->toContain('│ 41 │ vp │ @openai/codex │ — │ installed │ — │ — │')
+        ->and($flat)->toContain('│ 42 │ composer │ vendor/tool │ ^1.2 │ failed │ 1.3.0 │ tool.failed │')
         ->and($output)->toContain("Request ID: {$id}");
 
     expect($mock->getLastRequest()?->getMethod())
@@ -145,7 +143,7 @@ it('renders an empty tool table with its request id', function (): void {
 
 it('renders every show field as a detail tree', function (): void {
     $id = '33333333-3333-4333-8333-333333333333';
-    $data = tool_data(['protected' => true]);
+    $data = tool_data();
     MockClient::global([
         ShowToolRequest::class => MockResponse::make(['data' => $data, 'meta' => ['request_id' => $id]]),
     ]);
@@ -160,7 +158,6 @@ it('renders every show field as a detail tree', function (): void {
         ->and($flat)->toContain('Manager vp')
         ->and($flat)->toContain('Package @openai/codex')
         ->and($flat)->toContain('Constraint —')
-        ->and($flat)->toContain('Protected yes')
         ->and($flat)->toContain('Status installed')
         ->and($flat)->toContain('Installed version —')
         ->and($flat)->toContain('Failed operation —')
@@ -261,7 +258,7 @@ function manager_data(array $overrides = []): array
     ], $overrides);
 }
 
-/** @param array<string, bool|int|string|null> $overrides */
+/** @param array<string, int|string|null> $overrides */
 function tool_data(array $overrides = []): array
 {
     return array_replace([
@@ -270,7 +267,6 @@ function tool_data(array $overrides = []): array
         'manager' => 'vp',
         'package' => '@openai/codex',
         'version_constraint' => null,
-        'protected' => false,
         'status' => 'installed',
         'installed_version' => null,
         'failed_operation' => null,

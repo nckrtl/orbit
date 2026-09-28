@@ -70,7 +70,6 @@ final readonly class ProxyCliRouteTakeover
     /** @return array{status: RouteStatus, sites_published: bool} */
     private function withdraw(Route $route): array
     {
-        /** @var array{status: RouteStatus, sites_published: bool} $previous */
         $previous = DB::transaction(static function () use ($route): array {
             $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
             $previous = ['status' => $locked->status, 'sites_published' => $locked->sites_published];

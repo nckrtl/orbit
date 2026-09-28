@@ -194,13 +194,14 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
     ))->toBe([
         'node' => [
             'node.lifecycle_not_active',
+            'node.disk_low',
             'node.ssh_unreachable',
             'node.platform_mismatch',
             'node.architecture_mismatch',
             'node.wireguard_ip_mismatch',
             'node.agent_missing',
+            'node.agent_binary_mismatch',
             'node.agent_inactive',
-            'node.agent_outdated',
             'node.agent_view_stale',
             'node.agent_secret_mismatch',
             'node.inspection_failed',
@@ -220,7 +221,6 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'role.vpn_inactive',
             'role.vpn_projection_mismatch',
             'role.dns_projection_mismatch',
-            'role.dns_snippet_conflict',
             'role.private_dns_route_mismatch',
             'role.inspection_failed',
             'role.node_unreachable',

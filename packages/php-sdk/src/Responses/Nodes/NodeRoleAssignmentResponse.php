@@ -41,7 +41,7 @@ final readonly class NodeRoleAssignmentResponse
 
         $role = $data['role'] ?? null;
 
-        if (! self::isSafeRole($role)) {
+        if (! is_string($role) || ! self::isSafeRole($role)) {
             throw new GatewayApiException(
                 'Gateway response contains an invalid node role assignment role.',
                 requestId: $requestId,
@@ -59,14 +59,13 @@ final readonly class NodeRoleAssignmentResponse
 
         $failedStep = $data['failed_step'] ?? null;
 
-        if (! self::isSafeFailedStep($failedStep)) {
+        if (($failedStep !== null && ! is_string($failedStep)) || ! self::isSafeFailedStep($failedStep)) {
             throw new GatewayApiException(
                 'Gateway response contains an invalid node role assignment failed_step.',
                 requestId: $requestId,
             );
         }
 
-        /** @var ?string $failedStep */
         $rawErrorCode = $data['error_code'] ?? null;
 
         if (! is_string($rawErrorCode) && $rawErrorCode !== null) {
@@ -76,8 +75,6 @@ final readonly class NodeRoleAssignmentResponse
             );
         }
 
-        /** @var string $role */
-        /** @var string $status */
         return new self(
             id: $id,
             role: $role,

@@ -1673,10 +1673,6 @@
             "type": "string",
             "maxLength": 255,
             "description": "Optional explicit source branch"
-          },
-          "recover_source_profile": {
-            "type": "boolean",
-            "description": "Adopt complete source evidence for a legacy incomplete checkpoint"
           }
         },
         "additionalProperties": false,
@@ -4935,33 +4931,97 @@
         "properties": {
           "domain": {
             "type": "string",
-            "maxLength": 253,
-            "description": "Route domain"
+            "maxLength": 253
           },
           "publication": {
             "type": "string",
             "enum": [
               "private",
               "public"
-            ],
-            "description": "Publication intent"
+            ]
+          },
+          "app_instance_id": {
+            "type": "integer"
           },
           "node_id": {
             "type": "integer"
           },
           "upstream": {
             "type": "string",
-            "maxLength": 253,
-            "description": "Loopback HTTP URL for a custom proxy Route"
+            "maxLength": 253
           },
           "process_id": {
             "type": "integer"
           }
         },
         "additionalProperties": false,
-        "required": [
-          "domain",
-          "node_id"
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "domain": {
+                "type": "string",
+                "maxLength": 253
+              },
+              "publication": {
+                "type": "string",
+                "enum": [
+                  "private",
+                  "public"
+                ]
+              },
+              "app_instance_id": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "domain",
+              "app_instance_id"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "domain": {
+                "type": "string",
+                "maxLength": 253
+              },
+              "publication": {
+                "type": "string",
+                "enum": [
+                  "private"
+                ]
+              },
+              "node_id": {
+                "type": "integer"
+              },
+              "upstream": {
+                "type": "string",
+                "maxLength": 253
+              },
+              "process_id": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "domain",
+              "node_id"
+            ],
+            "oneOf": [
+              {
+                "required": [
+                  "upstream"
+                ]
+              },
+              {
+                "required": [
+                  "process_id"
+                ]
+              }
+            ],
+            "additionalProperties": false
+          }
         ]
       }
     },

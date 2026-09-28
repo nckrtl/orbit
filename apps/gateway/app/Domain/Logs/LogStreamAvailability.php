@@ -11,15 +11,11 @@ use App\Domain\Broadcasting\RealtimeConnection;
  * Whether the Gateway can serve a live log stream for a Node now, and why not (ADR 0153).
  *
  * A stream needs Reverb, a running and connected agent view subscriber, a fresh view of the Node,
- * and an agent that joined the Node's log channel. Agents before 0.3.0 never join it, so their Nodes
- * report `agent_outdated`. A newer agent that has not joined yet, for example while it reconnects
- * during a `websocket` move, reports `agent_not_joined`, which clients try again later.
+ * and an agent that joined the Node's log channel. An agent that has not joined yet, for example
+ * while it reconnects during a `websocket` move, reports `agent_not_joined`, which clients try again later.
  */
 final readonly class LogStreamAvailability
 {
-    /** The first agent version that joins the log channel. */
-    public const string FirstStreamingAgent = '0.3.0';
-
     public function __construct(
         private RealtimeConnection $realtime,
         private AgentStateView $view,
@@ -48,8 +44,6 @@ final readonly class LogStreamAvailability
             return null;
         }
 
-        return $node->agentVersion !== null && version_compare($node->agentVersion, self::FirstStreamingAgent, '<')
-            ? 'agent_outdated'
-            : 'agent_not_joined';
+        return 'agent_not_joined';
     }
 }

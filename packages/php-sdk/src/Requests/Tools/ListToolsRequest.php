@@ -43,7 +43,6 @@ final class ListToolsRequest extends GatewayRequest
 
         $requestId = $this->successRequestId($response);
 
-        /** @var list<array<string, mixed>> $data */
         $tools = array_map(
             static fn (array $item): ToolResponse => ToolResponse::fromGatewayData($item, $requestId),
             $data,

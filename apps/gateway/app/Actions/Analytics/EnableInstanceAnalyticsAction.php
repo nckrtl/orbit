@@ -13,6 +13,7 @@ use App\Domain\Analytics\AnalyticsTrackingUpstream;
 use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteProvenance;
@@ -37,15 +38,20 @@ final readonly class EnableInstanceAnalyticsAction
         private RouteStateResolver $state,
         private AppInstanceEnvironmentOperationLock $operations,
         private RecordEventBroadcaster $broadcaster,
+        private ?MetricsFleetReconciler $metrics = null,
     ) {}
 
     /** @param list<string> $hosts The exact host set; empty means the default host. */
     public function execute(AppInstance $instance, array $hosts): InstanceAnalyticsData
     {
-        return $this->operations->run(
+        $result = $this->operations->run(
             [$instance->id],
             fn (): InstanceAnalyticsData => $this->executeOwned($instance, $hosts),
         );
+
+        $this->metrics?->reconcile();
+
+        return $result;
     }
 
     /** @param list<string> $hosts */
@@ -110,7 +116,6 @@ final readonly class EnableInstanceAnalyticsAction
     private function create(AppInstance $instance, Route $owner, string $host): Route
     {
         try {
-            /** @var Route $route */
             $route = DB::transaction(static function () use ($instance, $owner, $host): Route {
                 $route = Route::query()->create([
                     'kind' => RouteKind::AnalyticsTracking,

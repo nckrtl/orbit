@@ -19,8 +19,8 @@ use Throwable;
 
 /**
  * Renders the Node's Caddy build from stored state and compares it byte for byte with the live
- * `/etc/caddy/Caddyfile` (ADR 0141). A Node whose live file no build wrote, such as a foreign file or the
- * fragment layout of an earlier release, never matches; its first build backs that file up and replaces it.
+ * `/etc/caddy/Caddyfile` (ADR 0141). A Node whose live file no build wrote never matches; its first build
+ * backs that file up and replaces it.
  */
 final readonly class NativeCaddyBuildInspector implements CaddyBuildInspector
 {

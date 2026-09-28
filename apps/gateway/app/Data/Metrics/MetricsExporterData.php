@@ -16,6 +16,7 @@ final readonly class MetricsExporterData
         public string $actual,
         public ExporterSelectionReason $reason,
         public ?ExporterDegradationReason $degradation = null,
+        public ?string $degradedErrorCode = null,
     ) {}
 
     /**
@@ -26,6 +27,7 @@ final readonly class MetricsExporterData
      *     actual: string,
      *     reason: string,
      *     degraded_reason: ?string,
+     *     degraded_error_code: ?string,
      * }
      */
     public function toArray(): array
@@ -37,6 +39,7 @@ final readonly class MetricsExporterData
             'actual' => $this->actual,
             'reason' => $this->reason->value,
             'degraded_reason' => $this->degradation?->value,
+            'degraded_error_code' => $this->degradedErrorCode,
         ];
     }
 }

@@ -338,6 +338,7 @@ it('reports a bounded failure when the machine architecture cannot be observed',
 
 it('reprovisions active role-bearing nodes only through WireGuard', function (): void {
     $node = base_provisionable_node();
+    $node->roles()->update(['status' => LifecycleStatus::Active]);
     $node->update(['status' => LifecycleStatus::Active, 'ssh_host_fingerprint' => 'SHA256:pinned']);
     $scans = [];
     $scanner = new class($scans) implements HostKeyScanner
@@ -410,6 +411,57 @@ it('reprovisions active role-bearing nodes only through WireGuard', function ():
         '10.44.0.2:22',
     ]);
 });
+
+it('retries recoverable managed peer publication while no assigned role is active', function (bool $anotherFailedRole): void {
+    $node = base_provisionable_node();
+    $node->roles()->delete();
+    $node->roles()->create([
+        'role' => RoleName::Metrics,
+        'status' => LifecycleStatus::Failed,
+        'failed_step' => 'converge:baseline',
+        'error_code' => 'node.baseline_failed',
+    ]);
+    if ($anotherFailedRole) {
+        $node->roles()->create([
+            'role' => RoleName::AppDev,
+            'status' => LifecycleStatus::Failed,
+            'failed_step' => 'converge:baseline',
+            'error_code' => 'node.baseline_failed',
+        ]);
+    }
+    $node->update(['status' => LifecycleStatus::Active, 'ssh_host_fingerprint' => 'SHA256:pinned']);
+    $events = [];
+    $wireGuard = new class($events) implements RecoverableWireGuardPeerConverger, WireGuardPeerConverger
+    {
+        public function __construct(private array &$events) {}
+
+        public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void
+        {
+            $this->events[] = 'nonrecoverable';
+        }
+
+        public function convergeRecoverably(Node $node, SshConnection $connection, Closure $completion, bool $rolelessOperator = false): void
+        {
+            $this->events[] = $rolelessOperator ? 'operator' : 'managed';
+            $completion();
+        }
+    };
+    $converger = new NativeNodeConverger(
+        hostKeys: base_test_scanner(),
+        knownHosts: base_test_known_hosts(),
+        sshKeys: base_test_keys(),
+        ssh: new BaseNodeSshExecutor,
+        bootstrapCommand: new NodeBootstrapCommandFactory(base_test_keys()),
+        wireGuard: $wireGuard,
+        firewall: base_firewall_spy(),
+    );
+
+    $converger->convergeRecoverably($node, base_identity(), null, static function () use (&$events): void {
+        $events[] = 'role';
+    });
+
+    expect($events)->toBe(['managed', 'role']);
+})->with(['one failed role' => false, 'two failed roles' => true]);
 
 it('commits recoverable peer publication before activating orbit SSH for active roleless reprovisioning', function (): void {
     $node = base_provisionable_node();

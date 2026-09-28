@@ -12,6 +12,7 @@ use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\ProtectedPathCatalog;
 use App\Domain\Nodes\Storage\StorageRootResolver;
+use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
@@ -365,6 +366,88 @@ it('observes production projections through fixed arguments and protected input'
         ->toBe(['environment' => '[PROTECTED]'])
         ->and($ssh->connections[0]->commandTimeout)
         ->toBe(30.0);
+});
+
+it('inspects non-PHP production Instances without requiring or probing a PHP-FPM service', function (): void {
+    $instance = application_production_app_instance(
+        application_inspector_app(),
+        application_inspector_node(),
+        'doctor-static-secret',
+    );
+    $instance->update([
+        'selected_php_version' => null,
+        'production_php_service' => null,
+        'production_php_pool' => null,
+        'production_php_socket' => null,
+    ]);
+    $ssh = new AppDevFakeSshExecutor([app_inspector_result(implode(PHP_EOL, ['1', '1', '1', '1', '1', '1', '']))]);
+
+    $inspection = application_instance_inspector($ssh)->inspect($instance->refresh());
+    $expectation = app(ProductionInstanceInspectionExpectationFactory::class)->make($instance->refresh());
+    $input = $ssh->commands[0]->protectedInput;
+    if (! $input instanceof ProtectedInput) {
+        throw new RuntimeException('Expected protected production inspection input.');
+    }
+    $program = stream_get_contents($input->stream());
+    if (! is_string($program)) {
+        throw new RuntimeException('Expected readable production inspection input.');
+    }
+
+    expect($inspection->phpFpmProjectionMatches)->toBeTrue()
+        ->and($inspection->caddyProjectionMatches)->toBeTrue()
+        ->and($expectation->associationMatches)->toBeTrue()
+        ->and($expectation->runtime)->toBeNull()
+        ->and($expectation->runtimeConfiguration)->toBeNull()
+        ->and($program)->toContain("runtime_expected='0'");
+});
+
+it('inspects a Laravel package with selected PHP but no PHP-FPM identity as having no runtime', function (): void {
+    $app = application_inspector_app();
+    $app->update(['type' => ProjectType::LaravelPackage]);
+    $instance = application_production_app_instance(
+        $app,
+        application_inspector_node(),
+        'doctor-package-secret',
+    );
+    $instance->update([
+        'production_php_service' => null,
+        'production_php_pool' => null,
+        'production_php_socket' => null,
+    ]);
+    $ssh = new AppDevFakeSshExecutor([app_inspector_result(implode(PHP_EOL, ['1', '1', '1', '1', '1', '1', '']))]);
+
+    $inspection = application_instance_inspector($ssh)->inspect($instance->refresh());
+    $expectation = app(ProductionInstanceInspectionExpectationFactory::class)->make($instance->refresh());
+    $input = $ssh->commands[0]->protectedInput;
+    if (! $input instanceof ProtectedInput) {
+        throw new RuntimeException('Expected readable production inspection input.');
+    }
+    $program = stream_get_contents($input->stream());
+    if (! is_string($program)) {
+        throw new RuntimeException('Expected readable production inspection input.');
+    }
+
+    expect($inspection->phpFpmProjectionMatches)->toBeTrue()
+        ->and($expectation->associationMatches)->toBeTrue()
+        ->and($expectation->runtime)->toBeNull()
+        ->and($expectation->runtimeConfiguration)->toBeNull()
+        ->and($program)->toContain("runtime_expected='0'");
+});
+
+it('refuses PHP production inspection when its dedicated service is missing', function (): void {
+    $instance = application_production_app_instance(
+        application_inspector_app(),
+        application_inspector_node(),
+        'doctor-php-secret',
+    );
+    $instance->update([
+        'production_php_service' => null,
+        'production_php_pool' => null,
+        'production_php_socket' => null,
+    ]);
+
+    expect(fn () => app(ProductionInstanceInspectionExpectationFactory::class)->make($instance->refresh()))
+        ->toThrow(InvalidArgumentException::class, 'The production PHP Instance requires a dedicated PHP-FPM service and PHP version.');
 });
 
 it('executes loaded service association outcomes from the production program', function (
@@ -1008,7 +1091,7 @@ it('still reports a truly different app origin despite an insteadOf rule', funct
     }
 });
 
-it('fails app inspection for a checkout outside both the apps root and the home', function (): void {
+it('fails app inspection for a checkout outside the effective apps root', function (): void {
     $app = application_inspector_app();
     $node = application_inspector_node();
     $fixture = application_instance_repository_fixture($app->repository_url);
@@ -1022,7 +1105,7 @@ it('fails app inspection for a checkout outside both the apps root and the home'
             new ProcessInvocation($ssh->commands[0]->arguments, input: $ssh->commands[0]->input),
         );
 
-        expect($ssh->commands[0]->arguments[5])->toBe('/srv/users/nckrtl')
+        expect($ssh->commands[0]->arguments[5])->toBe("{$fixture['sandbox']}/configured")
             ->and($result->succeeded())->toBeFalse()
             ->and($result->stdout)->toBe('');
     } finally {

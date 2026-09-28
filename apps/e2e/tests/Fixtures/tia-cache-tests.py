@@ -1219,14 +1219,32 @@ class ReviewGateTest(unittest.TestCase):
             seed = self.root / 'bin' / name
             seed.write_text(f'#!/bin/sh\nprintf "{name} %s\\n" "$*" >> "$GATE_TEST_SEEDS"\n')
             seed.chmod(0o755)
+        docs_impact = self.root / 'bin/docs-impact'
+        docs_impact.write_text("""#!/bin/sh
+printf '%s|%s\\n' "$PWD" "$*" >> "$GATE_TEST_DOCS"
+if [ "$GATE_TEST_MODE" = docs ]; then exit 5; fi
+""")
+        docs_impact.chmod(0o755)
         for project in cache.PROJECTS:
-            (self.root / project).mkdir(parents=True)
+            directory = self.root / project
+            directory.mkdir(parents=True)
+            (directory / '.gitkeep').write_text('')
+            pest = directory / 'vendor/bin/pest'
+            pest.parent.mkdir(parents=True)
+            pest.write_text('#!/bin/sh\nexit 0\n')
+            pest.chmod(0o755)
+        (self.root / '.gitignore').write_text('.orbit-tia/\n')
         self.commit_change('gate fixture')
         fake_bin = Path(self.temporary.name) / 'fake-bin'
         fake_bin.mkdir()
         composer = fake_bin / 'composer'
         composer.write_text("""#!/bin/sh
 printf '%s|%s\\n' "$PWD" "$*" >> "$GATE_TEST_CALLS"
+if [ "$1" = test:affected ]; then
+    tia_directory="${ORBIT_TIA_DIRECTORY:-.orbit-tia}"
+    mkdir -p "$tia_directory"
+    printf '[]\n' > "$tia_directory/affected.json"
+fi
 if [ "$1" = check ] && [ "${PWD##*/}" = e2e ]; then
     case "$GATE_TEST_MODE" in
         fail) exit 7 ;;
@@ -1237,7 +1255,7 @@ fi
         composer.chmod(0o755)
         self.gate_env = {**os.environ, 'PATH': str(fake_bin) + os.pathsep + os.environ['PATH'],
                          'GATE_TEST_CALLS': str(self.common / 'calls'), 'GATE_TEST_ROOT': str(self.root),
-                         'GATE_TEST_SEEDS': str(self.common / 'seeds')}
+                         'GATE_TEST_SEEDS': str(self.common / 'seeds'), 'GATE_TEST_DOCS': str(self.common / 'docs')}
         return runner
 
     def test_gate_seeds_quality_and_test_caches_before_checks(self):
@@ -1256,15 +1274,33 @@ fi
         self.assertTrue(report['passed'])
         self.assertEqual('builder', report['role'])
         self.assertEqual(cache.git(self.root, 'rev-parse', 'HEAD'), report['candidate'])
-        self.assertEqual([(project, command) for project in cache.PROJECTS
-                          for command in [['composer', 'validate', '--strict'], ['composer', 'check'],
-                                          ['composer', 'test:affected']]],
-                         [(item['project'], item['command']) for item in report['checks']])
+        architecture_tests = {
+            'apps/cli': ['tests/Feature/CommandSurfaceTest.php'],
+            'apps/gateway': ['tests/Unit/Architecture',
+                             'tests/Feature/Infrastructure/AppInstances/ConfiguredOriginReadTest.php',
+                             'tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php'],
+            'apps/e2e': ['tests/Unit/E2E/ProofFixtureContractTest.php',
+                         'tests/Unit/E2E/ProofFixtureShellContractTest.php'],
+            'packages/php-sdk': ['tests/Unit/SuccessRequestIdBoundaryTest.php',
+                                 'tests/Unit/RepositoryGuidanceTest.php',
+                                 'tests/Unit/Requests/Workspaces/WorkspaceRequestsTest.php',
+                                 'tests/Unit/Requests/Deployments/DeploymentRequestsTest.php'],
+        }
+        self.assertEqual(self.commit, report['base'])
+        expected = [('repository', ['bin/docs-impact', '--gate', '--base', self.commit])]
+        for project in cache.PROJECTS:
+            expected.extend((project, command) for command in [
+                ['composer', 'validate', '--strict'], ['composer', 'check'], ['composer', 'test:affected']])
+            expected.extend((project, ['vendor/bin/pest', path])
+                            for path in architecture_tests.get(project, []))
+        self.assertEqual(expected, [(item['project'], item['command']) for item in report['checks']])
+        self.assertEqual([f'{self.root.resolve()}|--gate --base {self.commit}'],
+                         (self.common / 'docs').read_text().splitlines())
         self.assertEqual(15, len((self.common / 'calls').read_text().splitlines()))
 
     def test_gate_rejects_failed_checks_and_candidate_mutation(self):
         runner = self.gate_fixture()
-        for mode in ['fail', 'mutate']:
+        for mode in ['docs', 'fail', 'mutate']:
             with self.subTest(mode=mode):
                 result = subprocess.run([str(runner)], env={**self.gate_env, 'GATE_TEST_MODE': mode},
                                         capture_output=True, text=True)

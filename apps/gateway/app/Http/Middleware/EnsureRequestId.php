@@ -27,7 +27,6 @@ final class EnsureRequestId
         $previousRequestId = RequestLogContext::enter($requestId);
 
         try {
-            /** @var Response $response */
             $response = $next($request);
             $response->headers->set('X-Orbit-Request-Id', $requestId);
 

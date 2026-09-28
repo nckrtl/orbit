@@ -27,7 +27,7 @@ Creating a new file works, and overwriting from a regular file works. Only an ov
 
 ## Solution
 
-Never point a remote `install` from standard input at a live path. Remove any stale `<path>.orbit-candidate`, write the candidate, and then `mv -fT` it onto the target. The move is atomic, which running containers and systemd units need anyway. `MetricsSshExecutor::publishFile()`, `MetricsExporterSshExecutor::publishConfiguration()`, and `NodeAgentSshExecutor::publishFile()` use this sequence. `RemoteProcessRuntimeManager` writes each unit to its own candidate directory, `/etc/orbit/systemd-candidates`, first.
+Never point a remote `install` from standard input at a live path. Remove any stale `<path>.orbit-candidate`, write the candidate, and then `mv -fT` it onto the target. The move is atomic, which running containers and systemd units need anyway. Metrics SSH publishers, `MetricsExporterSshExecutor::publishConfiguration()`, and `NodeAgentSshExecutor::publishFile()` use this sequence. `RemoteProcessRuntimeManager` writes each unit to `/etc/orbit/systemd-candidates`, verifies the candidate with `systemd-analyze`, and then moves it into place. Metrics exporter SSH lifecycle operations now delegate file publication to the shared publisher.
 
 ## Limits
 
@@ -35,4 +35,4 @@ The problem affects only `/dev/stdin` sources. `install -d`, mode changes, and r
 
 ## Verification
 
-Converge the same role twice over existing configuration, which is the case that fails. Unit tests cover the sequence in `apps/gateway/tests/Unit/Infrastructure/Metrics/MetricsSshExecutorTest.php` and `MetricsExporterSshExecutorLifecycleTest.php`.
+Converge the same role twice over existing configuration, which is the case that fails. Unit tests cover the sequence in `apps/gateway/tests/Unit/Infrastructure/Metrics/MetricsSshExecutorTest.php` and `MetricsExporterSshExecutorLifecycleTest.php`; `apps/gateway/tests/Feature/Infrastructure/Processes/RemoteProcessRuntimeManagerTest.php` checks candidate verification and atomic publication of systemd units.

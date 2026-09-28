@@ -7,6 +7,8 @@ use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\ExporterPreference;
 use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Metrics\ExporterSelector;
+use App\Domain\Metrics\MetricsFleetReconcileException;
+use App\Domain\Metrics\MetricsReconcileComponent;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -208,7 +210,11 @@ it('restores every earlier exporter mutation when a later fleet node fails', fun
     );
 
     expect(fn () => $lifecycle->converge($metrics, $assignment))
-        ->toThrow(ResourceOperationException::class, 'later exporter failed');
+        ->toThrow(function (MetricsFleetReconcileException $exception) use ($later): void {
+            expect($exception->component)->toBe(MetricsReconcileComponent::Exporter);
+            expect($exception->nodeId)->toBe($later->id);
+            expect($exception->errorCode)->toBe('metrics.exporter_failed');
+        });
     expect($runtime->events)->toBe([
         'snapshot:metrics',
         'snapshot:early',
@@ -220,6 +226,56 @@ it('restores every earlier exporter mutation when a later fleet node fails', fun
         'restore:early',
         'restore:metrics',
     ]);
+});
+
+it('reports exporter rollback failures with the node whose state could not be restored', function (): void {
+    $metrics = metricsExporterLifecycleNode('metrics', '10.44.0.3');
+    $assignment = $metrics->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
+    $candidate = metricsExporterLifecycleNode('candidate', '10.44.0.4');
+    $candidate->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    $runtime = new class($candidate->name) implements MetricsExporterRuntime
+    {
+        public function __construct(private readonly string $candidate) {}
+
+        public function snapshot(Node $node, Node $metricsNode): MetricsExporterState
+        {
+            return new MetricsExporterState(null, false, UfwRuleOwnership::Missing);
+        }
+
+        public function converge(Node $node, Node $metricsNode): void
+        {
+            if ($node->name === $this->candidate) {
+                throw new ResourceOperationException('metrics.exporter_convergence_failed', 'converge failed', 502);
+            }
+        }
+
+        public function remove(Node $node, Node $metricsNode): void {}
+
+        public function restore(Node $node, Node $metricsNode, MetricsExporterState $state): void
+        {
+            if ($node->name === $this->candidate) {
+                throw new ResourceOperationException('metrics.exporter_restore_failed', 'restore failed', 502);
+            }
+        }
+
+        public function actual(Node $node, Node $metricsNode): string
+        {
+            return 'inactive';
+        }
+    };
+
+    $lifecycle = new NativeMetricsExporterLifecycle(
+        executor: $runtime,
+        projection: new NativeMetricsExporterProjection(new ExporterSelector, app(ExporterPreferenceRepository::class)),
+        degradations: app(ExporterDegradationRepository::class),
+    );
+
+    expect(fn () => $lifecycle->converge($metrics, $assignment))
+        ->toThrow(function (MetricsFleetReconcileException $exception) use ($candidate): void {
+            expect($exception->component)->toBe(MetricsReconcileComponent::Exporter);
+            expect($exception->nodeId)->toBe($candidate->id);
+            expect($exception->errorCode)->toBe('metrics.exporter_fleet_rollback_failed');
+        });
 });
 
 it('skips a fleet node it cannot inspect and records why', function (): void {
@@ -297,7 +353,11 @@ it('fails closed when the Metrics node itself cannot be inspected', function ():
     );
 
     expect(fn () => $lifecycle->converge($metrics, $assignment))
-        ->toThrow(ResourceOperationException::class, 'could not be inspected');
+        ->toThrow(function (MetricsFleetReconcileException $exception) use ($metrics): void {
+            expect($exception->component)->toBe(MetricsReconcileComponent::Exporter);
+            expect($exception->nodeId)->toBe($metrics->id);
+            expect($exception->errorCode)->toBe('metrics.exporter_configuration_inspection_failed');
+        });
     expect($degradations->get($metrics->id))->toBeNull();
 });
 
@@ -320,7 +380,11 @@ it('keeps failing closed when a fleet node cannot prove exporter ownership', fun
     );
 
     expect(fn () => $lifecycle->converge($metrics, $assignment))
-        ->toThrow(ResourceOperationException::class, 'ownership cannot be proved');
+        ->toThrow(function (MetricsFleetReconcileException $exception) use ($dead): void {
+            expect($exception->component)->toBe(MetricsReconcileComponent::Exporter);
+            expect($exception->nodeId)->toBe($dead->id);
+            expect($exception->errorCode)->toBe('metrics.exporter_configuration_ownership_drift');
+        });
     expect($degradations->get($dead->id))->toBeNull();
 });
 

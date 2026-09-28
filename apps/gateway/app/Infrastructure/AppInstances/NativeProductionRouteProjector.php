@@ -18,7 +18,6 @@ use App\Infrastructure\AppDev\AppDevSshExecutor;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
-use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\AppInstance;
 use App\Models\Node;
@@ -28,7 +27,6 @@ final readonly class NativeProductionRouteProjector implements ProductionCloneRo
 {
     public function __construct(
         private ProductionPhpRuntimeManager $productionPhp,
-        private RemoteAppDevPhpFpmManager $sharedPhp,
         private RemoteAppDevCertificateManager $certificates,
         private NodeRoleFirewallManager $firewall,
         private RemoteAppDevCaddyManager $caddy,
@@ -42,17 +40,15 @@ final readonly class NativeProductionRouteProjector implements ProductionCloneRo
     public function prepareRuntime(AppInstance $appInstance, Route $route): void
     {
         $appInstance->loadMissing('node');
-        if ($appInstance->production_php_service !== null) {
-            $this->productionPhp->converge($appInstance);
-
-            return;
+        if (! is_string($appInstance->production_php_service) || $appInstance->production_php_service === '') {
+            throw new RuntimeConvergenceException(
+                step: 'production-php-runtime',
+                errorCode: 'app-prod.php_service_missing',
+                message: 'The production Instance has no recorded dedicated PHP-FPM service.',
+            );
         }
 
-        // The shared PHP-FPM pool comes from the Route's stored sites, so creation stores the
-        // publication record before this first render, once the certificate its sites name exists.
-        $this->certificates->convergeAppInstance($appInstance, $route);
-        $route->publishSites();
-        $this->sharedPhp->converge($appInstance->node);
+        $this->productionPhp->converge($appInstance);
     }
 
     public function prepareCertificate(AppInstance $appInstance, Route $route): void

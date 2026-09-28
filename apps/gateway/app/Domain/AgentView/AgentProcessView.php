@@ -137,7 +137,6 @@ final readonly class AgentProcessView
             return [];
         }
 
-        /** @var array<int, int> $nodes */
         $nodes = AppInstance::query()
             ->whereKey($instanceIds)
             ->pluck('node_id', 'id')

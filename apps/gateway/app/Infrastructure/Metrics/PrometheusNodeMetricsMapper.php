@@ -13,9 +13,7 @@ namespace App\Infrastructure\Metrics;
  *
  * Pure and side-effect free: every value comes from the four decoded response arrays passed in,
  * so it is testable from recorded Prometheus JSON without a Gateway, an HTTP client, or a clock.
- * An instance's memory family (Linux's `node_memory_MemTotal_bytes`/`MemAvailable_bytes` versus
- * Darwin's `node_memory_total_bytes` and friends) is detected per instance from which metrics its
- * exporter actually reported, never from a stored `platform` field, which can be stale or wrong.
+ * Orbit Nodes run Ubuntu, so memory and swap use the Linux `node_exporter` metric names.
  * An instance without either total-memory metric is left out of the map entirely: the caller
  * treats that as "no samples yet", not a zeroed snapshot.
  */
@@ -26,9 +24,7 @@ final readonly class PrometheusNodeMetricsMapper
         'tmpfs', 'devtmpfs', 'overlay', 'squashfs', 'efivarfs', 'proc', 'sysfs', 'cgroup', 'cgroup2', 'ramfs',
     ];
 
-    public const string LINUX_MEMORY_TOTAL_METRIC = 'node_memory_MemTotal_bytes';
-
-    public const string DARWIN_MEMORY_TOTAL_METRIC = 'node_memory_total_bytes';
+    public const string MEMORY_TOTAL_METRIC = 'node_memory_MemTotal_bytes';
 
     /**
      * @param  array<string, mixed>  $scalars  Decoded `/api/v1/query` response for memory, swap,
@@ -79,23 +75,14 @@ final readonly class PrometheusNodeMetricsMapper
      */
     private static function memory(array $values): ?array
     {
-        if (array_key_exists(self::LINUX_MEMORY_TOTAL_METRIC, $values)) {
-            $total = $values[self::LINUX_MEMORY_TOTAL_METRIC];
-            $available = $values['node_memory_MemAvailable_bytes'] ?? $total;
-
-            return ['used' => self::clampInt($total - $available), 'total' => self::clampInt($total)];
+        if (! array_key_exists(self::MEMORY_TOTAL_METRIC, $values)) {
+            return null;
         }
 
-        if (array_key_exists(self::DARWIN_MEMORY_TOTAL_METRIC, $values)) {
-            $total = $values[self::DARWIN_MEMORY_TOTAL_METRIC];
-            $free = $values['node_memory_free_bytes'] ?? 0.0;
-            $inactive = $values['node_memory_inactive_bytes'] ?? 0.0;
-            $purgeable = $values['node_memory_purgeable_bytes'] ?? 0.0;
+        $total = $values[self::MEMORY_TOTAL_METRIC];
+        $available = $values['node_memory_MemAvailable_bytes'] ?? $total;
 
-            return ['used' => self::clampInt($total - ($free + $inactive + $purgeable)), 'total' => self::clampInt($total)];
-        }
-
-        return null;
+        return ['used' => self::clampInt($total - $available), 'total' => self::clampInt($total)];
     }
 
     /**
@@ -104,21 +91,10 @@ final readonly class PrometheusNodeMetricsMapper
      */
     private static function swap(array $values): array
     {
-        if (array_key_exists('node_memory_SwapTotal_bytes', $values)) {
-            $total = $values['node_memory_SwapTotal_bytes'];
-            $free = $values['node_memory_SwapFree_bytes'] ?? 0.0;
+        $total = $values['node_memory_SwapTotal_bytes'] ?? 0.0;
+        $free = $values['node_memory_SwapFree_bytes'] ?? $total;
 
-            return ['used' => self::clampInt($total - $free), 'total' => self::clampInt($total)];
-        }
-
-        if (array_key_exists('node_memory_swap_total_bytes', $values)) {
-            $total = $values['node_memory_swap_total_bytes'];
-            $used = $values['node_memory_swap_used_bytes'] ?? 0.0;
-
-            return ['used' => self::clampInt(min($used, $total)), 'total' => self::clampInt($total)];
-        }
-
-        return ['used' => 0, 'total' => 0];
+        return ['used' => self::clampInt($total - $free), 'total' => self::clampInt($total)];
     }
 
     /** @param  array<string, float>  $values */
@@ -223,7 +199,6 @@ final readonly class PrometheusNodeMetricsMapper
      */
     private static function groupDisks(array $response): array
     {
-        /** @var array<string, array<string, array{size?: float, avail?: float}>> $raw */
         $raw = [];
 
         foreach (self::vector($response) as $sample) {

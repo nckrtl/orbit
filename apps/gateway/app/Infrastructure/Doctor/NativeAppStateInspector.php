@@ -12,7 +12,6 @@ use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
-use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\Tasks\TaskWorkspaceLifecycle;
@@ -52,7 +51,6 @@ final readonly class NativeAppStateInspector implements AppStateInspector
             throw new DoctorInspectionException;
         }
 
-        /** @var list<array{instance_id: int, path: string, root: string, user: string, slug: string, instance: string, mode: string, expected_root: string}> $checkouts */
         $checkouts = [];
         $appInstances = $app
             ->appInstances()
@@ -88,7 +86,7 @@ final readonly class NativeAppStateInspector implements AppStateInspector
             }
 
             $account ??= $this->accounts->resolve($node);
-            $root = $this->developmentRoot($node, $account, $appInstance->checkout_path);
+            $root = $this->developmentRoot($node, $account);
             $checkouts[] = [
                 'instance_id' => (int) $appInstance->id,
                 'path' => $appInstance->checkout_path,
@@ -196,24 +194,16 @@ final readonly class NativeAppStateInspector implements AppStateInspector
         return new AppInspectionData(count($checkouts), $match, $mismatchingInstanceIds, $failedInstanceIds);
     }
 
-    /**
-     * A development checkout lives under the Node's effective apps root, or under the managed
-     * user's home when it predates a configured apps root.
-     */
-    private function developmentRoot(Node $node, ManagedUserAccount $account, string $checkoutPath): string
+    /** Resolves the single managed apps root for development checkouts. */
+    private function developmentRoot(Node $node, ManagedUserAccount $account): string
     {
         try {
             $appsRoot = $this->storageRoots
-                ->resolveApps($this->nodeSettings->fromStored($node->settings), $account)
-                ->instance;
+                ->resolveApps($this->nodeSettings->fromStored($node->settings), $account);
         } catch (\Throwable) {
             throw new DoctorInspectionException;
         }
 
-        $checkout = StoragePath::tryParse($checkoutPath);
-
-        return $checkout instanceof StoragePath && $checkout->isInside($appsRoot)
-            ? $appsRoot->value
-            : $account->home;
+        return $appsRoot->value;
     }
 }

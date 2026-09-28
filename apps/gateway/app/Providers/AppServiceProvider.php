@@ -68,7 +68,6 @@ use App\Domain\AppInstances\Transfer\AppInstanceTransferRouteProjector;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferRuntime;
 use App\Domain\AppInstances\Transfer\AppInstanceTransferSource;
 use App\Domain\AppProd\AppProdCaddyManager;
-use App\Domain\AppProd\AppProdPhpFpmManager;
 use App\Domain\Apps\AppUpdateProjectionMutator;
 use App\Domain\Apps\AppUpdateSourceMutator;
 use App\Domain\Broadcasting\RealtimeConnection;
@@ -215,7 +214,6 @@ use App\Infrastructure\AppInstances\RemoteProductionDeployment;
 use App\Infrastructure\AppInstances\RemoteProductionPhpRuntimeManager;
 use App\Infrastructure\AppInstances\RemoteRegistrationSourceManager;
 use App\Infrastructure\AppProd\RemoteAppProdCaddyManager;
-use App\Infrastructure\AppProd\RemoteAppProdPhpFpmManager;
 use App\Infrastructure\Apps\NativeAppUpdateProjectionMutator;
 use App\Infrastructure\Apps\RemoteAppUpdateSourceMutator;
 use App\Infrastructure\Broadcasting\ReverbBroadcaster;
@@ -358,6 +356,7 @@ use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
 use App\Models\Activity;
 use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
+use App\Support\ValidatedData;
 use Illuminate\Broadcasting\BroadcastManager;
 use Illuminate\Cache\CacheManager;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -413,7 +412,6 @@ final class AppServiceProvider extends ServiceProvider
         CustomProxyRouteProjector::class => NativeCustomProxyRouteProjector::class,
         PublicRouteEdgeProjector::class => NativePublicRouteEdgeProjector::class,
         AppProdCaddyManager::class => RemoteAppProdCaddyManager::class,
-        AppProdPhpFpmManager::class => RemoteAppProdPhpFpmManager::class,
         AppStateInspector::class => NativeAppStateInspector::class,
         FirewallInspector::class => NativeUfwFirewallInspector::class,
         FirewallManager::class => NativeUfwFirewallManager::class,
@@ -869,8 +867,11 @@ final class AppServiceProvider extends ServiceProvider
 
     public function boot(ActivityPropertiesObserver $activityPropertiesObserver): void
     {
-        /** @var array<string, mixed> $cache */
         $cache = config('cache');
+        if (! is_array($cache)) {
+            throw new \UnexpectedValueException('The Gateway cache configuration is invalid.');
+        }
+        $cache = ValidatedData::object($cache);
         if (! $this->app->runningConsoleCommand(GatewayCacheStore::RecoveryCommands)) {
             GatewayCacheStore::assertSupported($cache, $this->app->environment(), $this->app->configurationIsCached());
         }

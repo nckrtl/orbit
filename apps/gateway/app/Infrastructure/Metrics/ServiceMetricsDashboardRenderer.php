@@ -46,7 +46,7 @@ final readonly class ServiceMetricsDashboardRenderer
         return json_encode([
             'uid' => 'orbit-'.$kind, 'title' => $kind === 'caddy' ? 'Orbit Caddy Traffic' : 'Orbit PHP Capacity',
             'description' => $kind === 'caddy'
-                ? 'Outer site-handler observations. Caddy 2.9+ supplies host labels; older versions cover the shared HTTPS listener without host labels. Private traffic to the same site may be included. Next-hop health is not application health.'
+                ? 'Outer site-handler observations. Private traffic to the same site may be included. Next-hop health is not application health.'
                 : 'Dedicated production masters. Missing data is not zero. OPcache panels require a successful enabled-cache observation.',
             'schemaVersion' => 39, 'version' => 1, 'refresh' => '30s', 'tags' => ['orbit', $kind],
             'time' => ['from' => 'now-1h', 'to' => 'now'], 'timezone' => 'browser',

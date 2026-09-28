@@ -223,7 +223,6 @@ final readonly class CloneAppInstanceAction
         $home = "/home/{$user}";
 
         try {
-            /** @var AppInstance $target */
             $target = DB::transaction(function () use (
                 $candidate,
                 $node,
@@ -374,10 +373,10 @@ final readonly class CloneAppInstanceAction
 
         if (! $route instanceof Route) {
             if ($target->provisioning_step === 'clone-definitions-instantiated') {
-                $this->checkpoint($target, 'clone-completed', AppInstanceState::Active);
+                $this->checkpoint($target, 'active', AppInstanceState::Active);
                 $target->update([
                     'clone_completed_at' => now(),
-                    'provisioning_step' => 'clone-completed',
+                    'provisioning_step' => 'active',
                     'failed_step' => null,
                     'error_code' => null,
                 ]);

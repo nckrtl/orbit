@@ -1,19 +1,26 @@
 ---
 title: "Instance setup and teardown"
 description: "How a Project stores named setup and teardown commands, and when Orbit runs them for a development Instance."
+covers:
+  - apps/gateway/app/Domain/Projects/{LifecyclePhase,LifecycleStep,ProjectLifecycleRunner,ProjectLifecycleStepStore}.php
+  - apps/gateway/app/Actions/AppInstances/{CreateAppInstanceAction,RunInstanceSetupAction}.php
+  - apps/gateway/app/Infrastructure/AppInstances/NativeDevelopmentAppInstanceProvisioner.php
+  - apps/gateway/app/Domain/AppInstances/DevelopmentAppInstanceProvisioner.php
+  - apps/gateway/app/Http/Controllers/Api/ProjectLifecycleStepsController.php
+  - apps/gateway/app/Models/ProjectLifecycleStep.php
+  - apps/gateway/resources/instances/lifecycle.py
+  - apps/cli/app/Commands/Instances/{SetupInstanceCommand,*SetupStepCommand,*TeardownStepCommand}.php
 ---
 
 # Instance setup and teardown
 
-This page tells an operator how a Project stores named setup and teardown commands and when Orbit runs them. [ADR 0115](/decisions/0115-run-project-setup-commands-on-development-instances) owns the decision. [Production release layout](/reference/deployments) owns production deploy steps. [Instance removal](/reference/appinstance-removal) owns source deletion after teardown succeeds.
+A Project stores two ordered lists of named commands: setup steps and teardown steps. Orbit runs the setup list when it creates a development Instance, and the teardown list before it removes one. Production Instances run neither list. They use [deploy steps](/reference/deployments#deploy-steps).
 
-A setup step is one database row: a name, a command string, a timeout, and a position in the Project's setup list. A teardown step is the same kind of row in the teardown list. Orbit reads the row and runs that command string. It does not write a script into the checkout.
-
-Both lists belong to the Project. `--project` selects it. An Instance does not keep a separate copy. The next `instance:create`, `instance:setup`, or development `instance:destroy` runs the lists as they are recorded at that moment.
+Each step is one database row with a name, a command string, a timeout, and a position. Orbit writes no script into the checkout. The lists belong to the Project, and no Instance keeps a copy. The next run uses the lists as they are at that moment.
 
 ## Record a step
 
-Record each command on the Project before creating an Instance.
+Record the steps on the Project before you create an Instance. `--project` selects the Project by its numeric ID.
 
 ```bash
 orbit instance:setup-step:create install-php --project=4 --command='composer install --no-interaction'
@@ -23,89 +30,118 @@ orbit instance:teardown-step:create drop-sqlite --project=4 --command='rm -f dat
 
 | Command | Result |
 | --- | --- |
-| `instance:setup-step:create NAME --project=ID --command=COMMAND` | Appends one setup step. Add `--timeout=SECONDS` and exclusive `--before=NAME` or `--after=NAME` to set the timeout and position. |
-| `instance:setup-step:list --project=ID` | Lists the setup steps in order. |
-| `instance:setup-step:update NAME --project=ID` | Changes the named setup step. Add `--command`, `--timeout=SECONDS`, and exclusive `--before=NAME` or `--after=NAME`. |
-| `instance:setup-step:destroy NAME --project=ID` | Removes the named setup step. Remaining steps keep their relative order. |
-| `instance:teardown-step:create NAME --project=ID --command=COMMAND` | Appends one teardown step. The timeout and position options match setup. |
-| `instance:teardown-step:list --project=ID` | Lists the teardown steps in order. |
-| `instance:teardown-step:update NAME --project=ID` | Changes the named teardown step. |
-| `instance:teardown-step:destroy NAME --project=ID` | Removes the named teardown step. |
+| `instance:setup-step:create NAME --project=ID --command=COMMAND` | Add a setup step at the end, or at `--before=NAME` or `--after=NAME`. |
+| `instance:setup-step:list --project=ID` | List the setup steps in order. |
+| `instance:setup-step:update NAME --project=ID` | Change `--command`, `--timeout`, or the position. |
+| `instance:setup-step:destroy NAME --project=ID` | Remove a setup step. The others keep their order. |
+| `instance:teardown-step:*` | The same four commands for the teardown list. |
 
-`instance:setup-step:destroy` and `instance:teardown-step:destroy` require confirmation. The prompt names the Project and step and defaults to No. `--yes` confirms without prompting. JSON and noninteractive calls require `--yes`.
+`destroy` asks for confirmation with No selected. `--yes` confirms without a prompt and is required for JSON and noninteractive calls.
+
+The Gateway checks each change against these limits and stores nothing when one fails.
 
 | Field | Rule |
 | --- | --- |
-| `name` | Unique within that Project list. The same pattern as a deploy step name. |
-| `command` | One nonempty UTF-8 command of at most 16 KiB with no NUL byte. The operating agent owns this command. |
-| `timeout_seconds` | Whole seconds from 1 through 540. The default is 240. |
-| `before`, `after` | Exclusive placement by step name within the same list. Omit both to append. |
+| `name` | 1 to 63 lowercase letters, digits, or hyphens. It starts and ends with a letter or digit. Unique within the list. |
+| `command` | Nonempty UTF-8, at most 16 KiB, no NUL byte. |
+| `timeout_seconds` | 1 to 540. The default is 240. |
+| `before`, `after` | The name of a step in the same list. Use at most one. |
 
-The Gateway refuses a duplicate name, a placement that names an unknown step, both placement options, a thirty-third step, a timeout over 540 seconds, or a change that brings a list's timeout total above 540 seconds. It stores no change. The setup list and the teardown list each have their own count and timeout total.
+A list holds at most 32 steps. The timeouts of one list add up to at most 540 seconds, so a whole list fits in one API request.
 
-The upgrade to these limits lowers every stored step timeout above 540 seconds to 540. A list can still total more than 540 seconds after that, for example three steps of 540 seconds. Such a list accepts every change that does not raise its total, so it can always be lowered, reordered, or shortened. A new step or a longer timeout is refused until the total fits.
-
-When such a list runs, each step's timeout is cut to what remains of the request deadline, so the request ends before PHP-FPM ends it. A Gateway that reads a stored timeout above 540 seconds before its migrations ran refuses with `lifecycle_step.migration_pending`.
-
-One API request runs a whole list, so both limits fit inside its 570-second deadline, whose forward work ends 20 seconds early to leave time for cleanup. Provisioning shares that deadline, so keep normal setup and teardown well below the limit. Authorized reads return commands. Activity records omit command text and command output.
-
-An empty list skips that phase.
-
-## Bootstrap Orbit Instances
-
-For the Orbit monorepo, record `bin/bootstrap` as a setup step on the Orbit Project. Replace `PROJECT_ID` with its numeric ID:
-
-```bash
-orbit instance:setup-step:create bootstrap --project=PROJECT_ID --command='bin/bootstrap' --timeout=900
-```
-
-If the step already exists, use `instance:setup-step:update` with the same options. `instance:create` runs this step for a new Instance. Use `instance:register --setup` to run it after adopting a checkout, or `instance:setup INSTANCE_ID` to run the setup list on an existing development Instance. Plain `instance:register` does not run setup.
-
-Bootstrap installs the locked dependencies, seeds compatible caches, and runs `composer test:affected` and `composer check` in all five Composer projects. Successful clean main runs refresh the shared caches. It does not deploy Orbit, run service database migrations, or restart services. The setup deadline still applies; a cold bootstrap may exceed it.
-
-Linked worktrees share the Git cache store. Independent clones do not automatically share it. Automatic task provisioning also bypasses these setup hooks. See the cache rules in [Implementation loop](/reference/implementation-loop).
+Authorized reads return the commands. [Activity](/cli/activity) records no input for the step commands and `instance:setup`, so it never holds command text or command output.
 
 ## Run setup
 
-`instance:create` runs the setup list after the source, PHP selection, Laravel URL configuration, and Route are ready. Each command runs from the instance directory on the Instance Node, through the fixed non-interactive shell used for deploy steps, as the Node's managed runtime user. Orbit runs the list from the first step. Commands travel through protected standard input. Their output is discarded; errors name the failed step. A timeout stops the command process group before Orbit continues. Commands must not detach background processes.
+`instance:create` runs the setup list after the Instance and its Route are active. Activation records `failed_step: setup` in the same transaction, so a Gateway interruption before or during setup cannot make an identical create retry report success without setup. Orbit clears the marker only after setup completes.
 
-Setup holds the same source and environment operation locks as removal. A second operation waits, then checks the current Instance state.
+Each command runs with `bash -eu` in the checkout, on the Instance's Node, as the Node's managed user. Commands read no input, and Orbit discards their output. When a step ends, for any reason, Orbit kills its process group, so background processes do not survive the step. Each run holds a lifecycle lock on the Instance. If another operation holds that lock during `instance:create`, Orbit keeps the active Instance and records `error_code: instance.lifecycle_busy`.
 
-The first command that exits non-zero or times out stops the remaining setup commands. Orbit then runs the full teardown list, including when setup stopped before the last step. It then removes the Instance and deletes the checkout created for that attempt, including a dirty or unpublished tree. Create rollback never removes another Instance; a linked registered checkout requires inspection and explicit removal. A teardown command that fails during this removal does not keep the Instance. The command exits non-zero with `instance.setup_step_failed` and the setup step name. When a teardown command also failed, the error includes that teardown step name.
+An identical create retry then reports that setup must run; use `instance:setup` to retry the list. A busy lock never removes the Instance.
 
-A step that the request deadline stops, or that has no time left to start, is not reported as a failed command. The request fails with `command.deadline_exceeded` (HTTP 504), `outcome: deadline`, and the step name, and the message says how many seconds the step ran against its own timeout. Lower the list's step timeouts until the whole list fits one request.
+The first command that exits non-zero or times out stops the list. Then Orbit rolls back the new Instance:
 
-`instance:create` holds 150 seconds of its deadline back from the setup list, so a failed setup can still roll back. Setup stops 170 seconds before the 570-second deadline. The teardown list then gets up to 60 seconds. The removal of the new Instance gets the last 90 seconds and the 20-second cleanup reserve. A create whose setup the deadline stopped keeps `command.deadline_exceeded` through that rollback. `instance:setup` and `instance:register --setup` roll nothing back, so their setup list can use the whole deadline.
+1. It runs every teardown step.
+2. It removes the Instance with forced removal, which also deletes a dirty checkout.
+3. It returns `instance.setup_step_failed` with the failed setup step. A failed teardown step is named too.
 
-When command failure and cleanup are confirmed, the failed attempt leaves no Instance. A lost SSH connection, an exhausted API deadline, or a cleanup failure retains the Instance and reports an unconfirmed outcome or incomplete cleanup. Inspect it before retrying. When the removal already started (`cleanup: incomplete`), the message names `orbit instance:destroy <id> --force`: the rollback's removal is forced, so a plain `instance:destroy` refuses it with `instance.removal_conflict`. The Instance records setup as failed; `instance:create` refuses to report success until `instance:setup` succeeds. The next `instance:create` starts on an empty placement. Provisioning checkpoints before setup still resume. A setup failure is not one of those checkpoints.
+A teardown failure during this rollback does not keep the Instance. Rollback never removes another Instance.
 
-An identical `instance:create` for an Instance that is already active returns that Instance and does not run setup.
+Orbit keeps the Instance, with its setup marked failed, in three cases:
 
-`instance:register` adopts the checkout and does not run setup. `instance:register --setup` runs the setup list after adoption. A failed command exits non-zero with `instance.setup_step_failed`, names the step, and leaves the Instance and the checkout in place. Teardown does not run. `instance:setup` runs the list again.
+| Case | Result |
+| --- | --- |
+| Orbit cannot confirm the setup step's outcome, for example after a lost SSH connection. | No rollback runs. The error is the step's own `instance.setup_step_failed` with `outcome: unconfirmed`. |
+| Orbit cannot confirm a teardown step's outcome. | The error adds `cleanup: unconfirmed`. |
+| The removal starts but does not finish. | The error adds `cleanup: incomplete` and names `orbit instance:destroy <id> --force`. |
+
+Inspect the Instance before you retry.
+
+`instance:register` runs no setup. `instance:register --setup` runs the setup list after adoption. `instance:setup` runs the list again on an active development Instance. Both keep the Instance when a command fails and return `instance.setup_step_failed`. Every run starts at the first step.
 
 ```bash
 orbit instance:setup <instance>
 ```
 
-`instance:setup` runs the current setup list against one active development Instance, from the first step. A failed command leaves the Instance in place and returns `instance.setup_step_failed`.
+`instance:clone` runs neither list.
 
-`instance:clone` does not run the setup list.
+## Deadlines
+
+One API request runs a whole list. The request's remote work ends after 570 seconds, and its forward work stops 20 seconds earlier to leave time for cleanup. Each step's timeout is cut to the time that remains.
+
+`instance:create` keeps 150 seconds back from its setup list for rollback: up to 60 seconds for the teardown list and 90 seconds for the removal. `instance:setup` and `instance:register --setup` roll nothing back, so their setup list can use the whole request.
+
+A step that the request deadline stops, or that has no time left to start, is not a failed command. The request returns `command.deadline_exceeded` (HTTP 504) with `outcome: deadline` and the step name. `instance:create` still rolls back and keeps that code. Lower the step timeouts until the list fits.
 
 ## Run teardown
 
-`instance:destroy` of a development Instance confirms removal and preflights the source under the [removal rules](/reference/appinstance-removal). After preflight accepts the source, Orbit runs the teardown list from the instance directory. After teardown, Orbit checks the same source ownership again and captures a fresh removal snapshot before deleting the Route, source, and Instance record. 
+`instance:destroy` of a development Instance runs the teardown list after the [removal checks](/reference/appinstance-removal) accept the source. Then Orbit checks the source again and deletes the Route, the source, and the record. In a forced removal of a checkout with worktrees, each member runs its own teardown list.
 
-Teardown may remove ignored application files, but must preserve the checkout, its Git identity, and its registered worktree set. If teardown changes tracked files, normal removal refuses before acceptance; inspect the change and retry with `--force` to discard it. Each member of a forced checkout removal runs its own teardown list.
+Teardown may delete ignored files. It must keep the checkout, its Git identity, and its worktrees. When teardown changes tracked files, normal removal refuses. Retry with `--force` to discard them.
 
-The first teardown command that exits non-zero or times out stops removal. The Route, source, and Instance record stay. The command exits non-zero with `instance.teardown_step_failed` and the step name. Fix the command, or destroy that step, then run `instance:destroy` again.
+The first teardown command that exits non-zero or times out stops the removal. The Route, source, and record stay, and the command returns `instance.teardown_step_failed` with the step name. Fix or destroy the step, then run `instance:destroy` again.
 
-Production removal does not run the teardown list. It retains application content as [Instance removal](/reference/appinstance-removal) describes.
+## Bootstrap the Orbit repository
+
+The Orbit Project records `bin/bootstrap` as a setup step. It installs the locked dependencies, seeds caches, and runs the checks in all five Composer projects. A cold bootstrap can exceed the request deadline.
+
+```bash
+orbit instance:setup-step:create bootstrap --project=PROJECT_ID --command='bin/bootstrap' --timeout=540
+```
+
+Task workspaces are not created with `instance:create`, so this create-time run does not happen for them. The task baseline check runs the Project setup steps before the task check instead. See [Project check](/reference/tasks#project-check) and [Implementation loop](/reference/implementation-loop).
 
 ## Failure codes
 
-These codes identify the command that failed. The surrounding sections state whether the Instance remains.
+These codes name the step that failed. The sections above say whether the Instance stays.
 
-| Code | Result |
+| Code | Cause |
 | --- | --- |
-| `instance.setup_step_failed` | A setup command failed or timed out. Create triggers cleanup when execution is confirmed; register and explicit setup retain the Instance. |
-| `instance.teardown_step_failed` | A teardown command exited non-zero or timed out during `instance:destroy`. The Instance remains. |
+| `instance.setup_step_failed` | A setup command failed or timed out. |
+| `instance.teardown_step_failed` | A teardown command failed or timed out during `instance:destroy`. |
+| `instance.setup_unavailable` | `instance:setup` targets an Instance that is not an active development Instance. |
+| `command.deadline_exceeded` | The request deadline stopped a step. |
+
+## Why it works this way
+
+These reasons explain the design. Check them before you propose a change.
+
+### Named rows, not a script
+
+Each command is its own row, so a failure names one step and you can reorder steps without rewriting a script. One script body and a path in the repository were rejected: the failure report could name no step, and the operator records the command on the Project.
+
+### Lists on the Project
+
+The commands run for every Instance of a repository, so they live on the Project. Per-Instance copies were rejected because they would drift from what the operator recorded. The command family is `instance:` because the commands run for an Instance.
+
+### A failed setup removes the new Instance
+
+A half-set-up Instance is not a useful result of `instance:create`. So a confirmed failure tears it down and removes it, and the next create starts clean. Resuming a create after a failed setup was rejected.
+
+### Registration skips setup by default
+
+Registration adopts a checkout that is usually set up already. Running setup on every registration was rejected. `--setup` runs it on request.
+
+### Teardown failure stops removal
+
+Teardown is the operator's cleanup. Removal continues only after that cleanup succeeds.

@@ -21,7 +21,6 @@ final readonly class RootCertificate
             throw new InvalidArgumentException('Root CA material contains private key data.');
         }
 
-        /** @var array{0: list<string>} $matches */
         $matches = [];
         preg_match_all(
             '/-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----\s*/s',

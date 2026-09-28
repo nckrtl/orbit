@@ -7,6 +7,7 @@ namespace App\Domain\Metrics;
 use App\Domain\Settings\SettingRepository;
 use App\Domain\Settings\SettingScope;
 use App\Domain\Settings\SettingScopeType;
+use App\Models\Setting;
 
 final readonly class ExporterDegradationRepository
 {
@@ -31,6 +32,15 @@ final readonly class ExporterDegradationRepository
     public function forget(int $nodeId): void
     {
         $this->settings->delete($this->scope($nodeId), self::KEY);
+    }
+
+    public function forgetReconcileFailures(): void
+    {
+        Setting::query()
+            ->where('scope_type', SettingScopeType::Node->value)
+            ->where('key', self::KEY)
+            ->where('value', ExporterDegradationReason::ReconcileFailed->value)
+            ->delete();
     }
 
     private function scope(int $nodeId): SettingScope
