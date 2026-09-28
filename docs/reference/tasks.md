@@ -350,7 +350,7 @@ An agent ends each turn with one command:
 .git/orbit/run --thread=ID --outcome=OUTCOME --summary="What was done, or what stops the work"
 ```
 
-Before each turn, the Gateway installs the run script at `.git/orbit/run`, writes `.git/orbit/turn.json` with the role, the deliverables, and the acting thread's Orbit id, and removes any earlier receipt. `ID` is that Orbit thread id. Git never tracks `.git/orbit/`. The run script needs `php` on the Node, and the [task check](#project-check) needs `python3`.
+Before each turn, the Gateway installs the run script at `.git/orbit/run`, writes `.git/orbit/turn.json` with the role, the deliverables, and the acting thread's Orbit id, and removes any earlier receipt. `ID` is that Orbit thread id. Git never tracks `.git/orbit/`. The run script and the [task check](#project-check) both need `python3` on the Node.
 
 | Role | Outcomes |
 | --- | --- |
@@ -687,7 +687,6 @@ The engine still holds these Project-specific rules. They are current engine beh
 - The baseline check installs Composer and JavaScript dependencies for a task check command that names them.
 - Every fixup gets a `composer check` command deliverable, whatever the Project's task check.
 - For the Project with slug `orbit`, a fixup gets a `reproduce-check` deliverable from a table of Orbit CI check names. Those checks get fixups first.
-- The run script is a PHP script, so every workspace Node needs `php`.
 - Workspace removal also deletes the Orbit Incus bridge worktree.
 
 ## Why it works this way
