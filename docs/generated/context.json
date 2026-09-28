@@ -596,133 +596,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0051-select-discovery-only-feature-delivery.md",
-            "title": "ADR 0051: Select discovery-only feature delivery",
-            "kind": "decision",
-            "components": [
-                "apps/e2e"
-            ],
-            "concepts": [
-                "Project",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0051"
-            ]
-        },
-        {
-            "path": "docs/decisions/0052-seed-worktrees-from-successful-main-test-baselines.md",
-            "title": "ADR 0052: Seed worktrees from successful main test baselines",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Gateway",
-                "Project"
-            ],
-            "governing_adrs": [
-                "0051",
-                "0052"
-            ]
-        },
-        {
-            "path": "docs/decisions/0053-use-local-review-checks-for-feature-landing.md",
-            "title": "ADR 0053: Use local review checks for feature landing",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Gateway",
-                "Project"
-            ],
-            "governing_adrs": [
-                "0051",
-                "0052",
-                "0053"
-            ]
-        },
-        {
-            "path": "docs/decisions/0054-maintain-main-caches-asynchronously.md",
-            "title": "ADR 0054: Maintain main caches asynchronously",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Gateway",
-                "Project",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0052",
-                "0053",
-                "0054"
-            ]
-        },
-        {
-            "path": "docs/decisions/0058-separate-incus-requirements-from-delivery-flow.md",
-            "title": "ADR 0058: Separate Incus requirements from delivery flow",
-            "kind": "decision",
-            "components": [],
-            "concepts": [],
-            "governing_adrs": [
-                "0051",
-                "0058"
-            ]
-        },
-        {
-            "path": "docs/decisions/0059-make-the-builder-own-the-candidate-quality-gate.md",
-            "title": "ADR 0059: Make the Builder own the candidate quality gate",
-            "kind": "decision",
-            "components": [
-                "apps/e2e"
-            ],
-            "concepts": [
-                "Project",
-                "Role"
-            ],
-            "governing_adrs": [
-                "0053",
-                "0059"
-            ]
-        },
-        {
-            "path": "docs/decisions/0076-deliver-features-through-complete-pull-requests.md",
-            "title": "ADR 0076: Deliver features through complete pull requests",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/e2e"
-            ],
-            "concepts": [
-                "Extension",
-                "Project",
-                "Role",
-                "Task"
-            ],
-            "governing_adrs": [
-                "0051",
-                "0053",
-                "0058",
-                "0059",
-                "0076"
-            ]
-        },
-        {
             "path": "docs/decisions/0097-publish-analytics-tracking-hosts-for-app-instances.md",
             "title": "ADR 0097: Publish analytics tracking hosts for App instances",
             "kind": "decision",
@@ -975,29 +848,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0119-publish-main-caches-from-clean-bootstrap-runs.md",
-            "title": "ADR 0119: Share caches after bootstrap",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Deployment",
-                "Gateway",
-                "Task",
-                "Task workspace"
-            ],
-            "governing_adrs": [
-                "0052",
-                "0054",
-                "0119"
-            ]
-        },
-        {
             "path": "docs/decisions/0121-end-agent-turns-with-a-run-receipt.md",
             "title": "ADR 0121: End agent turns with a run receipt",
             "kind": "decision",
@@ -1111,9 +961,6 @@
                 "Task workspace"
             ],
             "governing_adrs": [
-                "0052",
-                "0054",
-                "0119",
                 "0131"
             ]
         },
@@ -1343,27 +1190,6 @@
                 "0112",
                 "0116",
                 "0165"
-            ]
-        },
-        {
-            "path": "docs/decisions/0166-raise-phpstan-one-level-at-a-time.md",
-            "title": "ADR 0166: Raise PHPStan one level at a time",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Gateway",
-                "Project",
-                "Task",
-                "Task group"
-            ],
-            "governing_adrs": [
-                "0166"
             ]
         },
         {
@@ -1670,13 +1496,6 @@
                 "Tool"
             ],
             "governing_adrs": [
-                "0051",
-                "0052",
-                "0053",
-                "0054",
-                "0058",
-                "0059",
-                "0076",
                 "0097",
                 "0103",
                 "0104",
@@ -1702,7 +1521,6 @@
                 "0163",
                 "0164",
                 "0165",
-                "0166",
                 "0167",
                 "0168",
                 "0169",
@@ -2321,6 +2139,7 @@
             "components": [
                 "apps/docs",
                 "apps/gateway",
+                "apps/web",
                 "packages/php-sdk"
             ],
             "concepts": [
@@ -2330,20 +2149,11 @@
                 "Process",
                 "Project",
                 "Task",
-                "Task group",
+                "Task check",
                 "Task workspace",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0052",
-                "0054",
-                "0076",
-                "0113",
-                "0114",
-                "0119",
-                "0131",
-                "0166"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/incus-topologies.md",

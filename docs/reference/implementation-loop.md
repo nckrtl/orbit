@@ -95,7 +95,7 @@ Root `composer check` runs `bin/review-check`. It checks the working tree as it 
 4. In each Composer project that the candidate changes, it runs the project's architecture tests.
 5. When the candidate changes a test file that TIA did not select, it lists that file's tests and runs the file without TIA. A file without tests fails.
 6. When the candidate changes test sources, it runs `bin/check-classification-fakes` on them.
-7. When the candidate changes `apps/web`, it runs the web checks and the build. When it changes only `docs/openapi.json`, it checks the generated API types. When it changes `apps/pi-server`, it runs the Pi server checks.
+7. When the candidate changes `apps/web`, `docs/openapi.json`, or `apps/pi-server`, it adds the matching checks.
 
 The gate writes a receipt, `result.json`, and one log per command under `orbit-checks/<HEAD>/` in the Git common directory. The receipt passes only when every command passed and the commit and the working tree did not change during the run. It records a warning when `test:affected` selected no tests in a project that the candidate changes.
 
@@ -192,10 +192,12 @@ Every cache command accepts `--repository=PATH`. `seed` and `refresh` accept rep
 
 `bin/tia-cache status --json --remote` reports the remote `main`, whether a worker holds the lock, the pending requests, which projects are current, each project's command results with log paths, the open correctness failures, and `refresh_log`. A successful status command reports state. It does not mean that the checks passed.
 
-The worker sorts failures into two kinds:
+The worker sorts failures into two kinds.
 
-- A **check failure** is a nonzero exit of the tests, Pint, or PHPStan. It is a correctness signal on main. It stays open until that tool passes on a later refresh, and an infrastructure failure never clears it.
-- A **maintenance failure** is a failed install, fetch, or setup. Checkouts keep using the previous publications or run cold.
+| Kind | Cause | Effect |
+| --- | --- | --- |
+| Check failure | A nonzero exit of the tests, Pint, or PHPStan | A correctness signal on main. It stays open until that tool passes on a later refresh. |
+| Maintenance failure | A failed install, fetch, or setup | Checkouts keep using the previous publications or run cold. It never clears a check failure. |
 
 While a test-impact failure is open, the next refresh runs `composer test:affected -- --fresh` on the checked commit. The failure clears only when the new graph records that commit, and the project result then shows `recovery: executed`. A run that executed no tests shows `recovery: not_executed` and keeps the failure. Diagnose a check failure on the exact failed commit, and fix it in a separate worktree through a reviewed pull request.
 
