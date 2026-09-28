@@ -347,21 +347,6 @@ it('refuses cleanup before remote deletion when the replacement ownership change
     $this->assertModelExists($this->route);
 });
 
-it('retains legacy post-cutover state when the original Router identity is unknown', function (): void {
-    $this->projection->failRetirementOnce = true;
-    expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(ResourceOperationException::class);
-    $transfer = AppInstanceTransfer::query()->sole();
-    $transfer->update(['source_router_node_id' => null]);
-
-    expect(fn () => $this->action->execute($this->instance->refresh(), $this->data))
-        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.transfer_source_router_unknown'));
-
-    expect($this->projection->calls)->toBe(['converge', 'retire'])
-        ->and($this->sources->calls)->toBe(['capture', 'materialize'])
-        ->and($transfer->refresh()->completed_at)->toBeNull();
-    $this->assertModelExists($this->route);
-});
-
 it('refuses ineligible sources and destinations before source mutation', function (
     Closure $mutate,
     string $code,
@@ -386,9 +371,6 @@ it('refuses ineligible sources and destinations before source mutation', functio
     'inactive instance' => [function (object $test): void {
         $test->instance->update(['status' => AppInstanceState::Reserved]);
     }, 'instance.lifecycle_conflict'],
-    'migration required' => [function (object $test): void {
-        $test->instance->update(['migration_required' => true]);
-    }, 'instance.migration_required'],
     'same Node' => [function (object $test): void {
         $test->data = new TransferAppInstanceData($test->sourceNode->id, null, null);
     }, 'instance.same_node'],

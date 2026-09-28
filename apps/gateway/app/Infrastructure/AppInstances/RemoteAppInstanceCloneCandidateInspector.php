@@ -207,7 +207,6 @@ final readonly class RemoteAppInstanceCloneCandidateInspector implements AppInst
         if (
             $candidate->status !== AppInstanceState::Active
             || $candidate->provisioning_step !== 'active'
-            || $candidate->migration_required
             || $node->status !== LifecycleStatus::Active
             || $node->platform !== 'linux'
             || ! is_string($node->wireguard_ip)

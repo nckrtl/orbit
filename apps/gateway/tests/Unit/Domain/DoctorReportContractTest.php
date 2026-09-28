@@ -233,7 +233,6 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'instance.source_layout_mismatch',
             'instance.checkout_missing',
             'instance.repository_layout_mismatch',
-            'instance.migration_required',
             'instance.origin_mismatch',
             'instance.source_identity_mismatch',
             'instance.production_home_mismatch',

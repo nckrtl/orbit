@@ -20,8 +20,8 @@ it('proxies the reserved development-server path to loopback on a development si
     expect($configuration)
         ->toContain('https://tasks.commander.test {')
         ->toContain('path /__orbit/vite /__orbit/vite/*')
-        ->toContain('uri strip_prefix /__orbit/vite')
         ->toContain('reverse_proxy 127.0.0.1:5173')
+        ->not->toContain('uri strip_prefix /__orbit/vite')
         ->toContain($socket)
         ->toContain('root /dev/shm/orbit/hibernation')
         ->toContain('try_files /app-instance-6.awake')
@@ -313,15 +313,24 @@ it('composes a Router-local unix upstream with a remote HTTPS target without a s
         ->not->toContain('https://10.44.0.7');
 });
 
+it('does not fall back to port 5173 when a development site has no assigned Vite port', function (): void {
+    $configuration = new AppDevCaddyConfigRenderer()->render(collect([
+        development_server_site('tasks.commander.test', '/home/orbit/apps/tasks', vitePort: null),
+    ]));
+
+    expect($configuration)
+        ->not->toContain('reverse_proxy 127.0.0.1:5173')
+        ->not->toContain('/__orbit/vite')
+        ->not->toContain('uri strip_prefix');
+});
+
 it('exposes one origin URL and loopback upstream for frontend configuration', function (): void {
     expect(DevelopmentServerEndpoint::origin('tasks.commander.test'))
         ->toBe('https://tasks.commander.test/__orbit/vite')
-        ->and(DevelopmentServerEndpoint::upstream())
+        ->and(DevelopmentServerEndpoint::upstream(5173))
         ->toBe('127.0.0.1:5173')
         ->and(DevelopmentServerEndpoint::PATH)
-        ->toBe('/__orbit/vite')
-        ->and(DevelopmentServerEndpoint::PORT)
-        ->toBe(5173);
+        ->toBe('/__orbit/vite');
 });
 
 function development_server_site(
@@ -329,6 +338,7 @@ function development_server_site(
     string $checkoutPath,
     int $nodeId = 12,
     string $scope = 'app-instance-6',
+    ?int $vitePort = 5173,
 ): AppDevSite {
     return new AppDevSite(
         nodeId: $nodeId,
@@ -338,6 +348,7 @@ function development_server_site(
         documentRoot: 'public',
         phpVersion: '8.5',
         domain: $domain,
+        vitePort: $vitePort,
     );
 }
 

@@ -6,7 +6,7 @@ use App\Models\AppInstance;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-beforeEach(fn () => app_instance_environment_migration()->down());
+beforeEach(fn () => roll_back_app_instance_environment_for_migration_test());
 afterEach(fn () => restore_app_instance_environment_schema_for_migration_test());
 
 it('copies JSON deploy steps into named records and drops the JSON column', function (): void {

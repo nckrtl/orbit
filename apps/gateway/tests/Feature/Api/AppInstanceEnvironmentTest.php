@@ -344,13 +344,6 @@ it('requires an active complete owner while keeping stored updates offline', fun
         ->assertJsonPath('error.code', 'env.owner_unavailable');
 
     $this->instance->node->update(['status' => LifecycleStatus::Active]);
-    $this->instance->update(['migration_required' => true]);
-
-    $this
-        ->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
-        ->putJson("/api/v1/instances/{$this->instance->id}/environment/OTHER", ['value' => 'value'])
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'env.owner_unavailable');
 });
 
 it('resolves a finished public Route while retaining its terminal replacement step', function (): void {

@@ -14,7 +14,6 @@
                 "repository_url": "https://github.com/acme/site.git",
                 "default_branch": "main",
                 "root": "public",
-                "defaults": null,
                 "task_check": null
             },
             {
@@ -26,7 +25,6 @@
                 "repository_url": "git@github.com:bravo/docs.git",
                 "default_branch": "main",
                 "root": "public",
-                "defaults": null,
                 "task_check": null
             },
             {
@@ -38,7 +36,6 @@
                 "repository_url": "git@github.com:charlie/shop.git",
                 "default_branch": "release",
                 "root": "web/public",
-                "defaults": null,
                 "task_check": null
             },
             {
@@ -50,7 +47,6 @@
                 "repository_url": "https://github.com/delta/api.git",
                 "default_branch": "main",
                 "root": "public",
-                "defaults": null,
                 "task_check": null
             }
         ],

@@ -211,7 +211,7 @@ When the Router and the workload share one Node, one Caddy service serves the Ro
 
 ### Development-server endpoint
 
-The reserved path `/__orbit/vite` serves live frontend assets and hot module replacement (HMR) on the Route's HTTPS domain, on port 443. Workload Caddy proxies that path to the Instance's assigned `vite_port` on loopback and keeps the path prefix. Router Caddy forwards it like any other path. HTTPS and WSS terminate with the Route's Orbit CA certificates.
+The reserved path `/__orbit/vite` serves live frontend assets and hot module replacement (HMR) on the Route's HTTPS domain, on port 443. Workload Caddy proxies that path to the Instance's assigned `vite_port` on loopback and keeps the path prefix. When the Instance has no assigned `vite_port`, Caddy does not proxy that path. Router Caddy forwards it like any other path. HTTPS and WSS terminate with the Route's Orbit CA certificates.
 
 Each development Instance on a Node has its own port, and separate Nodes can reuse a port. See [Assigned Vite ports](/reference/assigned-vite-ports). When nothing listens on the port, Caddy returns a proxy error for that path only, and never picks another Instance.
 

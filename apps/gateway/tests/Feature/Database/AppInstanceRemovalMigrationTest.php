@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 beforeEach(function (): void {
-    app_instance_environment_migration()->down();
+    roll_back_app_instance_environment_for_migration_test();
     orb183_production_route_migration()->down();
 });
 

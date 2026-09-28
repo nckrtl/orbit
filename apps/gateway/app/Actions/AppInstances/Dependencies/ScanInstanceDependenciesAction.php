@@ -129,14 +129,14 @@ final readonly class ScanInstanceDependenciesAction
     private function available(AppInstance $instance): bool
     {
         return $instance->status === AppInstanceState::Active
-            && ! $instance->migration_required && ! $instance->removalMember()->exists();
+            && ! $instance->removalMember()->exists();
     }
 
     /** @return array<string, mixed> */
     private function identity(AppInstance $instance): array
     {
         return [
-            ...$instance->only(['app_id', 'node_id', 'environment', 'source_layout', 'checkout_path', 'production_user', 'production_home', 'migration_required']),
+            ...$instance->only(['app_id', 'node_id', 'environment', 'source_layout', 'checkout_path', 'production_user', 'production_home']),
             'node' => $instance->node->only(['wireguard_ip', 'user', 'status']),
         ];
     }

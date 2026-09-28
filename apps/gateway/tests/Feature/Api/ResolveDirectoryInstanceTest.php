@@ -26,7 +26,7 @@ describe('caller directory resolution', function (): void {
     it('selects the root and its descendants without requiring a Route', function (string $directory): void {
         [$caller, $instance] = directory_resolution_fixture();
         $response = $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->get('/api/v1/instances/resolve-directory?directory='.rawurlencode($directory));
-        $response->assertOk()->assertJsonPath('data', ['instance_id' => $instance->id, 'app_id' => $instance->app_id, 'node_id' => $caller->id, 'environment' => 'development']);
+        $response->assertOk()->assertJsonPath('data', ['instance_id' => $instance->id, 'project_id' => $instance->app_id, 'node_id' => $caller->id, 'environment' => 'development']);
         expect($response->getContent())->not->toContain('/home/orbit');
         $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 0);
     })->with(['/home/orbit/project', '/home/orbit/project/public', '/home/orbit/project/child directory']);
@@ -64,7 +64,7 @@ describe('caller directory resolution', function (): void {
         $instance->update($changes);
         $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->get('/api/v1/instances/resolve-directory?directory=/home/orbit/project')
             ->assertStatus(409)->assertJsonPath('error.code', 'dependencies.instance_unavailable');
-    })->with([[['status' => 'reserved']], [['migration_required' => true]]]);
+    })->with([[['status' => 'reserved']]]);
 
     it('uses the registered production home rather than a stale checkout field', function (): void {
         [$caller, $instance] = directory_resolution_fixture();

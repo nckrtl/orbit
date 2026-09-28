@@ -14,9 +14,9 @@ Several development Instances can run Vite on one Node. Orbit gives each develop
 
 ## Assignment
 
-Orbit assigns `vite_port` when it creates or registers a development Instance. Production Instances get none. An assignment creates or starts no Process.
+Orbit assigns `vite_port` when it creates or registers a development Instance. Production Instances get none. An assignment creates or starts no Process. Caddy, wake, and the `vp-dev` preset use only that assigned port.
 
-The search starts at `5173`, or at the recorded port, and moves up to `65535`. It never tries a port below its start. It skips:
+When this Instance already has a recorded port on the Node, the search starts there. When it has no recorded port, the search starts at `5173` and moves up to `65535`. It never tries a port below its start. It skips:
 
 - ports that other Instances on the Node hold,
 - ports that any TCP socket on the Node uses, over IPv4 or IPv6, except in `TIME_WAIT`,

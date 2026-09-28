@@ -67,7 +67,6 @@ final readonly class ScheduleTargetResolver
         if (
             $instance->node->status !== LifecycleStatus::Active
             || $instance->status === AppInstanceState::Removing
-            || $instance->migration_required
         ) {
             $this->unavailable();
         }
@@ -149,7 +148,6 @@ final readonly class ScheduleTargetResolver
         if (
             $requireActive
             && ($instance->status !== AppInstanceState::Active
-                || $instance->migration_required
                 || $instance->provisioning_step !== 'active')
         ) {
             $this->unavailable();

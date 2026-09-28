@@ -95,7 +95,6 @@ final readonly class UpdateYarnDependenciesAction
         $user = $node->user;
         if (! $instance->placedOnAppDev()
             || ! in_array($instance->source_layout, array_column(AppInstanceSourceLayout::cases(), 'value'), true)
-            || $instance->migration_required
             || ! str_starts_with($path, '/') || str_contains($path, "\0")
             || preg_match('/\A[a-z_][a-z0-9_-]*\z/D', $user) !== 1
             || ! is_string($node->wireguard_ip) || filter_var($node->wireguard_ip, FILTER_VALIDATE_IP) === false) {

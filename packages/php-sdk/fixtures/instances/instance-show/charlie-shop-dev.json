@@ -27,7 +27,6 @@
             "effective_root": "web/public",
             "selected_branch": "dev",
             "branch_override": null,
-            "migration_required": false,
             "starting_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "detached": false,
             "status": "active",

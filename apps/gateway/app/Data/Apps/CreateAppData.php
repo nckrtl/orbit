@@ -8,9 +8,6 @@ use App\Domain\Projects\ProjectType;
 
 final readonly class CreateAppData
 {
-    /**
-     * @param  array<array-key, mixed>|null  $defaults
-     */
     public function __construct(
         public string $name,
         public string $slug,
@@ -18,7 +15,6 @@ final readonly class CreateAppData
         public string $repositoryUrl,
         public ?string $defaultBranch,
         public string $root,
-        public ?array $defaults,
         public ?string $code = null,
         public bool $taskCheckProvided = false,
         public ?string $taskCheck = null,

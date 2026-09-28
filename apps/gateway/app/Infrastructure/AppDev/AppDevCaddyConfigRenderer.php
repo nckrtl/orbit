@@ -255,20 +255,25 @@ final readonly class AppDevCaddyConfigRenderer
 
     private function withDevelopmentServer(string $applicationHandler, ?int $port, ?int $agentationPort): string
     {
-        $path = DevelopmentServerEndpoint::PATH;
-        $upstream = DevelopmentServerEndpoint::upstream($port);
-        $rewrite = $port === null ? "uri strip_prefix {$path}" : '';
         $agentation = $this->agentationHandle($agentationPort);
+        $vite = '';
 
-        return <<<CADDY
-            @orbit_vite {
-                path {$path} {$path}/*
-            }
-            handle @orbit_vite {
-                {$rewrite}
-                reverse_proxy {$upstream}
-            }
-            {$agentation}handle {
+        if ($port !== null) {
+            $path = DevelopmentServerEndpoint::PATH;
+            $upstream = DevelopmentServerEndpoint::upstream($port);
+            $vite = <<<CADDY
+                @orbit_vite {
+                    path {$path} {$path}/*
+                }
+                handle @orbit_vite {
+                    reverse_proxy {$upstream}
+                }
+
+                CADDY;
+        }
+
+        return $vite.$agentation.<<<CADDY
+            handle {
                 {$applicationHandler}
             }
             CADDY;

@@ -87,7 +87,7 @@ describe('managed dependency collection transport', function (): void {
             ->toThrow(DependencyCollectionException::class, 'dependencies.unsafe_source');
     })->with([
         [['checkout_path' => 'relative']],
-        [['source_layout' => 'nested']], [['migration_required' => true]],
+        [['source_layout' => 'nested']],
         [['production_user' => '-root', 'production_home' => '/home/-root'], true],
         [['production_user' => 'app_sample', 'production_home' => '/tmp/wrong'], true],
     ]);

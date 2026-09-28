@@ -30,7 +30,7 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
 {
     #[\Override]
     protected $signature = 'instance:dependencies:scan
-        {--app= : Full Route domain selecting one instance}
+        {--project= : Full Route domain selecting one instance}
         {--all : Scan every authorized instance}
         {--json : Return machine-readable JSON}';
 
@@ -39,12 +39,12 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors, DependencyInstanceSelector $selector): int
     {
-        $app = $this->option('app');
+        $domain = $this->option('project');
         $all = $this->option('all') === true;
-        if ($all && $app !== null) {
-            return $this->renderGatewayFailure('dependencies.target_conflict', 'App and all-instance selectors cannot be combined.');
+        if ($all && $domain !== null) {
+            return $this->renderGatewayFailure('dependencies.target_conflict', 'Project and all-instance selectors cannot be combined.');
         }
-        if ($app !== null && trim($app) === '') {
+        if ($domain !== null && trim($domain) === '') {
             return $this->renderGatewayFailure('dependencies.domain_invalid', 'Supply a full Route domain.');
         }
 
@@ -53,17 +53,17 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        return $all ? $this->scanAll($connector) : $this->scanOne($connector, $selector, is_string($app) ? $app : null);
+        return $all ? $this->scanAll($connector) : $this->scanOne($connector, $selector, is_string($domain) ? $domain : null);
     }
 
-    private function scanOne(GatewayConnector $connector, DependencyInstanceSelector $selector, ?string $app): int
+    private function scanOne(GatewayConnector $connector, DependencyInstanceSelector $selector, ?string $domain): int
     {
         $progress = $this->progressDisplay('Scan instance dependencies');
         $progress->admit('target', 'Resolve instance', 'Resolving instance', 'Resolved instance');
         try {
-            $target = $progress->during('target', fn () => $app === null
+            $target = $progress->during('target', fn () => $domain === null
                 ? $selector->resolveDirectory($connector)
-                : $selector->resolveDomain($connector, $app));
+                : $selector->resolveDomain($connector, $domain));
             $progress->complete('target', ProgressState::Success, "Instance #{$target->instanceId}");
             $progress->admit('scan', 'Scan dependencies', 'Scanning dependencies', 'Scanned dependencies');
             $result = $progress->during('scan', fn () => $this->sendOrThrow(
@@ -81,7 +81,7 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
         if ($this->option('json') === true) {
             $this->writeJson($result->toArray());
         } else {
-            $this->renderIdentity($result->instanceId, $target->appId, $target->nodeId, $target->environment, $succeeded, $result->requestId);
+            $this->renderIdentity($result->instanceId, $target->projectId, $target->nodeId, $target->environment, $succeeded, $result->requestId);
             $this->renderEcosystem('Composer', $result->composer);
             $this->renderEcosystem('JavaScript', $result->javascript);
         }

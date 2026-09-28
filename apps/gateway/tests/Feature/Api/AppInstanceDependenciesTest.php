@@ -247,7 +247,7 @@ describe('single-instance dependency API', function (): void {
             ->assertOk()->assertJsonPath('data.instance_id', $instance->id);
     });
 
-    it('rejects inactive or migration-required targets before collection', function (array $attributes): void {
+    it('rejects inactive targets before collection', function (array $attributes): void {
         [$caller, $instance] = dependency_api_fixture();
         $instance->update($attributes);
         mock(SshExecutor::class)->shouldNotReceive('execute');
@@ -255,7 +255,7 @@ describe('single-instance dependency API', function (): void {
         $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->call('POST', "/api/v1/instances/{$instance->id}/dependencies/scan", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')
             ->assertConflict()->assertJsonPath('error.code', 'dependencies.instance_unavailable')->assertJsonMissingPath('data');
         $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 0);
-    })->with([[['status' => 'reserved']], [['migration_required' => true]]]);
+    })->with([[['status' => 'reserved']]]);
 
     it('does not return inventory when the instance disappears during collection', function (): void {
         [$caller, $instance] = dependency_api_fixture();

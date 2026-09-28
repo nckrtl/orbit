@@ -99,7 +99,6 @@ it('rejects inactive AppInstances and Nodes for admission', function (array $ins
 })->with([
     'inactive AppInstance' => [['status' => AppInstanceState::SourceResolved], []],
     'unfinished provisioning' => [['provisioning_step' => 'source'], []],
-    'migration required' => [['migration_required' => true], []],
     'inactive Node' => [[], ['status' => LifecycleStatus::Failed]],
 ])->throws(ResourceOperationException::class, 'not active');
 

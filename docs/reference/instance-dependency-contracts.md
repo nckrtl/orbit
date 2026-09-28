@@ -128,9 +128,9 @@ The SDK rejects a whole response that breaks the shape. It accepts at most 32 Mi
 
 ## Target resolution
 
-`GET /api/v1/instances/resolve?domain=DOMAIN` finds the one Instance behind an active Route domain. It returns `domain`, `instance_id`, `app_id`, `node_id`, and `environment`. A missing or inaccessible domain returns `dependencies.target_not_found`. A Route with more than one target returns `dependencies.target_ambiguous`. The SDK accepts at most 4,096 bytes of response.
+`GET /api/v1/instances/resolve?domain=DOMAIN` finds the one Instance behind an active Route domain. It returns `domain`, `instance_id`, `project_id`, `node_id`, and `environment`. A missing or inaccessible domain returns `dependencies.target_not_found`. A Route with more than one target returns `dependencies.target_ambiguous`. The SDK accepts at most 4,096 bytes of response.
 
-`GET /api/v1/instances/resolve-directory?directory=PATH` finds the Instance whose checkout or production home holds a canonical path on the caller's Node. It never looks at other Nodes. Nested matches return `dependencies.target_ambiguous`; the resolver never picks the longest prefix.
+`GET /api/v1/instances/resolve-directory?directory=PATH` finds the Instance whose checkout or production home holds a canonical path on the caller's Node. It returns `instance_id`, `project_id`, `node_id`, and `environment`. It never looks at other Nodes. Nested matches return `dependencies.target_ambiguous`; the resolver never picks the longest prefix.
 
 Both return `dependencies.instance_unavailable` for an Instance that is not active or is in removal. Later operations check access and state again.
 

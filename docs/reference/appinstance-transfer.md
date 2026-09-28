@@ -70,6 +70,8 @@ Cutover is the moment the destination becomes authoritative.
 
 A failed or unfinished transfer stays open. Only the identical request resumes it, and it is the only way to close it: a different transfer returns `instance.transfer_retry_conflict`, and removal returns `instance.transfer_incomplete`. For a pending transfer, the CLI offers the retry and names the original source Node. If a Schedule targets the Instance before reservation or is added before cutover, transfer returns `schedule.target_in_use`. Remove the Schedule or retarget it away from the Instance, then retry the identical transfer request.
 
+Orbit records the source Cluster's Router on the transfer before cutover, and cleanup uses that record.
+
 Cleanup deletes the old checkout or worktree and its runtime files, certificates, and firewall rules on the old workload and Router. The result reports the destination Node, path, domain, and whether cleanup finished. It does not depend on an HTTP response from the application.
 
 ## Failure codes
@@ -94,7 +96,7 @@ The Gateway returns these codes before or during a transfer.
 | `instance.transfer_retry_conflict` | A different request tried to resume a transfer. |
 | `instance.transfer_failed` | The transfer failed before cutover and the source is authoritative. |
 | `instance.transfer_cleanup_incomplete` | The destination is authoritative, and cleanup needs the identical retry. |
-| `instance.transfer_source_router_unknown` | The source Router is unknown, so Orbit cannot clean up the source projection. |
+| `instance.transfer_source_router_unknown` | The source Route has no Router, so Orbit cannot record one for the transfer. |
 | `instance.transfer_cleanup_conflict` | The recorded placement or Route changed, so cleanup stops. |
 | `instance.clone_sqlite_unconfirmed` | Orbit cannot confirm the SQLite copy. Retry. |
 | `sqlite.seed_preflight_failed`, `sqlite.seed_transfer_failed`, `sqlite.seed_failed` | The SQLite snapshot failed its checks, its copy, or its install. |

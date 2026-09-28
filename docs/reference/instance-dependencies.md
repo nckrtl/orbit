@@ -36,17 +36,17 @@ Select one Instance by the current directory or by its full Route domain, or sca
 
 ```bash
 orbit instance:dependencies:scan
-orbit instance:dependencies:scan --app=commander.test
+orbit instance:dependencies:scan --project=commander.test
 orbit instance:dependencies:scan --all
 ```
 
 | Selector | Target |
 | --- | --- |
 | none | The registered Instance whose checkout or production home holds the current directory, on the caller's Node. |
-| `--app=DOMAIN` | The one Instance behind that Route domain. It takes precedence over the directory. |
+| `--project=DOMAIN` | The one Instance behind that Route domain. It takes precedence over the directory. |
 | `--all` | Every Instance that `instance:list` returns, scanned one by one in list order. |
 
-No match or more than one match fails before any work, with `dependencies.target_not_found` or `dependencies.target_ambiguous`. `--all` with `--app` returns `dependencies.target_conflict`. An `--all` scan continues after a failed Instance, and Ctrl-C marks the rest as skipped.
+No match or more than one match fails before any work, with `dependencies.target_not_found` or `dependencies.target_ambiguous`. `--all` with `--project` returns `dependencies.target_conflict`. An `--all` scan continues after a failed Instance, and Ctrl-C marks the rest as skipped.
 
 Human output shows each ecosystem's state, counts, and times. An unknown count shows as an em dash, and verified absence shows zero. `--json` returns the typed inventory, or for `--all`, a document with `succeeded`, `summary`, `instances`, and `request_id`. The exit status is zero only when every scanned ecosystem succeeds.
 
@@ -74,7 +74,7 @@ Update one development Instance with the same selectors, except `--all`:
 
 ```bash
 orbit instance:dependencies:update
-orbit instance:dependencies:update --app=commander.test
+orbit instance:dependencies:update --project=commander.test
 ```
 
 The Gateway runs these steps as the Node's user in the project root:

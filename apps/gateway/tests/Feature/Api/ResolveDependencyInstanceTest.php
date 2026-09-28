@@ -37,7 +37,7 @@ describe('dependency domain resolution', function (): void {
         mock(SshExecutor::class)->shouldNotReceive('execute');
         $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->get('/api/v1/instances/resolve?domain=%20RESOLVE.EXAMPLE.TEST%20')
             ->assertOk()->assertExactJson(['data' => [
-                'domain' => $route->domain, 'instance_id' => $instance->id, 'app_id' => $instance->app_id,
+                'domain' => $route->domain, 'instance_id' => $instance->id, 'project_id' => $instance->app_id,
                 'node_id' => $instance->node_id, 'environment' => 'production',
             ], 'meta' => ['request_id' => $this->app['request']->attributes->get('orbit.request_id')]]);
         $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 0);
@@ -90,7 +90,7 @@ describe('dependency domain resolution', function (): void {
         $instance->update($change);
         $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->get('/api/v1/instances/resolve?domain='.$route->domain)
             ->assertStatus(409)->assertJsonPath('error.code', 'dependencies.instance_unavailable')->assertJsonMissingPath('data');
-    })->with([[['status' => 'reserved']], [['migration_required' => true]]]);
+    })->with([[['status' => 'reserved']]]);
 
     it('rejects invalid selectors without echoing input', function (string $domain): void {
         [$caller] = resolution_fixture();

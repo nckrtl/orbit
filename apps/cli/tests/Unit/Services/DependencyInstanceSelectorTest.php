@@ -13,13 +13,13 @@ use Saloon\Http\Faking\MockResponse;
 describe('dependency domain selector hook', function (): void {
     it('delegates the exact domain to Gateway and preserves owning instance data', function (): void {
         $mock = new MockClient([ResolveAppInstanceRequest::class => MockResponse::make([
-            'data' => ['domain' => 'app.example.test', 'instance_id' => 17, 'app_id' => 2, 'node_id' => 9, 'environment' => 'production'],
+            'data' => ['domain' => 'app.example.test', 'instance_id' => 17, 'project_id' => 2, 'node_id' => 9, 'environment' => 'production'],
             'meta' => ['request_id' => '11111111-1111-4111-8111-111111111111'],
         ])]);
         $connector = new GatewayConnector('https://gateway.test');
         $connector->withMockClient($mock);
         $target = new DependencyInstanceSelector()->resolveDomain($connector, ' APP.EXAMPLE.TEST ');
-        expect($target->instanceId)->toBe(17)->and($target->nodeId)->toBe(9)->and($target->appId)->toBe(2)
+        expect($target->instanceId)->toBe(17)->and($target->nodeId)->toBe(9)->and($target->projectId)->toBe(2)
             ->and($target->environment)->toBe('production')->and($target->requestId)->toBe('11111111-1111-4111-8111-111111111111')
             ->and($mock->getLastPendingRequest()?->query()->all())->toBe(['domain' => ' APP.EXAMPLE.TEST ']);
         $mock->assertSentCount(1);
@@ -50,7 +50,7 @@ it('canonicalizes the current directory through symlinked ancestors', function (
     symlink($root.'/physical', $root.'/alias');
     $previous = getcwd();
     $mock = new MockClient([ResolveDirectoryInstanceRequest::class => MockResponse::make([
-        'data' => ['instance_id' => 17, 'app_id' => 2, 'node_id' => 9, 'environment' => 'development'],
+        'data' => ['instance_id' => 17, 'project_id' => 2, 'node_id' => 9, 'environment' => 'development'],
         'meta' => ['request_id' => '11111111-1111-4111-8111-111111111111'],
     ])]);
     $connector = new GatewayConnector('https://gateway.test');
@@ -76,7 +76,7 @@ it('honors explicit domain and all selection even when the working directory dis
     mkdir($root, 0700);
     $previous = getcwd();
     $mock = new MockClient([ResolveAppInstanceRequest::class => MockResponse::make([
-        'data' => ['domain' => 'app.example.test', 'instance_id' => 17, 'app_id' => 2, 'node_id' => 9, 'environment' => 'production'],
+        'data' => ['domain' => 'app.example.test', 'instance_id' => 17, 'project_id' => 2, 'node_id' => 9, 'environment' => 'production'],
         'meta' => ['request_id' => '11111111-1111-4111-8111-111111111111'],
     ])]);
     $connector = new GatewayConnector('https://gateway.test');
@@ -85,10 +85,10 @@ it('honors explicit domain and all selection even when the working directory dis
         chdir($root);
         rmdir($root);
         $selector = new DependencyInstanceSelector;
-        expect($selector->select($connector, app: 'app.example.test')?->instanceId)->toBe(17)
+        expect($selector->select($connector, domain: 'app.example.test')?->instanceId)->toBe(17)
             ->and($selector->select($connector, all: true))->toBeNull();
         expect(fn () => $selector->select($connector))->toThrow(GatewayApiException::class, 'The current directory is unavailable.')
-            ->and(fn () => $selector->select($connector, app: 'app.example.test', all: true))->toThrow(GatewayApiException::class, 'App and all-instance selectors cannot be combined.');
+            ->and(fn () => $selector->select($connector, domain: 'app.example.test', all: true))->toThrow(GatewayApiException::class, 'Project and all-instance selectors cannot be combined.');
         $mock->assertSentCount(1);
     } finally {
         chdir($previous);

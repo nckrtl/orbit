@@ -76,6 +76,8 @@ The wake runs in this order:
 3. Wait until each one runs. A `vp-dev` Process must answer on its [assigned Vite port](/reference/assigned-vite-ports). An `agentation-mcp` Process must answer `/health` on its port.
 4. Clear the cold marker and write the awake marker.
 
+Any other Process is ready when its runtime reports running.
+
 Orbit checks each Process every 0.5 seconds. A fresh Node agent view answers without SSH. Orbit confirms a `failed` answer, or a timeout, over SSH before the wake fails.
 
 Every intercepted request starts a wake. A request during a running wake gets the same progress page. Its own wake attempt ends quietly when the running wake holds the Process lock. A failed wake keeps the cold marker and stores the error for up to 120 seconds. The next request gets a failure page, status 503, with state `failed`, the error, and a Try again link, and it also starts a new wake. The error shows once. Try again adds `orbit-wake-retry=1` to the path, and its request shows the progress page of the new wake.

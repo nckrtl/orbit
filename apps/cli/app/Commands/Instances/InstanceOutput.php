@@ -24,7 +24,6 @@ trait InstanceOutput
             'Effective root' => $instance->effectiveRoot,
             'Selected branch' => $instance->selectedBranch,
             'Branch override' => $instance->branchOverride,
-            'Migration required' => $instance->migrationRequired ? 'yes' : 'no',
             'Domain' => $instance->domain,
             'URL' => $instance->url,
         ];

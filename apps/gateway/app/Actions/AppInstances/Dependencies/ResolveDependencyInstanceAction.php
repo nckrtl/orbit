@@ -53,7 +53,7 @@ final readonly class ResolveDependencyInstanceAction
             }
             $instance = $route->targets->sole()->appInstance;
             if ($instance->app_id !== $route->app_id || $instance->status !== AppInstanceState::Active
-                || $instance->migration_required || $instance->removalMember()->exists()) {
+                || $instance->removalMember()->exists()) {
                 throw new ResourceOperationException('dependencies.instance_unavailable', 'The instance is unavailable for dependency inventory.', 409);
             }
 

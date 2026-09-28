@@ -13,7 +13,7 @@ use Saloon\Http\Faking\MockResponse;
 /** @return array<string, mixed> */
 function resolution_response(): array
 {
-    return ['data' => ['domain' => 'fixture.example.test', 'instance_id' => 17, 'app_id' => 3, 'node_id' => 9, 'environment' => 'development'],
+    return ['data' => ['domain' => 'fixture.example.test', 'instance_id' => 17, 'project_id' => 3, 'node_id' => 9, 'environment' => 'development'],
         'meta' => ['request_id' => '11111111-1111-4111-8111-111111111111']];
 }
 
@@ -52,7 +52,7 @@ describe('full-domain SDK resolution', function (): void {
             expect($exception->getMessage())->toBe('Gateway response contains invalid instance resolution data.')
                 ->not->toContain('sentinel-secret');
         }
-    })->with([['instance_id', '17'], ['instance_id', 0], ['node_id', null], ['app_id', -1], ['environment', 'other'],
+    })->with([['instance_id', '17'], ['instance_id', 0], ['node_id', null], ['project_id', -1], ['environment', 'other'],
         ['domain', 'other.example.test'], ['domain', 'https://user:sentinel-secret@fixture.example.test'], ['extra', 'sentinel-secret']]);
 
     it('rejects missing fields, oversized data and invalid JSON', function (string $kind): void {

@@ -143,8 +143,8 @@ describe('instance:register', function (): void {
         $this
             ->artisan('instance:register', [
                 '--yes' => true,
-                '--app-name' => 'Confirmed',
-                '--app-slug' => 'confirmed',
+                '--project-name' => 'Confirmed',
+                '--project-slug' => 'confirmed',
                 '--default-branch' => 'trunk',
                 '--root' => 'web',
                 '--no-interaction' => true,
@@ -447,7 +447,6 @@ describe('instance:create', function (): void {
             'Effective root public',
             'Selected branch dev',
             'Branch override —',
-            'Migration required no',
             'Domain dev.orbit.test',
             'URL https://dev.orbit.test',
         );
@@ -505,8 +504,8 @@ describe('instance:list', function (): void {
 
         expect(Artisan::call('instance:list'))->toBe(0);
         expect(instance_source_text(Artisan::output()))->toContain(
-            'ID PROJECT NODE VITE PORT NAME SOURCE LAYOUT ROOT SELECTED BRANCH BRANCH OVERRIDE MIGRATION REQUIRED ROUTE DOMAIN URL STATUS REMOVAL',
-            '5 3 2 — dev checkout public dev — no dev.orbit.test https://dev.orbit.test active —',
+            'ID PROJECT NODE VITE PORT NAME SOURCE LAYOUT ROOT SELECTED BRANCH BRANCH OVERRIDE ROUTE DOMAIN URL STATUS REMOVAL',
+            '5 3 2 — dev checkout public dev — dev.orbit.test https://dev.orbit.test active —',
             'Request ID: '.instance_request_id(),
         );
     });
@@ -590,7 +589,6 @@ describe('instance:show', function (): void {
             'Effective root public',
             'Selected branch dev',
             'Branch override —',
-            'Migration required no',
             'Domain dev.orbit.test',
             'URL https://dev.orbit.test',
             'No Processes.',

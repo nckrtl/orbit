@@ -188,11 +188,15 @@ final readonly class SystemdProcessRenderer
             $directives[] = 'Environment=ORBIT_DEV_SERVER_ORIGIN='.$this->escapeDirectivePath($origin);
             $directives[] = 'Environment=ORBIT_DEV_SERVER_HOST='.$this->escapeDirectivePath($target->routeDomain);
             $directives[] = 'Environment=ORBIT_DEV_SERVER_PATH='.DevelopmentServerEndpoint::PATH;
-            $directives[] = 'Environment=ORBIT_DEV_SERVER_PORT='.(string) ($target->appInstance->vite_port ?? DevelopmentServerEndpoint::PORT);
             $commandValues[] = "ORBIT_DEV_SERVER_ORIGIN={$origin}";
             $commandValues[] = "ORBIT_DEV_SERVER_HOST={$target->routeDomain}";
             $commandValues[] = 'ORBIT_DEV_SERVER_PATH='.DevelopmentServerEndpoint::PATH;
-            $commandValues[] = 'ORBIT_DEV_SERVER_PORT='.(string) ($target->appInstance->vite_port ?? DevelopmentServerEndpoint::PORT);
+            $port = $target->appInstance?->vite_port;
+
+            if (is_int($port)) {
+                $directives[] = 'Environment=ORBIT_DEV_SERVER_PORT='.(string) $port;
+                $commandValues[] = 'ORBIT_DEV_SERVER_PORT='.(string) $port;
+            }
 
             if (is_int($target->appInstance?->agentation_port)) {
                 $agentationOrigin = AgentationEndpoint::origin($target->routeDomain);

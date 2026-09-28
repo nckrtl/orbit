@@ -2325,14 +2325,12 @@
           },
           "app_name": {
             "type": "string",
-            "maxLength": 255,
-            "description": "Confirmed Project display name"
+            "maxLength": 255
           },
           "app_slug": {
             "type": "string",
             "pattern": "^[A-Za-z0-9_-]+$",
-            "maxLength": 63,
-            "description": "Confirmed Project slug"
+            "maxLength": 63
           },
           "default_branch": {
             "type": "string",
@@ -4092,12 +4090,6 @@
             "type": "string",
             "maxLength": 255,
             "description": "Repository-relative root; defaults to . for package types and public otherwise"
-          },
-          "defaults": {
-            "type": [
-              "array",
-              "null"
-            ]
           },
           "task_check": {
             "type": [

@@ -22,6 +22,7 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
+use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Projects\DevelopmentNodeExclusion;
 use App\Domain\Projects\LifecyclePhase;
@@ -92,7 +93,6 @@ final readonly class CreateAppInstanceAction
             ->first();
 
         if ($existing instanceof AppInstance) {
-            $this->assertDefaultIdentityAvailable($existing, $app);
             $this->assertRetryIdentity($existing, $requestedNode, $root, $data->branch);
             $appInstance = $existing;
             $created = false;
@@ -108,11 +108,11 @@ final readonly class CreateAppInstanceAction
             $this->checkoutOverlap->assertAvailable(
                 $requestedNode->id,
                 $checkout,
-                $data->name === 'default' ? 'instance.migration_conflict' : 'instance.path_taken',
+                $data->name === 'default' ? 'instance.default_path_occupied' : 'instance.path_taken',
             );
 
             if ($data->name === 'default') {
-                $this->destinationGuard->assertUnoccupied($requestedNode, $checkout);
+                $this->assertDefaultPathUnoccupied($requestedNode, $checkout);
             }
             $appInstance = AppInstance::query()->create([
                 'app_id' => $app->id,
@@ -366,13 +366,6 @@ final readonly class CreateAppInstanceAction
             );
         }
 
-        if ($appInstance->migration_required) {
-            throw $this->conflict(
-                'instance.migration_required',
-                "AppInstance [{$appInstance->name}] requires manual source migration.",
-            );
-        }
-
         $recordedNode = Node::query()->findOrFail($appInstance->node_id);
 
         if (
@@ -387,21 +380,22 @@ final readonly class CreateAppInstanceAction
         $this->assertPlacement($recordedNode);
     }
 
-    private function assertDefaultIdentityAvailable(AppInstance $appInstance, OrbitApp $app): void
+    private function assertDefaultPathUnoccupied(Node $node, StoragePath $checkout): void
     {
-        if (
-            $appInstance->name !== 'default'
-            || $appInstance->source_layout === AppInstanceSourceLayout::Checkout->value
-            && str_ends_with($appInstance->checkout_path, "/{$app->slug}/default")
-            && ! $appInstance->migration_required
-        ) {
-            return;
-        }
+        try {
+            $this->destinationGuard->assertUnoccupied($node, $checkout);
+        } catch (ResourceOperationException $exception) {
+            if ($exception->errorCode !== 'instance.migration_conflict') {
+                throw $exception;
+            }
 
-        throw $this->conflict(
-            'instance.migration_conflict',
-            'The reserved default AppInstance identity is occupied by another source.',
-        );
+            throw new ResourceOperationException(
+                'instance.default_path_occupied',
+                $exception->getMessage(),
+                $exception->status,
+                $exception,
+            );
+        }
     }
 
     private function assertPersistedOwnership(AppInstance $appInstance): void

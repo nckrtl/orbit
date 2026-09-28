@@ -24,7 +24,7 @@ final class UpdateInstanceDependenciesCommand extends GatewayCommand
 {
     #[\Override]
     protected $signature = 'instance:dependencies:update
-        {--app= : Full Route domain selecting one development instance}
+        {--project= : Full Route domain selecting one development instance}
         {--all : Rejected; dependency updates are single-instance only}
         {--latest : Rejected; updates stay within declared constraints}
         {--json : Return machine-readable JSON}';
@@ -47,8 +47,8 @@ final class UpdateInstanceDependenciesCommand extends GatewayCommand
             );
         }
 
-        $app = $this->option('app');
-        if ($app !== null && trim($app) === '') {
+        $domain = $this->option('project');
+        if ($domain !== null && trim($domain) === '') {
             return $this->renderGatewayFailure('dependencies.domain_invalid', 'Supply a full Route domain.');
         }
 
@@ -57,17 +57,17 @@ final class UpdateInstanceDependenciesCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        return $this->updateOne($connector, $selector, is_string($app) ? $app : null);
+        return $this->updateOne($connector, $selector, is_string($domain) ? $domain : null);
     }
 
-    private function updateOne(GatewayConnector $connector, DependencyInstanceSelector $selector, ?string $app): int
+    private function updateOne(GatewayConnector $connector, DependencyInstanceSelector $selector, ?string $domain): int
     {
         $progress = $this->progressDisplay('Update instance dependencies');
         $progress->admit('target', 'Resolve instance', 'Resolving instance', 'Resolved instance');
         try {
-            $target = $progress->during('target', fn () => $app === null
+            $target = $progress->during('target', fn () => $domain === null
                 ? $selector->resolveDirectory($connector)
-                : $selector->resolveDomain($connector, $app));
+                : $selector->resolveDomain($connector, $domain));
             $progress->complete('target', ProgressState::Success, "Instance #{$target->instanceId}");
             $progress->admit('update', 'Update dependencies', 'Updating dependencies', 'Updated dependencies');
             $result = $progress->during('update', fn () => $this->sendOrThrow(
@@ -95,12 +95,12 @@ final class UpdateInstanceDependenciesCommand extends GatewayCommand
         } else {
             $this->renderIdentity(
                 $result->instanceId,
-                $target->appId,
+                $target->projectId,
                 $target->nodeId,
                 $target->environment,
                 $succeeded,
                 $result->requestId,
-                domain: $app,
+                domain: $domain,
                 error: $result->errorCode,
                 mayHaveMutated: $result->mayHaveMutated,
             );

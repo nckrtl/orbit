@@ -145,19 +145,3 @@ it('keeps a list over the total limit editable after the migration, as long as a
     $this->postJson($this->url, ['name' => 'extra', 'command' => 'true', 'timeout_seconds' => 80])->assertCreated();
     $this->postJson($this->url, ['name' => 'too-much', 'command' => 'true', 'timeout_seconds' => 1])->assertUnprocessable();
 });
-
-it('refuses a stored step above the limit with a clear error until the migration runs', function (): void {
-    ProjectLifecycleStep::query()->create([
-        'app_id' => $this->project->id,
-        'phase' => 'setup',
-        'name' => 'unmigrated',
-        'command' => 'true',
-        'timeout_seconds' => 600,
-        'position' => 0,
-    ]);
-
-    $this->getJson($this->url)
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'lifecycle_step.migration_pending')
-        ->assertJsonPath('error.message', 'Lifecycle step [unmigrated] stores a 600-second timeout, above the 540-second limit. Run the Gateway database migrations.');
-});

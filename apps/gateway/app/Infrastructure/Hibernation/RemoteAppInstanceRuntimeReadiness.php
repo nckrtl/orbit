@@ -6,7 +6,6 @@ namespace App\Infrastructure\Hibernation;
 
 use App\Domain\AgentView\AgentProcessView;
 use App\Domain\AppDev\AgentationEndpoint;
-use App\Domain\AppDev\DevelopmentServerEndpoint;
 use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\Hibernation\AppInstanceRuntimeReadiness;
 use App\Domain\Hibernation\HibernationException;
@@ -41,8 +40,6 @@ final readonly class RemoteAppInstanceRuntimeReadiness implements AppInstanceRun
             $this->waitUntilObservedRunning($process, $deadline);
         }
 
-        $node = $instance->node;
-
         foreach ($processes as $process) {
             if ($process->isVpDev()) {
                 $instance->refresh()->load('node');
@@ -59,13 +56,6 @@ final readonly class RemoteAppInstanceRuntimeReadiness implements AppInstanceRun
             if ($process->isAgentationMcp()) {
                 $instance->refresh()->load('node');
                 $this->waitUntilAgentationReady($instance, $deadline);
-
-                continue;
-            }
-            if ($instance->vite_port === null && $this->needsDevelopmentServer($process)) {
-                $this->waitUntilDevelopmentServerListens($node, $deadline);
-
-                return;
             }
         }
     }
@@ -113,32 +103,6 @@ final readonly class RemoteAppInstanceRuntimeReadiness implements AppInstanceRun
         return $viewed;
     }
 
-    private function waitUntilDevelopmentServerListens(Node $node, int $deadline): void
-    {
-        $remaining = max(1, $deadline - time());
-        $port = (string) DevelopmentServerEndpoint::PORT;
-        $result = $this->ssh->execute(
-            $this->connection($node, (float) ($remaining + 5)),
-            new RemoteCommand(
-                arguments: [
-                    'bash',
-                    '-c',
-                    'for i in $(seq 1 '.((string) ($remaining * 4)).'); do timeout 0.2 bash -c "echo >/dev/tcp/127.0.0.1/'.$port.'" && exit 0; sleep 0.25; done; exit 1',
-                ],
-                timeout: (float) ($remaining + 5),
-            ),
-        );
-
-        if ($result->succeeded()) {
-            return;
-        }
-
-        throw new HibernationException(
-            errorCode: 'hibernation.development_server_not_ready',
-            message: 'The development server did not accept connections before the wake timeout.',
-        );
-    }
-
     private function waitUntilAgentationReady(AppInstance $instance, int $deadline): void
     {
         $port = (string) ($instance->agentation_port ?? AgentationEndpoint::PORT);
@@ -181,21 +145,6 @@ PY
             errorCode: 'hibernation.agentation_not_ready',
             message: 'The Agentation HTTP endpoint did not become ready before the wake timeout.',
         );
-    }
-
-    private function needsDevelopmentServer(Process $process): bool
-    {
-        if ($process->name === 'vite') {
-            return true;
-        }
-
-        $command = $process->runtime_config['command'] ?? null;
-
-        if (! is_array($command)) {
-            return false;
-        }
-
-        return array_any($command, fn ($part) => is_string($part) && str_contains(strtolower($part), 'vite'));
     }
 
     private function connection(Node $node, float $timeout): SshConnection

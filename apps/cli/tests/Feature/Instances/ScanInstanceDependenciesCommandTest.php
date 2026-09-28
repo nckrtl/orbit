@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use App\Support\Console\ConsoleInterrupted;
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
@@ -16,6 +17,7 @@ use Saloon\Exceptions\Request\FatalRequestException;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Saloon\Http\PendingRequest;
+use Symfony\Component\Console\Tester\CommandTester;
 
 beforeEach(function (): void {
     MockClient::destroyGlobal();
@@ -121,7 +123,7 @@ function fleet_cli_scan_id(PendingRequest $pending): int
 
 function scan_cli_mock(string $state = 'present', bool $domain = true): MockClient
 {
-    $target = ['instance_id' => 17, 'app_id' => 3, 'node_id' => 9, 'environment' => 'development'];
+    $target = ['instance_id' => 17, 'project_id' => 3, 'node_id' => 9, 'environment' => 'development'];
     if ($domain) {
         $target = ['domain' => 'fixture.example.test', ...$target];
     }
@@ -135,7 +137,7 @@ function scan_cli_mock(string $state = 'present', bool $domain = true): MockClie
 describe('single instance dependency scan', function (): void {
     it('preserves the complete typed result in one plain JSON document', function (string $state): void {
         $mock = scan_cli_mock($state);
-        $code = Artisan::call('instance:dependencies:scan', ['--app' => 'fixture.example.test', '--json' => true, '--no-interaction' => true]);
+        $code = Artisan::call('instance:dependencies:scan', ['--project' => 'fixture.example.test', '--json' => true, '--no-interaction' => true]);
         $expected = scan_cli_inventory($state);
         expect($code)->toBe($expected['data']['succeeded'] ? 0 : 1)
             ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR))->toBe([...$expected['data'], 'request_id' => scan_cli_id()])
@@ -157,7 +159,7 @@ describe('single instance dependency scan', function (): void {
     it('shows truthful counts freshness timestamps and terminal outcomes', function (string $state): void {
         scan_cli_mock($state);
         $expected = scan_cli_inventory($state);
-        expect(Artisan::call('instance:dependencies:scan', ['--app' => 'fixture.example.test', '--no-interaction' => true]))->toBe($expected['data']['succeeded'] ? 0 : 1);
+        expect(Artisan::call('instance:dependencies:scan', ['--project' => 'fixture.example.test', '--no-interaction' => true]))->toBe($expected['data']['succeeded'] ? 0 : 1);
         $text = Artisan::output();
         expect($text)->toContain('Instance: #17', 'Composer', 'JavaScript', 'Resolutions', 'Requirements', 'Observed', 'Attempted', scan_cli_id())
             ->not->toContain("\e", 'Choose', 'Confirm');
@@ -176,11 +178,11 @@ describe('single instance dependency scan', function (): void {
         $inventory = scan_cli_inventory('unknown');
         $inventory['data']['javascript']['error_code'] = $code;
         MockClient::global([
-            ResolveAppInstanceRequest::class => MockResponse::make(['data' => ['domain' => 'fixture.example.test', 'instance_id' => 17, 'app_id' => 3, 'node_id' => 9, 'environment' => 'development'], 'meta' => ['request_id' => scan_cli_id()]]),
+            ResolveAppInstanceRequest::class => MockResponse::make(['data' => ['domain' => 'fixture.example.test', 'instance_id' => 17, 'project_id' => 3, 'node_id' => 9, 'environment' => 'development'], 'meta' => ['request_id' => scan_cli_id()]]),
             ScanInstanceDependenciesRequest::class => MockResponse::make($inventory),
         ]);
 
-        expect(Artisan::call('instance:dependencies:scan', ['--app' => 'fixture.example.test', '--no-interaction' => true]))->toBe(1);
+        expect(Artisan::call('instance:dependencies:scan', ['--project' => 'fixture.example.test', '--no-interaction' => true]))->toBe(1);
         // The detail renderer wraps long values, so compare without whitespace.
         expect(preg_replace('/\s+/', '', Artisan::output()))->toContain($code, 'Fix', preg_replace('/\s+/', '', $hint));
     })->with([
@@ -192,13 +194,13 @@ describe('single instance dependency scan', function (): void {
     it('adds no fix line for other failures', function (): void {
         scan_cli_mock('unknown');
 
-        Artisan::call('instance:dependencies:scan', ['--app' => 'fixture.example.test', '--no-interaction' => true]);
+        Artisan::call('instance:dependencies:scan', ['--project' => 'fixture.example.test', '--no-interaction' => true]);
         expect(Artisan::output())->not->toContain('Fix');
     });
 
     it('never scans or falls back after target refusal', function (string $error): void {
         $mock = MockClient::global([ResolveAppInstanceRequest::class => MockResponse::make(['error' => ['code' => $error, 'message' => 'Target refused.', 'details' => []]], 409, ['X-Orbit-Request-Id' => scan_cli_id()])]);
-        expect(Artisan::call('instance:dependencies:scan', ['--app' => 'fixture.example.test', '--json' => true]))->toBe(1);
+        expect(Artisan::call('instance:dependencies:scan', ['--project' => 'fixture.example.test', '--json' => true]))->toBe(1);
         $json = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
         expect($json['error']['code'])->toBe($error)->and($json['error']['request_id'])->toBe(scan_cli_id())
             ->and($mock->getRecordedResponses())->toHaveCount(1);
@@ -206,23 +208,42 @@ describe('single instance dependency scan', function (): void {
 
     it('rejects an empty explicit domain without directory fallback', function (): void {
         $mock = MockClient::global();
-        expect(Artisan::call('instance:dependencies:scan', ['--app' => '', '--json' => true]))->toBe(1)
+        expect(Artisan::call('instance:dependencies:scan', ['--project' => '', '--json' => true]))->toBe(1)
             ->and(json_decode(Artisan::output(), true)['error']['code'])->toBe('dependencies.domain_invalid')
             ->and($mock->getLastPendingRequest())->toBeNull();
+    });
+
+    it('rejects the removed app option', function (): void {
+        $mock = MockClient::global();
+        $tester = new CommandTester(app(Kernel::class)->all()['instance:dependencies:scan']);
+
+        expect($tester->execute([
+            '--app' => 'fixture.example.test',
+            '--json' => true,
+            '--no-interaction' => true,
+        ], ['interactive' => false]))->toBe(1);
+        expect(json_decode(trim($tester->getDisplay()), associative: true, flags: JSON_THROW_ON_ERROR))->toBe([
+            'error' => [
+                'code' => 'input.invalid',
+                'message' => 'The "--app" option does not exist.',
+                'request_id' => null,
+            ],
+        ]);
+        expect($mock->getLastPendingRequest())->toBeNull();
     });
 
     it('rejects malformed scan output without claiming success', function (): void {
         $mock = scan_cli_mock();
         $mock->addResponse(MockResponse::make(['data' => []]), ScanInstanceDependenciesRequest::class);
-        expect(Artisan::call('instance:dependencies:scan', ['--app' => 'fixture.example.test', '--json' => true]))->toBe(1)
+        expect(Artisan::call('instance:dependencies:scan', ['--project' => 'fixture.example.test', '--json' => true]))->toBe(1)
             ->and(json_decode(Artisan::output(), true)['error']['message'])->toContain('invalid dependency inventory');
     });
 });
 
 describe('fleet dependency scan', function (): void {
-    it('rejects --all with --app before HTTP', function (): void {
+    it('rejects --all with --project before HTTP', function (): void {
         $mock = MockClient::global();
-        expect(Artisan::call('instance:dependencies:scan', ['--all' => true, '--app' => 'fixture.example.test', '--json' => true]))->toBe(1)
+        expect(Artisan::call('instance:dependencies:scan', ['--all' => true, '--project' => 'fixture.example.test', '--json' => true]))->toBe(1)
             ->and(json_decode(Artisan::output(), true)['error']['code'])->toBe('dependencies.target_conflict')
             ->and($mock->getLastPendingRequest())->toBeNull();
     });

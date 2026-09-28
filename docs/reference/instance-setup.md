@@ -47,7 +47,7 @@ The Gateway checks each change against these limits and stores nothing when one 
 | `timeout_seconds` | 1 to 540. The default is 240. |
 | `before`, `after` | The name of a step in the same list. Use at most one. |
 
-A list holds at most 32 steps. The timeouts of one list add up to at most 540 seconds, so a whole list fits in one API request.
+A list holds at most 32 steps. The timeouts of one list add up to at most 540 seconds, so a whole list fits in one API request. The Gateway stores a step only when its timeout is inside that limit, and a later read returns the stored timeout.
 
 Authorized reads return the commands. [Activity](/cli/activity) records no input for the step commands and `instance:setup`, so it never holds command text or command output.
 

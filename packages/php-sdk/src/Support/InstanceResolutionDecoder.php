@@ -31,7 +31,7 @@ final class InstanceResolutionDecoder
         #[SensitiveParameter] string $domain,
         #[SensitiveParameter] mixed $headerRequestId,
     ): ResolvedAppInstanceResponse {
-        [$data, $requestId] = self::envelope($body, $headerRequestId, ['domain', 'instance_id', 'app_id', 'node_id', 'environment']);
+        [$data, $requestId] = self::envelope($body, $headerRequestId, ['domain', 'instance_id', 'project_id', 'node_id', 'environment']);
 
         return ResolvedAppInstanceResponse::fromGatewayData($data, $domain, $requestId);
     }
@@ -40,7 +40,7 @@ final class InstanceResolutionDecoder
         #[SensitiveParameter] string $body,
         #[SensitiveParameter] mixed $headerRequestId,
     ): ResolvedDirectoryInstanceResponse {
-        [$data, $requestId] = self::envelope($body, $headerRequestId, ['instance_id', 'app_id', 'node_id', 'environment']);
+        [$data, $requestId] = self::envelope($body, $headerRequestId, ['instance_id', 'project_id', 'node_id', 'environment']);
 
         return ResolvedDirectoryInstanceResponse::fromGatewayData($data, $requestId);
     }

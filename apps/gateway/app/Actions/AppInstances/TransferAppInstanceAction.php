@@ -270,10 +270,6 @@ final readonly class TransferAppInstanceAction
             );
         }
 
-        if ($instance->migration_required) {
-            throw $this->conflict('instance.migration_required', 'The AppInstance requires source migration before transfer.');
-        }
-
         if ($instance->removalMember !== null) {
             throw $this->conflict('instance.removal_conflict', 'The AppInstance is being removed.');
         }
@@ -422,19 +418,6 @@ final readonly class TransferAppInstanceAction
         $transfer = AppInstanceTransfer::query()->findOrFail($transferId);
         $destination = Node::query()->findOrFail($transfer->destination_node_id);
         $path = StoragePath::parse($transfer->destination_path);
-
-        if ($transfer->source_router_node_id === null) {
-            if ($transfer->cutover_at !== null) {
-                throw $this->conflict(
-                    'instance.transfer_source_router_unknown',
-                    'The original Router was not recorded. Recover its identity before retrying cleanup.',
-                );
-            }
-
-            $transfer->update([
-                'source_router_node_id' => $this->sourceRouterId(Route::query()->findOrFail($transfer->source_route_id)),
-            ]);
-        }
 
         if ($transfer->current_step === AppInstanceTransferStep::Reserved) {
             app(VitePortAllocator::class)->assign($instance);

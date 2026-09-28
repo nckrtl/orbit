@@ -127,13 +127,11 @@ final readonly class SetRouteTargetAction
 
                 if ($locked->provenance === RouteProvenance::Generated) {
                     $attributes['generation_basis_node_id'] = $target->node_id;
-                    $attributes['domain'] = $target->migration_required
-                        ? $locked->domain
-                        : $this->state->generatedDomain(
-                            $target->app->slug,
-                            $target->name,
-                            $placement->effectiveTld,
-                        );
+                    $attributes['domain'] = $this->state->generatedDomain(
+                        $target->app->slug,
+                        $target->name,
+                        $placement->effectiveTld,
+                    );
                 }
 
                 $this->associations->assertTargetAssignable($locked, $target);

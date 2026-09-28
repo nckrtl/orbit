@@ -12,7 +12,6 @@ enum InstanceDoctorIssueCode: string implements DoctorIssueCode
     case SourceLayoutMismatch = 'instance.source_layout_mismatch';
     case CheckoutMissing = 'instance.checkout_missing';
     case RepositoryLayoutMismatch = 'instance.repository_layout_mismatch';
-    case MigrationRequired = 'instance.migration_required';
     case OriginMismatch = 'instance.origin_mismatch';
     case SourceIdentityMismatch = 'instance.source_identity_mismatch';
     case ProductionHomeMismatch = 'instance.production_home_mismatch';

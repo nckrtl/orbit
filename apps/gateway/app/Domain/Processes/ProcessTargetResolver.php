@@ -78,7 +78,6 @@ final readonly class ProcessTargetResolver
         if (
             $instance->node->status !== LifecycleStatus::Active
             || $instance->status === AppInstanceState::Removing
-            || $instance->migration_required
         ) {
             throw new ResourceOperationException(
                 errorCode: 'process.target_inactive',
@@ -261,7 +260,6 @@ final readonly class ProcessTargetResolver
         if (
             $instance->status === AppInstanceState::Active
             && $instance->node->status === LifecycleStatus::Active
-            && ! $instance->migration_required
             && $instance->provisioning_step === 'active'
         ) {
             return;

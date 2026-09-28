@@ -29,7 +29,6 @@ describe('App record events', function (): void {
             repositoryUrl: 'git@github.com:acme/site.git',
             defaultBranch: 'main',
             root: 'public',
-            defaults: null,
         );
 
         $result = $action->execute($data);
@@ -52,7 +51,6 @@ describe('App record events', function (): void {
             repositoryUrl: 'git@github.com:acme/site.git',
             defaultBranch: 'main',
             root: 'public',
-            defaults: null,
         );
         $action->execute($data);
 

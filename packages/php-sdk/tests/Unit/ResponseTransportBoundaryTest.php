@@ -123,22 +123,6 @@ it('normalizes unsafe Route and Metrics success error codes before diagnostics',
     'oversized code' => str_repeat('a', times: 129),
 ]);
 
-it('preserves every app default accepted by the Gateway array contract', function (): void {
-    $defaults = [
-        ['name' => 'worker'],
-        'php_version' => '8.5',
-    ];
-    $response = AppResponse::fromGatewayData(
-        ['defaults' => $defaults],
-        '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
-    );
-
-    expect($response->defaults)
-        ->toBe($defaults)
-        ->and($response->toArray()['defaults'])
-        ->toBe($defaults);
-});
-
 it('redacts credentials from nested success payloads and response diagnostics', function (): void {
     $credential = substr(hash('sha256', __FILE__), offset: 0, length: 20);
     $credentialUrl = "https://operator:{$credential}@git.example.test/orbit.git?access_token={$credential}";
@@ -146,10 +130,6 @@ it('redacts credentials from nested success payloads and response diagnostics', 
     $responses = [
         AppResponse::fromGatewayData([
             'repository_url' => $credentialUrl,
-            'defaults' => [
-                ['api_token' => $credential],
-                'repository_url' => $credentialUrl,
-            ],
         ], $requestId),
         ActivityResponse::fromGatewayData([
             'properties' => ['defaults' => ['api_token' => $credential]],

@@ -254,7 +254,7 @@ describe('coordinated instance dependency scans', function (): void {
 
         expect($result->succeeded())->toBeFalse();
         $this->assertDatabaseCount('app_instance_dependency_observations', 0);
-    })->with([['checkout_path', '/home/orbit/other'], ['migration_required', true], ['status', 'reserved']]);
+    })->with([['checkout_path', '/home/orbit/other'], ['status', 'reserved']]);
 
     it('does not resurrect usage when removal deletes the instance during collection', function (): void {
         $instance = dependency_scan_instance();

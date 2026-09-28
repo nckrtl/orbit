@@ -13,6 +13,9 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
+beforeEach(fn () => restore_app_era_instance_leftovers_for_migration_test());
+afterEach(fn () => drop_app_era_instance_leftovers_for_migration_test());
+
 function drop_app_instance_environment_migration(): object
 {
     return require base_path('database/migrations/2026_09_30_100000_drop_environment_from_app_instances.php');

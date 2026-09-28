@@ -73,8 +73,7 @@ describe('app creation', function (): void {
         $second
             ->assertOk()
             ->assertJsonPath('data.id', $first->json('data.id'))
-            ->assertJsonPath('data.name', 'acme')
-            ->assertJsonPath('data.defaults', null);
+            ->assertJsonPath('data.name', 'acme');
 
         expect(OrbitApp::query()->count())
             ->toBe(1)
@@ -124,7 +123,6 @@ describe('app creation', function (): void {
                 'repository_url' => 'git@github.com:acme/site.git',
                 'default_branch' => 'main',
                 'root' => 'public',
-                'defaults' => ['php_version' => '8.5'],
             ])
             ->assertCreated();
         $branches = new class implements RepositoryDefaultBranchResolver
@@ -154,7 +152,6 @@ describe('app creation', function (): void {
                 'repository_url' => $repository,
                 'default_branch' => 'main',
                 'root' => 'web/public',
-                'defaults' => ['php_version' => '8.4'],
             ])
             ->assertConflict()
             ->assertJsonPath('error.code', 'app.repository_identity_conflict');
@@ -170,7 +167,6 @@ describe('app creation', function (): void {
                     'repository_url',
                     'default_branch',
                     'root',
-                    'defaults',
                 ]))
             ->toBe([
                 'id' => $original->json('data.id'),
@@ -179,7 +175,6 @@ describe('app creation', function (): void {
                 'repository_url' => 'git@github.com:acme/site.git',
                 'default_branch' => 'main',
                 'root' => 'public',
-                'defaults' => ['php_version' => '8.5'],
             ])
             ->and($branches->calls)
             ->toBe(0)
@@ -238,147 +233,6 @@ describe('app creation', function (): void {
             ->toBe('app.repository_identity_conflict')
             ->and($response->getContent())
             ->not->toContain($repository, 'repository_identity', 'UNIQUE constraint failed');
-    });
-});
-
-describe('app defaults projection', function (): void {
-    it('redacts create responses for an active Gateway peer without changing stored defaults', function (): void {
-        $secrets = app_api_default_secrets();
-        $defaults = app_api_sensitive_defaults($secrets);
-        $publicDefaults = app_api_public_defaults();
-
-        $response = $this
-            ->withHeader('X-Orbit-Request-Id', (string) Str::uuid())
-            ->postJson('/api/v1/projects', [
-                'name' => 'Acme',
-                'slug' => 'acme',
-                'type' => 'laravel-app',
-                'repository_url' => 'https://github.com/acme/site.git',
-                'default_branch' => 'main',
-                'root' => 'public',
-                'defaults' => $defaults,
-            ])
-            ->assertCreated()
-            ->assertJsonPath('data.defaults', $publicDefaults);
-        $app = OrbitApp::query()->where('slug', 'acme')->sole();
-
-        app_api_expect_defaults_secrets_absent($response->getContent(), $secrets);
-        app_api_expect_defaults_secrets_absent(print_r($response->json('data'), return: true), $secrets);
-        app_api_expect_defaults_secrets_absent(print_r($app->toArray(), return: true), $secrets);
-        expect(array_key_exists('defaults', $app->toArray()))
-            ->toBeFalse()
-            ->and($app->defaults)
-            ->toBe($defaults);
-    });
-
-    it('redacts list and show responses for an active Gateway peer without changing stored defaults', function (): void {
-        $secrets = app_api_default_secrets();
-        $defaults = app_api_sensitive_defaults($secrets);
-        $publicDefaults = app_api_public_defaults();
-        $app = OrbitApp::query()->create([
-            'name' => 'Acme',
-            'slug' => 'acme',
-            'repository_url' => 'https://github.com/acme/site.git',
-            'defaults' => $defaults,
-        ]);
-
-        $listed = $this
-            ->withHeader('X-Orbit-Request-Id', (string) Str::uuid())
-            ->getJson('/api/v1/projects')
-            ->assertOk()
-            ->assertJsonPath('data.0.defaults', $publicDefaults);
-        $shown = $this
-            ->withHeader('X-Orbit-Request-Id', (string) Str::uuid())
-            ->getJson("/api/v1/projects/{$app->id}")
-            ->assertOk()
-            ->assertJsonPath('data.defaults', $publicDefaults);
-
-        app_api_expect_defaults_secrets_absent($listed->getContent(), $secrets);
-        app_api_expect_defaults_secrets_absent($shown->getContent(), $secrets);
-        app_api_expect_defaults_secrets_absent(
-            print_r([$listed->json('data.0'), $shown->json('data')], return: true),
-            $secrets,
-        );
-        expect($app->refresh()->defaults)->toBe($defaults);
-    });
-});
-
-describe('app defaults diagnostics', function (): void {
-    it('redacts submitted defaults before activity persistence and serialization', function (): void {
-        $requestId = (string) Str::uuid();
-        $secrets = app_api_default_secrets();
-        $defaults = app_api_sensitive_defaults($secrets);
-        $publicDefaults = app_api_public_defaults();
-
-        $this
-            ->withHeader('X-Orbit-Request-Id', $requestId)
-            ->postJson('/api/v1/projects', [
-                'slug' => 'acme',
-                'type' => 'laravel-app',
-                'repository_url' => 'https://github.com/acme/site.git',
-                'default_branch' => 'main',
-                'root' => 'public',
-                'defaults' => $defaults,
-            ])
-            ->assertCreated();
-        $activity = Activity::query()->where('request_id', $requestId)->sole();
-        $activityResponse = $this
-            ->withHeader('X-Orbit-Request-Id', (string) Str::uuid())
-            ->getJson("/api/v1/activities/{$activity->id}")
-            ->assertOk()
-            ->assertJsonPath('data.properties.input.defaults', $publicDefaults);
-
-        app_api_expect_defaults_secrets_absent($activityResponse->getContent(), $secrets);
-        app_api_expect_defaults_secrets_absent(
-            print_r($activity->properties?->toArray(), return: true),
-            $secrets,
-        );
-    });
-
-    it('keeps submitted default secrets out of repository conflict errors and diagnostics', function (): void {
-        $requestId = (string) Str::uuid();
-        $errorSecret = (string) Str::uuid();
-        $app = OrbitApp::query()->create([
-            'name' => 'Acme',
-            'slug' => 'acme',
-            'repository_url' => 'https://github.com/acme/site.git',
-            'default_branch' => 'main',
-            'root' => 'public',
-            'defaults' => ['php_version' => '8.5'],
-        ]);
-
-        $response = $this
-            ->withHeader('X-Orbit-Request-Id', $requestId)
-            ->postJson('/api/v1/projects', [
-                'slug' => 'acme',
-                'type' => 'laravel-app',
-                'repository_url' => 'https://github.com/acme/other.git',
-                'default_branch' => 'main',
-                'root' => 'public',
-                'defaults' => [
-                    'nested' => ['api_token' => $errorSecret],
-                    'diagnostic' => "request token={$errorSecret} branch=main",
-                ],
-            ])
-            ->assertConflict()
-            ->assertJsonPath('error.code', 'app.identity_conflict');
-        $activity = Activity::query()->where('request_id', $requestId)->sole();
-        $properties = $activity->properties?->toArray() ?? [];
-        $activityResponse = $this
-            ->withHeader('X-Orbit-Request-Id', (string) Str::uuid())
-            ->getJson("/api/v1/activities/{$activity->id}")
-            ->assertOk()
-            ->assertJsonPath('data.properties.input.defaults.nested.api_token', '[REDACTED]')
-            ->assertJsonPath(
-                'data.properties.input.defaults.diagnostic',
-                'request token=[REDACTED] branch=main',
-            );
-        $debugOutput = print_r($properties, return: true);
-
-        expect($response->getContent())
-            ->not->toContain($errorSecret)->and($activityResponse->getContent())
-            ->not->toContain($errorSecret)->and($debugOutput)
-            ->not->toContain($errorSecret)->and($app->refresh()->defaults)->toBe(['php_version' => '8.5']);
     });
 });
 
@@ -843,67 +697,3 @@ describe('app list access', function (): void {
             ->assertJsonPath('data.*.id', [$mixedVisible->id]);
     });
 });
-
-/** @return array{database: string, query: string, command: string, environment: string} */
-function app_api_default_secrets(): array
-{
-    return [
-        'database' => (string) Str::uuid(),
-        'query' => (string) Str::uuid(),
-        'command' => (string) Str::uuid(),
-        'environment' => (string) Str::uuid(),
-    ];
-}
-
-/**
- * @param  array{database: string, query: string, command: string, environment: string}  $secrets
- * @return array<string, mixed>
- */
-function app_api_sensitive_defaults(array $secrets): array
-{
-    return [
-        'php_version' => '8.5',
-        'config' => [
-            'app_name' => 'Acme',
-            'database' => [
-                'host' => 'database.internal',
-                'password' => $secrets['database'],
-            ],
-            'webhook' => "https://example.test/deploy?access_token={$secrets['query']}&branch=main",
-            'command' => "deploy --api-key={$secrets['command']} --branch=main",
-        ],
-        'environment' => [
-            'APP_ENV' => 'production',
-            'DATABASE_URL' => "postgres://orbit:{$secrets['environment']}@database.internal/acme",
-        ],
-    ];
-}
-
-/** @return array<string, mixed> */
-function app_api_public_defaults(): array
-{
-    $redacted = '[REDACTED]';
-
-    return [
-        'php_version' => '8.5',
-        'config' => [
-            'app_name' => 'Acme',
-            'database' => [
-                'host' => 'database.internal',
-                'password' => $redacted,
-            ],
-            'webhook' => 'https://example.test/deploy?access_token=[REDACTED]&branch=main',
-            'command' => 'deploy --api-key=[REDACTED] --branch=main',
-        ],
-        'environment' => [
-            'APP_ENV' => $redacted,
-            'DATABASE_URL' => $redacted,
-        ],
-    ];
-}
-
-/** @param array<string, string> $secrets */
-function app_api_expect_defaults_secrets_absent(string $output, array $secrets): void
-{
-    expect($output)->not->toContain(...array_values($secrets));
-}

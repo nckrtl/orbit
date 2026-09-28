@@ -15,16 +15,16 @@ use SensitiveParameter;
 
 final readonly class DependencyInstanceSelector
 {
-    public function select(GatewayConnector $connector, #[SensitiveParameter] ?string $app = null, bool $all = false): ResolvedAppInstanceResponse|ResolvedDirectoryInstanceResponse|null
+    public function select(GatewayConnector $connector, #[SensitiveParameter] ?string $domain = null, bool $all = false): ResolvedAppInstanceResponse|ResolvedDirectoryInstanceResponse|null
     {
-        if ($all && $app !== null) {
-            throw new GatewayApiException('App and all-instance selectors cannot be combined.', errorCode: 'dependencies.target_conflict');
+        if ($all && $domain !== null) {
+            throw new GatewayApiException('Project and all-instance selectors cannot be combined.', errorCode: 'dependencies.target_conflict');
         }
         if ($all) {
             return null;
         }
-        if ($app !== null) {
-            return $this->resolveDomain($connector, $app);
+        if ($domain !== null) {
+            return $this->resolveDomain($connector, $domain);
         }
 
         return $this->resolveDirectory($connector);

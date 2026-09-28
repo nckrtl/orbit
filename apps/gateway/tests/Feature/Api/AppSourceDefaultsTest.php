@@ -69,7 +69,6 @@ it('stores explicit source defaults and returns them through every App response'
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => 'stable',
         'root' => 'web/public',
-        'defaults' => ['php_version' => '8.5'],
     ]);
 
     $created
@@ -111,7 +110,6 @@ it('resolves an omitted default branch once and returns the existing App on an e
         'type' => 'laravel-app',
         'repository_url' => 'https://github.com/acme/site.git',
         'root' => 'public',
-        'defaults' => ['php_version' => '8.5'],
     ];
 
     $created = $this
@@ -141,7 +139,6 @@ it('rejects conflicting creation identity without mutation or remote access', fu
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => 'main',
         'root' => 'public',
-        'defaults' => ['php_version' => '8.5'],
     ];
 
     $this->postJson('/api/v1/projects', $payload)->assertCreated();
@@ -159,14 +156,12 @@ it('rejects conflicting creation identity without mutation or remote access', fu
             'repository_url',
             'default_branch',
             'root',
-            'defaults',
         ]))
         ->toBe([
             'name' => 'Acme',
             'repository_url' => 'https://github.com/acme/site.git',
             'default_branch' => 'main',
             'root' => 'public',
-            'defaults' => ['php_version' => '8.5'],
         ])
         ->and($this->branches->verifiedBranches)
         ->toBeEmpty();
@@ -178,7 +173,6 @@ it('rejects conflicting creation identity without mutation or remote access', fu
     'default branch' => [['default_branch' => 'stable']],
     'root' => [['root' => 'web']],
     'name' => [['name' => 'Renamed']],
-    'defaults' => [['defaults' => ['php_version' => '8.4']]],
 ]);
 
 it('returns null source defaults truthfully for a legacy App', function (): void {

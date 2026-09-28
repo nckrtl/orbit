@@ -198,7 +198,6 @@ describe('bounded Composer dependency updates', function (): void {
     })->with([
         [['checkout_path' => 'relative']],
         [['source_layout' => 'nested']],
-        [['migration_required' => true]],
     ]);
 
     it('fails incomplete Composer sources without mutation', function (): void {

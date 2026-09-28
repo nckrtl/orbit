@@ -23,7 +23,6 @@ use SensitiveParameter;
  * @property string $repository_identity
  * @property string|null $default_branch
  * @property string|null $root
- * @property array<string, mixed>|null $defaults
  * @property string|null $task_check
  * @property-read Collection<int, TaskGroup> $taskGroups
  */
@@ -37,11 +36,11 @@ final class App extends Model
 
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'default_branch', 'root', 'defaults', 'task_check'];
+    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'default_branch', 'root', 'task_check'];
 
     /** @var list<string> */
     #[\Override]
-    protected $hidden = ['defaults', 'repository_identity'];
+    protected $hidden = ['repository_identity'];
 
     protected static function booted(): void
     {
@@ -118,7 +117,6 @@ final class App extends Model
     protected function casts(): array
     {
         return [
-            'defaults' => 'array',
             'type' => ProjectType::class,
         ];
     }

@@ -48,14 +48,13 @@ describe('app requests', function (): void {
             ->toBe(orbit_request_id());
     });
 
-    it('serializes explicit defaults exactly as supplied', function (): void {
+    it('serializes explicit source defaults exactly as supplied', function (): void {
         $request = new CreateAppRequest(
             slug: 'orbit-docs',
             repositoryUrl: 'git@github.com:nckrtl/orbit-docs.git',
             root: 'web/public',
             name: 'Orbit Docs',
             defaultBranch: 'stable',
-            defaults: ['php_version' => '8.5'],
         );
 
         expect($request->body()->all())->toBe([
@@ -65,7 +64,6 @@ describe('app requests', function (): void {
             'repository_url' => 'git@github.com:nckrtl/orbit-docs.git',
             'default_branch' => 'stable',
             'root' => 'web/public',
-            'defaults' => ['php_version' => '8.5'],
         ]);
     });
 
@@ -216,7 +214,6 @@ describe('app requests', function (): void {
             'repository_url' => 'https://github.com/acme/kit.git',
             'default_branch' => 'main',
             'root' => '.',
-            'defaults' => null,
             'task_check' => 'composer check',
         ], 'request-id');
 
@@ -250,7 +247,6 @@ function app_gateway_data(): array
         'default_branch' => 'main',
         'root' => 'public',
         'task_check' => 'composer check',
-        'defaults' => null,
     ];
 }
 

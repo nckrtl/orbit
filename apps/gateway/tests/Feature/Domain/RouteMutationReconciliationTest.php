@@ -682,12 +682,11 @@ it('reconciles a retained generated Route and Node TLD before remote provisionin
         ]);
 });
 
-it('preserves a legacy default domain and source during Route-only reconciliation', function (): void {
+it('preserves Instance source while regenerating a generated domain during Route-only reconciliation', function (): void {
     $this->target->update([
         'name' => 'main',
         'checkout_path' => '/srv/acme/main',
         'branch' => 'main',
-        'migration_required' => true,
     ]);
     $route = reconciliation_route(
         $this->orbitApp,
@@ -720,21 +719,20 @@ it('preserves a legacy default domain and source during Route-only reconciliatio
             'root',
             'branch',
             'branch_override',
-            'migration_required',
             'starting_commit',
         ]);
-    $routeTargetBefore = $route->targets()->firstOrFail()->getAttributes();
 
     app(UpdateClusterAction::class)->execute($cluster, reconciliation_update(state: ClusterState::Active));
+    $current = reconciliation_route_by_domain('main.acme.cluster.test');
 
     expect($this->target->fresh()->only(array_keys($sourceBefore)))
         ->toBe($sourceBefore)
-        ->and($route->refresh()->domain)
-        ->toBe('acme.dev.test')
-        ->and($route->cluster_id)
+        ->and($current->cluster_id)
         ->toBe($cluster->id)
-        ->and($route->targets()->firstOrFail()->getAttributes())
-        ->toBe($routeTargetBefore);
+        ->and($current->targets()->firstOrFail()->app_instance_id)
+        ->toBe($this->target->id)
+        ->and(Route::query()->whereKey($route->id)->exists())
+        ->toBeFalse();
 });
 
 it('preserves Node and Route state when the last app-dev TLD has no active fallback', function (): void {

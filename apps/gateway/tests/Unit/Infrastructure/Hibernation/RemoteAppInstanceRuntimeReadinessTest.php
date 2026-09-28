@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Domain\Hibernation\HibernationException;
 use App\Infrastructure\Hibernation\RemoteAppInstanceRuntimeReadiness;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -14,7 +13,7 @@ use App\Models\Process;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
-it('waits for observed running status and the Vite port', function (): void {
+it('waits for observed running status without probing a fallback Vite port', function (): void {
     $runtime = new ProcessesApiFakeRuntimeManager;
     $runtime->statusOverride = 'running';
     $ssh = new AppDevFakeSshExecutor([new CommandResult(0, '', '', 1, false)]);
@@ -30,11 +29,7 @@ it('waits for observed running status and the Vite port', function (): void {
 
     $readiness->waitUntilReady($instance, [$process]);
 
-    expect($ssh->commands)->toHaveCount(1)
-        ->and($ssh->commands[0]->arguments[0])
-        ->toBe('bash')
-        ->and($ssh->commands[0]->arguments[2])
-        ->toContain('127.0.0.1/5173');
+    expect($ssh->commands)->toBe([]);
 });
 
 it('does not probe the Vite port for a queue Process', function (): void {
@@ -54,24 +49,6 @@ it('does not probe the Vite port for a queue Process', function (): void {
     $readiness->waitUntilReady($instance, [$process]);
 
     expect($ssh->commands)->toBe([]);
-});
-
-it('fails when the development server never accepts connections', function (): void {
-    $runtime = new ProcessesApiFakeRuntimeManager;
-    $runtime->statusOverride = 'running';
-    $ssh = new AppDevFakeSshExecutor([new CommandResult(1, '', 'timeout', 1, false)]);
-    $readiness = new RemoteAppInstanceRuntimeReadiness(
-        runtime: $runtime,
-        ssh: $ssh,
-        keys: new HibernationReadinessKeyProvider,
-        knownHosts: new HibernationReadinessKnownHostsStore,
-        timeoutSeconds: 5,
-    );
-    $instance = readiness_instance();
-    $process = readiness_process($instance, 'vite');
-
-    expect(fn () => $readiness->waitUntilReady($instance, [$process]))
-        ->toThrow(HibernationException::class);
 });
 
 function readiness_instance(): AppInstance

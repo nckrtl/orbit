@@ -61,9 +61,9 @@ The Gateway refuses these requests before it changes anything:
 | `instance.node_inactive` | The Node is not an active Linux Node. |
 | `instance.node_not_app_dev` | The Node has no active `app-dev` role. |
 | `instance.node_excluded` | The Project [excludes](/reference/development-node-exclusions) the Node. |
-| `instance.path_taken` | Another managed Instance uses the path. |
-| `instance.migration_conflict` | The name is `default`, and its path is used by a managed Instance or holds an unmanaged directory. |
-| `instance.candidate_required` | The Node has the `app-prod` role. Use [`instance:clone`](/reference/appinstance-cloning). |
+| `instance.path_taken` | The name is not `default`, and another managed Instance uses the path. |
+| `instance.default_path_occupied` | The name is `default`, and its path is used by a managed Instance or holds an unmanaged directory. |
+| `instance.candidate_required` | The Node has the active `app-prod` role. A repeat for an existing production Instance is refused the same way. Use [`instance:clone`](/reference/appinstance-cloning). |
 
 ## Register an existing checkout
 
@@ -90,7 +90,7 @@ For a source that qualifies as `default`, a `--name` other than `default` return
 
 Orbit records the source layout as `checkout` or `worktree`. It moves the complete source to `<apps-root>/<project-slug>/<name>`. `HEAD`, the branch or detached state, the index, dirty and untracked files, and all refs stay as they are. A source that is already at that path stays there.
 
-By default, registration adopts only the requested source. When Orbit moves a checkout that has linked worktrees, it repairs their Git links so they keep working. `--include-worktrees` adopts the checkout and every linked worktree in one step. The Gateway checks the complete set before it moves anything. If one check fails, nothing moves. A move to another filesystem copies and verifies the source before Orbit deletes the original. An identical retry resumes an interrupted move.
+By default, registration adopts only the requested source. When Orbit moves a checkout that has linked worktrees, it repairs their Git links so they keep working. `--include-worktrees` adopts the checkout and every linked worktree in one step. The Gateway checks the complete set before it moves anything. If one check fails, nothing moves. A move to another filesystem copies and verifies the source before Orbit deletes the original. An identical retry resumes an interrupted move. The Gateway finishes that move during registration. It does not stop and ask you to change the source yourself.
 
 Interactive registration asks for default-No consent that names the source. JSON and noninteractive calls need `--yes`. `--setup` runs the Project setup steps after adoption. Plain registration runs no setup.
 
@@ -138,7 +138,7 @@ A symlinked file, two `APP_URL` lines, or an unclear cached value stops provisio
 
 ## Production Instances
 
-`instance:create` refuses an `app-prod` Node with `instance.candidate_required`. A production Instance always starts as a [clone](/reference/appinstance-cloning) of a development or production Instance. Its first [deployment](/reference/deployments) creates its first release.
+`instance:create` refuses an `app-prod` Node with `instance.candidate_required`, including a repeat for a production Instance that already exists. A production Instance always starts as a [clone](/reference/appinstance-cloning) of a development or production Instance. Its first [deployment](/reference/deployments) creates its first release.
 
 A Project can have one production Instance per `app-prod` Node. Each production Instance has its own Unix user, home, and [PHP-FPM service](/reference/php-runtime#production-runtime).
 

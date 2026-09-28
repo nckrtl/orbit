@@ -803,7 +803,7 @@ it('creates an active checkout AppInstance on a standalone Node with inherited r
         ->assertJsonPath('data.effective_root', 'public')
         ->assertJsonPath('data.selected_branch', 'dev')
         ->assertJsonPath('data.branch_override', null)
-        ->assertJsonPath('data.migration_required', false)
+        ->assertJsonMissingPath('data.migration_required')
         ->assertJsonMissingPath('data.branch')
         ->assertJsonPath('data.starting_commit', str_repeat('a', 40))
         ->assertJsonPath('data.status', 'active');
@@ -833,8 +833,6 @@ it('creates an active checkout AppInstance on a standalone Node with inherited r
         ->toBe('checkout')
         ->and(Activity::query()->where('request_id', $requestId)->sole()->properties?->get('branch_override'))
         ->toBeNull()
-        ->and(Activity::query()->where('request_id', $requestId)->sole()->properties?->get('migration_required'))
-        ->toBeFalse()
         ->and(Schema::hasColumn('app_instances', 'source_layout'))
         ->toBeTrue()
         ->and(Schema::hasColumn('app_instances', 'cluster_id'))
@@ -957,7 +955,7 @@ it('refuses new production placement with a candidate-required error before muta
         ->toBe([]);
 });
 
-it('returns a completed historical production AppInstance without fetching or overwriting it', function (): void {
+it('refuses a repeat for an existing production Instance with candidate required', function (): void {
     $node = create_app_prod_node('app-prod');
     $payload = [
         'project_id' => $this->orbitApp->id,
@@ -978,11 +976,8 @@ it('returns a completed historical production AppInstance without fetching or ov
 
     $this
         ->postJson('/api/v1/instances', $payload)
-        ->assertOk()
-        ->assertJsonPath('data.id', $instance->id)
-        ->assertJsonPath('data.selected_branch', 'release')
-        ->assertJsonPath('data.branch_override', 'release')
-        ->assertJsonPath('data.domain', 'www.example.test');
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.candidate_required');
 
     expect($instance->refresh()->getAttributes())
         ->toBe($before)
@@ -996,23 +991,6 @@ it('returns a completed historical production AppInstance without fetching or ov
         ->toBe(1)
         ->and(Route::query()->count())
         ->toBe(1);
-
-    $this
-        ->postJson('/api/v1/instances', [...$payload, 'branch' => 'main'])
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'instance.placement_conflict');
-
-    $this
-        ->postJson('/api/v1/instances', [...$payload, 'domain' => 'changed.example.test'])
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'route.retry_conflict');
-
-    expect($instance->refresh()->getAttributes())
-        ->toBe($before)
-        ->and($this->productionSource->calls)
-        ->toBe([])
-        ->and($this->productionProjection->calls)
-        ->toBe([]);
 });
 
 it('refuses new production placement when the standalone Node has no TLD', function (): void {
@@ -2022,58 +2000,7 @@ it('rejects immutable root and source-layout conflicts on retry', function (stri
     expect($this->source->calls)->toBeEmpty();
 })->with(['root', 'source layout']);
 
-it('returns migration required before retry or removal mutates a legacy default', function (
-    string $operation,
-): void {
-    $payload = [
-        'project_id' => $this->orbitApp->id,
-        'node_id' => $this->node->id,
-        'name' => 'dev',
-    ];
-    $created = $this->postJson('/api/v1/instances', $payload)->assertCreated();
-    $instance = AppInstance::query()->sole();
-    $instance->update(['migration_required' => true]);
-    $before = $instance->refresh()->getAttributes();
-    $this->source->calls = [];
-
-    $response = $operation === 'retry'
-        ? $this->postJson('/api/v1/instances', $payload)
-        : $this->deleteJson("/api/v1/instances/{$created->json('data.id')}");
-
-    $response
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'instance.migration_required');
-    expect(AppInstance::query()->sole()->getAttributes())
-        ->toBe($before)
-        ->and($this->source->calls)
-        ->toBe([]);
-})->with(['retry', 'remove']);
-
-it('returns migration conflict for an occupied reserved default identity before mutation', function (): void {
-    $this->source->resolution = new DevelopmentSourceResolution('main', str_repeat('b', 40));
-    $payload = [
-        'project_id' => $this->orbitApp->id,
-        'node_id' => $this->node->id,
-        'name' => 'default',
-    ];
-    $this->postJson('/api/v1/instances', $payload)->assertCreated();
-    AppInstance::query()->sole()->update(['checkout_path' => '/srv/orbit/apps/acme/legacy-default']);
-    $before = AppInstance::query()->sole()->getAttributes();
-    $this->source->calls = [];
-
-    $this
-        ->postJson('/api/v1/instances', $payload)
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'instance.migration_conflict')
-        ->assertJsonPath('error.message', 'The reserved default AppInstance identity is occupied by another source.');
-
-    expect(AppInstance::query()->sole()->getAttributes())
-        ->toBe($before)
-        ->and($this->source->calls)
-        ->toBe([]);
-});
-
-it('returns migration conflict for a managed default destination overlap before mutation', function (): void {
+it('refuses a default path occupied by another managed Instance before mutation', function (): void {
     AppInstance::query()->create([
         'app_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
@@ -2090,7 +2017,7 @@ it('returns migration conflict for a managed default destination overlap before 
             'name' => 'default',
         ])
         ->assertConflict()
-        ->assertJsonPath('error.code', 'instance.migration_conflict');
+        ->assertJsonPath('error.code', 'instance.default_path_occupied');
 
     expect(AppInstance::query()->count())
         ->toBe(1)
@@ -2100,7 +2027,7 @@ it('returns migration conflict for a managed default destination overlap before 
         ->toBe([]);
 });
 
-it('returns migration conflict for an unmanaged occupied default destination before mutation', function (): void {
+it('refuses a default path occupied by an unmanaged directory before mutation', function (): void {
     $this->destination->occupied = true;
 
     $this
@@ -2110,7 +2037,7 @@ it('returns migration conflict for an unmanaged occupied default destination bef
             'name' => 'default',
         ])
         ->assertConflict()
-        ->assertJsonPath('error.code', 'instance.migration_conflict')
+        ->assertJsonPath('error.code', 'instance.default_path_occupied')
         ->assertJsonPath('error.message', 'AppInstance destination is occupied by unmanaged data.');
 
     expect(AppInstance::query()->count())
