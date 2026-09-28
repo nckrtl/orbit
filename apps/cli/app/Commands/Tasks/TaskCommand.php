@@ -393,7 +393,7 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
      * Reads a JSON file with a list of deliverables. Returns null when the option is absent and false after the
      * refusal. The Gateway validates each deliverable's fields.
      *
-     * @return list<array<string, string|bool>>|false|null
+     * @return list<array<string, string|bool|list<string>>>|false|null
      */
     protected function deliverablesFile(string $option = 'deliverables'): array|false|null
     {
@@ -436,9 +436,10 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
 
     /**
      * A list of at most DELIVERABLES_MAX objects with string fields, or null for any other value.
-     * A test deliverable may set fails_on_base to a JSON boolean. Any other type, or any other value, is refused.
+     * A command deliverable may set fails_on_base to a JSON boolean and paths to a list of strings.
+     * Any other type, or any other value, is refused.
      *
-     * @return list<array<string, string|bool>>|null
+     * @return list<array<string, string|bool|list<string>>>|null
      */
     protected static function deliverables(mixed $entries): ?array
     {
@@ -474,6 +475,21 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
                     continue;
                 }
 
+                if ($field === 'paths') {
+                    $paths = [];
+                    foreach (is_array($value) && array_is_list($value) ? $value : [0] as $candidate) {
+                        if (! is_string($candidate)) {
+                            self::$deliverablesRefusal = 'The paths value for '.self::deliverableWho(self::deliverableIdentity($entry)).' must be a list of strings.';
+
+                            return null;
+                        }
+                        $paths[] = $candidate;
+                    }
+                    $fields[$field] = $paths;
+
+                    continue;
+                }
+
                 if (! is_string($value)) {
                     return null;
                 }
@@ -481,10 +497,12 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
                 $fields[$field] = $value;
             }
 
-            if (array_key_exists('fails_on_base', $fields) && ($fields['type'] ?? '') !== 'test') {
-                self::$deliverablesRefusal = 'The fails_on_base field is only allowed on a test deliverable ('.self::deliverableWho(self::deliverableIdentity($entry)).').';
+            foreach (['fails_on_base', 'paths'] as $commandOnly) {
+                if (array_key_exists($commandOnly, $fields) && ($fields['type'] ?? '') !== 'command') {
+                    self::$deliverablesRefusal = 'The '.$commandOnly.' field is only allowed on a command deliverable ('.self::deliverableWho(self::deliverableIdentity($entry)).').';
 
-                return null;
+                    return null;
+                }
             }
 
             $deliverables[] = $fields;
@@ -521,7 +539,7 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         return is_string($id) && $id !== '' ? "deliverable {$id}" : 'this deliverable';
     }
 
-    /** @param array<string, string|bool> $deliverable */
+    /** @param array<string, string|bool|list<string>> $deliverable */
     private static function requirement(array $deliverable): string
     {
         $field = static fn (string $key): string => is_string($deliverable[$key] ?? null) ? $deliverable[$key] : '';
