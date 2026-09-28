@@ -591,7 +591,8 @@
               "decisions/0173-record-and-label-jev-decisions",
               "decisions/0174-match-the-task-gate-to-ci-and-repeated-findings",
               "decisions/0175-docs-impact-check-in-orbit-repo",
-              "decisions/0178-run-project-agnostic-tasks-without-a-planner"
+              "decisions/0178-run-project-agnostic-tasks-without-a-planner",
+              "decisions/0180-absorb-built-decisions-into-the-docs"
             ]
           }
         ]
