@@ -32,7 +32,7 @@ The recorded file holds the request class, the route, the status, and the body. 
 
 ## Validate a fixture
 
-`bin/api-fixtures --check` validates every fixture body against the response schema for its route and status in `docs/openapi.json`. The `apps/docs` checks run it, so a fixture whose body differs from the API reference fails continuous integration. Regenerate the reference with `composer docs-openapi` when a response shape changes on purpose.
+`bin/api-fixtures --check` validates every fixture body against the response schema for its route and status in `docs/openapi.json`. The `apps/docs` checks run it, so a fixture whose body differs from the API reference fails continuous integration. Regenerate the reference with `composer docs-openapi` when a response shape changes on purpose. The inputs that command reads are on [API reference generation](/reference/api-reference).
 
 ## Replay a fixture in the CLI
 
