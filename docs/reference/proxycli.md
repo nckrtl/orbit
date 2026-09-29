@@ -59,6 +59,8 @@ Setup can run again. It keeps the read and control tokens, writes the collector 
 
 ## What setup deploys
 
+Setup places these pieces on the collector Node and in Gateway settings.
+
 | Piece | Where | Detail |
 | --- | --- | --- |
 | Process `cli-proxy-api-collector` | The collector Node | systemd, listens on `127.0.0.1:8787` |
@@ -131,6 +133,8 @@ After setup, confirm that exactly one collector polls:
 
 ## Teardown
 
+Tear down the collector when collection should stop for the whole fleet.
+
 ```bash
 orbit proxycli:teardown
 ```
@@ -138,6 +142,8 @@ orbit proxycli:teardown
 Teardown removes the collector Process and script, withdraws the Caddy site and its certificate, and publishes private DNS without the collector name. It deletes the stored management key and the read and control tokens. A later setup needs the key file again and gives CodexBar a new read token. Valkey data and the Redis connection stay. Teardown does not change the extension switch.
 
 ## Errors
+
+These codes come from the Gateway on setup, teardown, reads, and toggles.
 
 | Code | Status | When |
 | --- | --- | --- |
