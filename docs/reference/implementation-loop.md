@@ -3,7 +3,8 @@ title: "Feature delivery"
 description: "How a change reaches main: review evidence, merge, CI, local checks, worktrees, and the shared main caches."
 covers:
   - apps/docs/app/Documentation/AdrLifecycle.php
-  - bin/{review-check,test,tia-cache,worktree-cache,worktree-create,worktree-remove}
+  - bin/{review-check,test,tia-cache,worktree-cache,worktree-create,worktree-remove,check-classification-fakes}
+  - tools/phpstan/**
   - .github/workflows/ci.yml
   - apps/gateway/tests/Support/TestDatabase{Environment,Guard}.php
 ---
@@ -96,10 +97,30 @@ Root `composer check` runs `bin/review-check`. It checks the working tree as it 
 1. It runs `bin/docs-impact --gate` against the merge base with `origin/main`. The fallback is the merge base with local `main`. Without a merge base, this check fails.
 2. It seeds absent quality and test caches with `bin/worktree-cache` and `bin/tia-cache seed`.
 3. It checks each of the five Composer projects in turn, as the next paragraph describes.
-4. When the candidate changes `apps/web`, `docs/openapi.json`, or `apps/pi-server`, it adds the matching checks.
+4. When the candidate changes `apps/web`, `docs/openapi.json`, or `apps/pi-server`, it adds the matching checks, as [Web and Pi server checks](#web-and-pi-server-checks) describes.
 5. Last, when the candidate changes test sources, it runs `bin/check-classification-fakes` on them.
 
 For each Composer project, the gate runs `composer validate --strict`, `composer check`, and `composer test:affected`. Each affected-test run records into its own copy of the project graph. When the candidate changes the project, the gate then runs the project's architecture tests. When `test:affected` passed, the gate looks for changed test files that TIA did not select. It lists the tests of each such file and runs the file without TIA. A file without tests fails.
+
+#### Web and Pi server checks
+
+A change under `apps/web` runs `bun install --frozen-lockfile` in `apps/web` and `packages/agent-annotation`, then `bun run check`, `bun run build`, and a generated-types check in `apps/web`. The generated-types check writes `openapi-typescript` output for `docs/openapi.json` to a temporary file and compares it with `src/api/schema.d.ts`. It does not change the working tree. A change to `docs/openapi.json` alone runs the install and the generated-types check. A change under `apps/pi-server` runs `bun install --frozen-lockfile`, `bun run check`, `bun run test`, and `bun run build` there. The Rust agent and agent annotation checks run only in CI.
+
+A command whose tool is missing fails with `<tool>: required tool not found`. The gate never skips a selected check.
+
+#### Finding checks
+
+Three checks reject review findings that code can detect. `composer check` runs the first two in every PHP project through the shared rules in `tools/phpstan/`.
+
+| Check | Rejects |
+| --- | --- |
+| `phpstan-disallowed-calls` | A call to `strtotime()`. Use Carbon parsing. |
+| `orbit.inlineVarOverride` | An inline `@var`, `@phpstan-var`, or `@psalm-var` inside a method body. Fix the type at its source. |
+| `bin/check-classification-fakes` | A changed test that calls `Classification::fake()` without chaining `preventStrayClassifications()`. |
+
+Each failure names the file and line.
+
+#### Receipt
 
 The gate writes a receipt, `result.json`, and one log per command in a new `review-*` directory under `orbit-checks/<HEAD>/` in the Git common directory. The receipt passes only when every command passed and the commit and the working tree did not change during the run. It records a warning when `test:affected` selected no tests in a project that the candidate changes.
 
@@ -233,6 +254,18 @@ The maintainer decides whether a feature belongs in Orbit, so an agent's review 
 ### Every project passes the gate at each handoff
 
 The gate runs all five Composer projects whatever the candidate changes. Focused tests of the changed project alone are a rejected alternative, because the other projects would then have no quality check before review. The gate runs at each handoff, before review. Running it only in the independent review is also rejected, because each deterministic failure would then cost a reviewer turn and a correction round before it reached the implementer.
+
+### Web and Pi server checks join the gate, Rust stays in CI
+
+A change to the web app or the Pi server could pass the gate and then fail a required CI job. So the gate runs the same commands as those CI jobs when their paths change. Running every CI job for every Task is a rejected alternative, because path selection keeps unrelated work fast. Rust cross-compilation is too slow for each handoff, so the Rust agent stays a CI check.
+
+### A missing tool fails the gate
+
+A green gate must mean that every selected check ran. Skipping a check when its tool is absent would pass a workspace that happens to lack `bun` or `git`.
+
+### Repeated findings become checks
+
+Reviewers kept reporting `strtotime()`, inline type overrides, and unguarded classification fakes. Each one is deterministic, so a check rejects it before review. Asking reviewers to remember them is a rejected alternative, because it spends a review round on a finding that code can detect.
 
 ### Main caches come only from clean main
 

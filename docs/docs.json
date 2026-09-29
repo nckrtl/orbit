@@ -561,7 +561,6 @@
               "decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension",
               "decisions/0109-publish-the-proxycli-collector-on-a-subdomain",
               "decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit",
-              "decisions/0174-match-the-task-gate-to-ci-and-repeated-findings",
               "decisions/0175-docs-impact-check-in-orbit-repo",
               "decisions/0178-run-project-agnostic-tasks-without-a-planner"
             ]
@@ -1305,6 +1304,10 @@
     {
       "source": "/decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop",
       "destination": "/cli/extension#why-it-works-this-way"
+    },
+    {
+      "source": "/decisions/0174-match-the-task-gate-to-ci-and-repeated-findings",
+      "destination": "/reference/implementation-loop#the-candidate-gate"
     }
   ]
 }
