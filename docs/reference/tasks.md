@@ -429,7 +429,13 @@ The scheduler identifies the process by its id and its start time, so a reused p
 
 ### Baseline check
 
-Before the first implementer of a group starts, the check runs on the fresh workspace, with `kind` `baseline`. It first runs the Project's [setup steps](/reference/instance-setup) with their own timeouts. Then it prepares dependencies:
+Before the first implementer of a group starts, the check runs on the fresh workspace, with `kind` `baseline`.
+
+A subtask runs at most one baseline check at a time. Moving a group to Todo and the scheduler tick can both reach the start. Only the first one starts the check. The other finds the running check and waits for its result. The verdict comes from that check, never from a duplicate.
+
+The start records that claim before the process exists. The tick waits while the claim has no process. If the claim is still unstarted after the SSH command timeout of 900 seconds, the start was interrupted. Orbit asks for assistance and does not start another check, because one may still be running in the workspace. Cancelling during that start stops the process once the start returns.
+
+The check first runs the Project's [setup steps](/reference/instance-setup) with their own timeouts. Then it prepares dependencies:
 
 - When the task check runs `composer` or names `vendor/`, it runs `composer install --no-interaction --prefer-dist` where a tracked `composer.json` has no `vendor/autoload.php`.
 - When the task check names Bun, npm, pnpm, Yarn, Node, Vite+, or `node_modules`, it runs `vp install --frozen-lockfile` for each tracked `package.json` with a lockfile and without `node_modules`.
@@ -438,7 +444,7 @@ The Composer step skips a nested `composer.json` without a lockfile. After a roo
 
 The Orbit repository's own check seeds its caches from a registered main cache store, as [Feature delivery](/reference/implementation-loop#seed-a-checkout) describes.
 
-A failed setup step, install, or check asks for assistance at once, without a reminder. The reason names the step and the exit code, and the Task's `check` shows the output. When the output shows missing `vendor/` or `node_modules` files, the reason says that Project dependencies appear to be missing. A cancelled baseline, a second `changed` run, and a second `lost` run also ask for assistance. Fix the cause, then cancel and create the group again.
+A failed setup step, install, or check asks for assistance at once, without a reminder. The reason names the step and the exit code, and the Task's `check` shows the output. When the output shows missing `vendor/` or `node_modules` files, the reason says that Project dependencies appear to be missing. A cancelled baseline, a second `changed` run, a second `lost` run, and an interrupted start also ask for assistance. The interrupted-start reason says that the baseline start was interrupted and a check may still run in the workspace. Fix the cause, then cancel and create the group again.
 
 ## Review a subtask
 

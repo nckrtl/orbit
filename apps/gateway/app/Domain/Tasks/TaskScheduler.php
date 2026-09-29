@@ -84,6 +84,15 @@ final readonly class TaskScheduler
 
     private const string BASELINE_JAVASCRIPT_INSTALL_STEP = '[Orbit internal] Install JavaScript dependencies';
 
+    /** A baseline row reserved before its process exists. A real check pid is at least 1. */
+    private const int BASELINE_UNSTARTED_PID = 0;
+
+    /**
+     * How long a baseline start may stay unrecorded. This matches the SSH command timeout.
+     * A claim older than that was interrupted, and its process may still be running.
+     */
+    public const int BASELINE_START_LIMIT_SECONDS = 900;
+
     /** The check script sets this when a command deliverable names an invalid directory or overlay path. */
     private const string INVALID_DELIVERABLE_STEP = 'invalid_deliverable';
 
@@ -202,11 +211,7 @@ final readonly class TaskScheduler
                     continue;
                 }
                 if ($task->status === TaskStatus::Running && ! $this->hasImplementer($task)) {
-                    if ($this->needsBaseline($task)) {
-                        $this->handleBaseline($group, $task);
-                    } else {
-                        $this->beginRunningTask($task);
-                    }
+                    $this->beginRunningTask($task);
 
                     continue;
                 }
@@ -2082,13 +2087,7 @@ final readonly class TaskScheduler
     {
         $task->taskGroup->requireManagedExecution();
         $started = $this->activateRunningTask($task);
-        $this->recordSubtaskStart($started);
-        if ($this->needsBaseline($started)) {
-            $group = $started->taskGroup()->with(['project', 'taskable'])->firstOrFail();
-            $this->startBaseline($group, $started);
-        } else {
-            $this->assignImplementer($started);
-        }
+        $this->beginRunningTask($started);
 
         $group = $started->taskGroup;
 
@@ -2831,7 +2830,7 @@ final readonly class TaskScheduler
         $this->recordSubtaskStart($task);
         if ($this->needsBaseline($task)) {
             $group = $task->taskGroup()->with(['project', 'taskable'])->firstOrFail();
-            $this->startBaseline($group, $task);
+            $this->handleBaseline($group, $task);
         } else {
             $this->assignImplementer($task);
         }
@@ -2882,8 +2881,15 @@ final readonly class TaskScheduler
      */
     private function handleBaseline(TaskGroup $group, Task $task): void
     {
-        $check = TaskCheck::query()->where('task_id', $task->id)->where('kind', TaskCheckKind::Baseline->value)->latest('id')->first();
+        $check = $this->baselineCheck($task);
         $instance = $group->taskable;
+        if ($check instanceof TaskCheck && $check->status === TaskCheckStatus::Running && ($check->pid === self::BASELINE_UNSTARTED_PID || $check->process_started === '')) {
+            if ($check->started_at->lt(now()->subSeconds(self::BASELINE_START_LIMIT_SECONDS))) {
+                $this->requestAssistance($task, $group, 'The baseline start was interrupted, and a check may still run in the workspace.');
+            }
+
+            return;
+        }
         if ($check instanceof TaskCheck && $check->status === TaskCheckStatus::Running && $instance instanceof Instance) {
             try {
                 $reading = $this->checks->read($instance, $check->process());
@@ -2978,24 +2984,101 @@ final readonly class TaskScheduler
                 'timeout_seconds' => 600,
             ];
         }
+        $claim = $this->claimBaseline($task);
+        if (! $claim instanceof TaskCheck) {
+            return;
+        }
         try {
             $process = $this->checks->start($instance, $command, $setup);
         } catch (TaskCheckException $exception) {
+            $this->releaseBaselineClaim($claim);
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
             return;
         }
-        TaskCheck::query()->create([
-            'task_id' => $task->id,
-            'kind' => TaskCheckKind::Baseline,
-            'status' => TaskCheckStatus::Running,
-            'pid' => $process->pid,
-            'process_started' => $process->started,
-            'head_before' => $process->head,
-            'tree_before' => $process->tree,
-            'started_at' => now(),
-        ]);
+        $stored = TaskCheck::query()->whereKey($claim->id)
+            ->where('status', TaskCheckStatus::Running->value)
+            ->where('pid', self::BASELINE_UNSTARTED_PID)
+            ->update([
+                'pid' => $process->pid,
+                'process_started' => $process->started,
+                'head_before' => $process->head,
+                'tree_before' => $process->tree,
+                'updated_at' => now(),
+            ]);
+        if ($stored !== 1) {
+            try {
+                $this->checks->cancel($instance, $process);
+            } catch (TaskCheckException $exception) {
+                $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+            }
+
+            return;
+        }
+        $this->broadcasts->groupChanged($group->id);
         $this->clearCommunicationFailures($task);
+    }
+
+    /**
+     * Reserves the one running baseline for this subtask before its process starts.
+     * The subtask row lock decides, so the scheduler tick and the Todo move cannot both start one.
+     */
+    private function claimBaseline(Task $task): ?TaskCheck
+    {
+        return DB::transaction(function () use ($task): ?TaskCheck {
+            $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
+            $running = TaskCheck::query()
+                ->where('task_id', $locked->id)
+                ->where('kind', TaskCheckKind::Baseline->value)
+                ->where('status', TaskCheckStatus::Running->value)
+                ->lockForUpdate()
+                ->exists();
+            if ($running) {
+                return null;
+            }
+
+            return TaskCheck::query()->create([
+                'task_id' => $locked->id,
+                'kind' => TaskCheckKind::Baseline,
+                'status' => TaskCheckStatus::Running,
+                'pid' => self::BASELINE_UNSTARTED_PID,
+                'process_started' => '',
+                'head_before' => '',
+                'tree_before' => '',
+                'started_at' => now(),
+            ]);
+        });
+    }
+
+    private function releaseBaselineClaim(TaskCheck $claim): void
+    {
+        TaskCheck::query()->whereKey($claim->id)
+            ->where('status', TaskCheckStatus::Running->value)
+            ->where('pid', self::BASELINE_UNSTARTED_PID)
+            ->delete();
+    }
+
+    /**
+     * The baseline that decides this subtask. A running claim wins, even before its process
+     * starts. A newer row is a duplicate and is not a verdict.
+     */
+    private function baselineCheck(Task $task): ?TaskCheck
+    {
+        $running = TaskCheck::query()
+            ->where('task_id', $task->id)
+            ->where('kind', TaskCheckKind::Baseline->value)
+            ->where('status', TaskCheckStatus::Running->value)
+            ->orderBy('id')
+            ->first();
+        if ($running instanceof TaskCheck) {
+            return $running;
+        }
+
+        return TaskCheck::query()
+            ->where('task_id', $task->id)
+            ->where('kind', TaskCheckKind::Baseline->value)
+            ->latest('id')
+            ->first();
     }
 
     private function assignImplementer(Task $task): void
