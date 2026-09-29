@@ -8,8 +8,10 @@ Run from any directory:
 
 The script reads the Gateway route table through `php apps/gateway/artisan route:list --json`, parses the
 controllers, form requests, data classes, and enums under apps/gateway/app, the request and response classes
-under packages/php-sdk/src, and the command descriptions from `php apps/cli/orbit list --format=json`. It writes
-docs/openapi.json, which docs/docs.json references for the API tab of the Mintlify site.
+under packages/php-sdk/src, and the command descriptions from the signature, description, and help properties
+under apps/cli/app/Commands. It does not run `orbit list`: that list hides extension commands unless a Gateway
+reports the extension enabled, and it needs apps/cli/vendor, so the same checkout would not always match.
+It writes docs/openapi.json, which docs/docs.json references for the API tab of the Mintlify site.
 
 A response schema uses the keys of a hand-written toArray() when each key is one constructor property.
 Otherwise it snake-cases constructor properties when the class uses SnakeCaseMapper, and keeps the
@@ -73,9 +75,123 @@ def load_routes():
     return routes
 
 
+def php_literal(source, start, path):
+    """Decode one PHP string literal. A heredoc or nowdoc value has no trailing newline."""
+    rel = path.relative_to(ROOT)
+    if source.startswith('<<<', start):
+        opener = re.match(r"<<<[ \t]*('?)([A-Za-z_][A-Za-z0-9_]*)\1[ \t]*\r?\n", source[start:])
+        if not opener:
+            sys.exit(f'bin/docs-openapi: {rel} has a PHP heredoc the generator cannot read')
+        body_at = start + opener.end()
+        closer = re.search(rf'(?m)^{re.escape(opener.group(2))}(?=\s*;)', source[body_at:])
+        if not closer:
+            sys.exit(f'bin/docs-openapi: {rel} has an unclosed PHP heredoc')
+        raw = source[body_at:body_at + closer.start()]
+        if raw.endswith('\r\n'):
+            raw = raw[:-2]
+        elif raw.endswith('\n'):
+            raw = raw[:-1]
+        if opener.group(1) != "'" and ('$' in raw or '\\' in raw):
+            sys.exit(f'bin/docs-openapi: {rel} has an interpolated PHP heredoc the generator does not read')
+        return raw
+    quote = source[start]
+    if quote not in "'\"":
+        sys.exit(f'bin/docs-openapi: {rel} has a command property that is not a PHP string')
+    i = start + 1
+    out = []
+    while i < len(source):
+        char = source[i]
+        if char == '\\' and i + 1 < len(source):
+            nxt = source[i + 1]
+            if quote == "'" and nxt in "\\'":
+                out.append(nxt)
+                i += 2
+                continue
+            if quote == '"':
+                mapped = {'n': '\n', 'r': '\r', 't': '\t', '\\': '\\', '"': '"', '$': '$'}
+                if nxt in mapped:
+                    out.append(mapped[nxt])
+                    i += 2
+                    continue
+        if char == quote:
+            return ''.join(out)
+        out.append(char)
+        i += 1
+    sys.exit(f'bin/docs-openapi: {rel} has an unterminated PHP string')
+
+
+def php_property(source, name, path):
+    found = re.search(rf'protected\s+\${name}\s*=\s*', source)
+    if not found:
+        return None
+    return php_literal(source, found.end(), path)
+
+
+def split_parameter(token):
+    parts = re.split(r'\s+:\s+', token.strip(), maxsplit=1)
+    if len(parts) == 2:
+        return parts[0], parts[1]
+    return token.strip(), ''
+
+
+def command_parameters(signature, path):
+    """Argument and option descriptions from a Laravel signature.
+
+    Framework options such as --version and --env are not part of the signature. Copying them onto a
+    request field names the console flag rather than the API field, as with analytics:update version.
+    """
+    found = re.match(r'[^\s]+', signature)
+    if not found:
+        sys.exit(f'bin/docs-openapi: {path.relative_to(ROOT)} has a signature with no command name')
+    arguments = {}
+    options = {}
+    for token in re.findall(r'\{\s*(.*?)\s*\}', signature):
+        if re.match(r'^-{2,}', token):
+            spec, description = split_parameter(re.sub(r'^-{2,}', '', token))
+            shortcut = re.split(r'\s*\|\s*', spec, maxsplit=1)
+            if len(shortcut) == 2:
+                spec = shortcut[1]
+            option = re.split(r'[=*]', spec, maxsplit=1)[0]
+            if option == '':
+                sys.exit(f'bin/docs-openapi: {path.relative_to(ROOT)} has an option with no name')
+            options[option] = description
+        else:
+            spec, description = split_parameter(token)
+            argument = spec.split('=', 1)[0].rstrip('?*')
+            if argument == '':
+                sys.exit(f'bin/docs-openapi: {path.relative_to(ROOT)} has an argument with no name')
+            arguments[argument] = description
+    return found.group(0), arguments, options
+
+
 def load_commands():
-    rows = run_json(['php', 'orbit', 'list', '--format=json'], ROOT / 'apps/cli')['commands']
-    return {c['name']: c for c in rows}
+    """Read CLI command text from the command classes.
+
+    `php orbit list` omits tasks and proxycli commands while the active Gateway reports that extension
+    off or cannot be reached, and it fails when apps/cli/vendor is absent. The class files are the same
+    in both cases, so request-field descriptions stay in the document.
+    """
+    commands = {}
+    for path in sorted((ROOT / 'apps/cli/app/Commands').rglob('*.php')):
+        source = path.read_text()
+        signature = php_property(source, 'signature', path)
+        if signature is None:
+            continue
+        name, arguments, options = command_parameters(signature, path)
+        if name in commands:
+            sys.exit(f'bin/docs-openapi: {path.relative_to(ROOT)} redefines command {name}')
+        description = php_property(source, 'description', path) or ''
+        help_text = php_property(source, 'help', path)
+        commands[name] = {
+            'name': name,
+            'description': description,
+            'help': description if help_text is None else help_text,
+            'definition': {
+                'arguments': {key: {'description': text} for key, text in arguments.items()},
+                'options': {key: {'description': text} for key, text in options.items()},
+            },
+        }
+    return commands
 
 
 def load_controllers():

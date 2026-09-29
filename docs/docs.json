@@ -128,6 +128,7 @@
               "contributor-guide",
               "reference/implementation-loop",
               "reference/incus-topologies",
+              "reference/api-reference",
               "reference/gateway-response-fixtures",
               "reference/topology-snapshot",
               "reference/cli-command-vocabulary",
