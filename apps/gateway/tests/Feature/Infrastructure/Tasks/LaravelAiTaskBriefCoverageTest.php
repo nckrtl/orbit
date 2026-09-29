@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Domain\Tasks\TaskRunPullRequest;
 use App\Domain\Tasks\TaskSessionClassificationException;
+use App\Domain\Tasks\TaskTurnPullRequest;
 use App\Infrastructure\Tasks\Jev;
 use App\Infrastructure\Tasks\LaravelAiTaskBriefCoverage;
 use App\Models\Project;
@@ -34,9 +34,9 @@ function coverage_group(): array
     return [$group, $models, $routes];
 }
 
-function coverage_pull_request(): TaskRunPullRequest
+function coverage_pull_request(): TaskTurnPullRequest
 {
-    return new TaskRunPullRequest('Adds an order export.', ['Orders export as CSV.'], []);
+    return new TaskTurnPullRequest('Adds an order export.', ['Orders export as CSV.'], []);
 }
 
 it('names each subtask that no listed change delivers', function (): void {
@@ -95,7 +95,7 @@ it('redacts secrets from persisted state and questions', function (): void {
         'subtask_'.$route->id => new BooleanAnswer(0.2),
     ]])->preventStrayClassifications();
 
-    app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskRunPullRequest(
+    app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskTurnPullRequest(
         'Authorization: Bearer summary-secret',
         ['API_KEY=change-secret'],
         [],
@@ -120,7 +120,7 @@ it('records the Jev call failure without provider body or input secrets', functi
     config()->set('ai.providers.typesafe.key', 'typesafe-test-key');
     Classification::fake(fn () => throw new ConnectionException('SECRET PROVIDER BODY'))->preventStrayClassifications();
 
-    expect(fn () => app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskRunPullRequest(
+    expect(fn () => app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskTurnPullRequest(
         'Authorization: Bearer failure-summary-secret',
         ['API_KEY=failure-change-secret'],
         [],

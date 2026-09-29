@@ -62,7 +62,7 @@ final readonly class TaskSessionActor
     public function relayReviewBody(Task $group, TaskThreadObservation $observed, string $body): void
     {
         $thread = $this->thread($group, $observed);
-        $this->drivers->get($thread->driver)->send($thread, 'Relay from the reviewer. Address these findings verbatim. '.TaskRunInstructions::implementer(check: $group->project->taskCheckCommand(), threadId: $thread->id)."\n\n".$body);
+        $this->drivers->get($thread->driver)->send($thread, 'Relay from the reviewer. Address these findings verbatim. '.TaskTurnInstructions::implementer(check: $group->project->taskCheckCommand(), threadId: $thread->id)."\n\n".$body);
     }
 
     public function remindRubric(Task $group, TaskThreadObservation $observed, string $message): void

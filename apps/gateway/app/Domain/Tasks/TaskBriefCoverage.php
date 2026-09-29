@@ -17,5 +17,5 @@ interface TaskBriefCoverage
      *
      * @throws TaskSessionClassificationException
      */
-    public function missing(Task $group, TaskRunPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array;
+    public function missing(Task $group, TaskTurnPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array;
 }

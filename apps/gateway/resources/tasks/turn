@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Orbit run receipt. The Gateway installs this script and turn.json in .git/orbit/.
+"""Orbit turn receipt. The Gateway installs this command and turn.json in .git/orbit/.
 
-An agent ends its turn with .git/orbit/run --thread=ID --outcome=OUTCOME --summary="..."
+An agent ends its turn with .git/orbit/turn --thread=ID --outcome=OUTCOME --summary="..."
 Every required deliverable confirmation is passed as --deliverable=ID=evidence.
 """
 
@@ -23,7 +23,7 @@ OUTCOME_ORDER = {
 
 
 def refuse(message):
-    print(f'orbit run: {message}', file=sys.stderr)
+    print(f'orbit turn: {message}', file=sys.stderr)
     raise SystemExit(2)
 
 
@@ -127,19 +127,19 @@ def main(argv):
     elif describes_pr:
         refuse('--pr-summary, --pr-change, and --pr-breaking are only for approving the last subtask.')
     receipt['nonce'] = secrets.token_hex(16)
-    temporary = os.path.join(directory, f'run.json.{os.getpid()}')
+    temporary = os.path.join(directory, f'receipt.json.{os.getpid()}')
     try:
         with open(temporary, 'w', encoding='utf-8') as output:
             json.dump(receipt, output, ensure_ascii=False, indent=2)
             output.write('\n')
-        os.replace(temporary, os.path.join(directory, 'run.json'))
+        os.replace(temporary, os.path.join(directory, 'receipt.json'))
     except OSError:
         try:
             os.unlink(temporary)
         except OSError:
             pass
-        refuse('could not write the run receipt.')
-    print(f'Orbit recorded the run receipt ({outcome}). End your turn now.')
+        refuse('could not write the turn receipt.')
+    print(f'Orbit recorded the turn receipt ({outcome}). End your turn now.')
 
 
 if __name__ == '__main__':

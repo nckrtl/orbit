@@ -196,7 +196,7 @@ function PullRequestProposal({ proposal }: { proposal: NonNullable<TaskComment["
     );
 }
 
-/** The task's latest check and its comments and run receipts, newest first, as stacked cards. */
+/** The task's latest check and its comments and turn receipts, newest first, as stacked cards. */
 export function TaskComments({ groupId, task }: { groupId: number; task: Task }) {
     const query = useQuery({
         ...taskCommentsQuery(groupId, task.id),

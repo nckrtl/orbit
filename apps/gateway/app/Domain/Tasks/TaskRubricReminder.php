@@ -28,7 +28,7 @@ final readonly class TaskRubricReminder
         ));
 
         return $role === TaskThreadRole::Implementer
-            ? implode(' ', [self::ImplementerLead, ...$sentences, TaskRunInstructions::implementer($deliverables, $check, $threadId)])
-            : implode(' ', [self::ReviewerLead, ...$sentences, TaskRunInstructions::reviewer($final, $deliverables, $threadId)]);
+            ? implode(' ', [self::ImplementerLead, ...$sentences, TaskTurnInstructions::implementer($deliverables, $check, $threadId)])
+            : implode(' ', [self::ReviewerLead, ...$sentences, TaskTurnInstructions::reviewer($final, $deliverables, $threadId)]);
     }
 }

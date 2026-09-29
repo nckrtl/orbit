@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 /**
- * Checks a subtask's deliverables against its run receipt and Orbit's handoff check
+ * Checks a subtask's deliverables against its turn receipt and Orbit's handoff check
  * ([ADR 0133](/decisions/0133-verify-typed-subtask-deliverables-at-handoff),
  * [ADR 0163](/decisions/0163-prove-a-failing-test-on-the-start-commit)). Each failure is one sentence
  * that names the deliverable and why it fails.

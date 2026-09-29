@@ -7,19 +7,19 @@ namespace App\Domain\Tasks;
 use JsonException;
 
 /**
- * The receipt an agent writes with `.git/orbit/run` to end its turn. A receipt without a
+ * The receipt an agent writes with `.git/orbit/turn` to end its turn. A receipt without a
  * known outcome and a summary is invalid and never advances a task. So is a `blocked`
  * receipt without a question for the operator. The receipt also carries the agent's
  * confirmation of each subtask deliverable (ADR 0133).
  */
-final readonly class TaskRunReceipt
+final readonly class TaskTurnReceipt
 {
     /** @param array<string, string> $deliverables the evidence for each confirmed deliverable, by ID */
     private function __construct(
         public string $hash,
-        public ?TaskRunOutcome $outcome,
+        public ?TaskTurnOutcome $outcome,
         public string $summary,
-        public ?TaskRunPullRequest $pullRequest = null,
+        public ?TaskTurnPullRequest $pullRequest = null,
         public ?string $question = null,
         public array $deliverables = [],
         public ?int $threadId = null,
@@ -36,16 +36,16 @@ final readonly class TaskRunReceipt
         if (! is_array($data) || ! is_string($data['outcome'] ?? null) || ! is_string($data['summary'] ?? null) || trim($data['summary']) === '') {
             return new self($hash, null, '');
         }
-        $outcome = TaskRunOutcome::tryFrom($data['outcome']);
+        $outcome = TaskTurnOutcome::tryFrom($data['outcome']);
         $question = null;
-        if ($outcome === TaskRunOutcome::Blocked) {
+        if ($outcome === TaskTurnOutcome::Blocked) {
             $question = is_string($data['question'] ?? null) ? trim($data['question']) : '';
             if ($question === '') {
                 return new self($hash, null, '');
             }
         }
 
-        return new self($hash, $outcome, trim($data['summary']), TaskRunPullRequest::fromArray($data['pull_request'] ?? null), $question, self::confirmations($data['deliverables'] ?? null), self::threadId($data['thread'] ?? null));
+        return new self($hash, $outcome, trim($data['summary']), TaskTurnPullRequest::fromArray($data['pull_request'] ?? null), $question, self::confirmations($data['deliverables'] ?? null), self::threadId($data['thread'] ?? null));
     }
 
     /** The same receipt, named as written by this Orbit thread. The content hash stays the hash of the file. */

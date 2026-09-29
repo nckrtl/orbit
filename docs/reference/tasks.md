@@ -366,7 +366,7 @@ When the acting thread is `idle`, `done`, or `asking_for_input`, the tick checks
 
 | Item | Passes when |
 | --- | --- |
-| `run_receipt` | A turn receipt for this turn and role exists. A `blocked` receipt needs a question |
+| `turn_receipt` | A turn receipt for this turn and role exists. A `blocked` receipt needs a question |
 | `waiting_for_input` | The thread has no pending question or approval |
 | `check_script` | The task check does not run `composer check`, or `composer.json` at the workspace root defines a non-empty `check` script |
 | `deliverables` | The receipt confirms the required deliverables, and every deliverable passes |

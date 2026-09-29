@@ -11,9 +11,9 @@ use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskReviewDiff;
-use App\Domain\Tasks\TaskRunReceipts;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Infrastructure\Tasks\T3\T3Dispatcher;
@@ -25,7 +25,7 @@ use App\Models\Project;
 use App\Models\Task;
 use Tests\Support\AcceptingTaskWorkspaceMcp;
 use Tests\Support\FakeTaskCheckRunner;
-use Tests\Support\FakeTaskRunReceipts;
+use Tests\Support\FakeTaskTurnReceipts;
 
 /** A blocked task in the given status, with an implementer and a reviewer thread. */
 function blocked_task(TaskStatus $status): Task
@@ -178,7 +178,7 @@ it('starts a fresh subtask reviewer with a review resolution when that thread do
 
     app(TaskExtensionState::class)->enable();
     app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
-    app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts);
+    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts);
     app()->instance(TaskReviewDiff::class, new NullTaskReviewDiff);
     app()->instance(TaskWorkspaceDiffReader::class, new NullTaskWorkspaceDiffReader);
     app()->instance(TaskWorkspaceMcp::class, new AcceptingTaskWorkspaceMcp);

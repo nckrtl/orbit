@@ -98,7 +98,7 @@ final readonly class TaskReviewPacket
             $this->section('Handoff', $this->handoff()),
         ], static fn (string $part): bool => $part !== ''));
         $retrieval = $this->retrieval();
-        $closing = TaskRunInstructions::reviewer($this->opensPullRequest, $this->deliverables, $this->threadId);
+        $closing = TaskTurnInstructions::reviewer($this->opensPullRequest, $this->deliverables, $this->threadId);
 
         return $this->withinLimit(
             implode("\n\n", [...$before, $this->diffSection($before, [$retrieval, $closing]), $retrieval, $closing]),
@@ -455,7 +455,7 @@ final readonly class TaskReviewPacket
     private function retrieval(): string
     {
         $commands = $this->statCommand()."\n".$this->diffCommand();
-        $group = TaskRunInstructions::groupStart($this->groupStartCommit);
+        $group = TaskTurnInstructions::groupStart($this->groupStartCommit);
 
         return "Retrieval\n".$commands.($group === '' ? '' : "\n".$group);
     }

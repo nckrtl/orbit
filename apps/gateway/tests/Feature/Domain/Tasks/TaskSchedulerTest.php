@@ -45,10 +45,6 @@ use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskReviewDiffException;
 use App\Domain\Tasks\TaskReviewPacket;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
-use App\Domain\Tasks\TaskRunInstructions;
-use App\Domain\Tasks\TaskRunPullRequest;
-use App\Domain\Tasks\TaskRunReceiptException;
-use App\Domain\Tasks\TaskRunReceipts;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskSequenceException;
 use App\Domain\Tasks\TaskSessionDecision;
@@ -58,6 +54,10 @@ use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadObservation;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskTurnInstructions;
+use App\Domain\Tasks\TaskTurnPullRequest;
+use App\Domain\Tasks\TaskTurnReceiptException;
+use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceSigner;
@@ -77,7 +77,7 @@ use Illuminate\Support\Facades\Exceptions;
 use Tests\Support\AcceptingTaskWorkspaceMcp;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskCheckRunner;
-use Tests\Support\FakeTaskRunReceipts;
+use Tests\Support\FakeTaskTurnReceipts;
 
 use function Pest\Laravel\mock;
 
@@ -317,10 +317,10 @@ it('starts a group when provisioning assigns an instance under both ceilings', f
         ->and($claimed?->reviewer_agent_thread_id)->toBeNull()
         ->and($claimed?->tasks->first()?->status)->toBe(TaskStatus::Running)
         ->and($claimed?->tasks->first()?->implementer_agent_thread_id)->toBe(AgentThread::query()->where('external_id', 'implementer-thread')->sole()->id)
-        ->and(app(TaskRunReceipts::class)->prepared)->toBe(['implementer']);
+        ->and(app(TaskTurnReceipts::class)->prepared)->toBe(['implementer']);
 });
 
-it('fails a group and its first task when the run script cannot be installed', function (): void {
+it('fails a group and its first task when the turn command cannot be installed', function (): void {
     $project = scheduler_app('orbit');
     $node = scheduler_node('orbit-node', '10.44.0.91');
     $instance = scheduler_instance($project, $node, 'isolated');
@@ -355,7 +355,7 @@ it('fails a group and its first task when the run script cannot be installed', f
         public function requestReview(Task $task): void {}
     };
     app()->instance(AgentSpawner::class, $spawner);
-    mock(TaskRunReceipts::class)->shouldReceive('prepare')->andThrow(new TaskRunReceiptException('The task workspace could not be reached for the run receipt.'));
+    mock(TaskTurnReceipts::class)->shouldReceive('prepare')->andThrow(new TaskTurnReceiptException('The task workspace could not be reached for the turn receipt.'));
 
     app(TaskScheduler::class)->claimNext();
     test_pass_baseline();
@@ -404,7 +404,7 @@ it('keeps the task in review and counts a communication failure when the reviewe
         ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
         ->and($task->fresh()?->communication_failures)->toBe(1)
         ->and($task->fresh()?->review_notified_attempt)->toBeNull()
-        ->and(app(TaskRunReceipts::class)->prepared)->toBe(['implementer', 'reviewer:final']);
+        ->and(app(TaskTurnReceipts::class)->prepared)->toBe(['implementer', 'reviewer:final']);
 });
 
 it('fails a group and its first task when the implementer spawn returns no thread id', function (): void {
@@ -1698,8 +1698,8 @@ function scheduler_approved_subtask(string $slug, bool $last = false, ?string $r
             return true;
         }
     });
-    app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts([
-        $receipt ?? FakeTaskRunReceipts::contents('approved', 'Checked the models.'),
+    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([
+        $receipt ?? FakeTaskTurnReceipts::contents('approved', 'Checked the models.'),
     ]));
     $signer = new class implements TaskWorkspaceSigner
     {
@@ -1755,7 +1755,7 @@ function scheduler_approved_subtask(string $slug, bool $last = false, ?string $r
     app()->instance(TaskPullRequestPublisher::class, $publisher);
     app()->instance(TaskBriefCoverage::class, new class implements TaskBriefCoverage
     {
-        public function missing(Task $group, TaskRunPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array
+        public function missing(Task $group, TaskTurnPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array
         {
             return [];
         }
@@ -1896,7 +1896,7 @@ it('pushes an approved fixup to the existing branch, keeps the pull request, and
     {
         public int $calls = 0;
 
-        public function missing(Task $group, TaskRunPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array
+        public function missing(Task $group, TaskTurnPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array
         {
             $this->calls++;
 
@@ -2078,7 +2078,7 @@ it('prepares a fixup review without pull request fields', function (): void {
     $group->update(['pr_url' => 'https://github.com/acme/orbit/pull/42']);
     app(TaskScheduler::class)->settleImplementer($group->tasks()->sole());
 
-    expect(app(TaskRunReceipts::class)->prepared)->toBe(['implementer', 'reviewer']);
+    expect(app(TaskTurnReceipts::class)->prepared)->toBe(['implementer', 'reviewer']);
 });
 
 it('keeps retrying a failed push after the fifth failure asks for assistance', function (): void {
@@ -2152,7 +2152,7 @@ it('does not run a baseline for a group whose implementers already started', fun
  * the workspace. Otherwise the stored baseline matches the fake check runner until a test changes it.
  *
  * @param  list<string|null>  $receipts
- * @return array{Task, Task, FakeTaskRunReceipts, object, FakeTaskCheckRunner, object, object}
+ * @return array{Task, Task, FakeTaskTurnReceipts, object, FakeTaskCheckRunner, object, object}
  */
 function scheduler_review(array $receipts, bool $notified = true): array
 {
@@ -2210,8 +2210,8 @@ function scheduler_review(array $receipts, bool $notified = true): array
 
         public function requestReview(Task $task): void {}
     });
-    $receipts = new FakeTaskRunReceipts($receipts);
-    app()->instance(TaskRunReceipts::class, $receipts);
+    $receipts = new FakeTaskTurnReceipts($receipts);
+    app()->instance(TaskTurnReceipts::class, $receipts);
     $checks = app(TaskCheckRunner::class);
     if (! $checks instanceof FakeTaskCheckRunner) {
         throw new RuntimeException('The review test needs the fake check runner.');
@@ -2281,7 +2281,7 @@ function scheduler_review(array $receipts, bool $notified = true): array
 
 it('approves a review when the workspace is unchanged since the review request', function (): void {
     [$group, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
-        FakeTaskRunReceipts::contents('approved', 'Checked the models.'),
+        FakeTaskTurnReceipts::contents('approved', 'Checked the models.'),
     ], notified: false);
 
     app(TaskScheduler::class)->tick();
@@ -2305,10 +2305,10 @@ it('approves a review when the workspace is unchanged since the review request',
 
 it('refuses a review when the reviewer changed the workspace and asks for assistance on the second change', function (): void {
     [$group, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
-        FakeTaskRunReceipts::contents('approved', 'Checked the models.'),
+        FakeTaskTurnReceipts::contents('approved', 'Checked the models.'),
     ]);
     $checks->tree = str_repeat('c', 40);
-    $reminder = 'Orbit could not confirm the review is complete. '.TaskScheduler::WorkspaceChangedReminder.' '.TaskRunInstructions::reviewer(threadId: $group->reviewer_agent_thread_id);
+    $reminder = 'Orbit could not confirm the review is complete. '.TaskScheduler::WorkspaceChangedReminder.' '.TaskTurnInstructions::reviewer(threadId: $group->reviewer_agent_thread_id);
 
     app(TaskScheduler::class)->tick();
 
@@ -2348,7 +2348,7 @@ it('refuses a review when the reviewer changed the workspace and asks for assist
 
 it('applies the kept approval once the reviewer restores the workspace', function (): void {
     [, $task, , $signer, $checks, , $reader] = scheduler_review([
-        FakeTaskRunReceipts::contents('approved', 'Checked the models.'),
+        FakeTaskTurnReceipts::contents('approved', 'Checked the models.'),
     ]);
     $checks->tree = str_repeat('c', 40);
 
@@ -2370,7 +2370,7 @@ it('applies the kept approval once the reviewer restores the workspace', functio
 
 it('counts an unreadable review workspace as a communication failure and does not treat it as a reviewer change', function (): void {
     [, $task, , $signer, $checks, $dispatcher] = scheduler_review([
-        FakeTaskRunReceipts::contents('approved', 'Checked the models.'),
+        FakeTaskTurnReceipts::contents('approved', 'Checked the models.'),
     ]);
     $checks->failSnapshot = true;
 
@@ -2392,7 +2392,7 @@ it('counts an unreadable review workspace as a communication failure and does no
 
 it('does not relay findings or accept a blocked question when the reviewer changed the workspace', function (string $outcome, ?string $question, string $field): void {
     [$group, $task, , $signer, $checks, $dispatcher] = scheduler_review([
-        FakeTaskRunReceipts::contents($outcome, 'Distinct findings that must not be applied.', $question),
+        FakeTaskTurnReceipts::contents($outcome, 'Distinct findings that must not be applied.', $question),
     ]);
     $checks->{$field} = str_repeat('d', 40);
 
@@ -2412,9 +2412,9 @@ it('does not relay findings or accept a blocked question when the reviewer chang
 
 it('treats a newer implementer turn during review as a new handoff without reminding the reviewer', function (): void {
     [$group, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
-        FakeTaskRunReceipts::contents('approved', 'Checked the models.'),
+        FakeTaskTurnReceipts::contents('approved', 'Checked the models.'),
         null,
-        FakeTaskRunReceipts::contents('ready_for_review', 'Operator follow-up.'),
+        FakeTaskTurnReceipts::contents('ready_for_review', 'Operator follow-up.'),
     ]);
     $task->update(['completion_handoff_turn_id' => 'implementer-handoff']);
     $reader->implementerTurnId = 'implementer-operator';
@@ -2459,7 +2459,7 @@ it('treats a newer implementer turn during review as a new handoff without remin
 
 it('does not remind the reviewer when a newer implementer turn explains a changes or blocked receipt', function (string $outcome, ?string $question): void {
     [$group, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
-        FakeTaskRunReceipts::contents($outcome, 'Distinct findings that must not be applied.', $question),
+        FakeTaskTurnReceipts::contents($outcome, 'Distinct findings that must not be applied.', $question),
     ]);
     $task->update(['completion_handoff_turn_id' => 'implementer-handoff']);
     $reader->implementerTurnId = 'implementer-operator';
@@ -2480,7 +2480,7 @@ it('does not remind the reviewer when a newer implementer turn explains a change
 
 it('still reminds the reviewer when the implementer turn is the handoff turn', function (): void {
     [, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
-        FakeTaskRunReceipts::contents('approved', 'Checked the models.'),
+        FakeTaskTurnReceipts::contents('approved', 'Checked the models.'),
     ]);
     $task->update(['completion_handoff_turn_id' => 'review-turn']);
     $reader->implementerTurnId = 'review-turn';
@@ -2496,7 +2496,7 @@ it('still reminds the reviewer when the implementer turn is the handoff turn', f
 
 it('accepts a lost commit response as the stored commit without a reminder or a second commit', function (): void {
     [$group, $task, , , $checks, $dispatcher] = scheduler_review([
-        FakeTaskRunReceipts::contents('approved', 'Checked the models.'),
+        FakeTaskTurnReceipts::contents('approved', 'Checked the models.'),
     ]);
     $stored = str_repeat('d', 40);
     $checks->head = $stored;
@@ -2561,7 +2561,7 @@ it('accepts a lost commit response as the stored commit without a reminder or a 
 
 it('stores the commit when its response is lost and pushes that stored commit without committing again', function (): void {
     [$group, $task, , , $checks, $dispatcher] = scheduler_review([
-        FakeTaskRunReceipts::contents('approved', 'Checked the models.'),
+        FakeTaskTurnReceipts::contents('approved', 'Checked the models.'),
     ]);
     $stored = str_repeat('d', 40);
     $signer = new class($stored) implements TaskWorkspaceSigner
@@ -2619,7 +2619,7 @@ it('stores the commit when its response is lost and pushes that stored commit wi
 
 it('refuses a workspace commit that is not the stored commit recorded for review', function (): void {
     [, $task, , $signer, $checks, $dispatcher] = scheduler_review([
-        FakeTaskRunReceipts::contents('approved', 'Checked the models.'),
+        FakeTaskTurnReceipts::contents('approved', 'Checked the models.'),
     ]);
     $checks->head = str_repeat('d', 40);
     $checks->parent = str_repeat('a', 40);

@@ -61,7 +61,7 @@ final readonly class TaskScheduler
     public const string T3ServerRestartContinuationError = 'Could not continue this thread after the server restart. Send a new message to continue.';
 
     /** One continue, on the same thread, after that restart. It does not ask for assistance. */
-    public const string PiServerRestartContinue = 'Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the run script.';
+    public const string PiServerRestartContinue = 'Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the turn command.';
 
     /** Resumes reserved for one subtask before the next restart asks for assistance (ADR 0167). */
     public const int PiServerRestartResumeLimit = 2;
@@ -101,7 +101,7 @@ final readonly class TaskScheduler
         private TaskExtensionState $extension,
         private TaskSessionObserver $observer,
         private TaskSessionActor $actor,
-        private TaskRunReceipts $receipts,
+        private TaskTurnReceipts $receipts,
         private TaskWorkspaceSigner $signer,
         private TaskBriefCoverage $coverage,
         private BriefCoverageLabeler $coverageLabeler,
@@ -301,13 +301,13 @@ final readonly class TaskScheduler
 
         try {
             $read = $this->collectReceipt($group, $task, TaskThreadRole::Implementer);
-        } catch (TaskRunReceiptException $exception) {
+        } catch (TaskTurnReceiptException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
             return true;
         }
         $receipt = $this->pendingReceipt($task, TaskThreadRole::Implementer);
-        if ($receipt instanceof TaskComment && $this->receiptOutcome($receipt) === TaskRunOutcome::Blocked) {
+        if ($receipt instanceof TaskComment && $this->receiptOutcome($receipt) === TaskTurnOutcome::Blocked) {
             $task->update(['completion_handoff_comment_id' => $receipt->id]);
             $this->requestAssistance($task, $group, 'The implementer is blocked: '.$receipt->body, $observation);
 
@@ -503,22 +503,22 @@ final readonly class TaskScheduler
 
         try {
             $read = $this->collectReceipt($group, $task, TaskThreadRole::Reviewer);
-        } catch (TaskRunReceiptException $exception) {
+        } catch (TaskTurnReceiptException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
             return true;
         }
         $receipt = $this->pendingReceipt($task, TaskThreadRole::Reviewer);
         $outcome = $receipt instanceof TaskComment ? $this->receiptOutcome($receipt) : null;
-        if ($outcome === TaskRunOutcome::Approved && $this->isWorking($observation->thread(TaskThreadRole::Implementer))) {
+        if ($outcome === TaskTurnOutcome::Approved && $this->isWorking($observation->thread(TaskThreadRole::Implementer))) {
             // Orbit commits the whole workspace, so the approval waits until the implementer stops changing it.
             return true;
         }
-        if ($outcome === TaskRunOutcome::ChangesRequested && $this->isWorking($observation->thread(TaskThreadRole::Implementer))) {
+        if ($outcome === TaskTurnOutcome::ChangesRequested && $this->isWorking($observation->thread(TaskThreadRole::Implementer))) {
             return true;
         }
         if ($receipt instanceof TaskComment
-            && in_array($outcome, [TaskRunOutcome::Blocked, TaskRunOutcome::ChangesRequested, TaskRunOutcome::Approved], true)) {
+            && in_array($outcome, [TaskTurnOutcome::Blocked, TaskTurnOutcome::ChangesRequested, TaskTurnOutcome::Approved], true)) {
             $decision = $this->reviewWorkspaceDecision($group, $task, $reviewer, $receipt, $observation);
             if ($decision === 'orbit_commit') {
                 try {
@@ -542,19 +542,19 @@ final readonly class TaskScheduler
                 return true;
             }
         }
-        if ($receipt instanceof TaskComment && $outcome === TaskRunOutcome::Approved && $this->committedApproval($receipt)) {
+        if ($receipt instanceof TaskComment && $outcome === TaskTurnOutcome::Approved && $this->committedApproval($receipt)) {
             // The commit is already stored and the workspace still holds it. Retry the push only; do not commit again.
             $this->publishApprovedCommit($group, $task, $receipt);
 
             return true;
         }
-        if ($receipt instanceof TaskComment && $outcome === TaskRunOutcome::Blocked) {
+        if ($receipt instanceof TaskComment && $outcome === TaskTurnOutcome::Blocked) {
             $task->update(['review_handled_comment_id' => $receipt->id]);
             $this->requestAssistance($task, $group, 'The reviewer is blocked: '.$receipt->body, $observation);
 
             return true;
         }
-        if ($receipt instanceof TaskComment && $outcome === TaskRunOutcome::ChangesRequested) {
+        if ($receipt instanceof TaskComment && $outcome === TaskTurnOutcome::ChangesRequested) {
             $this->relayFindings($group, $task, $observation, $receipt);
 
             return true;
@@ -563,7 +563,7 @@ final readonly class TaskScheduler
         $instance = $group->taskable;
         $pullRequest = null;
         $items = [$this->receiptItem($read, $receipt)];
-        if ($receipt instanceof TaskComment && $outcome === TaskRunOutcome::Approved) {
+        if ($receipt instanceof TaskComment && $outcome === TaskTurnOutcome::Approved) {
             $onBranch = $instance instanceof Instance && $this->workspace->currentBranch($instance) === 'task-'.$group->id;
             $items[] = new TaskRubricItem('branch', $onBranch, 'The workspace branch is not task-'.$group->id.'. Switch back to it.');
             $confirmation = $this->confirmationItem($task, $receipt, TaskThreadRole::Reviewer);
@@ -571,15 +571,15 @@ final readonly class TaskScheduler
                 $items[] = $confirmation;
             }
             if ($task->opensPullRequest()) {
-                $pullRequest = TaskRunPullRequest::fromArray($receipt->pull_request);
-                $items[] = new TaskRubricItem('pull_request_fields', $pullRequest instanceof TaskRunPullRequest, 'The approval of the last subtask needs --pr-summary, --pr-change, and --pr-breaking.');
+                $pullRequest = TaskTurnPullRequest::fromArray($receipt->pull_request);
+                $items[] = new TaskRubricItem('pull_request_fields', $pullRequest instanceof TaskTurnPullRequest, 'The approval of the last subtask needs --pr-summary, --pr-change, and --pr-breaking.');
             }
         }
         $waiting = $this->waitingItem($reviewer);
         if ($waiting instanceof TaskRubricItem) {
             $items[] = $waiting;
         }
-        if ($this->failedItems($items) === [] && $pullRequest instanceof TaskRunPullRequest) {
+        if ($this->failedItems($items) === [] && $pullRequest instanceof TaskTurnPullRequest) {
             try {
                 $missing = $this->coverage->missing(
                     $group,
@@ -642,7 +642,7 @@ final readonly class TaskScheduler
     private function retryCommittedApproval(Task $group, Task $task): bool
     {
         $receipt = $this->pendingReceipt($task, TaskThreadRole::Reviewer);
-        if (! $receipt instanceof TaskComment || $this->receiptOutcome($receipt) !== TaskRunOutcome::Approved || ! $this->committedApproval($receipt)) {
+        if (! $receipt instanceof TaskComment || $this->receiptOutcome($receipt) !== TaskTurnOutcome::Approved || ! $this->committedApproval($receipt)) {
             return false;
         }
         if (! $this->retryIsDue($this->publicationBackoffKey($task), 'approved publication')) {
@@ -696,8 +696,8 @@ final readonly class TaskScheduler
         }
 
         if ($task->opensPullRequest()) {
-            $pullRequest = TaskRunPullRequest::fromArray($receipt->pull_request);
-            if (! $pullRequest instanceof TaskRunPullRequest) {
+            $pullRequest = TaskTurnPullRequest::fromArray($receipt->pull_request);
+            if (! $pullRequest instanceof TaskTurnPullRequest) {
                 $this->recordCommunicationFailure($task, $group, 'The approval of the last subtask needs --pr-summary, --pr-change, and --pr-breaking.');
 
                 return;
@@ -821,7 +821,7 @@ final readonly class TaskScheduler
         try {
             $this->prepareTurn($group, $task, TaskThreadRole::Implementer, $implementer->threadId);
             $this->actor->relayReviewBody($group, $implementer, $findings->body);
-        } catch (AgentDriverException|TaskRunReceiptException $exception) {
+        } catch (AgentDriverException|TaskTurnReceiptException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
             return;
@@ -844,7 +844,7 @@ final readonly class TaskScheduler
     }
 
     /** @return list<TaskRubricItem> */
-    private function implementerItems(Task $group, Task $task, TaskThreadObservation $thread, ?TaskRunReceipt $read, ?TaskComment $receipt): array
+    private function implementerItems(Task $group, Task $task, TaskThreadObservation $thread, ?TaskTurnReceipt $read, ?TaskComment $receipt): array
     {
         $instance = $group->taskable;
         $items = [
@@ -864,7 +864,7 @@ final readonly class TaskScheduler
     }
 
     /**
-     * ADR 0133: a receipt confirms every deliverable it must, as the run script requires. A hand-written
+     * ADR 0133: a receipt confirms every deliverable it must, as the turn command requires. A hand-written
      * receipt that misses one fails the `deliverables` item.
      */
     private function confirmationItem(Task $task, ?TaskComment $receipt, TaskThreadRole $role): ?TaskRubricItem
@@ -875,7 +875,7 @@ final readonly class TaskScheduler
         }
         $missing = TaskDeliverableVerifier::unconfirmed($deliverables, $receipt->deliverables ?? [], $role);
 
-        return new TaskRubricItem('deliverables', $missing === [], $missing === [] ? '' : 'The run receipt does not confirm the deliverables '.implode(', ', $missing).'. Pass --deliverable=ID=evidence for each one.');
+        return new TaskRubricItem('deliverables', $missing === [], $missing === [] ? '' : 'The turn receipt does not confirm the deliverables '.implode(', ', $missing).'. Pass --deliverable=ID=evidence for each one.');
     }
 
     /**
@@ -908,33 +908,33 @@ final readonly class TaskScheduler
         return ['start' => $start !== '' ? $start : null, 'commands' => $commands];
     }
 
-    private function receiptItem(?TaskRunReceipt $read, ?TaskComment $receipt): TaskRubricItem
+    private function receiptItem(?TaskTurnReceipt $read, ?TaskComment $receipt): TaskRubricItem
     {
         if ($receipt instanceof TaskComment) {
-            return new TaskRubricItem('run_receipt', true, '');
+            return new TaskRubricItem('turn_receipt', true, '');
         }
 
-        return new TaskRubricItem('run_receipt', false, $read instanceof TaskRunReceipt ? 'The run receipt was not valid for this turn.' : 'No run receipt was found.');
+        return new TaskRubricItem('turn_receipt', false, $read instanceof TaskTurnReceipt ? 'The turn receipt was not valid for this turn.' : 'No turn receipt was found.');
     }
 
     /**
      * Stores a receipt that fits the turn as a comment, then removes the file. A crash before the
      * removal reads the receipt again, and its hash matches the stored comment.
      *
-     * @throws TaskRunReceiptException
+     * @throws TaskTurnReceiptException
      */
-    private function collectReceipt(Task $group, Task $task, TaskThreadRole $role): ?TaskRunReceipt
+    private function collectReceipt(Task $group, Task $task, TaskThreadRole $role): ?TaskTurnReceipt
     {
         $instance = $group->taskable;
         if (! $instance instanceof Instance) {
-            throw new TaskRunReceiptException('The task workspace is unavailable.');
+            throw new TaskTurnReceiptException('The task workspace is unavailable.');
         }
         $actingThreadId = $this->actingThreadId($group, $task, $role);
         $receipt = $this->receipts->read($instance, $actingThreadId);
-        if (! $receipt instanceof TaskRunReceipt || ! $this->receiptMatchesActingThread($receipt, $actingThreadId)) {
+        if (! $receipt instanceof TaskTurnReceipt || ! $this->receiptMatchesActingThread($receipt, $actingThreadId)) {
             return null;
         }
-        if ($receipt->outcome instanceof TaskRunOutcome && $receipt->fits($role)) {
+        if ($receipt->outcome instanceof TaskTurnOutcome && $receipt->fits($role)) {
             TaskComment::query()->firstOrCreate(['task_id' => $task->id, 'receipt_hash' => $receipt->hash], [
                 'task_group_id' => $group->id,
                 'agent_thread_id' => $role === TaskThreadRole::Implementer ? $task->implementer_agent_thread_id : $group->reviewer_agent_thread_id,
@@ -962,13 +962,13 @@ final readonly class TaskScheduler
     }
 
     /** A receipt applies only when it names the acting thread. An unbound receipt does not. */
-    private function receiptMatchesActingThread(TaskRunReceipt $receipt, ?int $actingThreadId): bool
+    private function receiptMatchesActingThread(TaskTurnReceipt $receipt, ?int $actingThreadId): bool
     {
         return $actingThreadId === null || $receipt->threadId === $actingThreadId;
     }
 
     /**
-     * Rewrites a legacy turn file for the acting thread and sends the bound run command.
+     * Rewrites a legacy turn file for the acting thread and sends the bound turn command.
      * The unidentified receipt is not applied.
      */
     private function reissueLegacyTurn(Task $group, Task $task, TaskThreadObservation $thread): bool
@@ -984,10 +984,10 @@ final readonly class TaskScheduler
             }
             $this->prepareTurn($group, $task, $thread->role, $actingThreadId);
             $instructions = $thread->role === TaskThreadRole::Implementer
-                ? TaskRunInstructions::implementer($task->deliverableList(), $group->project->taskCheckCommand(), $actingThreadId)
-                : TaskRunInstructions::reviewer($task->opensPullRequest(), $task->deliverableList(), $actingThreadId);
+                ? TaskTurnInstructions::implementer($task->deliverableList(), $group->project->taskCheckCommand(), $actingThreadId)
+                : TaskTurnInstructions::reviewer($task->opensPullRequest(), $task->deliverableList(), $actingThreadId);
             $this->actor->remindRubric($group, $thread, 'Orbit bound this turn to its thread. '.$instructions);
-        } catch (AgentDriverException|TaskRunReceiptException $exception) {
+        } catch (AgentDriverException|TaskTurnReceiptException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
         }
 
@@ -1011,19 +1011,19 @@ final readonly class TaskScheduler
         return $receipt instanceof TaskComment && $receipt->id !== $handled ? $receipt : null;
     }
 
-    private function receiptOutcome(TaskComment $receipt): ?TaskRunOutcome
+    private function receiptOutcome(TaskComment $receipt): ?TaskTurnOutcome
     {
         $type = $receipt->getRawOriginal('type');
 
-        return TaskRunOutcome::tryFrom(is_string($type) ? $type : '');
+        return TaskTurnOutcome::tryFrom(is_string($type) ? $type : '');
     }
 
-    /** @throws TaskRunReceiptException */
+    /** @throws TaskTurnReceiptException */
     private function prepareTurn(Task $group, Task $task, TaskThreadRole $role, ?int $threadId = null): void
     {
         $instance = $group->taskable;
         if (! $instance instanceof Instance) {
-            throw new TaskRunReceiptException('The task workspace is unavailable.');
+            throw new TaskTurnReceiptException('The task workspace is unavailable.');
         }
         $this->receipts->prepare($instance, $role, $role === TaskThreadRole::Reviewer && $task->opensPullRequest(), $task->deliverableList(), $threadId);
     }
@@ -1063,7 +1063,7 @@ final readonly class TaskScheduler
             try {
                 $this->prepareTurn($group, $task, $thread->role, $thread->threadId);
                 $this->actor->remindRubric($group, $thread, TaskRubricReminder::compose($thread->role, $failures, ! $implementer && $task->opensPullRequest(), $task->deliverableList(), $group->project->taskCheckCommand(), $thread->threadId));
-            } catch (AgentDriverException|TaskRunReceiptException $exception) {
+            } catch (AgentDriverException|TaskTurnReceiptException $exception) {
                 $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
                 return false;
@@ -1856,7 +1856,7 @@ final readonly class TaskScheduler
         if ($this->workspaceMatchesReview($task, $receipt, $current)) {
             return 'apply';
         }
-        if ($this->receiptOutcome($receipt) === TaskRunOutcome::Approved && ! $this->committedApproval($receipt) && $this->recoveredCommit($task, $current) !== null) {
+        if ($this->receiptOutcome($receipt) === TaskTurnOutcome::Approved && ! $this->committedApproval($receipt) && $this->recoveredCommit($task, $current) !== null) {
             return 'orbit_commit';
         }
         $implementer = $observation->thread(TaskThreadRole::Implementer);
@@ -3016,8 +3016,8 @@ final readonly class TaskScheduler
                 $this->prepareTurn($group, $task, TaskThreadRole::Implementer, $reserved === null ? null : (int) $reserved);
                 $threadId = $this->spawner->spawnImplementer($task->fresh() ?? $task);
             }
-        } catch (TaskRunReceiptException $exception) {
-            Log::error('The run script could not be installed for the implementer.', ['task_id' => $task->id, 'reason' => $exception->getMessage()]);
+        } catch (TaskTurnReceiptException $exception) {
+            Log::error('The turn command could not be installed for the implementer.', ['task_id' => $task->id, 'reason' => $exception->getMessage()]);
         }
 
         if ($threadId === null) {

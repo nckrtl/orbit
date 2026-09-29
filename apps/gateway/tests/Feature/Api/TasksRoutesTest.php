@@ -121,7 +121,7 @@ it('creates and reads operator task comments', function (): void {
         ->assertJsonPath('data.0.type', 'resolution');
 });
 
-it('refuses turn outcomes, which agents report with the run script', function (string $type): void {
+it('refuses turn outcomes, which agents report with the turn command', function (string $type): void {
     tasks_gateway();
     enable_tasks();
     $project = tasks_app('invalid-comments');

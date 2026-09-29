@@ -14,7 +14,7 @@ final readonly class TaskPullRequestDescription
     /**
      * @param  string|null  $check  the Project task check command, or null when the Project has none (ADR 0125)
      */
-    public static function render(TaskRunPullRequest $pullRequest, int $subtasks, ?string $check = 'composer check'): string
+    public static function render(TaskTurnPullRequest $pullRequest, int $subtasks, ?string $check = 'composer check'): string
     {
         $lines = static fn (array $items): string => implode("\n", array_map(static fn (string $item): string => '- '.$item, $items));
 

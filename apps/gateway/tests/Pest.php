@@ -18,7 +18,7 @@ use App\Domain\Tasks\NullTaskReviewDiff;
 use App\Domain\Tasks\TaskBridgeWorktreeRemover;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskReviewDiff;
-use App\Domain\Tasks\TaskRunReceipts;
+use App\Domain\Tasks\TaskTurnReceipts;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
@@ -45,7 +45,7 @@ use Tests\Support\FakeNodeAgentRuntime;
 use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\FakeRouterLanIngressReconciler;
 use Tests\Support\FakeTaskCheckRunner;
-use Tests\Support\FakeTaskRunReceipts;
+use Tests\Support\FakeTaskTurnReceipts;
 use Tests\Support\FakeVitePortRuntime;
 use Tests\Support\TestToolchain;
 use Tests\TestCase;
@@ -72,7 +72,7 @@ uses(TestCase::class, RefreshDatabase::class)
         app()->instance(AgentationSiteProjection::class, new FakeAgentationSiteProjection);
         app()->instance(RouterLanIngressReconciler::class, new FakeRouterLanIngressReconciler);
         app()->instance(ClusterRouterDnsSelectionReconciler::class, new FakeClusterRouterDnsSelectionReconciler);
-        app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts);
+        app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts);
         app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
         app()->instance(TaskReviewDiff::class, new NullTaskReviewDiff);
         // Bridge removal runs Git on the Node. Feature tests skip it unless they opt in.
@@ -113,7 +113,7 @@ pest()->tia()->directory(is_string($tiaDirectory) && $tiaDirectory !== '' ? $tia
 // A change reruns the tests that cover that file, and no others.
 pest()->tia()->watch([
     'resources/tasks/check' => 'tests/Feature/Infrastructure/Tasks/RemoteTaskCheckRunnerTest.php',
-    'resources/tasks/run' => 'tests/Feature/Infrastructure/Tasks/RemoteTaskRunReceiptsTest.php',
+    'resources/tasks/turn' => 'tests/Feature/Tasks/TurnReceiptTest.php',
     'resources/mcp/tools.json' => 'tests/Feature/Mcp',
     'resources/scripts/*.py' => 'tests/Feature/Infrastructure/Metrics/ServiceMetricsProgramTest.php',
     'resources/proxycli/*.py' => 'tests/Unit/Infrastructure/ProxyCli/ProxyCliCollectorValkeyClientTest.php',

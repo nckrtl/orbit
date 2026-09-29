@@ -14,14 +14,14 @@ final readonly class TaskPromptRenderer
         $deliverables = $task->deliverables;
 
         return implode("\n\n", array_filter([
-            'Implement this subtask in the shared workspace. '.TaskRunInstructions::implementer($deliverables, $group->taskCheck, $threadId),
+            'Implement this subtask in the shared workspace. '.TaskTurnInstructions::implementer($deliverables, $group->taskCheck, $threadId),
             'Orbit task group #'.$group->id,
             'Feature: '.$group->title,
             'Orbit subtask #'.$task->id,
             'Subtask: '.$task->title,
             $task->brief,
-            TaskRunInstructions::deliverables($deliverables),
-            TaskRunInstructions::groupStart($group->startCommit ?? ''),
+            TaskTurnInstructions::deliverables($deliverables),
+            TaskTurnInstructions::groupStart($group->startCommit ?? ''),
             'Follow this repository\'s task instructions.',
         ], static fn (string $part): bool => $part !== ''));
     }

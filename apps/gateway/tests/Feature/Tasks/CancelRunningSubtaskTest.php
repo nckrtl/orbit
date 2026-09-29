@@ -12,8 +12,8 @@ use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskRunReceipts;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -24,7 +24,7 @@ use App\Models\TaskCheck;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskCheckRunner;
-use Tests\Support\FakeTaskRunReceipts;
+use Tests\Support\FakeTaskTurnReceipts;
 
 /**
  * A running group on an Instance whose first subtask is in its baseline check and whose second waits.
@@ -217,7 +217,7 @@ it('cancel running subtask preserves its group and Instance', function (): void 
     $driver = new FakeAgentDriver('fake');
     $driver->supportsInterruption = true;
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
-    app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts);
+    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts);
     app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
     app()->instance(TaskWorkspaceStateReader::class, new class implements TaskWorkspaceStateReader
     {

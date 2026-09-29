@@ -13,7 +13,7 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property Carbon $posted_at
- * @property array<string, string>|null $deliverables the confirmations of a run receipt, by deliverable ID
+ * @property array<string, string>|null $deliverables the confirmations of a turn receipt, by deliverable ID
  */
 #[ObservedBy([TaskBroadcastObserver::class])]
 final class TaskComment extends Model

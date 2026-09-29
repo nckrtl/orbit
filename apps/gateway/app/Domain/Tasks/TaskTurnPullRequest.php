@@ -7,7 +7,7 @@ namespace App\Domain\Tasks;
 /**
  * The pull request description the reviewer gives when it approves the last subtask.
  */
-final readonly class TaskRunPullRequest
+final readonly class TaskTurnPullRequest
 {
     /**
      * @param  non-empty-list<string>  $changes

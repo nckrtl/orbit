@@ -205,7 +205,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
             return;
         }
         $task = is_numeric($thread->task_id) ? Task::query()->find((int) $thread->task_id) : null;
-        app(TaskRunReceipts::class)->prepare(
+        app(TaskTurnReceipts::class)->prepare(
             $instance,
             $role,
             $role === TaskThreadRole::Reviewer && $task instanceof Task && $task->opensPullRequest(),
