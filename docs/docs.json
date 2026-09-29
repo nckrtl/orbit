@@ -144,8 +144,7 @@
               "solutions/migrate-unmanaged-executor-hostname",
               "solutions/sqlite-wal-default",
               "solutions/realtime-reverb",
-              "solutions/relocate-gateway-role",
-              "solutions/cutover-proxycli"
+              "solutions/relocate-gateway-role"
             ]
           }
         ]
@@ -558,10 +557,6 @@
             "group": "Records",
             "pages": [
               "decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
-              "decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension",
-              "decisions/0109-publish-the-proxycli-collector-on-a-subdomain",
-              "decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit",
-              "decisions/0174-match-the-task-gate-to-ci-and-repeated-findings",
               "decisions/0175-docs-impact-check-in-orbit-repo",
               "decisions/0178-run-project-agnostic-tasks-without-a-planner"
             ]
@@ -1329,6 +1324,26 @@
     {
       "source": "/reference/app-processes-and-schedules",
       "destination": "/reference/processes-and-schedules"
+    },
+    {
+      "source": "/decisions/0174-match-the-task-gate-to-ci-and-repeated-findings",
+      "destination": "/reference/implementation-loop#the-candidate-gate"
+    },
+    {
+      "source": "/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension",
+      "destination": "/reference/proxycli#why-it-works-this-way"
+    },
+    {
+      "source": "/decisions/0109-publish-the-proxycli-collector-on-a-subdomain",
+      "destination": "/reference/proxycli#a-reserved-name-not-a-route"
+    },
+    {
+      "source": "/decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit",
+      "destination": "/reference/proxycli#a-reserved-name-not-a-route"
+    },
+    {
+      "source": "/solutions/cutover-proxycli",
+      "destination": "/reference/proxycli#check-the-collector"
     }
   ]
 }

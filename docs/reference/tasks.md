@@ -22,15 +22,9 @@ Agents use the Tasks tools of the [MCP server](/reference/mcp). The [`tasks` CLI
 
 ## Extension switch and status
 
-Enable and disable the extension with `orbit extension:enable tasks` and `orbit extension:disable tasks`; both require Gateway access. Those commands are the only switch. The Gateway keeps API routes registered, but task operations refuse with HTTP 409 `extension.disabled` when the switch is off. CLI command listing, MCP tools, and web navigation omit the disabled extension. Existing task records remain stored.
+Enable and disable the extension with `orbit extension:enable tasks` and `orbit extension:disable tasks`. Both need Gateway access. While the switch is off, the `tasks` commands, MCP tools, and web pages are hidden, except `tasks:status` and the `tasks-status` tool. Every other task operation refuses with HTTP 409 `extension.disabled` and changes nothing. Task records stay stored. [`extension`](/cli/extension) describes the switch.
 
-| Error code | HTTP status | Meaning |
-| --- | --- | --- |
-| `extension.disabled` | 409 | The Gateway's Tasks extension is off. Task API operations remain registered but refuse without changing state; stale CLI, MCP, and web calls cannot use the disabled surface. |
-
-The migration stores `tasks` as enabled only when the old `tasks.enabled` setting was `1`. It stores `proxycli` as enabled only when the old switch was on and its collector Process was still running. It then deletes the old Tasks switch. The migration's `down` method removes the new extension switches and does not reconstruct the old setting, so back up the Gateway database before upgrading and restore that backup to roll back.
-
-`tasks:status` remains an assistance and status view, not a switch. Its route returns `enabled` and `assistance`. `assistance` lists every group whose `assistance_requested` is true, in ascending group id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, and `assistance_reason`. A group that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its group unless the group itself is asking. The view remains available while tasks is disabled.
+`tasks:status` is an assistance and status view, not a switch. Its route returns `enabled` and `assistance`. `assistance` lists every group whose `assistance_requested` is true, in ascending group id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, and `assistance_reason`. A group that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its group unless the group itself is asking. The view remains available while tasks is disabled.
 
 ## Model
 

@@ -88,7 +88,7 @@ Each test process copies `apps/gateway` to the host with rsync once and reuses t
 
 Add regression tests for behavior changes and their important failure modes. Confirm that the tests that exercise the new behavior ran.
 
-GitHub CI runs quality checks and affected tests for all five projects, including documentation lint. Root `composer check` runs `bin/review-check`. It runs `composer validate --strict`, `composer check`, and `composer test:affected` in each of the five projects. It checks the working tree as it is, uncommitted changes included, and writes a report under `<git-common-dir>/orbit-checks/<HEAD>/`. For changed paths it also runs the web and Pi server CI profiles, every changed Pest file that the affected selection missed, and a PHP finding pack. [ADR 0174](/decisions/0174-match-the-task-gate-to-ci-and-repeated-findings) records these gate rules. Orbit's Project task check runs this gate at every task handoff.
+GitHub CI runs quality checks and affected tests for all five projects, including documentation lint. Root `composer check` runs `bin/review-check`. It runs `composer validate --strict`, `composer check`, and `composer test:affected` in each of the five projects. It checks the working tree as it is, uncommitted changes included, and writes a report under `<git-common-dir>/orbit-checks/<HEAD>/`. For changed paths it also runs the web and Pi server CI profiles, every changed Pest file that the affected selection missed, and a PHP finding pack. A missing tool fails its check. Orbit's Project task check runs this gate at every task handoff. [The candidate gate](/reference/implementation-loop#the-candidate-gate) lists every check.
 
 ## Static analysis
 
@@ -100,6 +100,8 @@ Fix the code that PHPStan reports, so that the declared type and the runtime val
 - `assert()` or an inline `@var` that overrides the inferred type
 - a cast that only silences the finding
 - a wider type that hides the finding
+
+The finding pack also rejects a call to `strtotime()`, so use Carbon parsing. In a test, chain `preventStrayClassifications()` to every `Classification::fake()` call.
 
 The CLI and E2E projects each keep one counted `ignoreErrors` entry for a Larastan finding on an inherited command helper. Each entry names the commands, the option, the file, and the count. Do not add an entry or raise a count.
 

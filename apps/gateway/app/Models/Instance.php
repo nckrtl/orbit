@@ -7,7 +7,6 @@ namespace App\Models;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Relations\DualSafeMorphMany;
 use Illuminate\Database\Eloquent\Builder;
@@ -273,7 +272,7 @@ final class Instance extends Model
     public function usesProductionReleaseLayout(): bool
     {
         return
-            $this->placementEnvironment(allowRemovingRole: true) === 'production'
+            $this->placementEnvironment() === 'production'
             && is_string($this->production_home)
             && str_starts_with($this->checkout_path, "{$this->production_home}/releases/");
     }
@@ -310,7 +309,7 @@ final class Instance extends Model
 
     public function defaultAppEnv(): string
     {
-        $environment = $this->placementEnvironment(allowRemovingRole: true);
+        $environment = $this->placementEnvironment();
 
         if ($environment === null) {
             throw new ResourceOperationException(
@@ -341,14 +340,14 @@ final class Instance extends Model
     {
         $root = $this->root ?? $this->project->root;
 
-        if ($this->placementEnvironment(allowRemovingRole: true) === 'production' && is_string($this->production_home) && is_string($root)) {
+        if ($this->placementEnvironment() === 'production' && is_string($this->production_home) && is_string($root)) {
             return "{$this->production_home}/current/{$root}";
         }
 
         return $root;
     }
 
-    public function placementEnvironment(bool $allowRemovingRole = false): ?string
+    public function placementEnvironment(): ?string
     {
         $this->loadMissing('node.roles');
         $node = $this->getRelation('node');
@@ -357,25 +356,17 @@ final class Instance extends Model
             return null;
         }
 
-        $active = $node->roles->filter(
-            static fn (NodeRole $role): bool => $role->status === LifecycleStatus::Active
-                && in_array($role->role, [RoleName::AppDev, RoleName::AppProd], strict: true),
+        // The Node's app role decides the environment in every lifecycle state, so an
+        // app-dev role that is converging, failed, or being removed still places its Instances.
+        $roles = $node->roles->filter(
+            static fn (NodeRole $role): bool => in_array($role->role, [RoleName::AppDev, RoleName::AppProd], strict: true),
         );
-        if ($active->count() === 1) {
-            return $active->sole()->role === RoleName::AppProd ? 'production' : 'development';
-        }
-        if ($active->count() > 1 || ! $allowRemovingRole) {
+
+        if ($roles->count() !== 1) {
             return null;
         }
 
-        $removing = $node->roles->filter(
-            static fn (NodeRole $role): bool => $role->status === LifecycleStatus::Removing
-                && in_array($role->role, [RoleName::AppDev, RoleName::AppProd], strict: true),
-        );
-
-        return $removing->count() === 1
-            ? ($removing->sole()->role === RoleName::AppProd ? 'production' : 'development')
-            : null;
+        return $roles->sole()->role === RoleName::AppProd ? 'production' : 'development';
     }
 
     /** @return array<string, string> */

@@ -241,7 +241,9 @@
             "title": "extension",
             "kind": "product",
             "components": [
-                "apps/gateway"
+                "apps/cli",
+                "apps/gateway",
+                "apps/web"
             ],
             "concepts": [
                 "Extension",
@@ -249,7 +251,6 @@
                 "Node",
                 "Process",
                 "Task",
-                "Task group",
                 "Tool"
             ],
             "governing_adrs": []
@@ -450,14 +451,15 @@
             "path": "docs/cli/proxycli.mdx",
             "title": "proxycli",
             "kind": "product",
-            "components": [],
+            "components": [
+                "apps/cli",
+                "packages/php-sdk"
+            ],
             "concepts": [
                 "Extension",
                 "Gateway",
                 "Node",
-                "Process",
-                "Role",
-                "Route"
+                "Process"
             ],
             "governing_adrs": []
         },
@@ -605,7 +607,6 @@
                 "Tool"
             ],
             "governing_adrs": [
-                "0174",
                 "0175"
             ]
         },
@@ -630,100 +631,6 @@
             ],
             "governing_adrs": [
                 "0097"
-            ]
-        },
-        {
-            "path": "docs/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension.md",
-            "title": "ADR 0104: Own CLIProxyAPI quota through the proxycli extension",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Extension",
-                "Gateway",
-                "Node",
-                "Process",
-                "Role",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0104",
-                "0109"
-            ]
-        },
-        {
-            "path": "docs/decisions/0109-publish-the-proxycli-collector-on-a-subdomain.md",
-            "title": "ADR 0109: Publish the proxycli collector on a subdomain",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Extension",
-                "Gateway",
-                "Node",
-                "Process",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0104",
-                "0109",
-                "0145"
-            ]
-        },
-        {
-            "path": "docs/decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit.md",
-            "title": "ADR 0145: Publish the proxycli collector on collector.cli-proxy-api.orbit",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Extension",
-                "Gateway",
-                "Node",
-                "Process",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0104",
-                "0109",
-                "0145"
-            ]
-        },
-        {
-            "path": "docs/decisions/0174-match-the-task-gate-to-ci-and-repeated-findings.md",
-            "title": "ADR 0174: Match the task gate to CI and repeated findings",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway",
-                "apps/web",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Gateway",
-                "Node",
-                "Process",
-                "Project",
-                "Task",
-                "Task workspace",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0174"
             ]
         },
         {
@@ -847,10 +754,6 @@
             ],
             "governing_adrs": [
                 "0097",
-                "0104",
-                "0109",
-                "0145",
-                "0174",
                 "0175",
                 "0178"
             ]
@@ -1826,9 +1729,11 @@
             "path": "docs/reference/proxycli.md",
             "title": "proxycli",
             "kind": "reference",
-            "components": [],
+            "components": [
+                "apps/gateway",
+                "apps/web"
+            ],
             "concepts": [
-                "Doctor",
                 "Extension",
                 "Gateway",
                 "Node",
@@ -1837,11 +1742,7 @@
                 "Route",
                 "Schedule"
             ],
-            "governing_adrs": [
-                "0104",
-                "0109",
-                "0145"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/routes.md",
@@ -2039,24 +1940,6 @@
             "components": [],
             "concepts": [],
             "governing_adrs": []
-        },
-        {
-            "path": "docs/solutions/cutover-proxycli.md",
-            "title": "Cut over proxy-quota collectors",
-            "kind": "solution",
-            "components": [],
-            "concepts": [
-                "Extension",
-                "Gateway",
-                "Node",
-                "Process",
-                "Role",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0104",
-                "0109"
-            ]
         },
         {
             "path": "docs/solutions/doctor-incus-proof.md",
