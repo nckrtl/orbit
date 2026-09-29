@@ -8,7 +8,7 @@
             {
                 "id": 3,
                 "task_group_id": 1,
-                "task_id": 1,
+                "task_id": 2,
                 "agent_thread_id": null,
                 "type": "resolution",
                 "body": "Use the existing request base.",
@@ -21,7 +21,7 @@
             {
                 "id": 2,
                 "task_group_id": 1,
-                "task_id": 1,
+                "task_id": 2,
                 "agent_thread_id": null,
                 "type": "approved",
                 "body": "Approved.",
@@ -34,7 +34,7 @@
             {
                 "id": 1,
                 "task_group_id": 1,
-                "task_id": 1,
+                "task_id": 2,
                 "agent_thread_id": 1,
                 "type": "ready_for_review",
                 "body": "Added the SDK requests.\ncomposer check passes.",

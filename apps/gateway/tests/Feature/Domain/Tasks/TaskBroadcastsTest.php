@@ -9,6 +9,8 @@ use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentThreadObserver;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\TaskBroadcasts;
+use App\Domain\Tasks\TaskCheckKind;
+use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPositions;
@@ -17,6 +19,7 @@ use App\Models\AgentThread;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskGroup;
 use Illuminate\Support\Facades\DB;
@@ -246,5 +249,39 @@ describe('task broadcasts', function (): void {
         $this->artisan('tasks:tick')->assertSuccessful();
 
         expect(live_broadcasts(RecordEventType::TaskGroupUpdated))->toHaveCount(1);
+    });
+
+    it('broadcasts the group when a task check changes', function (): void {
+        $group = live_group();
+        $subtask = $group->tasks[0];
+        app(TaskBroadcasts::class)->flush();
+        Event::fake([RecordBroadcast::class]);
+
+        expect(Task::query()->whereKey($subtask->id)->value('task_group_id'))->toBe($group->id)
+            ->and(Task::query()->whereKey($subtask->id)->pluck('task_group_id')->all())->toBe([$group->id]);
+
+        $check = TaskCheck::query()->create([
+            'task_id' => $subtask->id,
+            'kind' => TaskCheckKind::Baseline,
+            'status' => TaskCheckStatus::Running,
+            'pid' => 4100,
+            'process_started' => 'Wed Sep 23 12:00:00 2026',
+            'head_before' => str_repeat('a', 40),
+            'tree_before' => str_repeat('b', 40),
+            'started_at' => now(),
+        ]);
+        app(TaskBroadcasts::class)->flush();
+
+        $created = live_broadcasts(RecordEventType::TaskGroupUpdated);
+        expect($created)->toHaveCount(1)
+            ->and($created[0]->id)->toBe($group->id);
+
+        Event::fake([RecordBroadcast::class]);
+        $check->update(['status' => TaskCheckStatus::Passed, 'exit_code' => 0]);
+        app(TaskBroadcasts::class)->flush();
+
+        $updated = live_broadcasts(RecordEventType::TaskGroupUpdated);
+        expect($updated)->toHaveCount(1)
+            ->and($updated[0]->id)->toBe($group->id);
     });
 });

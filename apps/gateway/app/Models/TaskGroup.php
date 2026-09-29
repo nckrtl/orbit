@@ -9,7 +9,9 @@ use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskBroadcastObserver;
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskSchema;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -96,6 +98,24 @@ final class TaskGroup extends Model
         'settled_at',
     ];
 
+    #[\Override]
+    public function getTable(): string
+    {
+        return TaskSchema::merged($this->getConnection()) ? 'tasks' : 'task_groups';
+    }
+
+    #[\Override]
+    protected static function booted(): void
+    {
+        self::addGlobalScope('top_level', static function (Builder $query): void {
+            if (! TaskSchema::merged($query->getModel()->getConnection())) {
+                return;
+            }
+
+            $query->whereNull('parent_id');
+        });
+    }
+
     public function requireManagedExecution(): void
     {
         if ($this->execution_mode !== TaskExecutionMode::Managed) {
@@ -118,7 +138,9 @@ final class TaskGroup extends Model
     /** @return HasMany<Task, $this> */
     public function tasks(): HasMany
     {
-        return $this->hasMany(Task::class)->orderBy('position')->orderBy('id');
+        $foreignKey = TaskSchema::merged($this->getConnection()) ? 'parent_id' : 'task_group_id';
+
+        return $this->hasMany(Task::class, $foreignKey)->orderBy('position')->orderBy('id');
     }
 
     /** @return BelongsTo<AgentThread, $this> */

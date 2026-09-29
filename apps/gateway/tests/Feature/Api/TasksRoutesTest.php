@@ -515,7 +515,7 @@ it('stores the configured models on a new group and keeps the defaults when unse
     $this->postJson('/api/v1/task-groups', ['project_id' => $project->id, 'title' => 'Models', 'brief' => 'Configured models'])
         ->assertCreated();
 
-    $this->assertDatabaseHas('task_groups', ['title' => 'Models', 'implementer_model' => 'gpt-6-luna', 'reviewer_model' => TaskAgentDefaults::ReviewerModel]);
+    $this->assertDatabaseHas('tasks', ['title' => 'Models', 'parent_id' => null, 'implementer_model' => 'gpt-6-luna', 'reviewer_model' => TaskAgentDefaults::ReviewerModel]);
 });
 
 it('stores the configured implementer and reviewer drivers on a new group', function (): void {
@@ -528,7 +528,7 @@ it('stores the configured implementer and reviewer drivers on a new group', func
     $this->postJson('/api/v1/task-groups', ['project_id' => $project->id, 'title' => 'Mixed', 'brief' => 'Pi implements, T3 reviews'])
         ->assertCreated();
 
-    $this->assertDatabaseHas('task_groups', ['title' => 'Mixed', 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 't3']);
+    $this->assertDatabaseHas('tasks', ['title' => 'Mixed', 'parent_id' => null, 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 't3']);
 });
 
 it('rejects an unregistered configured driver with 409 before storing a group', function (string $role): void {
@@ -540,7 +540,6 @@ it('rejects an unregistered configured driver with 409 before storing a group', 
     $this->postJson('/api/v1/task-groups', ['project_id' => $project->id, 'title' => 'Unavailable', 'brief' => 'No driver'])
         ->assertStatus(409)->assertJsonPath('error.code', 'tasks.agent_driver_unavailable');
 
-    $this->assertDatabaseCount('task_groups', 0);
     $this->assertDatabaseCount('tasks', 0);
 })->with(['implementer', 'reviewer']);
 

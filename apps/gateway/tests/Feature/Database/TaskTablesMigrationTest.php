@@ -9,10 +9,11 @@ use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Support\Facades\Schema;
 
-it('creates task_groups and tasks with morph, metrics, and ordering columns', function (): void {
-    expect(Schema::hasTable('task_groups'))->toBeTrue()
+it('keeps task and subtask columns on one tasks table', function (): void {
+    expect(Schema::hasTable('task_groups'))->toBeFalse()
         ->and(Schema::hasTable('tasks'))->toBeTrue()
-        ->and(Schema::hasColumns('task_groups', [
+        ->and(Schema::hasColumns('tasks', [
+            'parent_id',
             'project_id',
             'taskable_type',
             'taskable_id',
@@ -29,17 +30,8 @@ it('creates task_groups and tasks with morph, metrics, and ordering columns', fu
             'duration_ms',
             'started_at',
             'settled_at',
-        ]))->toBeTrue()
-        ->and(Schema::hasColumns('tasks', [
-            'task_group_id',
             'position',
-            'title',
-            'brief',
-            'status',
             'implementer_agent_thread_id',
-            'tokens',
-            'line_diff',
-            'duration_ms',
         ]))->toBeTrue()
         ->and(Schema::hasColumns('agent_threads', [
             'tokens',

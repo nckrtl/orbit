@@ -29,7 +29,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         if ($existing !== null) {
             return $existing->id;
         }
-        $pending = $this->pending($task->task_group_id, $task->id, TaskThreadRole::Reviewer);
+        $pending = $this->pending($task->requireGroupId(), $task->id, TaskThreadRole::Reviewer);
         if ($pending !== null) {
             if (! $this->installReviewerMcp($task)) {
                 return null;
@@ -48,7 +48,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
     /** Reserves the subtask reviewer's Orbit id before the opening prompt, or returns the thread that already exists. */
     public function reserveReviewer(Task $task): ?int
     {
-        $existing = $this->subtaskReviewer($task) ?? $this->pending($task->task_group_id, $task->id, TaskThreadRole::Reviewer);
+        $existing = $this->subtaskReviewer($task) ?? $this->pending($task->requireGroupId(), $task->id, TaskThreadRole::Reviewer);
         if ($existing instanceof AgentThread) {
             return $existing->id;
         }
@@ -62,7 +62,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         if ($task->implementer_agent_thread_id !== null) {
             return (int) $task->implementer_agent_thread_id;
         }
-        $existing = $this->pending($task->task_group_id, $task->id, TaskThreadRole::Implementer);
+        $existing = $this->pending($task->requireGroupId(), $task->id, TaskThreadRole::Implementer);
         if ($existing instanceof AgentThread) {
             return $existing->id;
         }

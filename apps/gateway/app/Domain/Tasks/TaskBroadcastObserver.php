@@ -23,7 +23,7 @@ final readonly class TaskBroadcastObserver
     {
         match (true) {
             $model instanceof TaskGroup => $this->broadcasts->groupCreated($model->id),
-            $model instanceof Task => $this->broadcasts->groupChanged($model->task_group_id),
+            $model instanceof Task => $this->groupChanged($model),
             $model instanceof TaskCheck => $this->checkChanged($model),
             $model instanceof TaskComment => $this->broadcasts->commentCreated($model->id),
             $model instanceof AgentThread => $this->broadcasts->threadChanged($model->id),
@@ -37,7 +37,7 @@ final readonly class TaskBroadcastObserver
 
         match (true) {
             $model instanceof TaskGroup => TaskBroadcasts::broadcastsGroupChange($columns) ? $this->broadcasts->groupChanged($model->id) : null,
-            $model instanceof Task => TaskBroadcasts::broadcastsGroupChange($columns) ? $this->broadcasts->groupChanged($model->task_group_id) : null,
+            $model instanceof Task => TaskBroadcasts::broadcastsGroupChange($columns) ? $this->groupChanged($model) : null,
             $model instanceof TaskCheck => $this->checkChanged($model),
             $model instanceof AgentThread => TaskBroadcasts::broadcastsThreadChange($columns) ? $this->broadcasts->threadChanged($model->id) : null,
             default => null,
@@ -47,8 +47,13 @@ final readonly class TaskBroadcastObserver
     public function deleted(Model $model): void
     {
         if ($model instanceof Task) {
-            $this->broadcasts->groupChanged($model->task_group_id);
+            $this->groupChanged($model);
         }
+    }
+
+    private function groupChanged(Task $task): void
+    {
+        $this->broadcasts->groupChanged($task->task_group_id ?? $task->id);
     }
 
     private function checkChanged(TaskCheck $check): void

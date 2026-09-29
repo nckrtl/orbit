@@ -1766,45 +1766,47 @@ final readonly class TaskScheduler
     private function abandonedWorkspaces(): Collection
     {
         $workspaceName = match (DB::connection()->getDriverName()) {
-            'mysql', 'mariadb' => "CONCAT('task-', task_groups.id)",
-            default => "'task-' || task_groups.id",
+            'mysql', 'mariadb' => "CONCAT('task-', tasks.id)",
+            default => "'task-' || tasks.id",
         };
 
         $cutoff = RemoveTaskWorkspaceAction::reservationCutoff();
         $mergePrefix = RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.'%';
 
         return Instance::query()
-            ->select('instances.*', 'task_groups.id as ended_task_group_id')
-            ->join('task_groups', function ($join) use ($workspaceName): void {
-                $join->on('task_groups.project_id', '=', 'instances.project_id')
+            ->select('instances.*', 'tasks.id as ended_task_group_id')
+            ->join('tasks', function ($join) use ($workspaceName): void {
+                $join->on('tasks.project_id', '=', 'instances.project_id')
+                    ->whereNull('tasks.parent_id')
                     ->where(function ($link) use ($workspaceName): void {
-                        $link->whereColumn('task_groups.taskable_id', 'instances.id')
+                        $link->whereColumn('tasks.taskable_id', 'instances.id')
                             ->orWhere(function ($named) use ($workspaceName): void {
                                 $named->whereRaw("instances.name = {$workspaceName}")
                                     ->whereColumn('instances.branch_override', 'instances.name')
-                                    ->whereNull('task_groups.taskable_id');
+                                    ->whereNull('tasks.taskable_id');
                             });
                     });
             })
-            ->where('task_groups.execution_mode', TaskExecutionMode::Managed->value)
+            ->where('tasks.execution_mode', TaskExecutionMode::Managed->value)
             ->whereNotExists(function ($userGroup): void {
                 $userGroup->selectRaw('1')
-                    ->from('task_groups as user_groups')
+                    ->from('tasks as user_groups')
+                    ->whereNull('user_groups.parent_id')
                     ->whereColumn('user_groups.taskable_id', 'instances.id')
                     ->where('user_groups.taskable_type', TaskableType::Instance)
                     ->where('user_groups.execution_mode', '!=', TaskExecutionMode::Managed->value);
             })
             ->where(function ($ended) use ($cutoff, $mergePrefix): void {
                 $ended->where(function ($finished) use ($cutoff): void {
-                    $finished->whereIn('task_groups.status', [TaskGroupStatus::Cancelled->value, TaskGroupStatus::Completed->value])
+                    $finished->whereIn('tasks.status', [TaskGroupStatus::Cancelled->value, TaskGroupStatus::Completed->value])
                         ->where(function ($reservation) use ($cutoff): void {
-                            $reservation->whereColumn('task_groups.taskable_id', 'instances.id')
-                                ->orWhereNull('task_groups.reserved_at')
-                                ->orWhere('task_groups.reserved_at', '<=', $cutoff);
+                            $reservation->whereColumn('tasks.taskable_id', 'instances.id')
+                                ->orWhereNull('tasks.reserved_at')
+                                ->orWhere('tasks.reserved_at', '<=', $cutoff);
                         });
                 })->orWhere(function ($settling) use ($mergePrefix): void {
-                    $settling->where('task_groups.status', TaskGroupStatus::Settling->value)
-                        ->where('task_groups.assistance_reason', 'like', $mergePrefix);
+                    $settling->where('tasks.status', TaskGroupStatus::Settling->value)
+                        ->where('tasks.assistance_reason', 'like', $mergePrefix);
                 });
             })
             ->orderBy('instances.id')
@@ -2808,13 +2810,13 @@ final readonly class TaskScheduler
         $running = $this->runningSibling($tasks, $task);
 
         if ($running instanceof Task) {
-            throw TaskSequenceException::siblingRunning($task->task_group_id, $running->id);
+            throw TaskSequenceException::siblingRunning($task->requireGroupId(), $running->id);
         }
 
         $next = $this->lowestTodo($tasks);
 
         if (! $next instanceof Task || $next->id !== $task->id || ! $this->predecessorsCompleted($task, $tasks)) {
-            throw TaskSequenceException::notNext($task->id, $task->task_group_id);
+            throw TaskSequenceException::notNext($task->id, $task->requireGroupId());
         }
 
         $task->status = TaskStatus::Running;

@@ -54,7 +54,7 @@ final class TaskData extends Data
             fixupProblem: $task->fixup_problem,
 
             id: $task->id,
-            taskGroupId: $task->task_group_id,
+            taskGroupId: $task->requireGroupId(),
             position: $task->position,
             title: $task->title,
             brief: $task->brief,

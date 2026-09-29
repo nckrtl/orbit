@@ -7,7 +7,7 @@
         "data": {
             "id": 3,
             "task_group_id": 1,
-            "task_id": 1,
+            "task_id": 2,
             "agent_thread_id": null,
             "type": "resolution",
             "body": "Use the existing request base.",

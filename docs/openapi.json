@@ -23801,10 +23801,12 @@
           "status": {
             "type": "string",
             "enum": [
+              "backlog",
               "todo",
               "reserved",
               "running",
               "reviewing",
+              "settling",
               "completed",
               "failed",
               "cancelled"

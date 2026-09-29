@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Groups cancelled before cancel also closed their subtasks still hold todo and running rows.
@@ -37,10 +38,16 @@ return new class extends Migration
 
     private function openSubtasks(): Builder
     {
-        return DB::table('tasks')
-            ->whereIn('task_group_id', static function (Builder $query): void {
-                $query->select('id')->from('task_groups')->where('status', 'cancelled');
-            })
-            ->whereNotIn('status', ['completed', 'failed', 'cancelled']);
+        $query = DB::table('tasks')->whereNotIn('status', ['completed', 'failed', 'cancelled']);
+
+        if (Schema::hasColumn('tasks', 'parent_id')) {
+            return $query->whereIn('parent_id', static function (Builder $groups): void {
+                $groups->select('id')->from('tasks')->whereNull('parent_id')->where('status', 'cancelled');
+            });
+        }
+
+        return $query->whereIn('task_group_id', static function (Builder $groups): void {
+            $groups->select('id')->from('task_groups')->where('status', 'cancelled');
+        });
     }
 };

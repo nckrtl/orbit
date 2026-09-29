@@ -365,7 +365,7 @@ it('retries failed archives on a later tick with the same command id without blo
 
     app(TaskScheduler::class)->tick();
     $archiveId = collect($dispatcher->commands)->firstWhere('type', 'thread.archive')['commandId'];
-    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => TaskGroupStatus::Completed->value]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => TaskGroupStatus::Completed->value]);
     $this->travel(1)->minutes();
     app(TaskScheduler::class)->tick();
 
@@ -421,7 +421,7 @@ it('flags a prior settling group without a reviewed PR once and retains its work
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
 
-    $this->assertDatabaseHas('task_groups', [
+    $this->assertDatabaseHas('tasks', [
         'id' => $group->id, 'status' => 'settling', 'pr_url' => null,
         'assistance_requested' => true, 'taskable_id' => $group->taskable_id, 'settled_at' => null,
     ]);
@@ -553,11 +553,11 @@ it('continues watching a prior settling PR and completes only after it merges', 
     ]);
 
     app(TaskScheduler::class)->tick();
-    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'settling', 'pr_url' => $group->pr_url]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'pr_url' => $group->pr_url]);
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
 
-    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'completed', 'pr_url' => $group->pr_url, 'taskable_id' => null]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'completed', 'pr_url' => $group->pr_url, 'taskable_id' => null]);
     $this->assertDatabaseMissing('instances', ['id' => $group->taskable_id]);
     Http::assertSentCount(6);
 });
@@ -762,7 +762,7 @@ it('asks for assistance once per set of pull request problems and withdraws it w
     $checkReason = 'The pull request needs attention: Check Rust agent failed: https://github.com/acme/orbit/runs/1. Orbit reached the cap of 2 fixups for check:Rust agent in the current window (2 counted).';
 
     app(TaskScheduler::class)->tick();
-    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => $conflictReason]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => $conflictReason]);
     $requestedAt = $group->fresh()?->updated_at;
     $this->travel(1)->minute();
 
@@ -771,13 +771,13 @@ it('asks for assistance once per set of pull request problems and withdraws it w
         ->and($group->fresh()?->updated_at?->equalTo($requestedAt))->toBeTrue();
 
     app(TaskScheduler::class)->tick();
-    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'assistance_requested' => true, 'assistance_reason' => $checkReason]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'assistance_requested' => true, 'assistance_reason' => $checkReason]);
     expect($notifier->reasons)->toBe([$conflictReason, $checkReason]);
 
     // A re-run on the same head commit is read once the minute-long check cache expires.
     $this->travel(61)->seconds();
     app(TaskScheduler::class)->tick();
-    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => false, 'assistance_reason' => null]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => false, 'assistance_reason' => null]);
     expect($notifier->reasons)->toHaveCount(2)
         ->and(Task::query()->where('task_group_id', $group->id)->count())->toBe(5);
 });
@@ -798,7 +798,7 @@ it('leaves another cause of assistance on a settling group alone while its pull 
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
 
-    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => 'Merged pull request cleanup failed: disk full']);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => 'Merged pull request cleanup failed: disk full']);
     expect($notifier->reasons)->toBe([]);
 });
 
@@ -815,7 +815,7 @@ it('withdraws its pull request assistance request when the pull request merges',
 
     app(TaskScheduler::class)->tick();
 
-    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'completed', 'assistance_requested' => false, 'assistance_reason' => null]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'completed', 'assistance_requested' => false, 'assistance_reason' => null]);
 });
 
 it('keeps another cause of assistance when the pull request merges', function (): void {
@@ -831,7 +831,7 @@ it('keeps another cause of assistance when the pull request merges', function ()
 
     app(TaskScheduler::class)->tick();
 
-    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'completed', 'assistance_requested' => true, 'assistance_reason' => 'The operator asked to hold this group.']);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'completed', 'assistance_requested' => true, 'assistance_reason' => 'The operator asked to hold this group.']);
 });
 
 it('backs off a merged pull request cleanup and retries it on a later tick', function (): void {
@@ -1071,7 +1071,7 @@ it('replaces its pull request assistance request with the cleanup failure when a
 
     app(TaskScheduler::class)->tick();
 
-    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => 'Merged pull request cleanup failed: disk full']);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => 'Merged pull request cleanup failed: disk full']);
 });
 
 it('changes nothing on a settling group when GitHub cannot report the pull request', function (): void {
@@ -1089,7 +1089,7 @@ it('changes nothing on a settling group when GitHub cannot report the pull reque
 
     app(TaskScheduler::class)->tick();
 
-    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => $reason]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => $reason]);
     $this->assertDatabaseHas('tasks', ['id' => $waiting->id, 'status' => 'todo']);
     expect($notifier->reasons)->toBe([]);
 });
@@ -1784,7 +1784,7 @@ it('keeps a merged group settling when an approved commit missed the merge', fun
 
     app(TaskScheduler::class)->tick();
 
-    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'settling', 'assistance_reason' => $reason]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_reason' => $reason]);
 });
 
 it('returns no decisions when the tasks extension is disabled', function (): void {

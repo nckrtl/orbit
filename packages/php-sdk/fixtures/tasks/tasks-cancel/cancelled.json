@@ -28,7 +28,7 @@
             "duration_ms": null,
             "tasks": [
                 {
-                    "id": 1,
+                    "id": 2,
                     "task_group_id": 1,
                     "position": 1,
                     "title": "Add SDK requests",
@@ -65,7 +65,7 @@
                     "fixup_problem": null
                 },
                 {
-                    "id": 2,
+                    "id": 3,
                     "task_group_id": 1,
                     "position": 2,
                     "title": "Add CLI commands",
