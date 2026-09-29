@@ -56,7 +56,7 @@ final readonly class NativeProjectStateInspector implements ProjectStateInspecto
             ->instances()
             ->where('node_id', $node->id)
             ->where('status', '!=', InstanceState::Removing)
-            ->with(['project', 'taskGroups'])
+            ->with(['project', 'tasks'])
             ->orderBy('id')
             ->get()
             ->filter(static fn (Instance $instance): bool => ! InstanceProvisionProgress::isInFlight(

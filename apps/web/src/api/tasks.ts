@@ -207,7 +207,7 @@ export const taskAgentsQuery = (groupId: number) =>
         retry: false,
     });
 
-/** Comments and run receipts on one task, newest first. */
+/** Comments and turn receipts on one task, newest first. */
 export const taskCommentsQuery = (groupId: number, taskId: number) =>
     queryOptions({
         queryKey: ["task-groups", String(groupId), "tasks", String(taskId), "comments"],

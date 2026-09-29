@@ -14,7 +14,7 @@ use App\Infrastructure\Tasks\GitHubTaskBaseBranchFetcher;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
-use App\Models\TaskGroup;
+use App\Models\Task;
 use Illuminate\Support\Facades\Http;
 use Symfony\Component\Process\Process;
 use Tests\Feature\GitHub\GitHubTestSupport;
@@ -28,7 +28,7 @@ function fetcher_git(string $directory, array $arguments): string
     return trim((new Process(['git', '-C', $directory, '-c', 'user.name=t', '-c', 'user.email=t@t', ...$arguments]))->mustRun()->getOutput());
 }
 
-function fetcher_group(string $checkout): TaskGroup
+function fetcher_group(string $checkout): Task
 {
     $project = Project::query()->create([
         'name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@github.com:acme/shop.git', 'default_branch' => 'main',
@@ -41,7 +41,7 @@ function fetcher_group(string $checkout): TaskGroup
         'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-7', 'checkout_path' => $checkout,
         'branch' => 'task-7', 'status' => 'source_resolved',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id, 'title' => 'Export orders', 'brief' => 'Add an export.', 'status' => 'settling',
     ]);
     $group->taskable()->associate($instance);

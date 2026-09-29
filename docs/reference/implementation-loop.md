@@ -11,7 +11,7 @@ covers:
 
 # Feature delivery
 
-A feature reaches main as one complete pull request with its code, tests, documentation, and any in-progress ADRs. The [contributor guide](/contributor-guide) describes the steps. Orbit builds its own features as [task groups](/reference/tasks): the first Task writes the documentation, each Task handoff runs the Project task check, and the group ends in a pull request. This page covers review evidence, merge, CI, the local checks, and the main caches that make those checks fast.
+A feature reaches main as one complete pull request with its code, tests, documentation, and any in-progress ADRs. The [contributor guide](/contributor-guide) describes the steps. Orbit builds its own features as [tasks](/reference/tasks): the first subtask writes the documentation, each subtask handoff runs the Project task check, and the task ends in a pull request. This page covers review evidence, merge, CI, the local checks, and the main caches that make those checks fast.
 
 ## Review on Incus
 
@@ -94,7 +94,7 @@ Root `bin/test` runs all five project suites in parallel and splits the availabl
 
 ### The candidate gate
 
-Root `composer check` runs `bin/review-check`. It checks the working tree as it is, including uncommitted and untracked files. The Orbit Project uses it as its task check, so it also runs at every Task handoff. It runs these checks.
+Root `composer check` runs `bin/review-check`. It checks the working tree as it is, including uncommitted and untracked files. The Orbit Project uses it as its task check, so it also runs at every subtask handoff. It runs these checks.
 
 1. It runs `bin/docs-impact --gate` against the merge base with `origin/main`. The fallback is the merge base with local `main`. Without a merge base, this check fails.
 2. It seeds absent quality and test caches with `bin/worktree-cache` and `bin/tia-cache seed`.
@@ -201,7 +201,7 @@ After all checks pass, bootstrap publishes its caches when the checkout is clean
 
 ### Refresh in the background
 
-`bin/tia-cache refresh --background` records a request and starts one worker when none runs. It returns at once. `bin/worktree-remove` queues it when it removes a merged worktree. A merge without that cleanup, such as a task group's pull request, queues nothing. The next seed from the registered store queues the refresh instead. Cache freshness never holds worktree creation, a merge, or cleanup.
+`bin/tia-cache refresh --background` records a request and starts one worker when none runs. It returns at once. `bin/worktree-remove` queues it when it removes a merged worktree. A merge without that cleanup, such as a task's pull request, queues nothing. The next seed from the registered store queues the refresh instead. Cache freshness never holds worktree creation, a merge, or cleanup.
 
 The worker takes the repository refresh lock, fetches `main`, and fast-forwards the private maintenance checkout. It works through one project at a time. It skips a project whose publications are current at that commit. Otherwise it installs the dependencies and runs `composer test:affected`, `composer format:check`, and `composer analyse`. Each tool publishes after its own check succeeds, and a failure keeps the previous publication. The test run needs PCOV or Xdebug, and each command stops after 30 minutes.
 
@@ -259,7 +259,7 @@ The gate runs all five Composer projects whatever the candidate changes. Focused
 
 ### Web and Pi server checks join the gate, Rust stays in CI
 
-A change to the web app or the Pi server could pass the gate and then fail a required CI job. So the gate runs the same commands as those CI jobs when their paths change. Running every CI job for every Task is a rejected alternative, because path selection keeps unrelated work fast. Rust cross-compilation is too slow for each handoff, so the Rust agent stays a CI check.
+A change to the web app or the Pi server could pass the gate and then fail a required CI job. So the gate runs the same commands as those CI jobs when their paths change. Running every CI job for every subtask is a rejected alternative, because path selection keeps unrelated work fast. Rust cross-compilation is too slow for each handoff, so the Rust agent stays a CI check.
 
 ### A missing tool fails the gate
 

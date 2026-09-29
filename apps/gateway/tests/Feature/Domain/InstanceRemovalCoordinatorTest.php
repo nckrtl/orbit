@@ -1534,7 +1534,7 @@ it('cancels unfinished annotation tasks on Instance removal and preserves comple
     $this->orb181Coordinator->execute($instance, false);
     foreach ([$pending, $running] as $annotation) {
         expect($annotation->refresh()->task->status)->toBe(TaskStatus::Cancelled);
-        expect($annotation->task->taskGroup->status)->toBe(TaskGroupStatus::Cancelled);
+        expect($annotation->task->parent->status)->toBe(TaskGroupStatus::Cancelled);
         expect($annotation->delivery)->toBe('cancelled');
         expect(fn () => $store->transition($annotation, 'resolved', 'Late reply'))->toThrow(ResourceOperationException::class);
     }

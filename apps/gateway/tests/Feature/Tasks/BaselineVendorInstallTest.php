@@ -18,7 +18,6 @@ use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
 use App\Models\Task;
 use App\Models\TaskCheck;
-use App\Models\TaskGroup;
 use Symfony\Component\Process\Process;
 use Tests\Support\FakeTaskCheckRunner;
 
@@ -44,7 +43,7 @@ it('baseline installs vendor before check on a fresh workspace', function (): vo
         'checkout_path' => '/tmp/tasks-baseline-vendor-install',
         'status' => 'reserved',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Baseline vendor install',
         'brief' => 'Install missing dependencies before check.',
@@ -54,7 +53,7 @@ it('baseline installs vendor before check on a fresh workspace', function (): vo
     $group->taskable()->associate($instance);
     $group->save();
     Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'First task',
         'brief' => 'First task brief',
@@ -110,7 +109,7 @@ it('reports missing dependencies instead of claiming the default branch is broke
         'checkout_path' => '/tmp/tasks-baseline-install-failure',
         'status' => 'reserved',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Baseline install failure',
         'brief' => 'Report dependency installation failure.',
@@ -120,7 +119,7 @@ it('reports missing dependencies instead of claiming the default branch is broke
     $group->taskable()->associate($instance);
     $group->save();
     Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'First task',
         'brief' => 'First task brief',
@@ -178,7 +177,7 @@ it('keeps a baseline check error failed when the tree changed during the run', f
         'checkout_path' => '/tmp/tasks-baseline-changed-error',
         'status' => 'reserved',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Baseline changed error',
         'brief' => 'Report a check error even when the tree changes.',
@@ -188,7 +187,7 @@ it('keeps a baseline check error failed when the tree changed during the run', f
     $group->taskable()->associate($instance);
     $group->save();
     Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'First task',
         'brief' => 'First task brief',
@@ -252,7 +251,7 @@ it('installs the root Composer package without a lockfile, removes the lockfile 
             'checkout_path' => $checkout,
             'status' => 'reserved',
         ]);
-        $group = TaskGroup::query()->create([
+        $group = Task::topLevel()->create([
             'project_id' => $project->id,
             'title' => 'Lockless package',
             'brief' => 'Install the root package.',
@@ -262,7 +261,7 @@ it('installs the root Composer package without a lockfile, removes the lockfile 
         $group->taskable()->associate($instance);
         $group->save();
         Task::query()->create([
-            'task_group_id' => $group->id,
+            'parent_id' => $group->id,
             'position' => 1,
             'title' => 'First task',
             'brief' => 'First task brief',

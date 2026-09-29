@@ -30,7 +30,7 @@ final readonly class StoreTaskCommentAction
         $comment = DB::transaction(function () use ($task, $payload, &$deliverResolution): TaskComment {
             $comment = TaskComment::query()->create([
                 ...$payload,
-                'task_group_id' => $task->task_group_id,
+                'task_group_id' => $task->parent_id,
                 'task_id' => $task->id,
                 'completion_attempt' => $task->completion_attempt,
                 'posted_at' => Carbon::now(),
@@ -40,7 +40,7 @@ final readonly class StoreTaskCommentAction
 
             if ($type === TaskCommentType::AssistanceRequested) {
                 $task->update(['assistance_requested' => true, 'assistance_reason' => $comment->body]);
-                $task->taskGroup()->update(['assistance_requested' => true, 'assistance_reason' => $comment->body]);
+                $task->parent()->update(['assistance_requested' => true, 'assistance_reason' => $comment->body]);
                 $this->log($task, $comment, 'assistance requested');
             }
             if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && $task->assistance_requested) {
@@ -74,7 +74,7 @@ final readonly class StoreTaskCommentAction
 
         $rawType = $comment->getRawOriginal('type');
         if (TaskCommentType::tryFrom(is_string($rawType) ? $rawType : '') === TaskCommentType::AssistanceRequested) {
-            $this->notifier->assistance($task->taskGroup()->firstOrFail(), $comment->body);
+            $this->notifier->assistance($task->parent()->firstOrFail(), $comment->body);
         }
 
         return $comment;
@@ -84,11 +84,11 @@ final readonly class StoreTaskCommentAction
     private function subtaskReviewer(Task $task): ?AgentThread
     {
         $reviewers = AgentThread::query()
-            ->where('task_group_id', $task->task_group_id)
+            ->where('task_group_id', $task->parent_id)
             ->where('task_id', $task->id)
             ->where('role', TaskThreadRole::Reviewer->value)
             ->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%');
-        $pointed = $task->taskGroup()->value('reviewer_agent_thread_id');
+        $pointed = $task->parent()->value('reviewer_agent_thread_id');
         if (is_numeric($pointed)) {
             $match = (clone $reviewers)->whereKey((int) $pointed)->first();
             if ($match instanceof AgentThread) {
@@ -118,7 +118,7 @@ final readonly class StoreTaskCommentAction
                 'review_reminder_attempt' => null,
                 'review_reminder_input_id' => null,
             ]);
-            $locked->taskGroup()->update(['assistance_requested' => false, 'assistance_reason' => null]);
+            $locked->parent()->update(['assistance_requested' => false, 'assistance_reason' => null]);
             $this->log($locked, $comment, 'resolution held for reviewer');
         });
     }
@@ -135,7 +135,7 @@ final readonly class StoreTaskCommentAction
                 ? ['review_attempt' => $locked->review_attempt + 1, 'review_notified_attempt' => $locked->review_attempt + 1]
                 : ['completion_attempt' => $locked->completion_attempt + 1, 'completion_reminder_attempt' => null, 'completion_reminder_input_id' => null];
             $locked->update([...$attempt, 'assistance_requested' => false, 'assistance_reason' => null, 'communication_failures' => 0, 'review_reminder_attempt' => null, 'review_reminder_input_id' => null, 'resolution_delivered_comment_id' => $comment->id]);
-            $locked->taskGroup()->update(['assistance_requested' => false, 'assistance_reason' => null]);
+            $locked->parent()->update(['assistance_requested' => false, 'assistance_reason' => null]);
             $this->log($locked, $comment, 'resolution delivered');
         });
     }

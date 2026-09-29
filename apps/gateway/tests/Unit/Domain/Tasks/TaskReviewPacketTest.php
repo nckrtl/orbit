@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskDeliverableEvidence;
 use App\Domain\Tasks\TaskReviewPacket;
-use App\Domain\Tasks\TaskRunInstructions;
+use App\Domain\Tasks\TaskTurnInstructions;
 
 it('keeps the fails-on-base requirement intact before a long command is capped', function (): void {
     $path = 'apps/gateway/tests/Feature/HomeScreenTest.php';
@@ -400,7 +400,7 @@ it('keeps a review packet within 16000 characters when the task check and every 
         ->and($packet)->toContain('The Project task check is `'.$shown.'`. .git/orbit/check.log holds the rest.')
         ->and($packet)->not->toContain(mb_substr($taskCheck, 0, TaskReviewPacket::CommandLimit + 1))
         ->and($packet)->toContain($retrieval)
-        ->and($packet)->toContain(TaskRunInstructions::reviewer(final: true))
+        ->and($packet)->toContain(TaskTurnInstructions::reviewer(final: true))
         ->and($packet)->toContain('The change list, summary and breaking list are yours to write: add a missing entry yourself instead of requesting changes.')
         ->and(mb_strlen(packet_section($packet, 'Group brief')))->toBeLessThanOrEqual(TaskReviewPacket::BriefLimit)
         ->and(mb_strlen(packet_section($packet, 'Subtask brief')))->toBeLessThanOrEqual(TaskReviewPacket::BriefLimit)
@@ -425,7 +425,7 @@ it('keeps the packet retrieval commands and closing instructions when earlier te
     ]);
 
     expect(mb_strlen($packet))->toBeLessThanOrEqual(TaskReviewPacket::Limit)
-        ->and($packet)->toEndWith(TaskRunInstructions::reviewer(final: true))
+        ->and($packet)->toEndWith(TaskTurnInstructions::reviewer(final: true))
         ->and($packet)->toContain('git diff '.$start.'; git ls-files --others --exclude-standard -z | while IFS= read -r -d \'\' path; do git diff --no-index -- /dev/null "$path" || true; done')
         ->and($packet)->toContain("The group started at {$groupStart}.\ngit diff --stat {$groupStart}..HEAD");
 });

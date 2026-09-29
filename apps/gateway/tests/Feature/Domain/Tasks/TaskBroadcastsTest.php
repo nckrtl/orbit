@@ -9,6 +9,8 @@ use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentThreadObserver;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\TaskBroadcasts;
+use App\Domain\Tasks\TaskCheckKind;
+use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPositions;
@@ -17,27 +19,27 @@ use App\Models\AgentThread;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use App\Models\TaskComment;
-use App\Models\TaskGroup;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 
-function live_group(string $status = 'running'): TaskGroup
+function live_group(string $status = 'running'): Task
 {
     $project = Project::query()->firstOrCreate(['slug' => 'live-tasks'], [
         'name' => 'Live tasks',
         'repository_url' => 'git@example.test:live-tasks.git',
         'default_branch' => 'main',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Secret title',
         'brief' => 'A brief that must never reach a broadcast.',
         'status' => TaskGroupStatus::from($status),
         'started_at' => now(),
     ]);
-    Task::query()->create(['task_group_id' => $group->id, 'position' => 1, 'title' => 'One', 'brief' => 'One brief', 'status' => TaskStatus::Running]);
-    Task::query()->create(['task_group_id' => $group->id, 'position' => 2, 'title' => 'Two', 'brief' => 'Two brief', 'status' => TaskStatus::Todo]);
+    Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'One', 'brief' => 'One brief', 'status' => TaskStatus::Running]);
+    Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Two', 'brief' => 'Two brief', 'status' => TaskStatus::Todo]);
 
     return $group->fresh(['tasks']) ?? $group;
 }
@@ -246,5 +248,88 @@ describe('task broadcasts', function (): void {
         $this->artisan('tasks:tick')->assertSuccessful();
 
         expect(live_broadcasts(RecordEventType::TaskGroupUpdated))->toHaveCount(1);
+    });
+
+    it('broadcasts the group when a task check changes', function (): void {
+        $group = live_group();
+        $subtask = $group->tasks[0];
+        app(TaskBroadcasts::class)->flush();
+        Event::fake([RecordBroadcast::class]);
+
+        expect(Task::query()->whereKey($subtask->id)->value('parent_id'))->toBe($group->id)
+            ->and(Task::query()->whereKey($subtask->id)->pluck('parent_id')->all())->toBe([$group->id]);
+
+        $check = TaskCheck::query()->create([
+            'task_id' => $subtask->id,
+            'kind' => TaskCheckKind::Baseline,
+            'status' => TaskCheckStatus::Running,
+            'pid' => 4100,
+            'process_started' => 'Wed Sep 23 12:00:00 2026',
+            'head_before' => str_repeat('a', 40),
+            'tree_before' => str_repeat('b', 40),
+            'started_at' => now(),
+        ]);
+        app(TaskBroadcasts::class)->flush();
+
+        $created = live_broadcasts(RecordEventType::TaskGroupUpdated);
+        expect($created)->toHaveCount(1)
+            ->and($created[0]->id)->toBe($group->id);
+
+        Event::fake([RecordBroadcast::class]);
+        $check->update(['status' => TaskCheckStatus::Passed, 'exit_code' => 0]);
+        app(TaskBroadcasts::class)->flush();
+
+        $updated = live_broadcasts(RecordEventType::TaskGroupUpdated);
+        expect($updated)->toHaveCount(1)
+            ->and($updated[0]->id)->toBe($group->id);
+    });
+
+    it('decides a topLevel create and a partial select the same way for status and broadcasts', function (): void {
+        $project = Project::query()->create([
+            'name' => 'Level broadcasts',
+            'slug' => 'level-broadcasts-'.bin2hex(random_bytes(4)),
+            'repository_url' => 'git@example.test:level-broadcasts.git',
+        ]);
+        $group = Task::topLevel()->create([
+            'project_id' => $project->id,
+            'title' => 'Level',
+            'brief' => 'Decide the level.',
+            'status' => TaskGroupStatus::Backlog,
+        ]);
+
+        expect($group->status)->toBeInstanceOf(TaskGroupStatus::class)
+            ->and($group->isTopLevel())->toBeTrue();
+
+        app(TaskBroadcasts::class)->flush();
+        $created = live_broadcasts(RecordEventType::TaskGroupCreated);
+        expect($created)->toHaveCount(1)
+            ->and($created[0]->id)->toBe($group->id)
+            ->and($created[0]->data)->toBe(['id' => $group->id, 'status' => 'backlog']);
+
+        $subtask = $group->children()->create([
+            'position' => 1,
+            'title' => 'Child',
+            'brief' => 'A subtask.',
+            'status' => TaskStatus::Todo,
+        ]);
+        Event::fake([RecordBroadcast::class]);
+
+        $partialSubtask = Task::query()->whereKey($subtask->id)->firstOrFail(['id', 'status', 'title']);
+        $partialGroup = Task::topLevel()->whereKey($group->id)->firstOrFail(['id', 'status', 'title']);
+
+        expect(array_key_exists('parent_id', $partialSubtask->getAttributes()))->toBeFalse()
+            ->and(array_key_exists('parent_id', $partialGroup->getAttributes()))->toBeFalse()
+            ->and($partialSubtask->status)->toBeInstanceOf(TaskStatus::class)
+            ->and($partialGroup->status)->toBeInstanceOf(TaskGroupStatus::class);
+
+        $unloadedSubtask = Task::query()->whereKey($subtask->id)->firstOrFail(['id', 'title']);
+        $unloadedGroup = Task::topLevel()->whereKey($group->id)->firstOrFail(['id', 'title']);
+        $unloadedSubtask->update(['title' => 'Renamed child']);
+        $unloadedGroup->update(['title' => 'Renamed group']);
+        app(TaskBroadcasts::class)->flush();
+
+        $updated = live_broadcasts(RecordEventType::TaskGroupUpdated);
+        expect($updated)->toHaveCount(1)
+            ->and($updated[0]->id)->toBe($group->id);
     });
 });

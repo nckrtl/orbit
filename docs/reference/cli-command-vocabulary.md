@@ -55,14 +55,14 @@ Use `create` and `destroy` when the Gateway owns the resource lifecycle. Use `ad
 | `process` | `create` and `destroy` | A [Process](/reference/processes-and-schedules), or a Project Process definition with `--project` |
 | `route` | `create` and `destroy` | A [Route](/reference/routes) |
 | `schedule` | `create` and `destroy` | A [Schedule](/reference/schedules), or a Project Schedule definition with `--project` |
-| `tasks` | `create` | A [task group](/reference/tasks). `tasks:cancel` and `tasks:complete` end it. |
-| `tasks:comment` | `create` | A typed comment on a Task |
-| `tasks:subtask` | `create` and `destroy` | A Task in a task group |
+| `tasks` | `create` | A [task](/reference/tasks). `tasks:cancel` and `tasks:complete` end it. |
+| `tasks:comment` | `create` | A typed comment on a subtask |
+| `tasks:subtask` | `create` and `destroy` | A subtask of a task |
 | `tool` | `install` and `remove` | A Tool on a Node |
 
 `route:create` takes an Instance ID and domain for an app Route. It does not take a Project ID or an explicit Node or Cluster scope. A custom proxy Route instead takes a domain, serving Node, and upstream or Process. See [Route creation](/reference/routes#create-and-change-targets).
 
-`cluster:router` and `route:target` use `set` and `unset`, because each holds one slot. `extension` uses `enable` and `disable` for the Gateway-owned switch; `instance:analytics`, `metrics`, and `metrics:exporter` use `enable` and `disable`. `proxycli` uses `setup` and `teardown` for its fleet resources, while `proxycli:status` remains a family-specific read. `tasks` uses `create` for task groups and `status` for assistance; its extension switch is `extension:enable tasks` or `extension:disable tasks`. `schedule:enable` turns a Schedule on. A Project target selects a definition and never creates a Process or Schedule.
+`cluster:router` and `route:target` use `set` and `unset`, because each holds one slot. `extension` uses `enable` and `disable` for the Gateway-owned switch; `instance:analytics`, `metrics`, and `metrics:exporter` use `enable` and `disable`. `proxycli` uses `setup` and `teardown` for its fleet resources, while `proxycli:status` remains a family-specific read. `tasks` uses `create` for tasks and `status` for assistance; its extension switch is `extension:enable tasks` or `extension:disable tasks`. `schedule:enable` turns a Schedule on. A Project target selects a definition and never creates a Process or Schedule.
 
 ## Family-specific actions
 
@@ -84,7 +84,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `profile` | `profile` | The CLI profiles one HTTP request from the operator machine. |
 | `realtime` | `tail` | The CLI streams decoded realtime Gateway events as they arrive. |
 | `schedule` | `logs`, `run` | The CLI reads Schedule logs or runs a Schedule once. |
-| `tasks` | `cancel`, `complete`, `status` | The CLI cancels or completes a task group, cancels a running subtask with `tasks:subtask:cancel`, or reports task assistance and state. |
+| `tasks` | `cancel`, `complete`, `status` | The CLI cancels or completes a task, cancels a running subtask with `tasks:subtask:cancel`, or reports task assistance and state. |
 
 `doctor` and `profile` are one-segment commands. Each family name is the command. Project source defaults and task settings use `project:update`; create and destroy remain the lifecycle commands.
 
@@ -98,7 +98,7 @@ Five commands end in a noun.
 | `metrics:credentials` | The CLI shows or resets Metrics Grafana credentials. |
 | `node:metrics` | The CLI shows one Node metrics snapshot. |
 | `node:settings` | The CLI writes typed [Node settings](/reference/node-settings). |
-| `tasks:agents` | The CLI lists the agent threads of a [task group](/reference/tasks). |
+| `tasks:agents` | The CLI lists the agent threads of a [task](/reference/tasks). |
 
 ## Gateway route names
 

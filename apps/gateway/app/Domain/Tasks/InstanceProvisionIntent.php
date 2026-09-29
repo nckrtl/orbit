@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Models\Project;
-use App\Models\TaskGroup;
+use App\Models\Task;
 
 /**
  * Intent a Project instance create path must honor.
@@ -16,11 +16,11 @@ use App\Models\TaskGroup;
 final readonly class InstanceProvisionIntent
 {
     public function __construct(
-        public TaskGroup $group,
+        public Task $group,
         public bool $visitable,
     ) {}
 
-    public static function for(TaskGroup $group): self
+    public static function for(Task $group): self
     {
         $group->loadMissing('project');
 

@@ -20,7 +20,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
-use App\Models\TaskGroup;
+use App\Models\Task;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Projects\CreateProjectRequest;
 use Orbit\Sdk\Requests\Projects\DestroyProjectRequest;
@@ -344,7 +344,7 @@ describe('app lifecycle', function (): void {
             'default_branch' => 'main',
             'root' => 'public',
         ]);
-        $taskGroup = TaskGroup::query()->create([
+        $parent = Task::topLevel()->create([
             'project_id' => $project->id,
             'title' => 'Ship the feature',
             'brief' => 'Implement and verify the feature.',
@@ -358,7 +358,7 @@ describe('app lifecycle', function (): void {
         expect($project->fresh())
             ->not
             ->toBeNull()
-            ->and($taskGroup->fresh())
+            ->and($parent->fresh())
             ->not
             ->toBeNull();
     });

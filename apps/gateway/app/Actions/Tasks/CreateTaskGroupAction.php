@@ -15,7 +15,6 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\Task;
-use App\Models\TaskGroup;
 
 final readonly class CreateTaskGroupAction
 {
@@ -25,7 +24,7 @@ final readonly class CreateTaskGroupAction
         private AgentDriverRegistry $drivers,
     ) {}
 
-    public function execute(CreateTaskGroupData $data): TaskGroup
+    public function execute(CreateTaskGroupData $data): Task
     {
         $this->requireExtension->execute();
 
@@ -45,7 +44,7 @@ final readonly class CreateTaskGroupAction
             throw TaskGroupGuard::deliverablesMissing(array_map(static fn (int $index): string => 'position '.($index + 1).' "'.$data->tasks[$index]->title.'"', $missing));
         }
 
-        $group = TaskGroup::query()->create([
+        $group = Task::topLevel()->create([
             'project_id' => $data->projectId,
             'implementer_agent_driver' => $implementerDriver,
             'reviewer_agent_driver' => $reviewerDriver,
@@ -59,7 +58,7 @@ final readonly class CreateTaskGroupAction
 
         foreach ($data->tasks as $index => $task) {
             Task::query()->create([
-                'task_group_id' => $group->id,
+                'parent_id' => $group->id,
                 'position' => $index + 1,
                 'title' => $task->title,
                 'brief' => $task->brief,

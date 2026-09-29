@@ -7,7 +7,7 @@ Cancelling subtask...
 └  Cancelled subtask.
 
 
-┌  Subtask: 1
+┌  Subtask: 2
 │
 ├  Task group           1
 │

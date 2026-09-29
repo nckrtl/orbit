@@ -7,9 +7,9 @@ use App\Infrastructure\Tasks\T3\T3Stream as TaskAgentStream;
 use App\Models\AgentThread;
 use App\Models\Node;
 use App\Models\Project;
-use App\Models\TaskGroup;
+use App\Models\Task;
 
-/** @return array{TaskGroup, AgentThread} */
+/** @return array{Task, AgentThread} */
 function agent_viewer_fixture(): array
 {
     $node = Node::query()->create(['name' => 'agent-gateway', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.80', 'wireguard_ip' => '10.44.0.80']);
@@ -17,7 +17,7 @@ function agent_viewer_fixture(): array
     test()->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
     test()->postJson('/api/v1/extensions/tasks/enable')->assertOk();
     $project = Project::query()->create(['name' => 'viewer', 'slug' => 'viewer', 'repository_url' => 'git@example.test:viewer.git', 'default_branch' => 'main']);
-    $group = TaskGroup::query()->create(['project_id' => $project->id, 'title' => 'Viewer', 'brief' => 'Read sessions']);
+    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Viewer', 'brief' => 'Read sessions']);
     $session = AgentThread::query()->create(['task_group_id' => $group->id, 'node_id' => $node->id, 'role' => 'reviewer', 'model' => 'claude-opus', 'effort' => 'high', 'external_id' => 'thread-one', 'driver' => 't3', 'runtime_key' => 'node:'.$node->id]);
 
     return [$group, $session];
@@ -50,7 +50,7 @@ describe('task agent viewer', function (): void {
 
     it('refuses a session from another group, invalid cursors, and missing Nodes', function (): void {
         [$group, $session] = agent_viewer_fixture();
-        $other = TaskGroup::query()->create(['project_id' => $group->project_id, 'title' => 'Other', 'brief' => 'Other']);
+        $other = Task::topLevel()->create(['project_id' => $group->project_id, 'title' => 'Other', 'brief' => 'Other']);
         $this->getJson("/api/v1/task-groups/{$other->id}/agents/{$session->id}/stream")->assertNotFound();
         $this->withHeader('Last-Event-ID', 'bad cursor')->getJson("/api/v1/task-groups/{$group->id}/agents/{$session->id}/stream")->assertUnprocessable();
         $this->flushHeaders();

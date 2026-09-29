@@ -85,6 +85,7 @@
                 "Project",
                 "Role",
                 "Route",
+                "Subtask",
                 "Task",
                 "Task check",
                 "Task workspace",
@@ -384,7 +385,6 @@
                 "Role",
                 "Route",
                 "Schedule",
-                "Task",
                 "Tool"
             ],
             "governing_adrs": []
@@ -532,9 +532,9 @@
                 "Project",
                 "Role",
                 "Route",
+                "Subtask",
                 "Task",
                 "Task check",
-                "Task group",
                 "Tool"
             ],
             "governing_adrs": []
@@ -577,11 +577,12 @@
                 "Role",
                 "Route",
                 "Schedule",
+                "Subtask",
                 "Task",
                 "Task check",
-                "Task group",
                 "Task workspace",
-                "Tool"
+                "Tool",
+                "Turn receipt"
             ],
             "governing_adrs": []
         },
@@ -602,6 +603,7 @@
                 "Node",
                 "Process",
                 "Project",
+                "Subtask",
                 "Task",
                 "Task check",
                 "Tool"
@@ -654,6 +656,7 @@
                 "Project",
                 "Route",
                 "Schedule",
+                "Subtask",
                 "Task",
                 "Task check",
                 "Tool"
@@ -714,6 +717,35 @@
             ]
         },
         {
+            "path": "docs/decisions/0182-start-tasks-from-project-task-definitions.md",
+            "title": "ADR 0182: Start tasks from Project task definitions",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Deliverable",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Route",
+                "Schedule",
+                "Subtask",
+                "Task",
+                "Task workspace",
+                "Turn receipt"
+            ],
+            "governing_adrs": [
+                "0178",
+                "0182"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -721,8 +753,8 @@
                 "apps/docs"
             ],
             "concepts": [
-                "Task",
-                "Task group"
+                "Subtask",
+                "Task"
             ],
             "governing_adrs": [
                 "0001"
@@ -748,14 +780,17 @@
                 "Role",
                 "Route",
                 "Schedule",
+                "Subtask",
                 "Task",
                 "Task workspace",
-                "Tool"
+                "Tool",
+                "Turn receipt"
             ],
             "governing_adrs": [
                 "0097",
                 "0175",
-                "0178"
+                "0178",
+                "0182"
             ]
         },
         {
@@ -849,8 +884,8 @@
                 "Node",
                 "Project",
                 "Route",
-                "Task",
-                "Task group"
+                "Subtask",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -1033,8 +1068,8 @@
                 "Role",
                 "Route",
                 "Schedule",
+                "Subtask",
                 "Task",
-                "Task group",
                 "Tool"
             ],
             "governing_adrs": []
@@ -1135,7 +1170,6 @@
                 "Role",
                 "Route",
                 "Task",
-                "Task group",
                 "Tool"
             ],
             "governing_adrs": []
@@ -1185,8 +1219,9 @@
                 "Role",
                 "Route",
                 "Schedule",
+                "Subtask",
                 "Task",
-                "Task group"
+                "Turn receipt"
             ],
             "governing_adrs": []
         },
@@ -1225,6 +1260,7 @@
                 "Node",
                 "Project",
                 "Route",
+                "Subtask",
                 "Task"
             ],
             "governing_adrs": []
@@ -1260,6 +1296,7 @@
                 "Node",
                 "Project",
                 "Schedule",
+                "Subtask",
                 "Task"
             ],
             "governing_adrs": []
@@ -1280,9 +1317,9 @@
                 "Node",
                 "Process",
                 "Project",
+                "Subtask",
                 "Task",
                 "Task check",
-                "Task group",
                 "Task workspace",
                 "Tool"
             ],
@@ -1310,7 +1347,6 @@
                 "Route",
                 "Schedule",
                 "Task",
-                "Task group",
                 "Task workspace"
             ],
             "governing_adrs": []
@@ -1528,6 +1564,7 @@
                 "Project",
                 "Route",
                 "Schedule",
+                "Subtask",
                 "Task",
                 "Tool"
             ],
@@ -1570,8 +1607,8 @@
                 "Process",
                 "Project",
                 "Role",
-                "Task",
-                "Task group"
+                "Subtask",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -1595,7 +1632,6 @@
                 "Route",
                 "Schedule",
                 "Task",
-                "Task group",
                 "Tool"
             ],
             "governing_adrs": []
@@ -1670,6 +1706,7 @@
                 "Project",
                 "Route",
                 "Schedule",
+                "Subtask",
                 "Task",
                 "Tool"
             ],
@@ -1845,13 +1882,16 @@
                 "Role",
                 "Route",
                 "Schedule",
+                "Subtask",
                 "Task",
                 "Task check",
-                "Task group",
                 "Task workspace",
-                "Tool"
+                "Tool",
+                "Turn receipt"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0182"
+            ]
         },
         {
             "path": "docs/reference/tools.md",
@@ -1912,8 +1952,8 @@
                 "Project",
                 "Role",
                 "Route",
-                "Task",
-                "Task group"
+                "Subtask",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -1931,8 +1971,8 @@
                 "Instance",
                 "Node",
                 "Route",
+                "Subtask",
                 "Task",
-                "Task group",
                 "Tool"
             ],
             "governing_adrs": []

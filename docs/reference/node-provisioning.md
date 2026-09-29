@@ -224,7 +224,7 @@ The sockets live in `ORBIT_HOME/ssh/mux`, and the directory has mode `0700`. Eve
 - When the socket path is too long for a Unix socket, or the directory cannot be created, each command opens its own connection.
 - When a Node refuses another channel, OpenSSH opens a direct connection for that command and writes two warning lines to its stderr.
 
-A reachability check always opens a new connection. Doctor's Node inspection, the `--offline` probe of role and Node removal, and the Node probe of task group cancellation use it. File copies between Nodes for Instance transfer and clone use `scp` on their own connections.
+A reachability check always opens a new connection. Doctor's Node inspection, the `--offline` probe of role and Node removal, and the Node probe of task cancellation use it. File copies between Nodes for Instance transfer and clone use `scp` on their own connections.
 
 ## Public SSH
 

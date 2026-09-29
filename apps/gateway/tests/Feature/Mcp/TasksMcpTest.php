@@ -10,7 +10,7 @@ use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\Project;
-use App\Models\TaskGroup;
+use App\Models\Task;
 use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -121,7 +121,7 @@ it('cancels a running or queued group through MCP and removes its shared Instanc
         'checkout_path' => '/srv/orbit/apps/mcp-demo/task-mcp-cancel',
         'status' => 'source_resolved',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $this->appRecord->id,
         'title' => 'MCP cancel',
         'brief' => 'Cancel a stuck group.',
@@ -157,7 +157,7 @@ it('cancels a running or queued group through MCP and removes its shared Instanc
 
 it('returns a structured MCP error for canceling a settling group with a pull request and still completes it', function (): void {
     app(TaskExtensionState::class)->enable();
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $this->appRecord->id,
         'title' => 'MCP settle',
         'brief' => 'Complete after review.',
@@ -187,7 +187,7 @@ it('returns a structured MCP error for canceling a settling group with a pull re
 
 it('returns a structured MCP error for canceling a completed group', function (): void {
     app(TaskExtensionState::class)->enable();
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $this->appRecord->id,
         'title' => 'MCP completed',
         'brief' => 'Already complete.',

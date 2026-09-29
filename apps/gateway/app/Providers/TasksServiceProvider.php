@@ -20,8 +20,8 @@ use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
-use App\Domain\Tasks\TaskRunReceipts;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
+use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceSigner;
@@ -37,7 +37,7 @@ use App\Infrastructure\Tasks\Pi\PiDriver;
 use App\Infrastructure\Tasks\RemoteTaskBridgeWorktreeRemover;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Infrastructure\Tasks\RemoteTaskReviewDiff;
-use App\Infrastructure\Tasks\RemoteTaskRunReceipts;
+use App\Infrastructure\Tasks\RemoteTaskTurnReceipts;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceMcp;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceSigner;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceStateReader;
@@ -49,7 +49,10 @@ use App\Infrastructure\Tasks\T3\T3Stream;
 use App\Infrastructure\Tasks\T3\T3TaskAgentStream;
 use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
+use App\Models\Task;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 
 final class TasksServiceProvider extends ServiceProvider
@@ -67,7 +70,7 @@ final class TasksServiceProvider extends ServiceProvider
         TaskReviewDiff::class => RemoteTaskReviewDiff::class,
         TaskWorkspaceStateReader::class => RemoteTaskWorkspaceStateReader::class,
         TaskBridgeWorktreeRemover::class => RemoteTaskBridgeWorktreeRemover::class,
-        TaskRunReceipts::class => RemoteTaskRunReceipts::class,
+        TaskTurnReceipts::class => RemoteTaskTurnReceipts::class,
         TaskCheckRunner::class => RemoteTaskCheckRunner::class,
         TaskBriefCoverage::class => LaravelAiTaskBriefCoverage::class,
         BriefCoverageLabeler::class => JevBriefCoverageLabeler::class,
@@ -92,6 +95,17 @@ final class TasksServiceProvider extends ServiceProvider
     {
         // Observers are declared on the models with ObservedBy. Calling observe() here would load those
         // models during every boot, so test impact analysis would rerun unrelated tests after a model edit.
+
+        // {group} is the top-level task. The Task scope itself returns only subtasks.
+        Route::bind('group', static function (string $value): Task {
+            $task = Task::topLevel()->whereKey($value)->first();
+
+            if (! $task instanceof Task) {
+                throw (new ModelNotFoundException)->setModel(Task::class, [$value]);
+            }
+
+            return $task;
+        });
 
         // One notice per changed record, when the request or command that changed it ends (ADR 0151).
         $this->app->terminating(function (): void {

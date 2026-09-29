@@ -8,7 +8,7 @@ use App\Domain\Tasks\BriefCoverageLabeler;
 use App\Domain\Tasks\TaskPullRequestHealth;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Models\JevDecision;
-use App\Models\TaskGroup;
+use App\Models\Task;
 use Illuminate\Support\Facades\DB;
 
 final readonly class JevBriefCoverageLabeler implements BriefCoverageLabeler
@@ -16,7 +16,7 @@ final readonly class JevBriefCoverageLabeler implements BriefCoverageLabeler
     private const int SnapshotLimit = 65536;
 
     /** Label decisions only when the scheduler observes a merge with verifiable GitHub evidence. */
-    public function label(TaskGroup $group, TaskPullRequestHealth $merge): void
+    public function label(Task $group, TaskPullRequestHealth $merge): void
     {
         if ($merge->state !== 'merged') {
             return;

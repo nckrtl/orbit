@@ -15,7 +15,6 @@ use App\Models\Instance;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
-use App\Models\TaskGroup;
 use Symfony\Component\Process\Process;
 
 function render_task_prompt(string $role, array $payload): array
@@ -42,14 +41,14 @@ function production_task_prompt_models(): array
         'default_branch' => 'main',
         'task_check' => 'composer check',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Offline prompts',
         'brief' => 'Render <info>prompts</info> without <error>a workspace</error>.',
         'status' => 'running',
     ]);
     $task = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Render JSON',
         'brief' => 'Read and validate the prompt input.',
@@ -69,7 +68,7 @@ function production_task_prompt_models(): array
     $instance->starting_commit = str_repeat('b', 40);
     $group->setRelation('project', $project);
     $group->setRelation('taskable', $instance);
-    $task->setRelation('taskGroup', $group);
+    $task->setRelation('parent', $group);
 
     return [$project, $group, $task];
 }
@@ -176,7 +175,7 @@ function production_review_prompt(bool $continued): array
     $instance->starting_commit = str_repeat('b', 40);
     $group->setRelation('project', $project);
     $group->setRelation('taskable', $instance);
-    $task->setRelation('taskGroup', $group);
+    $task->setRelation('parent', $group);
     TaskCheck::query()->create([
         'task_id' => $task->id,
         'kind' => TaskCheckKind::Handoff,

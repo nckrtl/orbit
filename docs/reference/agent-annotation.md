@@ -17,7 +17,7 @@ covers:
 An annotation goes to one of two places:
 
 - **Local server**: a small server on your machine stores it as a file, and your agent picks it up.
-- **Orbit**: the Gateway stores it as a Task and sends it to a T3 thread in the Instance's checkout.
+- **Orbit**: the Gateway stores it as a task and sends it to a T3 thread in the Instance's checkout.
 
 ## Install and mount
 
@@ -132,16 +132,16 @@ You can type a thread ID and save it. The overlay keeps it in session storage fo
 
 ### Tasks
 
-Each annotation creates one task group with `execution_mode=existing_thread` and one Task with `type=annotation`. The group points at the Instance but does not own it. The annotation keeps the page context and the delivery state. The Task keeps the status, the summary, and the times.
+Each annotation creates one task with `execution_mode=existing_thread` and one subtask with `type=annotation`. The task points at the Instance but does not own it. The annotation keeps the page context and the delivery state. The subtask keeps the status, the summary, and the times.
 
-| Annotation status | Task status |
+| Annotation status | Subtask status |
 | --- | --- |
 | `pending` | `todo`, and every status not listed here, such as `failed` |
 | `in_progress` | `running` or `reviewing` |
 | `resolved` | `completed` |
 | `cancelled` | `cancelled` |
 
-The [managed scheduler](/reference/tasks) never claims, provisions, reviews, or cleans up an existing-thread group, and does not count it for concurrency. The managed Task commands refuse such a group with `tasks.external_execution`. So no managed action can remove the Instance.
+The [managed scheduler](/reference/tasks) never claims, provisions, reviews, or cleans up an existing-thread task, and does not count it for concurrency. The managed task commands refuse such a task with `tasks.external_execution`. So no managed action can remove the Instance.
 
 ### Delivery
 
@@ -195,9 +195,9 @@ A host that must compile Tailwind or mount React cannot load the overlay as a sc
 
 HTTP keeps Gateway validation, storage, and a durable answer for each submission. A realtime client message cannot run a Gateway action. So a notice only tells the browser to fetch.
 
-### A Task in an existing-thread group
+### A subtask in an existing-thread task
 
-An annotation is work for an agent, so it uses the Task record and shows on the task board. The execution mode, not the task type, keeps it out of the managed scheduler. So the managed lifecycle never provisions or removes the Instance for it.
+An annotation is work for an agent, so it uses a task and one subtask and shows on the task board. The execution mode, not the subtask type, keeps it out of the managed scheduler. So the managed lifecycle never provisions or removes the Instance for it.
 
 ### Completion is a report
 

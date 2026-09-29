@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Models\TaskGroup;
+use App\Models\Task;
 
 /**
  * Fetches a settling pull request's base ref into the workspace before a conflict fixup starts, and
@@ -16,7 +16,7 @@ interface TaskBaseBranchFetcher
     /**
      * @throws TaskPullRequestException
      */
-    public function fetch(TaskGroup $group, string $base): void;
+    public function fetch(Task $group, string $base): void;
 
     /**
      * Fetches `origin/task-{group id}` and fast-forwards the workspace when it is strictly behind that ref,
@@ -25,5 +25,5 @@ interface TaskBaseBranchFetcher
      *
      * @throws TaskPullRequestException
      */
-    public function fastForward(TaskGroup $group, bool $missingRefOk = false): void;
+    public function fastForward(Task $group, bool $missingRefOk = false): void;
 }

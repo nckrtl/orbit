@@ -13,14 +13,14 @@ use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
-use App\Models\TaskGroup;
+use App\Models\Task;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Event;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 
-/** @return array{Node, Instance, TaskGroup} */
+/** @return array{Node, Instance, Task} */
 function publish_group(): array
 {
     $node = Node::query()->create([
@@ -29,7 +29,7 @@ function publish_group(): array
     ]);
     $project = Project::query()->create(['name' => 'Publish', 'slug' => 'publish', 'repository_url' => 'git@example.test:publish.git', 'default_branch' => 'main']);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-1', 'checkout_path' => '/home/orbit/apps/publish/task-1', 'status' => 'source_resolved']);
-    $group = TaskGroup::query()->create(['project_id' => $project->id, 'title' => 'Publish', 'brief' => 'Brief', 'status' => TaskGroupStatus::Running, 'lines_added' => 1, 'lines_deleted' => 1, 'line_diff' => 2]);
+    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Publish', 'brief' => 'Brief', 'status' => TaskGroupStatus::Running, 'lines_added' => 1, 'lines_deleted' => 1, 'line_diff' => 2]);
     $group->taskable()->associate($instance)->save();
     app(TaskBroadcasts::class)->flush();
 

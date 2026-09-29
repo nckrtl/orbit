@@ -5,7 +5,7 @@
     "status": 200,
     "body": {
         "data": {
-            "id": 2,
+            "id": 4,
             "project_id": 1,
             "project": "orbit",
             "project_code": "ORB",
@@ -28,8 +28,8 @@
             "duration_ms": null,
             "tasks": [
                 {
-                    "id": 3,
-                    "task_group_id": 2,
+                    "id": 5,
+                    "task_group_id": 4,
                     "position": 1,
                     "title": "Add SDK requests",
                     "brief": "One request class per route.",
@@ -65,8 +65,8 @@
                     "fixup_problem": null
                 },
                 {
-                    "id": 4,
-                    "task_group_id": 2,
+                    "id": 6,
+                    "task_group_id": 4,
                     "position": 2,
                     "title": "Add CLI commands",
                     "brief": "One command per route.",

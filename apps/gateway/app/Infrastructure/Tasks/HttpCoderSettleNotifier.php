@@ -7,7 +7,7 @@ namespace App\Infrastructure\Tasks;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\TaskSessionDecision;
 use App\Domain\Tasks\TaskSessionObservation;
-use App\Models\TaskGroup;
+use App\Models\Task;
 use Illuminate\Support\Facades\Http;
 use JsonException;
 use SensitiveParameter;
@@ -19,7 +19,7 @@ final readonly class HttpCoderSettleNotifier implements CoderSettleNotifier
 
     private const float TIMEOUT = 10.0;
 
-    public function notify(TaskGroup $group): void
+    public function notify(Task $group): void
     {
         $this->post([
             'event' => 'task_group.settled',
@@ -32,7 +32,7 @@ final readonly class HttpCoderSettleNotifier implements CoderSettleNotifier
         ]);
     }
 
-    public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
+    public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
     {
         $this->post([
             'event' => 'task_group.escalated',
@@ -45,7 +45,7 @@ final readonly class HttpCoderSettleNotifier implements CoderSettleNotifier
         ]);
     }
 
-    public function assistance(TaskGroup $group, string $reason): void
+    public function assistance(Task $group, string $reason): void
     {
         $this->post([
             'event' => 'task_group.assistance_requested',

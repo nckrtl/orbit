@@ -16,7 +16,6 @@ use App\Models\ProjectLifecycleStep;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
-use App\Models\TaskGroup;
 use Closure;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -62,7 +61,7 @@ final readonly class TaskScheduler
     public const string T3ServerRestartContinuationError = 'Could not continue this thread after the server restart. Send a new message to continue.';
 
     /** One continue, on the same thread, after that restart. It does not ask for assistance. */
-    public const string PiServerRestartContinue = 'Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the run script.';
+    public const string PiServerRestartContinue = 'Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the turn command.';
 
     /** Resumes reserved for one subtask before the next restart asks for assistance (ADR 0167). */
     public const int PiServerRestartResumeLimit = 2;
@@ -111,7 +110,7 @@ final readonly class TaskScheduler
         private TaskExtensionState $extension,
         private TaskSessionObserver $observer,
         private TaskSessionActor $actor,
-        private TaskRunReceipts $receipts,
+        private TaskTurnReceipts $receipts,
         private TaskWorkspaceSigner $signer,
         private TaskBriefCoverage $coverage,
         private BriefCoverageLabeler $coverageLabeler,
@@ -132,7 +131,7 @@ final readonly class TaskScheduler
             return [];
         }
 
-        $groups = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
+        $groups = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
             ->with(['project', 'tasks', 'taskable'])
             ->whereIn('status', [TaskGroupStatus::Running, TaskGroupStatus::Reviewing, TaskGroupStatus::Settling])
             ->orderBy('id')
@@ -279,7 +278,7 @@ final readonly class TaskScheduler
         return $decisions;
     }
 
-    private function handleImplementerCompletion(TaskGroup $group, Task $task, TaskSessionObservation $observation): bool
+    private function handleImplementerCompletion(Task $group, Task $task, TaskSessionObservation $observation): bool
     {
         $implementer = $observation->thread(TaskThreadRole::Implementer);
         if ($implementer === null) {
@@ -307,13 +306,13 @@ final readonly class TaskScheduler
 
         try {
             $read = $this->collectReceipt($group, $task, TaskThreadRole::Implementer);
-        } catch (TaskRunReceiptException $exception) {
+        } catch (TaskTurnReceiptException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
             return true;
         }
         $receipt = $this->pendingReceipt($task, TaskThreadRole::Implementer);
-        if ($receipt instanceof TaskComment && $this->receiptOutcome($receipt) === TaskRunOutcome::Blocked) {
+        if ($receipt instanceof TaskComment && $this->receiptOutcome($receipt) === TaskTurnOutcome::Blocked) {
             $task->update(['completion_handoff_comment_id' => $receipt->id]);
             $this->requestAssistance($task, $group, 'The implementer is blocked: '.$receipt->body, $observation);
 
@@ -337,7 +336,7 @@ final readonly class TaskScheduler
     /**
      * Runs the Project check for a handoff and acts on its state. The process state decides; no timer ends a check.
      */
-    private function checkHandoff(TaskGroup $group, Task $task, TaskThreadObservation $implementer, TaskComment $receipt, TaskSessionObservation $observation): void
+    private function checkHandoff(Task $group, Task $task, TaskThreadObservation $implementer, TaskComment $receipt, TaskSessionObservation $observation): void
     {
         $instance = $group->taskable;
         if (! $instance instanceof Instance) {
@@ -471,13 +470,13 @@ final readonly class TaskScheduler
         $updated = TaskCheck::query()->whereKey($check->id)->where('status', TaskCheckStatus::Running->value)
             ->update([...$values, 'finished_at' => $finishedAt, 'updated_at' => now()]);
         $check->refresh();
-        $groupId = Task::query()->whereKey($check->task_id)->value('task_group_id');
+        $groupId = Task::query()->whereKey($check->task_id)->value('parent_id');
         if ($updated === 1 && is_int($groupId)) {
             $this->broadcasts->groupChanged($groupId);
         }
     }
 
-    private function handleReviewerOutcome(TaskGroup $group, Task $task, TaskSessionObservation $observation): bool
+    private function handleReviewerOutcome(Task $group, Task $task, TaskSessionObservation $observation): bool
     {
         $reviewer = $observation->thread(TaskThreadRole::Reviewer);
         // Before this subtask's review is requested, the observed reviewer can be an earlier
@@ -509,22 +508,22 @@ final readonly class TaskScheduler
 
         try {
             $read = $this->collectReceipt($group, $task, TaskThreadRole::Reviewer);
-        } catch (TaskRunReceiptException $exception) {
+        } catch (TaskTurnReceiptException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
             return true;
         }
         $receipt = $this->pendingReceipt($task, TaskThreadRole::Reviewer);
         $outcome = $receipt instanceof TaskComment ? $this->receiptOutcome($receipt) : null;
-        if ($outcome === TaskRunOutcome::Approved && $this->isWorking($observation->thread(TaskThreadRole::Implementer))) {
+        if ($outcome === TaskTurnOutcome::Approved && $this->isWorking($observation->thread(TaskThreadRole::Implementer))) {
             // Orbit commits the whole workspace, so the approval waits until the implementer stops changing it.
             return true;
         }
-        if ($outcome === TaskRunOutcome::ChangesRequested && $this->isWorking($observation->thread(TaskThreadRole::Implementer))) {
+        if ($outcome === TaskTurnOutcome::ChangesRequested && $this->isWorking($observation->thread(TaskThreadRole::Implementer))) {
             return true;
         }
         if ($receipt instanceof TaskComment
-            && in_array($outcome, [TaskRunOutcome::Blocked, TaskRunOutcome::ChangesRequested, TaskRunOutcome::Approved], true)) {
+            && in_array($outcome, [TaskTurnOutcome::Blocked, TaskTurnOutcome::ChangesRequested, TaskTurnOutcome::Approved], true)) {
             $decision = $this->reviewWorkspaceDecision($group, $task, $reviewer, $receipt, $observation);
             if ($decision === 'orbit_commit') {
                 try {
@@ -548,19 +547,19 @@ final readonly class TaskScheduler
                 return true;
             }
         }
-        if ($receipt instanceof TaskComment && $outcome === TaskRunOutcome::Approved && $this->committedApproval($receipt)) {
+        if ($receipt instanceof TaskComment && $outcome === TaskTurnOutcome::Approved && $this->committedApproval($receipt)) {
             // The commit is already stored and the workspace still holds it. Retry the push only; do not commit again.
             $this->publishApprovedCommit($group, $task, $receipt);
 
             return true;
         }
-        if ($receipt instanceof TaskComment && $outcome === TaskRunOutcome::Blocked) {
+        if ($receipt instanceof TaskComment && $outcome === TaskTurnOutcome::Blocked) {
             $task->update(['review_handled_comment_id' => $receipt->id]);
             $this->requestAssistance($task, $group, 'The reviewer is blocked: '.$receipt->body, $observation);
 
             return true;
         }
-        if ($receipt instanceof TaskComment && $outcome === TaskRunOutcome::ChangesRequested) {
+        if ($receipt instanceof TaskComment && $outcome === TaskTurnOutcome::ChangesRequested) {
             $this->relayFindings($group, $task, $observation, $receipt);
 
             return true;
@@ -569,7 +568,7 @@ final readonly class TaskScheduler
         $instance = $group->taskable;
         $pullRequest = null;
         $items = [$this->receiptItem($read, $receipt)];
-        if ($receipt instanceof TaskComment && $outcome === TaskRunOutcome::Approved) {
+        if ($receipt instanceof TaskComment && $outcome === TaskTurnOutcome::Approved) {
             $onBranch = $instance instanceof Instance && $this->workspace->currentBranch($instance) === 'task-'.$group->id;
             $items[] = new TaskRubricItem('branch', $onBranch, 'The workspace branch is not task-'.$group->id.'. Switch back to it.');
             $confirmation = $this->confirmationItem($task, $receipt, TaskThreadRole::Reviewer);
@@ -577,15 +576,15 @@ final readonly class TaskScheduler
                 $items[] = $confirmation;
             }
             if ($task->opensPullRequest()) {
-                $pullRequest = TaskRunPullRequest::fromArray($receipt->pull_request);
-                $items[] = new TaskRubricItem('pull_request_fields', $pullRequest instanceof TaskRunPullRequest, 'The approval of the last subtask needs --pr-summary, --pr-change, and --pr-breaking.');
+                $pullRequest = TaskTurnPullRequest::fromArray($receipt->pull_request);
+                $items[] = new TaskRubricItem('pull_request_fields', $pullRequest instanceof TaskTurnPullRequest, 'The approval of the last subtask needs --pr-summary, --pr-change, and --pr-breaking.');
             }
         }
         $waiting = $this->waitingItem($reviewer);
         if ($waiting instanceof TaskRubricItem) {
             $items[] = $waiting;
         }
-        if ($this->failedItems($items) === [] && $pullRequest instanceof TaskRunPullRequest) {
+        if ($this->failedItems($items) === [] && $pullRequest instanceof TaskTurnPullRequest) {
             try {
                 $missing = $this->coverage->missing(
                     $group,
@@ -645,10 +644,10 @@ final readonly class TaskScheduler
      * The tick calls this before it observes the reviewer, so an unavailable reviewer does not skip the retry.
      * A failed push asks for assistance on the fifth failure, and the tick keeps retrying it. This does not commit again.
      */
-    private function retryCommittedApproval(TaskGroup $group, Task $task): bool
+    private function retryCommittedApproval(Task $group, Task $task): bool
     {
         $receipt = $this->pendingReceipt($task, TaskThreadRole::Reviewer);
-        if (! $receipt instanceof TaskComment || $this->receiptOutcome($receipt) !== TaskRunOutcome::Approved || ! $this->committedApproval($receipt)) {
+        if (! $receipt instanceof TaskComment || $this->receiptOutcome($receipt) !== TaskTurnOutcome::Approved || ! $this->committedApproval($receipt)) {
             return false;
         }
         if (! $this->retryIsDue($this->publicationBackoffKey($task), 'approved publication')) {
@@ -679,7 +678,7 @@ final readonly class TaskScheduler
      * When the pull request URL is already stored, the push updates that pull request and Orbit does not open another (ADR 0164).
      * A failed push or open leaves the subtask in review and keeps commit_sha.
      */
-    private function publishApprovedCommit(TaskGroup $group, Task $task, TaskComment $receipt): void
+    private function publishApprovedCommit(Task $group, Task $task, TaskComment $receipt): void
     {
         $commit = $receipt->commit_sha;
         if (! is_string($commit) || $commit === '') {
@@ -702,8 +701,8 @@ final readonly class TaskScheduler
         }
 
         if ($task->opensPullRequest()) {
-            $pullRequest = TaskRunPullRequest::fromArray($receipt->pull_request);
-            if (! $pullRequest instanceof TaskRunPullRequest) {
+            $pullRequest = TaskTurnPullRequest::fromArray($receipt->pull_request);
+            if (! $pullRequest instanceof TaskTurnPullRequest) {
                 $this->recordCommunicationFailure($task, $group, 'The approval of the last subtask needs --pr-summary, --pr-change, and --pr-breaking.');
 
                 return;
@@ -732,7 +731,7 @@ final readonly class TaskScheduler
      * pull request would never carry the commit, so Orbit does not push it and asks for assistance naming
      * it. An unreadable state is a publication failure that waits out the backoff.
      */
-    private function pullRequestStillOpen(TaskGroup $group, Task $task, string $commit): bool
+    private function pullRequestStillOpen(Task $group, Task $task, string $commit): bool
     {
         if (! is_string($group->pr_url) || $group->pr_url === '') {
             return true;
@@ -755,7 +754,7 @@ final readonly class TaskScheduler
     }
 
     /** Whether the group waits for an operator because an approved commit missed its merged pull request. */
-    private function orphanedCommit(TaskGroup $group): bool
+    private function orphanedCommit(Task $group): bool
     {
         return $group->assistance_requested && is_string($group->assistance_reason)
             && str_starts_with($group->assistance_reason, self::OrphanedCommitPrefix);
@@ -766,7 +765,7 @@ final readonly class TaskScheduler
      * head is not the latest approved commit, that commit missed the merge. The group asks for assistance
      * naming the commit and is not completed, so its workspace stays.
      */
-    private function checkReturningPullRequest(TaskGroup $group): void
+    private function checkReturningPullRequest(Task $group): void
     {
         $health = $this->pullRequestWatcher->health($group);
         if (! $health instanceof TaskPullRequestHealth || $health->state !== 'merged' || $health->headSha === null) {
@@ -788,7 +787,7 @@ final readonly class TaskScheduler
     }
 
     /** A failed push or open waits out the backoff and asks for assistance on the fifth failure. */
-    private function failPublication(TaskGroup $group, Task $task, string $reason): void
+    private function failPublication(Task $group, Task $task, string $reason): void
     {
         $key = $this->publicationBackoffKey($task);
         $this->extendBackoff($key, $this->readBackoff($key, 'approved publication'), 'approved publication');
@@ -796,7 +795,7 @@ final readonly class TaskScheduler
     }
 
     /** Clears the publication failure only. A blocked question or any other cause stays on the subtask and the group. */
-    private function clearPublicationAssistance(Task $task, TaskGroup $group): void
+    private function clearPublicationAssistance(Task $task, Task $group): void
     {
         $task->refresh();
         $group->refresh();
@@ -813,7 +812,7 @@ final readonly class TaskScheduler
         return 'tasks.approved-publication.'.$task->id;
     }
 
-    private function relayFindings(TaskGroup $group, Task $task, TaskSessionObservation $observation, TaskComment $findings): void
+    private function relayFindings(Task $group, Task $task, TaskSessionObservation $observation, TaskComment $findings): void
     {
         $implementer = $observation->thread(TaskThreadRole::Implementer);
         if ($implementer === null) {
@@ -827,7 +826,7 @@ final readonly class TaskScheduler
         try {
             $this->prepareTurn($group, $task, TaskThreadRole::Implementer, $implementer->threadId);
             $this->actor->relayReviewBody($group, $implementer, $findings->body);
-        } catch (AgentDriverException|TaskRunReceiptException $exception) {
+        } catch (AgentDriverException|TaskTurnReceiptException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
             return;
@@ -850,7 +849,7 @@ final readonly class TaskScheduler
     }
 
     /** @return list<TaskRubricItem> */
-    private function implementerItems(TaskGroup $group, Task $task, TaskThreadObservation $thread, ?TaskRunReceipt $read, ?TaskComment $receipt): array
+    private function implementerItems(Task $group, Task $task, TaskThreadObservation $thread, ?TaskTurnReceipt $read, ?TaskComment $receipt): array
     {
         $instance = $group->taskable;
         $items = [
@@ -870,7 +869,7 @@ final readonly class TaskScheduler
     }
 
     /**
-     * ADR 0133: a receipt confirms every deliverable it must, as the run script requires. A hand-written
+     * ADR 0133: a receipt confirms every deliverable it must, as the turn command requires. A hand-written
      * receipt that misses one fails the `deliverables` item.
      */
     private function confirmationItem(Task $task, ?TaskComment $receipt, TaskThreadRole $role): ?TaskRubricItem
@@ -881,7 +880,7 @@ final readonly class TaskScheduler
         }
         $missing = TaskDeliverableVerifier::unconfirmed($deliverables, $receipt->deliverables ?? [], $role);
 
-        return new TaskRubricItem('deliverables', $missing === [], $missing === [] ? '' : 'The run receipt does not confirm the deliverables '.implode(', ', $missing).'. Pass --deliverable=ID=evidence for each one.');
+        return new TaskRubricItem('deliverables', $missing === [], $missing === [] ? '' : 'The turn receipt does not confirm the deliverables '.implode(', ', $missing).'. Pass --deliverable=ID=evidence for each one.');
     }
 
     /**
@@ -914,33 +913,33 @@ final readonly class TaskScheduler
         return ['start' => $start !== '' ? $start : null, 'commands' => $commands];
     }
 
-    private function receiptItem(?TaskRunReceipt $read, ?TaskComment $receipt): TaskRubricItem
+    private function receiptItem(?TaskTurnReceipt $read, ?TaskComment $receipt): TaskRubricItem
     {
         if ($receipt instanceof TaskComment) {
-            return new TaskRubricItem('run_receipt', true, '');
+            return new TaskRubricItem('turn_receipt', true, '');
         }
 
-        return new TaskRubricItem('run_receipt', false, $read instanceof TaskRunReceipt ? 'The run receipt was not valid for this turn.' : 'No run receipt was found.');
+        return new TaskRubricItem('turn_receipt', false, $read instanceof TaskTurnReceipt ? 'The turn receipt was not valid for this turn.' : 'No turn receipt was found.');
     }
 
     /**
      * Stores a receipt that fits the turn as a comment, then removes the file. A crash before the
      * removal reads the receipt again, and its hash matches the stored comment.
      *
-     * @throws TaskRunReceiptException
+     * @throws TaskTurnReceiptException
      */
-    private function collectReceipt(TaskGroup $group, Task $task, TaskThreadRole $role): ?TaskRunReceipt
+    private function collectReceipt(Task $group, Task $task, TaskThreadRole $role): ?TaskTurnReceipt
     {
         $instance = $group->taskable;
         if (! $instance instanceof Instance) {
-            throw new TaskRunReceiptException('The task workspace is unavailable.');
+            throw new TaskTurnReceiptException('The task workspace is unavailable.');
         }
         $actingThreadId = $this->actingThreadId($group, $task, $role);
         $receipt = $this->receipts->read($instance, $actingThreadId);
-        if (! $receipt instanceof TaskRunReceipt || ! $this->receiptMatchesActingThread($receipt, $actingThreadId)) {
+        if (! $receipt instanceof TaskTurnReceipt || ! $this->receiptMatchesActingThread($receipt, $actingThreadId)) {
             return null;
         }
-        if ($receipt->outcome instanceof TaskRunOutcome && $receipt->fits($role)) {
+        if ($receipt->outcome instanceof TaskTurnOutcome && $receipt->fits($role)) {
             TaskComment::query()->firstOrCreate(['task_id' => $task->id, 'receipt_hash' => $receipt->hash], [
                 'task_group_id' => $group->id,
                 'agent_thread_id' => $role === TaskThreadRole::Implementer ? $task->implementer_agent_thread_id : $group->reviewer_agent_thread_id,
@@ -960,7 +959,7 @@ final readonly class TaskScheduler
     }
 
     /** The Orbit id of the thread this phase acts as, or null when that thread has not been stored. */
-    private function actingThreadId(TaskGroup $group, Task $task, TaskThreadRole $role): ?int
+    private function actingThreadId(Task $group, Task $task, TaskThreadRole $role): ?int
     {
         $id = $role === TaskThreadRole::Implementer ? $task->implementer_agent_thread_id : $group->reviewer_agent_thread_id;
 
@@ -968,16 +967,16 @@ final readonly class TaskScheduler
     }
 
     /** A receipt applies only when it names the acting thread. An unbound receipt does not. */
-    private function receiptMatchesActingThread(TaskRunReceipt $receipt, ?int $actingThreadId): bool
+    private function receiptMatchesActingThread(TaskTurnReceipt $receipt, ?int $actingThreadId): bool
     {
         return $actingThreadId === null || $receipt->threadId === $actingThreadId;
     }
 
     /**
-     * Rewrites a legacy turn file for the acting thread and sends the bound run command.
+     * Rewrites a legacy turn file for the acting thread and sends the bound turn command.
      * The unidentified receipt is not applied.
      */
-    private function reissueLegacyTurn(TaskGroup $group, Task $task, TaskThreadObservation $thread): bool
+    private function reissueLegacyTurn(Task $group, Task $task, TaskThreadObservation $thread): bool
     {
         $actingThreadId = $this->actingThreadId($group, $task, $thread->role);
         $instance = $group->taskable;
@@ -990,10 +989,10 @@ final readonly class TaskScheduler
             }
             $this->prepareTurn($group, $task, $thread->role, $actingThreadId);
             $instructions = $thread->role === TaskThreadRole::Implementer
-                ? TaskRunInstructions::implementer($task->deliverableList(), $group->project->taskCheckCommand(), $actingThreadId)
-                : TaskRunInstructions::reviewer($task->opensPullRequest(), $task->deliverableList(), $actingThreadId);
+                ? TaskTurnInstructions::implementer($task->deliverableList(), $group->project->taskCheckCommand(), $actingThreadId)
+                : TaskTurnInstructions::reviewer($task->opensPullRequest(), $task->deliverableList(), $actingThreadId);
             $this->actor->remindRubric($group, $thread, 'Orbit bound this turn to its thread. '.$instructions);
-        } catch (AgentDriverException|TaskRunReceiptException $exception) {
+        } catch (AgentDriverException|TaskTurnReceiptException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
         }
 
@@ -1017,19 +1016,19 @@ final readonly class TaskScheduler
         return $receipt instanceof TaskComment && $receipt->id !== $handled ? $receipt : null;
     }
 
-    private function receiptOutcome(TaskComment $receipt): ?TaskRunOutcome
+    private function receiptOutcome(TaskComment $receipt): ?TaskTurnOutcome
     {
         $type = $receipt->getRawOriginal('type');
 
-        return TaskRunOutcome::tryFrom(is_string($type) ? $type : '');
+        return TaskTurnOutcome::tryFrom(is_string($type) ? $type : '');
     }
 
-    /** @throws TaskRunReceiptException */
-    private function prepareTurn(TaskGroup $group, Task $task, TaskThreadRole $role, ?int $threadId = null): void
+    /** @throws TaskTurnReceiptException */
+    private function prepareTurn(Task $group, Task $task, TaskThreadRole $role, ?int $threadId = null): void
     {
         $instance = $group->taskable;
         if (! $instance instanceof Instance) {
-            throw new TaskRunReceiptException('The task workspace is unavailable.');
+            throw new TaskTurnReceiptException('The task workspace is unavailable.');
         }
         $this->receipts->prepare($instance, $role, $role === TaskThreadRole::Reviewer && $task->opensPullRequest(), $task->deliverableList(), $threadId);
     }
@@ -1054,7 +1053,7 @@ final readonly class TaskScheduler
      * @param  list<TaskRubricItem>  $items
      * @return bool whether the scheduler reminded the agent or asked for assistance
      */
-    private function remindOrAssist(TaskGroup $group, Task $task, TaskThreadObservation $thread, array $items): bool
+    private function remindOrAssist(Task $group, Task $task, TaskThreadObservation $thread, array $items): bool
     {
         $failures = $this->failedItems($items);
         $implementer = $thread->role === TaskThreadRole::Implementer;
@@ -1069,7 +1068,7 @@ final readonly class TaskScheduler
             try {
                 $this->prepareTurn($group, $task, $thread->role, $thread->threadId);
                 $this->actor->remindRubric($group, $thread, TaskRubricReminder::compose($thread->role, $failures, ! $implementer && $task->opensPullRequest(), $task->deliverableList(), $group->project->taskCheckCommand(), $thread->threadId));
-            } catch (AgentDriverException|TaskRunReceiptException $exception) {
+            } catch (AgentDriverException|TaskTurnReceiptException $exception) {
                 $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
                 return false;
@@ -1100,7 +1099,7 @@ final readonly class TaskScheduler
         }
     }
 
-    private function recordCommunicationFailure(Task $task, TaskGroup $group, string $reason): void
+    private function recordCommunicationFailure(Task $task, Task $group, string $reason): void
     {
         $task->increment('communication_failures');
         $task->refresh();
@@ -1109,7 +1108,7 @@ final readonly class TaskScheduler
         }
     }
 
-    private function requestAssistance(Task $task, TaskGroup $group, string $reason, ?TaskSessionObservation $observation = null): void
+    private function requestAssistance(Task $task, Task $group, string $reason, ?TaskSessionObservation $observation = null): void
     {
         if ($task->assistance_requested || $group->assistance_requested) {
             return;
@@ -1147,7 +1146,7 @@ final readonly class TaskScheduler
      *
      * @return 'handled'|'assist'|'skip' handled owns the tick, assist asks for assistance, skip keeps today's failure path
      */
-    private function resumePiServerRestart(Task $task, TaskGroup $group, TaskThreadObservation $acting): string
+    private function resumePiServerRestart(Task $task, Task $group, TaskThreadObservation $acting): string
     {
         $record = AgentThread::query()->find($acting->threadId);
         if (! $record instanceof AgentThread || ! $this->isServerRestartError($record->driver, $acting->error)) {
@@ -1227,7 +1226,7 @@ final readonly class TaskScheduler
         };
     }
 
-    private function sendPiRestartResume(Task $task, TaskGroup $group, TaskThreadObservation $acting, string $key): void
+    private function sendPiRestartResume(Task $task, Task $group, TaskThreadObservation $acting, string $key): void
     {
         try {
             $this->actor->resumeInterruptedTurn($group, $acting, self::PiServerRestartContinue, $key);
@@ -1239,27 +1238,27 @@ final readonly class TaskScheduler
         $this->clearCommunicationFailures($task);
     }
 
-    private function classifyAvailable(TaskGroup $group, TaskSessionObservation $observation): TaskSessionDecision
+    private function classifyAvailable(Task $group, TaskSessionObservation $observation): TaskSessionDecision
     {
         $this->clearUnavailable($group);
 
         return new TaskSessionDecision(TaskSessionNextAction::Noop, 1.0, 'Waiting for a known agent state.');
     }
 
-    private function clearUnavailable(TaskGroup $group): void
+    private function clearUnavailable(Task $group): void
     {
-        TaskGroup::query()->whereKey($group->id)->whereNotNull('agent_unavailable_since')->update([
+        Task::topLevel()->whereKey($group->id)->whereNotNull('agent_unavailable_since')->update([
             'agent_unavailable_since' => null, 'agent_unavailable_notified_at' => null,
         ]);
     }
 
-    private function unavailableDecision(TaskGroup $group): TaskSessionDecision
+    private function unavailableDecision(Task $group): TaskSessionDecision
     {
-        TaskGroup::query()->whereKey($group->id)->whereNull('agent_unavailable_since')->update(['agent_unavailable_since' => now()]);
+        Task::topLevel()->whereKey($group->id)->whereNull('agent_unavailable_since')->update(['agent_unavailable_since' => now()]);
         $group->refresh();
         $grace = max(0, Config::integer('orbit.tasks.observation_grace_seconds', 120));
         if ($group->agent_unavailable_since !== null && $group->agent_unavailable_since->lte(now()->subSeconds($grace))) {
-            $claimed = TaskGroup::query()->whereKey($group->id)
+            $claimed = Task::topLevel()->whereKey($group->id)
                 ->where('agent_unavailable_since', $group->agent_unavailable_since)
                 ->whereNull('agent_unavailable_notified_at')
                 ->update(['agent_unavailable_notified_at' => now()]);
@@ -1271,7 +1270,7 @@ final readonly class TaskScheduler
         return new TaskSessionDecision(TaskSessionNextAction::Noop, 1.0, 'Waiting for an available agent observation.');
     }
 
-    private function advance(TaskGroup $group, Task $task, TaskSessionDecision $decision, TaskSessionObservation $observation): void
+    private function advance(Task $group, Task $task, TaskSessionDecision $decision, TaskSessionObservation $observation): void
     {
         $group = $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
         $current = $task->fresh();
@@ -1307,11 +1306,11 @@ final readonly class TaskScheduler
      * @param  list<int>  $skipped  Groups whose provisioning or start failed. A caller that passes the same list to later
      *                              calls tries each failing group at most once.
      */
-    public function claimNext(array &$skipped = []): ?TaskGroup
+    public function claimNext(array &$skipped = []): ?Task
     {
         while (true) {
-            $reserved = DB::transaction(function () use ($skipped): ?TaskGroup {
-                $candidates = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
+            $reserved = DB::transaction(function () use ($skipped): ?Task {
+                $candidates = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
                     ->with(['tasks', 'taskable'])
                     ->where('status', TaskGroupStatus::Todo)
                     ->when($skipped !== [], fn ($query) => $query->whereNotIn('id', $skipped))
@@ -1334,7 +1333,7 @@ final readonly class TaskScheduler
                 return null;
             });
 
-            if (! $reserved instanceof TaskGroup) {
+            if (! $reserved instanceof Task) {
                 return null;
             }
 
@@ -1366,7 +1365,7 @@ final readonly class TaskScheduler
             }
 
             try {
-                $started = DB::transaction(fn (): ?TaskGroup => $this->startReserved($reserved, $instance));
+                $started = DB::transaction(fn (): ?Task => $this->startReserved($reserved, $instance));
             } catch (Throwable $exception) {
                 // A failed start must not strand the group in reserved or drop its Instance. The log keeps the detail.
                 report($exception);
@@ -1380,7 +1379,7 @@ final readonly class TaskScheduler
             break;
         }
 
-        if (! $started instanceof TaskGroup) {
+        if (! $started instanceof Task) {
             $this->removeEndedWorkspace($reserved, $instance);
 
             return null;
@@ -1398,9 +1397,9 @@ final readonly class TaskScheduler
      * A group that is no longer the reservation this claim made, because the tick returned it to todo or cancellation
      * ended it, keeps its status. It gains the Instance only when it holds none.
      */
-    private function startReserved(TaskGroup $reserved, Instance $instance): ?TaskGroup
+    private function startReserved(Task $reserved, Instance $instance): ?Task
     {
-        $group = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
+        $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
             ->with(['tasks', 'project', 'taskable'])
             ->lockForUpdate()
             ->findOrFail($reserved->id);
@@ -1439,12 +1438,12 @@ final readonly class TaskScheduler
      * Returns a group whose start failed to todo with a fixed reason and keeps its Instance. When this write fails
      * too, the group stays reserved until the tick returns it to todo.
      */
-    private function releaseFailedStart(TaskGroup $reserved, Instance $instance): void
+    private function releaseFailedStart(Task $reserved, Instance $instance): void
     {
         try {
             DB::transaction(function () use ($reserved, $instance): void {
-                $group = TaskGroup::query()->lockForUpdate()->find($reserved->id);
-                if (! $group instanceof TaskGroup) {
+                $group = Task::topLevel()->lockForUpdate()->find($reserved->id);
+                if (! $group instanceof Task) {
                     return;
                 }
                 if ($group->taskable_id === null && ! self::hasEnded($group)) {
@@ -1465,9 +1464,9 @@ final readonly class TaskScheduler
      * Returns a group to todo only while this claim still holds its reservation, so a claim never overwrites a
      * group that the tick released, a cancel ended, or a newer claim reserved.
      */
-    private function releaseReservation(TaskGroup $reserved, ?string $reason): void
+    private function releaseReservation(Task $reserved, ?string $reason): void
     {
-        TaskGroup::query()->whereKey($reserved->id)
+        Task::topLevel()->whereKey($reserved->id)
             ->where('status', TaskGroupStatus::Reserved)
             ->where('reserved_at', $reserved->reserved_at)
             ->update(['status' => TaskGroupStatus::Todo, 'assistance_reason' => $reason]);
@@ -1478,10 +1477,10 @@ final readonly class TaskScheduler
      * workspace to the claim. The claim removes the Instance it provisioned, or the group's unattached
      * `task-{group id}` workspace when provisioning failed part way.
      */
-    private function removeEndedWorkspace(TaskGroup $reserved, ?Instance $instance): void
+    private function removeEndedWorkspace(Task $reserved, ?Instance $instance): void
     {
-        $group = TaskGroup::query()->with('taskable')->find($reserved->id);
-        if (! $group instanceof TaskGroup || ! self::hasEnded($group) || $group->taskable_id !== null) {
+        $group = Task::topLevel()->with('taskable')->find($reserved->id);
+        if (! $group instanceof Task || ! self::hasEnded($group) || $group->taskable_id !== null) {
             return;
         }
 
@@ -1497,12 +1496,12 @@ final readonly class TaskScheduler
         }
     }
 
-    private static function hasEnded(TaskGroup $group): bool
+    private static function hasEnded(Task $group): bool
     {
         return in_array($group->status, [TaskGroupStatus::Cancelled, TaskGroupStatus::Completed], true);
     }
 
-    private function holdsReservation(TaskGroup $group, TaskGroup $reserved): bool
+    private function holdsReservation(Task $group, Task $reserved): bool
     {
         return $group->status === TaskGroupStatus::Reserved
             && $group->reserved_at instanceof Carbon
@@ -1523,8 +1522,8 @@ final readonly class TaskScheduler
             ->where(static fn ($query) => $query->whereNull('reserved_at')->orWhere('reserved_at', '<=', $cutoff));
         $released = 0;
 
-        foreach ($stale(TaskGroup::query())->orderBy('id')->pluck('id') as $id) {
-            $updated = $stale(TaskGroup::query()->whereKey($id))->update([
+        foreach ($stale(Task::topLevel())->orderBy('id')->pluck('id') as $id) {
+            $updated = $stale(Task::topLevel()->whereKey($id))->update([
                 'status' => TaskGroupStatus::Todo,
                 'assistance_reason' => self::ReservationExpiredReason,
             ]);
@@ -1586,8 +1585,8 @@ final readonly class TaskScheduler
             }
 
             $instance = Instance::query()->find($workspace->id);
-            $group = TaskGroup::query()->find($workspace->getAttribute('ended_task_group_id'));
-            if (! $instance instanceof Instance || ! $group instanceof TaskGroup || ! $this->shouldRemoveWorkspace($group, $instance)) {
+            $group = Task::topLevel()->find($workspace->getAttribute('ended_task_group_id'));
+            if (! $instance instanceof Instance || ! $group instanceof Task || ! $this->shouldRemoveWorkspace($group, $instance)) {
                 continue;
             }
 
@@ -1612,7 +1611,7 @@ final readonly class TaskScheduler
     }
 
     /** Retries merged pull request cleanup at once the first time, then on the same per-Instance backoff as the sweep. */
-    private function completeMergedGroup(TaskGroup $group): void
+    private function completeMergedGroup(Task $group): void
     {
         $attached = $group->taskable;
         $instance = $attached instanceof Instance ? $attached : $this->workspaces->find($group);
@@ -1643,7 +1642,7 @@ final readonly class TaskScheduler
     }
 
     /** Pushes the latest stored approval before a cancelled checkout is deleted. A group with no approval is unchanged. */
-    private function pushCancelledApproval(TaskGroup $group, Instance $instance): void
+    private function pushCancelledApproval(Task $group, Instance $instance): void
     {
         if ($group->status !== TaskGroupStatus::Cancelled) {
             return;
@@ -1662,7 +1661,7 @@ final readonly class TaskScheduler
         $this->publisher->push($group, $commit);
     }
 
-    private function shouldRemoveWorkspace(TaskGroup $group, Instance $instance): bool
+    private function shouldRemoveWorkspace(Task $group, Instance $instance): bool
     {
         if ($instance->project_id !== $group->project_id || $this->attachedToUnmanagedGroup($instance)) {
             return false;
@@ -1688,7 +1687,7 @@ final readonly class TaskScheduler
             && str_starts_with($group->assistance_reason, RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix);
     }
 
-    private function releaseRemovedWorkspace(TaskGroup $group, int $instanceId): void
+    private function releaseRemovedWorkspace(Task $group, int $instanceId): void
     {
         $group->refresh();
 
@@ -1760,7 +1759,7 @@ final readonly class TaskScheduler
     /** A user Instance that backs a non-managed group is never a task workspace the sweep may delete. */
     private function attachedToUnmanagedGroup(Instance $instance): bool
     {
-        return TaskGroup::query()
+        return Task::topLevel()
             ->where('taskable_type', TaskableType::Instance)
             ->where('taskable_id', $instance->id)
             ->where('execution_mode', '!=', TaskExecutionMode::Managed->value)
@@ -1771,45 +1770,47 @@ final readonly class TaskScheduler
     private function abandonedWorkspaces(): Collection
     {
         $workspaceName = match (DB::connection()->getDriverName()) {
-            'mysql', 'mariadb' => "CONCAT('task-', task_groups.id)",
-            default => "'task-' || task_groups.id",
+            'mysql', 'mariadb' => "CONCAT('task-', tasks.id)",
+            default => "'task-' || tasks.id",
         };
 
         $cutoff = RemoveTaskWorkspaceAction::reservationCutoff();
         $mergePrefix = RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.'%';
 
         return Instance::query()
-            ->select('instances.*', 'task_groups.id as ended_task_group_id')
-            ->join('task_groups', function ($join) use ($workspaceName): void {
-                $join->on('task_groups.project_id', '=', 'instances.project_id')
+            ->select('instances.*', 'tasks.id as ended_task_group_id')
+            ->join('tasks', function ($join) use ($workspaceName): void {
+                $join->on('tasks.project_id', '=', 'instances.project_id')
+                    ->whereNull('tasks.parent_id')
                     ->where(function ($link) use ($workspaceName): void {
-                        $link->whereColumn('task_groups.taskable_id', 'instances.id')
+                        $link->whereColumn('tasks.taskable_id', 'instances.id')
                             ->orWhere(function ($named) use ($workspaceName): void {
                                 $named->whereRaw("instances.name = {$workspaceName}")
                                     ->whereColumn('instances.branch_override', 'instances.name')
-                                    ->whereNull('task_groups.taskable_id');
+                                    ->whereNull('tasks.taskable_id');
                             });
                     });
             })
-            ->where('task_groups.execution_mode', TaskExecutionMode::Managed->value)
+            ->where('tasks.execution_mode', TaskExecutionMode::Managed->value)
             ->whereNotExists(function ($userGroup): void {
                 $userGroup->selectRaw('1')
-                    ->from('task_groups as user_groups')
+                    ->from('tasks as user_groups')
+                    ->whereNull('user_groups.parent_id')
                     ->whereColumn('user_groups.taskable_id', 'instances.id')
                     ->where('user_groups.taskable_type', TaskableType::Instance)
                     ->where('user_groups.execution_mode', '!=', TaskExecutionMode::Managed->value);
             })
             ->where(function ($ended) use ($cutoff, $mergePrefix): void {
                 $ended->where(function ($finished) use ($cutoff): void {
-                    $finished->whereIn('task_groups.status', [TaskGroupStatus::Cancelled->value, TaskGroupStatus::Completed->value])
+                    $finished->whereIn('tasks.status', [TaskGroupStatus::Cancelled->value, TaskGroupStatus::Completed->value])
                         ->where(function ($reservation) use ($cutoff): void {
-                            $reservation->whereColumn('task_groups.taskable_id', 'instances.id')
-                                ->orWhereNull('task_groups.reserved_at')
-                                ->orWhere('task_groups.reserved_at', '<=', $cutoff);
+                            $reservation->whereColumn('tasks.taskable_id', 'instances.id')
+                                ->orWhereNull('tasks.reserved_at')
+                                ->orWhere('tasks.reserved_at', '<=', $cutoff);
                         });
                 })->orWhere(function ($settling) use ($mergePrefix): void {
-                    $settling->where('task_groups.status', TaskGroupStatus::Settling->value)
-                        ->where('task_groups.assistance_reason', 'like', $mergePrefix);
+                    $settling->where('tasks.status', TaskGroupStatus::Settling->value)
+                        ->where('tasks.assistance_reason', 'like', $mergePrefix);
                 });
             })
             ->orderBy('instances.id')
@@ -1827,7 +1828,7 @@ final readonly class TaskScheduler
         $skipped = [];
         $started = 0;
 
-        while ($this->claimNext($skipped) instanceof TaskGroup) {
+        while ($this->claimNext($skipped) instanceof Task) {
             $started++;
         }
 
@@ -1848,7 +1849,7 @@ final readonly class TaskScheduler
      *
      * @return 'apply'|'orbit_commit'|'wait'|'reopened'|'reminded'|'unreadable'
      */
-    private function reviewWorkspaceDecision(TaskGroup $group, Task $task, TaskThreadObservation $reviewer, TaskComment $receipt, TaskSessionObservation $observation): string
+    private function reviewWorkspaceDecision(Task $group, Task $task, TaskThreadObservation $reviewer, TaskComment $receipt, TaskSessionObservation $observation): string
     {
         try {
             $current = $this->workspaceSnapshot($group);
@@ -1860,7 +1861,7 @@ final readonly class TaskScheduler
         if ($this->workspaceMatchesReview($task, $receipt, $current)) {
             return 'apply';
         }
-        if ($this->receiptOutcome($receipt) === TaskRunOutcome::Approved && ! $this->committedApproval($receipt) && $this->recoveredCommit($task, $current) !== null) {
+        if ($this->receiptOutcome($receipt) === TaskTurnOutcome::Approved && ! $this->committedApproval($receipt) && $this->recoveredCommit($task, $current) !== null) {
             return 'orbit_commit';
         }
         $implementer = $observation->thread(TaskThreadRole::Implementer);
@@ -1932,7 +1933,7 @@ final readonly class TaskScheduler
      * A newer implementer turn changed the workspace during review. The reviewer outcome is not
      * applied and the reviewer is not reminded. The subtask needs a new receipt and a passing check.
      */
-    private function reopenHandoff(TaskGroup $group, Task $task, TaskComment $receipt): void
+    private function reopenHandoff(Task $group, Task $task, TaskComment $receipt): void
     {
         $task->update([
             'status' => TaskStatus::Running,
@@ -1951,7 +1952,7 @@ final readonly class TaskScheduler
     }
 
     /** @throws TaskCheckException */
-    private function workspaceSnapshot(TaskGroup $group): TaskWorkspaceSnapshot
+    private function workspaceSnapshot(Task $group): TaskWorkspaceSnapshot
     {
         $instance = $group->taskable;
         if (! $instance instanceof Instance) {
@@ -1975,7 +1976,7 @@ final readonly class TaskScheduler
         if ($existing !== null && $reviewer !== null && $reviewer->threadId === $existing->id && $this->isWorking($reviewer)) {
             return;
         }
-        $group = $task->taskGroup()->with('taskable')->firstOrFail();
+        $group = $task->parent()->with('taskable')->firstOrFail();
 
         try {
             // Read at send time. Do not copy the hash from an earlier check row: the request may have waited.
@@ -2020,11 +2021,11 @@ final readonly class TaskScheduler
     private function subtaskReviewer(Task $task): ?AgentThread
     {
         $query = AgentThread::query()
-            ->where('task_group_id', $task->task_group_id)
+            ->where('task_group_id', $task->parent_id)
             ->where('task_id', $task->id)
             ->where('role', TaskThreadRole::Reviewer->value)
             ->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%');
-        $pointed = TaskGroup::query()->whereKey($task->task_group_id)->value('reviewer_agent_thread_id');
+        $pointed = Task::topLevel()->whereKey($task->parent_id)->value('reviewer_agent_thread_id');
         if (is_numeric($pointed)) {
             $match = (clone $query)->whereKey((int) $pointed)->first();
             if ($match instanceof AgentThread) {
@@ -2050,15 +2051,15 @@ final readonly class TaskScheduler
             && in_array($thread->sessState, [AgentThreadState::Done->value, AgentThreadState::AskingForInput->value], true);
     }
 
-    public function settleImplementer(Task $task, ?TaskThreadObservation $reviewer = null): TaskGroup
+    public function settleImplementer(Task $task, ?TaskThreadObservation $reviewer = null): Task
     {
-        $task->taskGroup->requireManagedExecution();
-        $group = DB::transaction(function () use ($task): TaskGroup {
+        $task->parent->requireManagedExecution();
+        $group = DB::transaction(function () use ($task): Task {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            $group = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
+            $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
                 ->with(['tasks', 'project', 'taskable'])
                 ->lockForUpdate()
-                ->findOrFail($locked->task_group_id);
+                ->findOrFail($locked->parent_id);
 
             if ($group->status !== TaskGroupStatus::Running || $locked->status !== TaskStatus::Running) {
                 return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
@@ -2083,13 +2084,13 @@ final readonly class TaskScheduler
         return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
     }
 
-    public function startTask(Task $task): TaskGroup
+    public function startTask(Task $task): Task
     {
-        $task->taskGroup->requireManagedExecution();
+        $task->parent->requireManagedExecution();
         $started = $this->activateRunningTask($task);
         $this->beginRunningTask($started);
 
-        $group = $started->taskGroup;
+        $group = $started->parent;
 
         return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
     }
@@ -2104,17 +2105,17 @@ final readonly class TaskScheduler
      *
      * @param  Closure(Task): void  $stop
      */
-    public function cancelRunningSubtask(TaskGroup $taskGroup, Task $task, Closure $stop): TaskGroup
+    public function cancelRunningSubtask(Task $parent, Task $task, Closure $stop): Task
     {
-        $taskGroup->requireManagedExecution();
-        $candidate = Task::query()->where('task_group_id', $taskGroup->id)->findOrFail($task->id);
+        $parent->requireManagedExecution();
+        $candidate = Task::query()->where('parent_id', $parent->id)->findOrFail($task->id);
 
         if ($candidate->status === TaskStatus::Todo) {
-            $group = DB::transaction(function () use ($taskGroup, $task): TaskGroup {
-                $locked = Task::query()->where('task_group_id', $taskGroup->id)->lockForUpdate()->findOrFail($task->id);
-                $group = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
+            $group = DB::transaction(function () use ($parent, $task): Task {
+                $locked = Task::query()->where('parent_id', $parent->id)->lockForUpdate()->findOrFail($task->id);
+                $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
                     ->lockForUpdate()
-                    ->findOrFail($locked->task_group_id);
+                    ->findOrFail($locked->parent_id);
 
                 if ($locked->status !== TaskStatus::Todo || ! in_array($group->status, [
                     TaskGroupStatus::Todo,
@@ -2158,11 +2159,11 @@ final readonly class TaskScheduler
         $stop($candidate);
 
         $next = null;
-        $group = DB::transaction(function () use ($taskGroup, $task, &$next): TaskGroup {
-            $locked = Task::query()->where('task_group_id', $taskGroup->id)->lockForUpdate()->findOrFail($task->id);
-            $group = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
+        $group = DB::transaction(function () use ($parent, $task, &$next): Task {
+            $locked = Task::query()->where('parent_id', $parent->id)->lockForUpdate()->findOrFail($task->id);
+            $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
                 ->lockForUpdate()
-                ->findOrFail($locked->task_group_id);
+                ->findOrFail($locked->parent_id);
 
             if ($locked->status !== TaskStatus::Running) {
                 throw new ResourceOperationException(
@@ -2206,16 +2207,16 @@ final readonly class TaskScheduler
         return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
     }
 
-    public function acceptReview(Task $task): TaskGroup
+    public function acceptReview(Task $task): Task
     {
-        $task->taskGroup->requireManagedExecution();
+        $task->parent->requireManagedExecution();
         $next = null;
-        $group = DB::transaction(function () use ($task, &$next): TaskGroup {
+        $group = DB::transaction(function () use ($task, &$next): Task {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            $group = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
+            $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
                 ->with(['tasks', 'project', 'taskable'])
                 ->lockForUpdate()
-                ->findOrFail($locked->task_group_id);
+                ->findOrFail($locked->parent_id);
 
             if ($group->status !== TaskGroupStatus::Reviewing || $locked->status !== TaskStatus::Reviewing) {
                 return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
@@ -2260,10 +2261,10 @@ final readonly class TaskScheduler
     }
 
     public function settle(
-        TaskGroup $group,
+        Task $group,
         bool $requestMissingPullRequest = true,
         bool $checkReturningPullRequest = true,
-    ): TaskGroup {
+    ): Task {
         $group->requireManagedExecution();
         $group->loadMissing(['project', 'tasks', 'taskable']);
 
@@ -2313,7 +2314,7 @@ final readonly class TaskScheduler
      * A fixup that changed nothing asks for assistance instead of a second try on the same result.
      * A group keeps at most three Gateway fixups in total.
      */
-    private function healOpenPullRequest(TaskGroup $group, TaskPullRequestHealth $health): void
+    private function healOpenPullRequest(Task $group, TaskPullRequestHealth $health): void
     {
         if ($this->otherAssistance($group) || $this->hasBusyTask($group->tasks)) {
             return;
@@ -2408,7 +2409,7 @@ final readonly class TaskScheduler
      * appended. The group re-evaluates on the backoff of 1, 2, 5, 10, and 30 minutes, and asks for
      * assistance when they persist after that.
      */
-    private function awaitInfrastructureChecks(TaskGroup $group, TaskPullRequestHealth $health): void
+    private function awaitInfrastructureChecks(Task $group, TaskPullRequestHealth $health): void
     {
         $key = $this->infrastructureBackoffKey($group);
         $backoff = $this->readBackoff($key, 'infrastructure check');
@@ -2423,13 +2424,13 @@ final readonly class TaskScheduler
         $this->extendBackoff($key, $backoff, 'infrastructure check');
     }
 
-    private function infrastructureBackoffKey(TaskGroup $group): string
+    private function infrastructureBackoffKey(Task $group): string
     {
         return 'tasks.pull-request-infrastructure.'.$group->id;
     }
 
     /** Whether assistance was requested for a cause other than the open pull request's own problems. */
-    private function otherAssistance(TaskGroup $group): bool
+    private function otherAssistance(Task $group): bool
     {
         return $group->assistance_requested && ! TaskPullRequestHealth::isReason($group->assistance_reason);
     }
@@ -2442,7 +2443,7 @@ final readonly class TaskScheduler
         );
     }
 
-    private function nextFixup(TaskGroup $group, TaskPullRequestHealth $health, bool $conflictOnly = false): ?TaskSettlingFixup
+    private function nextFixup(Task $group, TaskPullRequestHealth $health, bool $conflictOnly = false): ?TaskSettlingFixup
     {
         $counts = $this->fixupCountsSinceOperatorWork($group);
 
@@ -2459,7 +2460,7 @@ final readonly class TaskScheduler
     }
 
     /** Explain each current problem whose per-identity cap has been reached in the active window. */
-    private function reachedFixupIdentityCaps(TaskGroup $group, TaskPullRequestHealth $health, bool $conflictOnly): ?string
+    private function reachedFixupIdentityCaps(Task $group, TaskPullRequestHealth $health, bool $conflictOnly): ?string
     {
         $counts = $this->fixupCountsSinceOperatorWork($group);
         $reasons = [];
@@ -2478,7 +2479,7 @@ final readonly class TaskScheduler
     }
 
     /** @return array<string, int> */
-    private function fixupCountsSinceOperatorWork(TaskGroup $group): array
+    private function fixupCountsSinceOperatorWork(Task $group): array
     {
         $counts = [];
         foreach ($this->fixupsSinceOperatorWork($this->orderedTasks($group->tasks)) as $task) {
@@ -2511,10 +2512,10 @@ final readonly class TaskScheduler
             ->values();
     }
 
-    private function appendFixup(TaskGroup $group, TaskSettlingFixup $plan, ?string $headSha): ?Task
+    private function appendFixup(Task $group, TaskSettlingFixup $plan, ?string $headSha): ?Task
     {
         return DB::transaction(function () use ($group, $plan, $headSha): ?Task {
-            $locked = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
+            $locked = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
                 ->lockForUpdate()
                 ->findOrFail($group->id);
             if ($locked->status !== TaskGroupStatus::Settling || $this->otherAssistance($locked)) {
@@ -2533,7 +2534,7 @@ final readonly class TaskScheduler
             }
 
             return Task::query()->create([
-                'task_group_id' => $locked->id,
+                'parent_id' => $locked->id,
                 'position' => StoredInteger::fromOrZero($tasks->max('position')) + 1,
                 'title' => $plan->title,
                 'brief' => $plan->brief,
@@ -2549,7 +2550,7 @@ final readonly class TaskScheduler
      * Starts a later subtask left todo after the group returned to running, including a conflict fixup
      * whose base fetch failed. The group's first subtask is started by claim, not by this retry.
      */
-    private function resumeStrandedSubtask(TaskGroup $group): void
+    private function resumeStrandedSubtask(Task $group): void
     {
         if ($group->assistance_requested || $this->hasBusyTask($group->tasks)) {
             return;
@@ -2568,7 +2569,7 @@ final readonly class TaskScheduler
      * subtask becomes running in that same commit; the implementer starts afterwards. A conflict fixup
      * returns the group to running before the base fetch, and a failed fetch leaves that subtask todo.
      */
-    private function resumeWaitingSubtask(TaskGroup $group): void
+    private function resumeWaitingSubtask(Task $group): void
     {
         if ($group->relationLoaded('tasks') && $this->hasBusyTask($group->tasks)) {
             return;
@@ -2613,7 +2614,7 @@ final readonly class TaskScheduler
      * 5, 10, and 30 minutes, leaves the subtask todo, and asks for assistance on the fifth failure.
      * On a group with no pull request, a missing `origin/task-{group id}` is not a failure.
      */
-    private function prepareResumedWorkspace(TaskGroup $group, Task $todo, ?string $base): bool
+    private function prepareResumedWorkspace(Task $group, Task $todo, ?string $base): bool
     {
         $key = 'tasks.resume-fetch.'.$todo->id;
         if (! $this->retryIsDue($key, 'resume fetch')) {
@@ -2638,7 +2639,7 @@ final readonly class TaskScheduler
     }
 
     /** Records the return to running before a conflict fixup's base fetch, which stays outside the commit. */
-    private function leaveSettling(TaskGroup $group): void
+    private function leaveSettling(Task $group): void
     {
         $this->clearResumeAssistance($group);
         $group->status = TaskGroupStatus::Running;
@@ -2654,9 +2655,9 @@ final readonly class TaskScheduler
         try {
             return DB::transaction(function () use ($todo): ?Task {
                 $locked = Task::query()->lockForUpdate()->findOrFail($todo->id);
-                $group = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
+                $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
                     ->lockForUpdate()
-                    ->findOrFail($locked->task_group_id);
+                    ->findOrFail($locked->parent_id);
                 if (! in_array($group->status, [TaskGroupStatus::Settling, TaskGroupStatus::Running], true)) {
                     return null;
                 }
@@ -2679,7 +2680,7 @@ final readonly class TaskScheduler
 
                 $this->markRunning($locked, $tasks);
 
-                return $locked->fresh(['taskGroup.tasks', 'taskGroup.project', 'taskGroup.taskable']) ?? $locked;
+                return $locked->fresh(['parent.tasks', 'parent.project', 'parent.taskable']) ?? $locked;
             });
         } catch (TaskSequenceException) {
             return null;
@@ -2706,7 +2707,7 @@ final readonly class TaskScheduler
         return substr($problem, strlen('conflict:'));
     }
 
-    private function requestMissingPullRequest(TaskGroup $group): void
+    private function requestMissingPullRequest(Task $group): void
     {
         if ($group->assistance_requested) {
             return;
@@ -2723,7 +2724,7 @@ final readonly class TaskScheduler
     }
 
     /** Another assistance cause blocks a resume. The missing-pull-request reason does not. */
-    private function resumeBlocked(TaskGroup $group): bool
+    private function resumeBlocked(Task $group): bool
     {
         return $group->assistance_requested
             && ! TaskPullRequestHealth::isReason($group->assistance_reason)
@@ -2731,7 +2732,7 @@ final readonly class TaskScheduler
     }
 
     /** Clears the pull-request and missing-pull-request reasons when a resumed subtask starts. */
-    private function clearResumeAssistance(TaskGroup $group): void
+    private function clearResumeAssistance(Task $group): void
     {
         if (! TaskPullRequestHealth::isReason($group->assistance_reason) && ! self::isMissingPullRequestReason($group->assistance_reason)) {
             return;
@@ -2744,7 +2745,7 @@ final readonly class TaskScheduler
      * Asks for assistance once per distinct set of pull request problems, and withdraws only its own
      * request when the pull request is healthy again. Another cause of assistance is left alone.
      */
-    private function reportPullRequestHealth(TaskGroup $group, TaskPullRequestHealth $health, ?string $extra = null): void
+    private function reportPullRequestHealth(Task $group, TaskPullRequestHealth $health, ?string $extra = null): void
     {
         $ownRequest = TaskPullRequestHealth::isReason($group->assistance_reason);
 
@@ -2765,7 +2766,7 @@ final readonly class TaskScheduler
         $this->coder->assistance($group, $reason);
     }
 
-    private function startFirstTask(TaskGroup $group): void
+    private function startFirstTask(Task $group): void
     {
         $first = $this->orderedTasks($group->tasks)->first();
 
@@ -2786,14 +2787,14 @@ final readonly class TaskScheduler
     {
         return DB::transaction(function () use ($task): Task {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            $group = TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
+            $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
                 ->lockForUpdate()
-                ->findOrFail($locked->task_group_id);
+                ->findOrFail($locked->parent_id);
             $tasks = $this->lockedTasks($group);
 
             $this->markRunning($locked, $tasks);
 
-            return $locked->fresh(['taskGroup.tasks', 'taskGroup.project', 'taskGroup.taskable']) ?? $locked;
+            return $locked->fresh(['parent.tasks', 'parent.project', 'parent.taskable']) ?? $locked;
         });
     }
 
@@ -2807,13 +2808,13 @@ final readonly class TaskScheduler
         $running = $this->runningSibling($tasks, $task);
 
         if ($running instanceof Task) {
-            throw TaskSequenceException::siblingRunning($task->task_group_id, $running->id);
+            throw TaskSequenceException::siblingRunning($task->requireGroupId(), $running->id);
         }
 
         $next = $this->lowestTodo($tasks);
 
         if (! $next instanceof Task || $next->id !== $task->id || ! $this->predecessorsCompleted($task, $tasks)) {
-            throw TaskSequenceException::notNext($task->id, $task->task_group_id);
+            throw TaskSequenceException::notNext($task->id, $task->requireGroupId());
         }
 
         $task->status = TaskStatus::Running;
@@ -2829,7 +2830,7 @@ final readonly class TaskScheduler
     {
         $this->recordSubtaskStart($task);
         if ($this->needsBaseline($task)) {
-            $group = $task->taskGroup()->with(['project', 'taskable'])->firstOrFail();
+            $group = $task->parent()->with(['project', 'taskable'])->firstOrFail();
             $this->handleBaseline($group, $task);
         } else {
             $this->assignImplementer($task);
@@ -2841,8 +2842,8 @@ final readonly class TaskScheduler
      */
     private function needsBaseline(Task $task): bool
     {
-        $started = Task::query()->where('task_group_id', $task->task_group_id)->whereNotNull('implementer_agent_thread_id')->exists()
-            || AgentThread::query()->where('task_group_id', $task->task_group_id)->where('role', TaskThreadRole::Implementer->value)->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%')->exists();
+        $started = Task::query()->where('parent_id', $task->parent_id)->whereNotNull('implementer_agent_thread_id')->exists()
+            || AgentThread::query()->where('task_group_id', $task->parent_id)->where('role', TaskThreadRole::Implementer->value)->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%')->exists();
 
         return ! $started && ! TaskCheck::query()->where('task_id', $task->id)->where('kind', TaskCheckKind::Baseline->value)
             ->where('status', TaskCheckStatus::Passed->value)->exists();
@@ -2879,7 +2880,7 @@ final readonly class TaskScheduler
      * Runs the Project's setup steps and check on the fresh workspace. The first implementer starts only
      * after it passes, so an agent never starts on a broken checkout.
      */
-    private function handleBaseline(TaskGroup $group, Task $task): void
+    private function handleBaseline(Task $group, Task $task): void
     {
         $check = $this->baselineCheck($task);
         $instance = $group->taskable;
@@ -2953,7 +2954,7 @@ final readonly class TaskScheduler
         ) === 1;
     }
 
-    private function startBaseline(TaskGroup $group, Task $task): void
+    private function startBaseline(Task $group, Task $task): void
     {
         $instance = $group->taskable;
         if (! $instance instanceof Instance) {
@@ -3087,10 +3088,10 @@ final readonly class TaskScheduler
             return;
         }
 
-        $group = $task->taskGroup()->with('taskable')->first();
+        $group = $task->parent()->with('taskable')->first();
         $threadId = null;
         try {
-            if ($group instanceof TaskGroup) {
+            if ($group instanceof Task) {
                 $reserved = $task->implementer_agent_thread_id;
                 if ($reserved === null && $this->spawner instanceof TaskAgentSpawner) {
                     $reserved = $this->spawner->reserveImplementer($task->fresh() ?? $task);
@@ -3098,8 +3099,8 @@ final readonly class TaskScheduler
                 $this->prepareTurn($group, $task, TaskThreadRole::Implementer, $reserved === null ? null : (int) $reserved);
                 $threadId = $this->spawner->spawnImplementer($task->fresh() ?? $task);
             }
-        } catch (TaskRunReceiptException $exception) {
-            Log::error('The run script could not be installed for the implementer.', ['task_id' => $task->id, 'reason' => $exception->getMessage()]);
+        } catch (TaskTurnReceiptException $exception) {
+            Log::error('The turn command could not be installed for the implementer.', ['task_id' => $task->id, 'reason' => $exception->getMessage()]);
         }
 
         if ($threadId === null) {
@@ -3137,7 +3138,7 @@ final readonly class TaskScheduler
         if ($this->implementerTurnStarted($task)) {
             return;
         }
-        $instance = $task->taskGroup()->with('taskable')->first()?->taskable;
+        $instance = $task->parent()->with('taskable')->first()?->taskable;
         if (! $instance instanceof Instance) {
             return;
         }
@@ -3166,7 +3167,7 @@ final readonly class TaskScheduler
         return $assistanceReason;
     }
 
-    private function clearCancelledSubtaskAssistance(TaskGroup $group, Task $task, ?string $assistanceReason): void
+    private function clearCancelledSubtaskAssistance(Task $group, Task $task, ?string $assistanceReason): void
     {
         if (! $group->assistance_requested || $assistanceReason === null || $group->assistance_reason !== $assistanceReason) {
             return;
@@ -3194,7 +3195,7 @@ final readonly class TaskScheduler
     }
 
     /** @param  Collection<int, Task>  $tasks */
-    private function statusWithOpenSubtasks(TaskGroup $group, Collection $tasks): TaskGroupStatus
+    private function statusWithOpenSubtasks(Task $group, Collection $tasks): TaskGroupStatus
     {
         if ($this->runningSibling($tasks) instanceof Task || $tasks->contains(static fn (Task $task): bool => $task->status === TaskStatus::Running)) {
             return TaskGroupStatus::Running;
@@ -3206,14 +3207,14 @@ final readonly class TaskScheduler
             return TaskGroupStatus::Reserved;
         }
 
-        return $group->status;
+        return $group->groupStatus();
     }
 
     /** @return Collection<int, Task> */
-    private function lockedTasks(TaskGroup $group): Collection
+    private function lockedTasks(Task $group): Collection
     {
         $tasks = Task::query()
-            ->where('task_group_id', $group->id)
+            ->where('parent_id', $group->id)
             ->orderBy('position')
             ->orderBy('id')
             ->lockForUpdate()
@@ -3265,14 +3266,14 @@ final readonly class TaskScheduler
             ], true));
     }
 
-    private function failSpawn(?TaskGroup $group, ?Task $task, string $agent): void
+    private function failSpawn(?Task $group, ?Task $task, string $agent): void
     {
         if ($task instanceof Task) {
             $task->status = TaskStatus::Failed;
             $task->save();
         }
 
-        if ($group instanceof TaskGroup) {
+        if ($group instanceof Task) {
             $group->status = TaskGroupStatus::Failed;
             $group->save();
         }

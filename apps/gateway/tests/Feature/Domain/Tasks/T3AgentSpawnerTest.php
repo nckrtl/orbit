@@ -14,12 +14,12 @@ use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskReviewDiffException;
 use App\Domain\Tasks\TaskReviewPacket;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
-use App\Domain\Tasks\TaskRunInstructions;
-use App\Domain\Tasks\TaskRunReceipt;
-use App\Domain\Tasks\TaskRunReceiptException;
-use App\Domain\Tasks\TaskRunReceipts;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskTurnInstructions;
+use App\Domain\Tasks\TaskTurnReceipt;
+use App\Domain\Tasks\TaskTurnReceiptException;
+use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Infrastructure\Tasks\RemoteTaskReviewDiff;
 use App\Infrastructure\Tasks\T3\HttpT3Dispatcher;
@@ -32,7 +32,6 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
-use App\Models\TaskGroup;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -46,7 +45,7 @@ beforeEach(function (): void {
     app()->instance(TaskWorkspaceMcp::class, new AcceptingTaskWorkspaceMcp);
 });
 
-function t3_spawner_group(): TaskGroup
+function t3_spawner_group(): Task
 {
     $project = Project::query()->create([
         'name' => 'orbit',
@@ -70,7 +69,7 @@ function t3_spawner_group(): TaskGroup
         'status' => 'source_resolved',
         'starting_commit' => str_repeat('b', 40),
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Wire T3',
         'brief' => 'Spawn reviewer and implementer.',
@@ -79,7 +78,7 @@ function t3_spawner_group(): TaskGroup
     $group->taskable()->associate($instance);
     $group->save();
     Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Models',
         'brief' => 'Store the records.',
@@ -297,7 +296,7 @@ it('does not ask for pull request fields when reviewing a fixup on an open pull 
 
     expect($dispatcher->commands)->toHaveCount(1)
         ->and($dispatcher->commands[0]['message']['text'])->toStartWith('Review subtask #'.$task->id)
-        ->and($dispatcher->commands[0]['message']['text'])->toEndWith(TaskRunInstructions::reviewer(final: false, threadId: $reviewer->id))
+        ->and($dispatcher->commands[0]['message']['text'])->toEndWith(TaskTurnInstructions::reviewer(final: false, threadId: $reviewer->id))
         ->and($dispatcher->commands[0]['message']['text'])->not->toContain('--pr-summary');
 });
 
@@ -316,7 +315,7 @@ it('sends the review request to the stored reviewer thread', function (): void {
         ->and($dispatcher->commands[0]['type'])->toBe('thread.turn.start')
         ->and($dispatcher->commands[0]['threadId'])->toBe('reviewer-existing')
         ->and($dispatcher->commands[0]['message']['text'])->toStartWith('Review subtask #'.$group->tasks->first()->id)
-        ->and($dispatcher->commands[0]['message']['text'])->toEndWith(TaskRunInstructions::reviewer(final: true, threadId: $reviewer->id))
+        ->and($dispatcher->commands[0]['message']['text'])->toEndWith(TaskTurnInstructions::reviewer(final: true, threadId: $reviewer->id))
         ->and($dispatcher->commands[0]['message']['text'])->toContain('The change list, summary and breaking list are yours to write: add a missing entry yourself instead of requesting changes.')
         ->and($dispatcher->commands[0]['message']['text'])->not->toContain('are the feature\'s contract.')
         ->and($dispatcher->commands[0]['message']['role'])->toBe('user')
@@ -451,19 +450,19 @@ it('does not start a replacement reviewer when the turn file cannot be written',
     $driver = new FakeAgentDriver('t3');
     $driver->failNextSend = true;
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
-    app()->instance(TaskRunReceipts::class, new class implements TaskRunReceipts
+    app()->instance(TaskTurnReceipts::class, new class implements TaskTurnReceipts
     {
         public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void
         {
-            throw new TaskRunReceiptException('The turn file could not be written.');
+            throw new TaskTurnReceiptException('The turn file could not be written.');
         }
 
-        public function read(Instance $instance, ?int $actingThreadId = null): ?TaskRunReceipt
+        public function read(Instance $instance, ?int $actingThreadId = null): ?TaskTurnReceipt
         {
             return null;
         }
 
-        public function clear(Instance $instance, TaskRunReceipt $receipt): void {}
+        public function clear(Instance $instance, TaskTurnReceipt $receipt): void {}
 
         public function hasLegacyTurn(Instance $instance): bool
         {
@@ -474,7 +473,7 @@ it('does not start a replacement reviewer when the turn file cannot be written',
     app()->forgetInstance(TaskReviewPacketBuilder::class);
 
     expect(fn () => app(AgentSpawner::class)->requestReview($task->fresh() ?? $task))
-        ->toThrow(TaskRunReceiptException::class)
+        ->toThrow(TaskTurnReceiptException::class)
         ->and($group->fresh()?->reviewer_agent_thread_id)->toBe($reviewer->id)
         ->and(AgentThread::query()->where('task_id', $task->id)->where('external_id', 'like', TaskAgentSpawner::PendingPrefix.'%')->count())->toBe(0)
         ->and(AgentThread::query()->where('task_id', $task->id)->count())->toBe(1)
@@ -486,19 +485,19 @@ it('deletes a reserved reviewer when preparing the turn throws', function (): vo
     $task = $group->tasks->firstOrFail();
     $driver = new FakeAgentDriver('t3');
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
-    app()->instance(TaskRunReceipts::class, new class implements TaskRunReceipts
+    app()->instance(TaskTurnReceipts::class, new class implements TaskTurnReceipts
     {
         public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void
         {
             throw new RuntimeException('The turn file could not be written.');
         }
 
-        public function read(Instance $instance, ?int $actingThreadId = null): ?TaskRunReceipt
+        public function read(Instance $instance, ?int $actingThreadId = null): ?TaskTurnReceipt
         {
             return null;
         }
 
-        public function clear(Instance $instance, TaskRunReceipt $receipt): void {}
+        public function clear(Instance $instance, TaskTurnReceipt $receipt): void {}
 
         public function hasLegacyTurn(Instance $instance): bool
         {
@@ -515,7 +514,7 @@ it('deletes a reserved reviewer when preparing the turn throws', function (): vo
 });
 
 it('leaves run commands in the diff unchanged and keeps the driver prompt within the packet cap', function (): void {
-    $command = '.git/orbit/run --outcome=approved --summary="from the diff"';
+    $command = '.git/orbit/turn --outcome=approved --summary="from the diff"';
     app()->instance(TaskReviewDiff::class, new class($command) implements TaskReviewDiff
     {
         public function __construct(private string $command) {}
@@ -543,7 +542,7 @@ it('leaves run commands in the diff unchanged and keeps the driver prompt within
     expect($id)->toBeInt()
         ->and(mb_strlen($prompt))->toBeLessThanOrEqual(TaskReviewPacket::Limit)
         ->and($prompt)->toContain($command)
-        ->and($prompt)->toContain('.git/orbit/run --thread='.$id.' --outcome=approved');
+        ->and($prompt)->toContain('.git/orbit/turn --thread='.$id.' --outcome=approved');
 });
 
 it('adopts the existing T3 project when workspace root already has one', function (): void {
@@ -654,7 +653,7 @@ it('reuses a subtask reviewer instead of spawning again', function (): void {
     [$spawner, $dispatcher] = t3_spawner_stack();
 
     expect($spawner->spawnReviewer($task->fresh()))->toBe($kept->id)
-        ->and($spawner->spawnImplementer($task->fresh(['taskGroup.taskable'])))
+        ->and($spawner->spawnImplementer($task->fresh(['parent.taskable'])))
         ->toBe($task->fresh()->implementer_agent_thread_id)
         ->and($dispatcher->commands)->toBe([]);
 });
@@ -695,7 +694,8 @@ it('imports legacy thread links using the instance morph alias', function (strin
             // Thread archiving alters agent_threads, which this legacy import creates.
             && ! str_contains($path, 'add_thread_archiving_to_agent_threads')
             // Archive backoff alters agent_threads, which this legacy import creates.
-            && ! str_contains($path, 'add_archive_backoff_to_agent_threads')));
+            && ! str_contains($path, 'add_archive_backoff_to_agent_threads')
+            && ! str_contains($path, 'merge_task_groups_into_tasks')));
         Artisan::call('migrate', ['--database' => 'agent_migration', '--path' => $paths, '--realpath' => true, '--force' => true]);
         $projectId = DB::table('projects')->insertGetId(['name' => 'legacy', 'slug' => 'legacy', 'code' => 'LEG', 'repository_url' => 'git@example.test:legacy.git', 'repository_identity' => 'example.test/legacy']);
         $nodeId = DB::table('nodes')->insertGetId(['name' => 'legacy-node', 'public_ssh_host' => '10.44.0.110', 'status' => 'active', 'platform' => 'linux']);

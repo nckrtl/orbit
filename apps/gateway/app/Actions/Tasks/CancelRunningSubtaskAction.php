@@ -15,7 +15,6 @@ use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskCheck;
-use App\Models\TaskGroup;
 
 /**
  * Cancels a todo subtask directly, or stops a running subtask's implementer and running check before
@@ -31,7 +30,7 @@ final readonly class CancelRunningSubtaskAction
         private TaskScheduler $scheduler,
     ) {}
 
-    public function execute(TaskGroup $group, Task $task): Task
+    public function execute(Task $group, Task $task): Task
     {
         $group->requireManagedExecution();
         $this->requireExtension->execute();
@@ -67,7 +66,7 @@ final readonly class CancelRunningSubtaskAction
      * its handoff check. Either check stops with the subtask. The scheduler marks it cancelled once the
      * stop succeeded, so a failed stop leaves it running.
      */
-    private function stopCheck(TaskGroup $group, Task $task): void
+    private function stopCheck(Task $group, Task $task): void
     {
         $check = $task->checks()->where('status', TaskCheckStatus::Running->value)->latest('id')->first();
         if (! $check instanceof TaskCheck) {

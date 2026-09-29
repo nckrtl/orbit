@@ -13,7 +13,7 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property Carbon $posted_at
- * @property array<string, string>|null $deliverables the confirmations of a run receipt, by deliverable ID
+ * @property array<string, string>|null $deliverables the confirmations of a turn receipt, by deliverable ID
  */
 #[ObservedBy([TaskBroadcastObserver::class])]
 final class TaskComment extends Model
@@ -24,10 +24,14 @@ final class TaskComment extends Model
         'review_attempt', 'commit_sha', 'posted_at', 'receipt_hash', 'pull_request', 'deliverables',
     ];
 
-    /** @return BelongsTo<TaskGroup, $this> */
-    public function taskGroup(): BelongsTo
+    /**
+     * The top-level task that owns this comment. The column still stores that id.
+     *
+     * @return BelongsTo<Task, $this>
+     */
+    public function parent(): BelongsTo
     {
-        return $this->belongsTo(TaskGroup::class);
+        return $this->belongsTo(Task::class, 'task_group_id')->withoutGlobalScope('subtask');
     }
 
     /** @return BelongsTo<Task, $this> */

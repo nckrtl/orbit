@@ -10,13 +10,12 @@ use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\Task;
-use App\Models\TaskGroup;
 
 final readonly class CreateTaskAction
 {
     public function __construct(private RequireTasksExtensionAction $requireExtension) {}
 
-    public function execute(TaskGroup $group, CreateTaskData $data): Task
+    public function execute(Task $group, CreateTaskData $data): Task
     {
         $group->requireManagedExecution();
         $this->requireExtension->execute();
@@ -33,7 +32,7 @@ final readonly class CreateTaskAction
         $position = StoredInteger::fromOrZero($group->tasks()->max('position')) + 1;
 
         return Task::query()->create([
-            'task_group_id' => $group->id,
+            'parent_id' => $group->id,
             'position' => $position,
             'title' => $data->title,
             'brief' => $data->brief,

@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Tests\Support;
 
 use App\Domain\Tasks\TaskDeliverable;
-use App\Domain\Tasks\TaskRunReceipt;
-use App\Domain\Tasks\TaskRunReceipts;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskTurnReceipt;
+use App\Domain\Tasks\TaskTurnReceipts;
 use App\Models\Instance;
 
-final class FakeTaskRunReceipts implements TaskRunReceipts
+final class FakeTaskTurnReceipts implements TaskTurnReceipts
 {
     /** @var list<string> */
     public array $prepared = [];
@@ -52,14 +52,14 @@ final class FakeTaskRunReceipts implements TaskRunReceipts
         $this->turnDeliverables[] = array_map(static fn (TaskDeliverable $deliverable): string => $deliverable->id, $deliverables);
     }
 
-    public function read(Instance $instance, ?int $actingThreadId = null): ?TaskRunReceipt
+    public function read(Instance $instance, ?int $actingThreadId = null): ?TaskTurnReceipt
     {
         $this->reads++;
         $contents = array_shift($this->receipts);
         if ($contents === null) {
             return null;
         }
-        $receipt = TaskRunReceipt::parse($contents);
+        $receipt = TaskTurnReceipt::parse($contents);
         if ($receipt->threadId === null && $actingThreadId !== null) {
             return $receipt->withThread($actingThreadId);
         }
@@ -72,7 +72,7 @@ final class FakeTaskRunReceipts implements TaskRunReceipts
         return false;
     }
 
-    public function clear(Instance $instance, TaskRunReceipt $receipt): void
+    public function clear(Instance $instance, TaskTurnReceipt $receipt): void
     {
         $this->cleared[] = $receipt->hash;
     }

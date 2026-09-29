@@ -21,7 +21,7 @@ final class AnnotationData extends Data
             'id' => $annotation->id,
             'instanceId' => $annotation->instance_id,
             'taskId' => $annotation->task_id,
-            'taskGroupId' => $annotation->task->task_group_id,
+            'taskGroupId' => $annotation->task->requireGroupId(),
             'threadId' => $annotation->task->target_thread_id,
             'status' => match ($annotation->task->status) {
                 TaskStatus::Completed => 'resolved', TaskStatus::Cancelled => 'cancelled', TaskStatus::Running, TaskStatus::Reviewing => 'in_progress', default => 'pending',

@@ -4,23 +4,35 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskBroadcastObserver;
 use App\Domain\Tasks\TaskDeliverable;
+use App\Domain\Tasks\TaskExecutionMode;
+use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskHierarchyException;
+use App\Domain\Tasks\TaskLevelStatusCast;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskType;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use LogicException;
 
 /**
  * @property-read AgentThread|null $implementerThread
+ * @property-read Task|null $parent
  * @property TaskType $type
  * @property string|null $target_thread_id
  * @property string|null $completion_summary
  * @property int $id
- * @property int $task_group_id
+ * @property int|null $parent_id
  * @property int $position
  * @property int|null $continuation_of_task_id
  * @property int $completion_attempt
@@ -49,7 +61,21 @@ use Illuminate\Support\Carbon;
  * @property int|null $resolution_delivered_comment_id
  * @property string $title
  * @property string $brief
- * @property TaskStatus $status
+ * @property TaskStatus|TaskGroupStatus $status
+ * @property int $project_id
+ * @property string|null $taskable_type
+ * @property int|null $taskable_id
+ * @property string|null $pr_url
+ * @property bool $notify_coder
+ * @property string $implementer_model
+ * @property string $reviewer_model
+ * @property int|null $reviewer_agent_thread_id
+ * @property TaskExecutionMode $execution_mode
+ * @property string $implementer_agent_driver
+ * @property string $reviewer_agent_driver
+ * @property Carbon|null $agent_unavailable_since
+ * @property Carbon|null $agent_unavailable_notified_at
+ * @property Carbon|null $reserved_at
  * @property int|null $implementer_agent_thread_id
  * @property int|null $tokens
  * @property int|null $lines_added
@@ -62,25 +88,75 @@ use Illuminate\Support\Carbon;
  * @property string|null $fixup_head_sha
  * @property list<array<string, string|bool|list<string>>>|null $deliverables
  * @property Carbon|null $settled_at
- * @property-read TaskGroup $taskGroup
+ * @property-read Task $parent
+ * @property-read Collection<int, Task> $children
+ * @property-read Collection<int, Task> $tasks
+ * @property-read Project $project
+ * @property-read Instance|Model|null $taskable
+ * @property-read AgentThread|null $reviewerThread
  */
 #[ObservedBy([TaskBroadcastObserver::class])]
 final class Task extends Model
 {
-    /** @var array<string, mixed> */
-    #[\Override]
-    protected $attributes = [
-        'status' => 'todo',
-        'assistance_requested' => false,
-        'pi_restart_resumes' => 0,
-        'type' => 'implementation',
+    /** @var list<string> */
+    private const array TOP_LEVEL_COLUMNS = [
+        'project_id',
+        'taskable_type',
+        'taskable_id',
+        'pr_url',
+        'notify_coder',
+        'implementer_model',
+        'reviewer_model',
+        'reviewer_agent_thread_id',
+        'execution_mode',
+        'implementer_agent_driver',
+        'reviewer_agent_driver',
+        'agent_unavailable_since',
+        'agent_unavailable_notified_at',
+        'reserved_at',
+    ];
+
+    /** @var list<string> */
+    private const array SUBTASK_COLUMNS = [
+        'position',
+        'implementer_agent_thread_id',
+        'type',
+        'target_thread_id',
+        'completion_summary',
+        'subtask_start_commit',
+        'completion_attempt',
+        'completion_handoff_comment_id',
+        'completion_reminder_attempt',
+        'completion_reminder_input_id',
+        'completion_handoff_attempt',
+        'completion_handoff_turn_id',
+        'review_attempt',
+        'review_handled_comment_id',
+        'review_reminder_attempt',
+        'review_reminder_input_id',
+        'review_notified_attempt',
+        'review_notified_turn_id',
+        'review_workspace_head',
+        'review_workspace_tree',
+        'deliverables',
+        'fixup_problem',
+        'fixup_head_sha',
+        'communication_failures',
+        'resolution_delivered_comment_id',
+        'pi_restart_resumes',
+        'pi_restart_key',
+        'pi_restart_thread_id',
+        'pi_restart_source_turn_id',
+        'pi_restart_reservation',
+        'pi_restart_session_revision',
+        'continuation_of_task_id',
     ];
 
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
         'type', 'target_thread_id', 'completion_summary',
-        'task_group_id',
+        'parent_id',
         'continuation_of_task_id',
         'position',
         'title',
@@ -114,12 +190,130 @@ final class Task extends Model
         'review_workspace_tree',
         'assistance_requested', 'assistance_reason', 'communication_failures', 'resolution_delivered_comment_id',
         'pi_restart_resumes', 'pi_restart_key', 'pi_restart_thread_id', 'pi_restart_source_turn_id', 'pi_restart_reservation', 'pi_restart_session_revision',
+        'project_id',
+        'taskable_type',
+        'taskable_id',
+        'pr_url',
+        'notify_coder',
+        'implementer_model',
+        'reviewer_model',
+        'reviewer_agent_thread_id',
+        'execution_mode',
+        'implementer_agent_driver',
+        'reviewer_agent_driver',
+        'agent_unavailable_since',
+        'agent_unavailable_notified_at',
+        'reserved_at',
     ];
 
-    /** @return BelongsTo<TaskGroup, $this> */
-    public function taskGroup(): BelongsTo
+    #[\Override]
+    protected static function booted(): void
     {
-        return $this->belongsTo(TaskGroup::class);
+        self::addGlobalScope('subtask', static function (Builder $query): void {
+            $query->whereNotNull('parent_id');
+        });
+
+        self::saving(static function (Task $task): void {
+            $task->ensureParentId();
+            $task->applyLevelDefaults();
+            $task->guardHierarchy();
+            $task->guardStatus();
+        });
+    }
+
+    /**
+     * A top-level task has a loaded null parent. A subtask has a loaded parent id.
+     * The status cast and the broadcast observer both use this.
+     */
+    public function isTopLevel(): bool
+    {
+        return $this->resolvedParentId() === null;
+    }
+
+    public function subtaskStatus(): TaskStatus
+    {
+        $status = $this->status;
+
+        if (! $status instanceof TaskStatus) {
+            throw new LogicException('A subtask status must use the subtask status names.');
+        }
+
+        return $status;
+    }
+
+    public function groupStatus(): TaskGroupStatus
+    {
+        $status = $this->status;
+
+        if (! $status instanceof TaskGroupStatus) {
+            throw new LogicException('A top-level task status must use the top-level status names.');
+        }
+
+        return $status;
+    }
+
+    public function requireGroupId(): int
+    {
+        $groupId = $this->resolvedParentId();
+
+        if (! is_int($groupId)) {
+            throw new LogicException('A subtask is missing its task.');
+        }
+
+        return $groupId;
+    }
+
+    /** @param  Builder<Task>  $query */
+    public function scopeTopLevel(Builder $query): void
+    {
+        $query->withoutGlobalScope('subtask')->whereNull('parent_id');
+    }
+
+    /** @return BelongsTo<Task, $this> */
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'parent_id')->withoutGlobalScope('subtask');
+    }
+
+    /** @return HasMany<Task, $this> */
+    public function children(): HasMany
+    {
+        return $this->hasMany(self::class, 'parent_id')->orderBy('position')->orderBy('id');
+    }
+
+    /**
+     * Subtasks of a top-level task, in position order. Same rows as children().
+     *
+     * @return HasMany<Task, $this>
+     */
+    public function tasks(): HasMany
+    {
+        return $this->hasMany(self::class, 'parent_id')->orderBy('position')->orderBy('id');
+    }
+
+    /** @return BelongsTo<Project, $this> */
+    public function project(): BelongsTo
+    {
+        return $this->belongsTo(Project::class, 'project_id');
+    }
+
+    /** @return MorphTo<Model, $this> */
+    public function taskable(): MorphTo
+    {
+        return $this->morphTo();
+    }
+
+    /** @return BelongsTo<AgentThread, $this> */
+    public function reviewerThread(): BelongsTo
+    {
+        return $this->belongsTo(AgentThread::class, 'reviewer_agent_thread_id');
+    }
+
+    public function requireManagedExecution(): void
+    {
+        if ($this->execution_mode !== TaskExecutionMode::Managed) {
+            throw new ResourceOperationException('tasks.external_execution', 'This task uses an existing thread. Use its annotation controls instead of the managed lifecycle.', 409);
+        }
     }
 
     /** @return BelongsTo<AgentThread, $this> */
@@ -146,7 +340,7 @@ final class Task extends Model
     public function isLastSubtask(): bool
     {
         return self::query()
-            ->where('task_group_id', $this->task_group_id)
+            ->where('parent_id', $this->requireGroupId())
             ->whereKeyNot($this->id)
             ->whereIn('status', [TaskStatus::Todo, TaskStatus::Reserved, TaskStatus::Running])
             ->doesntExist();
@@ -162,7 +356,7 @@ final class Task extends Model
             return false;
         }
 
-        $url = $this->taskGroup()->value('pr_url');
+        $url = $this->parent()->value('pr_url');
 
         return ! is_string($url) || $url === '';
     }
@@ -183,7 +377,12 @@ final class Task extends Model
         return [
             'type' => TaskType::class,
             'position' => 'integer',
-            'status' => TaskStatus::class,
+            'status' => TaskLevelStatusCast::class,
+            'execution_mode' => TaskExecutionMode::class,
+            'notify_coder' => 'boolean',
+            'agent_unavailable_since' => 'datetime',
+            'agent_unavailable_notified_at' => 'datetime',
+            'reserved_at' => 'datetime',
             'tokens' => 'integer',
             'line_diff' => 'integer',
             'lines_added' => 'integer',
@@ -206,5 +405,177 @@ final class Task extends Model
             'pi_restart_thread_id' => 'integer',
             'resolution_delivered_comment_id' => 'integer',
         ];
+    }
+
+    private function applyLevelDefaults(): void
+    {
+        if ($this->parentKey() === null) {
+            $this->fillIfMissing([
+                'status' => TaskGroupStatus::Backlog->value,
+                'execution_mode' => TaskExecutionMode::Managed->value,
+                'implementer_agent_driver' => 't3',
+                'reviewer_agent_driver' => 't3',
+                'notify_coder' => false,
+                'assistance_requested' => false,
+                'implementer_model' => TaskAgentDefaults::ImplementerModel,
+                'reviewer_model' => TaskAgentDefaults::ReviewerModel,
+            ]);
+
+            return;
+        }
+
+        $this->fillIfMissing([
+            'status' => TaskStatus::Todo->value,
+            'type' => TaskType::Implementation->value,
+            'assistance_requested' => false,
+            'pi_restart_resumes' => 0,
+            'completion_attempt' => 1,
+            'review_attempt' => 1,
+            'communication_failures' => 0,
+        ]);
+    }
+
+    /** @param  array<string, mixed>  $defaults */
+    private function fillIfMissing(array $defaults): void
+    {
+        foreach ($defaults as $column => $value) {
+            if (! array_key_exists($column, $this->attributes) || $this->attributes[$column] === null) {
+                $this->setAttribute($column, $value);
+            }
+        }
+    }
+
+    private function guardHierarchy(): void
+    {
+        $parentId = $this->parentKey();
+
+        if ($parentId === null) {
+            $this->rejectColumns(self::SUBTASK_COLUMNS, 'top-level task');
+
+            return;
+        }
+
+        $this->rejectColumns(self::TOP_LEVEL_COLUMNS, 'subtask');
+
+        $key = self::integerOrNull($this->getKey());
+
+        if ($this->exists && $key === $parentId) {
+            throw TaskHierarchyException::nested();
+        }
+
+        $parent = DB::table('tasks')->where('id', $parentId)->first(['id', 'parent_id']);
+
+        if ($parent === null || $parent->parent_id !== null) {
+            throw TaskHierarchyException::nested();
+        }
+
+        if ($this->exists && $this->children()->exists()) {
+            throw TaskHierarchyException::nested();
+        }
+    }
+
+    /** @param  list<string>  $columns */
+    private function rejectColumns(array $columns, string $level): void
+    {
+        foreach ($columns as $column) {
+            if (array_key_exists($column, $this->attributes) && $this->attributes[$column] !== null) {
+                throw TaskHierarchyException::column($column, $level);
+            }
+        }
+    }
+
+    /**
+     * The parent id, loaded from the row when a partial select omitted it.
+     * A model that has neither the attribute nor a row fails instead of guessing a level.
+     */
+    private function resolvedParentId(): ?int
+    {
+        if (! array_key_exists('parent_id', $this->attributes)) {
+            $this->loadParentId();
+        }
+
+        return self::integerOrNull($this->attributes['parent_id']);
+    }
+
+    /**
+     * A new row that omits parent_id stores null. Record that before the level is read.
+     * A saved row loads the stored value instead of treating the missing attribute as either level.
+     */
+    private function ensureParentId(): void
+    {
+        if (array_key_exists('parent_id', $this->attributes)) {
+            return;
+        }
+
+        if ($this->exists) {
+            $this->loadParentId();
+
+            return;
+        }
+
+        $this->attributes['parent_id'] = null;
+    }
+
+    private function loadParentId(): void
+    {
+        if (! $this->exists) {
+            throw new LogicException('A task needs parent_id before its level can be decided.');
+        }
+
+        $key = $this->getKey();
+
+        if (! is_int($key) && ! is_string($key)) {
+            throw new LogicException('A task needs its id before its level can be decided.');
+        }
+
+        $row = DB::table($this->getTable())->where('id', $key)->first(['id', 'parent_id']);
+
+        if ($row === null) {
+            throw new LogicException("Task [{$key}] has no row, so its level cannot be decided.");
+        }
+
+        $stored = (array) $row;
+
+        if (! array_key_exists('parent_id', $stored)) {
+            throw new LogicException("Task [{$key}] has no row, so its level cannot be decided.");
+        }
+
+        $this->attributes['parent_id'] = $stored['parent_id'];
+        $this->syncOriginalAttribute('parent_id');
+    }
+
+    private function guardStatus(): void
+    {
+        $status = $this->attributes['status'] ?? null;
+
+        if (! is_string($status) || $status === '') {
+            return;
+        }
+
+        if ($this->resolvedParentId() === null) {
+            TaskGroupStatus::from($status);
+
+            return;
+        }
+
+        TaskStatus::from($status);
+    }
+
+    private function parentKey(): ?int
+    {
+        return $this->resolvedParentId();
+    }
+
+    private static function integerOrNull(mixed $value): ?int
+    {
+        if (is_int($value)) {
+            return $value;
+        }
+
+        if (is_string($value) && is_numeric($value)) {
+            return (int) $value;
+        }
+
+        return null;
     }
 }

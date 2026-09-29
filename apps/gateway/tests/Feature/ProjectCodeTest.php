@@ -28,7 +28,7 @@ it('persists an editable code and returns the new code on task cards', function 
     app(TaskExtensionState::class)->enable();
     $project = projectForCode('orbit');
     expect($project->code)->toBe('ORB');
-    $group = $project->taskGroups()->create([
+    $group = $project->tasks()->create([
         'title' => 'Code on card', 'brief' => 'Brief', 'status' => 'todo',
         'implementer_model' => 'model', 'reviewer_model' => 'model',
     ]);

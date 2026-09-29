@@ -8,7 +8,6 @@ use App\Models\AgentThread;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
-use App\Models\TaskGroup;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -22,8 +21,7 @@ final readonly class TaskBroadcastObserver
     public function created(Model $model): void
     {
         match (true) {
-            $model instanceof TaskGroup => $this->broadcasts->groupCreated($model->id),
-            $model instanceof Task => $this->broadcasts->groupChanged($model->task_group_id),
+            $model instanceof Task => $this->createdTask($model),
             $model instanceof TaskCheck => $this->checkChanged($model),
             $model instanceof TaskComment => $this->broadcasts->commentCreated($model->id),
             $model instanceof AgentThread => $this->broadcasts->threadChanged($model->id),
@@ -36,8 +34,7 @@ final readonly class TaskBroadcastObserver
         $columns = array_keys($model->getChanges());
 
         match (true) {
-            $model instanceof TaskGroup => TaskBroadcasts::broadcastsGroupChange($columns) ? $this->broadcasts->groupChanged($model->id) : null,
-            $model instanceof Task => TaskBroadcasts::broadcastsGroupChange($columns) ? $this->broadcasts->groupChanged($model->task_group_id) : null,
+            $model instanceof Task => TaskBroadcasts::broadcastsGroupChange($columns) ? $this->groupChanged($model) : null,
             $model instanceof TaskCheck => $this->checkChanged($model),
             $model instanceof AgentThread => TaskBroadcasts::broadcastsThreadChange($columns) ? $this->broadcasts->threadChanged($model->id) : null,
             default => null,
@@ -47,13 +44,34 @@ final readonly class TaskBroadcastObserver
     public function deleted(Model $model): void
     {
         if ($model instanceof Task) {
-            $this->broadcasts->groupChanged($model->task_group_id);
+            $this->groupChanged($model);
         }
+    }
+
+    private function createdTask(Task $task): void
+    {
+        if ($this->isTopLevel($task)) {
+            $this->broadcasts->groupCreated($task->id);
+
+            return;
+        }
+
+        $this->groupChanged($task);
+    }
+
+    private function groupChanged(Task $task): void
+    {
+        $this->broadcasts->groupChanged($this->isTopLevel($task) ? $task->id : $task->requireGroupId());
+    }
+
+    private function isTopLevel(Task $task): bool
+    {
+        return $task->isTopLevel();
     }
 
     private function checkChanged(TaskCheck $check): void
     {
-        $groupId = Task::query()->whereKey($check->task_id)->value('task_group_id');
+        $groupId = Task::query()->whereKey($check->task_id)->value('parent_id');
 
         if (is_int($groupId)) {
             $this->broadcasts->groupChanged($groupId);

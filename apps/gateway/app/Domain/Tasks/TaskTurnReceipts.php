@@ -7,17 +7,17 @@ namespace App\Domain\Tasks;
 use App\Models\Instance;
 
 /**
- * Places the run script in a task workspace and reads the receipt an agent writes with it.
+ * Places the turn command in a task workspace and reads the receipt an agent writes with it.
  */
-interface TaskRunReceipts
+interface TaskTurnReceipts
 {
     /**
-     * Installs `.git/orbit/run`, records whose turn starts, whether it reviews the last subtask,
+     * Installs `.git/orbit/turn`, records whose turn starts, whether it reviews the last subtask,
      * the subtask's deliverables, and the acting Orbit thread id, and removes any earlier receipt.
      *
      * @param  list<TaskDeliverable>  $deliverables
      *
-     * @throws TaskRunReceiptException
+     * @throws TaskTurnReceiptException
      */
     public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void;
 
@@ -25,21 +25,21 @@ interface TaskRunReceipts
      * Reads the receipt. When `$actingThreadId` is set, the receipt applies only when it names that
      * thread. A receipt with no thread id does not apply. A stale turn file does not hide a match.
      *
-     * @throws TaskRunReceiptException
+     * @throws TaskTurnReceiptException
      */
-    public function read(Instance $instance, ?int $actingThreadId = null): ?TaskRunReceipt;
+    public function read(Instance $instance, ?int $actingThreadId = null): ?TaskTurnReceipt;
 
     /**
      * Whether the current turn file exists and does not name an Orbit thread. A missing turn file is not legacy.
      *
-     * @throws TaskRunReceiptException
+     * @throws TaskTurnReceiptException
      */
     public function hasLegacyTurn(Instance $instance): bool;
 
     /**
      * Removes the receipt only while it still has the content that was read.
      *
-     * @throws TaskRunReceiptException
+     * @throws TaskTurnReceiptException
      */
-    public function clear(Instance $instance, TaskRunReceipt $receipt): void;
+    public function clear(Instance $instance, TaskTurnReceipt $receipt): void;
 }

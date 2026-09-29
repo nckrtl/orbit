@@ -14,9 +14,8 @@ use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Task;
-use App\Models\TaskGroup;
 
-function test_agent_thread(TaskGroup $group, string $externalId, ?Task $task = null): AgentThread
+function test_agent_thread(Task $group, string $externalId, ?Task $task = null): AgentThread
 {
     $instance = $group->taskable;
     $nodeId = $instance instanceof Instance ? $instance->node_id : null;
@@ -31,7 +30,7 @@ function test_agent_thread(TaskGroup $group, string $externalId, ?Task $task = n
     ]);
 }
 
-function test_link_agent_threads(TaskGroup $group, string $reviewer = 'reviewer-thread', string $implementer = 'implementer-thread'): void
+function test_link_agent_threads(Task $group, string $reviewer = 'reviewer-thread', string $implementer = 'implementer-thread'): void
 {
     $group->update(['reviewer_agent_thread_id' => test_agent_thread($group, $reviewer)->id]);
     foreach ($group->tasks as $task) {

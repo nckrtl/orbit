@@ -7,7 +7,6 @@ namespace App\Domain\Tasks;
 use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskComment;
-use App\Models\TaskGroup;
 
 /**
  * The commit a subtask review and its base run both diff from.
@@ -30,8 +29,8 @@ final class TaskReviewBase
                 }
             }
         }
-        $task->loadMissing('taskGroup.taskable');
-        $group = $task->taskGroup;
+        $task->loadMissing('parent.taskable');
+        $group = $task->parent;
         $previous = self::previousApprovedCommit($group, $task);
         if ($previous !== null) {
             return $previous;
@@ -43,7 +42,7 @@ final class TaskReviewBase
     }
 
     /** The workspace commit recorded when the group workspace was created, or empty when it is missing. */
-    public static function groupStartCommit(TaskGroup $group): string
+    public static function groupStartCommit(Task $group): string
     {
         $group->loadMissing('taskable');
         $instance = $group->taskable;
@@ -52,10 +51,10 @@ final class TaskReviewBase
         return is_string($starting) ? $starting : '';
     }
 
-    private static function previousApprovedCommit(TaskGroup $group, Task $task): ?string
+    private static function previousApprovedCommit(Task $group, Task $task): ?string
     {
         $earlier = Task::query()
-            ->where('task_group_id', $group->id)
+            ->where('parent_id', $group->id)
             ->where(function ($query) use ($task): void {
                 $query->where('position', '<', $task->position)
                     ->orWhere(function ($query) use ($task): void {

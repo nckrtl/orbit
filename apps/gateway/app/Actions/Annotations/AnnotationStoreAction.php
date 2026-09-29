@@ -18,7 +18,6 @@ use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Models\Annotation;
 use App\Models\Instance;
 use App\Models\Task;
-use App\Models\TaskGroup;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -46,14 +45,14 @@ final readonly class AnnotationStoreAction
                 return $existing;
             }
             $thread = $context['threadId'] ?? null;
-            $group = TaskGroup::query()->create([
+            $group = Task::topLevel()->create([
                 'project_id' => $instance->project_id, 'taskable_type' => $instance->getMorphClass(), 'taskable_id' => $instance->id,
                 'execution_mode' => TaskExecutionMode::ExistingThread, 'implementer_agent_driver' => 't3', 'reviewer_agent_driver' => 't3',
                 'title' => mb_substr($comment, 0, 200), 'brief' => $comment,
                 'status' => TaskGroupStatus::Todo,
             ]);
             $task = Task::query()->create([
-                'task_group_id' => $group->id, 'type' => TaskType::Annotation, 'position' => 1,
+                'parent_id' => $group->id, 'type' => TaskType::Annotation, 'position' => 1,
                 'title' => $group->title, 'brief' => $group->brief, 'status' => TaskStatus::Todo,
                 'target_thread_id' => $thread,
             ]);
@@ -92,7 +91,7 @@ final readonly class AnnotationStoreAction
                 $task->duration_ms = max(0, (int) $task->started_at->diffInMilliseconds(now()));
             }
             $task->save();
-            $task->taskGroup()->update([
+            $task->parent()->update([
                 'status' => $next === TaskStatus::Completed ? TaskGroupStatus::Completed : TaskGroupStatus::Running,
                 'started_at' => $task->started_at, 'settled_at' => $task->settled_at, 'duration_ms' => $task->duration_ms,
             ]);

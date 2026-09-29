@@ -6,4 +6,4 @@ namespace App\Domain\Tasks;
 
 use RuntimeException;
 
-final class TaskRunReceiptException extends RuntimeException {}
+final class TaskTurnReceiptException extends RuntimeException {}

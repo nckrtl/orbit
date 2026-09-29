@@ -223,7 +223,7 @@ it("shows each thread's polled state in its tab, whatever the selected thread's 
     const group = {
         id: 49,
         title: "Receipts",
-        brief: "Record run receipts",
+        brief: "Record turn receipts",
         status: "running",
         project_id: 999,
         app: "test",

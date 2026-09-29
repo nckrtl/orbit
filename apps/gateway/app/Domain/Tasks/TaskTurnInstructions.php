@@ -7,9 +7,9 @@ namespace App\Domain\Tasks;
 use App\Models\Project;
 
 /**
- * Tells an agent how to end its turn with the run script.
+ * Tells an agent how to end its turn with the turn command.
  */
-final readonly class TaskRunInstructions
+final readonly class TaskTurnInstructions
 {
     /**
      * @param  list<TaskDeliverable>  $deliverables
@@ -75,7 +75,7 @@ final readonly class TaskRunInstructions
 
     private static function command(?int $threadId, string $arguments): string
     {
-        return '.git/orbit/run '.($threadId === null ? '' : '--thread='.$threadId.' ').$arguments;
+        return '.git/orbit/turn '.($threadId === null ? '' : '--thread='.$threadId.' ').$arguments;
     }
 
     /**

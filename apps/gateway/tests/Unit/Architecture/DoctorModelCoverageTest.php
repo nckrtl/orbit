@@ -44,7 +44,6 @@ use App\Models\Setting;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
-use App\Models\TaskGroup;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 
@@ -95,7 +94,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         Task::class,
         AgentThread::class,
         AgentThreadSendLease::class,
-        TaskGroup::class,
+        Task::class,
         TaskComment::class,
         TaskCheck::class,
     ];

@@ -35,7 +35,6 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\ProjectNodeExclusion;
 use App\Models\Task;
-use App\Models\TaskGroup;
 
 function provisioner_app(
     string $slug,
@@ -83,16 +82,16 @@ function provisioner_node(string $name, string $ip): Node
     return $node;
 }
 
-function provisioner_group(Project $project, string $title = 'Workspace'): TaskGroup
+function provisioner_group(Project $project, string $title = 'Workspace'): Task
 {
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => $title,
         'brief' => "{$title} brief",
         'status' => TaskGroupStatus::Reserved,
     ]);
     Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'First',
         'brief' => 'First subtask',
@@ -478,7 +477,7 @@ describe('a workspace an interrupted claim left unattached', function (): void {
 });
 
 /**
- * @return array{0: TaskGroup, 1: Instance, 2: string}
+ * @return array{0: Task, 1: Instance, 2: string}
  */
 function orbit_workspace_clone(): array
 {

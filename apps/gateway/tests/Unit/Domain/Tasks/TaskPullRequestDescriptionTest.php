@@ -3,10 +3,10 @@
 declare(strict_types=1);
 
 use App\Domain\Tasks\TaskPullRequestDescription;
-use App\Domain\Tasks\TaskRunPullRequest;
+use App\Domain\Tasks\TaskTurnPullRequest;
 
 it('renders the summary, changes, breaking changes, and the check line in order', function (): void {
-    $description = TaskPullRequestDescription::render(new TaskRunPullRequest(
+    $description = TaskPullRequestDescription::render(new TaskTurnPullRequest(
         'Adds an order export.',
         ['Orders export as CSV.', 'A download route serves the export.'],
         ['The orders:export command is renamed.'],
@@ -30,12 +30,12 @@ it('renders the summary, changes, breaking changes, and the check line in order'
 });
 
 it('states that nothing breaks when the reviewer passed none', function (): void {
-    expect(TaskPullRequestDescription::render(new TaskRunPullRequest('Summary.', ['Change.'], []), 1))
+    expect(TaskPullRequestDescription::render(new TaskTurnPullRequest('Summary.', ['Change.'], []), 1))
         ->toContain("## Breaking changes\n\nNone.");
 });
 
 it('accepts only a complete pull request description from a receipt', function (mixed $data, bool $valid): void {
-    expect(TaskRunPullRequest::fromArray($data) instanceof TaskRunPullRequest)->toBe($valid);
+    expect(TaskTurnPullRequest::fromArray($data) instanceof TaskTurnPullRequest)->toBe($valid);
 })->with([
     'complete' => [['summary' => 'S', 'changes' => ['C'], 'breaking' => []], true],
     'no changes' => [['summary' => 'S', 'changes' => [], 'breaking' => []], false],
@@ -46,7 +46,7 @@ it('accepts only a complete pull request description from a receipt', function (
 ]);
 
 it('names the Project task check, or only the review when the Project has none', function (): void {
-    $pullRequest = new TaskRunPullRequest('Summary.', ['Change.'], []);
+    $pullRequest = new TaskTurnPullRequest('Summary.', ['Change.'], []);
 
     expect(TaskPullRequestDescription::render($pullRequest, 1, 'vp run check'))
         ->toContain('Checks: each of the 1 subtasks passed `vp run check` and was approved by the reviewer.')

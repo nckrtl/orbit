@@ -7,7 +7,7 @@ namespace App\Actions\Tasks;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Models\Instance;
-use App\Models\TaskGroup;
+use App\Models\Task;
 use Throwable;
 
 final readonly class CompleteTaskGroupAction
@@ -24,7 +24,7 @@ final readonly class CompleteTaskGroupAction
      * on the completed group. Merge cleanup passes `$finishWhenRemovalFails` false so a failed removal leaves
      * the group settling for the sweep.
      */
-    public function execute(TaskGroup $group, bool $finishWhenRemovalFails = true): TaskGroup
+    public function execute(Task $group, bool $finishWhenRemovalFails = true): Task
     {
         $group->requireManagedExecution();
         $this->requireExtension->execute();
@@ -67,7 +67,7 @@ final readonly class CompleteTaskGroupAction
      * Removes the workspace. A manual complete that cannot remove it still finishes and returns false.
      * Merge cleanup rethrows so the group stays settling. A repeated complete retries at once.
      */
-    private function removeOrFinish(TaskGroup $group, bool $finishWhenRemovalFails): bool
+    private function removeOrFinish(Task $group, bool $finishWhenRemovalFails): bool
     {
         try {
             $this->removeWorkspace($group);
@@ -83,7 +83,7 @@ final readonly class CompleteTaskGroupAction
     }
 
     /** Deletes the checkout. A refusal keeps the checkout and the Instance row, asks for assistance, and rethrows. */
-    private function removeWorkspace(TaskGroup $group): void
+    private function removeWorkspace(Task $group): void
     {
         $instanceId = $group->taskable_id;
 

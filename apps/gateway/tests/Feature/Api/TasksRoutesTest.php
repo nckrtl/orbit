@@ -24,7 +24,6 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
-use App\Models\TaskGroup;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\Event;
 use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
@@ -122,7 +121,7 @@ it('creates and reads operator task comments', function (): void {
         ->assertJsonPath('data.0.type', 'resolution');
 });
 
-it('refuses turn outcomes, which agents report with the run script', function (string $type): void {
+it('refuses turn outcomes, which agents report with the turn command', function (string $type): void {
     tasks_gateway();
     enable_tasks();
     $project = tasks_app('invalid-comments');
@@ -216,7 +215,7 @@ it('returns 409 extension.disabled for create and list while the extension is of
         ->assertStatus(409)
         ->assertJsonPath('error.code', 'extension.disabled');
 
-    expect(TaskGroup::query()->count())->toBe(0);
+    expect(Task::topLevel()->count())->toBe(0);
 });
 
 it('still returns the created group, and fails it when the first implementer cannot start after the baseline', function (): void {
@@ -276,8 +275,8 @@ it('still returns the created group, and fails it when the first implementer can
         ->assertJsonPath('data.status', 'running');
     test_pass_baseline();
 
-    expect(TaskGroup::query()->count())->toBe(1)
-        ->and(TaskGroup::query()->sole()->status)->toBe(TaskGroupStatus::Failed);
+    expect(Task::topLevel()->count())->toBe(1)
+        ->and(Task::topLevel()->sole()->status)->toBe(TaskGroupStatus::Failed);
 });
 
 it('creates a group with ordered tasks and lists and shows it', function (): void {
@@ -292,7 +291,7 @@ it('creates a group with ordered tasks and lists and shows it', function (): voi
         'notify_coder' => true,
         'tasks' => [
             ['title' => 'ADR', 'brief' => 'Write the decision. Accept when reviewers can follow it.'],
-            ['title' => 'Models', 'brief' => 'Store TaskGroup and Task. Accept when migrations run.'],
+            ['title' => 'Models', 'brief' => 'Store Task and Task. Accept when migrations run.'],
         ],
     ]);
 
@@ -333,8 +332,8 @@ it('creates a group with ordered tasks and lists and shows it', function (): voi
         ->assertJsonPath('data.position', 3)
         ->assertJsonPath('data.status', 'todo');
 
-    expect(Task::query()->where('task_group_id', $id)->count())->toBe(3)
-        ->and(TaskGroup::query()->findOrFail($id)->status)->toBe(TaskGroupStatus::Backlog);
+    expect(Task::query()->where('parent_id', $id)->count())->toBe(3)
+        ->and(Task::topLevel()->findOrFail($id)->status)->toBe(TaskGroupStatus::Backlog);
 });
 
 it('creates a fourth group when the Project already has three active groups', function (): void {
@@ -410,7 +409,7 @@ it('returns 403 node_access.required when create comes from a Node without Gatew
         ->assertForbidden()
         ->assertJsonPath('error.code', 'node_access.required');
 
-    expect(TaskGroup::query()->count())->toBe(0);
+    expect(Task::topLevel()->count())->toBe(0);
 });
 
 it('lets a Node with a Gateway grant create a group', function (): void {
@@ -462,7 +461,7 @@ it('completes a settling group and removes its App instance', function (): void 
         'checkout_path' => '/tmp/task-30',
         'status' => 'source_resolved',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Ready',
         'brief' => 'PR is merged.',
@@ -493,7 +492,7 @@ it('returns 409 tasks.not_settling when complete runs before settle', function (
     tasks_gateway();
     enable_tasks();
     $project = tasks_app('too-early');
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Running',
         'brief' => 'Not ready.',
@@ -515,7 +514,7 @@ it('stores the configured models on a new group and keeps the defaults when unse
     $this->postJson('/api/v1/task-groups', ['project_id' => $project->id, 'title' => 'Models', 'brief' => 'Configured models'])
         ->assertCreated();
 
-    $this->assertDatabaseHas('task_groups', ['title' => 'Models', 'implementer_model' => 'gpt-6-luna', 'reviewer_model' => TaskAgentDefaults::ReviewerModel]);
+    $this->assertDatabaseHas('tasks', ['title' => 'Models', 'parent_id' => null, 'implementer_model' => 'gpt-6-luna', 'reviewer_model' => TaskAgentDefaults::ReviewerModel]);
 });
 
 it('stores the configured implementer and reviewer drivers on a new group', function (): void {
@@ -528,7 +527,7 @@ it('stores the configured implementer and reviewer drivers on a new group', func
     $this->postJson('/api/v1/task-groups', ['project_id' => $project->id, 'title' => 'Mixed', 'brief' => 'Pi implements, T3 reviews'])
         ->assertCreated();
 
-    $this->assertDatabaseHas('task_groups', ['title' => 'Mixed', 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 't3']);
+    $this->assertDatabaseHas('tasks', ['title' => 'Mixed', 'parent_id' => null, 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 't3']);
 });
 
 it('rejects an unregistered configured driver with 409 before storing a group', function (string $role): void {
@@ -540,7 +539,6 @@ it('rejects an unregistered configured driver with 409 before storing a group', 
     $this->postJson('/api/v1/task-groups', ['project_id' => $project->id, 'title' => 'Unavailable', 'brief' => 'No driver'])
         ->assertStatus(409)->assertJsonPath('error.code', 'tasks.agent_driver_unavailable');
 
-    $this->assertDatabaseCount('task_groups', 0);
     $this->assertDatabaseCount('tasks', 0);
 })->with(['implementer', 'reviewer']);
 
@@ -550,10 +548,10 @@ it('cancels a running check and shows it on the task', function (): void {
     $project = tasks_app('checks');
     $node = Node::query()->create(['name' => 'check-dev', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '192.0.2.81', 'wireguard_ip' => '10.44.0.81']);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-1', 'checkout_path' => '/srv/apps/checks/task-1', 'status' => 'source_resolved']);
-    $group = TaskGroup::query()->create(['project_id' => $project->id, 'title' => 'Checks', 'brief' => 'Run the check.', 'status' => 'running']);
+    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Checks', 'brief' => 'Run the check.', 'status' => 'running']);
     $group->taskable()->associate($instance);
     $group->save();
-    $task = Task::query()->create(['task_group_id' => $group->id, 'position' => 1, 'title' => 'Check', 'brief' => 'Run it.', 'status' => 'running']);
+    $task = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Check', 'brief' => 'Run it.', 'status' => 'running']);
     $receipt = $task->comments()->create(['task_group_id' => $group->id, 'type' => 'ready_for_review', 'body' => 'Done.', 'author' => 'implementer', 'posted_at' => now()]);
     $checks = new FakeTaskCheckRunner;
     app()->instance(TaskCheckRunner::class, $checks);
@@ -624,7 +622,7 @@ it('returns assistance fields on show and list for flagged and unflagged groups'
     $blocked = 'The implementer is blocked.';
     $question = 'Which database should this use?';
 
-    TaskGroup::query()->whereKey($flagged['id'])->update([
+    Task::topLevel()->whereKey($flagged['id'])->update([
         'assistance_requested' => true,
         'assistance_reason' => $blocked,
     ]);
@@ -701,21 +699,21 @@ it('summarises groups asking for assistance on tasks status', function (): void 
     $subtaskOnly = $create('Subtask only');
     $question = 'Which database should this use?';
 
-    TaskGroup::query()->whereKey($first)->update([
+    Task::topLevel()->whereKey($first)->update([
         'status' => 'running',
         'assistance_requested' => true,
         'assistance_reason' => 'The implementer is blocked.',
     ]);
-    TaskGroup::query()->whereKey($clear)->update([
+    Task::topLevel()->whereKey($clear)->update([
         'assistance_requested' => false,
         'assistance_reason' => 'An old reason.',
     ]);
-    TaskGroup::query()->whereKey($second)->update([
+    Task::topLevel()->whereKey($second)->update([
         'status' => 'settling',
         'assistance_requested' => true,
         'assistance_reason' => null,
     ]);
-    Task::query()->where('task_group_id', $subtaskOnly)->update([
+    Task::query()->where('parent_id', $subtaskOnly)->update([
         'assistance_requested' => true,
         'assistance_reason' => $question,
     ]);

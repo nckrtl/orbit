@@ -7,7 +7,7 @@ namespace App\Domain\Tasks;
 use App\Models\Instance;
 
 /**
- * Assigns the one App instance a TaskGroup shares.
+ * Assigns the one App instance a task shares.
  *
  * A no-op implementation returns null.
  * TaskWorkspaceProvisioner creates one fresh instance per group, honors

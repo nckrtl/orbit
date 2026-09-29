@@ -102,15 +102,15 @@ A pattern such as `/$section` is one entry. It is not one entry per section name
 
 The map stores patterns. `routes` prints them. `open`, `screenshot`, and `console-errors` do not accept a pattern. Replace each `$param` with one segment that is not empty and contains no slash. `/tasks/12` matches `/tasks/$id`, not `/$section/$id`, because `tasks` is static. An exact static path such as `/tasks` matches that map entry. Two still-tied patterns are `ambiguous-route`.
 
-The demo fleet includes task group 12 and its subtask 31, activity 150, node 1, and deployment 1 on instance 1. `/tasks/12`, `/tasks/12/subtasks/31`, `/activity/150`, `/nodes/1`, and `/instances/1/deployments/1` open those records. An id the fleet does not contain still loads the route, and the page shows its missing-record state.
+The demo fleet includes task 12 and its subtask 31, activity 150, node 1, and deployment 1 on instance 1. `/tasks/12`, `/tasks/12/subtasks/31`, `/activity/150`, `/nodes/1`, and `/instances/1/deployments/1` open those records. An id the fleet does not contain still loads the route, and the page shows its missing-record state.
 
 ```json
 {
   "path": "/tasks/$id",
-  "purpose": "One task group.",
-  "reach": "Open Tasks in the main nav, then choose a group.",
+  "purpose": "One task.",
+  "reach": "Open Tasks in the main nav, then choose a task.",
   "controls": [
-    { "testid": "task-group-title", "purpose": "The group title." }
+    { "testid": "task-group-title", "purpose": "The task title." }
   ]
 }
 ```

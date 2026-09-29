@@ -46,8 +46,8 @@ Removing the `app-dev` role from a Node deletes its rows. Adding the role again 
 Orbit checks the list for every new development placement:
 
 - The task scheduler skips excluded Nodes.
-- Among the other Nodes, it picks the one with the fewest active task groups.
-- When no Node remains, the task group waits without a workspace.
+- Among the other Nodes, it picks the one with the fewest active tasks.
+- When no Node remains, the task waits without a workspace.
 - `instance:create`, `instance:register`, and `instance:transfer` to an excluded Node return `instance.node_excluded` before they change anything.
 
 Production placement ignores the list. A Node that also has `app-prod` can still host a production Instance of the Project.

@@ -15,7 +15,6 @@ use App\Domain\Tasks\TaskStatus;
 use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskComment;
-use App\Models\TaskGroup;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -28,7 +27,7 @@ final readonly class CancelTaskGroupAction
         private NodeReachabilityProbe $reachability,
     ) {}
 
-    public function execute(TaskGroup $group): TaskGroup
+    public function execute(Task $group): Task
     {
         $group->requireManagedExecution();
         $this->requireExtension->execute();
@@ -61,7 +60,7 @@ final readonly class CancelTaskGroupAction
 
         $removedId = $instance instanceof Instance && $offlineId === null ? $instance->id : null;
         $attachedByClaim = DB::transaction(static function () use ($group, $removedId, $offlineId): ?Instance {
-            $locked = TaskGroup::query()->with('taskable')->lockForUpdate()->findOrFail($group->id);
+            $locked = Task::topLevel()->with('taskable')->lockForUpdate()->findOrFail($group->id);
             // A claim can attach an Instance between the checks above and this lock. Cancel removes whatever is still
             // attached and was not removed above, whether or not it saw a claim in flight. The unreachable Instance
             // stays attached so the sweep can find the checkout.
@@ -85,7 +84,7 @@ final readonly class CancelTaskGroupAction
             try {
                 $this->removeWorkspace($group, $attachedByClaim);
             } catch (Throwable $exception) {
-                $locked = TaskGroup::query()->findOrFail($group->id);
+                $locked = Task::topLevel()->findOrFail($group->id);
                 $locked->taskable()->associate($attachedByClaim);
                 $locked->save();
                 $this->workspace->recordFailure($locked, $exception);
@@ -116,7 +115,7 @@ final readonly class CancelTaskGroupAction
     }
 
     /** A refused removal keeps the checkout and the Instance row, asks for assistance, and returns the error. */
-    private function removeWorkspace(TaskGroup $group, Instance $instance): void
+    private function removeWorkspace(Task $group, Instance $instance): void
     {
         try {
             $this->workspace->remove($instance);
@@ -131,7 +130,7 @@ final readonly class CancelTaskGroupAction
      * A settling group without a pull request can still hold approved commits that only exist in its
      * workspace. They reach the task branch on origin before the workspace is removed.
      */
-    private function pushApprovedWork(TaskGroup $group): void
+    private function pushApprovedWork(Task $group): void
     {
         if (! $group->tasks->contains(static fn (Task $task): bool => $task->status === TaskStatus::Completed)) {
             return;

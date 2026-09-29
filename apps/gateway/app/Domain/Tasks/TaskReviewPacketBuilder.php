@@ -8,7 +8,6 @@ use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
-use App\Models\TaskGroup;
 
 /**
  * Builds the review packet for one subtask from the group, the latest passed handoff, and the workspace diff.
@@ -19,8 +18,8 @@ final readonly class TaskReviewPacketBuilder
 
     public function build(Task $task, bool $continued, ?int $threadId = null): string
     {
-        $task->loadMissing(['taskGroup.project', 'taskGroup.taskable']);
-        $group = $task->taskGroup;
+        $task->loadMissing(['parent.project', 'parent.taskable']);
+        $group = $task->parent;
         $start = TaskReviewBase::commit($task);
         $instance = $group->taskable;
         if (! $instance instanceof Instance) {
@@ -70,7 +69,7 @@ final readonly class TaskReviewPacketBuilder
     }
 
     /** @return list<array{title: string, summary: string}> */
-    private function approvals(TaskGroup $group, Task $task): array
+    private function approvals(Task $group, Task $task): array
     {
         $approvals = [];
         foreach ($group->tasks()->orderBy('position')->orderBy('id')->get() as $earlier) {

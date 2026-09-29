@@ -21,11 +21,11 @@ final readonly class CancelInstanceAnnotationTasksAction
         DB::transaction(function () use ($instanceId): void {
             $tasks = Task::query()->where('type', TaskType::Annotation)
                 ->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Cancelled])
-                ->whereHas('taskGroup', static fn ($q) => $q->whereIn('taskable_type', Instance::morphTypes())->where('taskable_id', $instanceId))
+                ->whereHas('parent', static fn ($q) => $q->whereIn('taskable_type', Instance::morphTypes())->where('taskable_id', $instanceId))
                 ->lockForUpdate()->get();
             foreach ($tasks as $task) {
                 $task->update(['status' => TaskStatus::Cancelled, 'settled_at' => now(), 'completion_summary' => 'Cancelled because the Instance is being removed.']);
-                $group = $task->taskGroup;
+                $group = $task->parent;
                 if (! $group->tasks()->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Cancelled])->exists()) {
                     $group->update(['status' => TaskGroupStatus::Cancelled, 'settled_at' => now()]);
                 }

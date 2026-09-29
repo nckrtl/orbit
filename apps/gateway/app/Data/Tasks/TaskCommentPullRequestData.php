@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Tasks;
 
-use App\Domain\Tasks\TaskRunPullRequest;
+use App\Domain\Tasks\TaskTurnPullRequest;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
@@ -23,7 +23,7 @@ final class TaskCommentPullRequestData extends Data
 
     public static function fromStored(mixed $stored): ?self
     {
-        $pullRequest = TaskRunPullRequest::fromArray($stored);
+        $pullRequest = TaskTurnPullRequest::fromArray($stored);
 
         return $pullRequest === null ? null : new self(
             summary: $pullRequest->summary,

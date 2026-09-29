@@ -12,8 +12,8 @@ use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskRunReceipts;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -21,16 +21,15 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
-use App\Models\TaskGroup;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskCheckRunner;
-use Tests\Support\FakeTaskRunReceipts;
+use Tests\Support\FakeTaskTurnReceipts;
 
 /**
  * A running group on an Instance whose first subtask is in its baseline check and whose second waits.
  *
- * @return array{TaskGroup, Task, Task, TaskCheck, FakeTaskCheckRunner, object, Node}
+ * @return array{Task, Task, Task, TaskCheck, FakeTaskCheckRunner, object, Node}
  */
 function cancel_subtask_in_baseline(int $suffix): array
 {
@@ -62,7 +61,7 @@ function cancel_subtask_in_baseline(int $suffix): array
         'checkout_path' => '/srv/orbit/apps/cancel-baseline/task-workspace',
         'status' => 'source_resolved',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Cancel during baseline',
         'brief' => 'Stop the baseline check.',
@@ -71,14 +70,14 @@ function cancel_subtask_in_baseline(int $suffix): array
     $group->taskable()->associate($instance);
     $group->save();
     $running = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Checking subtask',
         'brief' => 'Its baseline check runs.',
         'status' => TaskStatus::Running,
     ]);
     $next = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 2,
         'title' => 'Next subtask',
         'brief' => 'Needs its own baseline.',
@@ -168,7 +167,7 @@ it('cancel running subtask preserves its group and Instance', function (): void 
         'checkout_path' => '/srv/orbit/apps/cancel-subtask/task-workspace',
         'status' => 'source_resolved',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Cancel one subtask',
         'brief' => 'Keep the group workspace.',
@@ -177,21 +176,21 @@ it('cancel running subtask preserves its group and Instance', function (): void 
     $group->taskable()->associate($instance);
     $group->save();
     $running = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Running subtask',
         'brief' => 'Stop only this implementer.',
         'status' => TaskStatus::Running,
     ]);
     $sibling = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 2,
         'title' => 'Sibling subtask',
         'brief' => 'Keep this work queued.',
         'status' => TaskStatus::Todo,
     ]);
     $completed = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 3,
         'title' => 'Completed subtask',
         'brief' => 'Keep this completed work.',
@@ -218,7 +217,7 @@ it('cancel running subtask preserves its group and Instance', function (): void 
     $driver = new FakeAgentDriver('fake');
     $driver->supportsInterruption = true;
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
-    app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts);
+    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts);
     app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
     app()->instance(TaskWorkspaceStateReader::class, new class implements TaskWorkspaceStateReader
     {
@@ -246,7 +245,7 @@ it('cancel running subtask preserves its group and Instance', function (): void 
 
         public function spawnImplementer(Task $task): ?int
         {
-            $group = $task->taskGroup;
+            $group = $task->parent;
             $instance = $group->taskable;
             if (! $instance instanceof Instance) {
                 return null;
@@ -300,14 +299,14 @@ it('cancels a running subtask through the generated MCP tool', function (): void
         'repository_url' => 'git@example.test:cancel-via-mcp.git',
         'default_branch' => 'main',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Cancel via MCP',
         'brief' => 'Use the generated tool.',
         'status' => TaskGroupStatus::Running,
     ]);
     $task = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Running subtask',
         'brief' => 'Cancel using MCP.',
@@ -349,14 +348,14 @@ it('retries after an interrupt failure and settles when cancelling the last subt
         'repository_url' => 'git@example.test:cancel-retry.git',
         'default_branch' => 'main',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Cancel final subtask',
         'brief' => 'Retry and settle.',
         'status' => TaskGroupStatus::Running,
     ]);
     $task = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Final subtask',
         'brief' => 'No successor.',
@@ -411,14 +410,14 @@ it('returns a conflict when the subtask is neither todo nor running', function (
         'repository_url' => 'git@example.test:cancel-idle-subtask.git',
         'default_branch' => 'main',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Not running',
         'brief' => 'Reject cancellation.',
         'status' => TaskGroupStatus::Running,
     ]);
     $task = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Queued subtask',
         'brief' => 'Still queued.',

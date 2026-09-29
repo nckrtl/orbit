@@ -7,18 +7,18 @@ namespace App\Infrastructure\Tasks;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskDeliverableType;
-use App\Domain\Tasks\TaskRunReceipt;
-use App\Domain\Tasks\TaskRunReceiptException;
-use App\Domain\Tasks\TaskRunReceipts;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskTurnReceipt;
+use App\Domain\Tasks\TaskTurnReceiptException;
+use App\Domain\Tasks\TaskTurnReceipts;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 
 /**
- * Keeps the run script and receipt in `.git/orbit/`, which Git never tracks.
+ * Keeps the turn command and receipt in `.git/orbit/`, which Git never tracks.
  */
-final readonly class RemoteTaskRunReceipts implements TaskRunReceipts
+final readonly class RemoteTaskTurnReceipts implements TaskTurnReceipts
 {
     private const string Directory = <<<'BASH'
         dir=$(git -C "$checkout" rev-parse --absolute-git-dir)/orbit
@@ -28,9 +28,9 @@ final readonly class RemoteTaskRunReceipts implements TaskRunReceipts
 
     public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void
     {
-        $script = file_get_contents(resource_path('tasks/run'));
+        $script = file_get_contents(resource_path('tasks/turn'));
         if ($script === false) {
-            throw new TaskRunReceiptException('The run script is missing from the Gateway.');
+            throw new TaskTurnReceiptException('The turn command is missing from the Gateway.');
         }
         $turnFields = [
             'role' => $role->value,
@@ -53,25 +53,26 @@ final readonly class RemoteTaskRunReceipts implements TaskRunReceipts
         $turn = json_encode($turnFields, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $this->run($instance, [], "script='".base64_encode($script)."'\nturn='".base64_encode($turn)."'\n".<<<'BASH'
             install -d -m 0755 -- "$dir"
-            rm -f -- "$dir/run.json"
-            printf '%s' "$script" | base64 -d > "$dir/run.new"
-            chmod 0755 "$dir/run.new"
-            mv -f -- "$dir/run.new" "$dir/run"
-            printf '%s' "$turn" | base64 -d > "$dir/turn.new"
-            printf '\n' >> "$dir/turn.new"
-            mv -f -- "$dir/turn.new" "$dir/turn.json"
+            rm -f -- "$dir/receipt.json"
+            printf '%s' "$script" | base64 -d > "$dir/turn.new"
+            chmod 0755 "$dir/turn.new"
+            mv -f -- "$dir/turn.new" "$dir/turn"
+            printf '%s' "$turn" | base64 -d > "$dir/turn.json.new"
+            printf '\n' >> "$dir/turn.json.new"
+            mv -f -- "$dir/turn.json.new" "$dir/turn.json"
+            rm -f -- "$dir/run" "$dir/run.json"
             BASH);
     }
 
-    public function read(Instance $instance, ?int $actingThreadId = null): ?TaskRunReceipt
+    public function read(Instance $instance, ?int $actingThreadId = null): ?TaskTurnReceipt
     {
         $output = $this->run($instance, [], <<<'BASH'
-            if [ -f "$dir/run.json" ]; then
+            if [ -f "$dir/receipt.json" ]; then
                 printf 'receipt\n'
                 if [ -f "$dir/turn.json" ]; then
                     cat -- "$dir/turn.json"
                 fi
-                cat -- "$dir/run.json"
+                cat -- "$dir/receipt.json"
             else
                 printf 'none\n'
             fi
@@ -80,10 +81,10 @@ final readonly class RemoteTaskRunReceipts implements TaskRunReceipts
             return null;
         }
         if (! str_starts_with($output, "receipt\n")) {
-            throw new TaskRunReceiptException('The run receipt could not be read.');
+            throw new TaskTurnReceiptException('The turn receipt could not be read.');
         }
         [$expectedThread, $contents] = self::split(substr($output, 8));
-        $receipt = TaskRunReceipt::parse($contents);
+        $receipt = TaskTurnReceipt::parse($contents);
         if ($actingThreadId !== null) {
             return $receipt->threadId === $actingThreadId ? $receipt : null;
         }
@@ -136,11 +137,11 @@ final readonly class RemoteTaskRunReceipts implements TaskRunReceipts
         return [$expected !== null && $expected > 0 ? $expected : null, substr($body, $newline + 1)];
     }
 
-    public function clear(Instance $instance, TaskRunReceipt $receipt): void
+    public function clear(Instance $instance, TaskTurnReceipt $receipt): void
     {
         $this->run($instance, [$receipt->hash], <<<'BASH'
-            if [ -f "$dir/run.json" ] && [ "$(sha256sum -- "$dir/run.json" | cut -d ' ' -f 1)" = "$2" ]; then
-                rm -f -- "$dir/run.json"
+            if [ -f "$dir/receipt.json" ] && [ "$(sha256sum -- "$dir/receipt.json" | cut -d ' ' -f 1)" = "$2" ]; then
+                rm -f -- "$dir/receipt.json"
             fi
             BASH);
     }
@@ -150,15 +151,15 @@ final readonly class RemoteTaskRunReceipts implements TaskRunReceipts
     {
         $instance->loadMissing('node');
         if ($instance->checkout_path === '') {
-            throw new TaskRunReceiptException('The task workspace has no checkout.');
+            throw new TaskTurnReceiptException('The task workspace has no checkout.');
         }
         try {
             $result = $this->ssh->execute($instance->node, new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $instance->checkout_path, ...$arguments],
                 input: "checkout=\$1\n".self::Directory."\n{$command}\n",
-            ), 'task-run-receipt', 'tasks.run_receipt_failed');
+            ), 'task-turn-receipt', 'tasks.turn_receipt_failed');
         } catch (RuntimeConvergenceException $exception) {
-            throw new TaskRunReceiptException('The task workspace could not be reached for the run receipt.', previous: $exception);
+            throw new TaskTurnReceiptException('The task workspace could not be reached for the turn receipt.', previous: $exception);
         }
 
         return $result->stdout;

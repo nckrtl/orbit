@@ -27,7 +27,6 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
-use App\Models\TaskGroup;
 use Symfony\Component\Process\Process;
 use Tests\Support\AcceptingTaskWorkspaceMcp;
 use Tests\Support\FakeAgentDriver;
@@ -174,7 +173,7 @@ it('does not send a review when git cannot produce the stat, the body, or the fi
         putenv('PATH='.$bin.':'.$path);
     }
     $instance = review_diff_instance($checkout);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $instance->project_id,
         'title' => 'Unread diff',
         'brief' => 'Git cannot produce the diff.',
@@ -183,7 +182,7 @@ it('does not send a review when git cannot produce the stat, the body, or the fi
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Review',
         'brief' => 'Review it.',

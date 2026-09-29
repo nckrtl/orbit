@@ -559,7 +559,8 @@
             "pages": [
               "decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
               "decisions/0175-docs-impact-check-in-orbit-repo",
-              "decisions/0178-run-project-agnostic-tasks-without-a-planner"
+              "decisions/0178-run-project-agnostic-tasks-without-a-planner",
+              "decisions/0182-start-tasks-from-project-task-definitions"
             ]
           }
         ]
@@ -1216,15 +1217,15 @@
     },
     {
       "source": "/decisions/0121-end-agent-turns-with-a-run-receipt",
-      "destination": "/reference/tasks#run-receipt"
+      "destination": "/reference/tasks#turn-receipt"
     },
     {
       "source": "/decisions/0122-hold-task-groups-in-backlog-until-ready",
-      "destination": "/reference/tasks#prepare-a-group-in-backlog"
+      "destination": "/reference/tasks#prepare-a-task-in-backlog"
     },
     {
       "source": "/decisions/0124-plan-backlog-groups-with-a-t3-planner",
-      "destination": "/reference/tasks#prepare-a-group-in-backlog"
+      "destination": "/reference/tasks#prepare-a-task-in-backlog"
     },
     {
       "source": "/decisions/0125-run-the-project-check-when-the-implementer-hands-off",

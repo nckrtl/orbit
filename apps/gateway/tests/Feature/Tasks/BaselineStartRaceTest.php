@@ -22,7 +22,6 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
-use App\Models\TaskGroup;
 use Tests\Support\FakeTaskCheckRunner;
 
 it('starts one baseline check and asks for no assistance when the todo move and the tick race', function (): void {
@@ -47,7 +46,7 @@ it('starts one baseline check and asks for no assistance when the todo move and 
         'checkout_path' => '/tmp/tasks-baseline-start-race',
         'status' => 'reserved',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Baseline start race',
         'brief' => 'One baseline check wins the start.',
@@ -57,7 +56,7 @@ it('starts one baseline check and asks for no assistance when the todo move and 
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'First task',
         'brief' => 'First task brief',
@@ -151,7 +150,7 @@ it('cancels the started baseline process when the claim is cancelled during the 
         /** @var list<int> */
         public array $cancelledPids = [];
 
-        public function __construct(private TaskGroup $group, private Task $task) {}
+        public function __construct(private Task $group, private Task $task) {}
 
         public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess
         {
@@ -189,7 +188,7 @@ it('cancels the started baseline process when the claim is cancelled during the 
 });
 
 /**
- * @return array{TaskGroup, Task}
+ * @return array{Task, Task}
  */
 function baseline_start_task(string $slug, string $ip, TaskStatus $status): array
 {
@@ -214,7 +213,7 @@ function baseline_start_task(string $slug, string $ip, TaskStatus $status): arra
         'checkout_path' => '/tmp/tasks-'.$slug,
         'status' => 'reserved',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => $slug,
         'brief' => 'Baseline claim.',
@@ -224,7 +223,7 @@ function baseline_start_task(string $slug, string $ip, TaskStatus $status): arra
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'First task',
         'brief' => 'First task brief',

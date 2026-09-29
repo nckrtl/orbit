@@ -7,8 +7,8 @@ namespace App\Domain\Tasks;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Models\AgentThread;
+use App\Models\Task;
 use App\Models\TaskComment;
-use App\Models\TaskGroup;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -113,7 +113,7 @@ final class TaskBroadcasts
     private function send(array $groups, array $comments, array $threads, ?bool $extension): void
     {
         if ($groups !== []) {
-            foreach (TaskGroup::query()->whereKey(array_keys($groups))->orderBy('id')->get() as $group) {
+            foreach (Task::topLevel()->whereKey(array_keys($groups))->orderBy('id')->get() as $group) {
                 $this->broadcaster->broadcast(
                     $groups[$group->id] ? RecordEventType::TaskGroupCreated : RecordEventType::TaskGroupUpdated,
                     $group->id,

@@ -188,15 +188,15 @@ A client fetches the Instance's annotation list for the current state.
 
 | Type | Fires when | Data |
 | --- | --- | --- |
-| `task_group.created` | A task group is created. | `{ id, status }` |
-| `task_group.updated` | A group, one of its Tasks, or one of its checks changes, or the workspace has a new diff. | `{ id, status, lines_added, lines_deleted, line_diff }` |
-| `task_comment.created` | A comment or run receipt is stored. | `{ id, task_group_id, task_id }` |
+| `task_group.created` | A task is created. | `{ id, status }` |
+| `task_group.updated` | A task, one of its subtasks, or one of its checks changes, or the workspace has a new diff. | `{ id, status, lines_added, lines_deleted, line_diff }` |
+| `task_comment.created` | A comment or turn receipt is stored. | `{ id, task_group_id, task_id }` |
 | `agent_thread.updated` | An agent thread is created, or its state, error, or observation error changes. | `{ id, task_group_id, task_id, state }` |
 | `tasks.updated` | The Tasks extension is enabled or disabled. | `{ enabled }` |
 
-`id` is the group, comment, or thread id, and `0` for `tasks.updated`. A group-level thread has a null `task_id`. A Task's implementer and reviewer threads carry that Task's id. A thread row that is still reserved, with an external id that starts with `pending:`, sends no event.
+`id` is the task, comment, or thread id, and `0` for `tasks.updated`. `task_group_id` is the top-level task id. A thread of the top-level task has a null `task_id`. A subtask's implementer and reviewer threads carry that subtask's id in `task_id`. A thread row that is still reserved, with an external id that starts with `pending:`, sends no event.
 
-In a request or a scheduler tick, a change only to tokens, line counts, or duration sends no event, because showing a group refreshes those values. A publish run for a new workspace report always sends `task_group.updated` for the groups of that workspace. The Gateway collects the task changes of one request, one scheduler tick, or one publish run, and sends each record once when that work ends.
+In a request or a scheduler tick, a change only to tokens, line counts, or duration sends no event, because showing a task refreshes those values. A publish run for a new workspace report always sends `task_group.updated` for the tasks of that workspace. The Gateway collects the task changes of one request, one scheduler tick, or one publish run, and sends each record once when that work ends.
 
 ### Activity
 
@@ -297,7 +297,7 @@ A client acts only through the API, which checks identity, access grants, and va
 
 ### Notices instead of full records
 
-Reverb refuses a message over 10,000 bytes. A task group with its Tasks can pass that limit. Activity `properties` hold operation input, which should not reach every subscriber. So these events carry identifiers, status, and counts, and a client refetches the record. A change only to tokens or duration sends nothing, because every show would then send an event and make every tab show the group again.
+Reverb refuses a message over 10,000 bytes. A task with its subtasks can pass that limit. Activity `properties` hold operation input, which should not reach every subscriber. So these events carry identifiers, status, and counts, and a client refetches the record. A change only to tokens or duration sends nothing, because every show would then send an event and make every tab show the task again.
 
 ### One channel for all Gateway events
 

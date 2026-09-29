@@ -17,9 +17,8 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
-use App\Models\TaskGroup;
 
-function metrics_running_group(): TaskGroup
+function metrics_running_group(): Task
 {
     $project = Project::query()->create([
         'name' => 'live-metrics',
@@ -41,7 +40,7 @@ function metrics_running_group(): TaskGroup
         'checkout_path' => '/tmp/task-7',
         'status' => 'source_resolved',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Live metrics',
         'brief' => 'Show session totals.',
@@ -51,7 +50,7 @@ function metrics_running_group(): TaskGroup
     $group->taskable()->associate($instance);
     $group->save();
     Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'First',
         'brief' => 'One',

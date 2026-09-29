@@ -177,8 +177,8 @@ it('creates task-backed annotations and keeps their lifecycle outside the manage
     $taskId = $this->postJson($url, annotationInput())->assertCreated()->json('data.taskId');
     $task = Task::query()->findOrFail($taskId);
     expect($task->type)->toBe(TaskType::Annotation);
-    expect($task->taskGroup->execution_mode)->toBe(TaskExecutionMode::ExistingThread);
-    expect($task->taskGroup->taskable_id)->toBe($instance->id);
+    expect($task->parent->execution_mode)->toBe(TaskExecutionMode::ExistingThread);
+    expect($task->parent->taskable_id)->toBe($instance->id);
     app(TaskExtensionState::class)->enable();
     $scheduler = app(TaskScheduler::class);
     expect($scheduler->claimNext())->toBeNull();
@@ -187,12 +187,12 @@ it('creates task-backed annotations and keeps their lifecycle outside the manage
     expect($scheduler->tick())->toBe([]);
     expect(app(TaskConcurrencyGuard::class)->activeForNode($instance->node_id))->toBe(0);
     expect(fn () => $scheduler->startTask($task))->toThrow(ResourceOperationException::class);
-    expect(fn () => app(CompleteTaskGroupAction::class)->execute($task->taskGroup))->toThrow(ResourceOperationException::class);
-    expect(fn () => app(CancelTaskGroupAction::class)->execute($task->taskGroup))->toThrow(ResourceOperationException::class);
+    expect(fn () => app(CompleteTaskGroupAction::class)->execute($task->parent))->toThrow(ResourceOperationException::class);
+    expect(fn () => app(CancelTaskGroupAction::class)->execute($task->parent))->toThrow(ResourceOperationException::class);
     $this->postJson($url.'/annotation-one/status', ['status' => 'resolved', 'summary' => 'Implemented and verified'])->assertOk();
     expect($task->refresh()->status)->toBe(TaskStatus::Completed);
     expect($task->completion_summary)->toBe('Implemented and verified');
-    expect($task->taskGroup->status)->toBe(TaskGroupStatus::Completed);
+    expect($task->parent->status)->toBe(TaskGroupStatus::Completed);
     expect($instance->fresh())->not->toBeNull();
 });
 
@@ -200,7 +200,7 @@ it('refuses managed edits and removal on an annotation task group', function ():
     $instance = annotationFixture();
     $taskId = $this->postJson("/api/v1/instances/{$instance->id}/annotations", annotationInput())->assertCreated()->json('data.taskId');
     $task = Task::query()->findOrFail($taskId);
-    $group = $task->taskGroup;
+    $group = $task->parent;
 
     expect(fn () => app(UpdateTaskGroupAction::class)->execute($group, new UpdateTaskGroupData('Renamed', null, null)))
         ->toThrow(ResourceOperationException::class, 'This task uses an existing thread.');

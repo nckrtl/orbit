@@ -15,7 +15,6 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskComment;
-use App\Models\TaskGroup;
 use Illuminate\Support\Carbon;
 use Orbit\Sdk\Requests\Tasks\CancelSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CancelTaskGroupRequest;
@@ -73,7 +72,7 @@ describe('task response fixtures', function (): void {
     });
 
     it('records groups asking for assistance', function (): void {
-        TaskGroup::query()->create([
+        Task::topLevel()->create([
             'project_id' => $this->project->id,
             'title' => 'Blocked implementer',
             'brief' => 'Waiting on a decision.',
@@ -81,7 +80,7 @@ describe('task response fixtures', function (): void {
             'assistance_requested' => true,
             'assistance_reason' => 'The implementer is blocked.',
         ]);
-        TaskGroup::query()->create([
+        Task::topLevel()->create([
             'project_id' => $this->project->id,
             'title' => 'Settling question',
             'brief' => 'Waiting on review.',
@@ -89,7 +88,7 @@ describe('task response fixtures', function (): void {
             'assistance_requested' => true,
             'assistance_reason' => 'Which database should this use?',
         ]);
-        TaskGroup::query()->create([
+        Task::topLevel()->create([
             'project_id' => $this->project->id,
             'title' => 'Clear',
             'brief' => 'Not waiting.',
@@ -124,7 +123,7 @@ describe('task response fixtures', function (): void {
         record_fixture($this->getJson('/api/v1/task-groups')->assertOk(), 'tasks/tasks-list/empty', ListTaskGroupsRequest::class, 'GET /api/v1/task-groups');
 
         $group = task_fixture_group($this->project);
-        $done = TaskGroup::query()->create([
+        $done = Task::topLevel()->create([
             'project_id' => $this->project->id,
             'title' => 'Absorb Commander',
             'brief' => 'Run task groups on the Gateway.',
@@ -136,7 +135,7 @@ describe('task response fixtures', function (): void {
             'lines_deleted' => 230,
             'duration_ms' => 5_400_000,
         ]);
-        Task::query()->create(['task_group_id' => $done->id, 'position' => 1, 'title' => 'Persist groups', 'brief' => 'Store groups.', 'status' => TaskStatus::Completed]);
+        Task::query()->create(['parent_id' => $done->id, 'position' => 1, 'title' => 'Persist groups', 'brief' => 'Store groups.', 'status' => TaskStatus::Completed]);
 
         record_fixture($this->getJson('/api/v1/task-groups')->assertOk(), 'tasks/tasks-list/default', ListTaskGroupsRequest::class, 'GET /api/v1/task-groups');
         record_fixture($this->getJson("/api/v1/task-groups/{$group->id}")->assertOk(), 'tasks/tasks-show/default', ShowTaskGroupRequest::class, 'GET /api/v1/task-groups/{group}');
@@ -224,15 +223,15 @@ describe('task response fixtures', function (): void {
     });
 });
 
-function task_fixture_group(Project $project): TaskGroup
+function task_fixture_group(Project $project): Task
 {
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Add the tasks CLI',
         'brief' => "Add tasks:* commands.\nAccept when every route has a command.",
     ]);
-    Task::query()->create(['task_group_id' => $group->id, 'position' => 1, 'title' => 'Add SDK requests', 'brief' => 'One request class per route.', 'deliverables' => task_fixture_sdk_deliverables(), 'status' => TaskStatus::Todo]);
-    Task::query()->create(['task_group_id' => $group->id, 'position' => 2, 'title' => 'Add CLI commands', 'brief' => 'One command per route.', 'deliverables' => task_fixture_cli_deliverables(), 'status' => TaskStatus::Todo]);
+    Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Add SDK requests', 'brief' => 'One request class per route.', 'deliverables' => task_fixture_sdk_deliverables(), 'status' => TaskStatus::Todo]);
+    Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Add CLI commands', 'brief' => 'One command per route.', 'deliverables' => task_fixture_cli_deliverables(), 'status' => TaskStatus::Todo]);
 
     return $group;
 }

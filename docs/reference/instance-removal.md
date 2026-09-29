@@ -85,7 +85,7 @@ Once accepted, the Gateway marks each member `removing` and completes five steps
 | `route_target_clear` | Stop the Route from sending traffic to the Instance. See [Route cleanup](#route-cleanup). |
 | `source_finalization` | Delete the development checkout, or keep the production content. Remove the `<apps-root>/<project-slug>` directory when it is empty. |
 | `runtime_cleanup` | Remove every owned Process and Schedule, then the PHP-FPM pool or service, Caddy site, and other runtime files. |
-| `row_deletion` | Cancel the Instance's open annotation tasks, and their task groups when nothing else is open, and mark those annotations cancelled. Then delete the Instance record. |
+| `row_deletion` | Cancel the Instance's open annotation tasks, and their tasks when nothing else is open, and mark those annotations cancelled. Then delete the Instance record. |
 
 ### Route cleanup
 

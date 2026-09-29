@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-enum TaskRunOutcome: string
+enum TaskTurnOutcome: string
 {
     case ReadyForReview = 'ready_for_review';
     case Approved = 'approved';

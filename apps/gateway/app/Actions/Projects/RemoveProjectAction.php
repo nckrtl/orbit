@@ -29,7 +29,7 @@ final readonly class RemoveProjectAction
 
         ($this->routes ?? app(RouteRemovalGuard::class))->assertAppRemovable($project);
 
-        if ($project->taskGroups()->exists()) {
+        if ($project->tasks()->exists()) {
             throw new ResourceOperationException(
                 errorCode: 'project.has_task_groups',
                 message: "Project [{$project->slug}] still has task groups.",

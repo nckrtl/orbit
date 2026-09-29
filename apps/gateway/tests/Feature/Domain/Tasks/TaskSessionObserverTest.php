@@ -15,9 +15,8 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
-use App\Models\TaskGroup;
 
-function observer_group(): TaskGroup
+function observer_group(): Task
 {
     $project = Project::query()->create([
         'name' => 'observe-app',
@@ -41,7 +40,7 @@ function observer_group(): TaskGroup
         'status' => 'source_resolved',
         'starting_commit' => str_repeat('a', 40),
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Observe idle sessions',
         'brief' => 'Route idle implementer threads.',
@@ -51,7 +50,7 @@ function observer_group(): TaskGroup
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Models',
         'brief' => 'Store the records.',
@@ -240,7 +239,7 @@ it('checks sessions attached to every task even after finding an active session'
     $group = observer_group();
     $group->tasks->first()->update(['status' => TaskStatus::Reviewing]);
     $task = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 2,
         'title' => 'Second task',
         'brief' => 'Inspect this task too.',

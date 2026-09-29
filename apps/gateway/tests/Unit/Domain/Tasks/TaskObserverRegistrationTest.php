@@ -9,7 +9,6 @@ use Symfony\Component\Process\Process;
 it('leaves task models unloaded and not observed when an unrelated test boots the app', function (): void {
     $root = dirname(__DIR__, 4);
     $models = [
-        'App\\Models\\TaskGroup',
         'App\\Models\\Task',
         'App\\Models\\TaskCheck',
         'App\\Models\\TaskComment',
@@ -117,7 +116,7 @@ it('selects only the tests that cover a non-PHP runtime resource', function (): 
     $root = dirname(__DIR__, 4);
     $paths = [
         'resources/tasks/check',
-        'resources/tasks/run',
+        'resources/tasks/turn',
         'resources/mcp/tools.json',
         'resources/scripts/service-metrics.py',
         'resources/scripts/service-metrics-fpm.py',
@@ -136,7 +135,7 @@ it('selects only the tests that cover a non-PHP runtime resource', function (): 
 
     expect($selected)->toBe([
         'resources/tasks/check' => ['tests/Feature/Infrastructure/Tasks/RemoteTaskCheckRunnerTest.php'],
-        'resources/tasks/run' => ['tests/Feature/Infrastructure/Tasks/RemoteTaskRunReceiptsTest.php'],
+        'resources/tasks/turn' => ['tests/Feature/Tasks/TurnReceiptTest.php'],
         'resources/mcp/tools.json' => ['tests/Feature/Mcp'],
         'resources/scripts/service-metrics.py' => ['tests/Feature/Infrastructure/Metrics/ServiceMetricsProgramTest.php'],
         'resources/scripts/service-metrics-fpm.py' => ['tests/Feature/Infrastructure/Metrics/ServiceMetricsProgramTest.php'],

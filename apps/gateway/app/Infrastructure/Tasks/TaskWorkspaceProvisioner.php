@@ -32,7 +32,7 @@ use App\Domain\Tasks\TaskWorkspaceName;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
-use App\Models\TaskGroup;
+use App\Models\Task;
 use Illuminate\Support\Facades\DB;
 
 final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
@@ -76,7 +76,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         }
     }
 
-    private function createWorkspace(TaskGroup $group, Node $node, bool $visitable): Instance
+    private function createWorkspace(Task $group, Node $node, bool $visitable): Instance
     {
         $name = TaskWorkspaceName::for($group);
         $existing = Instance::query()
@@ -267,7 +267,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
      * A workspace that an interrupted claim created but never attached keeps its Node, so a later claim resumes it
      * there instead of creating a second one.
      */
-    private function existingWorkspaceNodeId(TaskGroup $group): ?int
+    private function existingWorkspaceNodeId(Task $group): ?int
     {
         $name = TaskWorkspaceName::for($group);
         $nodeId = Instance::query()

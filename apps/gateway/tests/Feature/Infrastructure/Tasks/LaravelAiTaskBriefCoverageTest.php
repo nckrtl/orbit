@@ -2,13 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Domain\Tasks\TaskRunPullRequest;
 use App\Domain\Tasks\TaskSessionClassificationException;
+use App\Domain\Tasks\TaskTurnPullRequest;
 use App\Infrastructure\Tasks\Jev;
 use App\Infrastructure\Tasks\LaravelAiTaskBriefCoverage;
 use App\Models\Project;
 use App\Models\Task;
-use App\Models\TaskGroup;
 use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Client\ConnectionException;
@@ -24,20 +23,20 @@ use Laravel\Ai\Responses\Data\ChoiceAnswer;
 
 use function Pest\Laravel\mock;
 
-/** @return array{TaskGroup, Task, Task} */
+/** @return array{Task, Task, Task} */
 function coverage_group(): array
 {
     $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@github.com:acme/shop.git', 'default_branch' => 'main']);
-    $group = TaskGroup::query()->create(['project_id' => $project->id, 'title' => 'Export orders', 'brief' => 'Export orders as CSV and add a download route.', 'status' => 'reviewing']);
-    $models = Task::query()->create(['task_group_id' => $group->id, 'position' => 1, 'title' => 'Export', 'brief' => 'Write the CSV export.', 'status' => 'completed']);
-    $routes = Task::query()->create(['task_group_id' => $group->id, 'position' => 2, 'title' => 'Route', 'brief' => 'Add the download route.', 'status' => 'reviewing']);
+    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Export orders', 'brief' => 'Export orders as CSV and add a download route.', 'status' => 'reviewing']);
+    $models = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Export', 'brief' => 'Write the CSV export.', 'status' => 'completed']);
+    $routes = Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Route', 'brief' => 'Add the download route.', 'status' => 'reviewing']);
 
     return [$group, $models, $routes];
 }
 
-function coverage_pull_request(): TaskRunPullRequest
+function coverage_pull_request(): TaskTurnPullRequest
 {
-    return new TaskRunPullRequest('Adds an order export.', ['Orders export as CSV.'], []);
+    return new TaskTurnPullRequest('Adds an order export.', ['Orders export as CSV.'], []);
 }
 
 it('names each subtask that no listed change delivers', function (): void {
@@ -96,7 +95,7 @@ it('redacts secrets from persisted state and questions', function (): void {
         'subtask_'.$route->id => new BooleanAnswer(0.2),
     ]])->preventStrayClassifications();
 
-    app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskRunPullRequest(
+    app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskTurnPullRequest(
         'Authorization: Bearer summary-secret',
         ['API_KEY=change-secret'],
         [],
@@ -121,7 +120,7 @@ it('records the Jev call failure without provider body or input secrets', functi
     config()->set('ai.providers.typesafe.key', 'typesafe-test-key');
     Classification::fake(fn () => throw new ConnectionException('SECRET PROVIDER BODY'))->preventStrayClassifications();
 
-    expect(fn () => app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskRunPullRequest(
+    expect(fn () => app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskTurnPullRequest(
         'Authorization: Bearer failure-summary-secret',
         ['API_KEY=failure-change-secret'],
         [],

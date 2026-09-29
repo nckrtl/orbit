@@ -9,7 +9,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Models\AgentThread;
-use App\Models\TaskGroup;
+use App\Models\Task;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
@@ -21,7 +21,7 @@ final readonly class StreamAgentThreadAction
         private CommandActivityInputSanitizer $sanitizer,
     ) {}
 
-    public function execute(TaskGroup $group, AgentThread $session, ?string $afterSequence): StreamedResponse
+    public function execute(Task $group, AgentThread $session, ?string $afterSequence): StreamedResponse
     {
         $this->requireExtension->execute();
         abort_unless($session->task_group_id === $group->id, 404);

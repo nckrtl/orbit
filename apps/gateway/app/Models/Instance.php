@@ -87,7 +87,7 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, InstanceTransfer> $transfers
  * @property-read Collection<int, InstanceDependencyObservation> $dependencyObservations
  * @property-read Collection<int, InstanceDependencyScanAttempt> $dependencyScanAttempts
- * @property-read Collection<int, TaskGroup> $taskGroups
+ * @property-read Collection<int, Task> $tasks
  */
 final class Instance extends Model
 {
@@ -263,10 +263,10 @@ final class Instance extends Model
         return $this->hasMany(InstanceDependencyScanAttempt::class);
     }
 
-    /** @return MorphMany<TaskGroup, $this> */
-    public function taskGroups(): MorphMany
+    /** @return MorphMany<Task, $this> */
+    public function tasks(): MorphMany
     {
-        return $this->morphMany(TaskGroup::class, 'taskable');
+        return $this->morphMany(Task::class, 'taskable')->topLevel();
     }
 
     public function usesProductionReleaseLayout(): bool

@@ -27,11 +27,6 @@ use App\Domain\Tasks\TaskPullRequestDescription;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestHealth;
 use App\Domain\Tasks\TaskPullRequestPublisher;
-use App\Domain\Tasks\TaskRunInstructions;
-use App\Domain\Tasks\TaskRunPullRequest;
-use App\Domain\Tasks\TaskRunReceipt;
-use App\Domain\Tasks\TaskRunReceiptException;
-use App\Domain\Tasks\TaskRunReceipts;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskSessionClassificationException;
 use App\Domain\Tasks\TaskSessionDecision;
@@ -40,6 +35,11 @@ use App\Domain\Tasks\TaskSettleMetrics;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskTurnInstructions;
+use App\Domain\Tasks\TaskTurnPullRequest;
+use App\Domain\Tasks\TaskTurnReceipt;
+use App\Domain\Tasks\TaskTurnReceiptException;
+use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceSigner;
@@ -56,7 +56,6 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
-use App\Models\TaskGroup;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
@@ -69,11 +68,11 @@ use Laravel\Ai\Responses\Data\BooleanAnswer;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AcceptingTaskWorkspaceMcp;
 use Tests\Support\FakeTaskCheckRunner;
-use Tests\Support\FakeTaskRunReceipts;
+use Tests\Support\FakeTaskTurnReceipts;
 
 use function Pest\Laravel\mock;
 
-function tick_group(): TaskGroup
+function tick_group(): Task
 {
     $project = Project::query()->create([
         'name' => 'tick-app',
@@ -97,7 +96,7 @@ function tick_group(): TaskGroup
         'branch' => 'task-21',
         'status' => 'source_resolved',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Tick routing',
         'brief' => 'Observe, classify, and execute.',
@@ -106,7 +105,7 @@ function tick_group(): TaskGroup
     $group->taskable()->associate($instance);
     $group->save();
     Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Models',
         'brief' => 'Store the records.',
@@ -365,7 +364,7 @@ it('retries failed archives on a later tick with the same command id without blo
 
     app(TaskScheduler::class)->tick();
     $archiveId = collect($dispatcher->commands)->firstWhere('type', 'thread.archive')['commandId'];
-    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => TaskGroupStatus::Completed->value]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => TaskGroupStatus::Completed->value]);
     $this->travel(1)->minutes();
     app(TaskScheduler::class)->tick();
 
@@ -413,7 +412,7 @@ it('flags a prior settling group without a reviewed PR once and retains its work
     $group->tasks()->update(['status' => TaskStatus::Completed]);
     app(TaskExtensionState::class)->enable();
     mock(CoderSettleNotifier::class)->shouldReceive('assistance')->once()->withArgs(
-        fn (TaskGroup $blocked, string $reason): bool => $blocked->id === $group->id && str_contains($reason, 'no reviewed pull request URL'),
+        fn (Task $blocked, string $reason): bool => $blocked->id === $group->id && str_contains($reason, 'no reviewed pull request URL'),
     );
     Http::preventStrayRequests();
 
@@ -421,7 +420,7 @@ it('flags a prior settling group without a reviewed PR once and retains its work
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
 
-    $this->assertDatabaseHas('task_groups', [
+    $this->assertDatabaseHas('tasks', [
         'id' => $group->id, 'status' => 'settling', 'pr_url' => null,
         'assistance_requested' => true, 'taskable_id' => $group->taskable_id, 'settled_at' => null,
     ]);
@@ -472,7 +471,7 @@ it('resumes a settling group without a pull request and opens the pull request w
         }
     });
     tick_workspace(branch: 'task-'.$group->id);
-    app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts([tick_final_approval()]));
+    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([tick_final_approval()]));
     $signer = new class implements TaskWorkspaceSigner
     {
         /** @var list<string> */
@@ -496,7 +495,7 @@ it('resumes a settling group without a pull request and opens the pull request w
 
     expect($signer->messages)->toBe(["Models\n\nChecked the feature."])
         ->and($publishing->publisher->pushes)->toBe([$group->id])
-        ->and($publishing->publisher->bodies)->toBe([TaskPullRequestDescription::render(new TaskRunPullRequest('Adds tick routing.', ['Tasks store their records.'], []), 1)])
+        ->and($publishing->publisher->bodies)->toBe([TaskPullRequestDescription::render(new TaskTurnPullRequest('Adds tick routing.', ['Tasks store their records.'], []), 1)])
         ->and($group->fresh()?->pr_url)->toBe('https://github.com/acme/orbit/pull/42')
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
         ->and($task->fresh()?->status)->toBe(TaskStatus::Completed);
@@ -511,7 +510,7 @@ it('does not resume a settling group without a pull request while another assist
     ]);
     $group->tasks()->update(['status' => TaskStatus::Completed]);
     $todo = Task::query()->create([
-        'task_group_id' => $group->id, 'position' => 2, 'title' => 'Waiting', 'brief' => 'Stay todo.', 'status' => TaskStatus::Todo,
+        'parent_id' => $group->id, 'position' => 2, 'title' => 'Waiting', 'brief' => 'Stay todo.', 'status' => TaskStatus::Todo,
         'deliverables' => [[
             'id' => 'composer-check', 'type' => 'command', 'description' => 'Run composer check',
             'command' => 'composer check', 'directory' => '.',
@@ -553,17 +552,17 @@ it('continues watching a prior settling PR and completes only after it merges', 
     ]);
 
     app(TaskScheduler::class)->tick();
-    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'settling', 'pr_url' => $group->pr_url]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'pr_url' => $group->pr_url]);
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
 
-    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'completed', 'pr_url' => $group->pr_url, 'taskable_id' => null]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'completed', 'pr_url' => $group->pr_url, 'taskable_id' => null]);
     $this->assertDatabaseMissing('instances', ['id' => $group->taskable_id]);
     Http::assertSentCount(6);
 });
 
 /** A settling group whose pull request the tick reads through the faked GitHub App. */
-function tick_settling_group(): TaskGroup
+function tick_settling_group(): Task
 {
     $group = tick_group();
     $group->project->update(['repository_url' => 'https://github.com/acme/orbit.git']);
@@ -576,10 +575,10 @@ function tick_settling_group(): TaskGroup
 }
 
 /** A subtask an operator appended. Its fixup identity stays null, so the cap ignores it. */
-function tick_appended_subtask(TaskGroup $group): Task
+function tick_appended_subtask(Task $group): Task
 {
     return Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => ((int) $group->tasks()->max('position')) + 1,
         'title' => 'Address the finding',
         'brief' => 'Fix the review.',
@@ -592,10 +591,10 @@ function tick_appended_subtask(TaskGroup $group): Task
 }
 
 /** One earlier fixup. Every status counts toward the cap. An approved commit, when given, is what the fixup pushed. */
-function tick_spent_fixup(TaskGroup $group, string $problem, TaskStatus $status = TaskStatus::Completed, ?string $headSha = null, ?string $commit = null): Task
+function tick_spent_fixup(Task $group, string $problem, TaskStatus $status = TaskStatus::Completed, ?string $headSha = null, ?string $commit = null): Task
 {
     $task = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => ((int) $group->tasks()->max('position')) + 1,
         'title' => 'Earlier fix',
         'brief' => 'Already tried.',
@@ -684,12 +683,12 @@ function tick_running_agents(bool $fetchFails = false, bool $fastForwardFails = 
             $this->spawned[] = $task->id;
             $this->events[] = 'spawn';
 
-            return test_agent_thread($task->taskGroup, 'fixup-implementer-'.$task->id, $task)->id;
+            return test_agent_thread($task->parent, 'fixup-implementer-'.$task->id, $task)->id;
         }
 
         public function requestReview(Task $task): void {}
 
-        public function fetch(TaskGroup $group, string $base): void
+        public function fetch(Task $group, string $base): void
         {
             $this->fetched[] = $base;
             $this->events[] = 'fetch';
@@ -698,7 +697,7 @@ function tick_running_agents(bool $fetchFails = false, bool $fastForwardFails = 
             }
         }
 
-        public function fastForward(TaskGroup $group, bool $missingRefOk = false): void
+        public function fastForward(Task $group, bool $missingRefOk = false): void
         {
             $this->fastForwards++;
             $this->missingRefOk = $missingRefOk;
@@ -722,11 +721,11 @@ function tick_assistance_notifier(): CoderSettleNotifier
         /** @var list<string> */
         public array $reasons = [];
 
-        public function notify(TaskGroup $group): void {}
+        public function notify(Task $group): void {}
 
-        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
+        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
 
-        public function assistance(TaskGroup $group, string $reason): void
+        public function assistance(Task $group, string $reason): void
         {
             $this->reasons[] = $reason;
         }
@@ -762,7 +761,7 @@ it('asks for assistance once per set of pull request problems and withdraws it w
     $checkReason = 'The pull request needs attention: Check Rust agent failed: https://github.com/acme/orbit/runs/1. Orbit reached the cap of 2 fixups for check:Rust agent in the current window (2 counted).';
 
     app(TaskScheduler::class)->tick();
-    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => $conflictReason]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => $conflictReason]);
     $requestedAt = $group->fresh()?->updated_at;
     $this->travel(1)->minute();
 
@@ -771,15 +770,15 @@ it('asks for assistance once per set of pull request problems and withdraws it w
         ->and($group->fresh()?->updated_at?->equalTo($requestedAt))->toBeTrue();
 
     app(TaskScheduler::class)->tick();
-    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'assistance_requested' => true, 'assistance_reason' => $checkReason]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'assistance_requested' => true, 'assistance_reason' => $checkReason]);
     expect($notifier->reasons)->toBe([$conflictReason, $checkReason]);
 
     // A re-run on the same head commit is read once the minute-long check cache expires.
     $this->travel(61)->seconds();
     app(TaskScheduler::class)->tick();
-    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => false, 'assistance_reason' => null]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => false, 'assistance_reason' => null]);
     expect($notifier->reasons)->toHaveCount(2)
-        ->and(Task::query()->where('task_group_id', $group->id)->count())->toBe(5);
+        ->and(Task::query()->where('parent_id', $group->id)->count())->toBe(5);
 });
 
 it('leaves another cause of assistance on a settling group alone while its pull request conflicts or recovers', function (): void {
@@ -798,7 +797,7 @@ it('leaves another cause of assistance on a settling group alone while its pull 
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
 
-    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => 'Merged pull request cleanup failed: disk full']);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => 'Merged pull request cleanup failed: disk full']);
     expect($notifier->reasons)->toBe([]);
 });
 
@@ -815,7 +814,7 @@ it('withdraws its pull request assistance request when the pull request merges',
 
     app(TaskScheduler::class)->tick();
 
-    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'completed', 'assistance_requested' => false, 'assistance_reason' => null]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'completed', 'assistance_requested' => false, 'assistance_reason' => null]);
 });
 
 it('keeps another cause of assistance when the pull request merges', function (): void {
@@ -831,7 +830,7 @@ it('keeps another cause of assistance when the pull request merges', function ()
 
     app(TaskScheduler::class)->tick();
 
-    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'completed', 'assistance_requested' => true, 'assistance_reason' => 'The operator asked to hold this group.']);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'completed', 'assistance_requested' => true, 'assistance_reason' => 'The operator asked to hold this group.']);
 });
 
 it('backs off a merged pull request cleanup and retries it on a later tick', function (): void {
@@ -919,7 +918,7 @@ it('preserves labeled merge evidence and report metrics when cleanup retries los
 });
 
 it('uses backoff for publication and removal retries and retries a failed manual complete', function (): void {
-    [$group, $task, , , $publisher] = tick_review([FakeTaskRunReceipts::contents('approved', 'Checked the models.')]);
+    [$group, $task, , , $publisher] = tick_review([FakeTaskTurnReceipts::contents('approved', 'Checked the models.')]);
     $publisher->pushFailures = 1;
     $hold = 'The operator asked to hold this group.';
 
@@ -961,7 +960,7 @@ it('uses backoff for publication and removal retries and retries a failed manual
         }
     };
     app()->instance(InstanceRemover::class, $remover);
-    $ended = TaskGroup::query()->create([
+    $ended = Task::topLevel()->create([
         'project_id' => $group->project_id,
         'title' => 'Ended',
         'brief' => 'Remove the workspace.',
@@ -1005,7 +1004,7 @@ it('uses backoff for publication and removal retries and retries a failed manual
     app(TaskScheduler::class)->removeAbandonedWorkspaces();
     expect($remover->attempts)->toHaveCount(4);
 
-    $settling = TaskGroup::query()->create([
+    $settling = Task::topLevel()->create([
         'project_id' => $group->project_id,
         'title' => 'Manual complete',
         'brief' => 'The operator completes it.',
@@ -1029,7 +1028,7 @@ it('uses backoff for publication and removal retries and retries a failed manual
         ->and($completed->taskable_id)->toBe($kept->id)
         ->and($completed->assistance_reason)->toBe(RemoveTaskWorkspaceAction::RemovalFailedPrefix.'disk full');
 
-    $other = TaskGroup::query()->create([
+    $other = Task::topLevel()->create([
         'project_id' => $group->project_id,
         'title' => 'Other cause',
         'brief' => 'Keep the question.',
@@ -1071,7 +1070,7 @@ it('replaces its pull request assistance request with the cleanup failure when a
 
     app(TaskScheduler::class)->tick();
 
-    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => 'Merged pull request cleanup failed: disk full']);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => 'Merged pull request cleanup failed: disk full']);
 });
 
 it('changes nothing on a settling group when GitHub cannot report the pull request', function (): void {
@@ -1089,7 +1088,7 @@ it('changes nothing on a settling group when GitHub cannot report the pull reque
 
     app(TaskScheduler::class)->tick();
 
-    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => $reason]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => $reason]);
     $this->assertDatabaseHas('tasks', ['id' => $waiting->id, 'status' => 'todo']);
     expect($notifier->reasons)->toBe([]);
 });
@@ -1097,10 +1096,10 @@ it('changes nothing on a settling group when GitHub cannot report the pull reque
 it('appends one conflict fixup with a merge brief and returns the group to running', function (): void {
     $group = tick_settling_group();
     Task::query()->create([
-        'task_group_id' => $group->id, 'position' => 2, 'title' => 'Operator', 'brief' => 'Not a fixup.', 'status' => TaskStatus::Completed,
+        'parent_id' => $group->id, 'position' => 2, 'title' => 'Operator', 'brief' => 'Not a fixup.', 'status' => TaskStatus::Completed,
     ]);
     Task::query()->create([
-        'task_group_id' => $group->id, 'position' => 3, 'title' => 'Operator again', 'brief' => 'Still not a fixup.', 'status' => TaskStatus::Completed,
+        'parent_id' => $group->id, 'position' => 3, 'title' => 'Operator again', 'brief' => 'Still not a fixup.', 'status' => TaskStatus::Completed,
     ]);
     $agents = tick_running_agents();
     tick_watch_pulls([
@@ -1287,7 +1286,7 @@ it('creates no fixup for a green mergeable pull request', function (): void {
 
     expect($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
         ->and($group->fresh()?->assistance_requested)->toBeFalse()
-        ->and(Task::query()->where('task_group_id', $group->id)->where('status', 'todo')->exists())->toBeFalse()
+        ->and(Task::query()->where('parent_id', $group->id)->where('status', 'todo')->exists())->toBeFalse()
         ->and(Task::query()->whereNotNull('fixup_problem')->exists())->toBeFalse();
 });
 
@@ -1764,7 +1763,7 @@ it('reports a throwing brief coverage labeler and continues the tick', function 
     Exceptions::fake();
     app()->instance(BriefCoverageLabeler::class, new class implements BriefCoverageLabeler
     {
-        public function label(TaskGroup $group, TaskPullRequestHealth $health): void
+        public function label(Task $group, TaskPullRequestHealth $health): void
         {
             throw new RuntimeException('labeling failed');
         }
@@ -1784,7 +1783,7 @@ it('keeps a merged group settling when an approved commit missed the merge', fun
 
     app(TaskScheduler::class)->tick();
 
-    $this->assertDatabaseHas('task_groups', ['id' => $group->id, 'status' => 'settling', 'assistance_reason' => $reason]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_reason' => $reason]);
 });
 
 it('returns no decisions when the tasks extension is disabled', function (): void {
@@ -1848,14 +1847,14 @@ it('escalates to Coder when a drain dispatch fails', function (): void {
     {
         public ?string $reason = null;
 
-        public function notify(TaskGroup $group): void {}
+        public function notify(Task $group): void {}
 
-        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
+        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
         {
             $this->reason = $decision->reason;
         }
 
-        public function assistance(TaskGroup $group, string $reason): void
+        public function assistance(Task $group, string $reason): void
         {
             $this->reason = $reason;
         }
@@ -1899,12 +1898,12 @@ it('advances the current subtask when Jev marks it done', function (): void {
         {
             $this->spawned++;
 
-            return test_agent_thread($task->taskGroup, 'reviewer-thread')->id;
+            return test_agent_thread($task->parent, 'reviewer-thread')->id;
         }
 
         public function spawnImplementer(Task $task): ?int
         {
-            return test_agent_thread($task->taskGroup, 'implementer-thread', $task)->id;
+            return test_agent_thread($task->parent, 'implementer-thread', $task)->id;
         }
 
         public function requestReview(Task $task): void {}
@@ -1998,9 +1997,9 @@ it('records an unreachable workspace as a communication failure without aborting
             return tick_checked_thread('done');
         }
     });
-    $receipts = mock(TaskRunReceipts::class);
+    $receipts = mock(TaskTurnReceipts::class);
     $receipts->shouldReceive('hasLegacyTurn')->andReturn(false);
-    $receipts->shouldReceive('read')->andThrow(new TaskRunReceiptException('The task workspace could not be reached for the run receipt.'));
+    $receipts->shouldReceive('read')->andThrow(new TaskTurnReceiptException('The task workspace could not be reached for the turn receipt.'));
 
     app(TaskScheduler::class)->tick();
 
@@ -2027,13 +2026,13 @@ it('records a legacy turn read failure without skipping the other group', functi
         'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-22',
         'checkout_path' => '/srv/orbit/apps/tick-review-legacy/task-22', 'branch' => 'task-22', 'status' => 'source_resolved',
     ]);
-    $reviewing = TaskGroup::query()->create([
+    $reviewing = Task::topLevel()->create([
         'project_id' => $project->id, 'title' => 'Tick review', 'brief' => 'Review the records.', 'status' => TaskGroupStatus::Reviewing,
     ]);
     $reviewing->taskable()->associate($instance);
     $reviewing->save();
     $reviewer = Task::query()->create([
-        'task_group_id' => $reviewing->id, 'position' => 1, 'title' => 'Review', 'brief' => 'Review the records.',
+        'parent_id' => $reviewing->id, 'position' => 1, 'title' => 'Review', 'brief' => 'Review the records.',
         'status' => TaskStatus::Reviewing, 'started_at' => now(),
         'review_notified_attempt' => 1, 'review_notified_turn_id' => 'handoff-turn',
     ]);
@@ -2050,8 +2049,8 @@ it('records a legacy turn read failure without skipping the other group', functi
             ]];
         }
     });
-    $receipts = mock(TaskRunReceipts::class);
-    $receipts->shouldReceive('hasLegacyTurn')->andThrow(new TaskRunReceiptException('The task workspace could not be reached for the run receipt.'));
+    $receipts = mock(TaskTurnReceipts::class);
+    $receipts->shouldReceive('hasLegacyTurn')->andThrow(new TaskTurnReceiptException('The task workspace could not be reached for the turn receipt.'));
 
     app(TaskScheduler::class)->tick();
 
@@ -2074,9 +2073,9 @@ it('stores a ready_for_review receipt, removes it, and hands off to the reviewer
             return tick_checked_thread('done');
         }
     });
-    $contents = FakeTaskRunReceipts::contents('ready_for_review', 'Added the models.');
-    $receipts = new FakeTaskRunReceipts([$contents]);
-    app()->instance(TaskRunReceipts::class, $receipts);
+    $contents = FakeTaskTurnReceipts::contents('ready_for_review', 'Added the models.');
+    $receipts = new FakeTaskTurnReceipts([$contents]);
+    app()->instance(TaskTurnReceipts::class, $receipts);
 
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
@@ -2105,12 +2104,12 @@ it('stores a receipt that was read again after a crash only once', function (): 
             return tick_checked_thread('done');
         }
     });
-    $contents = FakeTaskRunReceipts::contents('ready_for_review');
+    $contents = FakeTaskTurnReceipts::contents('ready_for_review');
     $task->comments()->create([
         'task_group_id' => $group->id, 'type' => 'ready_for_review', 'body' => 'Done.', 'author' => 'implementer',
         'completion_attempt' => $task->completion_attempt, 'receipt_hash' => hash('sha256', $contents), 'posted_at' => now(),
     ]);
-    app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts([$contents]));
+    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([$contents]));
 
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
@@ -2132,8 +2131,8 @@ it('asks for assistance with the summary of a blocked receipt', function (): voi
             return ['thread' => ['session' => ['status' => 'idle']]];
         }
     });
-    $receipts = new FakeTaskRunReceipts([FakeTaskRunReceipts::contents('blocked', 'Installing the extension needs sudo, and sudo was denied.', 'May the Node user run sudo apt-get install php8.5-intl?')]);
-    app()->instance(TaskRunReceipts::class, $receipts);
+    $receipts = new FakeTaskTurnReceipts([FakeTaskTurnReceipts::contents('blocked', 'Installing the extension needs sudo, and sudo was denied.', 'May the Node user run sudo apt-get install php8.5-intl?')]);
+    app()->instance(TaskTurnReceipts::class, $receipts);
 
     app(TaskScheduler::class)->tick();
 
@@ -2151,17 +2150,17 @@ it('resumes a Pi implementer restarted during the turn instead of asking for ass
     {
         public bool $called = false;
 
-        public function notify(TaskGroup $group): void
+        public function notify(Task $group): void
         {
             $this->called = true;
         }
 
-        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
+        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
         {
             $this->called = true;
         }
 
-        public function assistance(TaskGroup $group, string $reason): void
+        public function assistance(Task $group, string $reason): void
         {
             $this->called = true;
         }
@@ -2178,10 +2177,10 @@ it('resumes a Pi implementer restarted during the turn instead of asking for ass
     expect($fresh?->assistance_reason)->toBeNull()
         ->and($fresh?->assistance_requested)->toBeFalse()
         ->and($fresh?->status)->toBe(TaskStatus::Running)
-        ->and($task->taskGroup->fresh()?->assistance_requested)->toBeFalse()
+        ->and($task->parent->fresh()?->assistance_requested)->toBeFalse()
         ->and($notifier->called)->toBeFalse()
         ->and($sent)->toBeInstanceOf(Request::class)
-        ->and($sent['text'])->toBe('Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the run script.')
+        ->and($sent['text'])->toBe('Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the turn command.')
         ->and($sent['key'])->not->toBe('turn-key-1')
         ->and($sent['key'])->toBeUuid()
         ->and($fresh?->pi_restart_resumes)->toBe(1)
@@ -2217,7 +2216,7 @@ it('asks for assistance when a Pi implementer fails for another reason', functio
 
     expect($task->fresh()?->assistance_requested)->toBeTrue()
         ->and($task->fresh()?->assistance_reason)->toBe('The implementer thread failed.')
-        ->and($task->taskGroup->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->parent->fresh()?->assistance_requested)->toBeTrue()
         ->and(tick_pi_message_keys())->toBe([])
         ->and($task->fresh()?->pi_restart_resumes)->toBe(0);
 });
@@ -2295,7 +2294,7 @@ it('retries the stored Pi resume key when the send throws before Pi accepts it',
 
 it('reserves a new Pi resume for a restart during the turn that followed an accepted resume', function (): void {
     $task = tick_pi_implementer();
-    app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts([null, null]));
+    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([null, null]));
     $state = (object) ['turnId' => 'turn-key-1', 'error' => 'The Pi server restarted during the turn.', 'state' => 'failed'];
     tick_pi_failure($state);
     app(TaskScheduler::class)->tick();
@@ -2313,7 +2312,7 @@ it('reserves a new Pi resume for a restart during the turn that followed an acce
         ->and($task->fresh()?->pi_restart_key)->toBe($accepted)
         ->and($reminder)->toBeString()->not->toBe($accepted)
         ->and(collect(Http::recorded())->filter(fn (array $pair): bool => str_ends_with($pair[0]->url(), '/messages'))->values()[1][0]['text'])
-        ->toContain('No run receipt was found.');
+        ->toContain('No turn receipt was found.');
 
     $state->state = 'failed';
     $state->turnId = (string) $reminder;
@@ -2372,7 +2371,7 @@ it('does not reset Pi resumes when a resolution is delivered and asks after the 
 
 it('does not send an implementer Pi resume to the reviewer', function (): void {
     $task = tick_pi_implementer();
-    $reviewer = AgentThread::query()->findOrFail($task->taskGroup->reviewer_agent_thread_id);
+    $reviewer = AgentThread::query()->findOrFail($task->parent->reviewer_agent_thread_id);
     $reviewer->update(['driver' => 'pi']);
     $implementer = (object) ['state' => 'failed', 'error' => 'The Pi server restarted during the turn.', 'turnId' => 'impl-turn'];
     $review = (object) ['state' => 'idle', 'error' => null, 'turnId' => 'old-review'];
@@ -2406,7 +2405,7 @@ it('does not send an implementer Pi resume to the reviewer', function (): void {
         ->and($messages[0]['session'])->toBe('implementer-thread')
         ->and($messages[0]['key'])->toBe($implementerKey);
 
-    $task->taskGroup->update(['status' => TaskGroupStatus::Reviewing]);
+    $task->parent->update(['status' => TaskGroupStatus::Reviewing]);
     $task->update([
         'status' => TaskStatus::Reviewing,
         'review_notified_attempt' => $task->review_attempt,
@@ -2429,7 +2428,7 @@ it('does not send an implementer Pi resume to the reviewer', function (): void {
         ->and($messages)->toHaveCount(2)
         ->and($messages[1]['session'])->toBe('reviewer-thread')
         ->and($messages[1]['key'])->toBe($reviewerKey)
-        ->and($messages[1]['text'])->toBe('Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the run script.')
+        ->and($messages[1]['text'])->toBe('Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the turn command.')
         ->and(collect($messages)->where('session', 'reviewer-thread')->pluck('key')->all())->not->toContain($implementerKey);
 
     $review->turnId = (string) $reviewerKey;
@@ -2555,7 +2554,7 @@ it('keeps a Pi resume counted when the server accepts the key and both responses
 
 it('supersedes a pending Pi resume when a later turn is first observed', function (): void {
     $task = tick_pi_implementer();
-    app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts([null, null]));
+    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([null, null]));
     $state = (object) ['turnId' => 'turn-key-1', 'error' => 'The Pi server restarted during the turn.', 'state' => 'failed'];
     tick_pi_failure($state);
     app(TaskScheduler::class)->tick();
@@ -2577,7 +2576,7 @@ it('supersedes a pending Pi resume when a later turn is first observed', functio
         ->and($keys[0])->toBe($reserved)
         ->and($keys[1])->not->toBe($reserved)
         ->and(collect(Http::recorded())->filter(fn (array $pair): bool => str_ends_with($pair[0]->url(), '/messages'))->values()[1][0]['text'])
-        ->toContain('No run receipt was found.');
+        ->toContain('No turn receipt was found.');
 
     $state->state = 'failed';
     $state->turnId = 'normal-turn';
@@ -2904,11 +2903,11 @@ it('reminds an implementer that ends a turn without a receipt once, then asks fo
     {
         public ?string $reason = null;
 
-        public function notify(TaskGroup $group): void {}
+        public function notify(Task $group): void {}
 
-        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
+        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
 
-        public function assistance(TaskGroup $group, string $reason): void
+        public function assistance(Task $group, string $reason): void
         {
             $this->reason = $reason;
         }
@@ -2922,21 +2921,21 @@ it('reminds an implementer that ends a turn without a receipt once, then asks fo
             return tick_checked_thread('idle');
         }
     });
-    $receipts = new FakeTaskRunReceipts([null, null]);
-    app()->instance(TaskRunReceipts::class, $receipts);
+    $receipts = new FakeTaskTurnReceipts([null, null]);
+    app()->instance(TaskTurnReceipts::class, $receipts);
 
     app(TaskScheduler::class)->tick();
 
     $reminder = $dispatcher->commands[0]['message']['text'];
     expect($dispatcher->commands)->toHaveCount(1)
-        ->and($reminder)->toBe('Orbit could not confirm the brief is complete. No run receipt was found. '.TaskRunInstructions::implementer(check: $group->project->taskCheckCommand(), threadId: $task->implementer_agent_thread_id))
+        ->and($reminder)->toBe('Orbit could not confirm the brief is complete. No turn receipt was found. '.TaskTurnInstructions::implementer(check: $group->project->taskCheckCommand(), threadId: $task->implementer_agent_thread_id))
         ->and($receipts->prepared)->toBe(['implementer'])
         ->and($group->fresh()?->assistance_requested)->toBeFalse();
 
     app(TaskScheduler::class)->tick();
 
     expect($group->fresh()?->assistance_requested)->toBeTrue()
-        ->and($notifier->reason)->toBe('Checks still failed after the reminder. No run receipt was found.')
+        ->and($notifier->reason)->toBe('Checks still failed after the reminder. No turn receipt was found.')
         ->and($task->comments()->count())->toBe(0);
     Classification::assertNothingClassified();
 });
@@ -2954,20 +2953,20 @@ it('refuses a receipt with an outcome that does not fit the implementer turn, or
             return tick_checked_thread('done');
         }
     });
-    $receipts = new FakeTaskRunReceipts([$contents]);
-    app()->instance(TaskRunReceipts::class, $receipts);
+    $receipts = new FakeTaskTurnReceipts([$contents]);
+    app()->instance(TaskTurnReceipts::class, $receipts);
 
     app(TaskScheduler::class)->tick();
 
     expect($task->fresh()?->status)->toBe(TaskStatus::Running)
         ->and($task->fresh()?->assistance_requested)->toBeFalse()
-        ->and($dispatcher->commands[0]['message']['text'])->toContain('The run receipt was not valid for this turn.')
+        ->and($dispatcher->commands[0]['message']['text'])->toContain('The turn receipt was not valid for this turn.')
         ->and($dispatcher->commands[0]['message']['text'])->toContain('--question=')
         ->and($task->comments()->count())->toBe(0)
         ->and($receipts->cleared)->toHaveCount(1);
 })->with([
-    'a reviewer outcome' => [FakeTaskRunReceipts::contents('approved')],
-    'blocked without a question' => [FakeTaskRunReceipts::contents('blocked', 'Gateway implementation not completed; required project guidance/bootstrap review and implementation remain.')],
+    'a reviewer outcome' => [FakeTaskTurnReceipts::contents('approved')],
+    'blocked without a question' => [FakeTaskTurnReceipts::contents('blocked', 'Gateway implementation not completed; required project guidance/bootstrap review and implementation remain.')],
 ]);
 
 it('dispatches nothing when Jev selects noop', function (): void {
@@ -2978,17 +2977,17 @@ it('dispatches nothing when Jev selects noop', function (): void {
     {
         public bool $called = false;
 
-        public function notify(TaskGroup $group): void
+        public function notify(Task $group): void
         {
             $this->called = true;
         }
 
-        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
+        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
         {
             $this->called = true;
         }
 
-        public function assistance(TaskGroup $group, string $reason): void
+        public function assistance(Task $group, string $reason): void
         {
             $this->called = true;
         }
@@ -3100,7 +3099,7 @@ it('targets the idle in-progress task while another task is working', function (
     $workingTask = $group->tasks->first();
     $workingTask->update(['status' => TaskStatus::Reviewing]);
     $idleTask = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 2,
         'title' => 'Second task',
         'brief' => 'Finish the second task.',
@@ -3145,11 +3144,11 @@ it('reminds the implementer with the failing check output once, then asks for as
     {
         public ?string $reason = null;
 
-        public function notify(TaskGroup $group): void {}
+        public function notify(Task $group): void {}
 
-        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
+        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
 
-        public function assistance(TaskGroup $group, string $reason): void
+        public function assistance(Task $group, string $reason): void
         {
             $this->reason = $reason;
         }
@@ -3165,8 +3164,8 @@ it('reminds the implementer with the failing check output once, then asks for as
     });
     $failed = TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], "FAILED tests/Feature/ExportTest.php\n");
     app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner([$failed, $failed]));
-    app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts([
-        FakeTaskRunReceipts::contents('ready_for_review'), null, FakeTaskRunReceipts::contents('ready_for_review', 'Fixed the export test.'), null,
+    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([
+        FakeTaskTurnReceipts::contents('ready_for_review'), null, FakeTaskTurnReceipts::contents('ready_for_review', 'Fixed the export test.'), null,
     ]));
 
     app(TaskScheduler::class)->tick();
@@ -3202,8 +3201,8 @@ it('shows an unexpected check error as a failed check whose output ends with the
     $output = "composer check\n\nTraceback (most recent call last):\nFileNotFoundError: [Errno 2] No such file or directory: 'gateway'\n";
     $failed = TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], $output, failedStep: 'check_error');
     app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner([$failed]));
-    app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts([
-        FakeTaskRunReceipts::contents('ready_for_review'), null,
+    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([
+        FakeTaskTurnReceipts::contents('ready_for_review'), null,
     ]));
 
     app(TaskScheduler::class)->tick();
@@ -3233,8 +3232,8 @@ it('keeps an unexpected check error failed when the tree changed during the run'
     $failed = TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('c', 40), ['app'], $output, failedStep: 'check_error');
     $checks = new FakeTaskCheckRunner([$failed]);
     app()->instance(TaskCheckRunner::class, $checks);
-    app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts([
-        FakeTaskRunReceipts::contents('ready_for_review'), null,
+    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([
+        FakeTaskTurnReceipts::contents('ready_for_review'), null,
     ]));
 
     app(TaskScheduler::class)->tick();
@@ -3264,7 +3263,7 @@ it('retries the reviewer nudge until the handoff send succeeds', function (): vo
             if ($this->spawns === 1) {
                 return null;
             }
-            $thread = test_agent_thread($task->taskGroup, 'reviewer-spawned');
+            $thread = test_agent_thread($task->parent, 'reviewer-spawned');
             $thread->update(['task_id' => $task->id]);
 
             return $thread->id;
@@ -3335,7 +3334,7 @@ it('waits for a newer reviewer turn before asking for an outcome', function (?st
     app(TaskExtensionState::class)->enable();
     app()->instance(T3Dispatcher::class, $dispatcher);
     app()->instance(T3ThreadReader::class, $reader);
-    app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts([null]));
+    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([null]));
 
     app(TaskScheduler::class)->tick();
 
@@ -3346,7 +3345,7 @@ it('waits for a newer reviewer turn before asking for an outcome', function (?st
     app(TaskScheduler::class)->tick();
 
     expect($dispatcher->commands)->toHaveCount(1)
-        ->and($dispatcher->commands[0]['message']['text'])->toContain('No run receipt was found.');
+        ->and($dispatcher->commands[0]['message']['text'])->toContain('No turn receipt was found.');
 })->with(['turn-old', null, '']);
 
 it('retries review findings until the implementer receives them', function (): void {
@@ -3354,7 +3353,7 @@ it('retries review findings until the implementer receives them', function (): v
     $task = $group->tasks->sole();
     $group->update(['status' => TaskGroupStatus::Reviewing]);
     $task->update(['status' => TaskStatus::Reviewing, 'review_notified_attempt' => $task->review_attempt, ...tick_review_baseline()]);
-    app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts([FakeTaskRunReceipts::contents('changes_requested', 'Add the missing test.')]));
+    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([FakeTaskTurnReceipts::contents('changes_requested', 'Add the missing test.')]));
     $dispatcher = new class implements T3Dispatcher
     {
         public int $calls = 0;
@@ -3395,8 +3394,8 @@ it('retries review findings until the implementer receives them', function (): v
     expect($task->fresh()?->status)->toBe(TaskStatus::Running)
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
         ->and($dispatcher->commands[1]['message']['text'])->toContain('Add the missing test.')
-        ->and($dispatcher->commands[1]['message']['text'])->toContain(TaskRunInstructions::implementer(check: $group->project->taskCheckCommand(), threadId: $task->implementer_agent_thread_id))
-        ->and(app(TaskRunReceipts::class)->prepared)->toBe(['implementer', 'implementer']);
+        ->and($dispatcher->commands[1]['message']['text'])->toContain(TaskTurnInstructions::implementer(check: $group->project->taskCheckCommand(), threadId: $task->implementer_agent_thread_id))
+        ->and(app(TaskTurnReceipts::class)->prepared)->toBe(['implementer', 'implementer']);
 });
 
 it('repeated reminder send failures reach assistance', function (): void {
@@ -3469,7 +3468,7 @@ it('unavailable implementer uses observation grace instead of rubric', function 
     expect($group->fresh()->agent_unavailable_since)->not->toBeNull();
 });
 it('an unavailable reviewer cannot advance an approval', function (): void {
-    [$group, $task, $receipts, $signer] = tick_review([FakeTaskRunReceipts::contents('approved')]);
+    [$group, $task, $receipts, $signer] = tick_review([FakeTaskTurnReceipts::contents('approved')]);
     AgentThread::query()->where('task_group_id', $group->id)->update(['state' => 'done']);
     app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
     {
@@ -3491,10 +3490,10 @@ it('relayed findings require a newer implementer turn, a new receipt, and a new 
     $task = $group->tasks->sole();
     $group->update(['status' => TaskGroupStatus::Reviewing]);
     $task->update(['status' => TaskStatus::Reviewing, 'review_notified_attempt' => $task->review_attempt, ...tick_review_baseline()]);
-    app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts([
-        FakeTaskRunReceipts::contents('changes_requested', 'Fix the regression before requesting review again.'),
+    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([
+        FakeTaskTurnReceipts::contents('changes_requested', 'Fix the regression before requesting review again.'),
         null,
-        FakeTaskRunReceipts::contents('ready_for_review'),
+        FakeTaskTurnReceipts::contents('ready_for_review'),
     ]));
     app(TaskExtensionState::class)->enable();
     app()->instance(T3Dispatcher::class, tick_dispatcher());
@@ -3525,7 +3524,7 @@ it('relayed findings require a newer implementer turn, a new receipt, and a new 
     $reader->turnId = 'after-findings';
     app(TaskScheduler::class)->tick();
     expect($task->fresh()->status)->toBe(TaskStatus::Running);
-    expect(app(T3Dispatcher::class)->commands[1]['message']['text'])->toContain('No run receipt was found.');
+    expect(app(T3Dispatcher::class)->commands[1]['message']['text'])->toContain('No turn receipt was found.');
 
     app(TaskScheduler::class)->tick();
     expect($task->fresh()->status)->toBe(TaskStatus::Running)
@@ -3541,7 +3540,7 @@ it('retains reminder send failures across successful classifications and clears 
     $group->update(['status' => $status === TaskStatus::Reviewing ? TaskGroupStatus::Reviewing : TaskGroupStatus::Running]);
     $task->update(['status' => $status, 'review_notified_attempt' => $task->review_attempt, 'review_notified_turn_id' => 'old-turn']);
     app(TaskExtensionState::class)->enable();
-    app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts([]));
+    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([]));
     app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
     {
         public function snapshot(Node $node, string $threadId): ?array
@@ -3579,7 +3578,7 @@ it('retains reminder send failures across successful classifications and clears 
  * a later subtask waits behind it.
  *
  * @param  list<string|null>  $receipts
- * @return array{TaskGroup, Task, FakeTaskRunReceipts, object, object}
+ * @return array{Task, Task, FakeTaskTurnReceipts, object, object}
  */
 /** @return array{review_workspace_head: string, review_workspace_tree: string} */
 function tick_review_baseline(): array
@@ -3595,7 +3594,7 @@ function tick_review(array $receipts, bool $onBranch = true, bool $last = false)
     $group = tick_group();
     $task = $group->tasks->sole();
     if (! $last) {
-        Task::query()->create(['task_group_id' => $group->id, 'position' => 2, 'title' => 'Routes', 'brief' => 'Add the routes.', 'status' => TaskStatus::Todo]);
+        Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Routes', 'brief' => 'Add the routes.', 'status' => TaskStatus::Todo]);
     }
     $group->update(['status' => TaskGroupStatus::Reviewing]);
     $task->update(['status' => TaskStatus::Reviewing, 'review_notified_attempt' => $task->review_attempt, 'review_notified_turn_id' => 'handoff-turn', ...tick_review_baseline()]);
@@ -3609,8 +3608,8 @@ function tick_review(array $receipts, bool $onBranch = true, bool $last = false)
         }
     });
     tick_workspace(branch: $onBranch ? 'task-'.$group->id : 'main');
-    $receipts = new FakeTaskRunReceipts($receipts);
-    app()->instance(TaskRunReceipts::class, $receipts);
+    $receipts = new FakeTaskTurnReceipts($receipts);
+    app()->instance(TaskTurnReceipts::class, $receipts);
     $signer = new class implements TaskWorkspaceSigner
     {
         /** @var list<string> */
@@ -3644,14 +3643,14 @@ function tick_review(array $receipts, bool $onBranch = true, bool $last = false)
 
         public int $pushFailures = 0;
 
-        public function publish(TaskGroup $group, string $body, string $commit): string
+        public function publish(Task $group, string $body, string $commit): string
         {
             $this->bodies[] = $body;
 
             return 'https://github.com/acme/orbit/pull/42';
         }
 
-        public function push(TaskGroup $group, string $commit): void
+        public function push(Task $group, string $commit): void
         {
             $this->pushes[] = $group->id;
             if ($this->pushFailures > 0) {
@@ -3669,22 +3668,22 @@ function tick_review(array $receipts, bool $onBranch = true, bool $last = false)
 it('does not apply a receipt from the thread named by a stale turn file', function (): void {
     [$group, $task] = tick_review([null]);
     $acting = (int) $group->reviewer_agent_thread_id;
-    app()->instance(TaskRunReceipts::class, new class($acting) implements TaskRunReceipts
+    app()->instance(TaskTurnReceipts::class, new class($acting) implements TaskTurnReceipts
     {
         public function __construct(private int $acting) {}
 
         public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void {}
 
-        public function read(Instance $instance, ?int $actingThreadId = null): ?TaskRunReceipt
+        public function read(Instance $instance, ?int $actingThreadId = null): ?TaskTurnReceipt
         {
             expect($actingThreadId)->toBe($this->acting);
 
-            return TaskRunReceipt::parse((string) json_encode([
+            return TaskTurnReceipt::parse((string) json_encode([
                 'outcome' => 'approved', 'summary' => 'Approved the earlier subtask.', 'thread' => $this->acting + 1,
             ], JSON_THROW_ON_ERROR));
         }
 
-        public function clear(Instance $instance, TaskRunReceipt $receipt): void {}
+        public function clear(Instance $instance, TaskTurnReceipt $receipt): void {}
 
         public function hasLegacyTurn(Instance $instance): bool
         {
@@ -3698,10 +3697,10 @@ it('does not apply a receipt from the thread named by a stale turn file', functi
         ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing);
 });
 
-it('does not apply an unbound legacy receipt and reissues the bound run command', function (): void {
+it('does not apply an unbound legacy receipt and reissues the bound turn command', function (): void {
     [$group, $task] = tick_review([null]);
     $acting = (int) $group->reviewer_agent_thread_id;
-    $receipts = new class implements TaskRunReceipts
+    $receipts = new class implements TaskTurnReceipts
     {
         public bool $legacy = true;
 
@@ -3714,21 +3713,21 @@ it('does not apply an unbound legacy receipt and reissues the bound run command'
             $this->legacy = false;
         }
 
-        public function read(Instance $instance, ?int $actingThreadId = null): ?TaskRunReceipt
+        public function read(Instance $instance, ?int $actingThreadId = null): ?TaskTurnReceipt
         {
-            return TaskRunReceipt::parse((string) json_encode([
+            return TaskTurnReceipt::parse((string) json_encode([
                 'outcome' => 'approved', 'summary' => 'Approved the earlier subtask.',
             ], JSON_THROW_ON_ERROR));
         }
 
-        public function clear(Instance $instance, TaskRunReceipt $receipt): void {}
+        public function clear(Instance $instance, TaskTurnReceipt $receipt): void {}
 
         public function hasLegacyTurn(Instance $instance): bool
         {
             return $this->legacy;
         }
     };
-    app()->instance(TaskRunReceipts::class, $receipts);
+    app()->instance(TaskTurnReceipts::class, $receipts);
 
     app(TaskScheduler::class)->tick();
 
@@ -3738,26 +3737,26 @@ it('does not apply an unbound legacy receipt and reissues the bound run command'
         ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
         ->and($receipts->preparedThreads)->toBe([$acting])
         ->and($text)->toContain('Orbit bound this turn to its thread.')
-        ->and($text)->toContain('.git/orbit/run --thread='.$acting.' --outcome=');
+        ->and($text)->toContain('.git/orbit/turn --thread='.$acting.' --outcome=');
 });
 
 it('applies a receipt that names the acting reviewer', function (): void {
     [$group, $task] = tick_review([null], last: true);
     $acting = (int) $group->reviewer_agent_thread_id;
-    app()->instance(TaskRunReceipts::class, new class($acting) implements TaskRunReceipts
+    app()->instance(TaskTurnReceipts::class, new class($acting) implements TaskTurnReceipts
     {
         public function __construct(private int $acting) {}
 
         public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void {}
 
-        public function read(Instance $instance, ?int $actingThreadId = null): ?TaskRunReceipt
+        public function read(Instance $instance, ?int $actingThreadId = null): ?TaskTurnReceipt
         {
-            return TaskRunReceipt::parse((string) json_encode([
+            return TaskTurnReceipt::parse((string) json_encode([
                 'outcome' => 'approved', 'summary' => 'Checked this subtask.', 'thread' => $actingThreadId,
             ], JSON_THROW_ON_ERROR));
         }
 
-        public function clear(Instance $instance, TaskRunReceipt $receipt): void {}
+        public function clear(Instance $instance, TaskTurnReceipt $receipt): void {}
 
         public function hasLegacyTurn(Instance $instance): bool
         {
@@ -3772,7 +3771,7 @@ it('applies a receipt that names the acting reviewer', function (): void {
 });
 
 it('commits an approved subtask with the title and the reviewer summary, then starts the next subtask', function (): void {
-    [$group, $task, $receipts, $signer, $publisher] = tick_review([FakeTaskRunReceipts::contents('approved', 'Checked the models and their tests.')]);
+    [$group, $task, $receipts, $signer, $publisher] = tick_review([FakeTaskTurnReceipts::contents('approved', 'Checked the models and their tests.')]);
     $next = Task::query()->where('title', 'Routes')->sole();
     $spawner = new class implements AgentSpawner
     {
@@ -3788,7 +3787,7 @@ it('commits an approved subtask with the title and the reviewer summary, then st
         {
             $this->implementers[] = $task->id;
 
-            return test_agent_thread($task->taskGroup, 'implementer-'.$task->id, $task)->id;
+            return test_agent_thread($task->parent, 'implementer-'.$task->id, $task)->id;
         }
 
         public function requestReview(Task $task): void {}
@@ -3814,7 +3813,7 @@ it('commits an approved subtask with the title and the reviewer summary, then st
 });
 
 it('retries the commit of an approved subtask without storing the approval twice', function (): void {
-    [$group, $task, , $signer] = tick_review([FakeTaskRunReceipts::contents('approved', 'Looks good.')]);
+    [$group, $task, , $signer] = tick_review([FakeTaskTurnReceipts::contents('approved', 'Looks good.')]);
     $signer->fails = true;
 
     app(TaskScheduler::class)->tick();
@@ -3831,23 +3830,23 @@ it('retries the commit of an approved subtask without storing the approval twice
 });
 
 it('does not commit an approval while the workspace is on another branch', function (): void {
-    [$group, $task, , $signer] = tick_review([FakeTaskRunReceipts::contents('approved', 'Looks good.'), null], onBranch: false);
+    [$group, $task, , $signer] = tick_review([FakeTaskTurnReceipts::contents('approved', 'Looks good.'), null], onBranch: false);
 
     app(TaskScheduler::class)->tick();
 
     $dispatcher = app(T3Dispatcher::class);
     expect($signer->messages)->toBe([])
         ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
-        ->and($dispatcher->commands[0]['message']['text'])->toBe('Orbit could not confirm the review is complete. The workspace branch is not task-'.$group->id.'. Switch back to it. '.TaskRunInstructions::reviewer(threadId: $group->reviewer_agent_thread_id));
+        ->and($dispatcher->commands[0]['message']['text'])->toBe('Orbit could not confirm the review is complete. The workspace branch is not task-'.$group->id.'. Switch back to it. '.TaskTurnInstructions::reviewer(threadId: $group->reviewer_agent_thread_id));
 
     app(TaskScheduler::class)->tick();
 
     expect($task->fresh()?->assistance_requested)->toBeTrue()
-        ->and($task->fresh()?->assistance_reason)->toBe('Checks still failed after the reminder. No run receipt was found.');
+        ->and($task->fresh()?->assistance_reason)->toBe('Checks still failed after the reminder. No turn receipt was found.');
 });
 
 it('asks for assistance with the summary of a blocked reviewer receipt', function (): void {
-    [$group, $task] = tick_review([FakeTaskRunReceipts::contents('blocked', 'The brief contradicts ADR 0098.', 'Should the subtask follow the brief or ADR 0098?')]);
+    [$group, $task] = tick_review([FakeTaskTurnReceipts::contents('blocked', 'The brief contradicts ADR 0098.', 'Should the subtask follow the brief or ADR 0098?')]);
 
     app(TaskScheduler::class)->tick();
 
@@ -3862,22 +3861,22 @@ it('reminds a reviewer that ends a turn without a receipt once, then asks for as
 
     app(TaskScheduler::class)->tick();
 
-    expect(app(T3Dispatcher::class)->commands[0]['message']['text'])->toBe('Orbit could not confirm the review is complete. No run receipt was found. '.TaskRunInstructions::reviewer(threadId: $group->reviewer_agent_thread_id))
+    expect(app(T3Dispatcher::class)->commands[0]['message']['text'])->toBe('Orbit could not confirm the review is complete. No turn receipt was found. '.TaskTurnInstructions::reviewer(threadId: $group->reviewer_agent_thread_id))
         ->and($receipts->prepared)->toBe(['reviewer']);
 
     app(TaskScheduler::class)->tick();
 
     expect($task->fresh()?->assistance_requested)->toBeTrue()
-        ->and($task->fresh()?->assistance_reason)->toBe('Checks still failed after the reminder. No run receipt was found.');
+        ->and($task->fresh()?->assistance_reason)->toBe('Checks still failed after the reminder. No turn receipt was found.');
     Classification::assertNothingClassified();
 });
 
 it('refuses an implementer outcome in a reviewer turn', function (): void {
-    [$group, $task, $receipts, $signer] = tick_review([FakeTaskRunReceipts::contents('ready_for_review')]);
+    [$group, $task, $receipts, $signer] = tick_review([FakeTaskTurnReceipts::contents('ready_for_review')]);
 
     app(TaskScheduler::class)->tick();
 
-    expect(app(T3Dispatcher::class)->commands[0]['message']['text'])->toContain('The run receipt was not valid for this turn.')
+    expect(app(T3Dispatcher::class)->commands[0]['message']['text'])->toContain('The turn receipt was not valid for this turn.')
         ->and($task->comments()->count())->toBe(0)
         ->and($signer->messages)->toBe([])
         ->and($receipts->cleared)->toHaveCount(1);
@@ -3907,7 +3906,7 @@ it('starts the reviewer with the first review request when the group has no revi
         {
             $this->reviewers[] = $task->id;
 
-            return test_agent_thread($task->taskGroup, 'reviewer-thread-2')->id;
+            return test_agent_thread($task->parent, 'reviewer-thread-2')->id;
         }
 
         public function spawnImplementer(Task $task): ?int
@@ -3925,7 +3924,7 @@ it('starts the reviewer with the first review request when the group has no revi
     expect($spawner->reviewers)->toBe([$task->id])
         ->and($group->fresh()?->reviewer_agent_thread_id)->toBe(AgentThread::query()->where('external_id', 'reviewer-thread-2')->sole()->id)
         ->and($task->fresh()?->review_notified_attempt)->toBe($task->fresh()?->review_attempt)
-        ->and(app(TaskRunReceipts::class)->prepared)->toBe(['reviewer:final']);
+        ->and(app(TaskTurnReceipts::class)->prepared)->toBe(['reviewer:final']);
 });
 
 function tick_final_approval(): string
@@ -3953,7 +3952,7 @@ function tick_publishing(array $missing = [[]], int $failures = 0): object
         /** @param list<list<string>> $missing */
         public function __construct(private array $missing) {}
 
-        public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array
+        public function missing(Task $group, TaskTurnPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array
         {
             $this->calls++;
             $this->approvalCommentId = $approvalCommentId;
@@ -3972,7 +3971,7 @@ function tick_publishing(array $missing = [[]], int $failures = 0): object
 
         public function __construct(private int $failures) {}
 
-        public function publish(TaskGroup $group, string $body, string $commit): string
+        public function publish(Task $group, string $body, string $commit): string
         {
             $this->bodies[] = $body;
             if ($this->failures-- > 0) {
@@ -3982,7 +3981,7 @@ function tick_publishing(array $missing = [[]], int $failures = 0): object
             return 'https://github.com/acme/orbit/pull/42';
         }
 
-        public function push(TaskGroup $group, string $commit): void
+        public function push(Task $group, string $commit): void
         {
             $this->pushes[] = $group->id;
         }
@@ -4019,7 +4018,7 @@ it('commits the last approved subtask, opens the pull request with the reviewer 
     $approval = $task->comments()->sole();
     expect($signer->messages)->toBe(["Models\n\nChecked the feature."])
         ->and($publishing->publisher->pushes)->toBe([$group->id])
-        ->and($publishing->publisher->bodies)->toBe([TaskPullRequestDescription::render(new TaskRunPullRequest('Adds tick routing.', ['Tasks store their records.'], []), 1)])
+        ->and($publishing->publisher->bodies)->toBe([TaskPullRequestDescription::render(new TaskTurnPullRequest('Adds tick routing.', ['Tasks store their records.'], []), 1)])
         ->and($approval->pull_request)->toBe(['summary' => 'Adds tick routing.', 'changes' => ['Tasks store their records.'], 'breaking' => []])
         ->and($publishing->coverage->approvalCommentId)->toBe($approval->id)
         ->and($publishing->coverage->approvalChanges)->toBe(['Tasks store their records.'])
@@ -4032,23 +4031,23 @@ it('commits the last approved subtask, opens the pull request with the reviewer 
 it('counts only the delivered subtasks in the pull request description', function (): void {
     [$group, , , $signer] = tick_review([tick_final_approval()], last: true);
     foreach ([TaskStatus::Completed, TaskStatus::Cancelled, TaskStatus::Failed] as $index => $status) {
-        Task::query()->create(['task_group_id' => $group->id, 'position' => $index + 2, 'title' => $status->value, 'brief' => 'Other subtask.', 'status' => $status]);
+        Task::query()->create(['parent_id' => $group->id, 'position' => $index + 2, 'title' => $status->value, 'brief' => 'Other subtask.', 'status' => $status]);
     }
     $publishing = tick_publishing();
 
     app(TaskScheduler::class)->tick();
 
     expect($signer->messages)->toHaveCount(1)
-        ->and($publishing->publisher->bodies)->toBe([TaskPullRequestDescription::render(new TaskRunPullRequest('Adds tick routing.', ['Tasks store their records.'], []), 2)]);
+        ->and($publishing->publisher->bodies)->toBe([TaskPullRequestDescription::render(new TaskTurnPullRequest('Adds tick routing.', ['Tasks store their records.'], []), 2)]);
 });
 
 it('reminds the reviewer when the approval of the last subtask has no pull request fields', function (): void {
-    [$group, $task, , $signer] = tick_review([FakeTaskRunReceipts::contents('approved')], last: true);
+    [$group, $task, , $signer] = tick_review([FakeTaskTurnReceipts::contents('approved')], last: true);
     $publishing = tick_publishing();
 
     app(TaskScheduler::class)->tick();
 
-    expect(app(T3Dispatcher::class)->commands[0]['message']['text'])->toBe('Orbit could not confirm the review is complete. The approval of the last subtask needs --pr-summary, --pr-change, and --pr-breaking. '.TaskRunInstructions::reviewer(final: true, threadId: $group->reviewer_agent_thread_id))
+    expect(app(T3Dispatcher::class)->commands[0]['message']['text'])->toBe('Orbit could not confirm the review is complete. The approval of the last subtask needs --pr-summary, --pr-change, and --pr-breaking. '.TaskTurnInstructions::reviewer(final: true, threadId: $group->reviewer_agent_thread_id))
         ->and($publishing->coverage->calls)->toBe(0)
         ->and($signer->messages)->toBe([]);
 });
@@ -4174,7 +4173,7 @@ it('counts a failed coverage answer as a communication failure', function (): vo
     tick_publishing();
     app()->instance(TaskBriefCoverage::class, new class implements TaskBriefCoverage
     {
-        public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array
+        public function missing(Task $group, TaskTurnPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array
         {
             throw new TaskSessionClassificationException('TypeSafe Jev request failed (ConnectionException).');
         }
@@ -4191,7 +4190,7 @@ it('counts a failed coverage answer as a communication failure', function (): vo
  * A running task whose idle implementer ended its turn with ready_for_review, with the given check readings.
  *
  * @param  list<TaskCheckReading>  $readings
- * @return array{TaskGroup, Task, FakeTaskCheckRunner, object}
+ * @return array{Task, Task, FakeTaskCheckRunner, object}
  */
 function tick_checking(array $readings): array
 {
@@ -4211,11 +4210,11 @@ function tick_checking(array $readings): array
     {
         public ?string $reason = null;
 
-        public function notify(TaskGroup $group): void {}
+        public function notify(Task $group): void {}
 
-        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
+        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
 
-        public function assistance(TaskGroup $group, string $reason): void
+        public function assistance(Task $group, string $reason): void
         {
             $this->reason = $reason;
         }
@@ -4339,8 +4338,8 @@ describe('a thread that works outside the task phase', function (): void {
         $dispatcher = tick_dispatcher();
         app()->instance(T3Dispatcher::class, $dispatcher);
         app()->instance(T3ThreadReader::class, tick_thread_states(['implementer-thread' => 'done', 'reviewer-thread' => 'running']));
-        $receipts = new FakeTaskRunReceipts([FakeTaskRunReceipts::contents('blocked', 'Composer cannot reach the private package mirror.', 'Should I add the mirror credentials to auth.json?')]);
-        app()->instance(TaskRunReceipts::class, $receipts);
+        $receipts = new FakeTaskTurnReceipts([FakeTaskTurnReceipts::contents('blocked', 'Composer cannot reach the private package mirror.', 'Should I add the mirror credentials to auth.json?')]);
+        app()->instance(TaskTurnReceipts::class, $receipts);
 
         app(TaskScheduler::class)->tick();
 
@@ -4359,8 +4358,8 @@ describe('a thread that works outside the task phase', function (): void {
         $dispatcher = tick_dispatcher();
         app()->instance(T3Dispatcher::class, $dispatcher);
         app()->instance(T3ThreadReader::class, tick_thread_states(['implementer-thread' => 'running', 'reviewer-thread' => $reviewerState]));
-        $receipts = new FakeTaskRunReceipts([FakeTaskRunReceipts::contents('blocked', 'Stuck.', 'Which API version?')]);
-        app()->instance(TaskRunReceipts::class, $receipts);
+        $receipts = new FakeTaskTurnReceipts([FakeTaskTurnReceipts::contents('blocked', 'Stuck.', 'Which API version?')]);
+        app()->instance(TaskTurnReceipts::class, $receipts);
 
         $decisions = app(TaskScheduler::class)->tick();
 
@@ -4410,7 +4409,7 @@ describe('a thread that works outside the task phase', function (): void {
             ->and($spawner->reviews)->toBe(0)
             ->and($task->fresh()?->review_notified_attempt)->toBeNull()
             ->and($task->fresh()?->communication_failures)->toBe(0)
-            ->and(app(TaskRunReceipts::class)->prepared)->toBe([]);
+            ->and(app(TaskTurnReceipts::class)->prepared)->toBe([]);
 
         $reader->states['reviewer-thread'] = 'idle';
         app(TaskScheduler::class)->tick();
@@ -4419,7 +4418,7 @@ describe('a thread that works outside the task phase', function (): void {
         expect($spawner->reviews)->toBe(1)
             ->and($task->fresh()?->review_notified_attempt)->toBe($task->fresh()?->review_attempt)
             ->and($task->fresh()?->review_notified_turn_id)->toBe('reviewer-thread-turn')
-            ->and(app(TaskRunReceipts::class)->prepared)->toBe(['reviewer:final']);
+            ->and(app(TaskTurnReceipts::class)->prepared)->toBe(['reviewer:final']);
     });
 
     it('relays review findings only once the implementer is idle', function (): void {
@@ -4432,7 +4431,7 @@ describe('a thread that works outside the task phase', function (): void {
         app()->instance(T3Dispatcher::class, $dispatcher);
         $reader = tick_thread_states(['implementer-thread' => 'running', 'reviewer-thread' => 'done']);
         app()->instance(T3ThreadReader::class, $reader);
-        app()->instance(TaskRunReceipts::class, new FakeTaskRunReceipts([FakeTaskRunReceipts::contents('changes_requested', 'Add the missing test.')]));
+        app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([FakeTaskTurnReceipts::contents('changes_requested', 'Add the missing test.')]));
 
         app(TaskScheduler::class)->tick();
 
@@ -4450,7 +4449,7 @@ describe('a thread that works outside the task phase', function (): void {
     });
 
     it('commits an approval only once the implementer stops changing the workspace', function (): void {
-        [$group, $task, , $signer] = tick_review([FakeTaskRunReceipts::contents('approved', 'Checked the models.')]);
+        [$group, $task, , $signer] = tick_review([FakeTaskTurnReceipts::contents('approved', 'Checked the models.')]);
         $reader = tick_thread_states(['implementer-thread' => 'running', 'reviewer-thread' => 'done']);
         app()->instance(T3ThreadReader::class, $reader);
         app()->instance(AgentSpawner::class, new class implements AgentSpawner
@@ -4462,7 +4461,7 @@ describe('a thread that works outside the task phase', function (): void {
 
             public function spawnImplementer(Task $task): ?int
             {
-                return test_agent_thread($task->taskGroup, 'implementer-'.$task->id, $task)->id;
+                return test_agent_thread($task->parent, 'implementer-'.$task->id, $task)->id;
             }
 
             public function requestReview(Task $task): void {}
@@ -4490,14 +4489,14 @@ describe('a thread that works outside the task phase', function (): void {
  * @param  array<string, string>  $confirmations
  * @param  array<string, mixed>|null  $evidence
  * @param  list<TaskCheckReading>|null  $readings  the check readings; null passes once with the evidence
- * @return array{0: TaskGroup, 1: Task, 2: FakeTaskCheckRunner, 3: CoderSettleNotifier, 4: FakeTaskRunReceipts}
+ * @return array{0: Task, 1: Task, 2: FakeTaskCheckRunner, 3: CoderSettleNotifier, 4: FakeTaskTurnReceipts}
  */
 function tick_deliverables(array $deliverables, array $confirmations, ?array $evidence, ?array $readings = null, ?array $receipts = null): array
 {
     [$group, $task, $checks, $notifier] = tick_checking($readings ?? [FakeTaskCheckRunner::passed($evidence)]);
     $task->update(['deliverables' => $deliverables, 'subtask_start_commit' => str_repeat('5', 40)]);
-    $fake = new FakeTaskRunReceipts($receipts ?? [FakeTaskRunReceipts::contents('ready_for_review', 'Done.', null, $confirmations)]);
-    app()->instance(TaskRunReceipts::class, $fake);
+    $fake = new FakeTaskTurnReceipts($receipts ?? [FakeTaskTurnReceipts::contents('ready_for_review', 'Done.', null, $confirmations)]);
+    app()->instance(TaskTurnReceipts::class, $fake);
 
     return [$group, $task->fresh() ?? $task, $checks, $notifier, $fake];
 }
@@ -4618,7 +4617,7 @@ describe('subtask deliverables at handoff', function (): void {
         app(TaskScheduler::class)->tick();
 
         expect($checks->starts)->toBe(0)
-            ->and(app(T3Dispatcher::class)->commands[0]['message']['text'])->toContain('The run receipt does not confirm the deliverables export-test, web-tests, error-copy. Pass --deliverable=ID=evidence for each one.');
+            ->and(app(T3Dispatcher::class)->commands[0]['message']['text'])->toContain('The turn receipt does not confirm the deliverables export-test, web-tests, error-copy. Pass --deliverable=ID=evidence for each one.');
     });
 
     it('asks for assistance when a deliverable still fails after the reminder', function (): void {
@@ -4631,7 +4630,7 @@ describe('subtask deliverables at handoff', function (): void {
             tick_all_confirmations(),
             null,
             [$failing, $failing],
-            [FakeTaskRunReceipts::contents('ready_for_review', 'Done.', null, tick_all_confirmations()), null, FakeTaskRunReceipts::contents('ready_for_review', 'Fixed it.', null, tick_all_confirmations()), null],
+            [FakeTaskTurnReceipts::contents('ready_for_review', 'Done.', null, tick_all_confirmations()), null, FakeTaskTurnReceipts::contents('ready_for_review', 'Fixed it.', null, tick_all_confirmations()), null],
         );
 
         tick_deliverable_reminder();
@@ -4645,18 +4644,18 @@ describe('subtask deliverables at handoff', function (): void {
     });
 
     it('reminds a reviewer whose approval does not confirm each review deliverable', function (): void {
-        [$group, $task, , $signer] = tick_review([FakeTaskRunReceipts::contents('approved', 'Checked.', null, ['reference-page' => 'Read it'])]);
+        [$group, $task, , $signer] = tick_review([FakeTaskTurnReceipts::contents('approved', 'Checked.', null, ['reference-page' => 'Read it'])]);
         $task->update(['deliverables' => tick_all_deliverables()]);
 
         app(TaskScheduler::class)->tick();
 
         expect($signer->messages)->toBe([])
-            ->and(app(T3Dispatcher::class)->commands[0]['message']['text'])->toContain('The run receipt does not confirm the deliverables error-copy.')
+            ->and(app(T3Dispatcher::class)->commands[0]['message']['text'])->toContain('The turn receipt does not confirm the deliverables error-copy.')
             ->and(app(T3Dispatcher::class)->commands[0]['message']['text'])->toContain('The approval must confirm each review deliverable (error-copy) with --deliverable=ID=evidence');
     });
 
     it('commits an approval that confirms each review deliverable', function (): void {
-        [$group, $task, , $signer] = tick_review([FakeTaskRunReceipts::contents('approved', 'Checked.', null, ['error-copy' => 'Each error names the subtask'])]);
+        [$group, $task, , $signer] = tick_review([FakeTaskTurnReceipts::contents('approved', 'Checked.', null, ['error-copy' => 'Each error names the subtask'])]);
         $task->update(['deliverables' => tick_all_deliverables()]);
 
         app(TaskScheduler::class)->tick();

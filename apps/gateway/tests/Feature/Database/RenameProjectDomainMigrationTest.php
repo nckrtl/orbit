@@ -97,9 +97,18 @@ function rename_migration_is_recorded(): bool
     return DB::table('migrations')->where('migration', RENAME_APP_DOMAIN_MIGRATION)->exists();
 }
 
+function rename_migration_migrate(): void
+{
+    $paths = array_values(array_filter(
+        glob(database_path('migrations/*.php')) ?: [],
+        static fn (string $path): bool => ! str_contains($path, 'merge_task_groups_into_tasks'),
+    ));
+    Artisan::call('migrate', ['--path' => $paths, '--realpath' => true, '--force' => true]);
+}
+
 it('renames the Project domain in place and rolls it back', function (): void {
     with_rename_migration_database(function (): void {
-        Artisan::call('migrate', ['--force' => true]);
+        rename_migration_migrate();
         $counts = rename_migration_rows();
 
         Artisan::call('migrate:rollback', ['--step' => 1, '--force' => true]);
@@ -124,7 +133,7 @@ it('renames the Project domain in place and rolls it back', function (): void {
             ->and(DB::selectOne("SELECT sql FROM sqlite_master WHERE name = 'route_targets_reject_analytics_tracking'")->sql ?? '')
             ->toContain('App instance targets');
 
-        Artisan::call('migrate', ['--force' => true]);
+        rename_migration_migrate();
 
         expect(Schema::hasTable('projects'))->toBeTrue()
             ->and(Schema::hasTable('apps'))->toBeFalse()
@@ -173,12 +182,12 @@ it('renames the Project domain in place and rolls it back', function (): void {
 
 it('leaves the Project schema unchanged when an environment value cannot be decrypted', function (): void {
     with_rename_migration_database(function (): void {
-        Artisan::call('migrate', ['--force' => true]);
+        rename_migration_migrate();
         rename_migration_rows();
         Artisan::call('migrate:rollback', ['--step' => 1, '--force' => true]);
         DB::table('app_instance_environment_values')->update(['env_value' => 'not-encrypted']);
 
-        expect(fn () => Artisan::call('migrate', ['--force' => true]))
+        expect(fn () => rename_migration_migrate())
             ->toThrow(RuntimeException::class, 'Cannot rewrite Instance environment value');
 
         expect(Schema::hasTable('apps'))->toBeTrue()
@@ -186,7 +195,7 @@ it('leaves the Project schema unchanged when an environment value cannot be decr
             ->and(Schema::hasTable('app_instances'))->toBeTrue()
             ->and(rename_migration_is_recorded())->toBeFalse();
 
-        expect(fn () => Artisan::call('migrate', ['--force' => true]))
+        expect(fn () => rename_migration_migrate())
             ->toThrow(RuntimeException::class, 'Cannot rewrite Instance environment value');
 
         expect(Schema::hasTable('apps'))->toBeTrue()

@@ -10,7 +10,7 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskSchedule;
 use App\Models\AgentThread;
 use App\Models\Project;
-use App\Models\TaskGroup;
+use App\Models\Task;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
@@ -60,7 +60,7 @@ it('reads only threads that can still change', function (): void {
     $project = Project::query()->create(['name' => 'collector-scope', 'slug' => 'collector-scope', 'repository_url' => 'https://example.test/repo.git', 'default_branch' => 'main']);
 
     $thread = static function (string $groupStatus, string $state, ?string $finalAt = null) use ($project): AgentThread {
-        $group = TaskGroup::query()->create([
+        $group = Task::topLevel()->create([
             'project_id' => $project->id,
             'title' => 'Metrics scope',
             'brief' => 'Test collector scope',
@@ -107,7 +107,7 @@ it('reads only threads that can still change', function (): void {
 it('backs off incomplete heartbeat timeouts until a successful final collection', function (): void {
     app(TaskExtensionState::class)->enable();
     $project = Project::query()->create(['name' => 'collector-retry', 'slug' => 'collector-retry', 'repository_url' => 'https://example.test/repo.git', 'default_branch' => 'main']);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Settled thread',
         'brief' => 'Await successful final read',
@@ -142,7 +142,7 @@ it('backs off incomplete heartbeat timeouts until a successful final collection'
 it('waits for the final T3 metrics read before archiving a terminal thread', function (): void {
     app(TaskExtensionState::class)->enable();
     $project = Project::query()->create(['name' => 'archive-after-metrics', 'slug' => 'archive-after-metrics', 'repository_url' => 'https://example.test/repo.git']);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Terminal before collector',
         'brief' => 'Read final metrics before archiving',
@@ -183,7 +183,7 @@ it('lets healthy threads through a persistently failing batch and throttles repo
     app(TaskExtensionState::class)->enable();
     Log::spy();
     $project = Project::query()->create(['name' => 'collector-fairness', 'slug' => 'collector-fairness', 'repository_url' => 'https://example.test/repo.git', 'default_branch' => 'main']);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Collector backlog',
         'brief' => 'Exercise retry fairness',
@@ -230,7 +230,7 @@ it('lets healthy threads through a persistently failing batch and throttles repo
 it('gives a due failed thread priority over a full batch of recently collected healthy threads', function (): void {
     app(TaskExtensionState::class)->enable();
     $project = Project::query()->create(['name' => 'collector-due-retry', 'slug' => 'collector-due-retry', 'repository_url' => 'https://example.test/repo.git', 'default_branch' => 'main']);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Due retry fairness',
         'brief' => 'A due retry must progress',

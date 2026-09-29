@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Models\Instance;
-use App\Models\TaskGroup;
+use App\Models\Task;
 
 /**
  * Handles a new commit or new diff counts that a Node agent reports for a task group's workspace
@@ -27,7 +27,7 @@ final readonly class TaskWorkspaceSummary
         }
 
         $diff = $workspace['diff'];
-        $groups = TaskGroup::query()
+        $groups = Task::topLevel()
             ->with('project')
             ->where('taskable_type', 'instance')
             ->where('taskable_id', $workspace['instance_id'])

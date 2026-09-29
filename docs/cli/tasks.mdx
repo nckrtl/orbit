@@ -1,60 +1,60 @@
 ---
 title: "tasks"
-description: "Create, prepare, inspect, cancel, and complete task groups, their subtasks, and their comments through the Gateway tasks extension."
+description: "Create, prepare, inspect, cancel, and complete tasks, their subtasks, and their comments through the Gateway tasks extension."
 covers:
   - "apps/cli/app/Commands/Tasks/**"
 ---
 
 The `tasks` family runs the operations of the Gateway [tasks extension](/reference/tasks) from the command line. Agents usually use the [MCP server](/reference/mcp); the CLI offers the same operations when MCP is unavailable. Each command name equals its Gateway route name, and its MCP tool name uses hyphens instead of colons, so `tasks:subtask:create` is the MCP tool `tasks-subtask-create`. Two operations have no CLI command. Use the MCP tool `tasks-check-cancel` to stop a running task check. The agent thread stream, `GET /api/v1/task-groups/{group}/agents/{session}/stream`, serves the web app.
 
-A task group is one feature. A subtask is one ordered step of it. The [tasks reference](/reference/tasks) owns the lifecycle, the scheduler, and every Gateway rule that these commands reach.
+A task is one feature. A subtask is one ordered child of that task, and a subtask has no children. The [tasks reference](/reference/tasks) owns the lifecycle, the scheduler, and every Gateway rule that these commands reach.
 
 ## Commands
 
 | Command | Result |
 | --- | --- |
-| [`tasks:status`](#orbit-tasksstatus) | Show whether the tasks extension is on, and list groups asking for assistance. |
-| [`tasks:list`](#orbit-taskslist) | List task groups, optionally for one Project or status. |
-| [`tasks:show`](#orbit-tasksshow) | Show one task group with its brief and subtasks. |
-| [`tasks:create`](#orbit-taskscreate) | Create a task group in Backlog or Todo. |
-| [`tasks:update`](#orbit-tasksupdate) | Change a group's title, brief, or status. |
-| [`tasks:cancel`](#orbit-taskscancel) | Cancel a group and remove its Instance. |
-| [`tasks:complete`](#orbit-taskscomplete) | Complete a settling group and remove its Instance. |
-| [`tasks:subtask:create`](#orbit-taskssubtaskcreate) | Append a subtask to a group. |
+| [`tasks:status`](#orbit-tasksstatus) | Show whether the tasks extension is on, and list tasks asking for assistance. |
+| [`tasks:list`](#orbit-taskslist) | List tasks, optionally for one Project or status. |
+| [`tasks:show`](#orbit-tasksshow) | Show one task with its brief and subtasks. |
+| [`tasks:create`](#orbit-taskscreate) | Create a task in Backlog or Todo. |
+| [`tasks:update`](#orbit-tasksupdate) | Change a task's title, brief, or status. |
+| [`tasks:cancel`](#orbit-taskscancel) | Cancel a task and remove its Instance. |
+| [`tasks:complete`](#orbit-taskscomplete) | Complete a settling task and remove its Instance. |
+| [`tasks:subtask:create`](#orbit-taskssubtaskcreate) | Append a subtask to a task. |
 | [`tasks:subtask:update`](#orbit-taskssubtaskupdate) | Change a subtask's title, brief, position, or deliverables. |
 | [`tasks:subtask:destroy`](#orbit-taskssubtaskdestroy) | Delete a subtask. |
 | [`tasks:subtask:cancel`](#orbit-taskssubtaskcancel) | Cancel a Todo or running subtask. |
 | [`tasks:comment:create`](#orbit-taskscommentcreate) | Ask for assistance on a subtask or resolve a request. |
 | [`tasks:comment:list`](#orbit-taskscommentlist) | List a subtask's comments. |
-| [`tasks:agents`](#orbit-tasksagents) | List a group's agent threads. |
+| [`tasks:agents`](#orbit-tasksagents) | List a task's agent threads. |
 
 Every command accepts `--json`. JSON output is the Gateway record with `request_id` beside its fields. A list holds its records under `task_groups`, `comments`, or `agents`.
 
-`tasks:list` and `tasks:show` accept any authorized peer. `tasks:update` and the `tasks:subtask:*` commands need access to the Node that holds the group's Instance, or to the Gateway for a group without one. The other commands need Gateway access: run them on the Gateway, or on a Node with an access grant to the Gateway. Other callers receive `node_access.required`. While the extension is off, every command except enable, disable, and status fails with `extension.disabled`.
+`tasks:list` and `tasks:show` accept any authorized peer. `tasks:update` and the `tasks:subtask:*` commands need access to the Node that holds the task's Instance, or to the Gateway for a task without one. The other commands need Gateway access: run them on the Gateway, or on a Node with an access grant to the Gateway. Other callers receive `node_access.required`. While the extension is off, every command except enable, disable, and status fails with `extension.disabled`.
 
-## Select a group or subtask
+## Select a task or subtask
 
-A `group` argument is a numeric task group ID, and a `subtask` argument is a numeric subtask ID. When you omit either in a terminal, the CLI lists the candidates and you select one. The group list shows the ID, title, Project, and status. The subtask list shows the position, ID, title, and status of the group's subtasks. An empty list stops the command with `No matching records were found.`
+A `group` argument is a numeric task ID, and a `subtask` argument is a numeric subtask ID. When you omit either in a terminal, the CLI lists the candidates and you select one. The task list shows the ID, title, Project, and status. The subtask list shows the position, ID, title, and status of the task's subtasks. An empty list stops the command with `No matching records were found.`
 
-With `--json` or `-n`, an omitted group fails with `tasks.group_required` and an omitted subtask fails with `tasks.subtask_required`. A value that is not a positive integer fails with `tasks.group_invalid` or `tasks.subtask_invalid`.
+With `--json` or `-n`, an omitted task fails with `tasks.group_required` and an omitted subtask fails with `tasks.subtask_required`. A value that is not a positive integer fails with `tasks.group_invalid` or `tasks.subtask_invalid`.
 
-Human output names a group by its Project code and ID, such as `ORB-13`, as the web task board does. The CLI accepts only the numeric ID. Human output shows times to the minute in the Gateway's time zone; JSON keeps the full timestamps.
+Human output names a task by its Project code and ID, such as `ORB-13`, as the web task board does. The CLI accepts only the numeric ID. Human output shows times to the minute in the Gateway's time zone; JSON keeps the full timestamps.
 
 The CLI checks prompted text when you submit it. A title holds 1 to 160 characters, and a brief holds 1 to 8,000 characters. The brief prompt is a multiline text area. Pressing Ctrl-C or reaching the end of input at a prompt stops the command before any change.
 
 ## orbit tasks:status
 
-Show whether the tasks extension is on, then list every group currently asking for assistance.
+Show whether the tasks extension is on, then list every task currently asking for assistance.
 
 ```bash
 orbit tasks:status [--json]
 ```
 
-JSON returns `enabled` as `true` or `false`, and `assistance` as a list in ascending group id order. Each entry has the group's `id`, `project_id`, `project`, `project_code`, `title`, `status`, and `assistance_reason`. The list is empty when no group is asking, and it is present while the extension is off. The human table shows the group reference, title, status, and reason. An empty table says `No groups are asking for assistance.`
+JSON returns `enabled` as `true` or `false`, and `assistance` as a list in ascending task id order. Each entry has the task's `id`, `project_id`, `project`, `project_code`, `title`, `status`, and `assistance_reason`. The list is empty when no task is asking, and it is present while the extension is off. The human table shows the task reference, title, status, and reason. An empty table says `No groups are asking for assistance.`
 
 ## orbit tasks:list
 
-List task groups with their title, Project, status, number of completed subtasks, and assistance reason when the group is asking.
+List tasks with their title, Project, status, number of completed subtasks, and assistance reason when the task is asking.
 
 ```bash
 orbit tasks:list [--project=ID] [--status=STATUS] [--json]
@@ -62,24 +62,24 @@ orbit tasks:list [--project=ID] [--status=STATUS] [--json]
 
 | Option | Meaning |
 | --- | --- |
-| `--project=ID` | Only groups of this numeric Project ID. |
-| `--status=STATUS` | Only groups in this status: `backlog`, `todo`, `reserved`, `running`, `reviewing`, `settling`, `completed`, `failed`, or `cancelled`. |
+| `--project=ID` | Only tasks of this numeric Project ID. |
+| `--status=STATUS` | Only tasks in this status: `backlog`, `todo`, `reserved`, `running`, `reviewing`, `settling`, `completed`, `failed`, or `cancelled`. |
 
 An invalid filter fails with `tasks.project_invalid` or `tasks.status_invalid` before the request. The CLI does not prompt for a filter.
 
 ## orbit tasks:show
 
-Show one task group as a detail tree, followed by its brief and a table of its subtasks in position order.
+Show one task as a detail tree, followed by its brief and a table of its subtasks in position order.
 
 ```bash
 orbit tasks:show [group] [--json]
 ```
 
-The tree shows the ID, title, Project, status, whether the group is asking for assistance, the assistance reason, Instance, pull request, Coder notification, models, tokens, line diff, and duration. The subtask table shows the position, ID, title, status, deliverables, tokens, line diff, duration, and assistance reason of each subtask. A subtask or group that is not asking shows an em dash in that column, even when an old reason is still stored. JSON includes `assistance_requested` and `assistance_reason` on the group and each subtask, and `fails_on_base` on every test deliverable. When that value is true, the detail names the deliverable under Fails on the start commit. Showing an active group refreshes its metrics, as the [tasks reference](/reference/tasks#tokens-and-line-diff) describes.
+The tree shows the ID, title, Project, status, whether the task is asking for assistance, the assistance reason, Instance, pull request, Coder notification, models, tokens, line diff, and duration. The subtask table shows the position, ID, title, status, deliverables, tokens, line diff, duration, and assistance reason of each subtask. A subtask or task that is not asking shows an em dash in that column, even when an old reason is still stored. JSON includes `assistance_requested` and `assistance_reason` on the task and each subtask, and `fails_on_base` on every test deliverable. When that value is true, the detail names the deliverable under Fails on the start commit. Showing an active task refreshes its metrics, as the [tasks reference](/reference/tasks#tokens-and-line-diff) describes.
 
 ## orbit tasks:create
 
-Create a task group. It starts in `backlog` unless you ask for `todo`.
+Create a task. It starts in `backlog` unless you ask for `todo`.
 
 ```bash
 orbit tasks:create [title] [--project=ID] [--brief=TEXT] [--status=STATUS] [--subtasks=FILE] [--notify-coder] [--json]
@@ -90,9 +90,9 @@ orbit tasks:create [title] [--project=ID] [--brief=TEXT] [--status=STATUS] [--su
 | `title` | prompt | Short name of the feature. |
 | `--project=ID` | prompt | Numeric Project ID. In a terminal, the CLI lists Projects to select from. |
 | `--brief=TEXT` | prompt | Goal and acceptance. Pass a file with `--brief="$(cat brief.md)"`. |
-| `--status=STATUS` | `backlog` | `backlog` or `todo`. `todo` needs at least one subtask, each with deliverables, and asks the scheduler to claim the group. |
+| `--status=STATUS` | `backlog` | `backlog` or `todo`. `todo` needs at least one subtask, each with deliverables, and asks the scheduler to claim the task. |
 | `--subtasks=FILE` | none | JSON file with an ordered array of at most 50 objects, each with a string `title` and `brief` and an optional `deliverables` array. |
-| `--notify-coder` | off | Post the Coder settle webhook when the group settles. |
+| `--notify-coder` | off | Post the Coder settle webhook when the task settles. |
 
 
 ```bash
@@ -100,7 +100,7 @@ orbit tasks:create "Add tasks CLI" --project=1 --brief="$(cat brief.md)"
 orbit tasks:create "Add tasks CLI" --project=1 --brief="$(cat brief.md)" --subtasks=subtasks.json --status=todo
 ```
 
-The CLI does not prompt for the status, the subtasks, or the notification. After the Gateway answers, the CLI shows the group as `tasks:show` does. A group created in `todo` can already be `failed` when its first agent could not start. The tree then reports that status.
+The CLI does not prompt for the status, the subtasks, or the notification. After the Gateway answers, the CLI shows the task as `tasks:show` does. A task created in `todo` can already be `failed` when its first agent could not start. The tree then reports that status.
 
 | Error code | Meaning |
 | --- | --- |
@@ -109,12 +109,12 @@ The CLI does not prompt for the status, the subtasks, or the notification. After
 | `tasks.subtasks_invalid` | The CLI cannot read the subtasks file, or its content is not an array of at most 50 entries with a valid title and brief and, when present, a `deliverables` array. |
 | `tasks.no_subtasks` | `--status=todo` without subtasks. |
 | `tasks.subtask_deliverables_missing` | `--status=todo` while a subtask has no deliverables. |
-| `tasks.agent_driver_unavailable` | The Gateway's configured agent driver is unknown. The Gateway stores no group. |
+| `tasks.agent_driver_unavailable` | The Gateway's configured agent driver is unknown. The Gateway stores no task. |
 
 
 ## orbit tasks:update
 
-Change a group's title, brief, or status. Title and brief change only while the group is in `backlog`. The status moves between `backlog` and `todo`. A move to `todo` asks the scheduler to claim the group.
+Change a task's title, brief, or status. Title and brief change only while the task is in `backlog`. The status moves between `backlog` and `todo`. A move to `todo` asks the scheduler to claim the task.
 
 ```bash
 orbit tasks:update [group] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--json]
@@ -130,19 +130,19 @@ orbit tasks:update [group] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--js
 orbit tasks:update 13 --status=todo
 ```
 
-In a terminal, the group list shows `backlog` and `todo` groups. Without a change option, the CLI asks which fields to change and prompts for each one with its current value. A `--json` or `-n` call without a change option fails with `tasks.update_required`.
+In a terminal, the task list shows `backlog` and `todo` tasks. Without a change option, the CLI asks which fields to change and prompts for each one with its current value. A `--json` or `-n` call without a change option fails with `tasks.update_required`.
 
 | Error code | Meaning |
 | --- | --- |
 | `tasks.not_in_backlog` | A title or brief change outside `backlog`. |
-| `tasks.no_subtasks` | A move to `todo` for a group without subtasks. |
+| `tasks.no_subtasks` | A move to `todo` for a task without subtasks. |
 | `tasks.subtask_deliverables_missing` | A move to `todo` while a subtask has no deliverables. The error details name the subtasks. |
-| `tasks.already_claimed` | The scheduler claimed the group before the status change. |
+| `tasks.already_claimed` | The scheduler claimed the task before the status change. |
 
 
 ## orbit tasks:cancel
 
-Cancel a group that is stuck or that you do not want to run. The Gateway removes the group's shared Instance when it has one and marks the group `cancelled`. Subtasks, comments, and agent thread records stay as history. Cancellation does not stop the external agent conversation.
+Cancel a task that is stuck or that you do not want to run. The Gateway removes the task's shared Instance when it has one and marks the task `cancelled`. Subtasks, comments, and agent thread records stay as history. Cancellation does not stop the external agent conversation.
 
 ```bash
 orbit tasks:cancel [group] [--yes] [--json]
@@ -152,11 +152,11 @@ orbit tasks:cancel [group] [--yes] [--json]
 | --- | --- |
 | `--yes` | Confirm without a prompt. Required for `--json` and `-n` calls. |
 
-In a terminal, the group list leaves out `settling` and `completed` groups. Before it asks, the CLI reads the group and names it and its Instance in the question. The question defaults to No. A `--json` or `-n` call without `--yes` fails with `input.confirmation_required`. Declining fails with `input.cancelled`. Neither changes the group. A `completed` group, or a `settling` group with a pull request, fails with `tasks.not_cancellable`; complete a settling group instead. Pass the group ID to cancel a `settling` group without a pull request. When its Node answers, the Gateway first pushes the latest approved commit to the task branch; a failed push fails with `tasks.push_failed` and keeps the group. When the Node is unreachable, the group is still marked `cancelled`, the Instance stays attached, and the scheduler retries removal, as the [tasks reference](/reference/tasks#cancel-a-stuck-group) describes.
+In a terminal, the task list leaves out `settling` and `completed` tasks. Before it asks, the CLI reads the task and names it and its Instance in the question. The question defaults to No. A `--json` or `-n` call without `--yes` fails with `input.confirmation_required`. Declining fails with `input.cancelled`. Neither changes the task. A `completed` task, or a `settling` task with a pull request, fails with `tasks.not_cancellable`; complete a settling task instead. Pass the task ID to cancel a `settling` task without a pull request. When its Node answers, the Gateway first pushes the latest approved commit to the task branch; a failed push fails with `tasks.push_failed` and keeps the task. When the Node is unreachable, the task is still marked `cancelled`, the Instance stays attached, and the scheduler retries removal, as the [tasks reference](/reference/tasks#cancel-a-stuck-task) describes.
 
 ## orbit tasks:complete
 
-Complete a `settling` group after its pull request is reviewed and merged. The Gateway marks the group `completed` and removes its shared Instance. Completing a completed group whose checkout is already gone succeeds and changes nothing. Completing a completed group that still has its Instance retries removal.
+Complete a `settling` task after its pull request is reviewed and merged. The Gateway marks the task `completed` and removes its shared Instance. Completing a completed task whose checkout is already gone succeeds and changes nothing. Completing a completed task that still has its Instance retries removal.
 
 ```bash
 orbit tasks:complete [group] [--yes] [--json]
@@ -166,11 +166,11 @@ orbit tasks:complete [group] [--yes] [--json]
 | --- | --- |
 | `--yes` | Confirm without a prompt. Required for `--json` and `-n` calls. |
 
-In a terminal, the group list shows only `settling` groups. The question names the group and its Instance and defaults to No. Consent failures match `tasks:cancel`. Any other status fails with `tasks.not_settling`. When removal fails, the group is still marked `completed`, the Instance stays attached, and the scheduler retries removal, as the [tasks reference](/reference/tasks#complete-and-cleanup) describes.
+In a terminal, the task list shows only `settling` tasks. The question names the task and its Instance and defaults to No. Consent failures match `tasks:cancel`. Any other status fails with `tasks.not_settling`. When removal fails, the task is still marked `completed`, the Instance stays attached, and the scheduler retries removal, as the [tasks reference](/reference/tasks#complete-and-cleanup) describes.
 
 ## orbit tasks:subtask:create
 
-Append one subtask to a group at the next position, with status `todo`. This works in every group status except `completed` and `cancelled`. Outside `backlog`, the subtask needs deliverables. When the group is `settling` with an open pull request, or with no pull request, the next tick returns the group to `running` and starts this subtask. Another assistance cause keeps the group `settling`. The [tasks reference](/reference/tasks#fix-a-settling-pull-request) owns that transition.
+Append one subtask to a task at the next position, with status `todo`. This works in every task status except `completed` and `cancelled`. Outside `backlog`, the subtask needs deliverables. When the task is `settling` with an open pull request, or with no pull request, the next tick returns the task to `running` and starts this subtask. Another assistance cause keeps the task `settling`. The [tasks reference](/reference/tasks#fix-a-settling-pull-request) owns that transition.
 
 ```bash
 orbit tasks:subtask:create [group] [title] [--brief=TEXT] [--deliverables=FILE] [--json]
@@ -191,13 +191,13 @@ A `--json` or `-n` call fails with `tasks.title_required` or `tasks.brief_requir
 | Error code | Meaning |
 | --- | --- |
 | `tasks.deliverables_invalid` | The CLI cannot read the deliverables file, or its content is not an array of at most five objects. |
-| `tasks.group_closed` | The group is completed or cancelled and cannot accept a new subtask. |
+| `tasks.group_closed` | The task is completed or cancelled and cannot accept a new subtask. |
 | `validation.failed` | The Gateway refuses a deliverable. The error details name each field, such as `deliverables.0.path`. |
-| `tasks.subtask_deliverables_missing` | A subtask without deliverables for a group outside `backlog`. |
+| `tasks.subtask_deliverables_missing` | A subtask without deliverables for a task outside `backlog`. |
 
 ## orbit tasks:subtask:update
 
-Change a subtask's title, brief, position, or deliverables while its group is in `backlog`. In `todo`, `running`, `reviewing`, or `settling` groups, change any of those fields only while the subtask is `todo`. Deliverables cannot be empty. A new position moves only among `todo` subtasks; it cannot put one before a started or finished subtask. Positions stay gapless. Started subtasks keep their existing restrictions, and groups in `completed` or `cancelled` are read-only.
+Change a subtask's title, brief, position, or deliverables while its task is in `backlog`. In `todo`, `running`, `reviewing`, or `settling` tasks, change any of those fields only while the subtask is `todo`. Deliverables cannot be empty. A new position moves only among `todo` subtasks; it cannot put one before a started or finished subtask. Positions stay gapless. Started subtasks keep their existing restrictions, and tasks in `completed` or `cancelled` are read-only.
 
 ```bash
 orbit tasks:subtask:update [group] [subtask] [--title=TEXT] [--brief=TEXT] [--position=N] [--deliverables=FILE] [--json]
@@ -214,11 +214,11 @@ orbit tasks:subtask:update [group] [subtask] [--title=TEXT] [--brief=TEXT] [--po
 orbit tasks:subtask:update 58 88 --deliverables=deliverables.json
 ```
 
-In a terminal, the group list shows `backlog` groups and groups where a `todo` subtask can be edited. Without a change option, the CLI asks which fields to change and prompts for each one with its current value. It does not prompt for deliverables. A `--json` or `-n` call without a change option fails with `tasks.update_required`. A position that is not a positive integer fails with `tasks.position_invalid`. A title, brief, or position change where the group and subtask statuses do not permit it fails with `tasks.not_in_backlog`. A deliverables change for a subtask that has started fails with `tasks.deliverables_locked` and leaves the stored list unchanged. The command never reports success while ignoring that list. An unreadable or malformed file fails with `tasks.deliverables_invalid`.
+In a terminal, the task list shows `backlog` tasks and tasks where a `todo` subtask can be edited. Without a change option, the CLI asks which fields to change and prompts for each one with its current value. It does not prompt for deliverables. A `--json` or `-n` call without a change option fails with `tasks.update_required`. A position that is not a positive integer fails with `tasks.position_invalid`. A title, brief, or position change where the task and subtask statuses do not permit it fails with `tasks.not_in_backlog`. A deliverables change for a subtask that has started fails with `tasks.deliverables_locked` and leaves the stored list unchanged. The command never reports success while ignoring that list. An unreadable or malformed file fails with `tasks.deliverables_invalid`.
 
 ## orbit tasks:subtask:destroy
 
-Delete a subtask while its group is in `backlog`. The later subtasks move up to close the gap.
+Delete a subtask while its task is in `backlog`. The later subtasks move up to close the gap.
 
 ```bash
 orbit tasks:subtask:destroy [group] [subtask] [--yes] [--json]
@@ -228,11 +228,11 @@ orbit tasks:subtask:destroy [group] [subtask] [--yes] [--json]
 | --- | --- |
 | `--yes` | Confirm without a prompt. Required for `--json` and `-n` calls. |
 
-In a terminal, the group list shows only `backlog` groups. The question names the subtask and its group and defaults to No. Consent failures match `tasks:cancel`. JSON returns the deleted subtask.
+In a terminal, the task list shows only `backlog` tasks. The question names the subtask and its task and defaults to No. Consent failures match `tasks:cancel`. JSON returns the deleted subtask.
 
 ## orbit tasks:subtask:cancel
 
-Cancel a `todo` or `running` subtask. A `todo` subtask can be cancelled in a `todo`, `running`, `reviewing`, or `settling` group; cancellation marks it `cancelled`, starts nothing, and does not ask for assistance. If it was the last open subtask, the group settles as after a completed subtask. Cancelling a running subtask stops its implementer and running check, keeps the group and its Instance, and starts the next `todo` subtask. The group settles only when no open subtask remains. The [tasks reference](/reference/tasks#cancel-a-subtask) owns these effects.
+Cancel a `todo` or `running` subtask. A `todo` subtask can be cancelled in a `todo`, `running`, `reviewing`, or `settling` task; cancellation marks it `cancelled`, starts nothing, and does not ask for assistance. If it was the last open subtask, the task settles as after a completed subtask. Cancelling a running subtask stops its implementer and running check, keeps the task and its Instance, and starts the next `todo` subtask. The task settles only when no open subtask remains. The [tasks reference](/reference/tasks#cancel-a-subtask) owns these effects.
 
 ```bash
 orbit tasks:subtask:cancel [group] [subtask] [--yes] [--json]
@@ -242,16 +242,16 @@ orbit tasks:subtask:cancel [group] [subtask] [--yes] [--json]
 | --- | --- |
 | `--yes` | Confirm without a prompt. Required for `--json` and `-n` calls. |
 
-In a terminal, the group list shows groups with a cancellable `todo` or `running` subtask, and the subtask list shows those subtasks. The question names the subtask and its group and defaults to No. Consent failures match `tasks:cancel`. The CLI shows the cancelled subtask. JSON returns it.
+In a terminal, the task list shows tasks with a cancellable `todo` or `running` subtask, and the subtask list shows those subtasks. The question names the subtask and its task and defaults to No. Consent failures match `tasks:cancel`. The CLI shows the cancelled subtask. JSON returns it.
 
 | Error code | Meaning |
 | --- | --- |
 | `tasks.subtask_not_running` | The subtask is neither a cancellable `todo` subtask nor a `running` subtask, or it moved on while Orbit stopped it. |
-| `tasks.subtask_interrupt_failed` | Orbit could not stop the implementer or the check. The subtask stays `running`. Retry, or cancel the group. |
+| `tasks.subtask_interrupt_failed` | Orbit could not stop the implementer or the check. The subtask stays `running`. Retry, or cancel the task. |
 
 ## orbit tasks:comment:create
 
-Post a typed comment on a subtask. An `assistance_requested` comment flags the subtask and its group and notifies Coder once. A `resolution` comment clears the flag and continues the blocked agent thread. The [tasks reference](/reference/tasks#assistance-and-resolution) owns these effects.
+Post a typed comment on a subtask. An `assistance_requested` comment flags the subtask and its task and notifies Coder once. A `resolution` comment clears the flag and continues the blocked agent thread. The [tasks reference](/reference/tasks#assistance-and-resolution) owns these effects.
 
 ```bash
 orbit tasks:comment:create [group] [subtask] [--type=TYPE] [--body=TEXT] [--author=NAME] [--agent-thread=ID] [--json]
@@ -268,7 +268,7 @@ A `--json` or `-n` call fails with `tasks.comment_type_required`, `tasks.comment
 
 ## orbit tasks:comment:list
 
-List a subtask's comments, newest first. The list includes the run receipts that its agents stored.
+List a subtask's comments, newest first. The list includes the turn receipts that its agents stored.
 
 ```bash
 orbit tasks:comment:list [group] [subtask] [--json]
@@ -278,7 +278,7 @@ Human output prints one header line for each comment, with its time, type, autho
 
 ## orbit tasks:agents
 
-List a group's agent threads: each subtask's reviewer and implementer, including finished threads.
+List a task's agent threads: each subtask's reviewer and implementer, including finished threads.
 
 ```bash
 orbit tasks:agents [group] [--json]
@@ -288,6 +288,6 @@ The table shows the thread ID, role, subtask ID, driver, model, state, tokens, u
 
 ## Related
 
-- [`project`](/cli/project) lists the Projects that a group can belong to.
-- [`instance`](/cli/instance) shows the shared Instance of a running group.
-- The [tasks reference](/reference/tasks) explains Backlog preparation, the scheduler, run receipts, review, and pull requests.
+- [`project`](/cli/project) lists the Projects that a task can belong to.
+- [`instance`](/cli/instance) shows the shared Instance of a running task.
+- The [tasks reference](/reference/tasks) explains Backlog preparation, the scheduler, turn receipts, review, and pull requests.

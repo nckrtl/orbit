@@ -6,7 +6,7 @@ namespace App\Domain\Tasks;
 
 use App\Domain\Instances\InstanceState;
 use App\Models\Instance;
-use App\Models\TaskGroup;
+use App\Models\Task;
 
 /**
  * The lifecycle state an Instance settles in.
@@ -18,7 +18,7 @@ final readonly class TaskWorkspaceLifecycle
 {
     public static function settledState(Instance $instance): InstanceState
     {
-        $instance->loadMissing(['project', 'taskGroups']);
+        $instance->loadMissing(['project', 'tasks']);
 
         if (self::isTaskWorkspace($instance) && ! InstanceProvisionIntent::visitableFor($instance->project)) {
             return InstanceState::SourceResolved;
@@ -33,8 +33,8 @@ final readonly class TaskWorkspaceLifecycle
      */
     private static function isTaskWorkspace(Instance $instance): bool
     {
-        return $instance->taskGroups->contains(
-            static fn (TaskGroup $group): bool => $group->execution_mode === TaskExecutionMode::Managed
+        return $instance->tasks->contains(
+            static fn (Task $group): bool => $group->execution_mode === TaskExecutionMode::Managed
                 && $instance->name === TaskWorkspaceName::for($group),
         );
     }

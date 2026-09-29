@@ -2,9 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\Tasks\TaskReviewBase;
 use App\Http\Requests\Tasks\UpdateTaskRequest;
-use App\Models\Task;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -18,7 +16,7 @@ it('fails loudly when a legacy test deliverable does not name one exact test fil
             'driver' => 'sqlite', 'database' => ':memory:', 'foreign_key_constraints' => true,
         ]);
         DB::setDefaultConnection('test_deliverables_migration');
-        $paths = glob(database_path('migrations/*.php')) ?: [];
+        $paths = array_values(array_filter(glob(database_path('migrations/*.php')) ?: [], static fn (string $path): bool => ! str_contains($path, 'merge_task_groups_into_tasks')));
         Artisan::call('migrate', ['--database' => 'test_deliverables_migration', '--path' => $paths, '--realpath' => true, '--force' => true]);
 
         $projectId = DB::table('projects')->insertGetId([
@@ -50,7 +48,7 @@ it('converts stored test deliverables with the explicit legacy Pest mapping', fu
             'driver' => 'sqlite', 'database' => ':memory:', 'foreign_key_constraints' => true,
         ]);
         DB::setDefaultConnection('test_deliverables_migration');
-        $paths = glob(database_path('migrations/*.php')) ?: [];
+        $paths = array_values(array_filter(glob(database_path('migrations/*.php')) ?: [], static fn (string $path): bool => ! str_contains($path, 'merge_task_groups_into_tasks')));
         Artisan::call('migrate', ['--database' => 'test_deliverables_migration', '--path' => $paths, '--realpath' => true, '--force' => true]);
 
         $projectId = DB::table('projects')->insertGetId([
@@ -145,7 +143,7 @@ it('converts stored test deliverables with the explicit legacy Pest mapping', fu
             ->and($splitTasks->pluck('position')->all())->toBe([2, 3, 4])
             ->and(DB::table('tasks')->where('id', $laterTask)->value('position'))->toBe(5)
             ->and($splitTasks->slice(1)->every(static fn (object $task): bool => $task->continuation_of_task_id === $expandedTask))->toBeTrue()
-            ->and(TaskReviewBase::commit(Task::query()->findOrFail($splitTasks[1]->id)))->toBe($sourceStart)
+            ->and(DB::table('tasks')->where('id', $expandedTask)->value('subtask_start_commit'))->toBe($sourceStart)
             ->and(count(array_filter($allExpanded, static fn (array $item): bool => $item['type'] === 'command')))->toBe(5)
             ->and(count(array_filter($allExpanded, static fn (array $item): bool => $item['type'] === 'file')))->toBe(5)
             ->and(array_values(array_filter($allExpanded, static fn (array $item): bool => $item['type'] === 'review')))->toBe([[

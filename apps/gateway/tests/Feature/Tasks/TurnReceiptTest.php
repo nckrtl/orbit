@@ -4,16 +4,22 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskDeliverable;
-use App\Domain\Tasks\TaskRunOutcome;
-use App\Domain\Tasks\TaskRunReceiptException;
+use App\Domain\Tasks\TaskPromptGroup;
+use App\Domain\Tasks\TaskPromptRenderer;
+use App\Domain\Tasks\TaskPromptSubtask;
+use App\Domain\Tasks\TaskRubricItem;
+use App\Domain\Tasks\TaskRubricReminder;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskTurnInstructions;
+use App\Domain\Tasks\TaskTurnOutcome;
+use App\Domain\Tasks\TaskTurnReceiptException;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\Tasks\RemoteTaskRunReceipts;
+use App\Infrastructure\Tasks\RemoteTaskTurnReceipts;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
@@ -23,15 +29,15 @@ use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\TestOrbitHome;
 
-function run_receipt_checkout(): string
+function turn_receipt_checkout(): string
 {
-    $checkout = TestOrbitHome::scratch('orbit-run-receipt');
+    $checkout = TestOrbitHome::scratch('orbit-turn-receipt');
     (new Process(['git', 'init', '--quiet', $checkout]))->mustRun();
 
     return $checkout;
 }
 
-function run_receipt_instance(string $checkout): Instance
+function turn_receipt_instance(string $checkout): Instance
 {
     $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'git@github.com:nckrtl/orbit.git', 'default_branch' => 'main']);
     $node = Node::query()->create(['name' => 'receipt-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.143', 'wireguard_ip' => '10.44.0.143', 'user' => 'orbit']);
@@ -39,9 +45,9 @@ function run_receipt_instance(string $checkout): Instance
     return Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-13', 'checkout_path' => $checkout, 'branch' => 'task-13', 'status' => 'source_resolved']);
 }
 
-function run_receipts(SshExecutor $transport): RemoteTaskRunReceipts
+function turn_receipts(SshExecutor $transport): RemoteTaskTurnReceipts
 {
-    return new RemoteTaskRunReceipts(new DevelopmentSshExecutor(
+    return new RemoteTaskTurnReceipts(new DevelopmentSshExecutor(
         $transport,
         new class implements SshKeyProvider
         {
@@ -68,9 +74,9 @@ function run_receipts(SshExecutor $transport): RemoteTaskRunReceipts
 }
 
 /** @param list<string> $arguments */
-function run_receipt_script(string $checkout, array $arguments): Process
+function turn_receipt_script(string $checkout, array $arguments): Process
 {
-    $process = new Process([$checkout.'/.git/orbit/run', ...$arguments], $checkout);
+    $process = new Process([$checkout.'/.git/orbit/turn', ...$arguments], $checkout);
     $process->run();
 
     return $process;
@@ -80,92 +86,133 @@ afterEach(function (): void {
     TestOrbitHome::clearScratch();
 });
 
-it('installs the run script outside the tracked tree and reads the receipt it writes', function (): void {
-    $checkout = run_receipt_checkout();
-    $instance = run_receipt_instance($checkout);
-    $receipts = run_receipts(new LocalShellSshExecutor);
+it('installs the turn command outside the tracked tree and reads the receipt it writes', function (): void {
+    $checkout = turn_receipt_checkout();
+    $instance = turn_receipt_instance($checkout);
+    $receipts = turn_receipts(new LocalShellSshExecutor);
 
     $receipts->prepare($instance, TaskThreadRole::Implementer);
-    $written = run_receipt_script($checkout, ['--outcome=ready_for_review', '--summary', ' Added the export. ']);
+    $written = turn_receipt_script($checkout, ['--outcome=ready_for_review', '--summary', ' Added the export. ']);
     $receipt = $receipts->read($instance);
     $status = (new Process(['git', 'status', '--porcelain', '--untracked-files=all'], $checkout))->mustRun()->getOutput();
 
     expect($written->getExitCode())->toBe(0)
-        ->and(is_executable($checkout.'/.git/orbit/run'))->toBeTrue()
+        ->and($written->getOutput())->toBe("Orbit recorded the turn receipt (ready_for_review). End your turn now.\n")
+        ->and(is_executable($checkout.'/.git/orbit/turn'))->toBeTrue()
+        ->and(is_file($checkout.'/.git/orbit/run'))->toBeFalse()
+        ->and(is_file($checkout.'/.git/orbit/run.json'))->toBeFalse()
         ->and(json_decode((string) file_get_contents($checkout.'/.git/orbit/turn.json'), true))->toBe(['role' => 'implementer', 'final' => false, 'deliverables' => []])
-        ->and($receipt?->outcome)->toBe(TaskRunOutcome::ReadyForReview)
+        ->and($receipt?->outcome)->toBe(TaskTurnOutcome::ReadyForReview)
         ->and($receipt?->summary)->toBe('Added the export.')
-        ->and($receipt?->hash)->toBe(hash_file('sha256', $checkout.'/.git/orbit/run.json'))
+        ->and($receipt?->hash)->toBe(hash_file('sha256', $checkout.'/.git/orbit/receipt.json'))
         ->and($status)->toBe('');
 });
 
-it('does not apply a run receipt written by the other reviewer', function (): void {
-    $checkout = run_receipt_checkout();
-    $instance = run_receipt_instance($checkout);
-    $receipts = run_receipts(new LocalShellSshExecutor);
+it('removes the old run command and receipt when it installs turn', function (): void {
+    $checkout = turn_receipt_checkout();
+    $instance = turn_receipt_instance($checkout);
+    $receipts = turn_receipts(new LocalShellSshExecutor);
+    $orbit = $checkout.'/.git/orbit';
+    mkdir($orbit, 0755, true);
+    file_put_contents($orbit.'/run', "#!/usr/bin/env python3\n");
+    chmod($orbit.'/run', 0755);
+    file_put_contents($orbit.'/run.json', "{\"role\":\"implementer\"}\n");
+
+    $receipts->prepare($instance, TaskThreadRole::Implementer, threadId: 17);
+
+    expect(is_file($orbit.'/run'))->toBeFalse()
+        ->and(is_file($orbit.'/run.json'))->toBeFalse()
+        ->and(is_executable($orbit.'/turn'))->toBeTrue()
+        ->and(is_file($orbit.'/turn.json'))->toBeTrue();
+});
+
+it('does not read a receipt left at the old run path', function (): void {
+    $checkout = turn_receipt_checkout();
+    $instance = turn_receipt_instance($checkout);
+    $receipts = turn_receipts(new LocalShellSshExecutor);
+    $receipts->prepare($instance, TaskThreadRole::Implementer, threadId: 17);
+    $orbit = $checkout.'/.git/orbit';
+    file_put_contents($orbit.'/run', "#!/usr/bin/env python3\n");
+    chmod($orbit.'/run', 0755);
+    file_put_contents($orbit.'/run.json', json_encode([
+        'outcome' => 'ready_for_review',
+        'summary' => 'Used the old path.',
+        'thread' => 17,
+        'nonce' => 'old',
+    ], JSON_THROW_ON_ERROR)."\n");
+
+    expect(is_file($orbit.'/run'))->toBeTrue()
+        ->and($receipts->read($instance, 17))->toBeNull()
+        ->and(is_file($orbit.'/receipt.json'))->toBeFalse();
+});
+
+it('does not apply a turn receipt written by the other reviewer', function (): void {
+    $checkout = turn_receipt_checkout();
+    $instance = turn_receipt_instance($checkout);
+    $receipts = turn_receipts(new LocalShellSshExecutor);
     $receipts->prepare($instance, TaskThreadRole::Reviewer);
     $turnPath = $checkout.'/.git/orbit/turn.json';
     $turn = json_decode((string) file_get_contents($turnPath), true, 512, JSON_THROW_ON_ERROR);
     $turn['thread'] = 42;
     file_put_contents($turnPath, json_encode($turn, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n");
 
-    $written = run_receipt_script($checkout, ['--outcome=approved', '--summary=Approved the earlier subtask.']);
+    $written = turn_receipt_script($checkout, ['--outcome=approved', '--summary=Approved the earlier subtask.']);
 
     expect($written->getExitCode())->toBe(0)
         ->and($written->getErrorOutput())->toBe('')
-        ->and(is_file($checkout.'/.git/orbit/run.json'))->toBeTrue()
+        ->and(is_file($checkout.'/.git/orbit/receipt.json'))->toBeTrue()
         ->and($receipts->read($instance))->toBeNull();
 
-    $other = run_receipt_script($checkout, ['--thread=7', '--outcome=approved', '--summary=Approved the earlier subtask.']);
+    $other = turn_receipt_script($checkout, ['--thread=7', '--outcome=approved', '--summary=Approved the earlier subtask.']);
 
     expect($other->getExitCode())->toBe(0)
-        ->and((string) file_get_contents($checkout.'/.git/orbit/run.json'))->toContain('"thread": 7')
+        ->and((string) file_get_contents($checkout.'/.git/orbit/receipt.json'))->toContain('"thread": 7')
         ->and($receipts->read($instance))->toBeNull();
 });
 
 it('applies the acting thread receipt for the reviewer and the implementer', function (): void {
-    $checkout = run_receipt_checkout();
-    $instance = run_receipt_instance($checkout);
-    $receipts = run_receipts(new LocalShellSshExecutor);
+    $checkout = turn_receipt_checkout();
+    $instance = turn_receipt_instance($checkout);
+    $receipts = turn_receipts(new LocalShellSshExecutor);
 
     $receipts->prepare($instance, TaskThreadRole::Reviewer, threadId: 42);
-    $approved = run_receipt_script($checkout, ['--thread=42', '--outcome=approved', '--summary=Checked this subtask.']);
+    $approved = turn_receipt_script($checkout, ['--thread=42', '--outcome=approved', '--summary=Checked this subtask.']);
     $receipt = $receipts->read($instance);
 
     expect($approved->getExitCode())->toBe(0)
-        ->and($receipt?->outcome)->toBe(TaskRunOutcome::Approved)
+        ->and($receipt?->outcome)->toBe(TaskTurnOutcome::Approved)
         ->and($receipt?->threadId)->toBe(42);
 
     $receipts->clear($instance, $receipt ?? throw new RuntimeException('No receipt.'));
     $receipts->prepare($instance, TaskThreadRole::Implementer, threadId: 9);
-    $handed = run_receipt_script($checkout, ['--thread=9', '--outcome=ready_for_review', '--summary=Added the export.']);
+    $handed = turn_receipt_script($checkout, ['--thread=9', '--outcome=ready_for_review', '--summary=Added the export.']);
     $implementer = $receipts->read($instance);
 
     expect($handed->getExitCode())->toBe(0)
-        ->and($implementer?->outcome)->toBe(TaskRunOutcome::ReadyForReview)
+        ->and($implementer?->outcome)->toBe(TaskTurnOutcome::ReadyForReview)
         ->and($implementer?->threadId)->toBe(9);
 
     $receipts->clear($instance, $implementer ?? throw new RuntimeException('No receipt.'));
-    run_receipt_script($checkout, ['--thread=4', '--outcome=ready_for_review', '--summary=From another implementer.']);
+    turn_receipt_script($checkout, ['--thread=4', '--outcome=ready_for_review', '--summary=From another implementer.']);
 
     expect($receipts->read($instance))->toBeNull();
 });
 
 it('applies the acting thread receipt when the turn file names another reviewer', function (): void {
-    $checkout = run_receipt_checkout();
-    $instance = run_receipt_instance($checkout);
-    $receipts = run_receipts(new LocalShellSshExecutor);
+    $checkout = turn_receipt_checkout();
+    $instance = turn_receipt_instance($checkout);
+    $receipts = turn_receipts(new LocalShellSshExecutor);
     $receipts->prepare($instance, TaskThreadRole::Reviewer, threadId: 42);
-    $current = run_receipt_script($checkout, ['--thread=9', '--outcome=approved', '--summary=Approved this subtask.']);
+    $current = turn_receipt_script($checkout, ['--thread=9', '--outcome=approved', '--summary=Approved this subtask.']);
     $applied = $receipts->read($instance, 9);
 
     expect($current->getExitCode())->toBe(0)
         ->and($receipts->read($instance))->toBeNull()
         ->and($receipts->read($instance, 42))->toBeNull()
         ->and($applied?->threadId)->toBe(9)
-        ->and($applied?->outcome)->toBe(TaskRunOutcome::Approved);
+        ->and($applied?->outcome)->toBe(TaskTurnOutcome::Approved);
 
-    $stale = run_receipt_script($checkout, ['--thread=42', '--outcome=approved', '--summary=Approved the earlier subtask.']);
+    $stale = turn_receipt_script($checkout, ['--thread=42', '--outcome=approved', '--summary=Approved the earlier subtask.']);
 
     expect($stale->getExitCode())->toBe(0)
         ->and($receipts->read($instance)?->threadId)->toBe(42)
@@ -173,24 +220,24 @@ it('applies the acting thread receipt when the turn file names another reviewer'
 });
 
 it('does not apply an unbound receipt from a legacy turn when the acting reviewer is known', function (): void {
-    $checkout = run_receipt_checkout();
-    $instance = run_receipt_instance($checkout);
-    $receipts = run_receipts(new LocalShellSshExecutor);
+    $checkout = turn_receipt_checkout();
+    $instance = turn_receipt_instance($checkout);
+    $receipts = turn_receipts(new LocalShellSshExecutor);
     $receipts->prepare($instance, TaskThreadRole::Reviewer);
-    $legacy = run_receipt_script($checkout, ['--outcome=approved', '--summary=Approved the earlier subtask.']);
+    $legacy = turn_receipt_script($checkout, ['--outcome=approved', '--summary=Approved the earlier subtask.']);
 
     expect($legacy->getExitCode())->toBe(0)
         ->and($receipts->hasLegacyTurn($instance))->toBeTrue()
         ->and($receipts->read($instance, 42))->toBeNull();
 
     $receipts->prepare($instance, TaskThreadRole::Reviewer, threadId: 42);
-    $stillUnbound = run_receipt_script($checkout, ['--outcome=approved', '--summary=Approved the earlier subtask.']);
+    $stillUnbound = turn_receipt_script($checkout, ['--outcome=approved', '--summary=Approved the earlier subtask.']);
 
     expect($stillUnbound->getExitCode())->toBe(0)
         ->and($receipts->hasLegacyTurn($instance))->toBeFalse()
         ->and($receipts->read($instance, 42))->toBeNull();
 
-    $bound = run_receipt_script($checkout, ['--thread=42', '--outcome=approved', '--summary=Checked this subtask.']);
+    $bound = turn_receipt_script($checkout, ['--thread=42', '--outcome=approved', '--summary=Checked this subtask.']);
 
     expect($bound->getExitCode())->toBe(0)
         ->and($receipts->read($instance, 42)?->threadId)->toBe(42)
@@ -198,28 +245,28 @@ it('does not apply an unbound receipt from a legacy turn when the acting reviewe
 });
 
 it('removes a receipt only while its content is unchanged', function (): void {
-    $checkout = run_receipt_checkout();
-    $instance = run_receipt_instance($checkout);
-    $receipts = run_receipts(new LocalShellSshExecutor);
+    $checkout = turn_receipt_checkout();
+    $instance = turn_receipt_instance($checkout);
+    $receipts = turn_receipts(new LocalShellSshExecutor);
     $receipts->prepare($instance, TaskThreadRole::Implementer);
-    run_receipt_script($checkout, ['--outcome=blocked', '--summary=The API key is missing.', '--question=Where do I find the API key?']);
+    turn_receipt_script($checkout, ['--outcome=blocked', '--summary=The API key is missing.', '--question=Where do I find the API key?']);
     $first = $receipts->read($instance);
-    run_receipt_script($checkout, ['--outcome=ready_for_review', '--summary=Done.']);
+    turn_receipt_script($checkout, ['--outcome=ready_for_review', '--summary=Done.']);
 
     $receipts->clear($instance, $first ?? throw new RuntimeException('No receipt.'));
     $second = $receipts->read($instance);
     $receipts->clear($instance, $second ?? throw new RuntimeException('No receipt.'));
 
-    expect($second->outcome)->toBe(TaskRunOutcome::ReadyForReview)
+    expect($second->outcome)->toBe(TaskTurnOutcome::ReadyForReview)
         ->and($receipts->read($instance))->toBeNull();
 });
 
 it('removes an earlier receipt when a turn starts', function (): void {
-    $checkout = run_receipt_checkout();
-    $instance = run_receipt_instance($checkout);
-    $receipts = run_receipts(new LocalShellSshExecutor);
+    $checkout = turn_receipt_checkout();
+    $instance = turn_receipt_instance($checkout);
+    $receipts = turn_receipts(new LocalShellSshExecutor);
     $receipts->prepare($instance, TaskThreadRole::Implementer);
-    run_receipt_script($checkout, ['--outcome=ready_for_review', '--summary=Done.']);
+    turn_receipt_script($checkout, ['--outcome=ready_for_review', '--summary=Done.']);
 
     $receipts->prepare($instance, TaskThreadRole::Implementer);
 
@@ -227,15 +274,15 @@ it('removes an earlier receipt when a turn starts', function (): void {
 });
 
 it('refuses input that does not fit the turn', function (TaskThreadRole $role, array $arguments, string $error): void {
-    $checkout = run_receipt_checkout();
-    $instance = run_receipt_instance($checkout);
-    $receipts = run_receipts(new LocalShellSshExecutor);
+    $checkout = turn_receipt_checkout();
+    $instance = turn_receipt_instance($checkout);
+    $receipts = turn_receipts(new LocalShellSshExecutor);
     $receipts->prepare($instance, $role);
 
-    $process = run_receipt_script($checkout, $arguments);
+    $process = turn_receipt_script($checkout, $arguments);
 
     expect($process->getExitCode())->toBe(2)
-        ->and($process->getErrorOutput())->toBe("orbit run: {$error}\n")
+        ->and($process->getErrorOutput())->toBe("orbit turn: {$error}\n")
         ->and($receipts->read($instance))->toBeNull();
 })->with([
     'a reviewer outcome in an implementer turn' => [TaskThreadRole::Implementer, ['--outcome=approved', '--summary=Looks good.'], '--outcome must be one of: ready_for_review, blocked.'],
@@ -255,36 +302,36 @@ it('refuses input that does not fit the turn', function (TaskThreadRole $role, a
 ]);
 
 it('records the question of a blocked turn', function (): void {
-    $checkout = run_receipt_checkout();
-    $instance = run_receipt_instance($checkout);
-    $receipts = run_receipts(new LocalShellSshExecutor);
+    $checkout = turn_receipt_checkout();
+    $instance = turn_receipt_instance($checkout);
+    $receipts = turn_receipts(new LocalShellSshExecutor);
     $receipts->prepare($instance, TaskThreadRole::Implementer);
 
-    $process = run_receipt_script($checkout, ['--outcome=blocked', '--summary=Installing intl needs sudo.', '--question', ' May I run sudo apt-get install php8.5-intl? ']);
+    $process = turn_receipt_script($checkout, ['--outcome=blocked', '--summary=Installing intl needs sudo.', '--question', ' May I run sudo apt-get install php8.5-intl? ']);
     $receipt = $receipts->read($instance);
 
     expect($process->getExitCode())->toBe(0)
-        ->and($receipt?->outcome)->toBe(TaskRunOutcome::Blocked)
+        ->and($receipt?->outcome)->toBe(TaskTurnOutcome::Blocked)
         ->and($receipt?->question)->toBe('May I run sudo apt-get install php8.5-intl?')
         ->and($receipt?->body())->toBe("Installing intl needs sudo.\n\nQuestion: May I run sudo apt-get install php8.5-intl?");
 });
 
 it('refuses to write a receipt before Orbit starts a turn', function (): void {
-    $checkout = run_receipt_checkout();
+    $checkout = turn_receipt_checkout();
     File::ensureDirectoryExists($checkout.'/.git/orbit');
-    copy(resource_path('tasks/run'), $checkout.'/.git/orbit/run');
-    chmod($checkout.'/.git/orbit/run', 0755);
+    copy(resource_path('tasks/turn'), $checkout.'/.git/orbit/turn');
+    chmod($checkout.'/.git/orbit/turn', 0755);
 
-    $process = run_receipt_script($checkout, ['--outcome=blocked', '--summary=No.']);
+    $process = turn_receipt_script($checkout, ['--outcome=blocked', '--summary=No.']);
 
     expect($process->getExitCode())->toBe(2)
-        ->and($process->getErrorOutput())->toBe("orbit run: Orbit has not started a turn in this workspace.\n");
+        ->and($process->getErrorOutput())->toBe("orbit turn: Orbit has not started a turn in this workspace.\n");
 });
 
 it('treats a hand-written receipt without an outcome and summary as invalid', function (string $contents): void {
     $transport = new AppDevFakeSshExecutor([new CommandResult(0, "receipt\n".$contents, '', 1, false)]);
 
-    $receipt = run_receipts($transport)->read(run_receipt_instance('/srv/orbit/apps/orbit/task-13'));
+    $receipt = turn_receipts($transport)->read(turn_receipt_instance('/srv/orbit/apps/orbit/task-13'));
 
     expect($receipt?->outcome)->toBeNull()
         ->and($receipt?->hash)->toBe(hash('sha256', $contents));
@@ -299,18 +346,18 @@ it('treats a hand-written receipt without an outcome and summary as invalid', fu
 it('reports an unreachable workspace instead of a missing receipt', function (): void {
     $transport = new AppDevFakeSshExecutor([new CommandResult(255, '', 'ssh: connect to host 10.44.0.143 port 22: Connection refused', 1, false)]);
 
-    run_receipts($transport)->read(run_receipt_instance('/srv/orbit/apps/orbit/task-13'));
-})->throws(TaskRunReceiptException::class, 'The task workspace could not be reached for the run receipt.');
+    turn_receipts($transport)->read(turn_receipt_instance('/srv/orbit/apps/orbit/task-13'));
+})->throws(TaskTurnReceiptException::class, 'The task workspace could not be reached for the turn receipt.');
 
 it('requires the pull request fields when the reviewer approves the last subtask', function (array $arguments, string $error): void {
-    $checkout = run_receipt_checkout();
-    $instance = run_receipt_instance($checkout);
-    $receipts = run_receipts(new LocalShellSshExecutor);
+    $checkout = turn_receipt_checkout();
+    $instance = turn_receipt_instance($checkout);
+    $receipts = turn_receipts(new LocalShellSshExecutor);
     $receipts->prepare($instance, TaskThreadRole::Reviewer, true);
 
-    $process = run_receipt_script($checkout, ['--outcome=approved', '--summary=Checked the feature.', ...$arguments]);
+    $process = turn_receipt_script($checkout, ['--outcome=approved', '--summary=Checked the feature.', ...$arguments]);
 
-    expect($process->getErrorOutput())->toBe("orbit run: {$error}\n")
+    expect($process->getErrorOutput())->toBe("orbit turn: {$error}\n")
         ->and($receipts->read($instance))->toBeNull();
 })->with([
     'no fields' => [[], 'approving the last subtask needs --pr-summary.'],
@@ -322,37 +369,37 @@ it('requires the pull request fields when the reviewer approves the last subtask
 ]);
 
 it('records the pull request fields with the approval of the last subtask, with no limit on changes', function (): void {
-    $checkout = run_receipt_checkout();
-    $instance = run_receipt_instance($checkout);
-    $receipts = run_receipts(new LocalShellSshExecutor);
+    $checkout = turn_receipt_checkout();
+    $instance = turn_receipt_instance($checkout);
+    $receipts = turn_receipts(new LocalShellSshExecutor);
     $receipts->prepare($instance, TaskThreadRole::Reviewer, true);
     $changes = array_map(static fn (int $number): string => '--pr-change=Change '.$number, range(1, 40));
 
-    $process = run_receipt_script($checkout, ['--outcome=approved', '--summary=Checked the feature.', '--pr-summary=Adds exports.', ...$changes, '--pr-breaking=None']);
+    $process = turn_receipt_script($checkout, ['--outcome=approved', '--summary=Checked the feature.', '--pr-summary=Adds exports.', ...$changes, '--pr-breaking=None']);
     $receipt = $receipts->read($instance);
 
     expect($process->getExitCode())->toBe(0)
         ->and(json_decode((string) file_get_contents($checkout.'/.git/orbit/turn.json'), true))->toBe(['role' => 'reviewer', 'final' => true, 'deliverables' => []])
-        ->and($receipt?->outcome)->toBe(TaskRunOutcome::Approved)
+        ->and($receipt?->outcome)->toBe(TaskTurnOutcome::Approved)
         ->and($receipt?->pullRequest?->summary)->toBe('Adds exports.')
         ->and($receipt?->pullRequest?->changes)->toHaveCount(40)
         ->and($receipt?->pullRequest?->breaking)->toBe([]);
 });
 
 it('lets a reviewer request changes on the last subtask without the pull request fields', function (): void {
-    $checkout = run_receipt_checkout();
-    $instance = run_receipt_instance($checkout);
-    $receipts = run_receipts(new LocalShellSshExecutor);
+    $checkout = turn_receipt_checkout();
+    $instance = turn_receipt_instance($checkout);
+    $receipts = turn_receipts(new LocalShellSshExecutor);
     $receipts->prepare($instance, TaskThreadRole::Reviewer, true);
 
-    $process = run_receipt_script($checkout, ['--outcome=changes_requested', '--summary=Add the missing test.']);
+    $process = turn_receipt_script($checkout, ['--outcome=changes_requested', '--summary=Add the missing test.']);
 
     expect($process->getExitCode())->toBe(0)
-        ->and($receipts->read($instance)?->outcome)->toBe(TaskRunOutcome::ChangesRequested);
+        ->and($receipts->read($instance)?->outcome)->toBe(TaskTurnOutcome::ChangesRequested);
 });
 
 /** @return list<TaskDeliverable> */
-function run_receipt_deliverables(): array
+function turn_receipt_deliverables(): array
 {
     return [
         TaskDeliverable::fromArray(['id' => 'reference-page', 'type' => 'file', 'description' => 'Document the export', 'path' => 'docs/reference/tasks.md', 'change' => 'modified']),
@@ -363,10 +410,10 @@ function run_receipt_deliverables(): array
 
 describe('deliverable confirmations', function (): void {
     it('writes the deliverables into the turn', function (): void {
-        $checkout = run_receipt_checkout();
-        $receipts = run_receipts(new LocalShellSshExecutor);
+        $checkout = turn_receipt_checkout();
+        $receipts = turn_receipts(new LocalShellSshExecutor);
 
-        $receipts->prepare(run_receipt_instance($checkout), TaskThreadRole::Implementer, deliverables: run_receipt_deliverables());
+        $receipts->prepare(turn_receipt_instance($checkout), TaskThreadRole::Implementer, deliverables: turn_receipt_deliverables());
 
         expect(json_decode((string) file_get_contents($checkout.'/.git/orbit/turn.json'), true)['deliverables'])->toBe([
             ['id' => 'reference-page', 'type' => 'file', 'description' => 'Document the export'],
@@ -376,12 +423,12 @@ describe('deliverable confirmations', function (): void {
     });
 
     it('records the confirmation of every deliverable in a ready_for_review receipt', function (): void {
-        $checkout = run_receipt_checkout();
-        $instance = run_receipt_instance($checkout);
-        $receipts = run_receipts(new LocalShellSshExecutor);
-        $receipts->prepare($instance, TaskThreadRole::Implementer, deliverables: run_receipt_deliverables());
+        $checkout = turn_receipt_checkout();
+        $instance = turn_receipt_instance($checkout);
+        $receipts = turn_receipts(new LocalShellSshExecutor);
+        $receipts->prepare($instance, TaskThreadRole::Implementer, deliverables: turn_receipt_deliverables());
 
-        $process = run_receipt_script($checkout, [
+        $process = turn_receipt_script($checkout, [
             '--outcome=ready_for_review', '--summary=Added the export.',
             '--deliverable=reference-page=Export section in docs/reference/tasks.md',
             '--deliverable', 'export-test= tests/Feature/ExportTest.php covers it ',
@@ -397,27 +444,27 @@ describe('deliverable confirmations', function (): void {
     });
 
     it('records the review confirmations of an approval', function (): void {
-        $checkout = run_receipt_checkout();
-        $instance = run_receipt_instance($checkout);
-        $receipts = run_receipts(new LocalShellSshExecutor);
-        $receipts->prepare($instance, TaskThreadRole::Reviewer, deliverables: run_receipt_deliverables());
+        $checkout = turn_receipt_checkout();
+        $instance = turn_receipt_instance($checkout);
+        $receipts = turn_receipts(new LocalShellSshExecutor);
+        $receipts->prepare($instance, TaskThreadRole::Reviewer, deliverables: turn_receipt_deliverables());
 
-        $process = run_receipt_script($checkout, ['--outcome=approved', '--summary=Checked.', '--deliverable=error-copy=Read each message in ExportController']);
+        $process = turn_receipt_script($checkout, ['--outcome=approved', '--summary=Checked.', '--deliverable=error-copy=Read each message in ExportController']);
 
         expect($process->getExitCode())->toBe(0)
             ->and($receipts->read($instance)?->deliverables)->toBe(['error-copy' => 'Read each message in ExportController']);
     });
 
     it('refuses confirmations that do not fit the turn', function (TaskThreadRole $role, array $arguments, string $error): void {
-        $checkout = run_receipt_checkout();
-        $instance = run_receipt_instance($checkout);
-        $receipts = run_receipts(new LocalShellSshExecutor);
-        $receipts->prepare($instance, $role, deliverables: run_receipt_deliverables());
+        $checkout = turn_receipt_checkout();
+        $instance = turn_receipt_instance($checkout);
+        $receipts = turn_receipts(new LocalShellSshExecutor);
+        $receipts->prepare($instance, $role, deliverables: turn_receipt_deliverables());
 
-        $process = run_receipt_script($checkout, $arguments);
+        $process = turn_receipt_script($checkout, $arguments);
 
         expect($process->getExitCode())->toBe(2)
-            ->and($process->getErrorOutput())->toBe("orbit run: {$error}\n")
+            ->and($process->getErrorOutput())->toBe("orbit turn: {$error}\n")
             ->and($receipts->read($instance))->toBeNull();
     })->with([
         'a handoff without confirmations' => [TaskThreadRole::Implementer, ['--outcome=ready_for_review', '--summary=Done.'], 'ready_for_review needs --deliverable=ID=evidence for: reference-page, export-test, error-copy. Say where or how each one is met.'],
@@ -432,13 +479,46 @@ describe('deliverable confirmations', function (): void {
     ]);
 
     it('refuses any confirmation for a subtask without deliverables', function (): void {
-        $checkout = run_receipt_checkout();
-        $instance = run_receipt_instance($checkout);
-        run_receipts(new LocalShellSshExecutor)->prepare($instance, TaskThreadRole::Implementer);
+        $checkout = turn_receipt_checkout();
+        $instance = turn_receipt_instance($checkout);
+        turn_receipts(new LocalShellSshExecutor)->prepare($instance, TaskThreadRole::Implementer);
 
-        $process = run_receipt_script($checkout, ['--outcome=ready_for_review', '--summary=Done.', '--deliverable=docs=Added']);
+        $process = turn_receipt_script($checkout, ['--outcome=ready_for_review', '--summary=Done.', '--deliverable=docs=Added']);
 
         expect($process->getExitCode())->toBe(2)
-            ->and($process->getErrorOutput())->toBe("orbit run: unknown deliverable docs. This subtask's deliverables are: none.\n");
+            ->and($process->getErrorOutput())->toBe("orbit turn: unknown deliverable docs. This subtask's deliverables are: none.\n");
     });
+});
+
+it('names the turn command in the prompts and the reminder', function (): void {
+    $prompt = TaskPromptRenderer::implementer(new TaskPromptGroup(
+        id: 183,
+        title: 'One task model',
+        brief: 'Replace task groups.',
+        projectSlug: 'orbit',
+        projectId: 1,
+        defaultBranch: 'main',
+        taskCheck: null,
+        startCommit: null,
+    ), new TaskPromptSubtask(
+        id: 491,
+        title: 'Rename the run receipt',
+        brief: 'End each turn with the turn command.',
+        position: 4,
+        deliverables: [],
+    ), 17);
+    $reviewer = TaskTurnInstructions::reviewer(threadId: 19);
+    $reminder = TaskRubricReminder::compose(TaskThreadRole::Implementer, [
+        new TaskRubricItem('turn_receipt', false, 'No turn receipt was found.'),
+    ], threadId: 17);
+
+    expect($prompt)->toContain('.git/orbit/turn --thread=17 --outcome=ready_for_review')
+        ->and($prompt)->toContain('.git/orbit/turn --thread=17 --outcome=blocked')
+        ->and($prompt)->not->toContain('.git/orbit/run')
+        ->and($reviewer)->toContain('.git/orbit/turn --thread=19 --outcome=approved')
+        ->and($reviewer)->toContain('.git/orbit/turn --thread=19 --outcome=changes_requested')
+        ->and($reviewer)->not->toContain('.git/orbit/run')
+        ->and($reminder)->toContain('No turn receipt was found.')
+        ->and($reminder)->toContain('.git/orbit/turn --thread=17 --outcome=ready_for_review')
+        ->and($reminder)->not->toContain('.git/orbit/run');
 });

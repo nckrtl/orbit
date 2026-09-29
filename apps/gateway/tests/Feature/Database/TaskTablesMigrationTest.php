@@ -9,10 +9,11 @@ use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Support\Facades\Schema;
 
-it('creates task_groups and tasks with morph, metrics, and ordering columns', function (): void {
-    expect(Schema::hasTable('task_groups'))->toBeTrue()
+it('keeps task and subtask columns on one tasks table', function (): void {
+    expect(Schema::hasTable('task_groups'))->toBeFalse()
         ->and(Schema::hasTable('tasks'))->toBeTrue()
-        ->and(Schema::hasColumns('task_groups', [
+        ->and(Schema::hasColumns('tasks', [
+            'parent_id',
             'project_id',
             'taskable_type',
             'taskable_id',
@@ -29,17 +30,8 @@ it('creates task_groups and tasks with morph, metrics, and ordering columns', fu
             'duration_ms',
             'started_at',
             'settled_at',
-        ]))->toBeTrue()
-        ->and(Schema::hasColumns('tasks', [
-            'task_group_id',
             'position',
-            'title',
-            'brief',
-            'status',
             'implementer_agent_thread_id',
-            'tokens',
-            'line_diff',
-            'duration_ms',
         ]))->toBeTrue()
         ->and(Schema::hasColumns('agent_threads', [
             'tokens',
@@ -85,7 +77,7 @@ it('rolls back archive backoff columns and their index', function (): void {
     }
 });
 
-it('persists a TaskGroup morph to a Project instance and ordered subtasks', function (): void {
+it('persists a Task morph to a Project instance and ordered subtasks', function (): void {
     $node = Node::query()->create([
         'name' => 'task-migration-node',
         'status' => 'active',
@@ -105,7 +97,7 @@ it('persists a TaskGroup morph to a Project instance and ordered subtasks', func
         'status' => 'reserved',
     ]);
 
-    $group = $project->taskGroups()->create([
+    $group = $project->tasks()->create([
         'title' => 'Morph',
         'brief' => 'Attach the instance.',
     ]);
@@ -129,6 +121,6 @@ it('persists a TaskGroup morph to a Project instance and ordered subtasks', func
         ->and($fresh?->line_diff)->toBe(40)
         ->and($fresh?->duration_ms)->toBe(1500)
         ->and($fresh?->tasks->pluck('title')->all())->toBe(['First', 'Second'])
-        ->and($instance->taskGroups()->first()?->id)->toBe($group->id)
-        ->and(Task::query()->where('task_group_id', $group->id)->count())->toBe(2);
+        ->and($instance->tasks()->first()?->id)->toBe($group->id)
+        ->and(Task::query()->where('parent_id', $group->id)->count())->toBe(2);
 });

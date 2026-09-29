@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Data\Tasks;
 
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Models\TaskGroup;
+use App\Models\Task;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
@@ -23,7 +23,7 @@ final class TaskAssistanceData extends Data
         public ?string $assistanceReason,
     ) {}
 
-    public static function fromModel(TaskGroup $group): self
+    public static function fromModel(Task $group): self
     {
         $group->loadMissing('project');
 
@@ -33,7 +33,7 @@ final class TaskAssistanceData extends Data
             project: $group->project->slug,
             projectCode: $group->project->code,
             title: $group->title,
-            status: $group->status,
+            status: $group->groupStatus(),
             assistanceReason: $group->assistance_reason,
         );
     }

@@ -23,9 +23,9 @@ final readonly class ArchiveFinishedTaskThreads
         AgentThread::query()->where('external_id', 'like', TaskAgentSpawner::PendingPrefix.'%')
             ->where(static function ($query): void {
                 $query->whereIn('task_group_id', static function ($groups): void {
-                    $groups->select('id')->from('task_groups')->whereIn('status', [TaskGroupStatus::Completed->value, TaskGroupStatus::Cancelled->value]);
+                    $groups->select('id')->from('tasks')->whereNull('parent_id')->whereIn('status', [TaskGroupStatus::Completed->value, TaskGroupStatus::Cancelled->value]);
                 })->orWhereIn('task_id', static function ($tasks): void {
-                    $tasks->select('id')->from('tasks')->whereIn('status', [TaskStatus::Completed->value, TaskStatus::Cancelled->value]);
+                    $tasks->select('id')->from('tasks')->whereNotNull('parent_id')->whereIn('status', [TaskStatus::Completed->value, TaskStatus::Cancelled->value]);
                 });
             })->delete();
 
@@ -35,10 +35,10 @@ final readonly class ArchiveFinishedTaskThreads
             ->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%')
             ->where(static function ($query): void {
                 $query->whereIn('task_group_id', static function ($groups): void {
-                    $groups->select('id')->from('task_groups')->whereIn('status', [TaskGroupStatus::Completed->value, TaskGroupStatus::Cancelled->value]);
+                    $groups->select('id')->from('tasks')->whereNull('parent_id')->whereIn('status', [TaskGroupStatus::Completed->value, TaskGroupStatus::Cancelled->value]);
                 })->orWhere(static function ($subtasks): void {
                     $subtasks->where('role', TaskThreadRole::Reviewer->value)->whereIn('task_id', static function ($tasks): void {
-                        $tasks->select('id')->from('tasks')->whereIn('status', [TaskStatus::Completed->value, TaskStatus::Cancelled->value]);
+                        $tasks->select('id')->from('tasks')->whereNotNull('parent_id')->whereIn('status', [TaskStatus::Completed->value, TaskStatus::Cancelled->value]);
                     });
                 });
             })->orderBy('id')->limit(self::MAX_THREADS_PER_RUN)->get();

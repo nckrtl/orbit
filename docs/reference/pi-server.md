@@ -210,7 +210,7 @@ Stop the Gateway scheduler before you replace `pi-server` on a Node. A restart k
 
 [`process:stop`](/cli/process#orbit-processstop) returns when that unit is inactive. The cache lock is a different signal. `tasks:tick` holds `orbit:tasks:tick` for 300 seconds and releases the lock when the command returns. The lock can expire while that command is still running, so an expired lock is not proof the command has exited. Step 2 is that proof.
 
-[`tasks:agents`](/cli/tasks#orbit-tasksagents) and `GET /api/v1/task-groups/{group}/agents` return the stored row. The tick writes that row. While the tick is paused, a finished turn can stay `working` there. Use the list only for the thread id, the driver, and `external_id`. [`tasks:list`](/cli/tasks#orbit-taskslist) with status `running`, then `reviewing`, names the groups.
+[`tasks:agents`](/cli/tasks#orbit-tasksagents) and `GET /api/v1/task-groups/{group}/agents` return the stored row. The tick writes that row. While the tick is paused, a finished turn can stay `working` there. Use the list only for the thread id, the driver, and `external_id`. [`tasks:list`](/cli/tasks#orbit-taskslist) with status `running`, then `reviewing`, names the tasks.
 
 For a `pi` thread, `GET /sessions/{external_id}` on that Node is the live snapshot. Wait until `state` is not `working`. The first `snapshot` event on `GET /api/v1/task-groups/{group}/agents/{thread}/stream` is that same snapshot. The stream reads Pi and does not write the stored row. The [agent viewer](/reference/tasks#agent-viewer) shows it.
 

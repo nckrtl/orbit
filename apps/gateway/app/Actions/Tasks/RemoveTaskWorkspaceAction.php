@@ -9,7 +9,7 @@ use App\Domain\Tasks\TaskBridgeWorktreeRemover;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Models\Instance;
-use App\Models\TaskGroup;
+use App\Models\Task;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Config;
 use Throwable;
@@ -38,7 +38,7 @@ final readonly class RemoveTaskWorkspaceAction
     ) {}
 
     /** The attached Instance, or the group's unattached `task-{group id}` workspace. */
-    public function find(TaskGroup $group): ?Instance
+    public function find(Task $group): ?Instance
     {
         $attached = $group->taskable;
 
@@ -60,7 +60,7 @@ final readonly class RemoveTaskWorkspaceAction
      * `orbit.tasks.reserved_timeout_seconds` has a claim in flight, and that claim removes the workspace
      * when it finds the group ended. A group reserved longer than the bound has no live claim.
      */
-    public function claimInFlight(TaskGroup $group): bool
+    public function claimInFlight(Task $group): bool
     {
         return $group->status === TaskGroupStatus::Reserved
             && $group->reserved_at instanceof CarbonInterface
@@ -73,7 +73,7 @@ final readonly class RemoveTaskWorkspaceAction
     }
 
     /** Removes the group's workspace when it has one. It returns the removed Instance. */
-    public function execute(TaskGroup $group): ?Instance
+    public function execute(Task $group): ?Instance
     {
         $instance = $this->find($group);
 
@@ -92,7 +92,7 @@ final readonly class RemoveTaskWorkspaceAction
     }
 
     /** Asks the group for assistance and keeps the checkout and Instance row for a later retry. */
-    public function recordFailure(TaskGroup $group, Throwable $exception, ?string $prefix = null): void
+    public function recordFailure(Task $group, Throwable $exception, ?string $prefix = null): void
     {
         $group->update([
             'assistance_requested' => true,
@@ -101,7 +101,7 @@ final readonly class RemoveTaskWorkspaceAction
     }
 
     /** Clears assistance that this removal recorded, once the checkout is gone. Another cause is left alone. */
-    public function clearFailure(TaskGroup $group): void
+    public function clearFailure(Task $group): void
     {
         $group->refresh();
         $reason = $group->assistance_reason;

@@ -7,15 +7,14 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestHealth;
 use App\Domain\Tasks\TaskPullRequestWatcher;
-use App\Domain\Tasks\TaskRunPullRequest;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskTurnPullRequest;
 use App\Infrastructure\Tasks\JevRecorder;
 use App\Infrastructure\Tasks\LaravelAiTaskBriefCoverage;
 use App\Models\JevDecision;
 use App\Models\Project;
 use App\Models\Task;
-use App\Models\TaskGroup;
 use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -26,7 +25,7 @@ use Laravel\Ai\Responses\Data\BooleanAnswer;
 
 use function Pest\Laravel\mock;
 
-/** @return array{TaskGroup, Task, Task, Task} */
+/** @return array{Task, Task, Task, Task} */
 function cancelled_brief_coverage_group(): array
 {
     $project = Project::query()->create([
@@ -35,28 +34,28 @@ function cancelled_brief_coverage_group(): array
         'repository_url' => 'git@github.com:acme/shop.git',
         'default_branch' => 'main',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Export orders',
         'brief' => 'Export orders as CSV.',
         'status' => 'reviewing',
     ]);
     $cancelled = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Cancelled report',
         'brief' => 'Add a report that was cancelled.',
         'status' => TaskStatus::Cancelled,
     ]);
     $failed = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 2,
         'title' => 'Failed report',
         'brief' => 'Add a report that failed.',
         'status' => TaskStatus::Failed,
     ]);
     $completed = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 3,
         'title' => 'Export',
         'brief' => 'Write the CSV export.',
@@ -66,9 +65,9 @@ function cancelled_brief_coverage_group(): array
     return [$group, $cancelled, $failed, $completed];
 }
 
-function cancelled_brief_coverage_pull_request(): TaskRunPullRequest
+function cancelled_brief_coverage_pull_request(): TaskTurnPullRequest
 {
-    return new TaskRunPullRequest('Adds an order export.', ['Orders export as CSV.'], []);
+    return new TaskTurnPullRequest('Adds an order export.', ['Orders export as CSV.'], []);
 }
 
 it('skips cancelled brief coverage when the remaining subtasks are covered', function (): void {
@@ -105,12 +104,12 @@ it('labels a false negative from a pull request observed merged and records both
     {
         public function __construct(private TaskPullRequestHealth $merge) {}
 
-        public function status(TaskGroup $group): ?string
+        public function status(Task $group): ?string
         {
             return 'merged';
         }
 
-        public function health(TaskGroup $group): ?TaskPullRequestHealth
+        public function health(Task $group): ?TaskPullRequestHealth
         {
             return $this->merge;
         }
@@ -202,7 +201,7 @@ it('normalizes compatibility characters with Unicode NFKC before matching', func
     [$group, $cancelled, $failed, $completed] = cancelled_brief_coverage_group();
     $completed->update(['title' => 'Ｅｘｐｏｒｔ']);
     Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.2)]])->preventStrayClassifications();
-    app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskRunPullRequest('Summary.', ['Export'], []), 89, ['Export']);
+    app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskTurnPullRequest('Summary.', ['Export'], []), 89, ['Export']);
     app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(state: 'merged', pullRequestNumber: 42, mergeBody: "## Changes\n\n- Export\n", mergeSha: 'merge-sha', mergedAt: '2026-10-01T10:00:00Z'));
 
     expect(JevDecision::query()->sole()->labels['questions']['subtask_'.$completed->id]['label'])->toBe('false_negative');
@@ -210,11 +209,11 @@ it('normalizes compatibility characters with Unicode NFKC before matching', func
 
 it('does not assign a call-level label to a mixed-answer coverage call', function (): void {
     [$group, $cancelled, $failed, $completed] = cancelled_brief_coverage_group();
-    $other = Task::query()->create(['task_group_id' => $group->id, 'position' => 4, 'title' => 'Route', 'brief' => 'Add a route.', 'status' => TaskStatus::Completed]);
+    $other = Task::query()->create(['parent_id' => $group->id, 'position' => 4, 'title' => 'Route', 'brief' => 'Add a route.', 'status' => TaskStatus::Completed]);
     Classification::fake([
         ['subtask_'.$completed->id => new BooleanAnswer(0.97), 'subtask_'.$other->id => new BooleanAnswer(0.2)],
     ])->preventStrayClassifications();
-    app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskRunPullRequest('Summary.', ['Export', 'Route'], []), 88, ['Export', 'Route']);
+    app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskTurnPullRequest('Summary.', ['Export', 'Route'], []), 88, ['Export', 'Route']);
     app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(
         state: 'merged', pullRequestNumber: 42, mergeBody: "## Changes\n\n- Export\n- Route\n",
         mergeSha: 'merge-sha', mergedAt: '2026-10-01T10:00:00Z',
@@ -226,11 +225,11 @@ it('does not assign a call-level label to a mixed-answer coverage call', functio
 it('uses normalized title uniqueness and Unicode case folding before labeling', function (): void {
     [$group, $cancelled, $failed, $completed] = cancelled_brief_coverage_group();
     $completed->update(['title' => 'Straße']);
-    Task::query()->create(['task_group_id' => $group->id, 'position' => 4, 'title' => 'STRASSE', 'brief' => 'Same after normalization.', 'status' => TaskStatus::Completed]);
+    Task::query()->create(['parent_id' => $group->id, 'position' => 4, 'title' => 'STRASSE', 'brief' => 'Same after normalization.', 'status' => TaskStatus::Completed]);
     Classification::fake([
         ['subtask_'.$completed->id => new BooleanAnswer(0.2), 'subtask_'.Task::query()->where('title', 'STRASSE')->value('id') => new BooleanAnswer(0.2)],
     ])->preventStrayClassifications();
-    app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskRunPullRequest('Summary.', ['Straße'], []), 85, ['Straße']);
+    app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskTurnPullRequest('Summary.', ['Straße'], []), 85, ['Straße']);
     app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(state: 'merged', pullRequestNumber: 42, mergeBody: "## Changes\n\n- STRASSE\n", mergeSha: 'merge-sha', mergedAt: '2026-10-01T10:00:00Z'));
 
     expect(JevDecision::query()->sole()->labels)->toBeNull();
@@ -240,7 +239,7 @@ it('case-folds Unicode titles when matching merge change lines', function (): vo
     [$group, $cancelled, $failed, $completed] = cancelled_brief_coverage_group();
     $completed->update(['title' => 'Straße']);
     Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.2)]])->preventStrayClassifications();
-    app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskRunPullRequest('Summary.', ['Fix STRASSE behavior'], []), 86, ['Fix STRASSE behavior']);
+    app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskTurnPullRequest('Summary.', ['Fix STRASSE behavior'], []), 86, ['Fix STRASSE behavior']);
     app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(state: 'merged', pullRequestNumber: 42, mergeBody: "## Changes\n\n- Fix STRASSE behavior\n", mergeSha: 'merge-sha', mergedAt: '2026-10-01T10:00:00Z'));
 
     expect(JevDecision::query()->sole()->labels['questions']['subtask_'.$completed->id]['label'])->toBe('false_negative');
@@ -279,7 +278,7 @@ it('marks long Jev evidence incomplete and leaves its question unlabeled', funct
     $completed->update(['brief' => $longBrief]);
     Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.2)]])->preventStrayClassifications();
 
-    app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskRunPullRequest('Export feature.', ['Export'], []), 89, ['Export']);
+    app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskTurnPullRequest('Export feature.', ['Export'], []), 89, ['Export']);
     app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(
         state: 'merged',
         pullRequestNumber: 42,
@@ -313,7 +312,7 @@ it('caps Unicode questions, input state, and merge changes at the persisted JSON
     $completed->update(['brief' => $longLine]);
     Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.97)]])->preventStrayClassifications();
 
-    app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskRunPullRequest('Summary.', [$longLine], []), 81, ['Export']);
+    app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskTurnPullRequest('Summary.', [$longLine], []), 81, ['Export']);
     app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(
         state: 'merged',
         pullRequestNumber: 42,
@@ -349,12 +348,12 @@ it('completes the group when bookkeeping failure occurs during labeling', functi
     {
         public function __construct(private TaskPullRequestHealth $merge) {}
 
-        public function status(TaskGroup $group): ?string
+        public function status(Task $group): ?string
         {
             return 'merged';
         }
 
-        public function health(TaskGroup $group): ?TaskPullRequestHealth
+        public function health(Task $group): ?TaskPullRequestHealth
         {
             return $this->merge;
         }
@@ -371,7 +370,7 @@ it('completes the group when bookkeeping failure occurs during labeling', functi
 it('still reports an unmatched active subtask', function (TaskStatus $status): void {
     [$group, $cancelled, $failed, $completed] = cancelled_brief_coverage_group();
     $active = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 4,
         'title' => 'Active route',
         'brief' => 'Add an active route.',

@@ -19,10 +19,11 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskComment;
-use App\Models\TaskGroup;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
-function cancellable_task_group(TaskGroupStatus $status, ?string $prUrl = null): TaskGroup
+function cancellable_task_group(TaskGroupStatus $status, ?string $prUrl = null): Task
 {
     $project = Project::query()->create([
         'name' => 'cancel-app',
@@ -44,7 +45,7 @@ function cancellable_task_group(TaskGroupStatus $status, ?string $prUrl = null):
         'checkout_path' => '/srv/orbit/apps/cancel-app/task-21',
         'status' => 'source_resolved',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Cancel me',
         'brief' => 'Remove the stuck task workspace.',
@@ -94,12 +95,12 @@ function cancel_recording_publisher(int $failures = 0): object
 
         public function __construct(private int $failures) {}
 
-        public function publish(TaskGroup $group, string $body, string $commit): string
+        public function publish(Task $group, string $body, string $commit): string
         {
             throw new LogicException('Cancel never opens a pull request.');
         }
 
-        public function push(TaskGroup $group, string $commit): void
+        public function push(Task $group, string $commit): void
         {
             $this->pushes[] = $group->id;
             $this->commits[] = $commit;
@@ -117,7 +118,7 @@ function cancel_recording_publisher(int $failures = 0): object
 function cancel_approval(Task $task, string $commit): void
 {
     TaskComment::query()->create([
-        'task_group_id' => $task->task_group_id,
+        'task_group_id' => $task->parent_id,
         'task_id' => $task->id,
         'type' => 'approved',
         'body' => 'Approved.',
@@ -128,10 +129,10 @@ function cancel_approval(Task $task, string $commit): void
     ]);
 }
 
-function cancel_subtask(TaskGroup $group, TaskStatus $status, int $position = 1): Task
+function cancel_subtask(Task $group, TaskStatus $status, int $position = 1): Task
 {
     return Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => $position,
         'title' => 'Subtask '.$position,
         'brief' => 'Part of the group.',
@@ -397,7 +398,7 @@ describe('a workspace the group never attached', function (): void {
             {
                 $this->calls[] = $instance->id;
                 if ($this->calls === [$instance->id] && $instance->id !== $this->late->id) {
-                    $group = TaskGroup::query()->findOrFail($this->groupId);
+                    $group = Task::topLevel()->findOrFail($this->groupId);
                     $group->taskable()->associate($this->late);
                     $group->save();
                 }
@@ -450,58 +451,94 @@ describe('a workspace the group never attached', function (): void {
 });
 
 it('cancels open subtasks left in a cancelled group', function (): void {
-    $group = cancellable_task_group(TaskGroupStatus::Cancelled);
-    $keptAt = now()->subHour()->startOfSecond();
-    $todo = cancel_subtask($group, TaskStatus::Todo, 1);
-    $todo->forceFill(['assistance_requested' => true, 'settled_at' => null])->save();
-    $running = cancel_subtask($group, TaskStatus::Running, 2);
-    $running->forceFill([
-        'assistance_requested' => true,
-        'assistance_reason' => 'Still waiting.',
-        'settled_at' => $keptAt,
-    ])->save();
-    $reviewing = cancel_subtask($group, TaskStatus::Reviewing, 3);
-    $completedAt = now()->subDay()->startOfSecond();
-    $completed = cancel_subtask($group, TaskStatus::Completed, 4);
-    $completed->forceFill(['assistance_requested' => true, 'settled_at' => $completedAt])->save();
-    $failed = cancel_subtask($group, TaskStatus::Failed, 5);
-    $already = cancel_subtask($group, TaskStatus::Cancelled, 6);
-    $active = TaskGroup::query()->create([
-        'project_id' => $group->project_id,
-        'title' => 'Still running',
-        'brief' => 'Its open subtask stays open.',
-        'status' => TaskGroupStatus::Running,
-    ]);
-    $untouched = cancel_subtask($active, TaskStatus::Todo, 1);
-    $untouched->forceFill(['assistance_requested' => true])->save();
+    $default = DB::getDefaultConnection();
+    config(['database.connections.cancelled_open_subtasks' => [
+        'driver' => 'sqlite', 'database' => ':memory:', 'foreign_key_constraints' => true,
+    ]]);
+    DB::setDefaultConnection('cancelled_open_subtasks');
 
-    run_legacy_schema_migration(require database_path('migrations/2026_09_27_190000_cancel_open_subtasks_of_cancelled_groups.php'), 'up');
+    try {
+        $paths = array_values(array_filter(
+            glob(database_path('migrations/*.php')) ?: [],
+            static fn (string $path): bool => ! str_contains($path, 'merge_task_groups_into_tasks'),
+        ));
+        Artisan::call('migrate', ['--database' => 'cancelled_open_subtasks', '--path' => $paths, '--realpath' => true, '--force' => true]);
 
-    $todo->refresh();
-    $running->refresh();
-    $reviewing->refresh();
-    $completed->refresh();
-    $failed->refresh();
-    $already->refresh();
-    $untouched->refresh();
+        $projectId = DB::table('projects')->insertGetId([
+            'name' => 'Cancel legacy', 'slug' => 'cancel-legacy', 'code' => 'CAN',
+            'repository_url' => 'git@example.test:cancel-legacy.git', 'repository_identity' => 'example.test/cancel-legacy',
+        ]);
+        $cancelled = DB::table('task_groups')->insertGetId([
+            'project_id' => $projectId, 'title' => 'Cancelled', 'brief' => 'Already cancelled.', 'status' => 'cancelled',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $active = DB::table('task_groups')->insertGetId([
+            'project_id' => $projectId, 'title' => 'Still running', 'brief' => 'Its open subtask stays open.', 'status' => 'running',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $keptAt = now()->subHour()->startOfSecond();
+        $completedAt = now()->subDay()->startOfSecond();
+        $rows = [
+            'todo' => ['status' => 'todo', 'assistance_requested' => true, 'assistance_reason' => null, 'settled_at' => null],
+            'running' => ['status' => 'running', 'assistance_requested' => true, 'assistance_reason' => 'Still waiting.', 'settled_at' => $keptAt],
+            'reviewing' => ['status' => 'reviewing', 'assistance_requested' => false, 'assistance_reason' => null, 'settled_at' => null],
+            'completed' => ['status' => 'completed', 'assistance_requested' => true, 'assistance_reason' => null, 'settled_at' => $completedAt],
+            'failed' => ['status' => 'failed', 'assistance_requested' => false, 'assistance_reason' => null, 'settled_at' => null],
+            'already' => ['status' => 'cancelled', 'assistance_requested' => false, 'assistance_reason' => null, 'settled_at' => null],
+        ];
+        $ids = [];
+        $position = 1;
+        foreach ($rows as $name => $row) {
+            $ids[$name] = DB::table('tasks')->insertGetId([
+                ...$row,
+                'task_group_id' => $cancelled,
+                'position' => $position,
+                'title' => $name,
+                'brief' => 'Part of the group.',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            $position++;
+        }
+        $untouched = DB::table('tasks')->insertGetId([
+            'task_group_id' => $active, 'position' => 1, 'title' => 'Untouched', 'brief' => 'Stays open.',
+            'status' => 'todo', 'assistance_requested' => true, 'settled_at' => null,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
 
-    expect($todo->status)->toBe(TaskStatus::Cancelled)
-        ->and($todo->assistance_requested)->toBeFalse()
-        ->and($todo->settled_at)->not->toBeNull()
-        ->and($running->status)->toBe(TaskStatus::Cancelled)
-        ->and($running->assistance_requested)->toBeFalse()
-        ->and($running->assistance_reason)->toBe('Still waiting.')
-        ->and($running->settled_at?->equalTo($keptAt))->toBeTrue()
-        ->and($reviewing->status)->toBe(TaskStatus::Cancelled)
-        ->and($reviewing->settled_at)->not->toBeNull()
-        ->and($completed->status)->toBe(TaskStatus::Completed)
-        ->and($completed->assistance_requested)->toBeTrue()
-        ->and($completed->settled_at?->equalTo($completedAt))->toBeTrue()
-        ->and($failed->status)->toBe(TaskStatus::Failed)
-        ->and($failed->settled_at)->toBeNull()
-        ->and($already->status)->toBe(TaskStatus::Cancelled)
-        ->and($already->settled_at)->toBeNull()
-        ->and($untouched->status)->toBe(TaskStatus::Todo)
-        ->and($untouched->assistance_requested)->toBeTrue()
-        ->and($untouched->settled_at)->toBeNull();
+        $migration = require database_path('migrations/2026_09_27_190000_cancel_open_subtasks_of_cancelled_groups.php');
+        $migration->up();
+
+        $todo = DB::table('tasks')->where('id', $ids['todo'])->first();
+        $running = DB::table('tasks')->where('id', $ids['running'])->first();
+        $reviewing = DB::table('tasks')->where('id', $ids['reviewing'])->first();
+        $completed = DB::table('tasks')->where('id', $ids['completed'])->first();
+        $failed = DB::table('tasks')->where('id', $ids['failed'])->first();
+        $already = DB::table('tasks')->where('id', $ids['already'])->first();
+        $open = DB::table('tasks')->where('id', $untouched)->first();
+
+        expect($todo->status)->toBe('cancelled')
+            ->and((bool) $todo->assistance_requested)->toBeFalse()
+            ->and($todo->settled_at)->not->toBeNull()
+            ->and($running->status)->toBe('cancelled')
+            ->and((bool) $running->assistance_requested)->toBeFalse()
+            ->and($running->assistance_reason)->toBe('Still waiting.')
+            ->and($running->settled_at)->toBe($keptAt->format('Y-m-d H:i:s'))
+            ->and($reviewing->status)->toBe('cancelled')
+            ->and($reviewing->settled_at)->not->toBeNull()
+            ->and($completed->status)->toBe('completed')
+            ->and((bool) $completed->assistance_requested)->toBeTrue()
+            ->and($completed->settled_at)->toBe($completedAt->format('Y-m-d H:i:s'))
+            ->and($failed->status)->toBe('failed')
+            ->and($failed->settled_at)->toBeNull()
+            ->and($already->status)->toBe('cancelled')
+            ->and($already->settled_at)->toBeNull()
+            ->and($open->status)->toBe('todo')
+            ->and((bool) $open->assistance_requested)->toBeTrue()
+            ->and($open->settled_at)->toBeNull()
+            ->and(Schema::hasTable('task_groups'))->toBeTrue();
+    } finally {
+        DB::setDefaultConnection($default);
+        DB::purge('cancelled_open_subtasks');
+    }
 });
