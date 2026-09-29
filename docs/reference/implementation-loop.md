@@ -106,7 +106,7 @@ For each Composer project, the gate runs `composer validate --strict`, `composer
 
 A change under `apps/web` runs `bun install --frozen-lockfile` in `apps/web` and `packages/agent-annotation`, then `bun run check`, `bun run build`, and a generated-types check in `apps/web`. The generated-types check writes `openapi-typescript` output for `docs/openapi.json` to a temporary file and compares it with `src/api/schema.d.ts`. It does not change the working tree. A change to `docs/openapi.json` alone runs the install and the generated-types check. A change under `apps/pi-server` runs `bun install --frozen-lockfile`, `bun run check`, `bun run test`, and `bun run build` there. The Rust agent and agent annotation checks run only in CI.
 
-A command whose program is missing fails with `<program>: required tool not found`. A tool missing inside the generated-types shell command fails with the shell's exit code 127. The gate never skips a selected check.
+A command whose program is missing fails with `<program>: required tool not found`. The generated-types check runs in a shell, so a tool that is missing there fails with exit code 127. The gate never skips a selected check.
 
 #### Finding checks
 
