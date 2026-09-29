@@ -74,7 +74,7 @@ bin/docs-openapi
 bin/mcp-tools
 ```
 
-Continuous integration runs `bin/docs-openapi --check` and `bin/mcp-tools --check`. A Gateway test fails when an API route has no tool or a tool has no route.
+Continuous integration runs `bin/docs-openapi --check` and `bin/mcp-tools --check`. A Gateway test fails when an API route has no tool or a tool has no route. The inputs to `bin/docs-openapi` are on [API reference generation](/reference/api-reference).
 
 ## Why it works this way
 
@@ -82,7 +82,7 @@ These reasons explain the design. Check them before you propose a change.
 
 ### Tools generated from the API description
 
-More than a hundred hand-written tool classes would repeat the form requests' rules and drift from them with every API change. Generating the catalogue from the OpenAPI document keeps one source. A weak tool description is fixed in the form request or data class.
+More than a hundred hand-written tool classes would repeat the form requests' rules and drift from them with every API change. Generating the catalogue from the OpenAPI document keeps one source. A weak tool description is fixed in the form request, the data class, or the CLI command text that [API reference generation](/reference/api-reference) copies into the operation.
 
 ### Tool calls go through the HTTP kernel
 

@@ -907,6 +907,23 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/api-reference.md",
+            "title": "API reference generation",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Deployment",
+                "Gateway",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/reference/app-dev-runtime-hibernation.md",
             "title": "App-dev runtime hibernation",
             "kind": "reference",
