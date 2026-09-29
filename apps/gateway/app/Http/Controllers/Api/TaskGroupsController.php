@@ -71,7 +71,7 @@ final class TaskGroupsController extends Controller
     #[RequiresNodeAccess(ServingNode::TaskGroupOwning)]
     public function updateTask(UpdateTaskRequest $request, Task $group, Task $task, UpdateTaskAction $action): JsonResponse
     {
-        abort_unless($task->task_group_id === $group->id, 404);
+        abort_unless($task->parent_id === $group->id, 404);
 
         return response()->json([
             'data' => TaskData::fromModel($action->execute($group, $task, $request->payload()))->toArray(),
@@ -82,7 +82,7 @@ final class TaskGroupsController extends Controller
     #[RequiresNodeAccess(ServingNode::TaskGroupOwning)]
     public function destroyTask(EmptyTasksRequest $request, Task $group, Task $task, DestroyTaskAction $action): JsonResponse
     {
-        abort_unless($task->task_group_id === $group->id, 404);
+        abort_unless($task->parent_id === $group->id, 404);
 
         return response()->json([
             'data' => TaskData::fromModel($action->execute($group, $task))->toArray(),
@@ -93,7 +93,7 @@ final class TaskGroupsController extends Controller
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function cancelSubtask(EmptyTasksRequest $request, Task $group, Task $task, CancelRunningSubtaskAction $action): JsonResponse
     {
-        abort_unless($task->task_group_id === $group->id, 404);
+        abort_unless($task->parent_id === $group->id, 404);
 
         return response()->json([
             'data' => TaskData::fromModel($action->execute($group, $task))->toArray(),
@@ -104,7 +104,7 @@ final class TaskGroupsController extends Controller
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function cancelCheck(EmptyTasksRequest $request, Task $group, Task $task, CancelTaskCheckAction $action): JsonResponse
     {
-        abort_unless($task->task_group_id === $group->id, 404);
+        abort_unless($task->parent_id === $group->id, 404);
 
         return response()->json([
             'data' => TaskCheckData::fromModel($action->execute($group, $task))->toArray(),
@@ -115,7 +115,7 @@ final class TaskGroupsController extends Controller
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function storeComment(StoreTaskCommentRequest $request, Task $group, Task $task, StoreTaskCommentAction $action): JsonResponse
     {
-        abort_unless($task->task_group_id === $group->id, 404);
+        abort_unless($task->parent_id === $group->id, 404);
         $comment = $action->execute($task, $request->validated());
 
         return response()->json(['data' => TaskCommentData::fromModel($comment)->toArray(), 'meta' => $this->meta($request)], 201);
@@ -124,7 +124,7 @@ final class TaskGroupsController extends Controller
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function comments(Request $request, Task $group, Task $task): JsonResponse
     {
-        abort_unless($task->task_group_id === $group->id, 404);
+        abort_unless($task->parent_id === $group->id, 404);
 
         return response()->json([
             'data' => $task->comments()->latest('posted_at')->get()->map(static fn (TaskComment $comment): array => TaskCommentData::fromModel($comment)->toArray())->all(),

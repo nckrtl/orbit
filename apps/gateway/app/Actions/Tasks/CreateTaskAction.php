@@ -32,7 +32,7 @@ final readonly class CreateTaskAction
         $position = StoredInteger::fromOrZero($group->tasks()->max('position')) + 1;
 
         return Task::query()->create([
-            'task_group_id' => $group->id,
+            'parent_id' => $group->id,
             'position' => $position,
             'title' => $data->title,
             'brief' => $data->brief,

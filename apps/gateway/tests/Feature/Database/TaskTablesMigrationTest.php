@@ -122,5 +122,5 @@ it('persists a Task morph to a Project instance and ordered subtasks', function 
         ->and($fresh?->duration_ms)->toBe(1500)
         ->and($fresh?->tasks->pluck('title')->all())->toBe(['First', 'Second'])
         ->and($instance->tasks()->first()?->id)->toBe($group->id)
-        ->and(Task::query()->where('task_group_id', $group->id)->count())->toBe(2);
+        ->and(Task::query()->where('parent_id', $group->id)->count())->toBe(2);
 });

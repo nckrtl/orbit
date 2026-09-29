@@ -110,11 +110,11 @@ final readonly class TaskAgentSpawner implements AgentSpawner
     private function subtaskReviewer(Task $task): ?AgentThread
     {
         $query = AgentThread::query()
-            ->where('task_group_id', $task->task_group_id)
+            ->where('task_group_id', $task->parent_id)
             ->where('task_id', $task->id)
             ->where('role', TaskThreadRole::Reviewer->value)
             ->where('external_id', 'not like', self::PendingPrefix.'%');
-        $pointed = Task::topLevel()->whereKey($task->task_group_id)->value('reviewer_agent_thread_id');
+        $pointed = Task::topLevel()->whereKey($task->parent_id)->value('reviewer_agent_thread_id');
         if (is_numeric($pointed)) {
             $match = (clone $query)->whereKey((int) $pointed)->first();
             if ($match instanceof AgentThread) {
@@ -288,7 +288,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
 
     private function reviewTitle(Task $task): string
     {
-        return 'Orbit task #'.$task->task_group_id.' · Review: '.$task->title;
+        return 'Orbit task #'.$task->parent_id.' · Review: '.$task->title;
     }
 
     /** The opening packet carried this attempt's held resolution, so record that delivery. */

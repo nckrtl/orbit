@@ -7,10 +7,11 @@ namespace App\Domain\Tasks;
 use App\Models\Task;
 use Illuminate\Contracts\Database\Eloquent\CastsAttributes;
 use Illuminate\Database\Eloquent\Model;
+use LogicException;
 
 /**
  * Top-level rows use the task status names. Subtask rows use the subtask names.
- * The stored strings match, and a partial select that omits parent_id stays a subtask read.
+ * The level is the task's loaded parent id, the same decision the broadcast observer makes.
  *
  * @implements CastsAttributes<TaskStatus|TaskGroupStatus|null, TaskStatus|TaskGroupStatus|string|null>
  */
@@ -22,14 +23,13 @@ final class TaskLevelStatusCast implements CastsAttributes
             return null;
         }
 
-        if ($model instanceof Task
-            && TaskSchema::merged($model->getConnection())
-            && array_key_exists('parent_id', $attributes)
-            && $attributes['parent_id'] === null) {
-            return TaskGroupStatus::from($value);
+        if (! $model instanceof Task) {
+            throw new LogicException('Task status belongs on a task.');
         }
 
-        return TaskStatus::from($value);
+        return $model->isTopLevel()
+            ? TaskGroupStatus::from($value)
+            : TaskStatus::from($value);
     }
 
     public function set(Model $model, string $key, mixed $value, array $attributes): ?string

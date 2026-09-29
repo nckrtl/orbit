@@ -56,7 +56,7 @@ it('starts one baseline check and asks for no assistance when the todo move and 
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'First task',
         'brief' => 'First task brief',
@@ -223,7 +223,7 @@ function baseline_start_task(string $slug, string $ip, TaskStatus $status): arra
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'First task',
         'brief' => 'First task brief',

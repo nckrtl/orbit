@@ -3512,7 +3512,7 @@ export interface components {
             brief?: string;
             deliverables?: Record<string, never>[];
             /** @enum {string} */
-            status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "completed" | "failed" | "cancelled";
+            status?: "todo" | "reserved" | "running" | "reviewing" | "completed" | "failed" | "cancelled";
             implementer_agent_thread_id?: number | null;
             tokens?: number | null;
             line_diff?: number | null;

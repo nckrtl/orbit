@@ -48,7 +48,7 @@ function production_task_prompt_models(): array
         'status' => 'running',
     ]);
     $task = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Render JSON',
         'brief' => 'Read and validate the prompt input.',

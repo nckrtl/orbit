@@ -52,7 +52,7 @@ final readonly class AnnotationStoreAction
                 'status' => TaskGroupStatus::Todo,
             ]);
             $task = Task::query()->create([
-                'task_group_id' => $group->id, 'type' => TaskType::Annotation, 'position' => 1,
+                'parent_id' => $group->id, 'type' => TaskType::Annotation, 'position' => 1,
                 'title' => $group->title, 'brief' => $group->brief, 'status' => TaskStatus::Todo,
                 'target_thread_id' => $thread,
             ]);

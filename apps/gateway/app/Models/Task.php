@@ -7,24 +7,20 @@ namespace App\Models;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskBroadcastObserver;
-use App\Domain\Tasks\TaskColumnQueryBuilder;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskHierarchyException;
 use App\Domain\Tasks\TaskLevelStatusCast;
-use App\Domain\Tasks\TaskSchema;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskType;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
-use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use LogicException;
@@ -37,7 +33,6 @@ use LogicException;
  * @property string|null $completion_summary
  * @property int $id
  * @property int|null $parent_id
- * @property int $task_group_id
  * @property int $position
  * @property int|null $continuation_of_task_id
  * @property int $completion_attempt
@@ -162,7 +157,6 @@ final class Task extends Model
     protected $fillable = [
         'type', 'target_thread_id', 'completion_summary',
         'parent_id',
-        'task_group_id',
         'continuation_of_task_id',
         'position',
         'title',
@@ -216,33 +210,51 @@ final class Task extends Model
     protected static function booted(): void
     {
         self::addGlobalScope('subtask', static function (Builder $query): void {
-            if (! TaskSchema::merged($query->getModel()->getConnection())) {
-                return;
-            }
-
             $query->whereNotNull('parent_id');
         });
 
         self::saving(static function (Task $task): void {
-            if (! TaskSchema::merged($task->getConnection())) {
-                $task->fillIfMissing([
-                    'status' => TaskStatus::Todo->value,
-                    'assistance_requested' => false,
-                    'pi_restart_resumes' => 0,
-                    'type' => TaskType::Implementation->value,
-                ]);
-
-                return;
-            }
-
+            $task->ensureParentId();
             $task->applyLevelDefaults();
             $task->guardHierarchy();
+            $task->guardStatus();
         });
+    }
+
+    /**
+     * A top-level task has a loaded null parent. A subtask has a loaded parent id.
+     * The status cast and the broadcast observer both use this.
+     */
+    public function isTopLevel(): bool
+    {
+        return $this->resolvedParentId() === null;
+    }
+
+    public function subtaskStatus(): TaskStatus
+    {
+        $status = $this->status;
+
+        if (! $status instanceof TaskStatus) {
+            throw new LogicException('A subtask status must use the subtask status names.');
+        }
+
+        return $status;
+    }
+
+    public function groupStatus(): TaskGroupStatus
+    {
+        $status = $this->status;
+
+        if (! $status instanceof TaskGroupStatus) {
+            throw new LogicException('A top-level task status must use the top-level status names.');
+        }
+
+        return $status;
     }
 
     public function requireGroupId(): int
     {
-        $groupId = $this->task_group_id;
+        $groupId = $this->resolvedParentId();
 
         if (! is_int($groupId)) {
             throw new LogicException('A subtask is missing its task.');
@@ -328,7 +340,7 @@ final class Task extends Model
     public function isLastSubtask(): bool
     {
         return self::query()
-            ->where('task_group_id', $this->task_group_id)
+            ->where('parent_id', $this->requireGroupId())
             ->whereKeyNot($this->id)
             ->whereIn('status', [TaskStatus::Todo, TaskStatus::Reserved, TaskStatus::Running])
             ->doesntExist();
@@ -395,36 +407,6 @@ final class Task extends Model
         ];
     }
 
-    protected function newBaseQueryBuilder(): QueryBuilder
-    {
-        $connection = $this->getConnection();
-
-        return new TaskColumnQueryBuilder($connection, $connection->getQueryGrammar(), $connection->getPostProcessor());
-    }
-
-    /**
-     * Subtask rows keep the task_group_id name. On the merged table it is parent_id.
-     *
-     * @return Attribute<?int, array<string, int|string|null>>
-     */
-    protected function taskGroupId(): Attribute
-    {
-        return Attribute::make(
-            get: function (): ?int {
-                if (TaskSchema::merged($this->getConnection()) && array_key_exists('parent_id', $this->attributes)) {
-                    return self::integerOrNull($this->attributes['parent_id']);
-                }
-
-                return self::integerOrNull($this->attributes['task_group_id'] ?? null);
-            },
-            set: function (int|string|null $value): array {
-                $column = TaskSchema::merged($this->getConnection()) ? 'parent_id' : 'task_group_id';
-
-                return [$column => $value];
-            },
-        );
-    }
-
     private function applyLevelDefaults(): void
     {
         if ($this->parentKey() === null) {
@@ -487,7 +469,7 @@ final class Task extends Model
             throw TaskHierarchyException::nested();
         }
 
-        if ($this->exists && DB::table('tasks')->where('parent_id', $this->getKey())->exists()) {
+        if ($this->exists && $this->children()->exists()) {
             throw TaskHierarchyException::nested();
         }
     }
@@ -502,13 +484,86 @@ final class Task extends Model
         }
     }
 
-    private function parentKey(): ?int
+    /**
+     * The parent id, loaded from the row when a partial select omitted it.
+     * A model that has neither the attribute nor a row fails instead of guessing a level.
+     */
+    private function resolvedParentId(): ?int
     {
-        if (! TaskSchema::merged($this->getConnection())) {
-            return null;
+        if (! array_key_exists('parent_id', $this->attributes)) {
+            $this->loadParentId();
         }
 
-        return self::integerOrNull($this->attributes['parent_id'] ?? null);
+        return self::integerOrNull($this->attributes['parent_id']);
+    }
+
+    /**
+     * A new row that omits parent_id stores null. Record that before the level is read.
+     * A saved row loads the stored value instead of treating the missing attribute as either level.
+     */
+    private function ensureParentId(): void
+    {
+        if (array_key_exists('parent_id', $this->attributes)) {
+            return;
+        }
+
+        if ($this->exists) {
+            $this->loadParentId();
+
+            return;
+        }
+
+        $this->attributes['parent_id'] = null;
+    }
+
+    private function loadParentId(): void
+    {
+        if (! $this->exists) {
+            throw new LogicException('A task needs parent_id before its level can be decided.');
+        }
+
+        $key = $this->getKey();
+
+        if (! is_int($key) && ! is_string($key)) {
+            throw new LogicException('A task needs its id before its level can be decided.');
+        }
+
+        $row = DB::table($this->getTable())->where('id', $key)->first(['id', 'parent_id']);
+
+        if ($row === null) {
+            throw new LogicException("Task [{$key}] has no row, so its level cannot be decided.");
+        }
+
+        $stored = (array) $row;
+
+        if (! array_key_exists('parent_id', $stored)) {
+            throw new LogicException("Task [{$key}] has no row, so its level cannot be decided.");
+        }
+
+        $this->attributes['parent_id'] = $stored['parent_id'];
+        $this->syncOriginalAttribute('parent_id');
+    }
+
+    private function guardStatus(): void
+    {
+        $status = $this->attributes['status'] ?? null;
+
+        if (! is_string($status) || $status === '') {
+            return;
+        }
+
+        if ($this->resolvedParentId() === null) {
+            TaskGroupStatus::from($status);
+
+            return;
+        }
+
+        TaskStatus::from($status);
+    }
+
+    private function parentKey(): ?int
+    {
+        return $this->resolvedParentId();
     }
 
     private static function integerOrNull(mixed $value): ?int

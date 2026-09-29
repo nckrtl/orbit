@@ -82,12 +82,12 @@ it('claimNext continues after provision null', function (): void {
     {
         public function spawnReviewer(Task $task): ?int
         {
-            return test_agent_thread($task->parent, 'claim-hol-reviewer-'.$task->task_group_id)->id;
+            return test_agent_thread($task->parent, 'claim-hol-reviewer-'.$task->parent_id)->id;
         }
 
         public function spawnImplementer(Task $task): ?int
         {
-            return test_agent_thread($task->parent, 'claim-hol-implementer-'.$task->task_group_id, $task)->id;
+            return test_agent_thread($task->parent, 'claim-hol-implementer-'.$task->parent_id, $task)->id;
         }
 
         public function requestReview(Task $task): void {}
@@ -266,7 +266,7 @@ function claim_hol_group(Project $project, string $title): Task
         'status' => TaskGroupStatus::Todo,
     ]);
     Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => "{$title} task",
         'brief' => 'First task.',
@@ -325,12 +325,12 @@ function claim_hol_spawner(): void
     {
         public function spawnReviewer(Task $task): ?int
         {
-            return test_agent_thread($task->parent, 'claim-hol-reviewer-'.$task->task_group_id)->id;
+            return test_agent_thread($task->parent, 'claim-hol-reviewer-'.$task->parent_id)->id;
         }
 
         public function spawnImplementer(Task $task): ?int
         {
-            return test_agent_thread($task->parent, 'claim-hol-implementer-'.$task->task_group_id, $task)->id;
+            return test_agent_thread($task->parent, 'claim-hol-implementer-'.$task->parent_id, $task)->id;
         }
 
         public function requestReview(Task $task): void {}

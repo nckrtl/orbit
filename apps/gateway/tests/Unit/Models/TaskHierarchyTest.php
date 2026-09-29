@@ -2,11 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskHierarchyException;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
@@ -17,7 +19,7 @@ it('separates top-level tasks from subtasks and links parent and children', func
         'project_id' => $project->id,
         'title' => 'Feature',
         'brief' => 'Ship the feature.',
-        'status' => TaskStatus::Backlog,
+        'status' => TaskGroupStatus::Backlog,
     ]);
     $task->children()->create(['position' => 2, 'title' => 'Second', 'brief' => 'Later.']);
     $first = $task->children()->create(['position' => 1, 'title' => 'First', 'brief' => 'Earlier.']);
@@ -25,7 +27,7 @@ it('separates top-level tasks from subtasks and links parent and children', func
     expect(Task::topLevel()->pluck('title')->all())->toBe(['Feature'])
         ->and(Task::query()->orderBy('position')->pluck('title')->all())->toBe(['First', 'Second'])
         ->and($first->parent?->is($task))->toBeTrue()
-        ->and($first->task_group_id)->toBe($task->id)
+        ->and($first->parent_id)->toBe($task->id)
         ->and($task->children()->pluck('title')->all())->toBe(['First', 'Second']);
 });
 
@@ -100,6 +102,51 @@ it('refuses a subtask that would have children', function (): void {
 
     expect(fn () => $task->save())->toThrow(TaskHierarchyException::class, 'cannot have subtasks');
 });
+
+it('decides the level from a loaded parent_id for topLevel() and a partial select', function (): void {
+    $task = Task::topLevel()->create([
+        'project_id' => hierarchy_project()->id,
+        'title' => 'Feature',
+        'brief' => 'Ship the feature.',
+        'status' => TaskGroupStatus::Backlog,
+    ]);
+    $subtask = $task->children()->create(['position' => 1, 'title' => 'First', 'brief' => 'Earlier.', 'status' => TaskStatus::Todo]);
+    $partialTask = Task::topLevel()->whereKey($task->id)->firstOrFail(['id', 'status']);
+    $partialSubtask = Task::query()->whereKey($subtask->id)->firstOrFail(['id', 'status']);
+
+    expect(array_key_exists('parent_id', $partialTask->getAttributes()))->toBeFalse()
+        ->and(array_key_exists('parent_id', $partialSubtask->getAttributes()))->toBeFalse()
+        ->and($task->isTopLevel())->toBeTrue()
+        ->and($task->status)->toBeInstanceOf(TaskGroupStatus::class)
+        ->and($partialTask->status)->toBeInstanceOf(TaskGroupStatus::class)
+        ->and($partialTask->isTopLevel())->toBeTrue()
+        ->and($subtask->status)->toBeInstanceOf(TaskStatus::class)
+        ->and($partialSubtask->status)->toBeInstanceOf(TaskStatus::class)
+        ->and($partialSubtask->isTopLevel())->toBeFalse();
+});
+
+it('does not guess a level when parent_id was never loaded', function (): void {
+    $task = new Task;
+    $task->setRawAttributes(['status' => 'todo']);
+
+    expect(fn () => $task->status)->toThrow(LogicException::class, 'parent_id');
+});
+
+it('rejects a top-level-only status on a subtask', function (string $status): void {
+    $task = Task::query()->create([
+        'project_id' => hierarchy_project()->id,
+        'title' => 'Feature',
+        'brief' => 'Ship the feature.',
+    ]);
+    $subtask = $task->children()->create(['position' => 1, 'title' => 'First', 'brief' => 'Earlier.']);
+
+    expect(fn () => $subtask->forceFill(['status' => $status])->save())->toThrow(ValueError::class);
+
+    DB::table('tasks')->where('id', $subtask->id)->update(['status' => $status]);
+    $loaded = Task::query()->findOrFail($subtask->id);
+
+    expect(fn () => $loaded->status)->toThrow(ValueError::class);
+})->with(['backlog', 'settling']);
 
 function hierarchy_project(): Project
 {

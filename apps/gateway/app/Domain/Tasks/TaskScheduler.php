@@ -470,7 +470,7 @@ final readonly class TaskScheduler
         $updated = TaskCheck::query()->whereKey($check->id)->where('status', TaskCheckStatus::Running->value)
             ->update([...$values, 'finished_at' => $finishedAt, 'updated_at' => now()]);
         $check->refresh();
-        $groupId = Task::query()->whereKey($check->task_id)->value('task_group_id');
+        $groupId = Task::query()->whereKey($check->task_id)->value('parent_id');
         if ($updated === 1 && is_int($groupId)) {
             $this->broadcasts->groupChanged($groupId);
         }
@@ -2021,11 +2021,11 @@ final readonly class TaskScheduler
     private function subtaskReviewer(Task $task): ?AgentThread
     {
         $query = AgentThread::query()
-            ->where('task_group_id', $task->task_group_id)
+            ->where('task_group_id', $task->parent_id)
             ->where('task_id', $task->id)
             ->where('role', TaskThreadRole::Reviewer->value)
             ->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%');
-        $pointed = Task::topLevel()->whereKey($task->task_group_id)->value('reviewer_agent_thread_id');
+        $pointed = Task::topLevel()->whereKey($task->parent_id)->value('reviewer_agent_thread_id');
         if (is_numeric($pointed)) {
             $match = (clone $query)->whereKey((int) $pointed)->first();
             if ($match instanceof AgentThread) {
@@ -2059,7 +2059,7 @@ final readonly class TaskScheduler
             $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
                 ->with(['tasks', 'project', 'taskable'])
                 ->lockForUpdate()
-                ->findOrFail($locked->task_group_id);
+                ->findOrFail($locked->parent_id);
 
             if ($group->status !== TaskGroupStatus::Running || $locked->status !== TaskStatus::Running) {
                 return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
@@ -2108,14 +2108,14 @@ final readonly class TaskScheduler
     public function cancelRunningSubtask(Task $parent, Task $task, Closure $stop): Task
     {
         $parent->requireManagedExecution();
-        $candidate = Task::query()->where('task_group_id', $parent->id)->findOrFail($task->id);
+        $candidate = Task::query()->where('parent_id', $parent->id)->findOrFail($task->id);
 
         if ($candidate->status === TaskStatus::Todo) {
             $group = DB::transaction(function () use ($parent, $task): Task {
-                $locked = Task::query()->where('task_group_id', $parent->id)->lockForUpdate()->findOrFail($task->id);
+                $locked = Task::query()->where('parent_id', $parent->id)->lockForUpdate()->findOrFail($task->id);
                 $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
                     ->lockForUpdate()
-                    ->findOrFail($locked->task_group_id);
+                    ->findOrFail($locked->parent_id);
 
                 if ($locked->status !== TaskStatus::Todo || ! in_array($group->status, [
                     TaskGroupStatus::Todo,
@@ -2160,10 +2160,10 @@ final readonly class TaskScheduler
 
         $next = null;
         $group = DB::transaction(function () use ($parent, $task, &$next): Task {
-            $locked = Task::query()->where('task_group_id', $parent->id)->lockForUpdate()->findOrFail($task->id);
+            $locked = Task::query()->where('parent_id', $parent->id)->lockForUpdate()->findOrFail($task->id);
             $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
                 ->lockForUpdate()
-                ->findOrFail($locked->task_group_id);
+                ->findOrFail($locked->parent_id);
 
             if ($locked->status !== TaskStatus::Running) {
                 throw new ResourceOperationException(
@@ -2216,7 +2216,7 @@ final readonly class TaskScheduler
             $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
                 ->with(['tasks', 'project', 'taskable'])
                 ->lockForUpdate()
-                ->findOrFail($locked->task_group_id);
+                ->findOrFail($locked->parent_id);
 
             if ($group->status !== TaskGroupStatus::Reviewing || $locked->status !== TaskStatus::Reviewing) {
                 return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
@@ -2534,7 +2534,7 @@ final readonly class TaskScheduler
             }
 
             return Task::query()->create([
-                'task_group_id' => $locked->id,
+                'parent_id' => $locked->id,
                 'position' => StoredInteger::fromOrZero($tasks->max('position')) + 1,
                 'title' => $plan->title,
                 'brief' => $plan->brief,
@@ -2657,7 +2657,7 @@ final readonly class TaskScheduler
                 $locked = Task::query()->lockForUpdate()->findOrFail($todo->id);
                 $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
                     ->lockForUpdate()
-                    ->findOrFail($locked->task_group_id);
+                    ->findOrFail($locked->parent_id);
                 if (! in_array($group->status, [TaskGroupStatus::Settling, TaskGroupStatus::Running], true)) {
                     return null;
                 }
@@ -2789,7 +2789,7 @@ final readonly class TaskScheduler
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
             $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
                 ->lockForUpdate()
-                ->findOrFail($locked->task_group_id);
+                ->findOrFail($locked->parent_id);
             $tasks = $this->lockedTasks($group);
 
             $this->markRunning($locked, $tasks);
@@ -2842,8 +2842,8 @@ final readonly class TaskScheduler
      */
     private function needsBaseline(Task $task): bool
     {
-        $started = Task::query()->where('task_group_id', $task->task_group_id)->whereNotNull('implementer_agent_thread_id')->exists()
-            || AgentThread::query()->where('task_group_id', $task->task_group_id)->where('role', TaskThreadRole::Implementer->value)->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%')->exists();
+        $started = Task::query()->where('parent_id', $task->parent_id)->whereNotNull('implementer_agent_thread_id')->exists()
+            || AgentThread::query()->where('task_group_id', $task->parent_id)->where('role', TaskThreadRole::Implementer->value)->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%')->exists();
 
         return ! $started && ! TaskCheck::query()->where('task_id', $task->id)->where('kind', TaskCheckKind::Baseline->value)
             ->where('status', TaskCheckStatus::Passed->value)->exists();
@@ -3207,16 +3207,14 @@ final readonly class TaskScheduler
             return TaskGroupStatus::Reserved;
         }
 
-        $status = $group->status;
-
-        return $status instanceof TaskGroupStatus ? $status : TaskGroupStatus::from($status->value);
+        return $group->groupStatus();
     }
 
     /** @return Collection<int, Task> */
     private function lockedTasks(Task $group): Collection
     {
         $tasks = Task::query()
-            ->where('task_group_id', $group->id)
+            ->where('parent_id', $group->id)
             ->orderBy('position')
             ->orderBy('id')
             ->lockForUpdate()

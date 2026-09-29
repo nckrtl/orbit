@@ -50,7 +50,7 @@ function blocked_task(TaskStatus $status): Task
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create([
-        'task_group_id' => $group->id, 'position' => 1, 'title' => 'Only', 'brief' => 'One',
+        'parent_id' => $group->id, 'position' => 1, 'title' => 'Only', 'brief' => 'One',
         'status' => $status, 'assistance_requested' => true, 'assistance_reason' => 'Blocked.',
         'completion_attempt' => 2, 'review_attempt' => 3, 'review_notified_attempt' => 3,
     ]);
@@ -121,11 +121,11 @@ it('starts a fresh subtask reviewer with a review resolution when that thread do
     $group->taskable()->associate($instance);
     $group->save();
     $earlier = Task::query()->create([
-        'task_group_id' => $group->id, 'position' => 1, 'title' => 'Names', 'brief' => 'Name the records.',
+        'parent_id' => $group->id, 'position' => 1, 'title' => 'Names', 'brief' => 'Name the records.',
         'status' => TaskStatus::Completed,
     ]);
     $task = Task::query()->create([
-        'task_group_id' => $group->id, 'position' => 2, 'title' => 'Routes', 'brief' => 'Route the resolution.',
+        'parent_id' => $group->id, 'position' => 2, 'title' => 'Routes', 'brief' => 'Route the resolution.',
         'status' => TaskStatus::Reviewing, 'assistance_requested' => true, 'assistance_reason' => 'The review diff could not be read.',
         'review_attempt' => 3, 'review_notified_attempt' => null, 'communication_failures' => 5, 'completion_attempt' => 2,
     ]);

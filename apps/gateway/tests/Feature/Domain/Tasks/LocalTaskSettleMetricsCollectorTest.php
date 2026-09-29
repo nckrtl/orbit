@@ -46,7 +46,7 @@ it('sums task tokens, reads the workspace line diff, and measures duration', fun
     $group->taskable()->associate($instance);
     $group->save();
     Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'First',
         'brief' => 'One',
@@ -54,7 +54,7 @@ it('sums task tokens, reads the workspace line diff, and measures duration', fun
         'tokens' => 10,
     ]);
     Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 2,
         'title' => 'Second',
         'brief' => 'Two',

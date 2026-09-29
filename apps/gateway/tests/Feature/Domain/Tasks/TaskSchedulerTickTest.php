@@ -105,7 +105,7 @@ function tick_group(): Task
     $group->taskable()->associate($instance);
     $group->save();
     Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Models',
         'brief' => 'Store the records.',
@@ -510,7 +510,7 @@ it('does not resume a settling group without a pull request while another assist
     ]);
     $group->tasks()->update(['status' => TaskStatus::Completed]);
     $todo = Task::query()->create([
-        'task_group_id' => $group->id, 'position' => 2, 'title' => 'Waiting', 'brief' => 'Stay todo.', 'status' => TaskStatus::Todo,
+        'parent_id' => $group->id, 'position' => 2, 'title' => 'Waiting', 'brief' => 'Stay todo.', 'status' => TaskStatus::Todo,
         'deliverables' => [[
             'id' => 'composer-check', 'type' => 'command', 'description' => 'Run composer check',
             'command' => 'composer check', 'directory' => '.',
@@ -578,7 +578,7 @@ function tick_settling_group(): Task
 function tick_appended_subtask(Task $group): Task
 {
     return Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => ((int) $group->tasks()->max('position')) + 1,
         'title' => 'Address the finding',
         'brief' => 'Fix the review.',
@@ -594,7 +594,7 @@ function tick_appended_subtask(Task $group): Task
 function tick_spent_fixup(Task $group, string $problem, TaskStatus $status = TaskStatus::Completed, ?string $headSha = null, ?string $commit = null): Task
 {
     $task = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => ((int) $group->tasks()->max('position')) + 1,
         'title' => 'Earlier fix',
         'brief' => 'Already tried.',
@@ -778,7 +778,7 @@ it('asks for assistance once per set of pull request problems and withdraws it w
     app(TaskScheduler::class)->tick();
     $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => false, 'assistance_reason' => null]);
     expect($notifier->reasons)->toHaveCount(2)
-        ->and(Task::query()->where('task_group_id', $group->id)->count())->toBe(5);
+        ->and(Task::query()->where('parent_id', $group->id)->count())->toBe(5);
 });
 
 it('leaves another cause of assistance on a settling group alone while its pull request conflicts or recovers', function (): void {
@@ -1096,10 +1096,10 @@ it('changes nothing on a settling group when GitHub cannot report the pull reque
 it('appends one conflict fixup with a merge brief and returns the group to running', function (): void {
     $group = tick_settling_group();
     Task::query()->create([
-        'task_group_id' => $group->id, 'position' => 2, 'title' => 'Operator', 'brief' => 'Not a fixup.', 'status' => TaskStatus::Completed,
+        'parent_id' => $group->id, 'position' => 2, 'title' => 'Operator', 'brief' => 'Not a fixup.', 'status' => TaskStatus::Completed,
     ]);
     Task::query()->create([
-        'task_group_id' => $group->id, 'position' => 3, 'title' => 'Operator again', 'brief' => 'Still not a fixup.', 'status' => TaskStatus::Completed,
+        'parent_id' => $group->id, 'position' => 3, 'title' => 'Operator again', 'brief' => 'Still not a fixup.', 'status' => TaskStatus::Completed,
     ]);
     $agents = tick_running_agents();
     tick_watch_pulls([
@@ -1286,7 +1286,7 @@ it('creates no fixup for a green mergeable pull request', function (): void {
 
     expect($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
         ->and($group->fresh()?->assistance_requested)->toBeFalse()
-        ->and(Task::query()->where('task_group_id', $group->id)->where('status', 'todo')->exists())->toBeFalse()
+        ->and(Task::query()->where('parent_id', $group->id)->where('status', 'todo')->exists())->toBeFalse()
         ->and(Task::query()->whereNotNull('fixup_problem')->exists())->toBeFalse();
 });
 
@@ -2032,7 +2032,7 @@ it('records a legacy turn read failure without skipping the other group', functi
     $reviewing->taskable()->associate($instance);
     $reviewing->save();
     $reviewer = Task::query()->create([
-        'task_group_id' => $reviewing->id, 'position' => 1, 'title' => 'Review', 'brief' => 'Review the records.',
+        'parent_id' => $reviewing->id, 'position' => 1, 'title' => 'Review', 'brief' => 'Review the records.',
         'status' => TaskStatus::Reviewing, 'started_at' => now(),
         'review_notified_attempt' => 1, 'review_notified_turn_id' => 'handoff-turn',
     ]);
@@ -3099,7 +3099,7 @@ it('targets the idle in-progress task while another task is working', function (
     $workingTask = $group->tasks->first();
     $workingTask->update(['status' => TaskStatus::Reviewing]);
     $idleTask = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 2,
         'title' => 'Second task',
         'brief' => 'Finish the second task.',
@@ -3594,7 +3594,7 @@ function tick_review(array $receipts, bool $onBranch = true, bool $last = false)
     $group = tick_group();
     $task = $group->tasks->sole();
     if (! $last) {
-        Task::query()->create(['task_group_id' => $group->id, 'position' => 2, 'title' => 'Routes', 'brief' => 'Add the routes.', 'status' => TaskStatus::Todo]);
+        Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Routes', 'brief' => 'Add the routes.', 'status' => TaskStatus::Todo]);
     }
     $group->update(['status' => TaskGroupStatus::Reviewing]);
     $task->update(['status' => TaskStatus::Reviewing, 'review_notified_attempt' => $task->review_attempt, 'review_notified_turn_id' => 'handoff-turn', ...tick_review_baseline()]);
@@ -4031,7 +4031,7 @@ it('commits the last approved subtask, opens the pull request with the reviewer 
 it('counts only the delivered subtasks in the pull request description', function (): void {
     [$group, , , $signer] = tick_review([tick_final_approval()], last: true);
     foreach ([TaskStatus::Completed, TaskStatus::Cancelled, TaskStatus::Failed] as $index => $status) {
-        Task::query()->create(['task_group_id' => $group->id, 'position' => $index + 2, 'title' => $status->value, 'brief' => 'Other subtask.', 'status' => $status]);
+        Task::query()->create(['parent_id' => $group->id, 'position' => $index + 2, 'title' => $status->value, 'brief' => 'Other subtask.', 'status' => $status]);
     }
     $publishing = tick_publishing();
 

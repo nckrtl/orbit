@@ -182,7 +182,7 @@ it('does not send a review when git cannot produce the stat, the body, or the fi
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Review',
         'brief' => 'Review it.',

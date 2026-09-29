@@ -58,7 +58,7 @@ final readonly class CreateTaskGroupAction
 
         foreach ($data->tasks as $index => $task) {
             Task::query()->create([
-                'task_group_id' => $group->id,
+                'parent_id' => $group->id,
                 'position' => $index + 1,
                 'title' => $task->title,
                 'brief' => $task->brief,

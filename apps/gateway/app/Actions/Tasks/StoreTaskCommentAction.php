@@ -30,7 +30,7 @@ final readonly class StoreTaskCommentAction
         $comment = DB::transaction(function () use ($task, $payload, &$deliverResolution): TaskComment {
             $comment = TaskComment::query()->create([
                 ...$payload,
-                'task_group_id' => $task->task_group_id,
+                'task_group_id' => $task->parent_id,
                 'task_id' => $task->id,
                 'completion_attempt' => $task->completion_attempt,
                 'posted_at' => Carbon::now(),
@@ -84,7 +84,7 @@ final readonly class StoreTaskCommentAction
     private function subtaskReviewer(Task $task): ?AgentThread
     {
         $reviewers = AgentThread::query()
-            ->where('task_group_id', $task->task_group_id)
+            ->where('task_group_id', $task->parent_id)
             ->where('task_id', $task->id)
             ->where('role', TaskThreadRole::Reviewer->value)
             ->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%');

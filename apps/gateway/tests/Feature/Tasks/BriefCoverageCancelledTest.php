@@ -41,21 +41,21 @@ function cancelled_brief_coverage_group(): array
         'status' => 'reviewing',
     ]);
     $cancelled = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Cancelled report',
         'brief' => 'Add a report that was cancelled.',
         'status' => TaskStatus::Cancelled,
     ]);
     $failed = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 2,
         'title' => 'Failed report',
         'brief' => 'Add a report that failed.',
         'status' => TaskStatus::Failed,
     ]);
     $completed = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 3,
         'title' => 'Export',
         'brief' => 'Write the CSV export.',
@@ -209,7 +209,7 @@ it('normalizes compatibility characters with Unicode NFKC before matching', func
 
 it('does not assign a call-level label to a mixed-answer coverage call', function (): void {
     [$group, $cancelled, $failed, $completed] = cancelled_brief_coverage_group();
-    $other = Task::query()->create(['task_group_id' => $group->id, 'position' => 4, 'title' => 'Route', 'brief' => 'Add a route.', 'status' => TaskStatus::Completed]);
+    $other = Task::query()->create(['parent_id' => $group->id, 'position' => 4, 'title' => 'Route', 'brief' => 'Add a route.', 'status' => TaskStatus::Completed]);
     Classification::fake([
         ['subtask_'.$completed->id => new BooleanAnswer(0.97), 'subtask_'.$other->id => new BooleanAnswer(0.2)],
     ])->preventStrayClassifications();
@@ -225,7 +225,7 @@ it('does not assign a call-level label to a mixed-answer coverage call', functio
 it('uses normalized title uniqueness and Unicode case folding before labeling', function (): void {
     [$group, $cancelled, $failed, $completed] = cancelled_brief_coverage_group();
     $completed->update(['title' => 'Straße']);
-    Task::query()->create(['task_group_id' => $group->id, 'position' => 4, 'title' => 'STRASSE', 'brief' => 'Same after normalization.', 'status' => TaskStatus::Completed]);
+    Task::query()->create(['parent_id' => $group->id, 'position' => 4, 'title' => 'STRASSE', 'brief' => 'Same after normalization.', 'status' => TaskStatus::Completed]);
     Classification::fake([
         ['subtask_'.$completed->id => new BooleanAnswer(0.2), 'subtask_'.Task::query()->where('title', 'STRASSE')->value('id') => new BooleanAnswer(0.2)],
     ])->preventStrayClassifications();
@@ -370,7 +370,7 @@ it('completes the group when bookkeeping failure occurs during labeling', functi
 it('still reports an unmatched active subtask', function (TaskStatus $status): void {
     [$group, $cancelled, $failed, $completed] = cancelled_brief_coverage_group();
     $active = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 4,
         'title' => 'Active route',
         'brief' => 'Add an active route.',

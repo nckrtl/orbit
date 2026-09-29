@@ -31,8 +31,7 @@ final readonly class RemoveProjectAction
 
         if ($project->tasks()->exists()) {
             throw new ResourceOperationException(
-                // Published refusal code. Split so the source does not name the removed table.
-                errorCode: 'project.has_task_'.'groups',
+                errorCode: 'project.has_task_groups',
                 message: "Project [{$project->slug}] still has task groups.",
                 status: 409,
             );

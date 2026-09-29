@@ -58,7 +58,7 @@ final readonly class UpdateTaskAction
             if ($data->position !== null && $data->position !== $task->position) {
 
                 $ids = Task::query()
-                    ->where('task_group_id', $locked->id)
+                    ->where('parent_id', $locked->id)
                     ->whereKeyNot($task->id)
                     ->orderBy('position')
                     ->pluck('id')
@@ -69,7 +69,7 @@ final readonly class UpdateTaskAction
 
                 if ($todoOutsideBacklog) {
                     $ordered = Task::query()
-                        ->where('task_group_id', $locked->id)
+                        ->where('parent_id', $locked->id)
                         ->orderBy('position')
                         ->get(['id', 'position', 'status']);
                     $lastStartedOrFinished = $ordered

@@ -33,7 +33,7 @@ final class TaskAssistanceData extends Data
             project: $group->project->slug,
             projectCode: $group->project->code,
             title: $group->title,
-            status: $group->status instanceof TaskGroupStatus ? $group->status : TaskGroupStatus::from($group->status->value),
+            status: $group->groupStatus(),
             assistanceReason: $group->assistance_reason,
         );
     }

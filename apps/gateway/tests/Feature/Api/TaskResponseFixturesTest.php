@@ -135,7 +135,7 @@ describe('task response fixtures', function (): void {
             'lines_deleted' => 230,
             'duration_ms' => 5_400_000,
         ]);
-        Task::query()->create(['task_group_id' => $done->id, 'position' => 1, 'title' => 'Persist groups', 'brief' => 'Store groups.', 'status' => TaskStatus::Completed]);
+        Task::query()->create(['parent_id' => $done->id, 'position' => 1, 'title' => 'Persist groups', 'brief' => 'Store groups.', 'status' => TaskStatus::Completed]);
 
         record_fixture($this->getJson('/api/v1/task-groups')->assertOk(), 'tasks/tasks-list/default', ListTaskGroupsRequest::class, 'GET /api/v1/task-groups');
         record_fixture($this->getJson("/api/v1/task-groups/{$group->id}")->assertOk(), 'tasks/tasks-show/default', ShowTaskGroupRequest::class, 'GET /api/v1/task-groups/{group}');
@@ -230,8 +230,8 @@ function task_fixture_group(Project $project): Task
         'title' => 'Add the tasks CLI',
         'brief' => "Add tasks:* commands.\nAccept when every route has a command.",
     ]);
-    Task::query()->create(['task_group_id' => $group->id, 'position' => 1, 'title' => 'Add SDK requests', 'brief' => 'One request class per route.', 'deliverables' => task_fixture_sdk_deliverables(), 'status' => TaskStatus::Todo]);
-    Task::query()->create(['task_group_id' => $group->id, 'position' => 2, 'title' => 'Add CLI commands', 'brief' => 'One command per route.', 'deliverables' => task_fixture_cli_deliverables(), 'status' => TaskStatus::Todo]);
+    Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Add SDK requests', 'brief' => 'One request class per route.', 'deliverables' => task_fixture_sdk_deliverables(), 'status' => TaskStatus::Todo]);
+    Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Add CLI commands', 'brief' => 'One command per route.', 'deliverables' => task_fixture_cli_deliverables(), 'status' => TaskStatus::Todo]);
 
     return $group;
 }

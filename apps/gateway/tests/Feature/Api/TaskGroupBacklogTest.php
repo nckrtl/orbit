@@ -85,7 +85,7 @@ function php_test_deliverable(string $file, string $id = 'export-test'): array
 function backlog_order(int $groupId): array
 {
     /** @var list<string> */
-    return Task::query()->where('task_group_id', $groupId)->orderBy('position')->pluck('title')->all();
+    return Task::query()->where('parent_id', $groupId)->orderBy('position')->pluck('title')->all();
 }
 
 it('stores a new group in backlog and does not claim it', function (): void {
@@ -190,7 +190,7 @@ it('reorders a subtask and keeps positions gapless', function (): void {
         ->assertJsonPath('data.title', 'Three first');
 
     expect(backlog_order($group['id']))->toBe(['Three first', 'One', 'Two'])
-        ->and(Task::query()->where('task_group_id', $group['id'])->orderBy('position')->pluck('position')->all())->toBe([1, 2, 3]);
+        ->and(Task::query()->where('parent_id', $group['id'])->orderBy('position')->pluck('position')->all())->toBe([1, 2, 3]);
 
     $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$three}", ['position' => 3])->assertOk();
 
@@ -215,7 +215,7 @@ it('destroys a subtask and closes the gap', function (): void {
         ->assertJsonPath('data.title', 'Two');
 
     expect(backlog_order($group['id']))->toBe(['One', 'Three'])
-        ->and(Task::query()->where('task_group_id', $group['id'])->orderBy('position')->pluck('position')->all())->toBe([1, 2]);
+        ->and(Task::query()->where('parent_id', $group['id'])->orderBy('position')->pluck('position')->all())->toBe([1, 2]);
 });
 
 it('refuses subtask update and destroy outside backlog but still appends subtasks', function (): void {
@@ -254,7 +254,7 @@ it('allows a todo subtask of a running group to change its title, brief, and pos
         ->assertJsonPath('data.position', 3);
 
     expect(backlog_order($group['id']))->toBe(['Started', 'Third', 'Renamed second'])
-        ->and(Task::query()->where('task_group_id', $group['id'])->orderBy('position')->pluck('position')->all())->toBe([1, 2, 3]);
+        ->and(Task::query()->where('parent_id', $group['id'])->orderBy('position')->pluck('position')->all())->toBe([1, 2, 3]);
 });
 
 it('refuses to move a todo subtask of a running group across a cancelled middle subtask', function (): void {
@@ -387,7 +387,7 @@ it('refuses subtask creation in completed and cancelled groups', function (TaskG
         ->assertConflict()
         ->assertJsonPath('error.code', 'tasks.group_closed');
 
-    expect(Task::query()->where('task_group_id', $group['id'])->count())->toBe(1);
+    expect(Task::query()->where('parent_id', $group['id'])->count())->toBe(1);
 })->with([TaskGroupStatus::Completed, TaskGroupStatus::Cancelled]);
 
 it('returns 404 for a subtask of another group', function (): void {
@@ -652,7 +652,7 @@ describe('subtask deliverables', function (): void {
 
         expect($created->assertUnprocessable()->json('error.code'))->toBe('validation.failed')
             ->and($created->json('error.details')['deliverables.0.fails_on_base'][0] ?? null)->toBe($message)
-            ->and(Task::query()->where('task_group_id', $group['id'])->count())->toBe(0);
+            ->and(Task::query()->where('parent_id', $group['id'])->count())->toBe(0);
 
         $subtask = $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", [
             'title' => 'Layout', 'brief' => 'Fix the layout.',
@@ -733,7 +733,7 @@ describe('subtask deliverables', function (): void {
 
         expect($created->assertUnprocessable()->json('error.code'))->toBe('validation.failed')
             ->and($created->json('error.details')['deliverables.0.fails_on_base'][0] ?? null)->toBe($message)
-            ->and(Task::query()->where('task_group_id', $group['id'])->count())->toBe(0);
+            ->and(Task::query()->where('parent_id', $group['id'])->count())->toBe(0);
 
         $subtask = $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", [
             'title' => 'Docs', 'brief' => 'Write the docs.',

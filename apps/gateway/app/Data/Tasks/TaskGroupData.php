@@ -48,6 +48,7 @@ final class TaskGroupData extends Data
     {
         $group->loadMissing(['project', 'tasks']);
         $taskable = $group->taskable;
+        $status = $group->groupStatus();
 
         return new self(
             executionMode: $group->execution_mode,
@@ -60,7 +61,7 @@ final class TaskGroupData extends Data
             taskableId: $group->taskable_id,
             title: $group->title,
             brief: $group->brief,
-            status: $group->status instanceof TaskGroupStatus ? $group->status : TaskGroupStatus::from($group->status->value),
+            status: $status,
             reviewerAgentThreadId: $group->reviewer_agent_thread_id,
             prUrl: $group->pr_url,
             notifyCoder: $group->notify_coder,
@@ -72,7 +73,7 @@ final class TaskGroupData extends Data
             lineDiff: $group->line_diff,
             linesAdded: $group->lines_added,
             linesDeleted: $group->lines_deleted,
-            durationMs: $group->status->isActive() && $group->started_at !== null
+            durationMs: $status->isActive() && $group->started_at !== null
                 ? max(0, (int) now()->diffInMilliseconds($group->started_at, true))
                 : $group->duration_ms,
             tasks: array_values($group->tasks

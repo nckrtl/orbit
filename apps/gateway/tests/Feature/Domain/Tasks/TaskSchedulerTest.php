@@ -127,7 +127,7 @@ function queued_group(Project $project, string $title, ?Instance $instance = nul
     ]);
 
     Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => "{$title} first",
         'brief' => 'First subtask',
@@ -145,7 +145,7 @@ function queued_group(Project $project, string $title, ?Instance $instance = nul
 function scheduler_pending_task(Task $group, int $position, string $title): Task
 {
     return Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => $position,
         'title' => $title,
         'brief' => "{$title} subtask",
@@ -454,7 +454,7 @@ it('fails the group when a later implementer spawn returns no thread id', functi
     $instance = scheduler_instance($project, scheduler_node('missing-next-node', '10.44.0.98'), 'workspace');
     $group = queued_group($project, 'Missing next implementer', $instance);
     Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 2,
         'title' => 'Second',
         'brief' => 'Next subtask',
@@ -693,7 +693,7 @@ it('starts a reviewer at each subtask handoff and starts the next implementer af
     $instance = scheduler_instance($project, $node, 'handoff');
     $group = queued_group($project, 'Handoff', $instance);
     Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 2,
         'title' => 'Second',
         'brief' => 'Next subtask',
@@ -789,7 +789,7 @@ it('retries a review when the diff cannot be read instead of sending an empty ch
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Review',
         'brief' => 'Review it.',
@@ -829,7 +829,7 @@ it('holds a review resolution when diff reads fail on a reserved reviewer and re
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Review',
         'brief' => 'Review it.',
@@ -950,7 +950,7 @@ it('records a missing start commit on a later tick', function (): void {
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Work',
         'brief' => 'Work.',
@@ -999,7 +999,7 @@ it('keeps a migrated continuation on its source subtask start after the source c
     $group->save();
     $start = str_repeat('a', 40);
     $source = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Original task',
         'brief' => 'Implement tests and fix.',
@@ -1007,7 +1007,7 @@ it('keeps a migrated continuation on its source subtask start after the source c
         'subtask_start_commit' => $start,
     ]);
     $continuation = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 2,
         'title' => 'Original task (continued 1)',
         'brief' => 'Implement tests and fix.',
@@ -1056,7 +1056,7 @@ it('does not record a later head after the implementer starts and commits', func
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Work',
         'brief' => 'Work.',
@@ -1114,7 +1114,7 @@ it('records a start commit on a later tick while the implementer is only reserve
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Work',
         'brief' => 'Work.',
@@ -1227,7 +1227,7 @@ function scheduler_missing_start_review(?string $approvedCommit, string $startin
     $group->save();
     if ($approvedCommit !== null) {
         $earlier = Task::query()->create([
-            'task_group_id' => $group->id,
+            'parent_id' => $group->id,
             'position' => 1,
             'title' => 'Earlier',
             'brief' => 'Already approved.',
@@ -1244,7 +1244,7 @@ function scheduler_missing_start_review(?string $approvedCommit, string $startin
         ]);
     }
     $task = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => $approvedCommit === null ? 1 : 2,
         'title' => 'Review',
         'brief' => 'Review it.',
@@ -1292,7 +1292,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
     $group->taskable()->associate($instance);
     $group->save();
     $approved = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Packet',
         'brief' => 'The packet is built.',
@@ -1308,7 +1308,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
     ]);
     $start = str_repeat('d', 40);
     $first = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 2,
         'title' => 'First review',
         'brief' => 'Review the scheduler.',
@@ -1317,7 +1317,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
         'deliverables' => [['id' => 'scheduler-test', 'type' => 'review', 'description' => 'Fresh reviewer per subtask']],
     ]);
     $second = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 3,
         'title' => 'Second review',
         'brief' => 'Review the next subtask.',
@@ -1877,7 +1877,7 @@ it('pushes an approved fixup to the existing branch, keeps the pull request, and
         'fixup_problem' => 'conflict:main',
     ]);
     Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Models',
         'brief' => 'Store the records.',
@@ -1962,7 +1962,7 @@ it('pushes an approved fixup to the existing branch, keeps the pull request, and
         ->and($group->fresh()?->assistance_requested)->toBeFalse()
         ->and($notifier->settled)->toBe(0)
         ->and($watcher->urls)->toBe([$url])
-        ->and(Task::query()->where('task_group_id', $group->id)->orderBy('position')->get()->pluck('status')->all())->toBe([
+        ->and(Task::query()->where('parent_id', $group->id)->orderBy('position')->get()->pluck('status')->all())->toBe([
             TaskStatus::Completed,
             TaskStatus::Completed,
         ]);
@@ -2002,7 +2002,7 @@ it('does not push a fixup commit to a pull request that already merged or closed
     $url = 'https://github.com/acme/orbit/pull/77';
     [$group, $task, , $publisher] = scheduler_approved_subtask('fixup-orphan-'.$state, last: true);
     $task->update(['position' => 2, 'fixup_problem' => 'check:Gateway']);
-    Task::query()->create(['task_group_id' => $group->id, 'position' => 1, 'title' => 'Models', 'brief' => 'Store the records.', 'status' => TaskStatus::Completed]);
+    Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Models', 'brief' => 'Store the records.', 'status' => TaskStatus::Completed]);
     $group->update(['pr_url' => $url, 'settled_at' => now()->subHour()]);
     scheduler_pull_request_watcher($state);
 
@@ -2022,7 +2022,7 @@ it('does not push a fixup commit to a pull request that already merged or closed
 it('does not push a fixup commit while the pull request state is unreadable', function (): void {
     [$group, $task, , $publisher] = scheduler_approved_subtask('fixup-unknown', last: true);
     $task->update(['position' => 2, 'fixup_problem' => 'check:Gateway']);
-    Task::query()->create(['task_group_id' => $group->id, 'position' => 1, 'title' => 'Models', 'brief' => 'Store the records.', 'status' => TaskStatus::Completed]);
+    Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Models', 'brief' => 'Store the records.', 'status' => TaskStatus::Completed]);
     $group->update(['pr_url' => 'https://github.com/acme/orbit/pull/77', 'settled_at' => now()->subHour()]);
     scheduler_pull_request_watcher(null);
 
@@ -2038,7 +2038,7 @@ it('asks for assistance at settle when the pull request merged before the fixup 
     $url = 'https://github.com/acme/orbit/pull/77';
     [$group, $task, , $publisher] = scheduler_approved_subtask('fixup-late-merge', last: true);
     $task->update(['position' => 2, 'fixup_problem' => 'check:Gateway']);
-    Task::query()->create(['task_group_id' => $group->id, 'position' => 1, 'title' => 'Models', 'brief' => 'Store the records.', 'status' => TaskStatus::Completed]);
+    Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Models', 'brief' => 'Store the records.', 'status' => TaskStatus::Completed]);
     $group->update(['pr_url' => $url, 'settled_at' => now()->subHour()]);
     scheduler_pull_request_watcher('open', 'merged', 'abc123');
 

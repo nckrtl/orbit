@@ -64,24 +64,14 @@ final readonly class TaskBroadcastObserver
         $this->broadcasts->groupChanged($this->isTopLevel($task) ? $task->id : $task->requireGroupId());
     }
 
-    /**
-     * A top-level insert never sets parent_id, so the key is absent until the row is reloaded.
-     * A subtask always has the key set to its parent.
-     */
     private function isTopLevel(Task $task): bool
     {
-        if (! TaskSchema::merged($task->getConnection())) {
-            return false;
-        }
-
-        $attributes = $task->getAttributes();
-
-        return ! array_key_exists('parent_id', $attributes) || $attributes['parent_id'] === null;
+        return $task->isTopLevel();
     }
 
     private function checkChanged(TaskCheck $check): void
     {
-        $groupId = Task::query()->whereKey($check->task_id)->value('task_group_id');
+        $groupId = Task::query()->whereKey($check->task_id)->value('parent_id');
 
         if (is_int($groupId)) {
             $this->broadcasts->groupChanged($groupId);

@@ -70,14 +70,14 @@ function cancel_subtask_in_baseline(int $suffix): array
     $group->taskable()->associate($instance);
     $group->save();
     $running = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Checking subtask',
         'brief' => 'Its baseline check runs.',
         'status' => TaskStatus::Running,
     ]);
     $next = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 2,
         'title' => 'Next subtask',
         'brief' => 'Needs its own baseline.',
@@ -176,21 +176,21 @@ it('cancel running subtask preserves its group and Instance', function (): void 
     $group->taskable()->associate($instance);
     $group->save();
     $running = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Running subtask',
         'brief' => 'Stop only this implementer.',
         'status' => TaskStatus::Running,
     ]);
     $sibling = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 2,
         'title' => 'Sibling subtask',
         'brief' => 'Keep this work queued.',
         'status' => TaskStatus::Todo,
     ]);
     $completed = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 3,
         'title' => 'Completed subtask',
         'brief' => 'Keep this completed work.',
@@ -306,7 +306,7 @@ it('cancels a running subtask through the generated MCP tool', function (): void
         'status' => TaskGroupStatus::Running,
     ]);
     $task = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Running subtask',
         'brief' => 'Cancel using MCP.',
@@ -355,7 +355,7 @@ it('retries after an interrupt failure and settles when cancelling the last subt
         'status' => TaskGroupStatus::Running,
     ]);
     $task = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Final subtask',
         'brief' => 'No successor.',
@@ -417,7 +417,7 @@ it('returns a conflict when the subtask is neither todo nor running', function (
         'status' => TaskGroupStatus::Running,
     ]);
     $task = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Queued subtask',
         'brief' => 'Still queued.',

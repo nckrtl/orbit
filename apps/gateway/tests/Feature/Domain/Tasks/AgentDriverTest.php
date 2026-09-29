@@ -44,7 +44,7 @@ function driver_group(): array
     $group = Task::topLevel()->create(['project_id' => $project->id, 'implementer_agent_driver' => 'example', 'reviewer_agent_driver' => 'example', 'title' => 'Feature', 'brief' => 'Brief', 'status' => 'running']);
     $group->taskable()->associate($instance);
     $group->save();
-    $task = Task::query()->create(['task_group_id' => $group->id, 'position' => 1, 'title' => 'First', 'brief' => 'Do the work', 'status' => 'running']);
+    $task = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'First', 'brief' => 'Do the work', 'status' => 'running']);
     $driver = new FakeAgentDriver;
     $registry = new AgentDriverRegistry([$driver]);
     app()->instance(AgentDriverRegistry::class, $registry);
@@ -62,7 +62,7 @@ it('creates the conversation for each role through the driver recorded for that 
     $group = Task::topLevel()->create(['project_id' => $project->id, 'implementer_agent_driver' => 'implementer-runtime', 'reviewer_agent_driver' => 'reviewer-runtime', 'title' => 'Feature', 'brief' => 'Brief', 'status' => 'running']);
     $group->taskable()->associate($instance);
     $group->save();
-    $task = Task::query()->create(['task_group_id' => $group->id, 'position' => 1, 'title' => 'First', 'brief' => 'Do the work', 'status' => 'running']);
+    $task = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'First', 'brief' => 'Do the work', 'status' => 'running']);
     $implementer = new FakeAgentDriver('implementer-runtime');
     $reviewer = new FakeAgentDriver('reviewer-runtime');
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$implementer, $reviewer]));

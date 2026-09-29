@@ -78,7 +78,7 @@ function t3_spawner_group(): Task
     $group->taskable()->associate($instance);
     $group->save();
     Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Models',
         'brief' => 'Store the records.',

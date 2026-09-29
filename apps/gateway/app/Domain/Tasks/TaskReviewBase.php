@@ -54,7 +54,7 @@ final class TaskReviewBase
     private static function previousApprovedCommit(Task $group, Task $task): ?string
     {
         $earlier = Task::query()
-            ->where('task_group_id', $group->id)
+            ->where('parent_id', $group->id)
             ->where(function ($query) use ($task): void {
                 $query->where('position', '<', $task->position)
                     ->orWhere(function ($query) use ($task): void {

@@ -30,7 +30,7 @@ final readonly class DestroyTaskAction
             $task->delete();
 
             $ids = Task::query()
-                ->where('task_group_id', $locked->id)
+                ->where('parent_id', $locked->id)
                 ->orderBy('position')
                 ->pluck('id')
                 ->map(static fn (mixed $id): int => StoredInteger::from($id))

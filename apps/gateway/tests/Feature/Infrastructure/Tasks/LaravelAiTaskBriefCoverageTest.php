@@ -28,8 +28,8 @@ function coverage_group(): array
 {
     $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@github.com:acme/shop.git', 'default_branch' => 'main']);
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Export orders', 'brief' => 'Export orders as CSV and add a download route.', 'status' => 'reviewing']);
-    $models = Task::query()->create(['task_group_id' => $group->id, 'position' => 1, 'title' => 'Export', 'brief' => 'Write the CSV export.', 'status' => 'completed']);
-    $routes = Task::query()->create(['task_group_id' => $group->id, 'position' => 2, 'title' => 'Route', 'brief' => 'Add the download route.', 'status' => 'reviewing']);
+    $models = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Export', 'brief' => 'Write the CSV export.', 'status' => 'completed']);
+    $routes = Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Route', 'brief' => 'Add the download route.', 'status' => 'reviewing']);
 
     return [$group, $models, $routes];
 }

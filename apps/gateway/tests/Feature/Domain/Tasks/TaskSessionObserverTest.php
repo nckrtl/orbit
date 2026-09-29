@@ -50,7 +50,7 @@ function observer_group(): Task
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 1,
         'title' => 'Models',
         'brief' => 'Store the records.',
@@ -239,7 +239,7 @@ it('checks sessions attached to every task even after finding an active session'
     $group = observer_group();
     $group->tasks->first()->update(['status' => TaskStatus::Reviewing]);
     $task = Task::query()->create([
-        'task_group_id' => $group->id,
+        'parent_id' => $group->id,
         'position' => 2,
         'title' => 'Second task',
         'brief' => 'Inspect this task too.',

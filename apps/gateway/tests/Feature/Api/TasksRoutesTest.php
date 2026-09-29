@@ -332,7 +332,7 @@ it('creates a group with ordered tasks and lists and shows it', function (): voi
         ->assertJsonPath('data.position', 3)
         ->assertJsonPath('data.status', 'todo');
 
-    expect(Task::query()->where('task_group_id', $id)->count())->toBe(3)
+    expect(Task::query()->where('parent_id', $id)->count())->toBe(3)
         ->and(Task::topLevel()->findOrFail($id)->status)->toBe(TaskGroupStatus::Backlog);
 });
 
@@ -551,7 +551,7 @@ it('cancels a running check and shows it on the task', function (): void {
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Checks', 'brief' => 'Run the check.', 'status' => 'running']);
     $group->taskable()->associate($instance);
     $group->save();
-    $task = Task::query()->create(['task_group_id' => $group->id, 'position' => 1, 'title' => 'Check', 'brief' => 'Run it.', 'status' => 'running']);
+    $task = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Check', 'brief' => 'Run it.', 'status' => 'running']);
     $receipt = $task->comments()->create(['task_group_id' => $group->id, 'type' => 'ready_for_review', 'body' => 'Done.', 'author' => 'implementer', 'posted_at' => now()]);
     $checks = new FakeTaskCheckRunner;
     app()->instance(TaskCheckRunner::class, $checks);
@@ -713,7 +713,7 @@ it('summarises groups asking for assistance on tasks status', function (): void 
         'assistance_requested' => true,
         'assistance_reason' => null,
     ]);
-    Task::query()->where('task_group_id', $subtaskOnly)->update([
+    Task::query()->where('parent_id', $subtaskOnly)->update([
         'assistance_requested' => true,
         'assistance_reason' => $question,
     ]);
