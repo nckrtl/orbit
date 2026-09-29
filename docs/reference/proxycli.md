@@ -55,7 +55,7 @@ The collector Node must be an active Linux Node with a WireGuard address. Otherw
 
 `--cliproxy-url` is the CLIProxyAPI Management API origin, as the collector Node sees it. Use `http://127.0.0.1:8317` when CLIProxyAPI runs on that Node. The Gateway stores the management key as a secret setting and passes it to the collector Process. No API response contains it.
 
-Setup can run again. It keeps the read and control tokens, writes the collector script, replaces the collector Process, and publishes the hostname again.
+Setup can run again. It keeps the read and control tokens, writes the collector script, recreates the collector Process, and publishes the hostname again.
 
 ## What setup deploys
 
@@ -75,7 +75,7 @@ While setup holds the collector, `process:destroy` refuses to remove the Process
 
 `collector.cli-proxy-api.orbit` is a reserved platform name, so `route:create` refuses it with `route.domain_conflict`. The apex `cli-proxy-api.orbit` is not reserved. Publish the CLIProxyAPI management UI there as a [custom proxy Route](/reference/routes#custom-proxy-routes) to `http://127.0.0.1:8317`.
 
-Setup publishes the Caddy site before it replaces the collector Process. The site retries the loopback collector for up to 5 seconds, so a request that arrives during the restart waits instead of failing.
+Setup publishes the Caddy site before it recreates the collector Process. The site retries the loopback collector for up to 5 seconds, so a request that arrives during the restart waits instead of failing.
 
 ## Collection
 

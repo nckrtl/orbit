@@ -192,7 +192,7 @@ The server reports one of the Orbit thread states from its own evidence. The Gat
 | The turn ended with a provider error, an interruption, or the output limit | `failed`, with the error |
 | The server restarted while the turn was active | `failed`, with error `The Pi server restarted during the turn.` |
 
-Pi has no approvals, so a Pi thread never asks for input. A new turn replaces a `done` or `failed` state with `working`.
+Pi has no approvals, so a Pi thread never asks for input. A new turn changes a `done` or `failed` state to `working`.
 
 ## Restarts
 
