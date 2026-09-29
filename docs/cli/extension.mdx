@@ -1,49 +1,73 @@
 ---
 title: "extension"
-description: "Enable or disable optional Gateway extensions consistently across Orbit clients."
+description: "Enable or disable optional Gateway extensions for every Orbit client."
 covers:
   - "apps/gateway/app/Http/Middleware/RequireEnabledExtension.php"
   - "apps/gateway/database/migrations/*move_extension_switches_to_gateway_extension_keys.php"
+  - "apps/gateway/app/Domain/Extensions/**"
+  - "apps/gateway/app/Http/Controllers/Api/ExtensionsController.php"
+  - "apps/gateway/app/Http/Mcp/{ExtensionAwareCallTool,ExtensionAwareExecuteTools,ToolManifest}.php"
+  - "apps/cli/app/Commands/Extension/**"
+  - "apps/cli/app/Services/Extensions/**"
+  - "apps/cli/app/Support/{ExtensionCommandVisibility,GatedExtensionCommand}.php"
+  - "apps/web/src/api/extensions.ts"
 ---
 
-An extension is an optional Gateway-owned product surface. Its one switch controls which CLI commands, MCP tools, API routes, and web navigation are available to every client. The Gateway stores the enabled set; the CLI does not keep a local copy. [Why it works this way](#why-it-works-this-way) explains this model.
+An extension is an optional Gateway feature. Each extension has one switch, and the Gateway stores it. The switch decides for every client whether the extension's CLI commands, MCP tools, API operations, and web pages are available. A disabled extension is invisible in every client, and the Gateway refuses its operations.
 
 ## Commands
 
 | Command | Result |
 | --- | --- |
-| [`extension:list`](#orbit-extensionlist) | List known extensions and their Gateway state. |
+| [`extension:list`](#orbit-extensionlist) | List the extensions and their state. |
 | [`extension:enable`](#orbit-extensionenable) | Enable one extension for every client. |
 | [`extension:disable`](#orbit-extensiondisable) | Disable one extension for every client. |
 
-Each command accepts `--json`. Extension state comes from the selected Gateway. The CLI makes one bounded extension-state read during bootstrap with an explicit 2-second total deadline, shared across its single connection retry; this deadline is independent of the 900-second timeout used for operational reads. It does not loop or persist a local answer. That response supplies the enabled set for command listing, help, and dispatch for the process, and the Gateway checks direct operations again.
+Each command accepts `--json`. Enable and disable need Gateway access.
 
-## Discovery and recovery
+## Extensions
 
-If no Gateway profile is active, the CA is not trusted, or the Gateway is unreachable, extension state is `unknown`, not `disabled`. `extension:list` reports `UNKNOWN` with the relevant `gateway.profile_missing`, `gateway.unreachable`, or certificate-trust guidance; JSON returns `enabled: null` and the state detail. A direct extension command fails with `extension.state_unknown` and does not make a change. The CLI does not hide this behind repeated retries. If the 2-second discovery deadline expires, the CLI uses this same unknown-state behavior.
-
-The core `gateway:add`, `gateway:use`, `gateway:remove`, and `gateway:trust` commands and core help remain available without extension discovery, so an operator can establish, select, repair, or remove the active profile. After recovery, the next CLI process asks the Gateway again. Only a confirmed disabled extension is hidden and refused with `extension.disabled`.
-
-## Available extensions
-
-| Extension | Commands it reveals |
+| Extension | What it adds |
 | --- | --- |
-| `tasks` | The [`tasks`](/cli/tasks) family, including task group and subtask operations. |
-| `proxycli` | The [`proxycli`](/cli/proxycli) family, including collector setup and quota operations. |
+| `tasks` | The [`tasks`](/cli/tasks) family, its MCP tools and API operations, and the Tasks pages. See [Tasks](/reference/tasks). |
+| `proxycli` | The [`proxycli`](/cli/proxycli) family, its MCP tools and API operations, and the Quota pages. See [proxycli](/reference/proxycli). |
+
+## What a disabled extension does
+
+| Client | Behavior |
+| --- | --- |
+| API | The operations stay registered. Each one refuses with HTTP 409 `extension.disabled` and changes nothing. |
+| MCP | `tools/list` and `/mcp/search` omit the tools. A direct `tools/call` or `execute_tools` call returns a tool error with `extension.disabled`. See [MCP errors](/reference/mcp#tools). |
+| CLI | `list`, `help`, and completion hide the family. A direct call reaches the Gateway, which refuses it with `extension.disabled`. |
+| Web app | Navigation hides the extension's pages. The app reads the switches every 30 seconds. |
+
+`tasks:status` is a core view. It stays available while `tasks` is disabled. Disabling an extension keeps its data, such as task groups or the proxycli collector.
+
+## Extension state in the CLI
+
+The CLI asks the Gateway for the switches at most once per process: when it lists commands or shows help, and when it runs an extension command. The request has a 2-second deadline, which includes its one retry after a connection failure. The CLI stores no copy.
+
+When the CLI cannot read the switches, the state is unknown, not disabled. This happens when no Gateway profile is active, the Gateway CA is not trusted, or the Gateway does not answer in time.
+
+- `extension:list` shows `UNKNOWN` and the cause, such as `gateway.profile_missing`, `gateway.ca_untrusted`, or `gateway.unreachable`.
+- `list` and `help` hide the extension commands.
+- An extension command fails with `extension.state_unknown` and sends no request.
+
+The `gateway:*` commands need no extension state, so you can add, select, trust, or remove a profile and try again.
 
 ## orbit extension:list
 
-List every known extension with its Gateway state.
+List every extension with its Gateway state.
 
 ```bash
 orbit extension:list [--json]
 ```
 
-Human output is one table with the columns EXTENSION and STATE. JSON output returns an `extensions` array with `extension` and `enabled` for each entry.
+Human output is a table with the columns EXTENSION, STATE, and DETAIL. JSON returns an `extensions` array. Each entry has `extension` and `enabled`, which is null when the state is unknown. An unknown entry also has `state`, with the error `code`, `message`, and `request_id`.
 
 ## orbit extension:enable
 
-Enable one extension. Its commands, MCP tools, API operations, and web navigation become available to every client.
+Enable one extension for every client.
 
 ```bash
 orbit extension:enable <extension> [--json]
@@ -51,18 +75,13 @@ orbit extension:enable <extension> [--json]
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `extension` | yes | Extension slug: `tasks` or `proxycli`. |
+| `extension` | yes | `tasks` or `proxycli`. |
 
-```bash
-orbit extension:enable tasks
-orbit extension:enable proxycli
-```
-
-An unknown slug fails with `extension.unknown`. Enabling an already enabled extension succeeds without changing state.
+JSON returns `name` and `enabled`. Enabling an enabled extension succeeds and changes nothing. Enabling only flips the switch. An extension that needs fleet resources has its own setup command, such as [`proxycli:setup`](/cli/proxycli#orbit-proxyclisetup).
 
 ## orbit extension:disable
 
-Disable one extension across the Gateway. Its CLI commands disappear from listings, its API operations refuse requests, MCP omits its tools, and web navigation hides its pages. Existing extension data is retained.
+Disable one extension for every client.
 
 ```bash
 orbit extension:disable <extension> [--json]
@@ -70,21 +89,27 @@ orbit extension:disable <extension> [--json]
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `extension` | yes | Extension slug. |
+| `extension` | yes | `tasks` or `proxycli`. |
 
-```bash
-orbit extension:disable tasks
-```
+JSON returns `name` and `enabled`. Disabling a disabled extension succeeds and changes nothing. Disabling `proxycli` does not stop its collector. Run [`proxycli:teardown`](/cli/proxycli#orbit-proxycliteardown) for that.
 
-A stale CLI invocation or API request for a disabled extension fails with `extension.disabled`; the API response uses HTTP 409. MCP reports the same code in its tool-error envelope rather than as an HTTP 409; see [MCP errors](/reference/mcp#tools). Disabling `proxycli` hides access but does not tear down its configured collector; use [`proxycli:teardown`](/cli/proxycli#orbit-proxycliteardown) to remove that fleet setup before disabling it when desired.
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `extension.unknown` | The CLI does not know the slug. It sends no request. The API and MCP refuse an unknown slug with `validation.failed` (422). |
+| `extension.disabled` | The extension is disabled at the Gateway (HTTP 409). |
+| `extension.state_unknown` | The CLI could not read the switches, so it ran no extension command. |
 
 ## Why it works this way
 
-Each extension has one switch, and the Gateway owns it. A switch kept on each operator's machine could not hide Gateway routes, MCP tools, or web navigation, so two operators could see different products. The CLI asks the Gateway for the enabled set once per process instead of caching it in `$ORBIT_HOME`, because a cache would become a second source of truth.
+Each extension has one switch, and the Gateway owns it. A switch on each operator's machine could not hide Gateway routes, MCP tools, or web pages, so two operators could see different products. A cached copy in the CLI would become a second source of truth, so the CLI asks the Gateway in each process.
 
-`extension:enable` only flips the switch. Setting up an extension such as proxycli needs a Node, a cache connection, an upstream URL, and a key, so that stays in the extension's own setup command, and the switch keeps one small contract for every extension. The old `tasks:enable` and `tasks:disable` commands are gone rather than kept as aliases: one extension has one switch name.
+The switch only shows or hides. Setting up proxycli needs a Node, a cache connection, an upstream URL, and a key, so that stays in the extension's own setup command. Every extension then keeps the same small switch contract, and one extension has one switch name.
 
-API routes stay registered while an extension is off and refuse with HTTP 409 `extension.disabled`. Removing routes at runtime would make the OpenAPI document, the SDK, and the generated MCP tools change with runtime state. MCP tools are filtered before listing, search, and execution alike, so a disabled tool cannot be found or run through any path.
+API routes stay registered while an extension is off and refuse with `extension.disabled`. Removing routes at runtime would make the OpenAPI document, the SDK, and the generated MCP tools change with runtime state. MCP filters tools before listing, search, and execution, so no path can find or run a disabled tool.
+
+An unknown state is not a disabled state. Treating an unreachable Gateway as "disabled" would hide commands for a reason that has nothing to do with the switch, and the operator would look in the wrong place.
 
 ## Related
 

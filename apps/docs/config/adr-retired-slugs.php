@@ -176,4 +176,7 @@ return [
     '0180' => ['0180-absorb-built-decisions-into-the-docs'],
     '0179' => ['0179-gate-all-extension-surfaces-with-one-gateway-switch'],
     '0174' => ['0174-match-the-task-gate-to-ci-and-repeated-findings'],
+    '0104' => ['0104-own-cliproxyapi-quota-through-the-proxycli-extension'],
+    '0109' => ['0109-publish-the-proxycli-collector-on-a-subdomain'],
+    '0145' => ['0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit'],
 ];

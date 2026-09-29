@@ -1,15 +1,18 @@
 ---
 title: "proxycli"
 description: "Set up the fleet CLIProxyAPI quota collector, read provider pools, and toggle accounts."
+covers:
+  - apps/cli/app/Commands/ProxyCli/**
+  - packages/php-sdk/src/{Requests,Responses}/ProxyCli/**
 ---
 
-The family belongs to the Gateway-owned `proxycli` extension. Its commands are available on every client only after an authorized caller runs:
+The family belongs to the `proxycli` extension. It is visible and usable only while the extension is enabled at the Gateway:
 
 ```bash
 orbit extension:enable proxycli
 ```
 
-Disabling the extension hides this family and makes its Gateway routes return `extension.disabled`; it does not remove a configured collector. Use `proxycli:teardown` when the fleet feature itself should be removed. See [proxycli](/reference/proxycli).
+Enabling the extension deploys nothing, and disabling it removes nothing. `proxycli:setup` and `proxycli:teardown` own the collector. See [proxycli](/reference/proxycli).
 
 ## Commands
 
@@ -17,7 +20,7 @@ Disabling the extension hides this family and makes its Gateway routes return `e
 | --- | --- |
 | [`proxycli:setup`](#orbit-proxyclisetup) | Deploy the collector and publish `collector.cli-proxy-api.orbit`. |
 | [`proxycli:teardown`](#orbit-proxycliteardown) | Stop the collector and withdraw `collector.cli-proxy-api.orbit`. |
-| [`proxycli:status`](#orbit-proxyclistatus) | Show whether the fleet feature is set up. |
+| [`proxycli:status`](#orbit-proxyclistatus) | Show whether the collector is set up. |
 | [`proxycli:list`](#orbit-proxyclilist) | List provider pools from the Valkey snapshot. |
 | [`proxycli:show`](#orbit-proxyclishow) | Show one provider and its accounts. |
 | [`proxycli:update`](#orbit-proxycliupdate) | Enable or disable one CLIProxyAPI account. |
@@ -34,16 +37,16 @@ orbit proxycli:setup --node=<node> --cache-connection=<slug> --cliproxy-url=<url
 
 | Option | Required | Meaning |
 | --- | --- | --- |
-| `--node` | yes | Node ID or name that already hosts CLIProxyAPI. |
+| `--node` | yes | Node ID or name that runs CLIProxyAPI. |
 | `--cache-connection` | yes | Redis Database connection slug for shared Valkey. |
 | `--cliproxy-url` | yes | CLIProxyAPI Management API origin, for example `http://127.0.0.1:8317`. |
-| `--cliproxy-management-key-file` | yes in every mode | File that contains only the management key. The CLI never accepts the key on the command line. |
+| `--cliproxy-management-key-file` | yes | File that contains only the management key. The CLI never accepts the key as an argument. |
 
-Setup fails closed when the cache connection is missing, is not Redis, or names a Node without the `database` role. JSON returns `enabled`, `hostname`, `node_id`, and `cache_connection`. The response never includes tokens or the management key. Setup is idempotent.
+The output shows `enabled`, `hostname`, `node_id`, `cache_connection`, and `collected_at`. It never includes a token or the management key. Setup can run again with the same options.
 
 ## orbit proxycli:teardown
 
-Stop the collector for the whole fleet, remove the Process, and withdraw `collector.cli-proxy-api.orbit` and its certificate. The Gateway also deletes the stored CLIProxyAPI management key and the read and control tokens.
+Stop the collector for the whole fleet, remove its Process, and withdraw `collector.cli-proxy-api.orbit` and its certificate. The Gateway also deletes the stored management key and the read and control tokens.
 
 ```bash
 orbit proxycli:teardown [--yes] [--json]
@@ -51,19 +54,19 @@ orbit proxycli:teardown [--yes] [--json]
 
 | Option | Required | Meaning |
 | --- | --- | --- |
-| `--yes` | in noninteractive and JSON modes | Confirm the fleet-wide teardown without a prompt. |
+| `--yes` | in noninteractive and JSON modes | Confirm the teardown without a prompt. |
 
-In a terminal the command asks a default-No question that names the fleet effect. Noninteractive and JSON calls without `--yes` fail with `input.confirmation_required` before any Gateway request. Declining or cancelling fails with `input.cancelled` and changes nothing. Enabling the extension again does not restore the collector; run `proxycli:setup` with the management key file.
+In a terminal the command asks a default-No question that names the fleet effect. Without `--yes`, a noninteractive or JSON call fails with `input.confirmation_required` before any Gateway request. Declining fails with `input.cancelled` and changes nothing. To collect again, run `proxycli:setup` with the key file.
 
 ## orbit proxycli:status
 
-Show the fleet feature state.
+Show the collector state.
 
 ```bash
 orbit proxycli:status [--json]
 ```
 
-Human output is a detail record with enabled, hostname, Node, cache connection, and last snapshot time. JSON uses the same fields. `collected_at` is null until the collector writes a snapshot.
+The output shows `enabled`, `hostname`, `node_id`, `cache_connection`, and `collected_at`. `collected_at` is null until the collector writes a snapshot.
 
 ## orbit proxycli:list
 
@@ -73,7 +76,7 @@ List provider pools from the snapshot.
 orbit proxycli:list [--json]
 ```
 
-The command reads Valkey. It does not call CLIProxyAPI. A feature that has not been set up fails with `proxycli.disabled`.
+The command reads Valkey and never calls CLIProxyAPI.
 
 ## orbit proxycli:show
 
@@ -85,13 +88,13 @@ orbit proxycli:show <provider> [--json]
 
 | Argument | Required | Meaning |
 | --- | --- | --- |
-| `provider` | yes | Provider slug such as `codex` or `claude`. |
+| `provider` | yes | Provider slug, such as `codex` or `claude`. |
 
-Windows use duration titles in management.html#/quota order. A missing window is omitted.
+A provider that is not in the snapshot fails with `resource.not_found`.
 
 ## orbit proxycli:update
 
-Enable or disable one CLIProxyAPI account, then recompile pools from the cached snapshot.
+Enable or disable one CLIProxyAPI account.
 
 ```bash
 orbit proxycli:update <account> --disabled|--enabled [--json]
@@ -99,28 +102,28 @@ orbit proxycli:update <account> --disabled|--enabled [--json]
 
 | Argument or option | Required | Meaning |
 | --- | --- | --- |
-| `account` | yes | Auth file name or `auth_index`. |
-| `--disabled` or `--enabled` | one required | The new account state. |
+| `account` | yes | Account ID from `proxycli:show`: the auth file's `auth_index`, or its name when it has none. |
+| `--disabled` or `--enabled` | exactly one | The new account state. |
 
-The command updates CLIProxyAPI status and rewrites the snapshot from cache. It does not fetch quota.
+The command changes the account in CLIProxyAPI and rewrites the snapshot from cache. It fetches no quota.
 
 ## Errors
 
 | Code | Meaning |
 | --- | --- |
 | `extension.disabled` | The `proxycli` extension is disabled at the Gateway. |
-| `input.confirmation_required` | `proxycli:teardown` ran without `--yes` where it cannot prompt. |
-| `input.cancelled` | The operator declined or cancelled the `proxycli:teardown` question. |
-| `proxycli.disabled` | The fleet feature is not set up. |
-| `proxycli.cache_missing` | Setup names no Redis Database connection. |
-| `proxycli.cache_invalid` | The named connection is not Redis. |
-| `proxycli.cache_unplaced` | The connection's Node has no active `database` role. |
-| `proxycli.source_publication_failed` | Setup could not install the collector script on the Node. |
-| `proxycli.certificate_publication_failed` | Setup could not publish the Orbit CA leaf. |
-| `proxycli.caddy_publication_failed` | Setup could not install the collector Caddy site. |
-| `proxycli.hostname_taken` | A Route other than the collector's own custom proxy Route holds the collector hostname. |
+| `extension.state_unknown` | The CLI could not read the extension state from the Gateway. |
+| `input.confirmation_required` | `proxycli:teardown` ran without `--yes` where it cannot ask. |
+| `input.cancelled` | The operator declined the `proxycli:teardown` question. |
+| `proxycli.key_required` | `proxycli:setup` has no `--cliproxy-management-key-file`. |
+| `proxycli.key_invalid` | The key file is unreadable or empty. |
+| `proxycli.url_invalid` | `--cliproxy-url` is not a URL. |
+| `proxycli.state_required` | `proxycli:update` needs exactly one of `--disabled` and `--enabled`. |
+| `proxycli.disabled` | The collector is not set up. |
+
+[proxycli errors](/reference/proxycli#errors) lists the Gateway errors of setup and toggles.
 
 ## Related
 
-- [proxycli](/reference/proxycli) owns placement, publication, and the cache contract.
+- [proxycli](/reference/proxycli) describes placement, publication, and the cache.
 - [`extension`](/cli/extension) controls the Gateway switch.

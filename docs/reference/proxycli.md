@@ -1,37 +1,47 @@
 ---
 title: "proxycli"
 description: "The optional Orbit extension that collects CLIProxyAPI quota into shared Valkey and publishes provider pools at collector.cli-proxy-api.orbit."
+covers:
+  - apps/gateway/app/{Domain,Infrastructure}/ProxyCli/**
+  - apps/gateway/app/{Actions,Data,Http/Requests}/ProxyCli/**
+  - apps/gateway/app/Http/Controllers/Api/ProxyCliController.php
+  - apps/gateway/app/Infrastructure/Caddy/Build/Sources/ProxyCliCaddySiteSource.php
+  - apps/gateway/resources/proxycli/**
+  - apps/web/src/pages/Quota.tsx
 ---
 
 # proxycli
 
-This page tells an operator how the optional `proxycli` extension collects CLIProxyAPI account quota, stores one snapshot in shared Valkey, and exposes provider pools to the Orbit web app and CodexBar. [ADR 0179](/cli/extension#why-it-works-this-way) owns the one Gateway switch and visibility boundary. [ADR 0104](/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension) records the collector architecture. [ADR 0109](/decisions/0109-publish-the-proxycli-collector-on-a-subdomain) and [ADR 0145](/decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit) own the collector hostname. [Cut over proxy-quota collectors](/solutions/cutover-proxycli) owns the migration from hand-rolled Processes.
+`proxycli` is an optional Gateway extension. It collects CLIProxyAPI account quota into one snapshot in shared Valkey. The Orbit web app, the CLI, MCP, and CodexBar read provider pools from that snapshot.
 
-## What the extension owns
+## Switch and setup
 
-`proxycli` is a Gateway-owned extension and fleet feature. `orbit extension:enable proxycli` reveals the `proxycli:*` family, its MCP tools, its API routes, and its web navigation for every client. `proxycli:setup` deploys one collector Process and publishes `https://collector.cli-proxy-api.orbit`. `proxycli:teardown` stops that Process and withdraws the hostname. `orbit extension:disable proxycli` hides and refuses the extension but does not tear down an existing collector.
+The extension has one switch and one fleet setup. They are separate.
 
-The collector is the only process that calls CLIProxyAPI for quota. The web app, the Gateway API, and CodexBar read the Valkey snapshot. A refresh does not start a second poll. An account toggle sends `PATCH https://{node-wireguard-ip}:443/v1/accounts/{id}` to the collector site on its Node, with `Host: collector.cli-proxy-api.orbit`, Orbit CA verification, the account's `auth_index`, and the collector control token. The Gateway then recompiles pools from the cached snapshot. It does not call CLIProxyAPI directly.
+- `orbit extension:enable proxycli` shows the `proxycli:*` commands, MCP tools, API operations, and the Quota section to every client. It deploys nothing. See [`extension`](/cli/extension).
+- `orbit proxycli:setup` deploys the collector Process and publishes `https://collector.cli-proxy-api.orbit`.
+- `orbit proxycli:teardown` stops the collector and withdraws the hostname.
+- `orbit extension:disable proxycli` hides and refuses the extension. It does not tear down the collector.
 
 ## Valkey placement
 
-RoleRegistry has no `valkey` or `redis` role. Shared cache lives on the [`database` role](/reference/database-role): a Node-targeted Docker Process running Valkey or Redis, registered as a [Redis Database connection](/reference/database-connections).
+No Node role holds a cache. Shared Valkey runs on the [`database` role](/reference/database-role) as a Node-targeted Docker Process, and a [Redis Database connection](/reference/database-connections) registers it.
 
-Setup fails closed when any of these are true:
+Setup refuses a cache connection that does not fit:
 
 | Condition | Error |
 | --- | --- |
-| The named Database connection does not exist | `proxycli.cache_missing` |
+| No Database connection has the slug | `proxycli.cache_missing` |
 | The connection driver is not `redis` | `proxycli.cache_invalid` |
-| The connection names a fleet Node that has no active `database` role | `proxycli.cache_unplaced` |
+| The connection names a Node that is not in the fleet or has no active `database` role | `proxycli.cache_unplaced` |
 
-An external Redis host that is not a fleet Node is accepted. A connection that names a Node must place that cache on a `database` Node so Doctor and backups stay with the other database Processes.
+A connection that names no Node, such as an external Redis host, is accepted.
 
-Bind Valkey on the Node WireGuard address when the Gateway and the collector Process run on different Nodes. A loopback-only bind is enough only when the collector and the Gateway share that Node.
+Bind Valkey on the `database` Node's WireGuard address. The collector Node and the Gateway both connect to it with the host, port, username, and password of the connection.
 
 ## Set up
 
-Place Valkey, register it, enable the Gateway extension, then set up the fleet feature:
+Place Valkey, register it, enable the extension, then set up the collector:
 
 ```bash
 orbit node:role:add db-1 database
@@ -41,108 +51,131 @@ orbit extension:enable proxycli
 orbit proxycli:setup --node=beast --cache-connection=valkey --cliproxy-url=http://127.0.0.1:8317 --cliproxy-management-key-file=./management.key
 ```
 
-`cliproxy-url` is the CLIProxyAPI Management API origin. The collector Process uses that URL from the chosen Node, so `http://127.0.0.1:8317` is correct when CLIProxyAPI already listens on that Node. The management key stays on the Gateway and in the Process environment. The API never returns it.
+The collector Node must be an active Linux Node with a WireGuard address. Otherwise setup fails with `proxycli.node_invalid`.
 
-Setup is idempotent. A second setup on the same Node and cache connection converges the Process and `collector.cli-proxy-api.orbit` again. It does not publish or reclaim the management dashboard at `cli-proxy-api.orbit`. The extension switch and fleet setup are separate: enabling the extension does not deploy a collector, and disabling it does not remove one.
+`--cliproxy-url` is the CLIProxyAPI Management API origin, as the collector Node sees it. Use `http://127.0.0.1:8317` when CLIProxyAPI runs on that Node. The Gateway stores the management key as a secret setting and passes it to the collector Process. No API response contains it.
+
+Setup can run again. It keeps the read and control tokens, writes the collector script, replaces the collector Process, and publishes the hostname again.
 
 ## What setup deploys
 
-Setup places these four pieces on the chosen Node and in Gateway settings. The collector Process is the only one that talks to CLIProxyAPI.
-
-| Piece | Owner | Bind |
+| Piece | Where | Detail |
 | --- | --- | --- |
-| Node Process `cli-proxy-api-collector` | The chosen Node | `127.0.0.1:8787` |
-| Orbit CA leaf and Caddy site | The chosen Node | HTTPS on the Node WireGuard address |
-| Private DNS `host-record` | VPN DNS | `collector.cli-proxy-api.orbit` → the Node WireGuard address |
-| Read token and control token | Gateway settings | Server-side only |
+| Process `cli-proxy-api-collector` | The collector Node | systemd, listens on `127.0.0.1:8787` |
+| Collector script | The collector Node | `/var/lib/orbit/proxycli/server.py` |
+| Orbit CA leaf and Caddy site | The collector Node | HTTPS on the Node's WireGuard address |
+| Private DNS `host-record` | VPN DNS | `collector.cli-proxy-api.orbit` to the Node's WireGuard address |
+| Management key, read token, and control token | Gateway settings | Stored as secrets |
 
-`collector.cli-proxy-api.orbit` is a reserved platform name. [Collector hostname](#collector-hostname) describes the Routes setup refuses or takes over.
+The Process runs `/usr/bin/python3 /var/lib/orbit/proxycli/server.py`. systemd does not search `PATH`, so the command names the absolute path. The unit receives the `PROXYCLI_*` values as `Environment=` directives: the CLIProxyAPI URL and management key, the read and control tokens, the port, and the Valkey host, port, username, and password. [Processes and schedules](/reference/app-processes-and-schedules#environment-of-a-systemd-process) describes that environment.
 
-The Process command is `/usr/bin/python3 /var/lib/orbit/proxycli/server.py`. systemd does not search an operator `PATH`, so a bare `python3` does not start. Setup persists `PROXYCLI_*` on the Process specification and the unit receives those values as `Environment=` directives. The map includes the CLIProxyAPI URL and management key, the CodexBar read and control tokens, the loopback port, and the Valkey host, port, username, and password. [Processes and schedules](/reference/app-processes-and-schedules#environment-of-a-systemd-process) owns that projection. HTTP `process:create` still accepts environment only for Docker.
+While setup holds the collector, `process:destroy` refuses to remove the Process with `process.required_by_proxycli`.
 
-The management server is a separate Node Process named `cli-proxy-api`, listening on port 8317. Its dashboard is `/management.html` on `cli-proxy-api.orbit`. The extension slug, API paths, and cache keys remain `proxycli`. Setup retires the old `proxycli` Process name before starting the renamed collector.
+`collector.cli-proxy-api.orbit` is a reserved platform name, so `route:create` refuses it with `route.domain_conflict`. The apex `cli-proxy-api.orbit` is not reserved. Publish the CLIProxyAPI management UI there as a [custom proxy Route](/reference/routes#custom-proxy-routes) to `http://127.0.0.1:8317`.
 
-The collector takes a Valkey lock, lists CLIProxyAPI auth files, fetches each account's quota through `POST /v0/management/api-call`, writes the raw snapshot and compiled pools, and sleeps. It honors `Retry-After`, backs off a failing account, and skips a fetch when another poll already holds the lock. HTTP reads, including authenticated `GET /v1/quota-stats`, load that snapshot through one RESP stream and never fetch upstream.
+Setup publishes the Caddy site before it replaces the collector Process. The site retries the loopback collector for up to 5 seconds, so a request that arrives during the restart waits instead of failing.
 
-## Collector hostname
+## Collection
 
-`collector.cli-proxy-api.orbit` is a reserved platform name beside `gateway.orbit`, `metrics.orbit`, `reverb.orbit`, and `analytics.orbit`. `route:create` refuses it with `route.domain_conflict`. Publish CLIProxyAPI management at apex `cli-proxy-api.orbit` as a custom proxy Route to a loopback upstream such as `http://127.0.0.1:8317`. The apex is not reserved. [Custom proxy Routes](/reference/routes#custom-proxy-routes) owns that Route kind.
+The collector is the only process that calls CLIProxyAPI for quota. Every minute it takes the Valkey lock `orbit:proxycli:lock` for up to 120 seconds. When another holder has the lock, it skips the round. It lists the CLIProxyAPI auth files, fetches quota for each account that is due through `POST /v0/management/api-call`, and writes `orbit:proxycli:raw` and `orbit:proxycli:snapshot`.
 
-A custom proxy Route created before the name was reserved can still hold it. Setup checks for such a Route before it changes anything:
-
-| Route on `collector.cli-proxy-api.orbit` | Enable |
+| Rule | Value |
 | --- | --- |
-| None | Publishes the collector site. |
-| A custom proxy Route on the collector Node to `http://127.0.0.1:8787`, with no Process target | Takes the Route over, then removes it. |
-| Any other Route | Refuses with `proxycli.hostname_taken` and changes nothing. |
+| Check interval per account | 5 minutes, or 15 minutes for Claude |
+| Disabled account | Never checked |
+| Failed check | Waits 1 hour, doubling per failure up to 1 day. A longer `Retry-After` wins. |
+| Interrupted check | Waits 1 hour |
 
-A takeover publishes the collector site and withdraws the Route's site in one Caddy reload, so the name is served throughout. Setup then restarts the collector Process. The collector site retries the loopback collector for up to 5 seconds when it cannot connect, so a request that arrives during that restart waits instead of failing.
+Each account's next check is stored in Valkey, so a restart or an account toggle does not reset the schedule. `collected_at` is the time of the last snapshot. `checked_at` and `next_check_at` belong to each account.
 
-Private DNS keeps the same answer, the collector Node's WireGuard address. Setup then removes the Route's certificate and record, as `route:destroy` does. When the Caddy reload fails, the Route stays and keeps serving. When the Route removal fails, the collector site still serves the name, and the Route stays `failed` until a second enable or `route:destroy` finishes the removal.
+The collector reads Claude, Codex, Grok, Kimi, and Antigravity windows from CLIProxyAPI's wrapped response. It names common windows by duration, such as `7d` and `5h`, and sorts day and week windows before hour windows. A window the provider did not return is absent. The collector never reports a missing window as zero use, and never labels a window Primary or Secondary. A window whose reset time has passed drops out of reads until the next check.
 
-To take over such a Route, run setup again with the current settings. `proxycli:status` shows the Node and cache connection:
+When Grok returns no percentage, the collector calls Grok's billing RPC through CLIProxyAPI. It accepts zero use only from a complete response with an active weekly or monthly period, as [CodexBar](https://github.com/steipete/CodexBar/pull/3325) does.
 
-```bash
-orbit proxycli:status
-orbit proxycli:setup --node=services --cache-connection=valkey --cliproxy-url=http://127.0.0.1:8317 --cliproxy-management-key-file=./management.key
-orbit route:list
-```
+## Collector endpoints
 
-After the takeover, `route:list` does not show the Route. `collector.proxycli.orbit` is not published. A client still configured for it must move to `collector.cli-proxy-api.orbit`.
+The collector serves these paths on `https://collector.cli-proxy-api.orbit`. The read token and the control token are bearer tokens in Gateway settings.
 
-## Collection intervals
+| Request | Token | Result |
+| --- | --- | --- |
+| `GET /health` | None | `{"ok": true}` |
+| `GET /v1/quota-stats` | Read | The LLM Proxy quota-stats form of the snapshot, for CodexBar |
+| `GET /v1/providers` | Read | Provider pools |
+| `GET /api/v1/usage` | Read | The CodexBar plugin snapshot, in camelCase, with Grok as `xai` |
+| `GET /api/v1/providers/{provider}` | Read | One provider of that snapshot |
+| `PUT /api/v1/providers/{provider}/accounts/{account}` | Control | Sets `disabled` on one account and returns the CodexBar snapshot |
+| `PATCH /v1/accounts/{account}` | Control | Sets `disabled` on one account, for the Gateway |
 
-The collector checks its schedule every minute. It fetches each enabled account at most every five minutes, or every fifteen minutes for Claude. Disabled accounts are skipped. Each account's next check is persisted in Valkey, including across restarts and account controls. Failed checks wait at least one hour, with exponential backoff capped at one day; a longer provider `Retry-After` still wins. An interrupted request waits one hour before retrying.
+Every read uses the Valkey snapshot and never calls CLIProxyAPI. An account toggle sends `PATCH /v0/management/auth-files/status` to CLIProxyAPI, then compiles the pools again from the cached snapshot. It fetches no quota. The CLIProxyAPI management key is not a CodexBar credential.
 
-The web page reads the cache every ten seconds. It shows all reported provider windows, remaining percentages, and collection errors on the overview. `collected_at` is the snapshot compilation time; individual `checked_at` and `next_check_at` values track quota retrieval. A cache refresh does not reset the upstream schedule.
+## Clients
 
-The Python runtime decodes CLIProxyAPI's wrapped status, headers, and JSON-string body. It supports Claude, Codex, Grok, Kimi, and Antigravity windows. Missing quota is reported as unavailable, never assumed to mean zero use. If Grok omits its JSON percentage, the collector uses Grok’s billing RPC through CLIProxyAPI. It accepts zero only from a complete response with a recognized active period, matching [CodexBar’s validated-zero fix](https://github.com/steipete/CodexBar/pull/3325). The text encoding preserves protobuf bytes through CLIProxyAPI’s JSON response.
+The Gateway reads the snapshot from Valkey through the cache connection. `proxycli:list`, `proxycli:show`, and the Quota pages use it. A read or toggle before setup, or after teardown, fails with `proxycli.disabled` (409).
+
+`proxycli:update` checks that the account is in the snapshot, or fails with `resource.not_found`. The Gateway then sends `PATCH https://{node-wireguard-ip}:443/v1/accounts/{account}` with `Host: collector.cli-proxy-api.orbit`, Orbit CA verification, and the control token. It writes the new state into the snapshot. When the collector refuses or cannot be reached, the call fails with `proxycli.upstream_failed` (502).
+
+The web app shows the Quota section while the `proxycli` extension is enabled, and reads it every 60 seconds. It shows provider pools only when the collector is set up and the `tasks` extension is also enabled, because the page includes token spend from Tasks. Otherwise it names what is missing. A provider page lists the accounts, the remaining quota and reset time of each window, and the controls to enable or disable an account.
+
+`proxycli:status` reports whether the collector is set up, its hostname, Node, cache connection, and `collected_at`.
+
+## Check the collector
+
+After setup, confirm that exactly one collector polls:
+
+| Check | Expected result |
+| --- | --- |
+| `orbit process:list --node=<node>` | One Process `cli-proxy-api-collector` runs. |
+| `orbit proxycli:status` | `enabled` is true and `collected_at` has a time. |
+| `GET https://collector.cli-proxy-api.orbit/v1/quota-stats` with the read token | Quota groups from the snapshot. |
+| The CLIProxyAPI access log | Quota `api-call` requests arrive only at the collector's schedule, not on a page refresh or an account toggle. |
 
 ## Teardown
-
-Tear down the fleet feature when you want collection and the Quota UI to stop for every client.
 
 ```bash
 orbit proxycli:teardown
 ```
 
-`proxycli:teardown` asks a default-No question that names the fleet effect. Noninteractive and JSON calls need `--yes`. It stops and removes the Process and withdraws the Caddy site, certificate, and DNS record. It also deletes the stored management key and the read and control tokens, so setup again needs the key file and gives CodexBar a new read token. Valkey data and the Redis connection stay until the operator removes them. Teardown does not change the `proxycli` extension switch or web navigation.
-
-`extension:disable proxycli` changes the Gateway switch only. It hides the family, MCP tools, API operations, and web navigation for every client, and disabled calls return HTTP 409 `extension.disabled`. It does not tear down the collector. [ADR 0179](/cli/extension#why-it-works-this-way) records this contract.
-
-## Clients
-
-The Orbit web app shows the Quota section while the `proxycli` extension switch is enabled, regardless of whether the fleet collector is set up. When setup has not run, or after teardown, the section shows an `unconfigured` state and setup guidance instead of provider pools; it does not call the collector or pretend that missing quota is zero.
-
-After setup, the overview lists each provider pool. A provider page lists accounts, window remaining, reset times, and enable or disable controls. Window titles are duration labels in management.html#/quota order: the longer window first (`7d` then `5h`). A window the provider omitted is absent. The UI never renders a missing window as zero and never labels a window Primary or Secondary. When the extension switch is disabled, the Gateway omits the navigation and the Quota pages are not reachable.
-
-CodexBar uses the LLM Proxy quota-stats contract at `https://collector.cli-proxy-api.orbit/v1/quota-stats` with the read token as a bearer token. The custom CodexBar plugins also use cache-only `GET /api/v1/usage` and `GET /api/v1/providers/{provider}` on this collector. Their existing camelCase snapshot contract is preserved, including the `xai` alias for Grok. Native account control uses `PUT /api/v1/providers/{provider}/accounts/{account}` with the distinct control token. The collector compiles a snapshot every minute. CodexBar rejects snapshots older than three minutes; this does not increase quota polling. Account control at `https://collector.cli-proxy-api.orbit` uses the control token. The CLIProxyAPI management key is not a CodexBar credential.
-
-`orbit proxycli:status` reports whether the fleet feature is set up, which Node and cache connection it uses, and when the snapshot was last written. The web navigation follows the extension switch, not this setup status. `orbit proxycli:list` and `orbit proxycli:show` read the same snapshot. `orbit proxycli:update` toggles one account.
+Teardown removes the collector Process and script, withdraws the Caddy site and its certificate, and publishes private DNS without the collector name. It deletes the stored management key and the read and control tokens. A later setup needs the key file again and gives CodexBar a new read token. Valkey data and the Redis connection stay. Teardown does not change the extension switch.
 
 ## Errors
 
-These codes appear on setup, teardown, reads, and the CLI family. Placement failures stay 422. A disabled fleet feature stays 409.
+| Code | Status | When |
+| --- | --- | --- |
+| `extension.disabled` | 409 | The `proxycli` extension is disabled. |
+| `proxycli.disabled` | 409 | A read or toggle runs while the collector is not set up. |
+| `proxycli.cache_missing` | 422 | No Database connection has the cache slug. |
+| `proxycli.cache_invalid` | 422 | The cache connection is not Redis. |
+| `proxycli.cache_unplaced` | 422 | The cache connection's Node is not in the fleet or has no active `database` role. |
+| `proxycli.node_invalid` | 422 | The collector Node is missing, inactive, not Linux, or has no WireGuard address. |
+| `proxycli.source_publication_failed` | 422 | Setup could not write the collector script on the Node. |
+| `proxycli.certificate_publication_failed` | 422 | Setup could not place the Orbit CA leaf on the Node. |
+| `proxycli.caddy_publication_failed` | 422 | Setup could not install Caddy or build the Node's Caddy configuration. |
+| `proxycli.upstream_failed` | 502 | The collector refused or did not answer an account toggle. |
+| `resource.not_found` | 404 | The provider or account is not in the snapshot. |
 
-| Code | When |
-| --- | --- |
-| `proxycli.cache_missing` | Setup names no Redis Database connection. |
-| `proxycli.cache_invalid` | The named connection is not Redis. |
-| `proxycli.cache_unplaced` | The connection's Node has no active `database` role. |
-| `proxycli.disabled` | A read or toggle runs while the fleet feature is disabled. |
-| `proxycli.node_invalid` | The collector Node is missing, inactive, or has no WireGuard address. |
-| `proxycli.source_publication_failed` | Setup could not install the collector script on the Node. |
-| `proxycli.certificate_publication_failed` | Setup could not publish the Orbit CA leaf on the Node. |
-| `proxycli.caddy_publication_failed` | Setup could not install the `collector.cli-proxy-api.orbit` Caddy site. |
-| `proxycli.hostname_taken` | A Route other than the collector's own custom proxy Route holds `collector.cli-proxy-api.orbit`. Setup changes nothing. |
-| `extension.disabled` | The `proxycli` extension is disabled at the Gateway. The CLI, API, MCP, and web clients hide it or refuse a stale request. |
-| `extension.unknown` | The slug is not a known extension. |
+## Why it works this way
+
+These reasons explain the design. Check them before you propose a change.
+
+### An extension, not a Node role
+
+Quota collection is optional fleet infrastructure, not a capability of one Node. A `proxycli` or `valkey` role would split cache placement from the other database Processes on the `database` role. So the extension places one Process and reuses a registered Redis connection.
+
+### One collector, one snapshot
+
+A refresh of the web page or CodexBar must never start an upstream poll. A second polling loop in the Gateway would call CLIProxyAPI on every refresh. So one collector polls under a Valkey lock, and every client reads the snapshot.
+
+### A reserved name, not a Route
+
+If a custom proxy Route served the collector, anyone who changed or destroyed that Route would change the CodexBar endpoint outside the extension lifecycle. So the Gateway reserves `collector.cli-proxy-api.orbit` and publishes it itself. The collector name sits under `cli-proxy-api.orbit`, the name of the management service it reports on, and the apex stays free for the management Route.
+
+### Missing quota is not zero
+
+A window the provider did not return is unknown. Showing it as zero use would tell the operator that quota is free when it may be exhausted. So a missing window is absent, and the collector names windows by duration, as the CLIProxyAPI management UI does.
 
 ## Related
 
 - [`proxycli` commands](/cli/proxycli)
 - [`extension`](/cli/extension)
 - [Database role](/reference/database-role)
-- [Database connections](/reference/database-connections)
 - [Private DNS](/reference/private-dns)
-- [Cut over proxy-quota collectors](/solutions/cutover-proxycli)
