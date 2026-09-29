@@ -9,9 +9,9 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\AppInstances\ResolveAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\ResolveDirectoryInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\UpdateInstanceDependenciesRequest;
+use Orbit\Sdk\Requests\Instances\ResolveDirectoryInstanceRequest;
+use Orbit\Sdk\Requests\Instances\ResolveInstanceRequest;
+use Orbit\Sdk\Requests\Instances\UpdateInstanceDependenciesRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -124,7 +124,7 @@ function update_cli_mock(?array $envelope = null, bool $domain = true): MockClie
     }
 
     return MockClient::global([
-        ($domain ? ResolveAppInstanceRequest::class : ResolveDirectoryInstanceRequest::class) => MockResponse::make([
+        ($domain ? ResolveInstanceRequest::class : ResolveDirectoryInstanceRequest::class) => MockResponse::make([
             'data' => $target,
             'meta' => ['request_id' => update_cli_id()],
         ]),
@@ -270,7 +270,7 @@ describe('single instance dependency update', function (): void {
 
     it('never updates after target refusal', function (): void {
         $mock = MockClient::global([
-            ResolveAppInstanceRequest::class => MockResponse::make([
+            ResolveInstanceRequest::class => MockResponse::make([
                 'error' => ['code' => 'dependencies.target_not_found', 'message' => 'Target refused.', 'details' => []],
             ], 409, ['X-Orbit-Request-Id' => update_cli_id()]),
         ]);
@@ -286,7 +286,7 @@ describe('single instance dependency update', function (): void {
 
     it('reports cancellation without claiming rollback', function (): void {
         MockClient::global([
-            ResolveAppInstanceRequest::class => function (): never {
+            ResolveInstanceRequest::class => function (): never {
                 throw new ConsoleInterrupted(2);
             },
         ]);

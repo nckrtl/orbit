@@ -18,7 +18,7 @@ use Illuminate\Support\Str;
 use Laravel\Prompts\Key;
 use Laravel\Prompts\Prompt;
 use Laravel\Prompts\Terminal;
-use Orbit\Sdk\Requests\Apps\ListAppsRequest;
+use Orbit\Sdk\Requests\Projects\ListProjectsRequest;
 use Orbit\Sdk\Requests\Tasks\CancelSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CancelTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CreateSubtaskRequest;
@@ -330,7 +330,7 @@ describe('prompts', function (): void {
         expect($status)->toBe(0)
             ->and($display)->toContain('Title is required.')
             ->and($display)->toContain('project 42 · Feat · Brief');
-        $mock->assertSent(ListAppsRequest::class);
+        $mock->assertSent(ListProjectsRequest::class);
     });
 
     it('asks which fields change', function (): void {
@@ -365,7 +365,7 @@ function task_prompt_mock(): MockClient
 {
     $meta = ['request_id' => '11111111-1111-4111-8111-111111111111'];
     $group = static fn (int $id, string $title, string $status): array => [
-        'id' => $id, 'project_id' => 1, 'app' => 'orbit', 'project_code' => 'ORB', 'title' => $title, 'brief' => 'Brief', 'status' => $status, 'tasks' => [],
+        'id' => $id, 'project_id' => 1, 'project' => 'orbit', 'project_code' => 'ORB', 'title' => $title, 'brief' => 'Brief', 'status' => $status, 'tasks' => [],
     ];
 
     return MockClient::global([
@@ -374,7 +374,7 @@ function task_prompt_mock(): MockClient
             static fn (array $row): bool => ! isset($pending->getRequest()->query()->all()['status']) || $row['status'] === $pending->getRequest()->query()->all()['status'],
         )), 'meta' => $meta]),
         ShowTaskGroupRequest::class => MockResponse::make(['data' => $group(1, 'Feature', 'backlog'), 'meta' => $meta]),
-        ListAppsRequest::class => MockResponse::make(['data' => [
+        ListProjectsRequest::class => MockResponse::make(['data' => [
             ['id' => 7, 'name' => 'Alpha', 'slug' => 'alpha', 'type' => 'monorepo', 'repository_url' => 'https://example.test/alpha.git'],
             ['id' => 42, 'name' => 'Beta', 'slug' => 'beta', 'type' => 'monorepo', 'repository_url' => 'https://example.test/beta.git'],
         ], 'meta' => $meta]),
@@ -506,7 +506,7 @@ describe('assistance columns', function (): void {
                 'assistance' => [[
                     'id' => 4,
                     'project_id' => 1,
-                    'app' => 'orbit',
+                    'project' => 'orbit',
                     'project_code' => 'ORB',
                     'title' => 'Blocked implementer',
                     'status' => 'running',

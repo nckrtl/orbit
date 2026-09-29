@@ -8,8 +8,8 @@ use App\Models\InstanceDeployment;
 use App\Models\Node;
 use App\Models\Project;
 use Illuminate\Support\Carbon;
-use Orbit\Sdk\Requests\Deployments\ListAppInstanceDeploymentsRequest;
-use Orbit\Sdk\Requests\Deployments\ShowAppInstanceDeploymentRequest;
+use Orbit\Sdk\Requests\Deployments\ListInstanceDeploymentsRequest;
+use Orbit\Sdk\Requests\Deployments\ShowInstanceDeploymentRequest;
 
 /**
  * Records the deployment history responses that the CLI replays for
@@ -79,14 +79,14 @@ it('records the deployment list and show responses', function (): void {
     record_fixture(
         $this->getJson("/api/v1/instances/{$instance->id}/deployments")->assertOk(),
         'instances/instance-deployment-list/default',
-        ListAppInstanceDeploymentsRequest::class,
+        ListInstanceDeploymentsRequest::class,
         'GET /api/v1/instances/{instance}/deployments',
     );
 
     record_fixture(
         $this->getJson("/api/v1/deployments/{$deployment->id}")->assertOk(),
         'instances/instance-deployment-show/default',
-        ShowAppInstanceDeploymentRequest::class,
+        ShowInstanceDeploymentRequest::class,
         'GET /api/v1/deployments/{deployment}',
     );
 });

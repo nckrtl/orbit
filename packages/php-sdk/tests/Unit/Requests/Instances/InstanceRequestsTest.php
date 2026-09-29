@@ -4,26 +4,26 @@ declare(strict_types=1);
 
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
-use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\DestroyAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
-use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
-use Orbit\Sdk\Responses\AppInstances\AppInstanceRegistrationResponse;
-use Orbit\Sdk\Responses\AppInstances\AppInstanceRemovalResponse;
-use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
-use Orbit\Sdk\Responses\AppInstances\AppInstancesResponse;
+use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
+use Orbit\Sdk\Requests\Instances\DestroyInstanceRequest;
+use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
+use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
+use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
+use Orbit\Sdk\Responses\Instances\InstanceRegistrationResponse;
+use Orbit\Sdk\Responses\Instances\InstanceRemovalResponse;
+use Orbit\Sdk\Responses\Instances\InstanceResponse;
+use Orbit\Sdk\Responses\Instances\InstancesResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
-describe('AppInstance requests', function (): void {
-    it('creates an AppInstance with inherited root and maps the typed response', function (): void {
+describe('Instance requests', function (): void {
+    it('creates an Instance with inherited root and maps the typed response', function (): void {
         $mockClient = new MockClient([
-            CreateAppInstanceRequest::class => MockResponse::make(instance_envelope(), 201),
+            CreateInstanceRequest::class => MockResponse::make(instance_envelope(), 201),
         ]);
         $connector = instance_gateway_connector($mockClient);
-        $request = new CreateAppInstanceRequest(projectId: 3, nodeId: 4, name: 'main');
+        $request = new CreateInstanceRequest(projectId: 3, nodeId: 4, name: 'main');
 
         $response = $connector->send($request)->dto();
 
@@ -38,7 +38,7 @@ describe('AppInstance requests', function (): void {
                 'name' => 'main',
             ])
             ->and($response)
-            ->toBeInstanceOf(AppInstanceResponse::class)
+            ->toBeInstanceOf(InstanceResponse::class)
             ->and($response->requestId)
             ->toBe(instance_request_id())
             ->and($response->domain)
@@ -59,13 +59,13 @@ describe('AppInstance requests', function (): void {
             'effective_root' => '/home/orbit-app-3/current/public',
         ];
         $mockClient = new MockClient([
-            CreateAppInstanceRequest::class => MockResponse::make([
+            CreateInstanceRequest::class => MockResponse::make([
                 'data' => $data,
                 'meta' => ['request_id' => instance_request_id()],
             ], 201),
         ]);
         $response = instance_gateway_connector($mockClient)
-            ->send(new CreateAppInstanceRequest(projectId: 3, nodeId: 4, name: 'main'))
+            ->send(new CreateInstanceRequest(projectId: 3, nodeId: 4, name: 'main'))
             ->dto();
 
         expect($response->productionUser)
@@ -77,7 +77,7 @@ describe('AppInstance requests', function (): void {
     });
 
     it('transports only the optional root override', function (): void {
-        $request = new CreateAppInstanceRequest(
+        $request = new CreateInstanceRequest(
             projectId: 3,
             nodeId: 4,
             name: 'main',
@@ -93,13 +93,13 @@ describe('AppInstance requests', function (): void {
     });
 
     it('transports an optional Route domain and preserves omission', function (): void {
-        $explicit = new CreateAppInstanceRequest(
+        $explicit = new CreateInstanceRequest(
             projectId: 3,
             nodeId: 4,
             name: 'main',
             domain: 'Preview.Example.Test',
         );
-        $generated = new CreateAppInstanceRequest(projectId: 3, nodeId: 4, name: 'main');
+        $generated = new CreateInstanceRequest(projectId: 3, nodeId: 4, name: 'main');
 
         expect($explicit->body()->all())
             ->toBe([
@@ -116,7 +116,7 @@ describe('AppInstance requests', function (): void {
     });
 
     it('transports an optional registration Route domain and preserves omission', function (): void {
-        $explicit = new RegisterAppInstanceRequest(
+        $explicit = new RegisterInstanceRequest(
             sourcePath: '/work/orbit-docs',
             domain: 'Preview.Example.Test',
         );
@@ -128,12 +128,12 @@ describe('AppInstance requests', function (): void {
             ])
             ->and($explicit->body()->all())
             ->not->toHaveKey('hostname')
-            ->and(new RegisterAppInstanceRequest('/work/orbit-docs')->body()->all())
+            ->and(new RegisterInstanceRequest('/work/orbit-docs')->body()->all())
             ->not->toHaveKey('domain')
             ->not->toHaveKey('hostname');
     });
 
-    it('does not treat leftover hostname fields as AppInstance domain aliases', function (): void {
+    it('does not treat leftover hostname fields as Instance domain aliases', function (): void {
         $payload = instance_gateway_data();
         unset($payload['domain']);
         $payload['hostname'] = 'alias.test';
@@ -147,7 +147,7 @@ describe('AppInstance requests', function (): void {
         $route['hostname'] = 'alias.test';
         $payload['route'] = $route;
 
-        $response = AppInstanceResponse::fromGatewayData($payload, instance_request_id());
+        $response = InstanceResponse::fromGatewayData($payload, instance_request_id());
 
         expect($response->domain)
             ->toBeNull()
@@ -160,13 +160,13 @@ describe('AppInstance requests', function (): void {
     });
 
     it('transports an optional explicit branch and preserves omission', function (): void {
-        $explicit = new CreateAppInstanceRequest(
+        $explicit = new CreateInstanceRequest(
             projectId: 3,
             nodeId: 4,
             name: 'default',
             branch: 'release',
         );
-        $inherited = new CreateAppInstanceRequest(projectId: 3, nodeId: 4, name: 'default');
+        $inherited = new CreateInstanceRequest(projectId: 3, nodeId: 4, name: 'default');
 
         expect($explicit->body()->all())
             ->toBe([
@@ -181,7 +181,7 @@ describe('AppInstance requests', function (): void {
 
     it('registers a caller-local source with typed confirmed values', function (): void {
         $registration = [
-            'app' => [
+            'project' => [
                 'id' => 3,
                 'name' => 'Orbit Docs',
                 'slug' => 'orbit-docs',
@@ -189,23 +189,25 @@ describe('AppInstance requests', function (): void {
                 'default_branch' => 'main',
                 'root' => 'public',
             ],
-            'app_instance' => instance_gateway_data(),
+            'instance' => instance_gateway_data(),
             'instances' => [instance_gateway_data()],
             'status' => 'active',
             'source_count' => 1,
             'completed_count' => 1,
         ];
         $mockClient = new MockClient([
-            RegisterAppInstanceRequest::class => MockResponse::make([
+            RegisterInstanceRequest::class => MockResponse::make([
                 'data' => $registration,
                 'meta' => ['request_id' => instance_request_id()],
             ]),
         ]);
         $connector = instance_gateway_connector($mockClient);
-        $request = new RegisterAppInstanceRequest(
+        $request = new RegisterInstanceRequest(
             sourcePath: '/work/orbit-docs',
             includeWorktrees: true,
             projectId: 3,
+            projectName: 'Orbit Docs',
+            projectSlug: 'orbit-docs',
             instanceName: 'preview',
             root: 'web',
         );
@@ -220,12 +222,14 @@ describe('AppInstance requests', function (): void {
                 'source_path' => '/work/orbit-docs',
                 'include_worktrees' => true,
                 'project_id' => 3,
+                'project_name' => 'Orbit Docs',
+                'project_slug' => 'orbit-docs',
                 'instance_name' => 'preview',
                 'root' => 'web',
             ])
             ->and($response)
-            ->toBeInstanceOf(AppInstanceRegistrationResponse::class)
-            ->and($response->appInstance->sourceLayout)
+            ->toBeInstanceOf(InstanceRegistrationResponse::class)
+            ->and($response->instance->sourceLayout)
             ->toBe('checkout')
             ->and($response->sourceCount)
             ->toBe(1)
@@ -234,20 +238,20 @@ describe('AppInstance requests', function (): void {
     });
 
     it('omits null and false optional registration values', function (): void {
-        expect(new RegisterAppInstanceRequest('/work/orbit-docs')->body()->all())
+        expect(new RegisterInstanceRequest('/work/orbit-docs')->body()->all())
             ->toBe(['source_path' => '/work/orbit-docs']);
     });
 
     it('lists instances through the explicit collection route', function (): void {
         $mockClient = new MockClient([
-            ListAppInstancesRequest::class => MockResponse::make([
+            ListInstancesRequest::class => MockResponse::make([
                 'data' => [instance_gateway_data()],
                 'meta' => ['request_id' => instance_request_id()],
             ]),
         ]);
         $connector = instance_gateway_connector($mockClient);
 
-        $response = $connector->send(new ListAppInstancesRequest)->dto();
+        $response = $connector->send(new ListInstancesRequest)->dto();
         $request = $mockClient->getLastRequest();
 
         expect($request?->getMethod())
@@ -255,8 +259,8 @@ describe('AppInstance requests', function (): void {
             ->and($request?->resolveEndpoint())
             ->toBe('/api/v1/instances')
             ->and($response)
-            ->toBeInstanceOf(AppInstancesResponse::class)
-            ->and($response->appInstances)
+            ->toBeInstanceOf(InstancesResponse::class)
+            ->and($response->instances)
             ->toHaveCount(1)
             ->and($response->toArray())
             ->toBe([
@@ -267,11 +271,11 @@ describe('AppInstance requests', function (): void {
 
     it('shows an instance by numeric ID', function (): void {
         $mockClient = new MockClient([
-            ShowAppInstanceRequest::class => MockResponse::make(instance_envelope()),
+            ShowInstanceRequest::class => MockResponse::make(instance_envelope()),
         ]);
         $connector = instance_gateway_connector($mockClient);
 
-        $response = $connector->send(new ShowAppInstanceRequest(7))->dto();
+        $response = $connector->send(new ShowInstanceRequest(7))->dto();
         $request = $mockClient->getLastRequest();
 
         expect($request?->getMethod())
@@ -279,16 +283,16 @@ describe('AppInstance requests', function (): void {
             ->and($request?->resolveEndpoint())
             ->toBe('/api/v1/instances/7')
             ->and($response)
-            ->toBeInstanceOf(AppInstanceResponse::class);
+            ->toBeInstanceOf(InstanceResponse::class);
     });
 
-    it('removes an AppInstance and transports explicit force intent with bounded progress', function (): void {
+    it('removes an Instance and transports explicit force intent with bounded progress', function (): void {
         $mockClient = new MockClient([
-            DestroyAppInstanceRequest::class => MockResponse::make(removal_envelope()),
+            DestroyInstanceRequest::class => MockResponse::make(removal_envelope()),
         ]);
         $connector = instance_gateway_connector($mockClient);
 
-        $remove = new DestroyAppInstanceRequest(7, force: true);
+        $remove = new DestroyInstanceRequest(7, force: true);
         $response = $connector->send($remove)->dto();
         $request = $mockClient->getLastRequest();
 
@@ -299,15 +303,15 @@ describe('AppInstance requests', function (): void {
             ->and($remove->body()->all())
             ->toBe(['force' => true])
             ->and($response)
-            ->toBeInstanceOf(AppInstanceRemovalResponse::class)
+            ->toBeInstanceOf(InstanceRemovalResponse::class)
             ->and($response->toArray())
             ->toBe([...removal_gateway_data(), 'request_id' => instance_request_id()]);
     });
 
     it('preserves force omission and explicit false', function (): void {
-        expect(new DestroyAppInstanceRequest(7)->body()->all())
+        expect(new DestroyInstanceRequest(7)->body()->all())
             ->toBeEmpty()
-            ->and(new DestroyAppInstanceRequest(7, force: false)->body()->all())
+            ->and(new DestroyInstanceRequest(7, force: false)->body()->all())
             ->toBe(['force' => false]);
     });
 
@@ -320,11 +324,11 @@ describe('AppInstance requests', function (): void {
         $failure['failed_step'] = 'runtime_cleanup';
         $failure['error_code'] = 'instance.runtime_interrupted';
         $mockClient = new MockClient([
-            DestroyAppInstanceRequest::class => MockResponse::make(
+            DestroyInstanceRequest::class => MockResponse::make(
                 [
                     'error' => [
                         'code' => 'instance.runtime_interrupted',
-                        'message' => 'AppInstance removal was accepted but remains incomplete.',
+                        'message' => 'Instance removal was accepted but remains incomplete.',
                         'details' => ['removal' => $failure],
                         'request_id' => instance_request_id(),
                     ],
@@ -336,7 +340,7 @@ describe('AppInstance requests', function (): void {
         $connector = instance_gateway_connector($mockClient);
 
         try {
-            $connector->send(new DestroyAppInstanceRequest(7, force: true));
+            $connector->send(new DestroyInstanceRequest(7, force: true));
             $this->fail('Expected GatewayApiException.');
         } catch (GatewayApiException $exception) {
             expect($exception->errorCode())

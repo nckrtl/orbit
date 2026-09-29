@@ -11,10 +11,10 @@ use App\Support\Console\ConsoleWriter;
 use App\Support\Console\ProgressState;
 use App\Support\GatewayFailureRenderer;
 use Orbit\Sdk\GatewayApiException;
-use Orbit\Sdk\Requests\AppInstances\CloneAppInstanceRequest;
-use Orbit\Sdk\Requests\Deployments\ListAppInstanceReleasesRequest;
-use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
+use Orbit\Sdk\Requests\Deployments\ListInstanceReleasesRequest;
+use Orbit\Sdk\Requests\Instances\CloneInstanceRequest;
 use Orbit\Sdk\Responses\Deployments\DeploymentReleasesResponse;
+use Orbit\Sdk\Responses\Instances\InstanceResponse;
 use Orbit\Sdk\Responses\Routes\RouteResponse;
 
 final class CloneInstanceCommand extends GatewayCommand
@@ -34,7 +34,7 @@ final class CloneInstanceCommand extends GatewayCommand
 
     #[\Override]
     protected $help = <<<'HELP'
-The candidate supplies source, stored environment values, and an optional SQLite snapshot. The App supplies production Process and Schedule definitions; candidate-specific overrides are not copied.
+The candidate supplies source, stored environment values, and an optional SQLite snapshot. The Project supplies production Process and Schedule definitions; candidate-specific overrides are not copied.
 
 Provision the production Node with node:add --tld before cloning. Clean application state on the target only. Use env:update and env:sync for target configuration, then configure deploy steps with instance:deploy-step:create and deploy with instance:deploy.
 HELP;
@@ -82,25 +82,25 @@ HELP;
         $instance = null;
         try {
             [$instance, $route] = $progress->during('clone', /**
-             * @return array{AppInstanceResponse, RouteResponse}
+             * @return array{InstanceResponse, RouteResponse}
              */ function () use ($connector, $candidateId, $nodeId, $name, $previewName): array {
-                $response = $this->sendOrThrow($connector, new CloneAppInstanceRequest(
+                $response = $this->sendOrThrow($connector, new CloneInstanceRequest(
                     candidateId: $candidateId,
                     nodeId: $nodeId,
                     name: $name,
                     previewName: $previewName,
                     branch: $this->stringOption('branch'),
                     sqliteSourcePath: $this->stringOption('sqlite-source-path'),
-                ), AppInstanceResponse::class);
+                ), InstanceResponse::class);
 
                 return [$response, $this->previewRoute($response)];
             });
             $progress->complete('clone', ProgressState::Success);
             $releases = $progress->during('releases', fn (): object => $this->sendOrThrow(
-                $connector, new ListAppInstanceReleasesRequest($instance->id), DeploymentReleasesResponse::class,
+                $connector, new ListInstanceReleasesRequest($instance->id), DeploymentReleasesResponse::class,
             ));
         } catch (GatewayApiException $exception) {
-            if ($instance instanceof AppInstanceResponse) {
+            if ($instance instanceof InstanceResponse) {
                 $this->writeHumanMessage("Instance [{$instance->name}] (#{$instance->id}) was cloned; the selected release could not be read. Clone request ID: {$instance->requestId}");
             }
 
@@ -139,7 +139,7 @@ HELP;
         return self::SUCCESS;
     }
 
-    private function previewRoute(AppInstanceResponse $response): RouteResponse
+    private function previewRoute(InstanceResponse $response): RouteResponse
     {
         $route = $response->route;
 

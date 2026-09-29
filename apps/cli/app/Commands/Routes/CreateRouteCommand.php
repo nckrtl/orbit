@@ -8,11 +8,11 @@ use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Laravel\Prompts\TextPrompt;
 use Orbit\Sdk\GatewayConnector;
-use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
+use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
 use Orbit\Sdk\Requests\Processes\NodeProcessTarget;
 use Orbit\Sdk\Requests\Routes\CreateRouteRequest;
-use Orbit\Sdk\Responses\AppInstances\AppInstancesResponse;
+use Orbit\Sdk\Responses\Instances\InstancesResponse;
 use Orbit\Sdk\Responses\Processes\ProcessesResponse;
 use Orbit\Sdk\Responses\Routes\RouteResponse;
 
@@ -53,13 +53,13 @@ class CreateRouteCommand extends RouteCommand
                 return self::FAILURE;
             }
 
-            $instances = $this->sendWithProgress($connector, new ListAppInstancesRequest, AppInstancesResponse::class, ['Instances', 'Fetching Instances', 'Fetched Instances'], dismiss: true);
-            if (! $instances instanceof AppInstancesResponse) {
+            $instances = $this->sendWithProgress($connector, new ListInstancesRequest, InstancesResponse::class, ['Instances', 'Fetching Instances', 'Fetched Instances'], dismiss: true);
+            if (! $instances instanceof InstancesResponse) {
                 return self::FAILURE;
             }
 
             $rows = [];
-            foreach ($instances->appInstances as $candidate) {
+            foreach ($instances->instances as $candidate) {
                 $rows[$candidate->id] = [
                     (string) $candidate->id,
                     $candidate->name,
@@ -102,7 +102,7 @@ class CreateRouteCommand extends RouteCommand
             new CreateRouteRequest(
                 domain: $domain,
                 publication: $publication,
-                appInstanceId: $instanceId,
+                instanceId: $instanceId,
             ),
             RouteResponse::class,
             ['Create Route', 'Creating Route', 'Created Route'],

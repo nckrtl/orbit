@@ -1,0 +1,16 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Orbit\Sdk\Requests\Processes;
+
+final readonly class InstanceProcessTarget implements ProcessTarget
+{
+    public function __construct(public int|string $instanceId) {}
+
+    /** @return array{target_type: string, target_id: int|string} */
+    public function toRequestData(): array
+    {
+        return ['target_type' => 'instance', 'target_id' => $this->instanceId];
+    }
+}

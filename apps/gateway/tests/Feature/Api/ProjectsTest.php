@@ -22,10 +22,10 @@ use App\Models\Project;
 use App\Models\Route;
 use App\Models\TaskGroup;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\Apps\CreateAppRequest;
-use Orbit\Sdk\Requests\Apps\DestroyAppRequest;
-use Orbit\Sdk\Requests\Apps\ListAppsRequest;
-use Orbit\Sdk\Requests\Apps\ShowAppRequest;
+use Orbit\Sdk\Requests\Projects\CreateProjectRequest;
+use Orbit\Sdk\Requests\Projects\DestroyProjectRequest;
+use Orbit\Sdk\Requests\Projects\ListProjectsRequest;
+use Orbit\Sdk\Requests\Projects\ShowProjectRequest;
 
 beforeEach(function (): void {
     $this->operator = Node::query()->create([
@@ -58,7 +58,7 @@ describe('app creation', function (): void {
             ->assertJsonPath('data.slug', 'acme')
             ->assertJsonPath('data.repository_url', 'git@github.com:acme/site.git')
             ->assertJsonStructure(['meta' => ['request_id']]);
-        record_fixture($first, 'apps/app-create/created', CreateAppRequest::class, 'POST /api/v1/projects');
+        record_fixture($first, 'projects/project-create/created', CreateProjectRequest::class, 'POST /api/v1/projects');
 
         $second = $this
             ->withHeader('X-Orbit-Request-Id', (string) Str::uuid())
@@ -247,19 +247,19 @@ describe('app lifecycle', function (): void {
         record_fixture($this
             ->getJson('/api/v1/projects')
             ->assertOk()
-            ->assertJsonPath('data.0.id', $project->id), 'apps/app-list/default', ListAppsRequest::class, 'GET /api/v1/projects');
+            ->assertJsonPath('data.0.id', $project->id), 'projects/project-list/default', ListProjectsRequest::class, 'GET /api/v1/projects');
 
         record_fixture($this
             ->getJson("/api/v1/projects/{$project->id}")
             ->assertOk()
-            ->assertJsonPath('data.slug', 'acme'), 'apps/app-show/default', ShowAppRequest::class, 'GET /api/v1/projects/{project}');
+            ->assertJsonPath('data.slug', 'acme'), 'projects/project-show/default', ShowProjectRequest::class, 'GET /api/v1/projects/{project}');
 
         $requestId = (string) Str::uuid();
         record_fixture($this
             ->withHeader('X-Orbit-Request-Id', $requestId)
             ->deleteJson("/api/v1/projects/{$project->id}")
             ->assertOk()
-            ->assertJsonPath('data.id', $project->id), 'apps/app-destroy/removed', DestroyAppRequest::class, 'DELETE /api/v1/projects/{project}');
+            ->assertJsonPath('data.id', $project->id), 'projects/project-destroy/removed', DestroyProjectRequest::class, 'DELETE /api/v1/projects/{project}');
 
         expect(Project::query()->count())
             ->toBe(0)
@@ -277,8 +277,8 @@ describe('app lifecycle', function (): void {
             Project::query()->create(['name' => $name, 'slug' => $slug, 'repository_url' => $repository, 'default_branch' => $branch, 'root' => $root]);
         }
 
-        record_fixture($this->getJson('/api/v1/projects')->assertOk()->assertJsonCount(4, 'data'), 'apps/app-list/several', ListAppsRequest::class, 'GET /api/v1/projects');
-        record_fixture($this->getJson('/api/v1/projects/3')->assertOk()->assertJsonPath('data.slug', 'charlie-shop'), 'apps/app-show/charlie-shop', ShowAppRequest::class, 'GET /api/v1/projects/{project}');
+        record_fixture($this->getJson('/api/v1/projects')->assertOk()->assertJsonCount(4, 'data'), 'projects/project-list/several', ListProjectsRequest::class, 'GET /api/v1/projects');
+        record_fixture($this->getJson('/api/v1/projects/3')->assertOk()->assertJsonPath('data.slug', 'charlie-shop'), 'projects/project-show/charlie-shop', ShowProjectRequest::class, 'GET /api/v1/projects/{project}');
     });
 
     it('records a long list of apps for scrolling', function (): void {
@@ -296,7 +296,7 @@ describe('app lifecycle', function (): void {
             ]);
         }
 
-        record_fixture($this->getJson('/api/v1/projects')->assertOk()->assertJsonCount(24, 'data'), 'apps/app-list/many', ListAppsRequest::class, 'GET /api/v1/projects');
+        record_fixture($this->getJson('/api/v1/projects')->assertOk()->assertJsonCount(24, 'data'), 'projects/project-list/many', ListProjectsRequest::class, 'GET /api/v1/projects');
     });
 
     it('does not remove a Project that still owns Instances', function (): void {

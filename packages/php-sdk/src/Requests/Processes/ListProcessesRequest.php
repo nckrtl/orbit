@@ -16,9 +16,9 @@ final class ListProcessesRequest extends GatewayRequest
     #[\Override]
     protected Method $method = Method::GET;
 
-    /** @param  null|AppInstanceProcessTarget|NodeProcessTarget  $target  Null lists every Process in the fleet. */
+    /** @param  null|InstanceProcessTarget|NodeProcessTarget  $target  Null lists every Process in the fleet. */
     public function __construct(
-        private readonly AppInstanceProcessTarget|NodeProcessTarget|null $target = null,
+        private readonly InstanceProcessTarget|NodeProcessTarget|null $target = null,
     ) {}
 
     public function resolveEndpoint(): string

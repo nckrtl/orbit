@@ -8,9 +8,9 @@ use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
-use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
-use Orbit\Sdk\Responses\AppInstances\AppInstanceRemovalProgressResponse;
-use Orbit\Sdk\Responses\AppInstances\AppInstancesResponse;
+use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
+use Orbit\Sdk\Responses\Instances\InstanceRemovalProgressResponse;
+use Orbit\Sdk\Responses\Instances\InstancesResponse;
 
 final class ListInstancesCommand extends GatewayCommand
 {
@@ -31,9 +31,9 @@ final class ListInstancesCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $response = $this->sendWithProgress($connector, new ListAppInstancesRequest, AppInstancesResponse::class, ['List Instances', 'Loading Instances', 'Loaded Instances']);
+        $response = $this->sendWithProgress($connector, new ListInstancesRequest, InstancesResponse::class, ['List Instances', 'Loading Instances', 'Loaded Instances']);
 
-        if (! $response instanceof AppInstancesResponse) {
+        if (! $response instanceof InstancesResponse) {
             return self::FAILURE;
         }
 
@@ -45,7 +45,7 @@ final class ListInstancesCommand extends GatewayCommand
 
         $rows = [];
 
-        foreach ($response->appInstances as $instance) {
+        foreach ($response->instances as $instance) {
             $rows[] = [
                 $instance->id,
                 $instance->projectId,
@@ -89,7 +89,7 @@ final class ListInstancesCommand extends GatewayCommand
         return self::SUCCESS;
     }
 
-    private function removalSummary(AppInstanceRemovalProgressResponse $removal): string
+    private function removalSummary(InstanceRemovalProgressResponse $removal): string
     {
         $summary =
             ($removal->force ? 'forced' : 'normal')

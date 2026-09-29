@@ -10,7 +10,7 @@ final readonly class RegisterInstanceData
         public string $sourcePath,
         public bool $includeWorktrees,
         public ?int $projectId,
-        public ?string $appName,
+        public ?string $projectName,
         public ?string $projectSlug,
         public ?string $defaultBranch,
         public ?string $instanceName,

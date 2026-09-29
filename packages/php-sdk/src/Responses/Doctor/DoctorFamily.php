@@ -8,7 +8,7 @@ enum DoctorFamily: string
 {
     case Node = 'node';
     case Role = 'role';
-    case App = 'app';
+    case Project = 'project';
     case Instance = 'instance';
     case Schedule = 'schedule';
     case Tool = 'tool';

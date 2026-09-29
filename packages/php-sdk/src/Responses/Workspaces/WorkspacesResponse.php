@@ -3,5 +3,5 @@
 declare(strict_types=1);
 
 // This inert path remains a prepared-state fingerprint input during the legacy
-// Workspace conversion window. AppInstance responses own the application surface.
+// Workspace conversion window. Instance responses own the application surface.
 return;

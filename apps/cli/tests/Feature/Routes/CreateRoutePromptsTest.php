@@ -14,7 +14,7 @@ use Illuminate\Support\Str;
 use Laravel\Prompts\Key;
 use Laravel\Prompts\Prompt;
 use Laravel\Prompts\Terminal;
-use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
+use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
 use Orbit\Sdk\Requests\Routes\CreateRouteRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -48,7 +48,7 @@ it('selects an omitted Instance by stable ID and sends the selected Instance in 
             'publication' => 'private',
             'instance_id' => 12,
         ]);
-    $mock->assertSent(ListAppInstancesRequest::class);
+    $mock->assertSent(ListInstancesRequest::class);
 });
 
 it('prompts for the omitted domain after an explicit Instance without listing Instances', function (): void {
@@ -64,7 +64,7 @@ it('prompts for the omitted domain after an explicit Instance without listing In
             'publication' => 'private',
             'instance_id' => 12,
         ]);
-    $mock->assertNotSent(ListAppInstancesRequest::class);
+    $mock->assertNotSent(ListInstancesRequest::class);
 });
 
 it('refuses an empty Instance selection without creating a Route', function (): void {
@@ -93,7 +93,7 @@ function route_prompt_mock(?array $instances = null): MockClient
     ];
 
     return MockClient::global([
-        ListAppInstancesRequest::class => MockResponse::make([
+        ListInstancesRequest::class => MockResponse::make([
             'data' => $instances,
             'meta' => ['request_id' => '0198e15d-16c4-7855-8eb2-182b53ad28ba'],
         ]),

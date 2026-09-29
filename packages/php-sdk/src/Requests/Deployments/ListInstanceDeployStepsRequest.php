@@ -16,12 +16,12 @@ final class ListInstanceDeployStepsRequest extends GatewayRequest
     protected Method $method = Method::GET;
 
     public function __construct(
-        private readonly int $appInstanceId,
+        private readonly int $instanceId,
     ) {}
 
     public function resolveEndpoint(): string
     {
-        return "/api/v1/instances/{$this->appInstanceId}/deploy-steps";
+        return "/api/v1/instances/{$this->instanceId}/deploy-steps";
     }
 
     public function createDtoFromResponse(#[\SensitiveParameter] Response $response): DeployStepsResponse

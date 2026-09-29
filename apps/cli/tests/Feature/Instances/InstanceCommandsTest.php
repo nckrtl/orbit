@@ -11,12 +11,12 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\DestroyAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
-use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\UpdateAppInstanceRequest;
+use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
+use Orbit\Sdk\Requests\Instances\DestroyInstanceRequest;
+use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
+use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
+use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
+use Orbit\Sdk\Requests\Instances\UpdateInstanceRequest;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -77,19 +77,19 @@ describe('instance:register', function (): void {
     });
 
     it('registers the source after explicit ownership consent', function (): void {
-        $mockClient = MockClient::global([RegisterAppInstanceRequest::class => registration_mock_response()]);
+        $mockClient = MockClient::global([RegisterInstanceRequest::class => registration_mock_response()]);
         expect(Artisan::call('instance:register', ['--yes' => true]))->toBe(0);
         expect(instance_source_text(Artisan::output()))->toContain(
             'Instance: default', 'Source layout checkout',
             'Managed path /home/orbit/apps/acme/default',
         );
-        expect($mockClient->getLastRequest())->toBeInstanceOf(RegisterAppInstanceRequest::class)
+        expect($mockClient->getLastRequest())->toBeInstanceOf(RegisterInstanceRequest::class)
             ->and($mockClient->getLastRequest()?->body()->all())->toBe(['source_path' => '/work/acme']);
     });
 
     it('registers with --json on an interactive terminal without a prompt or prose', function (): void {
         $mockClient = MockClient::global([
-            RegisterAppInstanceRequest::class => registration_mock_response(),
+            RegisterInstanceRequest::class => registration_mock_response(),
         ]);
 
         $exitCode = Artisan::call('instance:register', ['--json' => true, '--yes' => true]);
@@ -106,7 +106,7 @@ describe('instance:register', function (): void {
         ]);
     });
 
-    it('omits inferred creation values when canonical repository lookup can resolve a different App identity', function (): void {
+    it('omits inferred creation values when canonical repository lookup can resolve a different Project identity', function (): void {
         $this->registrationGit->facts = new GitRegistrationFacts(
             path: '/work/legacy-default',
             repositoryUrl: 'https://github.com/laravel/laravel.git',
@@ -118,7 +118,7 @@ describe('instance:register', function (): void {
             commit: str_repeat(string: 'a', times: 40),
         );
         $mockClient = MockClient::global([
-            RegisterAppInstanceRequest::class => registration_mock_response(),
+            RegisterInstanceRequest::class => registration_mock_response(),
         ]);
 
         $this
@@ -135,9 +135,9 @@ describe('instance:register', function (): void {
         ]);
     });
 
-    it('transports explicit creation values when App lookup is not selected', function (): void {
+    it('transports explicit creation values when Project lookup is not selected', function (): void {
         $mockClient = MockClient::global([
-            RegisterAppInstanceRequest::class => registration_mock_response(),
+            RegisterInstanceRequest::class => registration_mock_response(),
         ]);
 
         $this
@@ -155,14 +155,14 @@ describe('instance:register', function (): void {
 
         expect($mockClient->getLastRequest()?->body()->all())->toBe([
             'source_path' => '/work/acme',
-            'app_name' => 'Confirmed',
-            'app_slug' => 'confirmed',
+            'project_name' => 'Confirmed',
+            'project_slug' => 'confirmed',
             'default_branch' => 'trunk',
             'root' => 'web',
         ]);
     });
 
-    it('refuses unresolved App values with one JSON error document without a prompt or request', function (array $parameters): void {
+    it('refuses unresolved Project values with one JSON error document without a prompt or request', function (array $parameters): void {
         $facts = $this->registrationGit->facts;
         assert(
             $facts instanceof GitRegistrationFacts,
@@ -198,9 +198,9 @@ describe('instance:register', function (): void {
         'JSON without interaction' => [['--json' => true, '--no-interaction' => true]],
     ]);
 
-    it('transports include worktrees and omits inferred values for a selected App', function (): void {
+    it('transports include worktrees and omits inferred values for a selected Project', function (): void {
         $mockClient = MockClient::global([
-            RegisterAppInstanceRequest::class => registration_mock_response(),
+            RegisterInstanceRequest::class => registration_mock_response(),
         ]);
 
         $this
@@ -325,9 +325,9 @@ describe('instance:create', function (): void {
             ->assertExitCode(0);
     });
 
-    it('creates an AppInstance with inherited root as JSON', function (): void {
+    it('creates an Instance with inherited root as JSON', function (): void {
         $mockClient = MockClient::global([
-            CreateAppInstanceRequest::class => instance_mock_response(201),
+            CreateInstanceRequest::class => instance_mock_response(201),
         ]);
 
         $this
@@ -345,14 +345,14 @@ describe('instance:create', function (): void {
         expect($mockClient->getLastPendingRequest()?->getUrl())
             ->toBe('https://10.44.0.1/api/v1/instances')
             ->and($request)
-            ->toBeInstanceOf(CreateAppInstanceRequest::class)
+            ->toBeInstanceOf(CreateInstanceRequest::class)
             ->and($request?->body()->all())
             ->toBe(['project_id' => 3, 'node_id' => 2, 'name' => 'dev']);
     });
 
     it('transports an optional root override without execution controls', function (): void {
         $mockClient = MockClient::global([
-            CreateAppInstanceRequest::class => instance_mock_response(201),
+            CreateInstanceRequest::class => instance_mock_response(201),
         ]);
 
         $this
@@ -374,7 +374,7 @@ describe('instance:create', function (): void {
 
     it('transports an optional Route domain without local policy validation', function (): void {
         $mockClient = MockClient::global([
-            CreateAppInstanceRequest::class => instance_mock_response(201),
+            CreateInstanceRequest::class => instance_mock_response(201),
         ]);
 
         $this
@@ -417,7 +417,7 @@ describe('instance:create', function (): void {
 
     it('transports an optional branch without local policy validation', function (): void {
         $mockClient = MockClient::global([
-            CreateAppInstanceRequest::class => instance_mock_response(201),
+            CreateInstanceRequest::class => instance_mock_response(201),
         ]);
 
         $this
@@ -437,8 +437,8 @@ describe('instance:create', function (): void {
         ]);
     });
 
-    it('reports the created AppInstance for humans', function (): void {
-        MockClient::global([CreateAppInstanceRequest::class => instance_mock_response(201)]);
+    it('reports the created Instance for humans', function (): void {
+        MockClient::global([CreateInstanceRequest::class => instance_mock_response(201)]);
 
         expect(Artisan::call('instance:create', ['project' => '3', 'node' => '2', 'name' => 'dev']))->toBe(0);
         expect(instance_source_text(Artisan::output()))->toContain(
@@ -460,7 +460,7 @@ describe('instance:create', function (): void {
             'checkout_path' => '/home/orbit-app-3',
             'effective_root' => '/home/orbit-app-3/current/public',
         ];
-        MockClient::global([CreateAppInstanceRequest::class => instance_mock_response(201, $payload)]);
+        MockClient::global([CreateInstanceRequest::class => instance_mock_response(201, $payload)]);
 
         expect(Artisan::call('instance:create', ['project' => '3', 'node' => '2', 'name' => 'dev']))->toBe(0);
         expect(instance_source_text(Artisan::output()))->toContain(
@@ -472,10 +472,10 @@ describe('instance:create', function (): void {
 });
 
 describe('instance:list', function (): void {
-    it('lists AppInstances as JSON', function (): void {
+    it('lists Instances as JSON', function (): void {
         MockClient::destroyGlobal();
         MockClient::global([
-            ListAppInstancesRequest::class => MockResponse::make([
+            ListInstancesRequest::class => MockResponse::make([
                 'data' => [instance_payload()],
                 'meta' => ['request_id' => instance_request_id()],
             ]),
@@ -494,9 +494,9 @@ describe('instance:list', function (): void {
             ->assertExitCode(0);
     });
 
-    it('lists AppInstance source identity for humans', function (): void {
+    it('lists Instance source identity for humans', function (): void {
         MockClient::global([
-            ListAppInstancesRequest::class => MockResponse::make([
+            ListInstancesRequest::class => MockResponse::make([
                 'data' => [instance_payload()],
                 'meta' => ['request_id' => instance_request_id()],
             ]),
@@ -513,7 +513,7 @@ describe('instance:list', function (): void {
     it('lists bounded unfinished removal progress for humans and JSON', function (): void {
         $payload = instance_payload(removal: removal_progress_payload());
         MockClient::global([
-            ListAppInstancesRequest::class => MockResponse::make([
+            ListInstancesRequest::class => MockResponse::make([
                 'data' => [$payload],
                 'meta' => ['request_id' => instance_request_id()],
             ]),
@@ -524,7 +524,7 @@ describe('instance:list', function (): void {
 
         MockClient::destroyGlobal();
         MockClient::global([
-            ListAppInstancesRequest::class => MockResponse::make([
+            ListInstancesRequest::class => MockResponse::make([
                 'data' => [$payload],
                 'meta' => ['request_id' => instance_request_id()],
             ]),
@@ -541,7 +541,7 @@ describe('instance:update', function (): void {
         $payload = instance_payload();
         $payload['selected_branch'] = 'main';
         $mock = MockClient::global([
-            UpdateAppInstanceRequest::class => instance_mock_response(payload: $payload),
+            UpdateInstanceRequest::class => instance_mock_response(payload: $payload),
         ]);
 
         expect(Artisan::call('instance:update', ['instance' => '5', '--branch' => 'release/next']))->toBe(0);
@@ -551,7 +551,7 @@ describe('instance:update', function (): void {
 
     it('updates the deployment branch without sending steps', function (): void {
         $mock = MockClient::global([
-            UpdateAppInstanceRequest::class => instance_mock_response(),
+            UpdateInstanceRequest::class => instance_mock_response(),
         ]);
 
         $this
@@ -560,14 +560,14 @@ describe('instance:update', function (): void {
             ->assertExitCode(0);
 
         expect($mock->getLastRequest())
-            ->toBeInstanceOf(UpdateAppInstanceRequest::class)
+            ->toBeInstanceOf(UpdateInstanceRequest::class)
             ->and($mock->getLastRequest()?->body()->all())->toBe(['branch' => 'release/next']);
     });
 });
 
 describe('instance:show', function (): void {
-    it('shows an AppInstance as JSON', function (): void {
-        MockClient::global([ShowAppInstanceRequest::class => instance_mock_response(), ListProcessesRequest::class => no_processes_response()]);
+    it('shows an Instance as JSON', function (): void {
+        MockClient::global([ShowInstanceRequest::class => instance_mock_response(), ListProcessesRequest::class => no_processes_response()]);
 
         $this
             ->artisan('instance:show', ['instance' => '5', '--json' => true])
@@ -575,8 +575,8 @@ describe('instance:show', function (): void {
             ->assertExitCode(0);
     });
 
-    it('shows AppInstance source details for humans', function (): void {
-        MockClient::global([ShowAppInstanceRequest::class => instance_mock_response(), ListProcessesRequest::class => no_processes_response()]);
+    it('shows Instance source details for humans', function (): void {
+        MockClient::global([ShowInstanceRequest::class => instance_mock_response(), ListProcessesRequest::class => no_processes_response()]);
 
         expect(Artisan::call('instance:show', ['instance' => '5']))->toBe(0);
         expect(instance_source_text(Artisan::output()))->toContain(
@@ -603,7 +603,7 @@ describe('instance:show', function (): void {
             'command' => 'php artisan migrate --force',
             'timeout_seconds' => 300,
         ]];
-        MockClient::global([ShowAppInstanceRequest::class => instance_mock_response(payload: $payload), ListProcessesRequest::class => no_processes_response()]);
+        MockClient::global([ShowInstanceRequest::class => instance_mock_response(payload: $payload), ListProcessesRequest::class => no_processes_response()]);
 
         expect(Artisan::call('instance:show', ['instance' => '5']))->toBe(0);
         expect(instance_source_text(Artisan::output()))->toContain(
@@ -617,7 +617,7 @@ describe('instance:show', function (): void {
     it('shows bounded unfinished removal progress for humans', function (): void {
         $payload = instance_payload(removal: removal_progress_payload(force: true));
         MockClient::destroyGlobal();
-        MockClient::global([ShowAppInstanceRequest::class => instance_mock_response(payload: $payload), ListProcessesRequest::class => no_processes_response()]);
+        MockClient::global([ShowInstanceRequest::class => instance_mock_response(payload: $payload), ListProcessesRequest::class => no_processes_response()]);
 
         expect(Artisan::call('instance:show', ['instance' => '5']))->toBe(0);
         expect(instance_source_text(Artisan::output()))->toContain(
@@ -632,7 +632,7 @@ describe('instance:show', function (): void {
 
     it('shows bounded unfinished removal progress as JSON', function (): void {
         $payload = instance_payload(removal: removal_progress_payload(force: true));
-        MockClient::global([ShowAppInstanceRequest::class => instance_mock_response(payload: $payload), ListProcessesRequest::class => no_processes_response()]);
+        MockClient::global([ShowInstanceRequest::class => instance_mock_response(payload: $payload), ListProcessesRequest::class => no_processes_response()]);
 
         $expected = json_encode([
             ...$payload,
@@ -647,8 +647,8 @@ describe('instance:show', function (): void {
 });
 
 describe('instance:destroy', function (): void {
-    it('removes an AppInstance in normal mode by default', function (): void {
-        $mockClient = MockClient::global([DestroyAppInstanceRequest::class => removal_mock_response()]);
+    it('removes an Instance in normal mode by default', function (): void {
+        $mockClient = MockClient::global([DestroyInstanceRequest::class => removal_mock_response()]);
 
         $this
             ->artisan('instance:destroy', ['--yes' => true, 'instance' => '5', '--json' => true])
@@ -659,7 +659,7 @@ describe('instance:destroy', function (): void {
     });
 
     it('transports explicit force and renders bounded progress', function (): void {
-        $mockClient = MockClient::global([DestroyAppInstanceRequest::class => removal_mock_response(force: true)]);
+        $mockClient = MockClient::global([DestroyInstanceRequest::class => removal_mock_response(force: true)]);
 
         expect(Artisan::call('instance:destroy', ['--yes' => true, 'instance' => '5', '--force' => true]))->toBe(0);
         expect(instance_source_text(Artisan::output()))->toContain(
@@ -676,13 +676,13 @@ describe('instance:destroy', function (): void {
         $failure = [
             'error' => [
                 'code' => 'instance.runtime_interrupted',
-                'message' => 'AppInstance removal was accepted but remains incomplete.',
+                'message' => 'Instance removal was accepted but remains incomplete.',
                 'details' => ['removal' => removal_progress_payload()],
                 'request_id' => instance_request_id(),
             ],
         ];
         MockClient::global([
-            DestroyAppInstanceRequest::class => MockResponse::make(
+            DestroyInstanceRequest::class => MockResponse::make(
                 $failure,
                 502,
                 ['X-Orbit-Request-Id' => instance_request_id()],
@@ -691,7 +691,7 @@ describe('instance:destroy', function (): void {
 
         expect(Artisan::call('instance:destroy', ['--yes' => true, 'instance' => '5']))->toBe(1);
         expect(instance_source_text(Artisan::output()))->toContain(
-            'AppInstance removal was accepted but remains incomplete.',
+            'Instance removal was accepted but remains incomplete.',
             'Mode normal',
             'Progress 0/1 completed; 1 remaining',
             'Current step runtime_cleanup',
@@ -701,7 +701,7 @@ describe('instance:destroy', function (): void {
 
         MockClient::destroyGlobal();
         MockClient::global([
-            DestroyAppInstanceRequest::class => MockResponse::make(
+            DestroyInstanceRequest::class => MockResponse::make(
                 $failure,
                 502,
                 ['X-Orbit-Request-Id' => instance_request_id()],
@@ -734,15 +734,15 @@ it('does not register replaced instance lifecycle names', function (): void {
     expect(Artisan::all())->not->toHaveKeys(['instance:new', 'instance:remove']);
 });
 
-it('rejects invalid parent IDs before creating an AppInstance', function (
-    string $appId,
+it('rejects invalid parent IDs before creating an Instance', function (
+    string $projectId,
     string $nodeId,
     string $message,
 ): void {
     $mockClient = MockClient::global();
 
     $this
-        ->artisan('instance:create', ['project' => $appId, 'node' => $nodeId, 'name' => 'dev'])
+        ->artisan('instance:create', ['project' => $projectId, 'node' => $nodeId, 'name' => 'dev'])
         ->expectsOutputToContain($message)
         ->assertExitCode(1);
 

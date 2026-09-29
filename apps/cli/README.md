@@ -80,7 +80,7 @@ unverifiable, or a transport failure.
 
 ## Schedules
 
-Create a Schedule with exactly one positive Node or AppInstance ID:
+Create a Schedule with exactly one positive Node or Instance ID:
 
 ```bash
 ./orbit schedule:create daily-report --node=7 --calendar=daily --command='php report.php'

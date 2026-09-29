@@ -10,7 +10,6 @@ export type RealtimeEvent = { type: string; id: number; at: string; data: Record
 
 const COLLECTIONS: Record<string, string> = {
     node: "nodes",
-    app: "projects",
     project: "projects",
     instance: "instances",
     process: "processes",

@@ -5,11 +5,11 @@ declare(strict_types=1);
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Requests\Schedules\AppInstanceScheduleTarget;
 use Orbit\Sdk\Requests\Schedules\CompleteScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\CreateScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\DestroyScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\EnableScheduleRequest;
+use Orbit\Sdk\Requests\Schedules\InstanceScheduleTarget;
 use Orbit\Sdk\Requests\Schedules\ListSchedulesRequest;
 use Orbit\Sdk\Requests\Schedules\NodeScheduleTarget;
 use Orbit\Sdk\Requests\Schedules\RunScheduleRequest;
@@ -25,7 +25,7 @@ use Saloon\Http\Faking\MockResponse;
 
 it('serializes distinct typed targets and preserves omitted versus explicit add values', function (): void {
     $omitted = new CreateScheduleRequest(
-        target: new AppInstanceScheduleTarget(7),
+        target: new InstanceScheduleTarget(7),
         name: 'daily-report',
         calendar: 'daily',
         command: 'php artisan report:send',
@@ -71,7 +71,7 @@ it('serializes distinct typed targets and preserves omitted versus explicit add 
             static fn (ReflectionNamedType $type): string => $type->getName(),
             $targetType instanceof ReflectionUnionType ? $targetType->getTypes() : [],
         ))
-        ->toEqualCanonicalizing([NodeScheduleTarget::class, AppInstanceScheduleTarget::class]);
+        ->toEqualCanonicalizing([NodeScheduleTarget::class, InstanceScheduleTarget::class]);
 });
 
 it('maps every UUID operation to the exact method path query and body', function (

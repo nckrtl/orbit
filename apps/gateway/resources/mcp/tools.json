@@ -1710,7 +1710,7 @@
       "name": "instance-clone",
       "extension": null,
       "title": "Clone an Instance",
-      "description": "Clone a candidate into a prepared production Instance.\n\nThe candidate supplies source, stored environment values, and an optional SQLite snapshot. The App supplies production Process and Schedule definitions; candidate-specific overrides are not copied.\n\nProvision the production Node with node:add --tld before cloning. Clean application state on the target only. Use env:update and env:sync for target configuration, then configure deploy steps with instance:deploy-step:create and deploy with instance:deploy.",
+      "description": "Clone a candidate into a prepared production Instance.\n\nThe candidate supplies source, stored environment values, and an optional SQLite snapshot. The Project supplies production Process and Schedule definitions; candidate-specific overrides are not copied.\n\nProvision the production Node with node:add --tld before cloning. Clean application state on the target only. Use env:update and env:sync for target configuration, then configure deploy steps with instance:deploy-step:create and deploy with instance:deploy.",
       "method": "POST",
       "path": "/api/v1/instances/{candidate}/clone",
       "path_inputs": [
@@ -2323,14 +2323,16 @@
           "project_id": {
             "type": "integer"
           },
-          "app_name": {
+          "project_name": {
             "type": "string",
-            "maxLength": 255
+            "maxLength": 255,
+            "description": "Confirmed Project display name"
           },
-          "app_slug": {
+          "project_slug": {
             "type": "string",
             "pattern": "^[A-Za-z0-9_-]+$",
-            "maxLength": 63
+            "maxLength": 63,
+            "description": "Confirmed Project slug"
           },
           "default_branch": {
             "type": "string",

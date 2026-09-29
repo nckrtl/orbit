@@ -12,7 +12,7 @@ use Saloon\Http\Response;
 use Saloon\Traits\Body\HasJsonBody;
 use SensitiveParameter;
 
-/** Sets the exact tracking hosts of an App instance; no hosts means the default `analytics.<instance domain>`. */
+/** Sets the exact tracking hosts of an Instance; no hosts means the default `analytics.<instance domain>`. */
 final class EnableInstanceAnalyticsRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;

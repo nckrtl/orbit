@@ -8,8 +8,8 @@ use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
-use Orbit\Sdk\Requests\AppInstances\UpdateAppInstanceRequest;
-use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
+use Orbit\Sdk\Requests\Instances\UpdateInstanceRequest;
+use Orbit\Sdk\Responses\Instances\InstanceResponse;
 
 final class UpdateInstanceCommand extends GatewayCommand
 {
@@ -47,12 +47,12 @@ final class UpdateInstanceCommand extends GatewayCommand
 
         $instance = $this->sendWithProgress(
             $connector,
-            new UpdateAppInstanceRequest($instanceId, $branch),
-            AppInstanceResponse::class,
+            new UpdateInstanceRequest($instanceId, $branch),
+            InstanceResponse::class,
             ['Update Instance', 'Updating Instance', 'Updated Instance'],
         );
 
-        if (! $instance instanceof AppInstanceResponse) {
+        if (! $instance instanceof InstanceResponse) {
             return self::FAILURE;
         }
 

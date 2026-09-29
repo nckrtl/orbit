@@ -12,7 +12,7 @@ final readonly class RouteResponse
     public function __construct(
         public int $id,
         public string $kind,
-        public ?int $appId,
+        public ?int $projectId,
         public ?int $nodeId,
         public ?int $clusterId,
         public ?int $generationBasisNodeId,
@@ -47,7 +47,7 @@ final readonly class RouteResponse
         return new self(
             id: is_int($data['id'] ?? null) ? $data['id'] : 0,
             kind: is_string($data['kind'] ?? null) && $data['kind'] !== '' ? $data['kind'] : 'app',
-            appId: is_int($data['project_id'] ?? null) ? $data['project_id'] : null,
+            projectId: is_int($data['project_id'] ?? null) ? $data['project_id'] : null,
             nodeId: is_int($data['node_id'] ?? null) ? $data['node_id'] : null,
             clusterId: is_int($data['cluster_id'] ?? null) ? $data['cluster_id'] : null,
             generationBasisNodeId: is_int($data['generation_basis_node_id'] ?? null)
@@ -79,7 +79,7 @@ final readonly class RouteResponse
         return [
             'id' => $this->id,
             'kind' => $this->kind,
-            'project_id' => $this->appId,
+            'project_id' => $this->projectId,
             'node_id' => $this->nodeId,
             'cluster_id' => $this->clusterId,
             'generation_basis_node_id' => $this->generationBasisNodeId,

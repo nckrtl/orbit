@@ -1030,7 +1030,7 @@ EXAMPLE_BY_NAME = {
     'title': 'Absorb Commander', 'brief': 'Persist groups. Accept when create and list work.',
 }
 PHP_EXAMPLES = {
-    'nodeId': 7, 'appId': 4, 'appInstanceId': 12, 'appInstance': 12, 'clusterId': 3, 'routeId': 9, 'toolId': 41, 'processId': 41, 'workspaceId': 9, 'activityId': 481, 'sessionId': 2, 'candidateId': 12, 'instanceId': 4,
+    'nodeId': 7, 'projectId': 4, 'instanceId': 12, 'instance': 12, 'appId': 4, 'clusterId': 3, 'routeId': 9, 'toolId': 41, 'processId': 41, 'workspaceId': 9, 'activityId': 481, 'sessionId': 2, 'candidateId': 12, 'instanceId': 4,
     'servingNodeId': 7, 'consumerNodeId': 3, 'scheduleId': '9a1f0c2e-6b7d-4e5f-8a9b-0c1d2e3f4a5b', 'slug': 'acme', 'user': 'orbit', 'role': 'app-dev', 'driver': 'mysql',
     'domain': 'app.example.test', 'repositoryUrl': 'https://github.com/acme/site.git', 'publication': 'private', 'key': 'MAIL_MAILER', 'value': 'log', 'branch': 'main', 'release': '20260914T101500Z', 'manager': 'vp',
     'package': '@openai/codex', 'calendar': 'daily', 'command': 'php artisan report:send', 'phpVersion': '8.5', 'tld': 'test',
@@ -1068,7 +1068,7 @@ def php_sample(sdkreq, stream, tag):
         if 'Target' in t:
             first = t.split('|')[0]
             imports.append(f'Orbit\\Sdk\\Requests\\{sdkreq["file"].split("/")[0]}\\{first}')
-            args.append(f'{name}: new {first}({12 if "AppInstance" in first else 7})')
+            args.append(f'{name}: new {first}({12 if "Instance" in first and "Node" not in first else 7})')
             continue
         if name == 'name':
             val = NAME_BY_TAG.get(tag, 'example')

@@ -7,8 +7,8 @@ namespace App\Commands\Instances;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
-use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
+use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
+use Orbit\Sdk\Responses\Instances\InstanceResponse;
 
 final class CreateInstanceCommand extends GatewayCommand
 {
@@ -36,7 +36,7 @@ HELP;
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $projectId = $this->positiveId('project', 'Project', 'app.id_invalid');
+        $projectId = $this->positiveId('project', 'Project', 'project.id_invalid');
 
         if ($projectId === null) {
             return self::FAILURE;
@@ -62,7 +62,7 @@ HELP;
 
         $instance = $this->sendWithProgress(
             $connector,
-            new CreateAppInstanceRequest(
+            new CreateInstanceRequest(
                 projectId: $projectId,
                 nodeId: $nodeId,
                 name: $name,
@@ -70,11 +70,11 @@ HELP;
                 domain: $this->stringOption('domain'),
                 branch: $this->stringOption('branch'),
             ),
-            AppInstanceResponse::class,
+            InstanceResponse::class,
             ['Create Instance', 'Creating Instance', 'Created Instance'],
         );
 
-        if (! $instance instanceof AppInstanceResponse) {
+        if (! $instance instanceof InstanceResponse) {
             return self::FAILURE;
         }
 

@@ -18,7 +18,7 @@ trait SelectsProjectDefinitionTarget
         return $this->providedOption('project');
     }
 
-    protected function projectIdOption(string $errorCode = 'app.id_invalid'): int|false|null
+    protected function projectIdOption(string $errorCode = 'project.id_invalid'): int|false|null
     {
         if (! $this->providedProjectOption()) {
             return null;

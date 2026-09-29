@@ -64,9 +64,9 @@ use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
-use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
+use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
+use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
+use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
 use Tests\Support\LifecycleSshExecutor;
 use Tests\TestCase;
 
@@ -807,7 +807,7 @@ it('creates an active checkout Instance on a standalone Node with inherited root
         ->assertJsonMissingPath('data.branch')
         ->assertJsonPath('data.starting_commit', str_repeat('a', 40))
         ->assertJsonPath('data.status', 'active');
-    record_fixture($response, 'instances/instance-create/created', CreateAppInstanceRequest::class, 'POST /api/v1/instances');
+    record_fixture($response, 'instances/instance-create/created', CreateInstanceRequest::class, 'POST /api/v1/instances');
 
     expect(Instance::query()->count())
         ->toBe(1)
@@ -911,8 +911,8 @@ it('records the instances of one App among several', function (): void {
     $this->source->resolution = new DevelopmentSourceResolution('dev', str_repeat('a', 40));
     $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'dev'])->assertCreated();
 
-    record_fixture($this->getJson('/api/v1/instances')->assertOk()->assertJsonCount(4, 'data'), 'instances/instance-list/charlie-shop', ListAppInstancesRequest::class, 'GET /api/v1/instances');
-    record_fixture($this->getJson('/api/v1/instances/1')->assertOk()->assertJsonPath('data.name', 'dev'), 'instances/instance-show/charlie-shop-dev', ShowAppInstanceRequest::class, 'GET /api/v1/instances/{instance}');
+    record_fixture($this->getJson('/api/v1/instances')->assertOk()->assertJsonCount(4, 'data'), 'instances/instance-list/charlie-shop', ListInstancesRequest::class, 'GET /api/v1/instances');
+    record_fixture($this->getJson('/api/v1/instances/1')->assertOk()->assertJsonPath('data.name', 'dev'), 'instances/instance-show/charlie-shop-dev', ShowInstanceRequest::class, 'GET /api/v1/instances/{instance}');
 });
 
 it('records the list and show responses of an active checkout Instance', function (): void {
@@ -923,8 +923,8 @@ it('records the list and show responses of an active checkout Instance', functio
     ])->assertCreated();
     $instance = Instance::query()->sole();
 
-    record_fixture($this->getJson('/api/v1/instances')->assertOk()->assertJsonCount(1, 'data'), 'instances/instance-list/default', ListAppInstancesRequest::class, 'GET /api/v1/instances');
-    record_fixture($this->getJson("/api/v1/instances/{$instance->id}")->assertOk(), 'instances/instance-show/default', ShowAppInstanceRequest::class, 'GET /api/v1/instances/{instance}');
+    record_fixture($this->getJson('/api/v1/instances')->assertOk()->assertJsonCount(1, 'data'), 'instances/instance-list/default', ListInstancesRequest::class, 'GET /api/v1/instances');
+    record_fixture($this->getJson("/api/v1/instances/{$instance->id}")->assertOk(), 'instances/instance-show/default', ShowInstanceRequest::class, 'GET /api/v1/instances/{instance}');
 });
 
 it('refuses new production placement with a candidate-required error before mutation', function (): void {
@@ -943,7 +943,7 @@ it('refuses new production placement with a candidate-required error before muta
             'error.message',
             'New production Instances require a candidate. Use instance:clone.',
         );
-    record_fixture($refusal, 'instances/instance-create/candidate-required', CreateAppInstanceRequest::class, 'POST /api/v1/instances');
+    record_fixture($refusal, 'instances/instance-create/candidate-required', CreateInstanceRequest::class, 'POST /api/v1/instances');
 
     expect(Instance::query()->count())
         ->toBe(0)

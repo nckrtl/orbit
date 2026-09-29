@@ -18,7 +18,7 @@ trait RendersLifecycleSteps
         );
 
         if (! is_int($id)) {
-            $this->renderGatewayFailure('app.id_invalid', 'Project ID must be a positive integer.');
+            $this->renderGatewayFailure('project.id_invalid', 'Project ID must be a positive integer.');
 
             return null;
         }

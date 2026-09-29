@@ -6,12 +6,12 @@ namespace App\Commands\Instances;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\DestroyInstanceDeployStepRequest;
 use Orbit\Sdk\Requests\Deployments\ListInstanceDeployStepsRequest;
-use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
+use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
 use Orbit\Sdk\Responses\Deployments\DeploymentStepResponse;
 use Orbit\Sdk\Responses\Deployments\DeployStepsResponse;
+use Orbit\Sdk\Responses\Instances\InstanceResponse;
 
 final class DestroyDeployStepCommand extends DeploymentCommand
 {
@@ -41,9 +41,9 @@ final class DestroyDeployStepCommand extends DeploymentCommand
         }
 
         if ($this->option('yes') !== true) {
-            $instance = $this->sendWithProgress($connector, new ShowAppInstanceRequest($instanceId), AppInstanceResponse::class,
+            $instance = $this->sendWithProgress($connector, new ShowInstanceRequest($instanceId), InstanceResponse::class,
                 ['Resolve Instance', 'Loading Instance', 'Loaded Instance']);
-            if (! $instance instanceof AppInstanceResponse) {
+            if (! $instance instanceof InstanceResponse) {
                 return self::FAILURE;
             }
             $steps = $this->sendWithProgress($connector, new ListInstanceDeployStepsRequest($instanceId), DeployStepsResponse::class,

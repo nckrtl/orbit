@@ -1,6 +1,6 @@
 {
     "schema": 1,
-    "request": "Orbit\\Sdk\\Requests\\AppInstances\\ShowAppInstanceRequest",
+    "request": "Orbit\\Sdk\\Requests\\Instances\\ShowInstanceRequest",
     "route": "GET /api/v1/instances/{instance}",
     "status": 200,
     "body": {

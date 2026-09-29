@@ -12,8 +12,8 @@ final readonly class TaskGroupResponse
     /** @param list<SubtaskResponse> $tasks */
     public function __construct(
         public int $id,
-        public int $appId,
-        public ?string $app,
+        public int $projectId,
+        public ?string $project,
         public ?string $projectCode,
         public string $title,
         public string $brief,
@@ -42,8 +42,8 @@ final readonly class TaskGroupResponse
     {
         return new self(
             id: TaskFields::id($data, 'id', 'task group', $requestId),
-            appId: TaskFields::id($data, 'project_id', 'task group', $requestId),
-            app: TaskFields::nullableText($data, 'project'),
+            projectId: TaskFields::id($data, 'project_id', 'task group', $requestId),
+            project: TaskFields::nullableText($data, 'project'),
             projectCode: TaskFields::nullableText($data, 'project_code'),
             title: TaskFields::text($data, 'title', 'task group', $requestId),
             brief: TaskFields::text($data, 'brief', 'task group', $requestId),
@@ -83,8 +83,8 @@ final readonly class TaskGroupResponse
     {
         return [
             'id' => $this->id,
-            'project_id' => $this->appId,
-            'project' => $this->app,
+            'project_id' => $this->projectId,
+            'project' => $this->project,
             'project_code' => $this->projectCode,
             'title' => $this->title,
             'brief' => $this->brief,

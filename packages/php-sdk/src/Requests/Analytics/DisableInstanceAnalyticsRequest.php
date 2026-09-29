@@ -10,7 +10,7 @@ use Saloon\Enums\Method;
 use Saloon\Http\Response;
 use SensitiveParameter;
 
-/** Removes every tracking host of an App instance. */
+/** Removes every tracking host of an Instance. */
 final class DisableInstanceAnalyticsRequest extends GatewayRequest
 {
     #[\Override]

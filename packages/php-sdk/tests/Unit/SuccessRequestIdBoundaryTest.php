@@ -5,16 +5,16 @@ declare(strict_types=1);
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Requests\Apps\ListAppsRequest;
 use Orbit\Sdk\Requests\Doctor\RunDoctorRequest;
 use Orbit\Sdk\Requests\Gateway\ShowGatewayStatusRequest;
 use Orbit\Sdk\Requests\Processes\ProcessLogsRequest;
+use Orbit\Sdk\Requests\Projects\ListProjectsRequest;
 use Orbit\Sdk\Requests\Tools\ListToolManagersRequest;
 use Orbit\Sdk\Requests\Tools\ListToolsRequest;
-use Orbit\Sdk\Responses\Apps\AppsResponse;
 use Orbit\Sdk\Responses\Doctor\DoctorReportResponse;
 use Orbit\Sdk\Responses\Gateway\GatewayStatusResponse;
 use Orbit\Sdk\Responses\Processes\ProcessLogsResponse;
+use Orbit\Sdk\Responses\Projects\ProjectsResponse;
 use Orbit\Sdk\Responses\Tools\ToolManagersResponse;
 use Orbit\Sdk\Responses\Tools\ToolsResponse;
 use Saloon\Http\Faking\MockClient;
@@ -209,7 +209,7 @@ describe('success request ID boundary', function (): void {
             ],
         );
         $apps = success_request_id_dto(
-            new ListAppsRequest,
+            new ListProjectsRequest,
             [
                 'data' => [[
                     'id' => 1,
@@ -237,13 +237,13 @@ describe('success request ID boundary', function (): void {
         expect($status)
             ->toBeInstanceOf(GatewayStatusResponse::class)
             ->and($apps)
-            ->toBeInstanceOf(AppsResponse::class)
+            ->toBeInstanceOf(ProjectsResponse::class)
             ->and($logs)
             ->toBeInstanceOf(ProcessLogsResponse::class);
 
         if (
             ! $status instanceof GatewayStatusResponse
-            || ! $apps instanceof AppsResponse
+            || ! $apps instanceof ProjectsResponse
             || ! $logs instanceof ProcessLogsResponse
         ) {
             $this->fail('Expected typed gateway responses.');
@@ -264,7 +264,7 @@ describe('success request ID boundary', function (): void {
             ->toBeEmpty()
             ->and($apps->requestId)
             ->toBeEmpty()
-            ->and($apps->apps[0]->requestId)
+            ->and($apps->projects[0]->requestId)
             ->toBeEmpty()
             ->and($apps->toArray()['request_id'])
             ->toBeEmpty()

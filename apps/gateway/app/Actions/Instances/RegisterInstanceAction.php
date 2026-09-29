@@ -157,7 +157,7 @@ final readonly class RegisterInstanceAction
                     throw new ResourceOperationException(
                         errorCode: 'instance.registration_incomplete',
                         message: $projectCreated
-                            ? "App [{$project->slug}] was retained; Instance registration is incomplete and can be retried."
+                            ? "Project [{$project->slug}] was retained; Instance registration is incomplete and can be retried."
                             : 'Instance registration is incomplete and can be retried.',
                         status: 502,
                         previous: $exception,
@@ -580,7 +580,7 @@ final readonly class RegisterInstanceAction
         if ($defaultBranch === null || $root === null) {
             throw new ResourceOperationException(
                 'instance.registration_values_unresolved',
-                'App default branch and root must be confirmed before registration.',
+                'Project default branch and root must be confirmed before registration.',
                 422,
             );
         }
@@ -596,7 +596,7 @@ final readonly class RegisterInstanceAction
         }
 
         $result = $this->createProject->execute(new CreateProjectData(
-            name: $data->appName ?? $slug,
+            name: $data->projectName ?? $slug,
             slug: $slug,
             type: $type,
             repositoryUrl: $facts->repositoryUrl,
@@ -612,8 +612,8 @@ final readonly class RegisterInstanceAction
         if (
             $data->projectSlug !== null
             && $data->projectSlug !== $project->slug
-            || $data->appName !== null
-            && $data->appName !== $project->name
+            || $data->projectName !== null
+            && $data->projectName !== $project->name
             || $data->defaultBranch !== null
             && $data->defaultBranch !== $project->default_branch
         ) {

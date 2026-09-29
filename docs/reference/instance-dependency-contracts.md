@@ -8,8 +8,8 @@ covers:
   - apps/gateway/app/Models/{DependencyPackage,InstanceDependencyObservation,InstanceDependencyResolution,InstanceDependencyEdge,InstanceDependencyScanAttempt}.php
   - apps/gateway/database/migrations/2026_09_15_200000_create_instance_dependency_inventory.php
   - packages/php-sdk/src/Support/{DependencyInventoryDecoder,InstanceResolutionDecoder}.php
-  - packages/php-sdk/src/Requests/AppInstances/{Show,Scan,Update}InstanceDependenciesRequest.php
-  - packages/php-sdk/src/Requests/AppInstances/{ResolveAppInstanceRequest,ResolveDirectoryInstanceRequest}.php
+  - packages/php-sdk/src/Requests/Instances/{Show,Scan,Update}InstanceDependenciesRequest.php
+  - packages/php-sdk/src/Requests/Instances/{ResolveInstanceRequest,ResolveDirectoryInstanceRequest}.php
 ---
 
 # Dependency contracts

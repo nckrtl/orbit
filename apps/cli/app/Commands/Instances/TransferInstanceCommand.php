@@ -10,10 +10,10 @@ use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
 use App\Support\Console\ProgressState;
 use Orbit\Sdk\GatewayApiException;
-use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\TransferAppInstanceRequest;
+use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
+use Orbit\Sdk\Requests\Instances\TransferInstanceRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
-use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
+use Orbit\Sdk\Responses\Instances\InstanceResponse;
 use Orbit\Sdk\Responses\Nodes\NodeResponse;
 
 final class TransferInstanceCommand extends GatewayCommand
@@ -62,9 +62,9 @@ HELP;
         }
 
         if ($this->option('force') !== true) {
-            $source = $this->sendWithProgress($connector, new ShowAppInstanceRequest($instanceId), AppInstanceResponse::class,
+            $source = $this->sendWithProgress($connector, new ShowInstanceRequest($instanceId), InstanceResponse::class,
                 ['Resolve Instance', 'Loading Instance', 'Loaded Instance']);
-            if (! $source instanceof AppInstanceResponse) {
+            if (! $source instanceof InstanceResponse) {
                 return self::FAILURE;
             }
             $destination = $this->sendWithProgress($connector, new ShowNodeRequest($nodeId), NodeResponse::class,
@@ -88,15 +88,15 @@ HELP;
 
         $instance = $this->sendWithProgress(
             $connector,
-            new TransferAppInstanceRequest(
+            new TransferInstanceRequest(
                 instanceId: $instanceId,
                 nodeId: $nodeId,
                 name: $this->stringOption('name'),
                 sqliteSourcePath: $this->stringOption('sqlite-source-path'),
             ),
-            AppInstanceResponse::class,
+            InstanceResponse::class,
             ['Transfer Instance', 'Transferring Instance', 'Transferred Instance'],
-            static function (AppInstanceResponse $response): ProgressState {
+            static function (InstanceResponse $response): ProgressState {
                 if ($response->transfer === null || $response->domain === null || $response->domain === '') {
                     throw new GatewayApiException('Gateway response is invalid.', 'gateway.invalid_response', requestId: $response->requestId);
                 }
@@ -105,7 +105,7 @@ HELP;
             },
         );
 
-        if (! $instance instanceof AppInstanceResponse) {
+        if (! $instance instanceof InstanceResponse) {
             return self::FAILURE;
         }
 

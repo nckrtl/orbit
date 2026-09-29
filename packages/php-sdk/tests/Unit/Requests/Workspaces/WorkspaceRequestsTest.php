@@ -3,10 +3,10 @@
 declare(strict_types=1);
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\DestroyAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
-use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
+use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
+use Orbit\Sdk\Requests\Instances\DestroyInstanceRequest;
+use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
+use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
 
 describe('retired workspace requests', function (): void {
     it('keeps no Workspace request or response class', function (): void {
@@ -72,14 +72,14 @@ describe('retired workspace requests', function (): void {
         }
     });
 
-    it('keeps supported AppInstance request verbs on the concise instance routes', function (): void {
-        expect((new ListAppInstancesRequest)->resolveEndpoint())
+    it('keeps supported Instance request verbs on the concise instance routes', function (): void {
+        expect((new ListInstancesRequest)->resolveEndpoint())
             ->toBe('/api/v1/instances')
-            ->and((new ShowAppInstanceRequest(7))->resolveEndpoint())
+            ->and((new ShowInstanceRequest(7))->resolveEndpoint())
             ->toBe('/api/v1/instances/7')
-            ->and((new CreateAppInstanceRequest(projectId: 3, nodeId: 4, name: 'default'))->resolveEndpoint())
+            ->and((new CreateInstanceRequest(projectId: 3, nodeId: 4, name: 'default'))->resolveEndpoint())
             ->toBe('/api/v1/instances')
-            ->and((new DestroyAppInstanceRequest(7))->resolveEndpoint())
+            ->and((new DestroyInstanceRequest(7))->resolveEndpoint())
             ->toBe('/api/v1/instances/7');
     });
 });

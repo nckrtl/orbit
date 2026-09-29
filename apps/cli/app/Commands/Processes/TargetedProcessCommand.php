@@ -6,7 +6,7 @@ namespace App\Commands\Processes;
 
 use App\Commands\Concerns\SelectsProjectDefinitionTarget;
 use Orbit\Sdk\GatewayConnector;
-use Orbit\Sdk\Requests\Processes\AppInstanceProcessTarget;
+use Orbit\Sdk\Requests\Processes\InstanceProcessTarget;
 use Orbit\Sdk\Requests\Processes\NodeProcessTarget;
 
 abstract class TargetedProcessCommand extends ProcessCommand
@@ -46,7 +46,7 @@ abstract class TargetedProcessCommand extends ProcessCommand
         };
     }
 
-    protected function processTarget(GatewayConnector $connector, bool $allowDomain = false): AppInstanceProcessTarget|NodeProcessTarget|null
+    protected function processTarget(GatewayConnector $connector, bool $allowDomain = false): InstanceProcessTarget|NodeProcessTarget|null
     {
         $target = $this->exclusiveProcessTarget();
 
@@ -59,7 +59,7 @@ abstract class TargetedProcessCommand extends ProcessCommand
 
             $selector = $this->option('instance');
             if ($allowDomain && ! is_int($id) && is_string($selector) && preg_match('/\A[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z0-9-]+\z/D', $selector) === 1) {
-                return new AppInstanceProcessTarget($selector);
+                return new InstanceProcessTarget($selector);
             }
 
             if (! is_int($id)) {
@@ -71,7 +71,7 @@ abstract class TargetedProcessCommand extends ProcessCommand
                 return null;
             }
 
-            return new AppInstanceProcessTarget($id);
+            return new InstanceProcessTarget($id);
         }
 
         $nodeId = $this->resolveNodeId($connector, $this->option('node'));

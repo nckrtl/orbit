@@ -25,7 +25,7 @@ final class CreateProcessRequest extends GatewayRequest implements HasBody
      * @param  list<array{source: string, target: string, read_only?: bool}>|null  $volumes
      */
     public function __construct(
-        private readonly AppInstanceProcessTarget|NodeProcessTarget $target,
+        private readonly InstanceProcessTarget|NodeProcessTarget $target,
         private readonly string $name,
         private readonly ?string $runtime = null,
         private readonly ?array $command = null,

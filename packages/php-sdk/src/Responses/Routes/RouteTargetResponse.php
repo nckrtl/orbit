@@ -8,7 +8,7 @@ final readonly class RouteTargetResponse
 {
     public function __construct(
         public int $id,
-        public int $appInstanceId,
+        public int $instanceId,
         public int $position,
     ) {}
 
@@ -17,7 +17,7 @@ final readonly class RouteTargetResponse
     {
         return new self(
             id: is_int($data['id'] ?? null) ? $data['id'] : 0,
-            appInstanceId: is_int($data['instance_id'] ?? null) ? $data['instance_id'] : 0,
+            instanceId: is_int($data['instance_id'] ?? null) ? $data['instance_id'] : 0,
             position: is_int($data['position'] ?? null) ? $data['position'] : 0,
         );
     }
@@ -27,7 +27,7 @@ final readonly class RouteTargetResponse
     {
         return [
             'id' => $this->id,
-            'instance_id' => $this->appInstanceId,
+            'instance_id' => $this->instanceId,
             'position' => $this->position,
         ];
     }

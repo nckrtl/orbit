@@ -8,7 +8,7 @@ covers:
   - apps/gateway/app/Http/Controllers/Api/InstanceTransfersController.php
   - apps/gateway/app/Models/InstanceTransfer.php
   - apps/cli/app/Commands/Instances/TransferInstanceCommand.php
-  - packages/php-sdk/src/Requests/AppInstances/TransferAppInstanceRequest.php
+  - packages/php-sdk/src/Requests/Instances/TransferInstanceRequest.php
 ---
 
 # Instance transfer

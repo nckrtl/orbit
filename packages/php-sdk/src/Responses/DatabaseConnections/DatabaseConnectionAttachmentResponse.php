@@ -29,7 +29,7 @@ final readonly class DatabaseConnectionAttachmentResponse
      * @param  list<string>  $keys
      */
     public function __construct(
-        public int $appInstanceId,
+        public int $instanceId,
         public string $slug,
         public string $prefix,
         public array $keys,
@@ -40,7 +40,7 @@ final readonly class DatabaseConnectionAttachmentResponse
         public int $keyCount,
         public string $requestId,
     ) {
-        if ($appInstanceId < 1) {
+        if ($instanceId < 1) {
             throw new InvalidArgumentException('Invalid Database connection attachment response identifier.');
         }
 
@@ -59,7 +59,7 @@ final readonly class DatabaseConnectionAttachmentResponse
         $redactor = new CredentialRedactor;
 
         return new self(
-            appInstanceId: self::requiredInteger($data, 'instance_id'),
+            instanceId: self::requiredInteger($data, 'instance_id'),
             slug: self::requiredPattern($data, 'slug', self::SLUG_PATTERN, self::SLUG_MAX_LENGTH),
             prefix: self::requiredPattern($data, 'prefix', self::PREFIX_PATTERN, self::PREFIX_MAX_LENGTH),
             keys: self::requiredKeys($data),
@@ -76,7 +76,7 @@ final readonly class DatabaseConnectionAttachmentResponse
     public function toArray(): array
     {
         return [
-            'instance_id' => $this->appInstanceId,
+            'instance_id' => $this->instanceId,
             'slug' => $this->slug,
             'prefix' => $this->prefix,
             'keys' => $this->keys,

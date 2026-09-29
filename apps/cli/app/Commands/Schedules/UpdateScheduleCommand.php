@@ -4,17 +4,17 @@ declare(strict_types=1);
 
 namespace App\Commands\Schedules;
 
-use App\Commands\Concerns\RendersAppRuntimeDefinitions;
+use App\Commands\Concerns\RendersProjectRuntimeDefinitions;
 use App\Commands\Concerns\SelectsProjectDefinitionTarget;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use JsonException;
-use Orbit\Sdk\Requests\Apps\UpdateScheduleDefinitionRequest;
-use Orbit\Sdk\Responses\Apps\AppRuntimeDefinitionResponse;
+use Orbit\Sdk\Requests\Projects\UpdateScheduleDefinitionRequest;
+use Orbit\Sdk\Responses\Projects\ProjectRuntimeDefinitionResponse;
 
 final class UpdateScheduleCommand extends ScheduleCommand
 {
-    use RendersAppRuntimeDefinitions;
+    use RendersProjectRuntimeDefinitions;
     use SelectsProjectDefinitionTarget;
 
     #[\Override]
@@ -74,13 +74,13 @@ final class UpdateScheduleCommand extends ScheduleCommand
             );
         }
 
-        $appId = $this->projectIdOption();
+        $projectId = $this->projectIdOption();
 
-        if ($appId === false) {
+        if ($projectId === false) {
             return self::FAILURE;
         }
 
-        if ($appId === null) {
+        if ($projectId === null) {
             return $this->renderGatewayFailure(
                 'schedule.target_required',
                 'The --project option is required.',
@@ -121,12 +121,12 @@ final class UpdateScheduleCommand extends ScheduleCommand
 
         $response = $this->sendWithProgress(
             $connector,
-            new UpdateScheduleDefinitionRequest($appId, $name, $definition),
-            AppRuntimeDefinitionResponse::class,
+            new UpdateScheduleDefinitionRequest($projectId, $name, $definition),
+            ProjectRuntimeDefinitionResponse::class,
             ['Update Schedule definition', 'Updating Schedule definition', 'Updated Schedule definition'],
         );
 
-        return $response instanceof AppRuntimeDefinitionResponse
+        return $response instanceof ProjectRuntimeDefinitionResponse
             ? $this->renderDefinition($response, 'Schedule')
             : self::FAILURE;
     }

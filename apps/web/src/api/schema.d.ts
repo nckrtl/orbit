@@ -791,7 +791,7 @@ export interface paths {
          * Clone an Instance
          * @description Clone a candidate into a prepared production Instance.
          *
-         *     The candidate supplies source, stored environment values, and an optional SQLite snapshot. The App supplies production Process and Schedule definitions; candidate-specific overrides are not copied.
+         *     The candidate supplies source, stored environment values, and an optional SQLite snapshot. The Project supplies production Process and Schedule definitions; candidate-specific overrides are not copied.
          *
          *     Provision the production Node with node:add --tld before cloning. Clean application state on the target only. Use env:update and env:sync for target configuration, then configure deploy steps with instance:deploy-step:create and deploy with instance:deploy.
          */
@@ -5909,8 +5909,10 @@ export interface operations {
                     /** @description Adopt the checkout and every linked worktree */
                     include_worktrees?: boolean;
                     project_id?: number;
-                    app_name?: string;
-                    app_slug?: string;
+                    /** @description Confirmed Project display name */
+                    project_name?: string;
+                    /** @description Confirmed Project slug */
+                    project_slug?: string;
                     /** @description Confirmed Project default branch */
                     default_branch?: string;
                     instance_name?: string;
@@ -7682,7 +7684,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: {
-                            app_instance_id?: number;
+                            instance_id?: number;
                             operation?: string;
                             changed?: boolean;
                             key_count?: number;
@@ -7753,7 +7755,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: {
-                            app_instance_id?: number;
+                            instance_id?: number;
                             operation?: string;
                             changed?: boolean;
                             key_count?: number;
@@ -7829,7 +7831,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: {
-                            app_instance_id?: number;
+                            instance_id?: number;
                             operation?: string;
                             changed?: boolean;
                             key_count?: number;

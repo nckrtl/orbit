@@ -155,7 +155,7 @@ describe('task responses from recorded Gateway fixtures', function (): void {
 
         expect($group->reference())->toBe('ORB-1')
             ->and($group->status)->toBe('backlog')
-            ->and($group->app)->toBe('orbit')
+            ->and($group->project)->toBe('orbit')
             ->and($group->executionMode)->toBe('managed')
             ->and($group->assistanceRequested)->toBeFalse()
             ->and($group->assistanceReason)->toBeNull()

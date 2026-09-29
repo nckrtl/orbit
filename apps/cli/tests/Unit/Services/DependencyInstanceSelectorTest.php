@@ -5,14 +5,14 @@ declare(strict_types=1);
 use App\Services\DependencyInstanceSelector;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
-use Orbit\Sdk\Requests\AppInstances\ResolveAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\ResolveDirectoryInstanceRequest;
+use Orbit\Sdk\Requests\Instances\ResolveDirectoryInstanceRequest;
+use Orbit\Sdk\Requests\Instances\ResolveInstanceRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
 describe('dependency domain selector hook', function (): void {
     it('delegates the exact domain to Gateway and preserves owning instance data', function (): void {
-        $mock = new MockClient([ResolveAppInstanceRequest::class => MockResponse::make([
+        $mock = new MockClient([ResolveInstanceRequest::class => MockResponse::make([
             'data' => ['domain' => 'app.example.test', 'instance_id' => 17, 'project_id' => 2, 'node_id' => 9, 'environment' => 'production'],
             'meta' => ['request_id' => '11111111-1111-4111-8111-111111111111'],
         ])]);
@@ -26,7 +26,7 @@ describe('dependency domain selector hook', function (): void {
     });
 
     it('propagates an ambiguous target without fallback or a second request', function (): void {
-        $mock = new MockClient([ResolveAppInstanceRequest::class => MockResponse::make([
+        $mock = new MockClient([ResolveInstanceRequest::class => MockResponse::make([
             'error' => ['code' => 'dependencies.target_ambiguous', 'message' => 'The domain does not select one instance.', 'details' => []],
             'meta' => ['request_id' => '11111111-1111-4111-8111-111111111111'],
         ], 409, ['X-Orbit-Request-Id' => '11111111-1111-4111-8111-111111111111'])]);
@@ -75,7 +75,7 @@ it('honors explicit domain and all selection even when the working directory dis
     $root = sys_get_temp_dir().'/orbit-directory-'.bin2hex(random_bytes(8));
     mkdir($root, 0700);
     $previous = getcwd();
-    $mock = new MockClient([ResolveAppInstanceRequest::class => MockResponse::make([
+    $mock = new MockClient([ResolveInstanceRequest::class => MockResponse::make([
         'data' => ['domain' => 'app.example.test', 'instance_id' => 17, 'project_id' => 2, 'node_id' => 9, 'environment' => 'production'],
         'meta' => ['request_id' => '11111111-1111-4111-8111-111111111111'],
     ])]);

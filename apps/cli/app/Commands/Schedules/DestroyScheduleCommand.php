@@ -4,18 +4,18 @@ declare(strict_types=1);
 
 namespace App\Commands\Schedules;
 
-use App\Commands\Concerns\RendersAppRuntimeDefinitions;
+use App\Commands\Concerns\RendersProjectRuntimeDefinitions;
 use App\Commands\Concerns\SelectsProjectDefinitionTarget;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Requests\Apps\DestroyScheduleDefinitionRequest;
+use Orbit\Sdk\Requests\Projects\DestroyScheduleDefinitionRequest;
 use Orbit\Sdk\Requests\Schedules\DestroyScheduleRequest;
-use Orbit\Sdk\Responses\Apps\AppRuntimeDefinitionResponse;
+use Orbit\Sdk\Responses\Projects\ProjectRuntimeDefinitionResponse;
 
 final class DestroyScheduleCommand extends ScheduleItemCommand
 {
-    use RendersAppRuntimeDefinitions;
+    use RendersProjectRuntimeDefinitions;
     use SelectsProjectDefinitionTarget;
 
     #[\Override]
@@ -33,13 +33,13 @@ final class DestroyScheduleCommand extends ScheduleItemCommand
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $appId = $this->projectIdOption();
+        $projectId = $this->projectIdOption();
 
-        if ($appId === false) {
+        if ($projectId === false) {
             return self::FAILURE;
         }
 
-        if ($appId === null) {
+        if ($projectId === null) {
             $scheduleId = $this->scheduleId();
 
             if ($scheduleId === null) {
@@ -81,12 +81,12 @@ final class DestroyScheduleCommand extends ScheduleItemCommand
 
         $response = $this->sendWithProgress(
             $connector,
-            new DestroyScheduleDefinitionRequest($appId, $name),
-            AppRuntimeDefinitionResponse::class,
+            new DestroyScheduleDefinitionRequest($projectId, $name),
+            ProjectRuntimeDefinitionResponse::class,
             $this->progressLabels(),
         );
 
-        return $response instanceof AppRuntimeDefinitionResponse
+        return $response instanceof ProjectRuntimeDefinitionResponse
             ? $this->renderDefinition($response, 'Schedule')
             : self::FAILURE;
     }

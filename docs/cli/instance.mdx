@@ -3,8 +3,9 @@ title: "instance"
 description: "Create, register, set up, clone, deploy, roll back, and remove Instances, and attach Database connections to them."
 covers:
   - apps/cli/app/Commands/Instances/**
-  - packages/php-sdk/src/Requests/AppInstances/{Create,Register,List,Show,Update,Destroy,Clone,Transfer}AppInstanceRequest.php
-  - packages/php-sdk/src/Responses/AppInstances/**
+  - packages/php-sdk/src/Requests/Instances/{Create,Register,Show,Update,Destroy,Clone,Transfer}InstanceRequest.php
+  - packages/php-sdk/src/Requests/Instances/ListInstancesRequest.php
+  - packages/php-sdk/src/Responses/Instances/**
 ---
 
 An Instance is one copy of a Project on one Node. On an `app-dev` Node it owns a checkout or worktree. On an `app-prod` Node it owns a Unix user and a production home with releases. The [Project type](/reference/projects#project-types) decides whether it gets a Route.

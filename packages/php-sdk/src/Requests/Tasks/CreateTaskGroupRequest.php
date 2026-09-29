@@ -20,7 +20,7 @@ final class CreateTaskGroupRequest extends GatewayRequest implements HasBody
 
     /** @param list<SubtaskInput>|null $tasks */
     public function __construct(
-        private readonly int $appId,
+        private readonly int $projectId,
         private readonly string $title,
         private readonly string $brief,
         private readonly ?string $status = null,
@@ -48,7 +48,7 @@ final class CreateTaskGroupRequest extends GatewayRequest implements HasBody
     {
         $body = array_filter(
             [
-                'project_id' => $this->appId,
+                'project_id' => $this->projectId,
                 'title' => $this->title,
                 'brief' => $this->brief,
                 'status' => $this->status,

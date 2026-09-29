@@ -3,15 +3,6 @@
 declare(strict_types=1);
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Requests\AppInstances\CloneAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\DestroyAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\InstanceLogsRequest;
-use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\TransferAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\UpdateAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\UpdateInstanceDependenciesRequest;
-use Orbit\Sdk\Requests\Apps\UpdateAppRequest;
 use Orbit\Sdk\Requests\Clusters\ListClustersRequest;
 use Orbit\Sdk\Requests\Clusters\UnsetClusterRouterRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\AddInstanceDatabaseRequest;
@@ -28,25 +19,33 @@ use Orbit\Sdk\Requests\DatabaseConnections\ShowDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ShowDatabaseSchemaRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\UpdateDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\Deployments\CreateInstanceDeployStepRequest;
-use Orbit\Sdk\Requests\Deployments\DeployAppInstanceRequest;
+use Orbit\Sdk\Requests\Deployments\DeployInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\DestroyInstanceDeployStepRequest;
-use Orbit\Sdk\Requests\Deployments\ListAppInstanceDeploymentsRequest;
-use Orbit\Sdk\Requests\Deployments\ListAppInstanceReleasesRequest;
+use Orbit\Sdk\Requests\Deployments\ListInstanceDeploymentsRequest;
 use Orbit\Sdk\Requests\Deployments\ListInstanceDeployStepsRequest;
-use Orbit\Sdk\Requests\Deployments\RollbackAppInstanceRequest;
-use Orbit\Sdk\Requests\Deployments\ShowAppInstanceDeploymentRequest;
+use Orbit\Sdk\Requests\Deployments\ListInstanceReleasesRequest;
+use Orbit\Sdk\Requests\Deployments\RollbackInstanceRequest;
+use Orbit\Sdk\Requests\Deployments\ShowInstanceDeploymentRequest;
 use Orbit\Sdk\Requests\Deployments\UpdateInstanceDeployStepRequest;
 use Orbit\Sdk\Requests\Doctor\RunDoctorRequest;
-use Orbit\Sdk\Requests\Environment\ImportAppInstanceEnvironmentRequest;
-use Orbit\Sdk\Requests\Environment\SynchronizeAppInstanceEnvironmentRequest;
-use Orbit\Sdk\Requests\Environment\UpdateAppInstanceEnvironmentRequest;
+use Orbit\Sdk\Requests\Environment\ImportInstanceEnvironmentRequest;
+use Orbit\Sdk\Requests\Environment\SynchronizeInstanceEnvironmentRequest;
+use Orbit\Sdk\Requests\Environment\UpdateInstanceEnvironmentRequest;
 use Orbit\Sdk\Requests\GitHub\DestroyGitHubAppRequest;
 use Orbit\Sdk\Requests\GitHub\InstallGitHubAppRequest;
 use Orbit\Sdk\Requests\GitHub\ShowGitHubAppRequest;
+use Orbit\Sdk\Requests\Instances\CloneInstanceRequest;
+use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\CreateProjectLifecycleStepRequest;
+use Orbit\Sdk\Requests\Instances\DestroyInstanceRequest;
 use Orbit\Sdk\Requests\Instances\DestroyProjectLifecycleStepRequest;
+use Orbit\Sdk\Requests\Instances\InstanceLogsRequest;
 use Orbit\Sdk\Requests\Instances\ListProjectLifecycleStepsRequest;
-use Orbit\Sdk\Requests\Instances\SetupAppInstanceRequest;
+use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
+use Orbit\Sdk\Requests\Instances\SetupInstanceRequest;
+use Orbit\Sdk\Requests\Instances\TransferInstanceRequest;
+use Orbit\Sdk\Requests\Instances\UpdateInstanceDependenciesRequest;
+use Orbit\Sdk\Requests\Instances\UpdateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\UpdateProjectLifecycleStepRequest;
 use Orbit\Sdk\Requests\Logs\CreateLogStreamRequest;
 use Orbit\Sdk\Requests\Logs\DestroyLogStreamRequest;
@@ -60,6 +59,7 @@ use Orbit\Sdk\Requests\Nodes\ShowNodeMetricsRequest;
 use Orbit\Sdk\Requests\Projects\AddProjectExcludedNodeRequest;
 use Orbit\Sdk\Requests\Projects\ListProjectExcludedNodesRequest;
 use Orbit\Sdk\Requests\Projects\RemoveProjectExcludedNodeRequest;
+use Orbit\Sdk\Requests\Projects\UpdateProjectRequest;
 use Orbit\Sdk\Requests\ProxyCli\ListProxyCliProvidersRequest;
 use Orbit\Sdk\Requests\ProxyCli\SetupProxyCliRequest;
 use Orbit\Sdk\Requests\ProxyCli\ShowProxyCliProviderRequest;
@@ -247,7 +247,7 @@ describe('repository guidance bootstrap', function (): void {
             CreateProjectLifecycleStepRequest::class,
             DestroyProjectLifecycleStepRequest::class,
             ListProjectLifecycleStepsRequest::class,
-            SetupAppInstanceRequest::class,
+            SetupInstanceRequest::class,
             UpdateProjectLifecycleStepRequest::class,
         ];
         $logRequests = [
@@ -315,8 +315,6 @@ describe('repository guidance bootstrap', function (): void {
 
         $requestDirectory = "{$root}/src/Requests";
         $retiredInstanceRequestPaths = [
-            'Instances/CreateInstanceRequest.php',
-            'Instances/ListInstancesRequest.php',
             'Instances/UpdateInstancePhpRequest.php',
             'Workspaces/CreateWorkspaceRequest.php',
             'Workspaces/ListWorkspacesRequest.php',
@@ -369,26 +367,26 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(...$logRequests)
             ->toContain(...$extensionRequests)
             ->toContain(...$proxycliSwitchRequests)
-            ->toContain(CloneAppInstanceRequest::class)
-            ->toContain(TransferAppInstanceRequest::class)
-            ->toContain(CreateAppInstanceRequest::class)
-            ->toContain(RegisterAppInstanceRequest::class)
-            ->toContain(DestroyAppInstanceRequest::class)
-            ->toContain(ImportAppInstanceEnvironmentRequest::class)
-            ->toContain(UpdateAppInstanceEnvironmentRequest::class)
-            ->toContain(SynchronizeAppInstanceEnvironmentRequest::class)
+            ->toContain(CloneInstanceRequest::class)
+            ->toContain(TransferInstanceRequest::class)
+            ->toContain(CreateInstanceRequest::class)
+            ->toContain(RegisterInstanceRequest::class)
+            ->toContain(DestroyInstanceRequest::class)
+            ->toContain(ImportInstanceEnvironmentRequest::class)
+            ->toContain(UpdateInstanceEnvironmentRequest::class)
+            ->toContain(SynchronizeInstanceEnvironmentRequest::class)
             ->toContain(UpdateInstanceDependenciesRequest::class)
             ->toContain(CreateInstanceDeployStepRequest::class)
             ->toContain(ListInstanceDeployStepsRequest::class)
             ->toContain(UpdateInstanceDeployStepRequest::class)
             ->toContain(DestroyInstanceDeployStepRequest::class)
-            ->toContain(UpdateAppRequest::class)
-            ->toContain(UpdateAppInstanceRequest::class)
-            ->toContain(DeployAppInstanceRequest::class)
-            ->toContain(RollbackAppInstanceRequest::class)
-            ->toContain(ListAppInstanceReleasesRequest::class)
-            ->toContain(ListAppInstanceDeploymentsRequest::class)
-            ->toContain(ShowAppInstanceDeploymentRequest::class)
+            ->toContain(UpdateProjectRequest::class)
+            ->toContain(UpdateInstanceRequest::class)
+            ->toContain(DeployInstanceRequest::class)
+            ->toContain(RollbackInstanceRequest::class)
+            ->toContain(ListInstanceReleasesRequest::class)
+            ->toContain(ListInstanceDeploymentsRequest::class)
+            ->toContain(ShowInstanceDeploymentRequest::class)
             ->toContain(RunDoctorRequest::class)
             ->toContain(ListClustersRequest::class)
             ->toContain(UnsetClusterRouterRequest::class)
@@ -453,10 +451,10 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain('- Database connection: list, show, add, update, remove, attach, detach, query, tables, schema, describe, user create, and user list.')
             ->toContain('- GitHub App: install, show, and destroy.')
             ->toContain(
-                '- App runtime definition: process and Schedule list, create, show, update, and destroy.',
+                '- Project runtime definition: process and Schedule list, create, show, update, and destroy.',
             )
             ->toContain(
-                '- AppInstance: list, show, create, register, clone, transfer, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, deployment-history list and show, environment import, environment update, environment synchronization, dependency inventory read, dependency scan, dependency update, and full-domain and directory instance resolution through the concise Instance routes.',
+                '- Instance: list, show, create, register, clone, transfer, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, deployment-history list and show, environment import, environment update, environment synchronization, dependency inventory read, dependency scan, dependency update, and full-domain and directory instance resolution through the concise Instance routes.',
             )
             ->toContain('- Route: list, show, create, update, target set, target clear, and remove.')
             ->not->toContain('- Workspace: list, show, create, remove, and update PHP.')
@@ -470,34 +468,34 @@ describe('repository guidance bootstrap', function (): void {
 
         expect($normalizedPublicContract)
             ->toContain(
-                'Keep candidate clone transport limited to the numeric candidate AppInstance ID, destination Node ID, target name, preview name, optional branch, and optional SQLite source path.',
+                'Keep candidate clone transport limited to the numeric candidate Instance ID, destination Node ID, target name, preview name, optional branch, and optional SQLite source path.',
             )
             ->toContain(
-                'Keep AppInstance transfer transport limited to the numeric AppInstance ID, destination Node ID, optional rename, and optional SQLite source path.',
+                'Keep Instance transfer transport limited to the numeric Instance ID, destination Node ID, optional rename, and optional SQLite source path.',
             )
             ->toContain(
                 'Model binary node access add/remove and node-show access lists. Do not model granular permissions, presets, wildcards, permission editing, or legacy grant/revoke compatibility.',
             )
             ->not->toContain(
-                'Keep AppInstance deployment-layout transport limited to the numeric AppInstance ID and an optional explicit SQLite source path.',
+                'Keep Instance deployment-layout transport limited to the numeric Instance ID and an optional explicit SQLite source path.',
             )
             ->toContain(
-                'Keep AppInstance environment transport limited to an ID-or-domain selector, optional import replacement, one key and string value for update, an empty synchronization body, and the bounded value-free operation result.',
+                'Keep Instance environment transport limited to an ID-or-domain selector, optional import replacement, one key and string value for update, an empty synchronization body, and the bounded value-free operation result.',
             )
             ->toContain(
-                'Keep AppInstance deployment transport limited to named deploy-step create, list, update, and destroy, AppInstance branch update, explicit deploy and rollback streams, and retained-release inspection.',
+                'Keep Instance deployment transport limited to named deploy-step create, list, update, and destroy, Instance branch update, explicit deploy and rollback streams, and retained-release inspection.',
             )
             ->toContain(
-                "Keep App runtime definition transport limited to a numeric App ID, a definition name for item operations, and the caller's exact JSON document for create and full update.",
+                "Keep Project runtime definition transport limited to a numeric Project ID, a definition name for item operations, and the caller's exact JSON document for create and full update.",
             )
             ->toContain(
-                'Keep Schedule transport limited to typed Node and AppInstance targets and the eight shipped operations.',
+                'Keep Schedule transport limited to typed Node and Instance targets and the eight shipped operations.',
             )
             ->toContain(
                 'Keep Database connection transport limited to slug identity, driver, optional Node ID, host, port, database name, sqlite path, username, and password.',
             )
             ->toContain(
-                'Attach and detach send an AppInstance ID-or-domain selector, the connection slug, and an optional prefix.',
+                'Attach and detach send an Instance ID-or-domain selector, the connection slug, and an optional prefix.',
             )
             ->toContain(
                 'Keep proxycli transport limited to Node ID, Redis connection slug, CLIProxyAPI URL, and management key on enable; a provider slug on show; and an account identity plus disabled flag on update.',
@@ -513,13 +511,13 @@ describe('repository guidance bootstrap', function (): void {
                 'The SDK exposes exactly 168 public Gateway operations.',
                 'The SDK exposes typed enable, disable, status, provider list, provider show, and account update requests for the optional CLIProxyAPI quota collector.',
                 'The SDK exposes typed list, show, add, update, remove, attach, detach, query, tables, schema, describe, and user create requests for Gateway-owned database connection records.',
-                'The SDK exposes typed list, create, show, update, and destroy requests for App process and Schedule definitions.',
-                'The SDK exposes typed list, add, show, run, logs, complete, remove, and activate requests for Node and AppInstance Schedules.',
+                'The SDK exposes typed list, create, show, update, and destroy requests for Project process and Schedule definitions.',
+                'The SDK exposes typed list, add, show, run, logs, complete, remove, and activate requests for Node and Instance Schedules.',
                 'Doctor accepts the current Gateway family set, including Schedule and Database connection.',
                 "Create and update requests send the caller's exact JSON document to the Gateway.",
                 'The SDK exposes typed deploy-step, deploy, rollback, and retained-release operations.',
                 'Deployment streams are incremental, closeable, bounded, correlated, and never retried or replayed.',
-                'The SDK exposes typed import, update, and synchronization requests for AppInstance environment configuration.',
+                'The SDK exposes typed import, update, and synchronization requests for Instance environment configuration.',
                 'Environment values remain outside normal SDK diagnostics and errors.',
             );
 

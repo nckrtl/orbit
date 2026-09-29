@@ -6,7 +6,7 @@ namespace App\Commands\Environment;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\Environment\SynchronizeAppInstanceEnvironmentRequest;
+use Orbit\Sdk\Requests\Environment\SynchronizeInstanceEnvironmentRequest;
 use Orbit\Sdk\Responses\Environment\EnvironmentOperationResponse;
 
 final class SynchronizeEnvironmentCommand extends EnvironmentCommand
@@ -21,7 +21,7 @@ final class SynchronizeEnvironmentCommand extends EnvironmentCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
-        $selector = $this->appInstanceSelector();
+        $selector = $this->instanceSelector();
 
         if ($selector === null) {
             return self::FAILURE;
@@ -35,7 +35,7 @@ final class SynchronizeEnvironmentCommand extends EnvironmentCommand
 
         $response = $this->sendWithProgress(
             $connector,
-            new SynchronizeAppInstanceEnvironmentRequest($selector),
+            new SynchronizeInstanceEnvironmentRequest($selector),
             EnvironmentOperationResponse::class,
             ['Synchronize environment', 'Synchronizing environment', 'Synchronized environment'],
         );

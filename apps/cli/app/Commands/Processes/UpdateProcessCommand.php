@@ -4,17 +4,17 @@ declare(strict_types=1);
 
 namespace App\Commands\Processes;
 
-use App\Commands\Concerns\RendersAppRuntimeDefinitions;
+use App\Commands\Concerns\RendersProjectRuntimeDefinitions;
 use App\Commands\Concerns\SelectsProjectDefinitionTarget;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use JsonException;
-use Orbit\Sdk\Requests\Apps\UpdateProcessDefinitionRequest;
-use Orbit\Sdk\Responses\Apps\AppRuntimeDefinitionResponse;
+use Orbit\Sdk\Requests\Projects\UpdateProcessDefinitionRequest;
+use Orbit\Sdk\Responses\Projects\ProjectRuntimeDefinitionResponse;
 
 final class UpdateProcessCommand extends ProcessCommand
 {
-    use RendersAppRuntimeDefinitions;
+    use RendersProjectRuntimeDefinitions;
     use SelectsProjectDefinitionTarget;
 
     #[\Override]
@@ -106,13 +106,13 @@ final class UpdateProcessCommand extends ProcessCommand
             return self::FAILURE;
         }
 
-        $appId = $this->projectIdOption();
+        $projectId = $this->projectIdOption();
 
-        if ($appId === false) {
+        if ($projectId === false) {
             return self::FAILURE;
         }
 
-        if ($appId === null) {
+        if ($projectId === null) {
             return $this->renderGatewayFailure(
                 'process.target_invalid',
                 'The --project option is required.',
@@ -176,12 +176,12 @@ final class UpdateProcessCommand extends ProcessCommand
 
         $response = $this->sendWithProgress(
             $connector,
-            new UpdateProcessDefinitionRequest($appId, $name, $definition),
-            AppRuntimeDefinitionResponse::class,
+            new UpdateProcessDefinitionRequest($projectId, $name, $definition),
+            ProjectRuntimeDefinitionResponse::class,
             ['Update Process definition', 'Updating Process definition', 'Updated Process definition'],
         );
 
-        return $response instanceof AppRuntimeDefinitionResponse
+        return $response instanceof ProjectRuntimeDefinitionResponse
             ? $this->renderDefinition($response, 'Process')
             : self::FAILURE;
     }

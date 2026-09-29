@@ -13,7 +13,7 @@ final readonly class EnvironmentOperationResponse
     private const int MAX_KEY_COUNT = 1_024;
 
     private function __construct(
-        public int $appInstanceId,
+        public int $instanceId,
         public string $operation,
         public bool $changed,
         public int $keyCount,
@@ -50,7 +50,7 @@ final readonly class EnvironmentOperationResponse
         }
 
         return new self(
-            appInstanceId: $data['instance_id'],
+            instanceId: $data['instance_id'],
             operation: $data['operation'],
             changed: $data['changed'],
             keyCount: $data['key_count'],
@@ -62,7 +62,7 @@ final readonly class EnvironmentOperationResponse
     public function toArray(): array
     {
         return [
-            'instance_id' => $this->appInstanceId,
+            'instance_id' => $this->instanceId,
             'operation' => $this->operation,
             'changed' => $this->changed,
             'key_count' => $this->keyCount,

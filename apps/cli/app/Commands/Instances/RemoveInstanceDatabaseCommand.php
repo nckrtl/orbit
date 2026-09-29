@@ -26,7 +26,7 @@ final class RemoveInstanceDatabaseCommand extends DatabaseAttachmentCommand
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
         $slug = $this->slug();
-        $instance = $this->appInstanceSelector();
+        $instance = $this->instanceSelector();
         $prefix = $this->prefixOption();
 
         if ($slug === null || $instance === null || ($this->input->getOption('prefix') !== null && $prefix === null)) {
@@ -54,7 +54,7 @@ final class RemoveInstanceDatabaseCommand extends DatabaseAttachmentCommand
         $attachment = $this->sendWithProgress(
             $connector,
             new RemoveInstanceDatabaseRequest(
-                appInstance: $instance,
+                instance: $instance,
                 slug: $slug,
                 prefix: $prefix,
             ),
@@ -68,7 +68,7 @@ final class RemoveInstanceDatabaseCommand extends DatabaseAttachmentCommand
 
         return $this->renderAttachment(
             $attachment,
-            "Database connection [{$attachment->slug}] removed from Instance [{$attachment->appInstanceId}].",
+            "Database connection [{$attachment->slug}] removed from Instance [{$attachment->instanceId}].",
         );
     }
 }

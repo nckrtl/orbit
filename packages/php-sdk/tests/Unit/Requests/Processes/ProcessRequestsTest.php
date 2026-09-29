@@ -3,9 +3,9 @@
 declare(strict_types=1);
 
 use Orbit\Sdk\GatewayConnector;
-use Orbit\Sdk\Requests\Processes\AppInstanceProcessTarget;
 use Orbit\Sdk\Requests\Processes\CreateProcessRequest;
 use Orbit\Sdk\Requests\Processes\DestroyProcessRequest;
+use Orbit\Sdk\Requests\Processes\InstanceProcessTarget;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
 use Orbit\Sdk\Requests\Processes\NodeProcessTarget;
 use Orbit\Sdk\Requests\Processes\ProcessLogsRequest;
@@ -24,7 +24,7 @@ it('adds a process with the explicit minimal runtime contract', function (): voi
         CreateProcessRequest::class => MockResponse::make(process_envelope(), 201),
     ]);
     $request = new CreateProcessRequest(
-        target: new AppInstanceProcessTarget(7),
+        target: new InstanceProcessTarget(7),
         name: 'redis',
         runtime: 'docker',
         command: ['redis-server'],
@@ -66,7 +66,7 @@ it('adds a process with the explicit minimal runtime contract', function (): voi
 
 it('forwards every explicit process field without applying runtime policy', function (): void {
     $request = new CreateProcessRequest(
-        target: new AppInstanceProcessTarget(7),
+        target: new InstanceProcessTarget(7),
         name: 'worker',
         runtime: 'systemd',
         command: ['php', 'artisan', 'queue:work'],
@@ -98,7 +98,7 @@ it('forwards every explicit process field without applying runtime policy', func
 
 it('omits every absent optional process field without applying runtime policy', function (): void {
     $request = new CreateProcessRequest(
-        target: new AppInstanceProcessTarget(7),
+        target: new InstanceProcessTarget(7),
         name: 'worker',
         runtime: 'systemd',
         command: ['/usr/bin/php', 'artisan', 'queue:work'],
@@ -118,7 +118,7 @@ it('omits every absent optional process field without applying runtime policy', 
 
 it('preserves explicitly supplied empty process collections', function (): void {
     $request = new CreateProcessRequest(
-        target: new AppInstanceProcessTarget(7),
+        target: new InstanceProcessTarget(7),
         name: 'redis',
         runtime: 'docker',
         command: ['redis-server'],
@@ -144,7 +144,7 @@ it('preserves explicitly supplied empty process collections', function (): void 
 
 it('preserves an omitted optional volume read-only flag', function (): void {
     $request = new CreateProcessRequest(
-        target: new AppInstanceProcessTarget(7),
+        target: new InstanceProcessTarget(7),
         name: 'redis',
         runtime: 'docker',
         command: ['redis-server'],
@@ -158,7 +158,7 @@ it('preserves an omitted optional volume read-only flag', function (): void {
 
 it('forwards keep-alive without treating restart policy as the same contract', function (): void {
     $request = new CreateProcessRequest(
-        target: new AppInstanceProcessTarget(7),
+        target: new InstanceProcessTarget(7),
         name: 'queue',
         runtime: 'systemd',
         command: ['/usr/bin/php', 'artisan', 'queue:work'],
@@ -203,7 +203,7 @@ it('lists only one target process collection', function (): void {
             'meta' => ['request_id' => process_request_id()],
         ]),
     ]);
-    $request = new ListProcessesRequest(new AppInstanceProcessTarget(7));
+    $request = new ListProcessesRequest(new InstanceProcessTarget(7));
     $response = process_connector($mock)->send($request)->dto();
 
     expect($request->getMethod())
@@ -239,7 +239,7 @@ it('lists one node-targeted process collection', function (): void {
 });
 
 it('rejects a domain selector for a process list because the query target id is an integer', function (): void {
-    $request = new ListProcessesRequest(new AppInstanceProcessTarget('commander.test'));
+    $request = new ListProcessesRequest(new InstanceProcessTarget('commander.test'));
 
     expect(fn (): array => $request->query()->all())
         ->toThrow(InvalidArgumentException::class, 'Process list target id must be an integer.');
@@ -383,7 +383,7 @@ function process_request_id(): string
 
 it('transports a preset and domain selector without synthesizing runtime configuration', function (): void {
     $mock = new MockClient([CreateProcessRequest::class => MockResponse::make(process_envelope(), 201)]);
-    $request = new CreateProcessRequest(target: new AppInstanceProcessTarget('commander.test'), name: 'assets', preset: 'vp-dev', start: true);
+    $request = new CreateProcessRequest(target: new InstanceProcessTarget('commander.test'), name: 'assets', preset: 'vp-dev', start: true);
     process_connector($mock)->send($request);
 
     expect($request->body()->all())->toBe(['target_type' => 'instance', 'target_id' => 'commander.test', 'name' => 'assets', 'preset' => 'vp-dev', 'start' => true, 'keep_alive' => false]);

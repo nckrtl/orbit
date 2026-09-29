@@ -231,7 +231,7 @@ it('defines the durable node access command contract', function (): void {
         );
 });
 
-it('defines the AppInstance environment command boundary', function (): void {
+it('defines the Instance environment command boundary', function (): void {
     $commandRules = file_get_contents(base_path('.ai/rules/commands.md'));
     $normalizedCommandRules = is_string($commandRules)
         ? preg_replace(pattern: '/\s+/', replacement: ' ', subject: $commandRules)
@@ -243,7 +243,7 @@ it('defines the AppInstance environment command boundary', function (): void {
         ->toContain('Import retains existing stored values unless `--replace` allows stored-key conflicts')
         ->toContain('update changes stored configuration only, and synchronization is explicit')
         ->toContain(
-            'Preserve quoted empty, multiline, `false`, `0`, and `https://{{app_instance.domain}}` string values.',
+            'Preserve quoted empty, multiline, `false`, `0`, and `https://{{instance.domain}}` string values.',
         )
         ->toContain(
             'Never display values, read or write local files, select a target, resolve a placeholder, refresh an application cache, or restart a process.',

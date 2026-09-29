@@ -16,12 +16,12 @@ use InvalidArgumentException;
 use JsonException;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
-use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
-use Orbit\Sdk\Requests\AppInstances\ScanInstanceDependenciesRequest;
-use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
-use Orbit\Sdk\Responses\AppInstances\AppInstancesResponse;
+use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
+use Orbit\Sdk\Requests\Instances\ScanInstanceDependenciesRequest;
 use Orbit\Sdk\Responses\Dependencies\DependencyInventoryResponse;
 use Orbit\Sdk\Responses\Dependencies\InstanceDependencyInventoryResponse;
+use Orbit\Sdk\Responses\Instances\InstanceResponse;
+use Orbit\Sdk\Responses\Instances\InstancesResponse;
 use Saloon\Exceptions\Request\FatalRequestException;
 use Saloon\Http\Response;
 use stdClass;
@@ -101,7 +101,7 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
             return $this->renderGatewayFailure('input.cancelled', 'Instance listing was cancelled.');
         }
 
-        $targets = $list->appInstances;
+        $targets = $list->instances;
         $progress->complete('targets', ProgressState::Success, count($targets).' instances');
         $progress->finish(count($targets) === 0 ? 'No instances to scan.' : 'Resolved instances.');
 
@@ -157,10 +157,10 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
         return $allSucceeded ? self::SUCCESS : self::FAILURE;
     }
 
-    private function captureAuthorizedInstances(GatewayConnector $connector): AppInstancesResponse
+    private function captureAuthorizedInstances(GatewayConnector $connector): InstancesResponse
     {
         try {
-            $response = $connector->send(new ListAppInstancesRequest);
+            $response = $connector->send(new ListInstancesRequest);
         } catch (FatalRequestException) {
             throw new GatewayApiException('Could not reach the gateway.', 'gateway.unreachable');
         }
@@ -181,7 +181,7 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
             );
         }
 
-        if (! $dto instanceof AppInstancesResponse) {
+        if (! $dto instanceof InstancesResponse) {
             throw new GatewayApiException(
                 message: 'Gateway response is invalid.',
                 errorCode: 'gateway.invalid_response',
@@ -286,7 +286,7 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
     }
 
     /** @return array<string, mixed> */
-    private function inventoryOutcome(AppInstanceResponse $instance, InstanceDependencyInventoryResponse $result): array
+    private function inventoryOutcome(InstanceResponse $instance, InstanceDependencyInventoryResponse $result): array
     {
         return [
             ...$this->instanceIdentity($instance),
@@ -298,7 +298,7 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
     }
 
     /** @return array<string, mixed> */
-    private function errorOutcome(AppInstanceResponse $instance, string $code, string $message, ?string $requestId): array
+    private function errorOutcome(InstanceResponse $instance, string $code, string $message, ?string $requestId): array
     {
         return [
             ...$this->instanceIdentity($instance),
@@ -312,7 +312,7 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
     }
 
     /** @return array{instance_id: int, project_id: int, node_id: int, name: string, environment: string, domain: ?string} */
-    private function instanceIdentity(AppInstanceResponse $instance): array
+    private function instanceIdentity(InstanceResponse $instance): array
     {
         return [
             'instance_id' => $instance->id,
@@ -324,7 +324,7 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
         ];
     }
 
-    private function renderInventoryAttempt(AppInstanceResponse $instance, InstanceDependencyInventoryResponse $result): void
+    private function renderInventoryAttempt(InstanceResponse $instance, InstanceDependencyInventoryResponse $result): void
     {
         if ($this->option('json') === true) {
             return;
@@ -344,7 +344,7 @@ final class ScanInstanceDependenciesCommand extends GatewayCommand
         $this->renderEcosystem('JavaScript', $result->javascript);
     }
 
-    private function renderErrorAttempt(AppInstanceResponse $instance, string $error, ?string $requestId): void
+    private function renderErrorAttempt(InstanceResponse $instance, string $error, ?string $requestId): void
     {
         if ($this->option('json') === true) {
             return;

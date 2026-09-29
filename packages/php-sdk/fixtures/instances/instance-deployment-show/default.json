@@ -1,6 +1,6 @@
 {
     "schema": 1,
-    "request": "Orbit\\Sdk\\Requests\\Deployments\\ShowAppInstanceDeploymentRequest",
+    "request": "Orbit\\Sdk\\Requests\\Deployments\\ShowInstanceDeploymentRequest",
     "route": "GET /api/v1/deployments/{deployment}",
     "status": 200,
     "body": {

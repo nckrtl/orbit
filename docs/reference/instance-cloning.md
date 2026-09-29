@@ -8,7 +8,7 @@ covers:
   - apps/gateway/app/Infrastructure/{Instances/{RemoteInstanceCloneCandidateInspector,RemoteInstanceSqliteSeeder,ProtectedSqliteSnapshotTransfer,RemoteProductionInstanceSourceLifecycle,NativeProductionInstanceProvisioner},AppInstances/NativeProductionAppInstanceProvisioner}.php
   - apps/gateway/app/Http/{Controllers/Api/InstanceClonesController.php,Requests/Instances/CloneInstanceRequest.php}
   - apps/cli/app/Commands/Instances/CloneInstanceCommand.php
-  - packages/php-sdk/src/Requests/AppInstances/CloneAppInstanceRequest.php
+  - packages/php-sdk/src/Requests/Instances/CloneInstanceRequest.php
 ---
 
 # Instance cloning

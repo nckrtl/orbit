@@ -6,7 +6,7 @@ namespace App\Commands\Instances;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\Deployments\DeployAppInstanceRequest;
+use Orbit\Sdk\Requests\Deployments\DeployInstanceRequest;
 use Orbit\Sdk\Responses\Deployments\DeploymentStream;
 
 final class DeployCommand extends DeploymentCommand
@@ -35,7 +35,7 @@ final class DeployCommand extends DeploymentCommand
 
         $stream = $this->send(
             $connector,
-            new DeployAppInstanceRequest($instanceId),
+            new DeployInstanceRequest($instanceId),
             DeploymentStream::class,
         );
 

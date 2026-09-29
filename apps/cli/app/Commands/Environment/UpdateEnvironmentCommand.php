@@ -6,7 +6,7 @@ namespace App\Commands\Environment;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\Environment\UpdateAppInstanceEnvironmentRequest;
+use Orbit\Sdk\Requests\Environment\UpdateInstanceEnvironmentRequest;
 use Orbit\Sdk\Responses\Environment\EnvironmentOperationResponse;
 
 final class UpdateEnvironmentCommand extends EnvironmentCommand
@@ -23,7 +23,7 @@ final class UpdateEnvironmentCommand extends EnvironmentCommand
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
-        $selector = $this->appInstanceSelector();
+        $selector = $this->instanceSelector();
 
         if ($selector === null) {
             return self::FAILURE;
@@ -49,8 +49,8 @@ final class UpdateEnvironmentCommand extends EnvironmentCommand
 
         $response = $this->sendWithProgress(
             $connector,
-            new UpdateAppInstanceEnvironmentRequest(
-                appInstance: $selector,
+            new UpdateInstanceEnvironmentRequest(
+                instance: $selector,
                 key: $key,
                 value: $value,
             ),

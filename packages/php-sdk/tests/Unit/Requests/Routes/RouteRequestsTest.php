@@ -17,7 +17,7 @@ use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
 it('transports explicit Route creation values without applying Gateway policy', function (): void {
-    $request = new CreateRouteRequest(domain: 'Odd_Value', publication: 'future-policy', appInstanceId: 7);
+    $request = new CreateRouteRequest(domain: 'Odd_Value', publication: 'future-policy', instanceId: 7);
 
     expect($request->getMethod())
         ->toBe(Method::POST)
@@ -32,7 +32,7 @@ it('transports explicit Route creation values without applying Gateway policy', 
 });
 
 it('defaults Route publication to private', function (): void {
-    expect(new CreateRouteRequest(domain: 'shop.test', appInstanceId: 7)->body()->all())
+    expect(new CreateRouteRequest(domain: 'shop.test', instanceId: 7)->body()->all())
         ->toBe(['domain' => 'shop.test', 'publication' => 'private', 'instance_id' => 7]);
 });
 

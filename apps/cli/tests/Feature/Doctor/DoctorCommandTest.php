@@ -50,7 +50,7 @@ it('lists every accepted family including schedule in doctor help', function ():
         ->toContain('schedule', 'database_connection')
         ->not->toContain('workspace');
     expect(app(Kernel::class)->all()['doctor']->getDefinition()->getOption('family')->getDescription())
-        ->toBe('Limit checks to node, role, app, instance, schedule, tool, process, firewall, database_connection, or route');
+        ->toBe('Limit checks to node, role, project, instance, schedule, tool, process, firewall, database_connection, or route');
 
     expect(Artisan::call('help', ['command_name' => 'doctor']))->toBe(Command::SUCCESS);
     expect(Artisan::output())
@@ -255,7 +255,7 @@ it('renders a completed unverifiable report instead of a gateway failure', funct
 });
 
 it('distinguishes same-code findings across different resources by identity (F3)', function (): void {
-    // Two AppInstances failing with the identical code must not render as identical rows;
+    // Two Instances failing with the identical code must not render as identical rows;
     // resource type and name are what tells them apart in human output.
     $data = doctor_cli_report(
         healthy: false,
@@ -307,11 +307,11 @@ it('writes the exact one-line report json and follows its healthy state', functi
     $nodes = $healthy
         ? []
         : [doctor_cli_node('delta', [
-            doctor_cli_family(family: 'app', status: 'drift', checked: 1, issues: [
+            doctor_cli_family(family: 'project', status: 'drift', checked: 1, issues: [
                 doctor_cli_issue(
-                    code: 'app.repository_mismatch',
+                    code: 'project.repository_origin_mismatch',
                     summary: 'Repository differs.',
-                    resourceType: 'app',
+                    resourceType: 'project',
                 ),
             ]),
         ])];

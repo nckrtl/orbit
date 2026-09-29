@@ -10,7 +10,7 @@ use Saloon\Enums\Method;
 use Saloon\Http\Response;
 use SensitiveParameter;
 
-/** Reads the tracking hosts an App instance publishes for the analytics role. */
+/** Reads the tracking hosts an Instance publishes for the analytics role. */
 final class ShowInstanceAnalyticsRequest extends GatewayRequest
 {
     #[\Override]

@@ -9,7 +9,7 @@ covers:
   - apps/gateway/app/Http/{Controllers/Api/ProjectsController.php,Requests/Projects/**}
   - apps/gateway/app/Data/Projects/**
   - apps/gateway/app/Models/{Project,ProjectUpdate}.php
-  - apps/cli/app/Commands/Apps/**
+  - apps/cli/app/Commands/Projects/**
 ---
 
 # Projects

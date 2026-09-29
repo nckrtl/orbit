@@ -19,10 +19,10 @@ use Laravel\Prompts\SelectPrompt;
 use Laravel\Prompts\TextareaPrompt;
 use Laravel\Prompts\TextPrompt;
 use Orbit\Sdk\GatewayConnector;
-use Orbit\Sdk\Requests\Apps\ListAppsRequest;
+use Orbit\Sdk\Requests\Projects\ListProjectsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskGroupRequest;
-use Orbit\Sdk\Responses\Apps\AppsResponse;
+use Orbit\Sdk\Responses\Projects\ProjectsResponse;
 use Orbit\Sdk\Responses\Tasks\SubtaskResponse;
 use Orbit\Sdk\Responses\Tasks\TaskAgentResponse;
 use Orbit\Sdk\Responses\Tasks\TaskCommentResponse;
@@ -227,7 +227,7 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
                 continue;
             }
 
-            $rows[$group->id] = [(string) $group->id, $group->title, $group->app ?? (string) $group->appId, $group->status];
+            $rows[$group->id] = [(string) $group->id, $group->title, $group->project ?? (string) $group->projectId, $group->status];
         }
 
         return (int) $this->commandPrompts()->selectEntity('Task group', ['ID', 'Title', 'Project', 'Status'], $rows);
@@ -257,19 +257,19 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
     {
         $projects = $this->sendWithProgress(
             $connector,
-            new ListAppsRequest,
-            AppsResponse::class,
+            new ListProjectsRequest,
+            ProjectsResponse::class,
             ['List Projects', 'Loading Projects', 'Loaded Projects'],
             dismiss: true,
         );
 
-        if (! $projects instanceof AppsResponse) {
+        if (! $projects instanceof ProjectsResponse) {
             return null;
         }
 
         $rows = [];
 
-        foreach ($projects->apps as $project) {
+        foreach ($projects->projects as $project) {
             $rows[$project->id] = [(string) $project->id, $project->name, $project->slug];
         }
 
@@ -301,7 +301,7 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail('Task group: '.$group->reference(), [
             'ID' => $group->id,
             'Title' => $group->title,
-            'Project' => $group->app ?? $group->appId,
+            'Project' => $group->project ?? $group->projectId,
             'Status' => $group->status,
             'Assistance' => $group->assistanceRequested,
             'Reason' => $group->assistanceReason,

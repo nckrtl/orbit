@@ -66,7 +66,7 @@ final class UpdateDeployStepCommand extends DeploymentCommand
         }
 
         $response = $this->sendWithProgress($connector, new UpdateInstanceDeployStepRequest(
-            appInstanceId: $instanceId,
+            instanceId: $instanceId,
             name: $name,
             hasCommand: $hasCommand,
             command: $hasCommand ? (string) $this->option('command') : null,

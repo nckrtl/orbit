@@ -6,7 +6,7 @@ namespace App\Commands\Instances;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\Deployments\RollbackAppInstanceRequest;
+use Orbit\Sdk\Requests\Deployments\RollbackInstanceRequest;
 use Orbit\Sdk\Responses\Deployments\DeploymentStream;
 
 final class RollbackCommand extends DeploymentCommand
@@ -45,7 +45,7 @@ final class RollbackCommand extends DeploymentCommand
 
         $stream = $this->send(
             $connector,
-            new RollbackAppInstanceRequest($instanceId, $release),
+            new RollbackInstanceRequest($instanceId, $release),
             DeploymentStream::class,
         );
 

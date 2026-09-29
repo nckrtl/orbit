@@ -67,7 +67,7 @@ it('accepts every family and all statuses', function (): void {
     expect($families)->toBe([
         'node',
         'role',
-        'app',
+        'project',
         'instance',
         'schedule',
         'tool',

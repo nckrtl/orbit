@@ -652,7 +652,7 @@ final readonly class DocsImpact
         }
         preg_match('/protected\s+\$description\s*=\s*[\'"]([^\'"]*)/', $source, $description);
         $this->addSurface($surfaces, $impacts, $path, 'cli_signature', $page, "CLI command {$command} in {$path}; description ".trim($description[1] ?? ''));
-        if ($family === 'env' || str_contains(strtolower($source), 'instance .env') || str_contains($source, "'.env'") || preg_match('/(?:Update|Import|Synchronize)AppInstanceEnvironmentRequest/', $source) === 1) {
+        if ($family === 'env' || str_contains(strtolower($source), 'instance .env') || str_contains($source, "'.env'") || preg_match('/(?:Update|Import|Synchronize)(?:App)?InstanceEnvironmentRequest/', $source) === 1) {
             $this->addSurface($surfaces, $impacts, $path, 'instance_environment_command', 'docs/cli/env.mdx', "CLI command reads or changes Instance .env in {$path}");
         }
     }

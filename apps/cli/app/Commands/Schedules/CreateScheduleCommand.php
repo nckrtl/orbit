@@ -4,21 +4,21 @@ declare(strict_types=1);
 
 namespace App\Commands\Schedules;
 
-use App\Commands\Concerns\RendersAppRuntimeDefinitions;
+use App\Commands\Concerns\RendersProjectRuntimeDefinitions;
 use App\Commands\Concerns\SelectsProjectDefinitionTarget;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use JsonException;
-use Orbit\Sdk\Requests\Apps\CreateScheduleDefinitionRequest;
-use Orbit\Sdk\Requests\Schedules\AppInstanceScheduleTarget;
+use Orbit\Sdk\Requests\Projects\CreateScheduleDefinitionRequest;
 use Orbit\Sdk\Requests\Schedules\CreateScheduleRequest;
+use Orbit\Sdk\Requests\Schedules\InstanceScheduleTarget;
 use Orbit\Sdk\Requests\Schedules\NodeScheduleTarget;
-use Orbit\Sdk\Responses\Apps\AppRuntimeDefinitionResponse;
+use Orbit\Sdk\Responses\Projects\ProjectRuntimeDefinitionResponse;
 use Orbit\Sdk\Responses\Schedules\ScheduleResponse;
 
 final class CreateScheduleCommand extends ScheduleCommand
 {
-    use RendersAppRuntimeDefinitions;
+    use RendersProjectRuntimeDefinitions;
     use SelectsProjectDefinitionTarget;
 
     #[\Override]
@@ -100,7 +100,7 @@ final class CreateScheduleCommand extends ScheduleCommand
 
         $target = $this->target();
 
-        if (! $target instanceof NodeScheduleTarget && ! $target instanceof AppInstanceScheduleTarget) {
+        if (! $target instanceof NodeScheduleTarget && ! $target instanceof InstanceScheduleTarget) {
             return self::FAILURE;
         }
 
@@ -181,13 +181,13 @@ final class CreateScheduleCommand extends ScheduleCommand
             );
         }
 
-        $appId = $this->projectIdOption();
+        $projectId = $this->projectIdOption();
 
-        if ($appId === false) {
+        if ($projectId === false) {
             return self::FAILURE;
         }
 
-        if ($appId === null) {
+        if ($projectId === null) {
             return $this->renderGatewayFailure(
                 'schedule.target_required',
                 'The --project option is required.',
@@ -228,17 +228,17 @@ final class CreateScheduleCommand extends ScheduleCommand
 
         $response = $this->sendWithProgress(
             $connector,
-            new CreateScheduleDefinitionRequest($appId, $definition),
-            AppRuntimeDefinitionResponse::class,
+            new CreateScheduleDefinitionRequest($projectId, $definition),
+            ProjectRuntimeDefinitionResponse::class,
             ['Create Schedule definition', 'Creating Schedule definition', 'Created Schedule definition'],
         );
 
-        return $response instanceof AppRuntimeDefinitionResponse
+        return $response instanceof ProjectRuntimeDefinitionResponse
             ? $this->renderDefinition($response, 'Schedule')
             : self::FAILURE;
     }
 
-    private function target(): NodeScheduleTarget|AppInstanceScheduleTarget|null
+    private function target(): NodeScheduleTarget|InstanceScheduleTarget|null
     {
         $node = $this->option('node');
         $instance = $this->option('instance');
@@ -273,7 +273,7 @@ final class CreateScheduleCommand extends ScheduleCommand
             'schedule.instance_id_invalid',
         );
 
-        return $instanceId === null ? null : new AppInstanceScheduleTarget($instanceId);
+        return $instanceId === null ? null : new InstanceScheduleTarget($instanceId);
     }
 
     private function positiveOptionId(mixed $value, string $label, string $errorCode): ?int

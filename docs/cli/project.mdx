@@ -2,9 +2,10 @@
 title: "project"
 description: "Create, inspect, update, and remove Projects. A Project owns one repository, a type, and the source defaults that Instances inherit."
 covers:
-  - apps/cli/app/Commands/Apps/**
-  - packages/php-sdk/src/Requests/Apps/{Create,List,Show,Update,Destroy}AppRequest.php
-  - packages/php-sdk/src/Responses/Apps/{AppResponse,AppsResponse,AppIdentityResponse}.php
+  - apps/cli/app/Commands/Projects/**
+  - packages/php-sdk/src/Requests/Projects/{Create,Show,Update,Destroy}ProjectRequest.php
+  - packages/php-sdk/src/Requests/Projects/ListProjectsRequest.php
+  - packages/php-sdk/src/Responses/Projects/{ProjectResponse,ProjectsResponse,ProjectIdentityResponse}.php
 ---
 
 A Project records one Git repository and the defaults for running it. [Projects](/reference/projects) owns the fields, types, update lifecycle, and error codes. [Applications](/domains/applications) shows how a Project becomes an Instance.

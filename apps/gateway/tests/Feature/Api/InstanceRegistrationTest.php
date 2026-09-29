@@ -287,10 +287,10 @@ it('resolves a Project by canonical repository identity and returns bounded sour
         ->not->toHaveKey('source_path');
 });
 
-it('creates a confirmed missing App before its Instance and retains it after later failure', function (): void {
+it('creates a confirmed missing Project before its Instance and retains it after later failure', function (): void {
     $payload = [
         'source_path' => '/work/acme',
-        'app_slug' => 'acme',
+        'project_slug' => 'acme',
         'default_branch' => 'main',
         'root' => 'public',
     ];
@@ -304,7 +304,7 @@ it('creates a confirmed missing App before its Instance and retains it after lat
     expect(Project::query()->count())->toBe(1)->and(Instance::query()->count())->toBe(1);
 });
 
-it('requires unresolved values without mutating and keeps a valid App on incomplete registration', function (): void {
+it('requires unresolved values without mutating and keeps a valid Project on incomplete registration', function (): void {
     $facts = registration_facts();
     $this->registrationSource->facts = [new RegistrationSourceFacts(
         path: $facts->path,
@@ -333,7 +333,7 @@ it('requires unresolved values without mutating and keeps a valid App on incompl
     $this
         ->postJson('/api/v1/instances/register', [
             'source_path' => '/work/acme',
-            'app_slug' => 'acme',
+            'project_slug' => 'acme',
             'default_branch' => 'main',
             'root' => 'public',
         ])
@@ -341,7 +341,7 @@ it('requires unresolved values without mutating and keeps a valid App on incompl
         ->assertJsonPath('error.code', 'instance.registration_incomplete')
         ->assertJsonPath(
             'error.message',
-            'App [acme] was retained; Instance registration is incomplete and can be retried.',
+            'Project [acme] was retained; Instance registration is incomplete and can be retried.',
         );
 
     expect(Project::query()->count())
@@ -383,7 +383,7 @@ it('returns the same identities on an identical retry and refuses conflicting ev
         ]);
 
     $this
-        ->postJson('/api/v1/instances/register', [...$payload, 'app_slug' => 'different'])
+        ->postJson('/api/v1/instances/register', [...$payload, 'project_slug' => 'different'])
         ->assertConflict()
         ->assertJsonPath('error.code', 'project.identity_conflict');
     expect(Instance::query()->count())->toBe(1)->and(Route::query()->count())->toBe(1);

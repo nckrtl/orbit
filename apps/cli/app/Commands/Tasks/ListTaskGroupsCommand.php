@@ -68,7 +68,7 @@ final class ListTaskGroupsCommand extends TaskCommand
         $rows = array_map(static fn (TaskGroupResponse $group): array => [
             $group->id,
             $group->title,
-            $group->app ?? $group->appId,
+            $group->project ?? $group->projectId,
             $group->status,
             count(array_filter($group->tasks, static fn (SubtaskResponse $task): bool => $task->status === 'completed')).'/'.count($group->tasks),
             self::assistanceCell($group->assistanceRequested, $group->assistanceReason),

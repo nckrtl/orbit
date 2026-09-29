@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
-use Orbit\Sdk\Requests\AppInstances\UpdateInstanceDependenciesRequest;
+use Orbit\Sdk\Requests\Instances\UpdateInstanceDependenciesRequest;
 use Orbit\Sdk\Responses\Dependencies\InstanceDependencyUpdateResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;

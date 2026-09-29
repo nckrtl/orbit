@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
-use Orbit\Sdk\Requests\AppInstances\UpdateAppInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\CreateInstanceDeployStepRequest;
-use Orbit\Sdk\Requests\Deployments\DeployAppInstanceRequest;
+use Orbit\Sdk\Requests\Deployments\DeployInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\DestroyInstanceDeployStepRequest;
-use Orbit\Sdk\Requests\Deployments\ListAppInstanceReleasesRequest;
 use Orbit\Sdk\Requests\Deployments\ListInstanceDeployStepsRequest;
-use Orbit\Sdk\Requests\Deployments\RollbackAppInstanceRequest;
+use Orbit\Sdk\Requests\Deployments\ListInstanceReleasesRequest;
+use Orbit\Sdk\Requests\Deployments\RollbackInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\UpdateInstanceDeployStepRequest;
+use Orbit\Sdk\Requests\Instances\UpdateInstanceRequest;
 use Orbit\Sdk\Responses\Deployments\DeploymentReleasesResponse;
 use Orbit\Sdk\Responses\Deployments\DeploymentStream;
 use Saloon\Enums\Method;
@@ -21,14 +21,14 @@ use Saloon\Http\Faking\MockResponse;
 describe('deployment requests', function (): void {
     it('uses the exact Gateway methods and paths', function (): void {
         $cases = [
-            [new DeployAppInstanceRequest(17), Method::POST, '/api/v1/instances/17/deploy'],
-            [new RollbackAppInstanceRequest(17, 'release-20260911'), Method::POST, '/api/v1/instances/17/rollback'],
-            [new ListAppInstanceReleasesRequest(17), Method::GET, '/api/v1/instances/17/releases'],
+            [new DeployInstanceRequest(17), Method::POST, '/api/v1/instances/17/deploy'],
+            [new RollbackInstanceRequest(17, 'release-20260911'), Method::POST, '/api/v1/instances/17/rollback'],
+            [new ListInstanceReleasesRequest(17), Method::GET, '/api/v1/instances/17/releases'],
             [new ListInstanceDeployStepsRequest(17), Method::GET, '/api/v1/instances/17/deploy-steps'],
             [new CreateInstanceDeployStepRequest(17, 'migrate', 'php artisan migrate'), Method::POST, '/api/v1/instances/17/deploy-steps'],
             [new UpdateInstanceDeployStepRequest(17, 'migrate', hasCommand: true, command: 'php artisan migrate --force'), Method::PATCH, '/api/v1/instances/17/deploy-steps/migrate'],
             [new DestroyInstanceDeployStepRequest(17, 'migrate'), Method::DELETE, '/api/v1/instances/17/deploy-steps/migrate'],
-            [new UpdateAppInstanceRequest(17, 'release'), Method::PATCH, '/api/v1/instances/17'],
+            [new UpdateInstanceRequest(17, 'release'), Method::PATCH, '/api/v1/instances/17'],
         ];
 
         foreach ($cases as [$request, $method, $path]) {
@@ -55,16 +55,16 @@ describe('deployment requests', function (): void {
             ->not->toContain('DeploymentConfig')
             ->not->toContain('DeploymentLayout')
             ->and($paths)
-            ->not->toContain(dirname(__DIR__, 4).'/src/Requests/Deployments/ShowAppInstanceDeploymentConfigRequest.php')
-            ->not->toContain(dirname(__DIR__, 4).'/src/Requests/Deployments/UpdateAppInstanceDeploymentConfigRequest.php')
-            ->not->toContain(dirname(__DIR__, 4).'/src/Requests/AppInstances/AppInstanceDeploymentLayoutRequest.php');
+            ->not->toContain(dirname(__DIR__, 4).'/src/Requests/Deployments/ShowInstanceDeploymentConfigRequest.php')
+            ->not->toContain(dirname(__DIR__, 4).'/src/Requests/Deployments/UpdateInstanceDeploymentConfigRequest.php')
+            ->not->toContain(dirname(__DIR__, 4).'/src/Requests/Instances/InstanceDeploymentLayoutRequest.php');
     });
 
     it('preserves deployment payload omission and explicit values', function (): void {
         $omitted = new CreateInstanceDeployStepRequest(17, 'migrate', 'secret-command-one');
         $explicit = new CreateInstanceDeployStepRequest(17, 'restart', 'secret-command-two', 'after_activation', 0);
-        $deploy = new DeployAppInstanceRequest(17);
-        $rollback = new RollbackAppInstanceRequest(17, '');
+        $deploy = new DeployInstanceRequest(17);
+        $rollback = new RollbackInstanceRequest(17, '');
 
         expect($omitted->body()->all())->toBe([
             'name' => 'migrate',
@@ -81,14 +81,14 @@ describe('deployment requests', function (): void {
     it('maps retained releases through typed correlated responses', function (): void {
         $requestId = deployment_request_id();
         $mock = new MockClient([
-            ListAppInstanceReleasesRequest::class => MockResponse::make([
+            ListInstanceReleasesRequest::class => MockResponse::make([
                 'data' => ['releases' => ['release-b', 'release-a'], 'selected_release' => 'release-b'],
                 'meta' => ['request_id' => $requestId],
             ]),
         ]);
         $connector = deployment_connector($mock);
 
-        $releases = $connector->send(new ListAppInstanceReleasesRequest(17))->dto();
+        $releases = $connector->send(new ListInstanceReleasesRequest(17))->dto();
 
         expect($releases)->toBeInstanceOf(DeploymentReleasesResponse::class)
             ->and($releases->releases)->toBe(['release-b', 'release-a'])
@@ -126,20 +126,20 @@ describe('deployment requests', function (): void {
             'selected_release' => 'release-a',
         ], JSON_THROW_ON_ERROR)."\n";
         $mock = new MockClient([
-            DeployAppInstanceRequest::class => MockResponse::make($result, headers: [
+            DeployInstanceRequest::class => MockResponse::make($result, headers: [
                 'Content-Type' => 'application/x-ndjson',
                 'X-Orbit-Request-Id' => $requestId,
             ]),
-            RollbackAppInstanceRequest::class => MockResponse::make($result, headers: [
+            RollbackInstanceRequest::class => MockResponse::make($result, headers: [
                 'Content-Type' => 'application/x-ndjson',
                 'X-Orbit-Request-Id' => $requestId,
             ]),
         ]);
         $connector = deployment_connector($mock);
 
-        expect($connector->send(new DeployAppInstanceRequest(17))->dto())
+        expect($connector->send(new DeployInstanceRequest(17))->dto())
             ->toBeInstanceOf(DeploymentStream::class)
-            ->and($connector->send(new RollbackAppInstanceRequest(17, 'release-a'))->dto())
+            ->and($connector->send(new RollbackInstanceRequest(17, 'release-a'))->dto())
             ->toBeInstanceOf(DeploymentStream::class);
     });
 });
