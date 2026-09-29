@@ -45,7 +45,7 @@ Each command accepts `--json`. Enable and disable need Gateway access.
 
 ## Extension state in the CLI
 
-The CLI asks the Gateway for the switches at most once per process: when it lists commands or shows help, and when it runs an extension command. The request has a 2-second deadline, which includes its one retry after a connection failure. The CLI stores no copy.
+The CLI asks the Gateway for the switches at most once per process: when it lists commands or shows help, when it runs `extension:list`, and when it runs an extension command. The request has a 2-second deadline, which includes its one retry after a connection failure. The CLI stores no copy.
 
 When the CLI cannot read the switches, the state is unknown, not disabled. This happens when no Gateway profile is active, the Gateway CA is not trusted, or the Gateway does not answer in time.
 

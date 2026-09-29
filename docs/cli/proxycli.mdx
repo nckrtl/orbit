@@ -102,7 +102,7 @@ orbit proxycli:update <account> --disabled|--enabled [--json]
 
 | Argument or option | Required | Meaning |
 | --- | --- | --- |
-| `account` | yes | Account ID from `proxycli:show`: the auth file's `auth_index`, or its name when it has none. |
+| `account` | yes | Account ID from `proxycli:show`: the auth file's `auth_index`, or its name when it has none. Only letters, digits, `.`, `_`, and `-` are accepted. |
 | `--disabled` or `--enabled` | exactly one | The new account state. |
 
 The command changes the account in CLIProxyAPI and rewrites the snapshot from cache. It fetches no quota.

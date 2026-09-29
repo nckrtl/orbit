@@ -45,7 +45,7 @@ Place Valkey, register it, enable the extension, then set up the collector:
 
 ```bash
 orbit node:role:add db-1 database
-orbit process:create valkey --node=db-1 --runtime=docker --image=valkey/valkey:8 --command=valkey-server --volume=valkey-data:/data --publish=10.44.0.20:6379:6379
+orbit process:create valkey --node=db-1 --runtime=docker --image=valkey/valkey:8 --command=valkey-server --volume=valkey-data:/data --port=10.44.0.20:6379:6379 --restart=unless-stopped --start
 orbit database:create valkey --driver=redis --node=db-1 --host=10.44.0.20 --port=6379
 orbit extension:enable proxycli
 orbit proxycli:setup --node=beast --cache-connection=valkey --cliproxy-url=http://127.0.0.1:8317 --cliproxy-management-key-file=./management.key
@@ -55,7 +55,7 @@ The collector Node must be an active Linux Node with a WireGuard address. Otherw
 
 `--cliproxy-url` is the CLIProxyAPI Management API origin, as the collector Node sees it. Use `http://127.0.0.1:8317` when CLIProxyAPI runs on that Node. The Gateway stores the management key as a secret setting and passes it to the collector Process. No API response contains it.
 
-Setup can run again. It keeps the read and control tokens, writes the collector script, recreates the collector Process, and publishes the hostname again.
+Setup can run again. It keeps the read and control tokens, writes the collector script, recreates the collector Process, and publishes the hostname again. Setup with another `--node` sets up only the new Node and leaves the old Node's collector in place. To move the collector, run `proxycli:teardown` first.
 
 ## What setup deploys
 
@@ -75,6 +75,8 @@ While setup holds the collector, `process:destroy` refuses to remove the Process
 
 `collector.cli-proxy-api.orbit` is a reserved platform name, so `route:create` refuses it with `route.domain_conflict`. The apex `cli-proxy-api.orbit` is not reserved. Publish the CLIProxyAPI management UI there as a [custom proxy Route](/reference/routes#custom-proxy-routes) to `http://127.0.0.1:8317`.
 
+Before it changes anything, setup checks for a Route on `collector.cli-proxy-api.orbit`. It takes over a custom proxy Route on the collector Node to `http://127.0.0.1:8787` with no Process target: one Caddy reload moves the name to the collector site, and setup then removes the Route. Any other Route on that name fails setup with `proxycli.hostname_taken` (409).
+
 Setup publishes the Caddy site before it recreates the collector Process. The site retries the loopback collector for up to 5 seconds, so a request that arrives during the restart waits instead of failing.
 
 ## Collection
@@ -88,9 +90,9 @@ The collector is the only process that calls CLIProxyAPI for quota. Every minute
 | Failed check | Waits 1 hour, doubling per failure up to 1 day. A longer `Retry-After` wins. |
 | Interrupted check | Waits 1 hour |
 
-Each account's next check is stored in Valkey, so a restart or an account toggle does not reset the schedule. `collected_at` is the time of the last snapshot. `checked_at` and `next_check_at` belong to each account.
+Each account's next check is stored in Valkey, so a restart or an account toggle does not reset the schedule. `collected_at` is the time of the last snapshot write. `checked_at` and `next_check_at` belong to each account.
 
-The collector reads Claude, Codex, Grok, Kimi, and Antigravity windows from CLIProxyAPI's wrapped response. It names common windows by duration, such as `7d` and `5h`, and sorts day and week windows before hour windows. A window the provider did not return is absent. The collector never reports a missing window as zero use, and never labels a window Primary or Secondary. A window whose reset time has passed drops out of reads until the next check.
+The collector reads Claude, Codex, Grok, Kimi, and Antigravity windows from CLIProxyAPI's wrapped response. It names common windows by duration, such as `7d` and `5h`. It sorts by the last character of the label: labels that end in `d` or `w` first, then `h`, `m`, or `s`, then all others, such as `Monthly credits`. A window the provider did not return is absent. The collector never reports a missing window as zero use, and never labels a window Primary or Secondary. The collector's own endpoints leave out a window whose reset time has passed. Gateway reads still show it until the next check.
 
 When Grok returns no percentage, the collector calls Grok's billing RPC through CLIProxyAPI. It accepts zero use only from a complete response with an active weekly or monthly period, as [CodexBar](https://github.com/steipete/CodexBar/pull/3325) does.
 
@@ -108,13 +110,13 @@ The collector serves these paths on `https://collector.cli-proxy-api.orbit`. The
 | `PUT /api/v1/providers/{provider}/accounts/{account}` | Control | Sets `disabled` on one account and returns the CodexBar snapshot |
 | `PATCH /v1/accounts/{account}` | Control | Sets `disabled` on one account, for the Gateway |
 
-Every read uses the Valkey snapshot and never calls CLIProxyAPI. An account toggle sends `PATCH /v0/management/auth-files/status` to CLIProxyAPI, then compiles the pools again from the cached snapshot. It fetches no quota. The CLIProxyAPI management key is not a CodexBar credential.
+Every read uses the Valkey snapshot and never calls CLIProxyAPI. An account toggle reads `GET /v0/management/auth-files` to find the account's file, sends `PATCH /v0/management/auth-files/status`, then compiles the pools again from the cached snapshot. It fetches no quota. An account without a file returns 404. The CLIProxyAPI management key is not a CodexBar credential.
 
 ## Clients
 
 The Gateway reads the snapshot from Valkey through the cache connection. `proxycli:list`, `proxycli:show`, and the Quota pages use it. A read or toggle before setup, or after teardown, fails with `proxycli.disabled` (409).
 
-`proxycli:update` checks that the account is in the snapshot, or fails with `resource.not_found`. The Gateway then sends `PATCH https://{node-wireguard-ip}:443/v1/accounts/{account}` with `Host: collector.cli-proxy-api.orbit`, Orbit CA verification, and the control token. It writes the new state into the snapshot. When the collector refuses or cannot be reached, the call fails with `proxycli.upstream_failed` (502).
+`proxycli:update` checks that the account is in the snapshot, or fails with `resource.not_found`. The Gateway then sends `PATCH https://{node-wireguard-ip}:443/v1/accounts/{account}` with `Host: collector.cli-proxy-api.orbit`, Orbit CA verification, and the control token. The account ID must match `[A-Za-z0-9._-]+`. The Gateway then writes the snapshot again with the new state. That write sets `collected_at` to the toggle time and drops each account's `checked_at` and `next_check_at` until the next collection round. The schedule itself is unchanged. When the collector refuses or cannot be reached, the call fails with `proxycli.upstream_failed` (502).
 
 The web app shows the Quota section while the `proxycli` extension is enabled, and reads it every 60 seconds. It shows provider pools only when the collector is set up and the `tasks` extension is also enabled, because the page includes token spend from Tasks. Otherwise it names what is missing. A provider page lists the accounts, the remaining quota and reset time of each window, and the controls to enable or disable an account.
 
@@ -155,6 +157,8 @@ These codes come from the Gateway on setup, teardown, reads, and toggles.
 | `proxycli.node_invalid` | 422 | The collector Node is missing, inactive, not Linux, or has no WireGuard address. |
 | `proxycli.source_publication_failed` | 422 | Setup could not write the collector script on the Node. |
 | `proxycli.certificate_publication_failed` | 422 | Setup could not place the Orbit CA leaf on the Node. |
+| `proxycli.certificate_read_failed` | 422 | The Gateway could not read the certificate it issued. |
+| `proxycli.hostname_taken` | 409 | A Route that setup cannot take over holds `collector.cli-proxy-api.orbit`. Setup changes nothing. |
 | `proxycli.caddy_publication_failed` | 422 | Setup could not install Caddy or build the Node's Caddy configuration. |
 | `proxycli.upstream_failed` | 502 | The collector refused or did not answer an account toggle. |
 | `resource.not_found` | 404 | The provider or account is not in the snapshot. |

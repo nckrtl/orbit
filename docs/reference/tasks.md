@@ -22,7 +22,7 @@ Agents use the Tasks tools of the [MCP server](/reference/mcp). The [`tasks` CLI
 
 ## Extension switch and status
 
-Enable and disable the extension with `orbit extension:enable tasks` and `orbit extension:disable tasks`. Both need Gateway access. While the switch is off, the `tasks` commands, MCP tools, and web pages are hidden, and every other task operation refuses with HTTP 409 `extension.disabled` and changes nothing. Task records stay stored. [`extension`](/cli/extension) describes the switch.
+Enable and disable the extension with `orbit extension:enable tasks` and `orbit extension:disable tasks`. Both need Gateway access. While the switch is off, the `tasks` commands, MCP tools, and web pages are hidden, except `tasks:status` and the `tasks-status` tool. Every other task operation refuses with HTTP 409 `extension.disabled` and changes nothing. Task records stay stored. [`extension`](/cli/extension) describes the switch.
 
 `tasks:status` is an assistance and status view, not a switch. Its route returns `enabled` and `assistance`. `assistance` lists every group whose `assistance_requested` is true, in ascending group id order. Each entry has `id`, `app_id`, `app`, `project_code`, `title`, `status`, and `assistance_reason`. A group that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its group unless the group itself is asking. The view remains available while tasks is disabled.
 

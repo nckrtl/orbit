@@ -106,7 +106,7 @@ For each Composer project, the gate runs `composer validate --strict`, `composer
 
 A change under `apps/web` runs `bun install --frozen-lockfile` in `apps/web` and `packages/agent-annotation`, then `bun run check`, `bun run build`, and a generated-types check in `apps/web`. The generated-types check writes `openapi-typescript` output for `docs/openapi.json` to a temporary file and compares it with `src/api/schema.d.ts`. It does not change the working tree. A change to `docs/openapi.json` alone runs the install and the generated-types check. A change under `apps/pi-server` runs `bun install --frozen-lockfile`, `bun run check`, `bun run test`, and `bun run build` there. The Rust agent and agent annotation checks run only in CI.
 
-A command whose tool is missing fails with `<tool>: required tool not found`. The gate never skips a selected check.
+A command whose program is missing fails with `<program>: required tool not found`. A tool missing inside the generated-types shell command fails with the shell's exit code 127. The gate never skips a selected check.
 
 #### Finding checks
 
@@ -122,7 +122,7 @@ Each failure names the file and line.
 
 #### Receipt
 
-The gate writes a receipt, `result.json`, and one log per command in a new `review-*` directory under `orbit-checks/<HEAD>/` in the Git common directory. The receipt passes only when every command passed and the commit and the working tree did not change during the run. It records a warning when `test:affected` selected no tests in a project that the candidate changes.
+The gate writes a receipt, `result.json`, and one log per command in a new `review-*` directory under `orbit-checks/<HEAD>/` in the Git common directory. The receipt passes only when at least one command ran, every command passed, and the commit and the working tree did not change during the run. It records a warning when `test:affected` selected no tests in a project that the candidate changes.
 
 ### Gateway test databases
 
@@ -263,9 +263,13 @@ A change to the web app or the Pi server could pass the gate and then fail a req
 
 A green gate must mean that every selected check ran. Skipping a check when its tool is absent would pass a workspace that happens to lack `bun` or `git`.
 
+### A changed test must run
+
+Test-impact analysis can select no tests for a changed test file. Reporting that only as a warning is a rejected alternative, because an edited test that Pest does not discover gives false confidence. So the gate runs the file by path and fails when Pest finds no tests in it.
+
 ### Repeated findings become checks
 
-Reviewers kept reporting `strtotime()`, inline type overrides, and unguarded classification fakes. Each one is deterministic, so a check rejects it before review. Asking reviewers to remember them is a rejected alternative, because it spends a review round on a finding that code can detect.
+Reviewers report `strtotime()`, inline type overrides, and unguarded classification fakes again and again. Each one is deterministic, so a check rejects it before review. Asking reviewers to remember them is a rejected alternative, because it spends a review round on a finding that code can detect.
 
 ### Main caches come only from clean main
 
