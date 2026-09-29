@@ -1,6 +1,9 @@
 ---
 title: "Pi server"
 description: "How the Pi server runs Pi agent sessions on a Node for the Gateway's pi driver: configuration, sign-in, agent tools, API, thread states, and restart behavior."
+covers:
+  - apps/pi-server/**
+  - apps/gateway/app/Infrastructure/Tasks/Pi/{PiConnection,PiModel,PiNodeEligibility}.php
 ---
 
 # Pi server
@@ -23,7 +26,7 @@ The server reads command-line flags first, then the environment. Orbit's systemd
 | `--allow-provider`, repeatable | `PI_SERVER_ALLOW_PROVIDERS`, comma-separated | none | Allow one named provider although Pi sees an API key, such as a CLIProxyAPI endpoint |
 | `--idle-unload-seconds` | `PI_SERVER_IDLE_UNLOAD_SECONDS` | `900` | Unload a session with no turn and no stream after this many seconds |
 
-The Gateway reaches the server at `http://{wireguard_ip}:{ORBIT_PI_PORT}` with the token in `ORBIT_PI_TOKEN`. `ORBIT_PI_PORT` defaults to `3774`. A Node record that carries `pi` settings uses its own `token` and optional `url` instead and never falls back to `ORBIT_PI_TOKEN`. The Node settings API does not set `pi`.
+The Gateway reaches the server at `http://{wireguard_ip}:{ORBIT_PI_PORT}` with the token in `ORBIT_PI_TOKEN`. `ORBIT_PI_PORT` defaults to `3774`.
 
 ## Connect through CLIProxyAPI
 
@@ -46,13 +49,13 @@ A Node can reuse the subscription accounts that CLIProxyAPI already holds, as Co
 
 A leading `!` runs the command at request time, so the key stays in the file or secret store that Codex already uses. List each model the Node should run; `GET /v1/models` on CLIProxyAPI shows the available IDs. Start the server with `--allow-provider=cliproxyapi`, because Pi sees an API key for this provider. Set `ORBIT_PI_PROVIDER=cliproxyapi` on the Gateway so plain model names, such as `gpt-5.6-luna`, use it.
 
-Claude models are refused through CLIProxyAPI as well. The proxy relays Claude subscription credentials, which Anthropic permits only in its own applications.
+The Gateway's `pi` driver refuses every Claude model, also through CLIProxyAPI. See [Claude runs on T3](#claude-runs-on-t3).
 
 ## Sign in to a provider
 
 Sign in once per provider on each Node, as the user that runs the server. Run `pi-server login openai-codex` or `pi-server login xai`, choose device-code sign-in, and approve the code from any browser. Pi stores the credential in its own directory, where the server reads it. The Gateway never receives it. `pi-server login anthropic` is refused.
 
-By default the server accepts only subscription sign-ins, such as ChatGPT for Codex models. A provider signed in with an API key, including a key in the server's environment, is not available until `PI_SERVER_ALLOW_API_KEYS=1` is set. Claude models do not run on Pi: Anthropic permits subscription sign-ins only in its own applications.
+By default the server accepts only subscription sign-ins, such as ChatGPT for Codex models. A provider signed in with an API key, including a key in the server's environment, is not available until `PI_SERVER_ALLOW_API_KEYS=1` is set or `--allow-provider` names it.
 
 ## Install on a Node
 
@@ -127,15 +130,16 @@ Every route requires `Authorization: Bearer <token>`. Errors return `{"error": {
 | Route | Result |
 | --- | --- |
 | `GET /capabilities` | Pi version and the models this Node can run, as `provider/model` |
-| `POST /sessions` | Creates a session from `id`, `cwd`, `model`, `thinkingLevel`, and an optional `appendSystemPrompt`. Repeating the same create returns `200` |
-| `POST /sessions/{id}/messages` | Starts a turn from `key` and `text`. A repeated key returns `200` with `duplicate: true` and starts no turn |
-| `POST /sessions/{id}/interrupt` | Aborts the active turn |
+| `POST /sessions` | Creates a session from `id`, `cwd`, `model`, `thinkingLevel`, and an optional `appendSystemPrompt`, and returns `201`. Repeating the same create returns `200` |
+| `POST /sessions/{id}/messages` | Starts a turn from `key` and `text`, and returns `202`. A repeated key returns `200` with `duplicate: true` and starts no turn |
+| `POST /sessions/{id}/interrupt` | Aborts the active turn and returns `202` |
 | `GET /sessions/{id}` | Snapshot: session settings, state, error, turn ID, transcript entries, and [token usage](#token-usage) |
 | `GET /sessions/{id}/stream` | Newline-delimited JSON: a snapshot or, with `run` and `after`, a resumed start; then `entry` and `state` events, with a `heartbeat` every 15 seconds. See [Stream](#stream) |
 
 | Error code | Status | Meaning |
 | --- | --- | --- |
 | `unauthorized` | 401 | Missing or wrong token |
+| `not_found` | 404 | No route matches the method and path |
 | `session_not_found` | 404 | No session has this ID |
 | `invalid_request` | 422 | A field is missing or invalid, or the workspace is outside the allowed roots |
 | `model_unavailable` | 422 | The model is unknown, or its provider is not signed in with an accepted method |
@@ -188,7 +192,7 @@ The server reports one of the Orbit thread states from its own evidence. The Gat
 | The turn ended with a provider error, an interruption, or the output limit | `failed`, with the error |
 | The server restarted while the turn was active | `failed`, with error `The Pi server restarted during the turn.` |
 
-Pi has no approvals, so a Pi thread never asks for input. A new turn replaces a `done` or `failed` state with `working`.
+Pi has no approvals, so a Pi thread never asks for input. A new turn changes a `done` or `failed` state to `working`.
 
 ## Restarts
 
@@ -217,6 +221,10 @@ A turn still `working` at the restart fails with the restart error. The next tic
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.
+
+### Claude runs on T3
+
+Anthropic permits Claude subscription credentials only in its own applications, also when a proxy such as CLIProxyAPI relays them. So the `pi` driver refuses a Claude model, `pi-server login anthropic` refuses to sign in, and Claude models run on the T3 driver.
 
 ### A long-lived server, not RPC over SSH
 

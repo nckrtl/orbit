@@ -25,10 +25,6 @@ Permanent ADRs made the current rule hard to find: amendments spread it across h
 | Record | Decision | Status |
 | --- | --- | --- |
 | [0097](/decisions/0097-publish-analytics-tracking-hosts-for-app-instances) | Publish analytics tracking hosts for App instances | Proposed |
-| [0104](/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension) | Own CLIProxyAPI quota through the proxycli extension | Proposed; amended by 0109 and 0150 |
-| [0109](/decisions/0109-publish-the-proxycli-collector-on-a-subdomain) | Publish the proxycli collector on collector.proxycli.orbit | Proposed; amended by 0145 |
-| [0145](/decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit) | Publish the proxycli collector on collector.cli-proxy-api.orbit | Proposed |
-| [0174](/decisions/0174-match-the-task-gate-to-ci-and-repeated-findings) | Match the task gate to CI and repeated findings | Proposed |
 | [0175](/decisions/0175-docs-impact-check-in-orbit-repo) | Keep the docs-impact check in Orbit's repository | Proposed |
 | [0178](/decisions/0178-run-project-agnostic-tasks-without-a-planner) | Run project-agnostic Tasks without a planner | Proposed; supersedes 0124 and amends 0122, 0125, 0133, 0135, 0163, and 0164 |
 
@@ -138,10 +134,12 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0101 | Keep one Route publication field and terminate public Ingress with Let's Encrypt | [Routes: Publish a public Route](/reference/routes#publish-a-public-route) |
 | 0102 | Read App instance analytics through a fleet driver | [Instance analytics stats](/reference/instance-analytics-stats) |
 | 0103 | Absorb Commander tasks as a Gateway extension | [Tasks: An optional, generic extension](/reference/tasks#an-optional-generic-extension) |
+| 0104 | Own CLIProxyAPI quota through the proxycli extension | [proxycli: Why it works this way](/reference/proxycli#why-it-works-this-way) |
 | 0105 | Name applications as Project and Instance | [Projects: Project and Instance](/reference/apps#project-and-instance) |
 | 0106 | Derive instance capabilities from Project type | [Projects: Project types](/reference/apps#project-types) |
 | 0107 | Key isolation and releases to Node role | [Instance environment variables: Laravel mode](/reference/environment-variables#laravel-mode), [Production release layout](/reference/deployments), and [Instance cloning](/reference/appinstance-cloning) |
 | 0108 | Persist managed environment on systemd Processes | [Processes and schedules: Environment of a systemd Process](/reference/app-processes-and-schedules#environment-of-a-systemd-process) |
+| 0109 | Publish the proxycli collector on a subdomain | [proxycli: A reserved name, not a Route](/reference/proxycli#a-reserved-name-not-a-route) |
 | 0110 | Route task sessions with Laravel AI Jev | [Tasks: Session routing (Jev routing removed)](/reference/tasks#session-routing) |
 | 0111 | Retain completed transfer history through AppInstance removal | [Instance removal: Keep unfinished transfer history](/reference/appinstance-removal#keep-unfinished-transfer-history) |
 | 0112 | Isolate agent threads behind drivers | [Tasks: Agent threads](/reference/tasks#agent-threads) |
@@ -178,6 +176,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0142 | Apply Plausible's ClickHouse configuration from the analytics role | [Analytics role: ClickHouse configuration](/reference/analytics#clickhouse-configuration) |
 | 0143 | Record topology evidence and sync without verification | [Incus topology registry: Evidence log](/reference/incus-topologies#evidence-log) |
 | 0144 | Migrate waiting connections when Caddy reloads | [Node provisioning: Caddy reloads](/reference/node-provisioning#caddy-reloads) |
+| 0145 | Publish the proxycli collector on collector.cli-proxy-api.orbit | [proxycli: A reserved name, not a Route](/reference/proxycli#a-reserved-name-not-a-route) |
 | 0146 | Retire the Herdr integration | [extension (Herdr is removed)](/cli/extension) |
 | 0147 | Retire orbit top | [Web app: One live fleet view](/reference/web-app#one-live-fleet-view) |
 | 0148 | Keep a Gateway view of Node agent state | [Node agent: Gateway view](/reference/node-agent#gateway-view) |
@@ -206,5 +205,6 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0171 | Reset fixup caps after operator work | [Tasks: Fix a settling pull request](/reference/tasks#fix-a-settling-pull-request) |
 | 0172 | Count every T3 model call in thread metrics | [Tasks: Thread token metrics](/reference/tasks#thread-token-metrics) |
 | 0173 | Record and label every Jev decision | [Tasks: Jev decision records](/reference/tasks#jev-decision-records) |
+| 0174 | Match the task gate to CI and repeated findings | [Feature delivery: The candidate gate](/reference/implementation-loop#the-candidate-gate) |
 | 0179 | Gate every extension surface with one Gateway switch | [extension: Why it works this way](/cli/extension#why-it-works-this-way) |
 | 0180 | Absorb built decisions into the documentation | [Architecture decisions: Why it works this way](/decisions/overview#why-it-works-this-way) |
