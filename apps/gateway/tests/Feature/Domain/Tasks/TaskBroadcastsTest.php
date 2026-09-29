@@ -21,18 +21,17 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
-use App\Models\TaskGroup;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 
-function live_group(string $status = 'running'): TaskGroup
+function live_group(string $status = 'running'): Task
 {
     $project = Project::query()->firstOrCreate(['slug' => 'live-tasks'], [
         'name' => 'Live tasks',
         'repository_url' => 'git@example.test:live-tasks.git',
         'default_branch' => 'main',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Secret title',
         'brief' => 'A brief that must never reach a broadcast.',

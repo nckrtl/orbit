@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Models\TaskGroup;
+use App\Models\Task;
 
 interface TaskSettleMetricsCollector
 {
-    public function collect(TaskGroup $group): TaskSettleMetrics;
+    public function collect(Task $group): TaskSettleMetrics;
 }

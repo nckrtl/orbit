@@ -15,7 +15,7 @@ use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\Schedule;
-use App\Models\TaskGroup;
+use App\Models\Task;
 use App\Models\Tool;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
@@ -58,9 +58,9 @@ final readonly class ServingNodeResolver
     {
         $group = $request->route('group');
 
-        if (! $group instanceof TaskGroup) {
+        if (! $group instanceof Task) {
             $id = $this->positiveInteger($group);
-            $group = $id === null ? null : TaskGroup::query()->find($id);
+            $group = $id === null ? null : Task::topLevel()->find($id);
         }
 
         $instance = $group?->taskable;

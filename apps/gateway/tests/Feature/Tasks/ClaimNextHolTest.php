@@ -24,7 +24,6 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskComment;
-use App\Models\TaskGroup;
 use Illuminate\Cache\ArrayStore;
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Database\DeadlockException;
@@ -83,12 +82,12 @@ it('claimNext continues after provision null', function (): void {
     {
         public function spawnReviewer(Task $task): ?int
         {
-            return test_agent_thread($task->taskGroup, 'claim-hol-reviewer-'.$task->task_group_id)->id;
+            return test_agent_thread($task->parent, 'claim-hol-reviewer-'.$task->task_group_id)->id;
         }
 
         public function spawnImplementer(Task $task): ?int
         {
-            return test_agent_thread($task->taskGroup, 'claim-hol-implementer-'.$task->task_group_id, $task)->id;
+            return test_agent_thread($task->parent, 'claim-hol-implementer-'.$task->task_group_id, $task)->id;
         }
 
         public function requestReview(Task $task): void {}
@@ -142,7 +141,7 @@ it('leaves every group untouched in todo and stops claiming when the fleet is fu
 
     expect($started)->toBe(0)
         ->and($provisioning->calls)->toBe(1)
-        ->and(array_map(static fn (TaskGroup $group): ?TaskGroupStatus => $group->fresh()?->status, $groups))->toBe([TaskGroupStatus::Todo, TaskGroupStatus::Todo, TaskGroupStatus::Todo])
+        ->and(array_map(static fn (Task $group): ?TaskGroupStatus => $group->fresh()?->status, $groups))->toBe([TaskGroupStatus::Todo, TaskGroupStatus::Todo, TaskGroupStatus::Todo])
         ->and($groups[0]->fresh()?->assistance_reason)->toBeNull()
         ->and($groups[1]->fresh()?->assistance_reason)->toBe(TaskScheduler::ProvisioningFailedReason)
         ->and($groups[2]->fresh()?->assistance_reason)->toBeNull();
@@ -206,7 +205,7 @@ it('tries a failing group once per tick', function (): void {
         ->and(count($provisioning->calls))->toBe(3)
         ->and($failing->fresh()?->status)->toBe(TaskGroupStatus::Todo)
         ->and($failing->fresh()?->assistance_reason)->toBe(TaskScheduler::ProvisioningFailedReason)
-        ->and(TaskGroup::query()->where('status', TaskGroupStatus::Running)->count())->toBe(2);
+        ->and(Task::topLevel()->where('status', TaskGroupStatus::Running)->count())->toBe(2);
 });
 
 it('returns a group to todo when provisioning throws and continues the tick with the next group', function (): void {
@@ -242,7 +241,7 @@ it('returns a group to todo when provisioning throws and continues the tick with
         ->and($failing->fresh()?->status)->toBe(TaskGroupStatus::Todo)
         ->and($failing->fresh()?->assistance_reason)->toBe(TaskScheduler::ProvisioningFailedReason)
         ->and($next->fresh()?->status)->toBe(TaskGroupStatus::Running)
-        ->and(TaskGroup::query()->where('status', TaskGroupStatus::Reserved)->count())->toBe(0)
+        ->and(Task::topLevel()->where('status', TaskGroupStatus::Reserved)->count())->toBe(0)
         ->and(app(TaskConcurrencyGuard::class)->activeForApp($project->id))->toBe(1);
 });
 
@@ -258,9 +257,9 @@ it('clears the provisioning failure reason when a group moves to backlog', funct
         ->and($group->fresh()?->assistance_reason)->toBeNull();
 });
 
-function claim_hol_group(Project $project, string $title): TaskGroup
+function claim_hol_group(Project $project, string $title): Task
 {
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => $title,
         'brief' => "{$title} brief",
@@ -326,12 +325,12 @@ function claim_hol_spawner(): void
     {
         public function spawnReviewer(Task $task): ?int
         {
-            return test_agent_thread($task->taskGroup, 'claim-hol-reviewer-'.$task->task_group_id)->id;
+            return test_agent_thread($task->parent, 'claim-hol-reviewer-'.$task->task_group_id)->id;
         }
 
         public function spawnImplementer(Task $task): ?int
         {
-            return test_agent_thread($task->taskGroup, 'claim-hol-implementer-'.$task->task_group_id, $task)->id;
+            return test_agent_thread($task->parent, 'claim-hol-implementer-'.$task->task_group_id, $task)->id;
         }
 
         public function requestReview(Task $task): void {}
@@ -358,7 +357,7 @@ describe('a start that fails after provisioning', function (): void {
             ->and($group?->assistance_reason)->toBe(TaskScheduler::StartFailedReason)
             ->and($group?->taskable?->is($provisioning->instances[$failing->id]))->toBeTrue()
             ->and($next->fresh()?->status)->toBe(TaskGroupStatus::Running)
-            ->and(TaskGroup::query()->where('status', TaskGroupStatus::Reserved)->count())->toBe(0)
+            ->and(Task::topLevel()->where('status', TaskGroupStatus::Reserved)->count())->toBe(0)
             ->and(app(TaskConcurrencyGuard::class)->activeForNode($provisioning->instances[$failing->id]->node_id))->toBe(1);
     });
 
@@ -555,8 +554,8 @@ describe('the abandoned workspace sweep', function (): void {
 
         expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1)
             ->and(Instance::query()->find($goodWorkspace->id))->toBeNull()
-            ->and(TaskGroup::query()->where('assistance_requested', true)->count())->toBe(5)
-            ->and(TaskGroup::query()->where('assistance_requested', true)->pluck('assistance_reason')->unique()->values()->all())
+            ->and(Task::topLevel()->where('assistance_requested', true)->count())->toBe(5)
+            ->and(Task::topLevel()->where('assistance_requested', true)->pluck('assistance_reason')->unique()->values()->all())
             ->toBe([RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.']);
         Exceptions::assertReportedCount(5);
 
@@ -742,12 +741,12 @@ describe('the abandoned workspace sweep', function (): void {
             /** @var list<string> */
             public array $commits = [];
 
-            public function publish(TaskGroup $group, string $body, string $commit): string
+            public function publish(Task $group, string $body, string $commit): string
             {
                 throw new TaskPullRequestException('Cancel never opens a pull request.');
             }
 
-            public function push(TaskGroup $group, string $commit): void
+            public function push(Task $group, string $commit): void
             {
                 $this->commits[] = $commit;
             }
@@ -775,12 +774,12 @@ describe('the abandoned workspace sweep', function (): void {
         ]);
         app()->instance(TaskPullRequestPublisher::class, new class implements TaskPullRequestPublisher
         {
-            public function publish(TaskGroup $group, string $body, string $commit): string
+            public function publish(Task $group, string $body, string $commit): string
             {
                 throw new TaskPullRequestException('Cancel never opens a pull request.');
             }
 
-            public function push(TaskGroup $group, string $commit): void
+            public function push(Task $group, string $commit): void
             {
                 throw new TaskPullRequestException('The task branch could not be pushed.');
             }
@@ -824,7 +823,7 @@ function claim_hol_failing_remover(int $secondsPerRemoval = 0): object
 }
 
 /** The group's deterministic workspace, as TaskWorkspaceProvisioner creates it. */
-function claim_hol_workspace(Project $project, TaskGroup $group, string $status = 'reserved'): Instance
+function claim_hol_workspace(Project $project, Task $group, string $status = 'reserved'): Instance
 {
     $name = 'task-'.$group->id;
     $workspace = claim_hol_instance($project, $name);
@@ -885,7 +884,7 @@ function claim_hol_recording_provisioning(Project $project): object
 function claim_hol_fail_first_start(int $groupId): void
 {
     $failed = false;
-    TaskGroup::saving(static function (TaskGroup $group) use ($groupId, &$failed): void {
+    Task::saving(static function (Task $group) use ($groupId, &$failed): void {
         if ($failed || $group->id !== $groupId || $group->status !== TaskGroupStatus::Running) {
             return;
         }

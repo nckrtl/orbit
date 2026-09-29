@@ -22,9 +22,8 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
-use App\Models\TaskGroup;
 
-function router_group(): TaskGroup
+function router_group(): Task
 {
     $project = Project::query()->create([
         'name' => 'router-app',
@@ -47,7 +46,7 @@ function router_group(): TaskGroup
         'branch' => 'task-21',
         'status' => 'source_resolved',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Execute Jev actions',
         'brief' => 'Drain, advance, escalate, or stay quiet.',
@@ -69,7 +68,7 @@ function router_group(): TaskGroup
     return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
 }
 
-function router_observation(TaskGroup $group, ?string $pendingApprovalId = null): TaskSessionObservation
+function router_observation(Task $group, ?string $pendingApprovalId = null): TaskSessionObservation
 {
     return new TaskSessionObservation(
         taskId: $group->tasks->first()->id,
@@ -180,19 +179,19 @@ it('notifies Coder only when Jev escalates', function (): void {
     $dispatcher = router_dispatcher();
     $notifier = new class implements CoderSettleNotifier
     {
-        public ?TaskGroup $escalated = null;
+        public ?Task $escalated = null;
 
         public ?TaskSessionDecision $decision = null;
 
-        public function notify(TaskGroup $group): void {}
+        public function notify(Task $group): void {}
 
-        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
+        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
         {
             $this->escalated = $group;
             $this->decision = $decision;
         }
 
-        public function assistance(TaskGroup $group, string $reason): void {}
+        public function assistance(Task $group, string $reason): void {}
     };
     $decision = new TaskSessionDecision(TaskSessionNextAction::EscalateCoder, 0.2, 'Choice confidence 0.2 is below 0.75.');
 
@@ -210,17 +209,17 @@ it('dispatches nothing for noop', function (): void {
     {
         public bool $called = false;
 
-        public function notify(TaskGroup $group): void
+        public function notify(Task $group): void
         {
             $this->called = true;
         }
 
-        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
+        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
         {
             $this->called = true;
         }
 
-        public function assistance(TaskGroup $group, string $reason): void {}
+        public function assistance(Task $group, string $reason): void {}
     };
 
     new TaskSessionActor(test_t3_registry($dispatcher), $notifier)->execute(

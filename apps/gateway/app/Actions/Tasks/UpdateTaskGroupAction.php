@@ -9,7 +9,6 @@ use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
 use App\Models\Task;
-use App\Models\TaskGroup;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -20,7 +19,7 @@ final readonly class UpdateTaskGroupAction
         private TaskScheduler $scheduler,
     ) {}
 
-    public function execute(TaskGroup $group, UpdateTaskGroupData $data): TaskGroup
+    public function execute(Task $group, UpdateTaskGroupData $data): Task
     {
         $group->requireManagedExecution();
         $this->requireExtension->execute();
@@ -28,8 +27,8 @@ final readonly class UpdateTaskGroupAction
             self::requireDeliverables($group->tasks()->get());
         }
         // The row lock makes a status move and a scheduler claim exclusive: whichever commits second sees the other's status.
-        $updated = DB::transaction(static function () use ($group, $data): TaskGroup {
-            $locked = TaskGroup::query()->with('tasks')->lockForUpdate()->findOrFail($group->id);
+        $updated = DB::transaction(static function () use ($group, $data): Task {
+            $locked = Task::topLevel()->with('tasks')->lockForUpdate()->findOrFail($group->id);
 
             if (($data->title !== null || $data->brief !== null) && $locked->status !== TaskGroupStatus::Backlog) {
                 throw TaskGroupGuard::notInBacklog();

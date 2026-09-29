@@ -13,7 +13,7 @@ use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Tasks\TaskPullRequestCheck;
 use App\Domain\Tasks\TaskPullRequestHealth;
 use App\Domain\Tasks\TaskPullRequestWatcher;
-use App\Models\TaskGroup;
+use App\Models\Task;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Throwable;
@@ -30,7 +30,7 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestWatche
 
     public function __construct(private RepositoryPullRequestAccess $access, private GitHubApi $github) {}
 
-    public function status(TaskGroup $group): ?string
+    public function status(Task $group): ?string
     {
         $target = $this->target($group);
         if ($target === null) {
@@ -50,7 +50,7 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestWatche
      * that could not start, and runs pending for more than 60 minutes are infrastructure, kept apart
      * from genuine failures (ADR 0164).
      */
-    public function health(TaskGroup $group): ?TaskPullRequestHealth
+    public function health(Task $group): ?TaskPullRequestHealth
     {
         $target = $this->target($group);
         if ($target === null) {
@@ -334,7 +334,7 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestWatche
     }
 
     /** @return array{GitHubRepository, int}|null */
-    private function target(TaskGroup $group): ?array
+    private function target(Task $group): ?array
     {
         $repository = GitHubRepository::fromOrigin((string) $group->project->repository_url);
         if (! $repository instanceof GitHubRepository || ! is_string($group->pr_url)) {

@@ -7,7 +7,7 @@ namespace App\Actions\Tasks;
 use App\Data\Tasks\TaskAssistanceData;
 use App\Data\Tasks\TasksStatusData;
 use App\Domain\Tasks\TaskExtensionState;
-use App\Models\TaskGroup;
+use App\Models\Task;
 
 final readonly class ShowTasksStatusAction
 {
@@ -15,12 +15,12 @@ final readonly class ShowTasksStatusAction
 
     public function execute(): TasksStatusData
     {
-        $assistance = array_values(TaskGroup::query()
+        $assistance = array_values(Task::topLevel()
             ->with('project')
             ->where('assistance_requested', true)
             ->orderBy('id')
             ->get()
-            ->map(static fn (TaskGroup $group): TaskAssistanceData => TaskAssistanceData::fromModel($group))
+            ->map(static fn (Task $group): TaskAssistanceData => TaskAssistanceData::fromModel($group))
             ->all());
 
         return new TasksStatusData(

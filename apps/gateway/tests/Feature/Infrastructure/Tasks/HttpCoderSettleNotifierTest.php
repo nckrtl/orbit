@@ -10,11 +10,11 @@ use App\Domain\Tasks\TaskThreadObservation;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Infrastructure\Tasks\HttpCoderSettleNotifier;
 use App\Models\Project;
-use App\Models\TaskGroup;
+use App\Models\Task;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
-function coder_settle_group(): TaskGroup
+function coder_settle_group(): Task
 {
     $project = Project::query()->create([
         'name' => 'coder-app',
@@ -23,7 +23,7 @@ function coder_settle_group(): TaskGroup
         'default_branch' => 'main',
     ]);
 
-    return TaskGroup::query()->create([
+    return Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Settle notify',
         'brief' => 'Notify Coder after the PR opens.',

@@ -7,11 +7,10 @@ namespace App\Domain\Tasks;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Task;
-use App\Models\TaskGroup;
 
 /**
- * Fills Task and TaskGroup settle metrics from agent observations and the
- * shared checkout. A refused agent read keeps the last stored thread values.
+ * Fills settle metrics on a top-level task and its subtasks from agent observations
+ * and the shared checkout. A refused agent read keeps the last stored thread values.
  */
 final readonly class TaskGroupMetricsRefresher
 {
@@ -20,7 +19,7 @@ final readonly class TaskGroupMetricsRefresher
         private TaskWorkspaceDiffReader $diff,
     ) {}
 
-    public function refresh(TaskGroup $group): TaskGroup
+    public function refresh(Task $group): Task
     {
         $group->loadMissing(['project', 'tasks', 'taskable']);
 

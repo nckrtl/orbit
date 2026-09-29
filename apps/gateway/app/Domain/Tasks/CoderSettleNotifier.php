@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Models\TaskGroup;
+use App\Models\Task;
 
 /**
  * Posts the opt-in HMAC-signed Coder settle webhook for a Task group.
@@ -14,9 +14,9 @@ use App\Models\TaskGroup;
  */
 interface CoderSettleNotifier
 {
-    public function notify(TaskGroup $group): void;
+    public function notify(Task $group): void;
 
-    public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void;
+    public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void;
 
-    public function assistance(TaskGroup $group, string $reason): void;
+    public function assistance(Task $group, string $reason): void;
 }

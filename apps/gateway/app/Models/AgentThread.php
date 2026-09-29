@@ -71,10 +71,14 @@ final class AgentThread extends Model
         return $this->belongsTo(Node::class);
     }
 
-    /** @return BelongsTo<TaskGroup, $this> */
-    public function taskGroup(): BelongsTo
+    /**
+     * The top-level task that owns this thread. The column still stores that id.
+     *
+     * @return BelongsTo<Task, $this>
+     */
+    public function parent(): BelongsTo
     {
-        return $this->belongsTo(TaskGroup::class);
+        return $this->belongsTo(Task::class, 'task_group_id')->withoutGlobalScope('subtask');
     }
 
     /** @return BelongsTo<Task, $this> */

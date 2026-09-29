@@ -9,7 +9,6 @@ use App\Domain\Tasks\TaskRunPullRequest;
 use App\Domain\Tasks\TaskSessionClassificationException;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\Task;
-use App\Models\TaskGroup;
 use Laravel\Ai\Classification;
 use Laravel\Ai\Classification\Boolean;
 use Laravel\Ai\Responses\Data\BooleanAnswer;
@@ -26,7 +25,7 @@ final readonly class LaravelAiTaskBriefCoverage implements TaskBriefCoverage
      * @param  list<string>|null  $approvalChanges
      * @return list<string>
      */
-    public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array
+    public function missing(Task $group, TaskRunPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array
     {
         $subtasks = $group->tasks()
             ->whereNotIn('status', [TaskStatus::Cancelled, TaskStatus::Failed])

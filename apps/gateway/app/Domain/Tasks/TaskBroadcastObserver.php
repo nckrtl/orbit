@@ -8,7 +8,6 @@ use App\Models\AgentThread;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
-use App\Models\TaskGroup;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -22,8 +21,7 @@ final readonly class TaskBroadcastObserver
     public function created(Model $model): void
     {
         match (true) {
-            $model instanceof TaskGroup => $this->broadcasts->groupCreated($model->id),
-            $model instanceof Task => $this->groupChanged($model),
+            $model instanceof Task => $this->createdTask($model),
             $model instanceof TaskCheck => $this->checkChanged($model),
             $model instanceof TaskComment => $this->broadcasts->commentCreated($model->id),
             $model instanceof AgentThread => $this->broadcasts->threadChanged($model->id),
@@ -36,7 +34,6 @@ final readonly class TaskBroadcastObserver
         $columns = array_keys($model->getChanges());
 
         match (true) {
-            $model instanceof TaskGroup => TaskBroadcasts::broadcastsGroupChange($columns) ? $this->broadcasts->groupChanged($model->id) : null,
             $model instanceof Task => TaskBroadcasts::broadcastsGroupChange($columns) ? $this->groupChanged($model) : null,
             $model instanceof TaskCheck => $this->checkChanged($model),
             $model instanceof AgentThread => TaskBroadcasts::broadcastsThreadChange($columns) ? $this->broadcasts->threadChanged($model->id) : null,
@@ -51,9 +48,35 @@ final readonly class TaskBroadcastObserver
         }
     }
 
+    private function createdTask(Task $task): void
+    {
+        if ($this->isTopLevel($task)) {
+            $this->broadcasts->groupCreated($task->id);
+
+            return;
+        }
+
+        $this->groupChanged($task);
+    }
+
     private function groupChanged(Task $task): void
     {
-        $this->broadcasts->groupChanged($task->task_group_id ?? $task->id);
+        $this->broadcasts->groupChanged($this->isTopLevel($task) ? $task->id : $task->requireGroupId());
+    }
+
+    /**
+     * A top-level insert never sets parent_id, so the key is absent until the row is reloaded.
+     * A subtask always has the key set to its parent.
+     */
+    private function isTopLevel(Task $task): bool
+    {
+        if (! TaskSchema::merged($task->getConnection())) {
+            return false;
+        }
+
+        $attributes = $task->getAttributes();
+
+        return ! array_key_exists('parent_id', $attributes) || $attributes['parent_id'] === null;
     }
 
     private function checkChanged(TaskCheck $check): void

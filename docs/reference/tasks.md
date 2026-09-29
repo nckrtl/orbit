@@ -7,7 +7,7 @@ covers:
   - "apps/gateway/app/Http/Requests/Tasks/**"
   - "apps/gateway/app/Http/Controllers/Api/{TasksController,TaskGroupsController,AgentThreadsController}.php"
   - "apps/gateway/app/Console/Commands/{TickTaskSessionsCommand,CollectT3MetricsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand}.php"
-  - "apps/gateway/app/Models/{TaskGroup,Task,TaskComment,TaskCheck,AgentThread,JevDecision}.php"
+  - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,AgentThread,JevDecision}.php"
   - "apps/gateway/resources/tasks/**"
   - "apps/gateway/database/migrations/*_{convert_test_deliverables_to_commands,add_continuation_source_to_tasks}.php"
 ---

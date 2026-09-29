@@ -13,7 +13,6 @@ use App\Models\Instance;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
-use App\Models\TaskGroup;
 
 /**
  * Stops a running Project check. The next tick gives the implementer its reminder
@@ -27,7 +26,7 @@ final readonly class CancelTaskCheckAction
         private TaskBroadcasts $broadcasts,
     ) {}
 
-    public function execute(TaskGroup $group, Task $task): TaskCheck
+    public function execute(Task $group, Task $task): TaskCheck
     {
         $this->requireExtension->execute();
         $check = $task->checks()->where('status', TaskCheckStatus::Running->value)->latest('id')->first();

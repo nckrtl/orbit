@@ -23,7 +23,6 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
-use App\Models\TaskGroup;
 use Tests\Support\AcceptingTaskWorkspaceMcp;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskRunReceipts;
@@ -43,7 +42,7 @@ function blocked_task(TaskStatus $status): Task
         'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-9',
         'checkout_path' => '/tmp/task-9', 'status' => 'source_resolved',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id, 'title' => 'Blocked', 'brief' => 'Unblock it.',
         'status' => $status === TaskStatus::Reviewing ? TaskGroupStatus::Reviewing : TaskGroupStatus::Running,
         'assistance_requested' => true, 'assistance_reason' => 'Blocked.',
@@ -98,7 +97,7 @@ it('sends a resolution for a blocked review to the reviewer and does not request
         ->and($task->review_notified_attempt)->toBe(4)
         ->and($task->completion_attempt)->toBe(2)
         ->and($task->resolution_delivered_comment_id)->toBe($comment->id)
-        ->and($task->taskGroup->assistance_requested)->toBeFalse();
+        ->and($task->parent->assistance_requested)->toBeFalse();
 });
 
 it('starts a fresh subtask reviewer with a review resolution when that thread does not exist', function (): void {
@@ -114,7 +113,7 @@ it('starts a fresh subtask reviewer with a review resolution when that thread do
         'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-136',
         'checkout_path' => '/tmp/task-136', 'branch' => 'task-136', 'status' => 'source_resolved',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id, 'title' => 'Resolutions', 'brief' => 'Route each resolution to its subtask.',
         'status' => TaskGroupStatus::Reviewing,
         'assistance_requested' => true, 'assistance_reason' => 'The review diff could not be read.',
@@ -170,7 +169,7 @@ it('starts a fresh subtask reviewer with a review resolution when that thread do
 
     expect($started)->toBe([])
         ->and($task->assistance_requested)->toBeFalse()
-        ->and($task->taskGroup->assistance_requested)->toBeFalse()
+        ->and($task->parent->assistance_requested)->toBeFalse()
         ->and($task->communication_failures)->toBe(0)
         ->and($task->review_attempt)->toBe(3)
         ->and($task->review_notified_attempt)->toBeNull()
@@ -195,7 +194,7 @@ it('starts a fresh subtask reviewer with a review resolution when that thread do
     $text = implode("\n", array_map(static fn (array $command): string => (string) data_get($command, 'message.text'), $opening));
 
     expect($reviewer->id)->not->toBe($earlierReviewer->id)
-        ->and($task->taskGroup->reviewer_agent_thread_id)->toBe($reviewer->id)
+        ->and($task->parent->reviewer_agent_thread_id)->toBe($reviewer->id)
         ->and($task->review_attempt)->toBe(3)
         ->and($task->review_notified_attempt)->toBe(3)
         ->and($task->resolution_delivered_comment_id)->toBe($comment->id)

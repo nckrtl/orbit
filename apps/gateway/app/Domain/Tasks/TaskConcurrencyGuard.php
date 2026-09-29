@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Models\Instance;
-use App\Models\TaskGroup;
+use App\Models\Task;
 use Illuminate\Database\Eloquent\Builder;
 
 final readonly class TaskConcurrencyGuard
 {
-    public function canActivate(TaskGroup $group): bool
+    public function canActivate(Task $group): bool
     {
         $nodeId = $this->nodeId($group);
 
@@ -40,17 +40,17 @@ final readonly class TaskConcurrencyGuard
             ->count();
     }
 
-    public function nodeId(TaskGroup $group): ?int
+    public function nodeId(Task $group): ?int
     {
         $taskable = $group->taskable;
 
         return $taskable instanceof Instance ? $taskable->node_id : null;
     }
 
-    /** @return Builder<TaskGroup> */
+    /** @return Builder<Task> */
     private function activeQuery(?int $exceptGroupId): Builder
     {
-        return TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
+        return Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
             ->whereIn('status', array_map(
                 static fn (TaskGroupStatus $status): string => $status->value,
                 TaskGroupStatus::active(),

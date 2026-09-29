@@ -15,4 +15,20 @@ enum TaskStatus: string
     case Completed = 'completed';
     case Failed = 'failed';
     case Cancelled = 'cancelled';
+
+    /** @return list<self> */
+    public static function active(): array
+    {
+        return [
+            self::Reserved,
+            self::Running,
+            self::Reviewing,
+            self::Settling,
+        ];
+    }
+
+    public function isActive(): bool
+    {
+        return in_array($this, self::active(), true);
+    }
 }

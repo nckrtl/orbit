@@ -14,7 +14,7 @@ use App\Infrastructure\Tasks\GitHubTaskPullRequestPublisher;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
-use App\Models\TaskGroup;
+use App\Models\Task;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Symfony\Component\Process\Process;
@@ -29,12 +29,12 @@ function publisher_git(string $directory, array $arguments): string
     return trim((new Process(['git', '-C', $directory, '-c', 'user.name=t', '-c', 'user.email=t@t', ...$arguments]))->mustRun()->getOutput());
 }
 
-function publisher_group(string $checkout, string $repository = 'git@github.com:acme/shop.git'): TaskGroup
+function publisher_group(string $checkout, string $repository = 'git@github.com:acme/shop.git'): Task
 {
     $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => $repository, 'default_branch' => 'main']);
     $node = Node::query()->create(['name' => 'publish-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.150', 'wireguard_ip' => '10.44.0.150', 'user' => 'orbit']);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-7', 'checkout_path' => $checkout, 'branch' => 'task-7', 'status' => 'source_resolved']);
-    $group = TaskGroup::query()->create(['project_id' => $project->id, 'title' => 'Export orders', 'brief' => 'Add an export.', 'status' => 'reviewing']);
+    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Export orders', 'brief' => 'Add an export.', 'status' => 'reviewing']);
     $group->taskable()->associate($instance);
     $group->save();
 
@@ -107,7 +107,7 @@ it('pushes the task branch with a pull request token and opens the pull request'
     Http::assertSent(static fn (Request $request): bool => str_ends_with($request->url(), '/access_tokens')
         && $request->data() === ['repositories' => ['shop'], 'permissions' => ['contents' => 'write', 'pull_requests' => 'write', 'workflows' => 'write']]);
     Http::assertSent(static fn (Request $request): bool => $request->method() === 'POST' && $request->url() === 'https://api.github.com/repos/acme/shop/pulls'
-        && $request->data() === ['title' => 'Export orders', 'head' => 'task-'.TaskGroup::query()->sole()->id, 'base' => 'main', 'body' => "Adds the export.\n"]
+        && $request->data() === ['title' => 'Export orders', 'head' => 'task-'.Task::topLevel()->sole()->id, 'base' => 'main', 'body' => "Adds the export.\n"]
         && $request->hasHeader('Authorization', 'Bearer ghs_publish'));
 });
 
@@ -139,7 +139,7 @@ it('sends the token only on the standard input of the push', function (): void {
     publisher($transport)->publish(publisher_group('/srv/orbit/apps/shop/task-7'), 'Body', $commit);
 
     $command = $transport->commands[0];
-    expect($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'task-'.TaskGroup::query()->sole()->id, $commit])
+    expect($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'task-'.Task::topLevel()->sole()->id, $commit])
         ->and($command->input)->toBeNull()
         ->and(stream_get_contents($command->protectedInput?->stream()))->toContain(base64_encode('x-access-token:ghs_publish'))
         ->and(stream_get_contents($command->protectedInput?->stream()))->toContain('git_read git -C "$checkout" push --quiet origin "$commit:refs/heads/$branch"')

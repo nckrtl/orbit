@@ -21,7 +21,7 @@ final readonly class DispatchAnnotationsAction
     public function execute(): int
     {
         $sent = 0;
-        $candidates = Annotation::query()->with('task.taskGroup')->whereHas('task', static fn ($q) => $q->where('status', TaskStatus::Todo)->whereHas('taskGroup', static fn ($g) => $g->where('execution_mode', TaskExecutionMode::ExistingThread)))->whereIn('delivery', ['queued', 'sending'])
+        $candidates = Annotation::query()->with('task.parent')->whereHas('task', static fn ($q) => $q->where('status', TaskStatus::Todo)->whereHas('parent', static fn ($g) => $g->where('execution_mode', TaskExecutionMode::ExistingThread)))->whereIn('delivery', ['queued', 'sending'])
             ->whereHas('instance', static fn ($q) => $q->where('status', '!=', 'removing'))->whereNotNull('instance_id')->where(static fn ($q) => $q->whereNull('lease_until')->orWhere('lease_until', '<', now()))
             ->orderBy('submission_order')->limit(20)->get();
         foreach ($candidates as $candidate) {

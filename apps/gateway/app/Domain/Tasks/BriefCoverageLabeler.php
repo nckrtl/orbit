@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Models\TaskGroup;
+use App\Models\Task;
 
 interface BriefCoverageLabeler
 {
-    public function label(TaskGroup $group, TaskPullRequestHealth $merge): void;
+    public function label(Task $group, TaskPullRequestHealth $merge): void;
 }

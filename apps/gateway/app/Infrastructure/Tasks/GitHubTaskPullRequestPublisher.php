@@ -19,7 +19,7 @@ use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
-use App\Models\TaskGroup;
+use App\Models\Task;
 use SensitiveParameter;
 
 /**
@@ -43,7 +43,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         private DevelopmentSshExecutor $ssh,
     ) {}
 
-    public function publish(TaskGroup $group, string $body, string $commit): string
+    public function publish(Task $group, string $body, string $commit): string
     {
         [$repository, $instance, $branch] = $this->target($group);
         $base = $group->project->default_branch;
@@ -61,7 +61,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         }
     }
 
-    public function push(TaskGroup $group, string $commit): void
+    public function push(Task $group, string $commit): void
     {
         [$repository, $instance, $branch] = $this->target($group);
 
@@ -77,7 +77,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
      *
      * @throws TaskPullRequestException
      */
-    private function target(TaskGroup $group): array
+    private function target(Task $group): array
     {
         $group->loadMissing(['project', 'taskable']);
         $repository = GitHubRepository::fromOrigin((string) $group->project->repository_url);

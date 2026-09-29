@@ -8,7 +8,6 @@ use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Models\Instance;
 use App\Models\Task;
-use App\Models\TaskGroup;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
@@ -45,7 +44,7 @@ final class TaskGroupData extends Data
         public TaskExecutionMode $executionMode,
     ) {}
 
-    public static function fromModel(TaskGroup $group): self
+    public static function fromModel(Task $group): self
     {
         $group->loadMissing(['project', 'tasks']);
         $taskable = $group->taskable;
@@ -61,7 +60,7 @@ final class TaskGroupData extends Data
             taskableId: $group->taskable_id,
             title: $group->title,
             brief: $group->brief,
-            status: $group->status,
+            status: $group->status instanceof TaskGroupStatus ? $group->status : TaskGroupStatus::from($group->status->value),
             reviewerAgentThreadId: $group->reviewer_agent_thread_id,
             prUrl: $group->pr_url,
             notifyCoder: $group->notify_coder,

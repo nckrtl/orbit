@@ -8,7 +8,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
-use App\Models\TaskGroup;
+use App\Models\Task;
 
 function agent_workspace_node(string $name, string $address): Node
 {
@@ -37,7 +37,7 @@ function agent_workspace_group(Node $node, string $name, TaskGroupStatus $status
         'status' => 'source_resolved',
         'starting_commit' => $start,
     ]);
-    $group = TaskGroup::query()->create(['project_id' => $project->id, 'title' => $name, 'brief' => 'Brief', 'status' => $status]);
+    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => $name, 'brief' => 'Brief', 'status' => $status]);
     $group->taskable()->associate($instance);
     $group->save();
 

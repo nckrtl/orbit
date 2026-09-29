@@ -5,19 +5,19 @@ declare(strict_types=1);
 use App\Domain\Tasks\TaskPullRequestCheck;
 use App\Infrastructure\Tasks\HttpTaskPullRequestWatcher;
 use App\Models\Project;
-use App\Models\TaskGroup;
+use App\Models\Task;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Tests\Feature\GitHub\GitHubTestSupport;
 
-function watcher_group(string $url = 'https://github.com/acme/orbit/pull/42'): TaskGroup
+function watcher_group(string $url = 'https://github.com/acme/orbit/pull/42'): Task
 {
     $project = Project::query()->create([
         'name' => 'Watcher App', 'slug' => 'watcher-app',
         'repository_url' => 'https://github.com/acme/orbit.git', 'default_branch' => 'main',
     ]);
 
-    return TaskGroup::query()->create([
+    return Task::topLevel()->create([
         'project_id' => $project->id, 'title' => 'Watch PR', 'brief' => 'Verify PR state',
         'status' => 'settling', 'pr_url' => $url,
     ])->load('project');
@@ -262,14 +262,14 @@ it('reads the check runs of one head commit at most once a minute', function ():
     ));
 
     $first = $watcher->health(watcher_group());
-    $second = $watcher->health(TaskGroup::query()->sole()->load('project'));
+    $second = $watcher->health(Task::topLevel()->sole()->load('project'));
 
     expect($first?->problems)->toBe(['Check Rust agent failed: https://github.com/acme/orbit/runs/1.'])
         ->and($second?->problems)->toBe($first?->problems)
         ->and($checkRunReads())->toBe(1);
 
     $this->travel(61)->seconds();
-    $watcher->health(TaskGroup::query()->sole()->load('project'));
+    $watcher->health(Task::topLevel()->sole()->load('project'));
 
     expect($checkRunReads())->toBe(2);
 });

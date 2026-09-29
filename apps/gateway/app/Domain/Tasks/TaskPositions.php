@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Models\Task;
-use App\Models\TaskGroup;
 
 /** Keeps a group's subtask positions a gapless sequence from 1 under the unique (task_group_id, position) index. */
 final class TaskPositions
@@ -14,7 +13,7 @@ final class TaskPositions
     private const int Offset = 1_000_000;
 
     /** @param  list<int>  $orderedIds */
-    public static function assign(TaskGroup $group, array $orderedIds): void
+    public static function assign(Task $group, array $orderedIds): void
     {
         Task::query()->where('task_group_id', $group->id)->increment('position', self::Offset);
 

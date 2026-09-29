@@ -10,13 +10,12 @@ use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\Task;
-use App\Models\TaskGroup;
 
 final readonly class CreateTaskAction
 {
     public function __construct(private RequireTasksExtensionAction $requireExtension) {}
 
-    public function execute(TaskGroup $group, CreateTaskData $data): Task
+    public function execute(Task $group, CreateTaskData $data): Task
     {
         $group->requireManagedExecution();
         $this->requireExtension->execute();

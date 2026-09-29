@@ -15,9 +15,8 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
-use App\Models\TaskGroup;
 
-function observer_group(): TaskGroup
+function observer_group(): Task
 {
     $project = Project::query()->create([
         'name' => 'observe-app',
@@ -41,7 +40,7 @@ function observer_group(): TaskGroup
         'status' => 'source_resolved',
         'starting_commit' => str_repeat('a', 40),
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Observe idle sessions',
         'brief' => 'Route idle implementer threads.',

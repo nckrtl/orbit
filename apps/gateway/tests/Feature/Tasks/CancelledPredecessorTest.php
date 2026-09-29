@@ -8,7 +8,6 @@ use App\Domain\Tasks\TaskSequenceException;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\Project;
 use App\Models\Task;
-use App\Models\TaskGroup;
 
 function predecessor_task_group(TaskStatus $predecessorStatus): array
 {
@@ -18,7 +17,7 @@ function predecessor_task_group(TaskStatus $predecessorStatus): array
         'repository_url' => 'git@example.test:predecessor-test.git',
         'default_branch' => 'main',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Sequential tasks',
         'brief' => 'Run tasks in order.',

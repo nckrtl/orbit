@@ -102,7 +102,7 @@ final class CollectT3MetricsCommand extends Command
 
     private function isSettled(AgentThread $thread): bool
     {
-        $group = $thread->taskGroup;
+        $group = $thread->parent;
         if ($group === null || in_array($group->status, [TaskGroupStatus::Completed, TaskGroupStatus::Failed, TaskGroupStatus::Cancelled], true)) {
             return true;
         }

@@ -21,7 +21,6 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
-use App\Models\TaskGroup;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskCheckRunner;
@@ -30,7 +29,7 @@ use Tests\Support\FakeTaskRunReceipts;
 /**
  * A running group on an Instance whose first subtask is in its baseline check and whose second waits.
  *
- * @return array{TaskGroup, Task, Task, TaskCheck, FakeTaskCheckRunner, object, Node}
+ * @return array{Task, Task, Task, TaskCheck, FakeTaskCheckRunner, object, Node}
  */
 function cancel_subtask_in_baseline(int $suffix): array
 {
@@ -62,7 +61,7 @@ function cancel_subtask_in_baseline(int $suffix): array
         'checkout_path' => '/srv/orbit/apps/cancel-baseline/task-workspace',
         'status' => 'source_resolved',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Cancel during baseline',
         'brief' => 'Stop the baseline check.',
@@ -168,7 +167,7 @@ it('cancel running subtask preserves its group and Instance', function (): void 
         'checkout_path' => '/srv/orbit/apps/cancel-subtask/task-workspace',
         'status' => 'source_resolved',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Cancel one subtask',
         'brief' => 'Keep the group workspace.',
@@ -246,7 +245,7 @@ it('cancel running subtask preserves its group and Instance', function (): void 
 
         public function spawnImplementer(Task $task): ?int
         {
-            $group = $task->taskGroup;
+            $group = $task->parent;
             $instance = $group->taskable;
             if (! $instance instanceof Instance) {
                 return null;
@@ -300,7 +299,7 @@ it('cancels a running subtask through the generated MCP tool', function (): void
         'repository_url' => 'git@example.test:cancel-via-mcp.git',
         'default_branch' => 'main',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Cancel via MCP',
         'brief' => 'Use the generated tool.',
@@ -349,7 +348,7 @@ it('retries after an interrupt failure and settles when cancelling the last subt
         'repository_url' => 'git@example.test:cancel-retry.git',
         'default_branch' => 'main',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Cancel final subtask',
         'brief' => 'Retry and settle.',
@@ -411,7 +410,7 @@ it('returns a conflict when the subtask is neither todo nor running', function (
         'repository_url' => 'git@example.test:cancel-idle-subtask.git',
         'default_branch' => 'main',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Not running',
         'brief' => 'Reject cancellation.',

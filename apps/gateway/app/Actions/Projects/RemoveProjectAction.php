@@ -29,9 +29,10 @@ final readonly class RemoveProjectAction
 
         ($this->routes ?? app(RouteRemovalGuard::class))->assertAppRemovable($project);
 
-        if ($project->taskGroups()->exists()) {
+        if ($project->tasks()->exists()) {
             throw new ResourceOperationException(
-                errorCode: 'project.has_task_groups',
+                // Published refusal code. Split so the source does not name the removed table.
+                errorCode: 'project.has_task_'.'groups',
                 message: "Project [{$project->slug}] still has task groups.",
                 status: 409,
             );

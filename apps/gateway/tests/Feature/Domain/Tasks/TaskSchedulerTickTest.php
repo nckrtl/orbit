@@ -56,7 +56,6 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
-use App\Models\TaskGroup;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
@@ -73,7 +72,7 @@ use Tests\Support\FakeTaskRunReceipts;
 
 use function Pest\Laravel\mock;
 
-function tick_group(): TaskGroup
+function tick_group(): Task
 {
     $project = Project::query()->create([
         'name' => 'tick-app',
@@ -97,7 +96,7 @@ function tick_group(): TaskGroup
         'branch' => 'task-21',
         'status' => 'source_resolved',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Tick routing',
         'brief' => 'Observe, classify, and execute.',
@@ -413,7 +412,7 @@ it('flags a prior settling group without a reviewed PR once and retains its work
     $group->tasks()->update(['status' => TaskStatus::Completed]);
     app(TaskExtensionState::class)->enable();
     mock(CoderSettleNotifier::class)->shouldReceive('assistance')->once()->withArgs(
-        fn (TaskGroup $blocked, string $reason): bool => $blocked->id === $group->id && str_contains($reason, 'no reviewed pull request URL'),
+        fn (Task $blocked, string $reason): bool => $blocked->id === $group->id && str_contains($reason, 'no reviewed pull request URL'),
     );
     Http::preventStrayRequests();
 
@@ -563,7 +562,7 @@ it('continues watching a prior settling PR and completes only after it merges', 
 });
 
 /** A settling group whose pull request the tick reads through the faked GitHub App. */
-function tick_settling_group(): TaskGroup
+function tick_settling_group(): Task
 {
     $group = tick_group();
     $group->project->update(['repository_url' => 'https://github.com/acme/orbit.git']);
@@ -576,7 +575,7 @@ function tick_settling_group(): TaskGroup
 }
 
 /** A subtask an operator appended. Its fixup identity stays null, so the cap ignores it. */
-function tick_appended_subtask(TaskGroup $group): Task
+function tick_appended_subtask(Task $group): Task
 {
     return Task::query()->create([
         'task_group_id' => $group->id,
@@ -592,7 +591,7 @@ function tick_appended_subtask(TaskGroup $group): Task
 }
 
 /** One earlier fixup. Every status counts toward the cap. An approved commit, when given, is what the fixup pushed. */
-function tick_spent_fixup(TaskGroup $group, string $problem, TaskStatus $status = TaskStatus::Completed, ?string $headSha = null, ?string $commit = null): Task
+function tick_spent_fixup(Task $group, string $problem, TaskStatus $status = TaskStatus::Completed, ?string $headSha = null, ?string $commit = null): Task
 {
     $task = Task::query()->create([
         'task_group_id' => $group->id,
@@ -684,12 +683,12 @@ function tick_running_agents(bool $fetchFails = false, bool $fastForwardFails = 
             $this->spawned[] = $task->id;
             $this->events[] = 'spawn';
 
-            return test_agent_thread($task->taskGroup, 'fixup-implementer-'.$task->id, $task)->id;
+            return test_agent_thread($task->parent, 'fixup-implementer-'.$task->id, $task)->id;
         }
 
         public function requestReview(Task $task): void {}
 
-        public function fetch(TaskGroup $group, string $base): void
+        public function fetch(Task $group, string $base): void
         {
             $this->fetched[] = $base;
             $this->events[] = 'fetch';
@@ -698,7 +697,7 @@ function tick_running_agents(bool $fetchFails = false, bool $fastForwardFails = 
             }
         }
 
-        public function fastForward(TaskGroup $group, bool $missingRefOk = false): void
+        public function fastForward(Task $group, bool $missingRefOk = false): void
         {
             $this->fastForwards++;
             $this->missingRefOk = $missingRefOk;
@@ -722,11 +721,11 @@ function tick_assistance_notifier(): CoderSettleNotifier
         /** @var list<string> */
         public array $reasons = [];
 
-        public function notify(TaskGroup $group): void {}
+        public function notify(Task $group): void {}
 
-        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
+        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
 
-        public function assistance(TaskGroup $group, string $reason): void
+        public function assistance(Task $group, string $reason): void
         {
             $this->reasons[] = $reason;
         }
@@ -961,7 +960,7 @@ it('uses backoff for publication and removal retries and retries a failed manual
         }
     };
     app()->instance(InstanceRemover::class, $remover);
-    $ended = TaskGroup::query()->create([
+    $ended = Task::topLevel()->create([
         'project_id' => $group->project_id,
         'title' => 'Ended',
         'brief' => 'Remove the workspace.',
@@ -1005,7 +1004,7 @@ it('uses backoff for publication and removal retries and retries a failed manual
     app(TaskScheduler::class)->removeAbandonedWorkspaces();
     expect($remover->attempts)->toHaveCount(4);
 
-    $settling = TaskGroup::query()->create([
+    $settling = Task::topLevel()->create([
         'project_id' => $group->project_id,
         'title' => 'Manual complete',
         'brief' => 'The operator completes it.',
@@ -1029,7 +1028,7 @@ it('uses backoff for publication and removal retries and retries a failed manual
         ->and($completed->taskable_id)->toBe($kept->id)
         ->and($completed->assistance_reason)->toBe(RemoveTaskWorkspaceAction::RemovalFailedPrefix.'disk full');
 
-    $other = TaskGroup::query()->create([
+    $other = Task::topLevel()->create([
         'project_id' => $group->project_id,
         'title' => 'Other cause',
         'brief' => 'Keep the question.',
@@ -1764,7 +1763,7 @@ it('reports a throwing brief coverage labeler and continues the tick', function 
     Exceptions::fake();
     app()->instance(BriefCoverageLabeler::class, new class implements BriefCoverageLabeler
     {
-        public function label(TaskGroup $group, TaskPullRequestHealth $health): void
+        public function label(Task $group, TaskPullRequestHealth $health): void
         {
             throw new RuntimeException('labeling failed');
         }
@@ -1848,14 +1847,14 @@ it('escalates to Coder when a drain dispatch fails', function (): void {
     {
         public ?string $reason = null;
 
-        public function notify(TaskGroup $group): void {}
+        public function notify(Task $group): void {}
 
-        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
+        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
         {
             $this->reason = $decision->reason;
         }
 
-        public function assistance(TaskGroup $group, string $reason): void
+        public function assistance(Task $group, string $reason): void
         {
             $this->reason = $reason;
         }
@@ -1899,12 +1898,12 @@ it('advances the current subtask when Jev marks it done', function (): void {
         {
             $this->spawned++;
 
-            return test_agent_thread($task->taskGroup, 'reviewer-thread')->id;
+            return test_agent_thread($task->parent, 'reviewer-thread')->id;
         }
 
         public function spawnImplementer(Task $task): ?int
         {
-            return test_agent_thread($task->taskGroup, 'implementer-thread', $task)->id;
+            return test_agent_thread($task->parent, 'implementer-thread', $task)->id;
         }
 
         public function requestReview(Task $task): void {}
@@ -2027,7 +2026,7 @@ it('records a legacy turn read failure without skipping the other group', functi
         'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-22',
         'checkout_path' => '/srv/orbit/apps/tick-review-legacy/task-22', 'branch' => 'task-22', 'status' => 'source_resolved',
     ]);
-    $reviewing = TaskGroup::query()->create([
+    $reviewing = Task::topLevel()->create([
         'project_id' => $project->id, 'title' => 'Tick review', 'brief' => 'Review the records.', 'status' => TaskGroupStatus::Reviewing,
     ]);
     $reviewing->taskable()->associate($instance);
@@ -2151,17 +2150,17 @@ it('resumes a Pi implementer restarted during the turn instead of asking for ass
     {
         public bool $called = false;
 
-        public function notify(TaskGroup $group): void
+        public function notify(Task $group): void
         {
             $this->called = true;
         }
 
-        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
+        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
         {
             $this->called = true;
         }
 
-        public function assistance(TaskGroup $group, string $reason): void
+        public function assistance(Task $group, string $reason): void
         {
             $this->called = true;
         }
@@ -2178,7 +2177,7 @@ it('resumes a Pi implementer restarted during the turn instead of asking for ass
     expect($fresh?->assistance_reason)->toBeNull()
         ->and($fresh?->assistance_requested)->toBeFalse()
         ->and($fresh?->status)->toBe(TaskStatus::Running)
-        ->and($task->taskGroup->fresh()?->assistance_requested)->toBeFalse()
+        ->and($task->parent->fresh()?->assistance_requested)->toBeFalse()
         ->and($notifier->called)->toBeFalse()
         ->and($sent)->toBeInstanceOf(Request::class)
         ->and($sent['text'])->toBe('Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the run script.')
@@ -2217,7 +2216,7 @@ it('asks for assistance when a Pi implementer fails for another reason', functio
 
     expect($task->fresh()?->assistance_requested)->toBeTrue()
         ->and($task->fresh()?->assistance_reason)->toBe('The implementer thread failed.')
-        ->and($task->taskGroup->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->parent->fresh()?->assistance_requested)->toBeTrue()
         ->and(tick_pi_message_keys())->toBe([])
         ->and($task->fresh()?->pi_restart_resumes)->toBe(0);
 });
@@ -2372,7 +2371,7 @@ it('does not reset Pi resumes when a resolution is delivered and asks after the 
 
 it('does not send an implementer Pi resume to the reviewer', function (): void {
     $task = tick_pi_implementer();
-    $reviewer = AgentThread::query()->findOrFail($task->taskGroup->reviewer_agent_thread_id);
+    $reviewer = AgentThread::query()->findOrFail($task->parent->reviewer_agent_thread_id);
     $reviewer->update(['driver' => 'pi']);
     $implementer = (object) ['state' => 'failed', 'error' => 'The Pi server restarted during the turn.', 'turnId' => 'impl-turn'];
     $review = (object) ['state' => 'idle', 'error' => null, 'turnId' => 'old-review'];
@@ -2406,7 +2405,7 @@ it('does not send an implementer Pi resume to the reviewer', function (): void {
         ->and($messages[0]['session'])->toBe('implementer-thread')
         ->and($messages[0]['key'])->toBe($implementerKey);
 
-    $task->taskGroup->update(['status' => TaskGroupStatus::Reviewing]);
+    $task->parent->update(['status' => TaskGroupStatus::Reviewing]);
     $task->update([
         'status' => TaskStatus::Reviewing,
         'review_notified_attempt' => $task->review_attempt,
@@ -2904,11 +2903,11 @@ it('reminds an implementer that ends a turn without a receipt once, then asks fo
     {
         public ?string $reason = null;
 
-        public function notify(TaskGroup $group): void {}
+        public function notify(Task $group): void {}
 
-        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
+        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
 
-        public function assistance(TaskGroup $group, string $reason): void
+        public function assistance(Task $group, string $reason): void
         {
             $this->reason = $reason;
         }
@@ -2978,17 +2977,17 @@ it('dispatches nothing when Jev selects noop', function (): void {
     {
         public bool $called = false;
 
-        public function notify(TaskGroup $group): void
+        public function notify(Task $group): void
         {
             $this->called = true;
         }
 
-        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
+        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
         {
             $this->called = true;
         }
 
-        public function assistance(TaskGroup $group, string $reason): void
+        public function assistance(Task $group, string $reason): void
         {
             $this->called = true;
         }
@@ -3145,11 +3144,11 @@ it('reminds the implementer with the failing check output once, then asks for as
     {
         public ?string $reason = null;
 
-        public function notify(TaskGroup $group): void {}
+        public function notify(Task $group): void {}
 
-        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
+        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
 
-        public function assistance(TaskGroup $group, string $reason): void
+        public function assistance(Task $group, string $reason): void
         {
             $this->reason = $reason;
         }
@@ -3264,7 +3263,7 @@ it('retries the reviewer nudge until the handoff send succeeds', function (): vo
             if ($this->spawns === 1) {
                 return null;
             }
-            $thread = test_agent_thread($task->taskGroup, 'reviewer-spawned');
+            $thread = test_agent_thread($task->parent, 'reviewer-spawned');
             $thread->update(['task_id' => $task->id]);
 
             return $thread->id;
@@ -3579,7 +3578,7 @@ it('retains reminder send failures across successful classifications and clears 
  * a later subtask waits behind it.
  *
  * @param  list<string|null>  $receipts
- * @return array{TaskGroup, Task, FakeTaskRunReceipts, object, object}
+ * @return array{Task, Task, FakeTaskRunReceipts, object, object}
  */
 /** @return array{review_workspace_head: string, review_workspace_tree: string} */
 function tick_review_baseline(): array
@@ -3644,14 +3643,14 @@ function tick_review(array $receipts, bool $onBranch = true, bool $last = false)
 
         public int $pushFailures = 0;
 
-        public function publish(TaskGroup $group, string $body, string $commit): string
+        public function publish(Task $group, string $body, string $commit): string
         {
             $this->bodies[] = $body;
 
             return 'https://github.com/acme/orbit/pull/42';
         }
 
-        public function push(TaskGroup $group, string $commit): void
+        public function push(Task $group, string $commit): void
         {
             $this->pushes[] = $group->id;
             if ($this->pushFailures > 0) {
@@ -3788,7 +3787,7 @@ it('commits an approved subtask with the title and the reviewer summary, then st
         {
             $this->implementers[] = $task->id;
 
-            return test_agent_thread($task->taskGroup, 'implementer-'.$task->id, $task)->id;
+            return test_agent_thread($task->parent, 'implementer-'.$task->id, $task)->id;
         }
 
         public function requestReview(Task $task): void {}
@@ -3907,7 +3906,7 @@ it('starts the reviewer with the first review request when the group has no revi
         {
             $this->reviewers[] = $task->id;
 
-            return test_agent_thread($task->taskGroup, 'reviewer-thread-2')->id;
+            return test_agent_thread($task->parent, 'reviewer-thread-2')->id;
         }
 
         public function spawnImplementer(Task $task): ?int
@@ -3953,7 +3952,7 @@ function tick_publishing(array $missing = [[]], int $failures = 0): object
         /** @param list<list<string>> $missing */
         public function __construct(private array $missing) {}
 
-        public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array
+        public function missing(Task $group, TaskRunPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array
         {
             $this->calls++;
             $this->approvalCommentId = $approvalCommentId;
@@ -3972,7 +3971,7 @@ function tick_publishing(array $missing = [[]], int $failures = 0): object
 
         public function __construct(private int $failures) {}
 
-        public function publish(TaskGroup $group, string $body, string $commit): string
+        public function publish(Task $group, string $body, string $commit): string
         {
             $this->bodies[] = $body;
             if ($this->failures-- > 0) {
@@ -3982,7 +3981,7 @@ function tick_publishing(array $missing = [[]], int $failures = 0): object
             return 'https://github.com/acme/orbit/pull/42';
         }
 
-        public function push(TaskGroup $group, string $commit): void
+        public function push(Task $group, string $commit): void
         {
             $this->pushes[] = $group->id;
         }
@@ -4174,7 +4173,7 @@ it('counts a failed coverage answer as a communication failure', function (): vo
     tick_publishing();
     app()->instance(TaskBriefCoverage::class, new class implements TaskBriefCoverage
     {
-        public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array
+        public function missing(Task $group, TaskRunPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array
         {
             throw new TaskSessionClassificationException('TypeSafe Jev request failed (ConnectionException).');
         }
@@ -4191,7 +4190,7 @@ it('counts a failed coverage answer as a communication failure', function (): vo
  * A running task whose idle implementer ended its turn with ready_for_review, with the given check readings.
  *
  * @param  list<TaskCheckReading>  $readings
- * @return array{TaskGroup, Task, FakeTaskCheckRunner, object}
+ * @return array{Task, Task, FakeTaskCheckRunner, object}
  */
 function tick_checking(array $readings): array
 {
@@ -4211,11 +4210,11 @@ function tick_checking(array $readings): array
     {
         public ?string $reason = null;
 
-        public function notify(TaskGroup $group): void {}
+        public function notify(Task $group): void {}
 
-        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
+        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
 
-        public function assistance(TaskGroup $group, string $reason): void
+        public function assistance(Task $group, string $reason): void
         {
             $this->reason = $reason;
         }
@@ -4462,7 +4461,7 @@ describe('a thread that works outside the task phase', function (): void {
 
             public function spawnImplementer(Task $task): ?int
             {
-                return test_agent_thread($task->taskGroup, 'implementer-'.$task->id, $task)->id;
+                return test_agent_thread($task->parent, 'implementer-'.$task->id, $task)->id;
             }
 
             public function requestReview(Task $task): void {}
@@ -4490,7 +4489,7 @@ describe('a thread that works outside the task phase', function (): void {
  * @param  array<string, string>  $confirmations
  * @param  array<string, mixed>|null  $evidence
  * @param  list<TaskCheckReading>|null  $readings  the check readings; null passes once with the evidence
- * @return array{0: TaskGroup, 1: Task, 2: FakeTaskCheckRunner, 3: CoderSettleNotifier, 4: FakeTaskRunReceipts}
+ * @return array{0: Task, 1: Task, 2: FakeTaskCheckRunner, 3: CoderSettleNotifier, 4: FakeTaskRunReceipts}
  */
 function tick_deliverables(array $deliverables, array $confirmations, ?array $evidence, ?array $readings = null, ?array $receipts = null): array
 {

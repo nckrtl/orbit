@@ -16,7 +16,7 @@ use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
-use App\Models\TaskGroup;
+use App\Models\Task;
 
 /**
  * Fetches `origin/{base}` with the pull request token. `{base}` is one argument. The fetch updates
@@ -30,7 +30,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         private DevelopmentSshExecutor $ssh,
     ) {}
 
-    public function fetch(TaskGroup $group, string $base): void
+    public function fetch(Task $group, string $base): void
     {
         if (! GitBranchName::isValid($base)) {
             throw new TaskPullRequestException('The base branch could not be fetched.');
@@ -50,7 +50,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         }
     }
 
-    public function fastForward(TaskGroup $group, bool $missingRefOk = false): void
+    public function fastForward(Task $group, bool $missingRefOk = false): void
     {
         $group->loadMissing(['project', 'taskable']);
         $repository = GitHubRepository::fromOrigin((string) $group->project->repository_url);

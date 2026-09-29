@@ -8,8 +8,8 @@ use Illuminate\Database\Connection;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * The merged tasks table has parent_id. Historical migration tests still open the earlier
- * task_groups table, so the models follow whichever schema the connection has.
+ * Historical migration tests still open the tasks table from before parent_id existed.
+ * The model follows whichever shape the connection has.
  */
 final class TaskSchema
 {

@@ -8,7 +8,6 @@ use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskComment;
-use App\Models\TaskGroup;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
@@ -53,7 +52,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
             return $existing->id;
         }
 
-        return $this->insertPending($task->taskGroup, $task->id, TaskThreadRole::Reviewer)?->id;
+        return $this->insertPending($task->parent, $task->id, TaskThreadRole::Reviewer)?->id;
     }
 
     /** Reserves the implementer's Orbit id before the opening prompt, or returns the thread that already exists. */
@@ -67,7 +66,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
             return $existing->id;
         }
 
-        return $this->insertPending($task->taskGroup, $task->id, TaskThreadRole::Implementer)?->id;
+        return $this->insertPending($task->parent, $task->id, TaskThreadRole::Implementer)?->id;
     }
 
     public function spawnImplementer(Task $task): ?int
@@ -75,7 +74,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         if ($task->implementer_agent_thread_id !== null) {
             return (int) $task->implementer_agent_thread_id;
         }
-        $group = $task->taskGroup;
+        $group = $task->parent;
         $pending = $this->pending($group->id, $task->id, TaskThreadRole::Implementer);
         $title = 'Orbit task #'.$group->id.' / subtask #'.$task->id.' · Implementer: '.$task->title;
         if ($pending === null) {
@@ -103,7 +102,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
             if ($replacement === null) {
                 throw new AgentDriverException('The reviewer conversation could not be started.');
             }
-            $task->taskGroup->update(['reviewer_agent_thread_id' => $replacement]);
+            $task->parent->update(['reviewer_agent_thread_id' => $replacement]);
         }
     }
 
@@ -115,7 +114,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
             ->where('task_id', $task->id)
             ->where('role', TaskThreadRole::Reviewer->value)
             ->where('external_id', 'not like', self::PendingPrefix.'%');
-        $pointed = TaskGroup::query()->whereKey($task->task_group_id)->value('reviewer_agent_thread_id');
+        $pointed = Task::topLevel()->whereKey($task->task_group_id)->value('reviewer_agent_thread_id');
         if (is_numeric($pointed)) {
             $match = (clone $query)->whereKey((int) $pointed)->first();
             if ($match instanceof AgentThread) {
@@ -131,7 +130,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         if (! $this->installReviewerMcp($task)) {
             return null;
         }
-        $thread = $this->insertPending($task->taskGroup, $task->id, TaskThreadRole::Reviewer);
+        $thread = $this->insertPending($task->parent, $task->id, TaskThreadRole::Reviewer);
         if ($thread === null) {
             return null;
         }
@@ -146,7 +145,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
 
     private function installReviewerMcp(Task $task): bool
     {
-        $group = $task->taskGroup;
+        $group = $task->parent;
         $instance = $group->taskable;
         if (! $instance instanceof Instance) {
             return true;
@@ -175,7 +174,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         return $thread instanceof AgentThread ? $thread : null;
     }
 
-    private function insertPending(TaskGroup $group, ?int $taskId, TaskThreadRole $role): ?AgentThread
+    private function insertPending(Task $group, ?int $taskId, TaskThreadRole $role): ?AgentThread
     {
         $group->loadMissing('taskable');
         $instance = $group->taskable;
@@ -199,10 +198,10 @@ final readonly class TaskAgentSpawner implements AgentSpawner
 
     private function prepareReceipt(AgentThread $thread): void
     {
-        $group = TaskGroup::query()->with(['taskable', 'project'])->find($thread->task_group_id);
+        $group = Task::topLevel()->with(['taskable', 'project'])->find($thread->task_group_id);
         $instance = $group?->taskable;
         $role = TaskThreadRole::tryFrom((string) $thread->role);
-        if (! $group instanceof TaskGroup || ! $instance instanceof Instance || $role === null) {
+        if (! $group instanceof Task || ! $instance instanceof Instance || $role === null) {
             return;
         }
         $task = is_numeric($thread->task_id) ? Task::query()->find((int) $thread->task_id) : null;
@@ -231,9 +230,9 @@ final readonly class TaskAgentSpawner implements AgentSpawner
 
     private function startPending(AgentThread $thread, string $title, string $prompt): ?int
     {
-        $group = TaskGroup::query()->with('taskable')->find($thread->task_group_id);
+        $group = Task::topLevel()->with('taskable')->find($thread->task_group_id);
         $instance = $group?->taskable;
-        if (! $group instanceof TaskGroup || ! $instance instanceof Instance) {
+        if (! $group instanceof Task || ! $instance instanceof Instance) {
             $thread->delete();
 
             return null;
@@ -312,7 +311,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         return $this->packets->build($task, $continued, $threadId);
     }
 
-    private function implementerPrompt(TaskGroup $group, Task $task, ?int $threadId = null): string
+    private function implementerPrompt(Task $group, Task $task, ?int $threadId = null): string
     {
         return TaskPromptRenderer::implementer(
             new TaskPromptGroup(

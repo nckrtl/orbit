@@ -7,7 +7,6 @@ namespace App\Domain\Tasks;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Task;
-use App\Models\TaskGroup;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
 
@@ -20,7 +19,7 @@ final readonly class TaskSessionObserver
      * phase defers the task while it works: the implementer while the task runs, and that subtask's
      * reviewer while it is in review. An earlier subtask's reviewer does not.
      */
-    public function observe(TaskGroup $group, Task $task): TaskSessionObservation
+    public function observe(Task $group, Task $task): TaskSessionObservation
     {
         $group->loadMissing(['project', 'tasks', 'taskable']);
         $records = AgentThread::query()->where('task_group_id', $group->id)->orderBy('id')->get();
@@ -80,7 +79,7 @@ final readonly class TaskSessionObserver
     }
 
     /** @param Collection<int, AgentThread> $records */
-    private function subtaskReviewerId(Collection $records, TaskGroup $group, Task $task): ?int
+    private function subtaskReviewerId(Collection $records, Task $group, Task $task): ?int
     {
         $fallback = null;
         foreach ($records as $thread) {
@@ -96,7 +95,7 @@ final readonly class TaskSessionObserver
         return $fallback;
     }
 
-    private function includeThread(AgentThread $thread, TaskThreadRole $role, Task $task, TaskGroup $group, ?int $reviewerId): bool
+    private function includeThread(AgentThread $thread, TaskThreadRole $role, Task $task, Task $group, ?int $reviewerId): bool
     {
         if ($role === TaskThreadRole::Implementer) {
             return $thread->task_id === $task->id;
@@ -109,7 +108,7 @@ final readonly class TaskSessionObserver
     }
 
     /** The acting reviewer is this subtask's reviewer, or a legacy shared reviewer after notification. */
-    private function acts(AgentThread $thread, TaskThreadRole $role, Task $task, TaskGroup $group, ?int $reviewerId): bool
+    private function acts(AgentThread $thread, TaskThreadRole $role, Task $task, Task $group, ?int $reviewerId): bool
     {
         if ($role === TaskThreadRole::Implementer) {
             return $thread->task_id === $task->id;
@@ -122,7 +121,7 @@ final readonly class TaskSessionObserver
             && $task->review_notified_attempt === $task->review_attempt;
     }
 
-    private function hasNewCommits(TaskGroup $group): bool
+    private function hasNewCommits(Task $group): bool
     {
         $instance = $group->taskable;
 

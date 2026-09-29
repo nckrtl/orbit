@@ -15,7 +15,6 @@ use App\Infrastructure\Tasks\LaravelAiTaskBriefCoverage;
 use App\Models\JevDecision;
 use App\Models\Project;
 use App\Models\Task;
-use App\Models\TaskGroup;
 use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -26,7 +25,7 @@ use Laravel\Ai\Responses\Data\BooleanAnswer;
 
 use function Pest\Laravel\mock;
 
-/** @return array{TaskGroup, Task, Task, Task} */
+/** @return array{Task, Task, Task, Task} */
 function cancelled_brief_coverage_group(): array
 {
     $project = Project::query()->create([
@@ -35,7 +34,7 @@ function cancelled_brief_coverage_group(): array
         'repository_url' => 'git@github.com:acme/shop.git',
         'default_branch' => 'main',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Export orders',
         'brief' => 'Export orders as CSV.',
@@ -105,12 +104,12 @@ it('labels a false negative from a pull request observed merged and records both
     {
         public function __construct(private TaskPullRequestHealth $merge) {}
 
-        public function status(TaskGroup $group): ?string
+        public function status(Task $group): ?string
         {
             return 'merged';
         }
 
-        public function health(TaskGroup $group): ?TaskPullRequestHealth
+        public function health(Task $group): ?TaskPullRequestHealth
         {
             return $this->merge;
         }
@@ -349,12 +348,12 @@ it('completes the group when bookkeeping failure occurs during labeling', functi
     {
         public function __construct(private TaskPullRequestHealth $merge) {}
 
-        public function status(TaskGroup $group): ?string
+        public function status(Task $group): ?string
         {
             return 'merged';
         }
 
-        public function health(TaskGroup $group): ?TaskPullRequestHealth
+        public function health(Task $group): ?TaskPullRequestHealth
         {
             return $this->merge;
         }

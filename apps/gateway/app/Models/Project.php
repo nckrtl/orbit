@@ -24,7 +24,7 @@ use SensitiveParameter;
  * @property string|null $default_branch
  * @property string|null $root
  * @property string|null $task_check
- * @property-read Collection<int, TaskGroup> $taskGroups
+ * @property-read Collection<int, Task> $tasks
  */
 final class Project extends Model
 {
@@ -89,10 +89,10 @@ final class Project extends Model
         return $this->hasMany(ProjectUpdate::class);
     }
 
-    /** @return HasMany<TaskGroup, $this> */
-    public function taskGroups(): HasMany
+    /** @return HasMany<Task, $this> */
+    public function tasks(): HasMany
     {
-        return $this->hasMany(TaskGroup::class);
+        return $this->hasMany(Task::class)->topLevel();
     }
 
     /** @return HasMany<ProjectNodeExclusion, $this> */

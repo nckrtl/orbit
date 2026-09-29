@@ -17,7 +17,7 @@ use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
-use App\Models\TaskGroup;
+use App\Models\Task;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -44,7 +44,7 @@ function pi_workspace(Node $node): Instance
 function pi_thread(Node $node, string $externalId = 'session-1'): AgentThread
 {
     $workspace = pi_workspace($node);
-    $group = TaskGroup::query()->create(['project_id' => $workspace->project_id, 'implementer_agent_driver' => 'pi', 'title' => 'Feature', 'brief' => 'Brief', 'status' => 'running']);
+    $group = Task::topLevel()->create(['project_id' => $workspace->project_id, 'implementer_agent_driver' => 'pi', 'title' => 'Feature', 'brief' => 'Brief', 'status' => 'running']);
 
     return AgentThread::query()->create([
         'task_group_id' => $group->id,

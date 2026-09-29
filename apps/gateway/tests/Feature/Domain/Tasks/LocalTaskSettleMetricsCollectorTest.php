@@ -13,7 +13,6 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
-use App\Models\TaskGroup;
 
 it('sums task tokens, reads the workspace line diff, and measures duration', function (): void {
     $this->travelTo('2026-09-20 12:00:02');
@@ -37,7 +36,7 @@ it('sums task tokens, reads the workspace line diff, and measures duration', fun
         'checkout_path' => '/tmp/task-40',
         'status' => 'source_resolved',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Metrics',
         'brief' => 'Fill settle numbers.',

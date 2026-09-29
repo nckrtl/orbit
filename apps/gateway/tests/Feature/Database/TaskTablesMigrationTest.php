@@ -77,7 +77,7 @@ it('rolls back archive backoff columns and their index', function (): void {
     }
 });
 
-it('persists a TaskGroup morph to a Project instance and ordered subtasks', function (): void {
+it('persists a Task morph to a Project instance and ordered subtasks', function (): void {
     $node = Node::query()->create([
         'name' => 'task-migration-node',
         'status' => 'active',
@@ -97,7 +97,7 @@ it('persists a TaskGroup morph to a Project instance and ordered subtasks', func
         'status' => 'reserved',
     ]);
 
-    $group = $project->taskGroups()->create([
+    $group = $project->tasks()->create([
         'title' => 'Morph',
         'brief' => 'Attach the instance.',
     ]);
@@ -121,6 +121,6 @@ it('persists a TaskGroup morph to a Project instance and ordered subtasks', func
         ->and($fresh?->line_diff)->toBe(40)
         ->and($fresh?->duration_ms)->toBe(1500)
         ->and($fresh?->tasks->pluck('title')->all())->toBe(['First', 'Second'])
-        ->and($instance->taskGroups()->first()?->id)->toBe($group->id)
+        ->and($instance->tasks()->first()?->id)->toBe($group->id)
         ->and(Task::query()->where('task_group_id', $group->id)->count())->toBe(2);
 });

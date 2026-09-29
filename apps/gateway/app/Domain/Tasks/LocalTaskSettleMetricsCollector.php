@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Models\TaskGroup;
+use App\Models\Task;
 
 final readonly class LocalTaskSettleMetricsCollector implements TaskSettleMetricsCollector
 {
     public function __construct(private TaskGroupMetricsRefresher $metrics) {}
 
-    public function collect(TaskGroup $group): TaskSettleMetrics
+    public function collect(Task $group): TaskSettleMetrics
     {
         $refreshed = $this->metrics->refresh($group);
 

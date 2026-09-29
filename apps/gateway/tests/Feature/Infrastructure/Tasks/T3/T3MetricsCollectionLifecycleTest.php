@@ -22,7 +22,7 @@ use App\Models\AgentThread;
 use App\Models\AgentThreadSendLease;
 use App\Models\Node;
 use App\Models\Project;
-use App\Models\TaskGroup;
+use App\Models\Task;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Mockery\MockInterface;
@@ -43,7 +43,7 @@ function metrics_collection_driver(): array
         'public_ssh_host' => '10.44.0.200',
         'wireguard_ip' => '10.44.0.200',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Metrics lifecycle',
         'brief' => 'Exercise T3 metric stream behavior',

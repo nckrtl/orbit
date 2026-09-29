@@ -120,7 +120,7 @@ final readonly class ProjectDoctorProbe implements DoctorFamilyProbe
     private function eligibleInstanceIds(int $nodeId, ?int $projectId = null): array
     {
         $query = Instance::query()
-            ->with(['project', 'taskGroups'])
+            ->with(['project', 'tasks'])
             ->where('node_id', $nodeId)
             ->where('status', '!=', InstanceState::Removing);
         if ($projectId !== null) {

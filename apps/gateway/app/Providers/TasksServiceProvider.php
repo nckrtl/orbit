@@ -49,7 +49,10 @@ use App\Infrastructure\Tasks\T3\T3Stream;
 use App\Infrastructure\Tasks\T3\T3TaskAgentStream;
 use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
+use App\Models\Task;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 
 final class TasksServiceProvider extends ServiceProvider
@@ -92,6 +95,17 @@ final class TasksServiceProvider extends ServiceProvider
     {
         // Observers are declared on the models with ObservedBy. Calling observe() here would load those
         // models during every boot, so test impact analysis would rerun unrelated tests after a model edit.
+
+        // {group} is the top-level task. The Task scope itself returns only subtasks.
+        Route::bind('group', static function (string $value): Task {
+            $task = Task::topLevel()->whereKey($value)->first();
+
+            if (! $task instanceof Task) {
+                throw (new ModelNotFoundException)->setModel(Task::class, [$value]);
+            }
+
+            return $task;
+        });
 
         // One notice per changed record, when the request or command that changed it ends (ADR 0151).
         $this->app->terminating(function (): void {

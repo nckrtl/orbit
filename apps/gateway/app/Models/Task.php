@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskBroadcastObserver;
 use App\Domain\Tasks\TaskColumnQueryBuilder;
@@ -11,15 +12,18 @@ use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskHierarchyException;
+use App\Domain\Tasks\TaskLevelStatusCast;
 use App\Domain\Tasks\TaskSchema;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskType;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -62,7 +66,21 @@ use LogicException;
  * @property int|null $resolution_delivered_comment_id
  * @property string $title
  * @property string $brief
- * @property TaskStatus $status
+ * @property TaskStatus|TaskGroupStatus $status
+ * @property int $project_id
+ * @property string|null $taskable_type
+ * @property int|null $taskable_id
+ * @property string|null $pr_url
+ * @property bool $notify_coder
+ * @property string $implementer_model
+ * @property string $reviewer_model
+ * @property int|null $reviewer_agent_thread_id
+ * @property TaskExecutionMode $execution_mode
+ * @property string $implementer_agent_driver
+ * @property string $reviewer_agent_driver
+ * @property Carbon|null $agent_unavailable_since
+ * @property Carbon|null $agent_unavailable_notified_at
+ * @property Carbon|null $reserved_at
  * @property int|null $implementer_agent_thread_id
  * @property int|null $tokens
  * @property int|null $lines_added
@@ -75,7 +93,12 @@ use LogicException;
  * @property string|null $fixup_head_sha
  * @property list<array<string, string|bool|list<string>>>|null $deliverables
  * @property Carbon|null $settled_at
- * @property-read TaskGroup $taskGroup
+ * @property-read Task $parent
+ * @property-read Collection<int, Task> $children
+ * @property-read Collection<int, Task> $tasks
+ * @property-read Project $project
+ * @property-read Instance|Model|null $taskable
+ * @property-read AgentThread|null $reviewerThread
  */
 #[ObservedBy([TaskBroadcastObserver::class])]
 final class Task extends Model
@@ -246,10 +269,39 @@ final class Task extends Model
         return $this->hasMany(self::class, 'parent_id')->orderBy('position')->orderBy('id');
     }
 
-    /** @return BelongsTo<TaskGroup, $this> */
-    public function taskGroup(): BelongsTo
+    /**
+     * Subtasks of a top-level task, in position order. Same rows as children().
+     *
+     * @return HasMany<Task, $this>
+     */
+    public function tasks(): HasMany
     {
-        return $this->belongsTo(TaskGroup::class, $this->groupForeignKey());
+        return $this->hasMany(self::class, 'parent_id')->orderBy('position')->orderBy('id');
+    }
+
+    /** @return BelongsTo<Project, $this> */
+    public function project(): BelongsTo
+    {
+        return $this->belongsTo(Project::class, 'project_id');
+    }
+
+    /** @return MorphTo<Model, $this> */
+    public function taskable(): MorphTo
+    {
+        return $this->morphTo();
+    }
+
+    /** @return BelongsTo<AgentThread, $this> */
+    public function reviewerThread(): BelongsTo
+    {
+        return $this->belongsTo(AgentThread::class, 'reviewer_agent_thread_id');
+    }
+
+    public function requireManagedExecution(): void
+    {
+        if ($this->execution_mode !== TaskExecutionMode::Managed) {
+            throw new ResourceOperationException('tasks.external_execution', 'This task uses an existing thread. Use its annotation controls instead of the managed lifecycle.', 409);
+        }
     }
 
     /** @return BelongsTo<AgentThread, $this> */
@@ -292,7 +344,7 @@ final class Task extends Model
             return false;
         }
 
-        $url = $this->taskGroup()->value('pr_url');
+        $url = $this->parent()->value('pr_url');
 
         return ! is_string($url) || $url === '';
     }
@@ -313,7 +365,12 @@ final class Task extends Model
         return [
             'type' => TaskType::class,
             'position' => 'integer',
-            'status' => TaskStatus::class,
+            'status' => TaskLevelStatusCast::class,
+            'execution_mode' => TaskExecutionMode::class,
+            'notify_coder' => 'boolean',
+            'agent_unavailable_since' => 'datetime',
+            'agent_unavailable_notified_at' => 'datetime',
+            'reserved_at' => 'datetime',
             'tokens' => 'integer',
             'line_diff' => 'integer',
             'lines_added' => 'integer',
@@ -465,10 +522,5 @@ final class Task extends Model
         }
 
         return null;
-    }
-
-    private function groupForeignKey(): string
-    {
-        return TaskSchema::merged($this->getConnection()) ? 'parent_id' : 'task_group_id';
     }
 }

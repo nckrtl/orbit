@@ -9,7 +9,6 @@ use Symfony\Component\Process\Process;
 it('leaves task models unloaded and not observed when an unrelated test boots the app', function (): void {
     $root = dirname(__DIR__, 4);
     $models = [
-        'App\\Models\\TaskGroup',
         'App\\Models\\Task',
         'App\\Models\\TaskCheck',
         'App\\Models\\TaskComment',

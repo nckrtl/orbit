@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Tasks;
 
 use App\Domain\Tasks\TaskGroupMetricsRefresher;
-use App\Models\TaskGroup;
+use App\Models\Task;
 
 final readonly class ShowTaskGroupAction
 {
@@ -14,7 +14,7 @@ final readonly class ShowTaskGroupAction
         private TaskGroupMetricsRefresher $metrics,
     ) {}
 
-    public function execute(TaskGroup $group): TaskGroup
+    public function execute(Task $group): Task
     {
         $this->requireExtension->execute();
 

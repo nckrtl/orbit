@@ -32,7 +32,6 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
-use App\Models\TaskGroup;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -46,7 +45,7 @@ beforeEach(function (): void {
     app()->instance(TaskWorkspaceMcp::class, new AcceptingTaskWorkspaceMcp);
 });
 
-function t3_spawner_group(): TaskGroup
+function t3_spawner_group(): Task
 {
     $project = Project::query()->create([
         'name' => 'orbit',
@@ -70,7 +69,7 @@ function t3_spawner_group(): TaskGroup
         'status' => 'source_resolved',
         'starting_commit' => str_repeat('b', 40),
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Wire T3',
         'brief' => 'Spawn reviewer and implementer.',
@@ -654,7 +653,7 @@ it('reuses a subtask reviewer instead of spawning again', function (): void {
     [$spawner, $dispatcher] = t3_spawner_stack();
 
     expect($spawner->spawnReviewer($task->fresh()))->toBe($kept->id)
-        ->and($spawner->spawnImplementer($task->fresh(['taskGroup.taskable'])))
+        ->and($spawner->spawnImplementer($task->fresh(['parent.taskable'])))
         ->toBe($task->fresh()->implementer_agent_thread_id)
         ->and($dispatcher->commands)->toBe([]);
 });

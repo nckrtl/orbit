@@ -14,12 +14,12 @@ use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\Project;
-use App\Models\TaskGroup;
+use App\Models\Task;
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 use Tests\Support\LocalShellSshExecutor;
 
-function complete_group(TaskGroupStatus $status = TaskGroupStatus::Settling): TaskGroup
+function complete_group(TaskGroupStatus $status = TaskGroupStatus::Settling): Task
 {
     $project = Project::query()->create([
         'name' => 'complete-app',
@@ -41,7 +41,7 @@ function complete_group(TaskGroupStatus $status = TaskGroupStatus::Settling): Ta
         'checkout_path' => '/srv/orbit/apps/complete-app/task-20',
         'status' => 'source_resolved',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Complete me',
         'brief' => 'Remove the workspace after merge.',
@@ -350,7 +350,7 @@ it('prunes a bridge registration whose directory is already gone', function (): 
  * A primary checkout, a task clone, and the bridge shape named by $kind.
  *
  * @return array{
- *     group: TaskGroup,
+ *     group: Task,
  *     primary: string,
  *     checkout: string,
  *     bridge: string,

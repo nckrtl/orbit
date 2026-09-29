@@ -11,7 +11,6 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPositions;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\Task;
-use App\Models\TaskGroup;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -19,13 +18,13 @@ final readonly class UpdateTaskAction
 {
     public function __construct(private RequireTasksExtensionAction $requireExtension) {}
 
-    public function execute(TaskGroup $group, Task $task, UpdateTaskData $data): Task
+    public function execute(Task $group, Task $task, UpdateTaskData $data): Task
     {
         $group->requireManagedExecution();
         $this->requireExtension->execute();
 
         return DB::transaction(static function () use ($group, $task, $data): Task {
-            $locked = TaskGroup::query()->lockForUpdate()->findOrFail($group->id);
+            $locked = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
             $task = Task::query()->lockForUpdate()->findOrFail($task->id);
             $backlog = $locked->status === TaskGroupStatus::Backlog;
             $todoOutsideBacklog = $task->status === TaskStatus::Todo && in_array($locked->status, [

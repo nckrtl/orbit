@@ -31,7 +31,7 @@ use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Project;
 use App\Models\Route;
-use App\Models\TaskGroup;
+use App\Models\Task;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -420,7 +420,7 @@ it('keeps an annotated active Orbit Instance healthy after the annotation resolv
 
     $report = new InstanceDoctorProbe(instance_probe_healthy_inspector())->inspect(instance_probe_context($node));
 
-    expect($instance->taskGroups()->count())->toBe(1)
+    expect($instance->tasks()->count())->toBe(1)
         ->and($report->issues)->toBe([]);
 });
 
@@ -986,7 +986,7 @@ function instance_probe_mark_removing(Instance $instance): void
 function instance_probe_task_workspace_for_removal(): Instance
 {
     [$node, , $instance] = instance_probe_private_cluster_route();
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $instance->project_id,
         'title' => 'Task workspace removal',
         'brief' => 'Build the feature.',
@@ -997,12 +997,12 @@ function instance_probe_task_workspace_for_removal(): Instance
     $group->taskable()->associate($instance);
     $group->save();
 
-    return $instance->fresh()->load(['project', 'node', 'taskGroups', 'routes.targets']);
+    return $instance->fresh()->load(['project', 'node', 'tasks', 'routes.targets']);
 }
 
 function instance_probe_task_workspace(Project $project, Node $node, InstanceState $status): Instance
 {
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Task workspace',
         'brief' => 'Build the feature.',

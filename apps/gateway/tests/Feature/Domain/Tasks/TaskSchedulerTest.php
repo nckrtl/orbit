@@ -73,7 +73,6 @@ use App\Models\ProjectLifecycleStep;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
-use App\Models\TaskGroup;
 use Illuminate\Support\Facades\Exceptions;
 use Tests\Support\AcceptingTaskWorkspaceMcp;
 use Tests\Support\FakeAgentDriver;
@@ -118,9 +117,9 @@ function scheduler_instance(Project $project, Node $node, string $name): Instanc
     ]);
 }
 
-function queued_group(Project $project, string $title, ?Instance $instance = null): TaskGroup
+function queued_group(Project $project, string $title, ?Instance $instance = null): Task
 {
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => $title,
         'brief' => "{$title} brief",
@@ -143,7 +142,7 @@ function queued_group(Project $project, string $title, ?Instance $instance = nul
     return $group->fresh(['tasks', 'taskable']) ?? $group;
 }
 
-function scheduler_pending_task(TaskGroup $group, int $position, string $title): Task
+function scheduler_pending_task(Task $group, int $position, string $title): Task
 {
     return Task::query()->create([
         'task_group_id' => $group->id,
@@ -163,7 +162,7 @@ function scheduler_recording_spawner(): AgentSpawner
 
         public function spawnReviewer(Task $task): ?int
         {
-            $group = $task->taskGroup;
+            $group = $task->parent;
 
             $this->events[] = 'reviewer';
 
@@ -174,7 +173,7 @@ function scheduler_recording_spawner(): AgentSpawner
         {
             $this->events[] = 'implementer:'.$task->position;
 
-            return test_agent_thread($task->taskGroup, 'implementer-'.$task->position, $task)->id;
+            return test_agent_thread($task->parent, 'implementer-'.$task->position, $task)->id;
         }
 
         public function requestReview(Task $task): void
@@ -221,7 +220,7 @@ it('reserves queued groups without a per-Project ceiling', function (): void {
 
 it('does not count completed groups toward the Project ceiling', function (): void {
     $project = scheduler_app('completed-app');
-    TaskGroup::query()->create([
+    Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Done',
         'brief' => 'Already settled',
@@ -236,7 +235,7 @@ it('does not count completed groups toward the Project ceiling', function (): vo
 it('claims another group when three reserved groups already occupy the App', function (): void {
     $project = scheduler_app('full-app');
     foreach (['A', 'B', 'C'] as $title) {
-        TaskGroup::query()->create([
+        Task::topLevel()->create([
             'project_id' => $project->id,
             'title' => $title,
             'brief' => $title,
@@ -257,7 +256,7 @@ it('applies the Node ceiling only after a Project instance is assigned', functio
     foreach (range(1, TaskCeilings::PerNode) as $index) {
         $owner = scheduler_app("node-owner-{$index}");
         $placed = scheduler_instance($owner, $node, "slot-{$index}");
-        $group = TaskGroup::query()->create([
+        $group = Task::topLevel()->create([
             'project_id' => $owner->id,
             'title' => "Active {$index}",
             'brief' => 'Occupies the node',
@@ -295,14 +294,14 @@ it('starts a group when provisioning assigns an instance under both ceilings', f
     {
         public function spawnReviewer(Task $task): ?int
         {
-            $group = $task->taskGroup;
+            $group = $task->parent;
 
             return test_agent_thread($group, 'reviewer-thread')->id;
         }
 
         public function spawnImplementer(Task $task): ?int
         {
-            return test_agent_thread($task->taskGroup, 'implementer-thread', $task)->id;
+            return test_agent_thread($task->parent, 'implementer-thread', $task)->id;
         }
 
         public function requestReview(Task $task): void {}
@@ -341,7 +340,7 @@ it('fails a group and its first task when the run script cannot be installed', f
 
         public function spawnReviewer(Task $task): ?int
         {
-            $group = $task->taskGroup;
+            $group = $task->parent;
 
             return test_agent_thread($group, 'reviewer-thread')->id;
         }
@@ -389,7 +388,7 @@ it('keeps the task in review and counts a communication failure when the reviewe
 
         public function spawnImplementer(Task $task): ?int
         {
-            return test_agent_thread($task->taskGroup, 'implementer-thread', $task)->id;
+            return test_agent_thread($task->parent, 'implementer-thread', $task)->id;
         }
 
         public function requestReview(Task $task): void {}
@@ -426,7 +425,7 @@ it('fails a group and its first task when the implementer spawn returns no threa
     {
         public function spawnReviewer(Task $task): ?int
         {
-            $group = $task->taskGroup;
+            $group = $task->parent;
 
             return test_agent_thread($group, 'reviewer-thread')->id;
         }
@@ -475,14 +474,14 @@ it('fails the group when a later implementer spawn returns no thread id', functi
     {
         public function spawnReviewer(Task $task): ?int
         {
-            $group = $task->taskGroup;
+            $group = $task->parent;
 
             return test_agent_thread($group, 'reviewer-thread')->id;
         }
 
         public function spawnImplementer(Task $task): ?int
         {
-            return $task->position === 1 ? test_agent_thread($task->taskGroup, 'implementer-1', $task)->id : null;
+            return $task->position === 1 ? test_agent_thread($task->parent, 'implementer-1', $task)->id : null;
         }
 
         public function requestReview(Task $task): void {}
@@ -506,7 +505,7 @@ it('returns a provisioned group to todo on its Instance when the Node is already
     foreach (range(1, TaskCeilings::PerNode) as $index) {
         $owner = scheduler_app("fill-owner-{$index}");
         $placed = scheduler_instance($owner, $node, "fill-{$index}");
-        $group = TaskGroup::query()->create([
+        $group = Task::topLevel()->create([
             'project_id' => $owner->id,
             'title' => "Fill {$index}",
             'brief' => 'Fills the node',
@@ -707,7 +706,7 @@ it('starts a reviewer at each subtask handoff and starts the next implementer af
 
         public function spawnReviewer(Task $task): ?int
         {
-            $group = $task->taskGroup;
+            $group = $task->parent;
 
             $this->events[] = 'reviewer';
 
@@ -718,7 +717,7 @@ it('starts a reviewer at each subtask handoff and starts the next implementer af
         {
             $this->events[] = 'implementer:'.$task->position;
 
-            return test_agent_thread($task->taskGroup, 'implementer-'.$task->position, $task)->id;
+            return test_agent_thread($task->parent, 'implementer-'.$task->position, $task)->id;
         }
 
         public function requestReview(Task $task): void
@@ -781,7 +780,7 @@ it('retries a review when the diff cannot be read instead of sending an empty ch
     $project = scheduler_app('unread-diff');
     $node = scheduler_node('unread-diff-node', '10.44.0.78');
     $instance = scheduler_instance($project, $node, 'unread');
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Unread diff',
         'brief' => 'The diff read fails.',
@@ -821,7 +820,7 @@ it('holds a review resolution when diff reads fail on a reserved reviewer and re
     $project = scheduler_app('reserved-review');
     $node = scheduler_node('reserved-review-node', '10.44.0.79');
     $instance = scheduler_instance($project, $node, 'reserved');
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Reserved review',
         'brief' => 'The diff read fails until the operator answers.',
@@ -899,7 +898,7 @@ it('holds a review resolution when diff reads fail on a reserved reviewer and re
     expect($reviewer->external_id)->not->toStartWith(TaskAgentSpawner::PendingPrefix)
         ->and($task->review_notified_attempt)->toBe($task->review_attempt)
         ->and($task->resolution_delivered_comment_id)->toBe($comment->id)
-        ->and($task->taskGroup->reviewer_agent_thread_id)->toBe($reviewer->id)
+        ->and($task->parent->reviewer_agent_thread_id)->toBe($reviewer->id)
         ->and($driver->calls[0]['operation'] ?? null)->toBe('create')
         ->and($driver->calls[0]['prompt'] ?? '')->toContain('Ship the names as they are.')
         ->and(array_column($driver->calls, 'operation'))->not->toContain('send');
@@ -940,7 +939,7 @@ it('reviews the first subtask with a missing start commit from the workspace sta
 it('records a missing start commit on a later tick', function (): void {
     $project = scheduler_app('retry-start');
     $instance = scheduler_instance($project, scheduler_node('retry-start-node', '10.44.0.71'), 'retry');
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Retry start',
         'brief' => 'The start read failed.',
@@ -988,7 +987,7 @@ it('records a missing start commit on a later tick', function (): void {
 it('keeps a migrated continuation on its source subtask start after the source commits', function (): void {
     $project = scheduler_app('continuation-start');
     $instance = scheduler_instance($project, scheduler_node('continuation-start-node', '10.44.0.74'), 'continuation');
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Continuation start',
         'brief' => 'Overflow deliverables preserve the source boundary.',
@@ -1046,7 +1045,7 @@ it('keeps a migrated continuation on its source subtask start after the source c
 it('does not record a later head after the implementer starts and commits', function (): void {
     $project = scheduler_app('late-start');
     $instance = scheduler_instance($project, scheduler_node('late-start-node', '10.44.0.72'), 'late');
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Late start',
         'brief' => 'The start read failed until the implementer had committed.',
@@ -1104,7 +1103,7 @@ it('does not record a later head after the implementer starts and commits', func
 it('records a start commit on a later tick while the implementer is only reserved', function (): void {
     $project = scheduler_app('reserved-start');
     $instance = scheduler_instance($project, scheduler_node('reserved-start-node', '10.44.0.73'), 'reserved');
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Reserved start',
         'brief' => 'The implementer row is not a turn yet.',
@@ -1173,7 +1172,7 @@ it('records a review-request failure and still reviews the other group', functio
                 throw new RuntimeException($this->raw);
             }
 
-            return test_agent_thread($task->taskGroup, 'spawned-reviewer-'.$task->id)->id;
+            return test_agent_thread($task->parent, 'spawned-reviewer-'.$task->id)->id;
         }
 
         public function spawnImplementer(Task $task): ?int
@@ -1201,7 +1200,7 @@ it('records a review-request failure and still reviews the other group', functio
         ->and($first->fresh()?->assistance_requested)->toBeTrue()
         ->and($first->fresh()?->assistance_reason)->toBe($reason)
         ->and($first->fresh()?->assistance_reason)->not->toContain($raw)
-        ->and($first->taskGroup->fresh()?->assistance_reason)->toBe($reason)
+        ->and($first->parent->fresh()?->assistance_reason)->toBe($reason)
         ->and($second->fresh()?->review_notified_attempt)->toBe($second->review_attempt)
         ->and($second->fresh()?->assistance_requested)->toBeFalse();
 });
@@ -1218,7 +1217,7 @@ function scheduler_missing_start_review(?string $approvedCommit, string $startin
     $project = scheduler_app('missing-start-'.$octet);
     $instance = scheduler_instance($project, scheduler_node($project->slug.'-node', '10.44.3.'.$octet), 'missing');
     $instance->update(['starting_commit' => $startingCommit]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Missing start',
         'brief' => 'Review without a recorded start.',
@@ -1284,7 +1283,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
     $project->update(['task_check' => 'composer check']);
     $node = scheduler_node('fresh-reviewer-node', '10.44.0.77');
     $instance = scheduler_instance($project, $node, 'fresh');
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Fresh reviewers',
         'brief' => 'Each subtask gets its own reviewer.',
@@ -1380,7 +1379,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
         ->and(mb_strlen($opening))->toBeLessThanOrEqual(TaskReviewPacket::Limit);
 
     $first->update(['status' => TaskStatus::Running, 'review_attempt' => $first->fresh()->review_attempt + 1]);
-    TaskGroup::query()->whereKey($group->id)->update(['status' => TaskGroupStatus::Running]);
+    Task::topLevel()->whereKey($group->id)->update(['status' => TaskGroupStatus::Running]);
     app(TaskScheduler::class)->settleImplementer($first->fresh(), new TaskThreadObservation(
         threadId: $thread->id,
         role: TaskThreadRole::Reviewer,
@@ -1399,7 +1398,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
         ->and($first->fresh()?->review_notified_attempt)->not->toBe($first->fresh()?->review_attempt);
 
     $first->update(['status' => TaskStatus::Running]);
-    TaskGroup::query()->whereKey($group->id)->update(['status' => TaskGroupStatus::Running]);
+    Task::topLevel()->whereKey($group->id)->update(['status' => TaskGroupStatus::Running]);
     app(TaskScheduler::class)->settleImplementer($first->fresh());
     $continued = $driver->calls[1]['message'];
 
@@ -1415,7 +1414,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
 
     $driver->failNextSend = true;
     $first->update(['status' => TaskStatus::Running, 'review_attempt' => $first->fresh()->review_attempt + 1]);
-    TaskGroup::query()->whereKey($group->id)->update(['status' => TaskGroupStatus::Running]);
+    Task::topLevel()->whereKey($group->id)->update(['status' => TaskGroupStatus::Running]);
     app(TaskScheduler::class)->settleImplementer($first->fresh());
     $replacement = AgentThread::query()->where('task_id', $first->id)->where('role', 'reviewer')->orderByDesc('id')->first();
     $replaced = $driver->calls[3]['prompt'];
@@ -1428,7 +1427,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
         ->and(AgentThread::query()->whereKey($thread->id)->exists())->toBeTrue();
 
     $second->update(['status' => TaskStatus::Running]);
-    TaskGroup::query()->whereKey($group->id)->update(['status' => TaskGroupStatus::Running]);
+    Task::topLevel()->whereKey($group->id)->update(['status' => TaskGroupStatus::Running]);
     TaskCheck::query()->create([
         'task_id' => $second->id,
         'kind' => TaskCheckKind::Handoff,
@@ -1472,23 +1471,23 @@ it('keeps the reviewed pull request, writes settle metrics, and notifies Coder a
     $first?->update(['tokens' => 40]);
     $metrics = new class implements TaskSettleMetricsCollector
     {
-        public function collect(TaskGroup $group): TaskSettleMetrics
+        public function collect(Task $group): TaskSettleMetrics
         {
             return new TaskSettleMetrics(tokens: 40, lineDiff: 12, durationMs: 1500);
         }
     };
     $notifier = new class implements CoderSettleNotifier
     {
-        public ?TaskGroup $notified = null;
+        public ?Task $notified = null;
 
-        public function notify(TaskGroup $group): void
+        public function notify(Task $group): void
         {
             $this->notified = $group;
         }
 
-        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
+        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
 
-        public function assistance(TaskGroup $group, string $reason): void {}
+        public function assistance(Task $group, string $reason): void {}
     };
 
     app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
@@ -1504,14 +1503,14 @@ it('keeps the reviewed pull request, writes settle metrics, and notifies Coder a
     {
         public function spawnReviewer(Task $task): ?int
         {
-            $group = $task->taskGroup;
+            $group = $task->parent;
 
             return test_agent_thread($group, 'reviewer-thread')->id;
         }
 
         public function spawnImplementer(Task $task): ?int
         {
-            return test_agent_thread($task->taskGroup, 'implementer-'.$task->position, $task)->id;
+            return test_agent_thread($task->parent, 'implementer-'.$task->position, $task)->id;
         }
 
         public function requestReview(Task $task): void {}
@@ -1643,7 +1642,7 @@ it('asks for assistance, and starts no agent, when the fresh workspace fails its
 /**
  * A reviewing subtask whose reviewer has approved it. Unless it is the last, a later subtask waits behind it.
  *
- * @return array{TaskGroup, Task, object, object}
+ * @return array{Task, Task, object, object}
  */
 function scheduler_approved_subtask(string $slug, bool $last = false, ?string $receipt = null): array
 {
@@ -1733,7 +1732,7 @@ function scheduler_approved_subtask(string $slug, bool $last = false, ?string $r
 
         public int $pushFailures = 0;
 
-        public function publish(TaskGroup $group, string $body, string $commit): string
+        public function publish(Task $group, string $body, string $commit): string
         {
             $this->bodies[] = $body;
             $this->commits[] = $commit;
@@ -1741,7 +1740,7 @@ function scheduler_approved_subtask(string $slug, bool $last = false, ?string $r
             return 'https://github.com/acme/orbit/pull/42';
         }
 
-        public function push(TaskGroup $group, string $commit): void
+        public function push(Task $group, string $commit): void
         {
             $this->pushes[] = $group->id;
             $this->commits[] = $commit;
@@ -1756,14 +1755,14 @@ function scheduler_approved_subtask(string $slug, bool $last = false, ?string $r
     app()->instance(TaskPullRequestPublisher::class, $publisher);
     app()->instance(TaskBriefCoverage::class, new class implements TaskBriefCoverage
     {
-        public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array
+        public function missing(Task $group, TaskRunPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array
         {
             return [];
         }
     });
     app()->instance(TaskSettleMetricsCollector::class, new class implements TaskSettleMetricsCollector
     {
-        public function collect(TaskGroup $group): TaskSettleMetrics
+        public function collect(Task $group): TaskSettleMetrics
         {
             return new TaskSettleMetrics(tokens: 1, lineDiff: 1, durationMs: 1);
         }
@@ -1897,7 +1896,7 @@ it('pushes an approved fixup to the existing branch, keeps the pull request, and
     {
         public int $calls = 0;
 
-        public function missing(TaskGroup $group, TaskRunPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array
+        public function missing(Task $group, TaskRunPullRequest $pullRequest, ?int $approvalCommentId = null, ?array $approvalChanges = null): array
         {
             $this->calls++;
 
@@ -1908,26 +1907,26 @@ it('pushes an approved fixup to the existing branch, keeps the pull request, and
     {
         public int $settled = 0;
 
-        public function notify(TaskGroup $group): void
+        public function notify(Task $group): void
         {
             $this->settled++;
         }
 
-        public function escalate(TaskGroup $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
+        public function escalate(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void {}
 
-        public function assistance(TaskGroup $group, string $reason): void {}
+        public function assistance(Task $group, string $reason): void {}
     };
     $watcher = new class implements TaskPullRequestWatcher
     {
         /** @var list<string> */
         public array $urls = [];
 
-        public function status(TaskGroup $group): ?string
+        public function status(Task $group): ?string
         {
             return 'open';
         }
 
-        public function health(TaskGroup $group): ?TaskPullRequestHealth
+        public function health(Task $group): ?TaskPullRequestHealth
         {
             $this->urls[] = (string) $group->pr_url;
 
@@ -1937,7 +1936,7 @@ it('pushes an approved fixup to the existing branch, keeps the pull request, and
     app()->instance(TaskBriefCoverage::class, $coverage);
     app()->instance(TaskSettleMetricsCollector::class, new class implements TaskSettleMetricsCollector
     {
-        public function collect(TaskGroup $group): TaskSettleMetrics
+        public function collect(Task $group): TaskSettleMetrics
         {
             return new TaskSettleMetrics(tokens: 90, lineDiff: 18, durationMs: 2500);
         }
@@ -1984,12 +1983,12 @@ function scheduler_pull_request_watcher(?string $status, string $healthState = '
     {
         public function __construct(private ?string $state, private string $healthState, private ?string $headSha) {}
 
-        public function status(TaskGroup $group): ?string
+        public function status(Task $group): ?string
         {
             return $this->state;
         }
 
-        public function health(TaskGroup $group): ?TaskPullRequestHealth
+        public function health(Task $group): ?TaskPullRequestHealth
         {
             return new TaskPullRequestHealth(state: $this->healthState, baseRef: 'main', headSha: $this->headSha);
         }
@@ -2063,12 +2062,12 @@ it('prepares a fixup review without pull request fields', function (): void {
     {
         public function spawnReviewer(Task $task): ?int
         {
-            return test_agent_thread($task->taskGroup, 'reviewer-thread')->id;
+            return test_agent_thread($task->parent, 'reviewer-thread')->id;
         }
 
         public function spawnImplementer(Task $task): ?int
         {
-            return test_agent_thread($task->taskGroup, 'implementer-thread', $task)->id;
+            return test_agent_thread($task->parent, 'implementer-thread', $task)->id;
         }
 
         public function requestReview(Task $task): void {}
@@ -2153,7 +2152,7 @@ it('does not run a baseline for a group whose implementers already started', fun
  * the workspace. Otherwise the stored baseline matches the fake check runner until a test changes it.
  *
  * @param  list<string|null>  $receipts
- * @return array{TaskGroup, Task, FakeTaskRunReceipts, object, FakeTaskCheckRunner, object, object}
+ * @return array{Task, Task, FakeTaskRunReceipts, object, FakeTaskCheckRunner, object, object}
  */
 function scheduler_review(array $receipts, bool $notified = true): array
 {
@@ -2201,12 +2200,12 @@ function scheduler_review(array $receipts, bool $notified = true): array
     {
         public function spawnReviewer(Task $task): ?int
         {
-            return test_agent_thread($task->taskGroup, 'spawned-reviewer')->id;
+            return test_agent_thread($task->parent, 'spawned-reviewer')->id;
         }
 
         public function spawnImplementer(Task $task): ?int
         {
-            return test_agent_thread($task->taskGroup, 'spawned-implementer-'.$task->id, $task)->id;
+            return test_agent_thread($task->parent, 'spawned-implementer-'.$task->id, $task)->id;
         }
 
         public function requestReview(Task $task): void {}
@@ -2269,12 +2268,12 @@ function scheduler_review(array $receipts, bool $notified = true): array
     // ADR 0160: every approval pushes the task branch.
     app()->instance(TaskPullRequestPublisher::class, new class implements TaskPullRequestPublisher
     {
-        public function publish(TaskGroup $group, string $body, string $commit): string
+        public function publish(Task $group, string $body, string $commit): string
         {
             return 'https://github.com/acme/orbit/pull/1';
         }
 
-        public function push(TaskGroup $group, string $commit): void {}
+        public function push(Task $group, string $commit): void {}
     });
 
     return [$group->fresh(['tasks', 'taskable']) ?? $group, $task->fresh() ?? $task, $receipts, $signer, $checks, $dispatcher, $reader];
@@ -2521,12 +2520,12 @@ it('accepts a lost commit response as the stored commit without a reminder or a 
 
         public int $pushFailures = 1;
 
-        public function publish(TaskGroup $group, string $body, string $commit): string
+        public function publish(Task $group, string $body, string $commit): string
         {
             return 'https://github.com/acme/orbit/pull/1';
         }
 
-        public function push(TaskGroup $group, string $commit): void
+        public function push(Task $group, string $commit): void
         {
             $this->commits[] = $commit;
             if ($this->pushFailures > 0) {
@@ -2589,12 +2588,12 @@ it('stores the commit when its response is lost and pushes that stored commit wi
         /** @var list<string> */
         public array $commits = [];
 
-        public function publish(TaskGroup $group, string $body, string $commit): string
+        public function publish(Task $group, string $body, string $commit): string
         {
             return 'https://github.com/acme/orbit/pull/1';
         }
 
-        public function push(TaskGroup $group, string $commit): void
+        public function push(Task $group, string $commit): void
         {
             $this->commits[] = $commit;
         }

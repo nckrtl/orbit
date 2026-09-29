@@ -6,7 +6,7 @@ namespace App\Actions\Tasks;
 
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Models\AgentThread;
-use App\Models\TaskGroup;
+use App\Models\Task;
 use Illuminate\Database\Eloquent\Collection;
 
 final readonly class ShowAgentThreadsAction
@@ -14,7 +14,7 @@ final readonly class ShowAgentThreadsAction
     public function __construct(private RequireTasksExtensionAction $requireExtension) {}
 
     /** @return Collection<int, AgentThread> */
-    public function execute(TaskGroup $group): Collection
+    public function execute(Task $group): Collection
     {
         $this->requireExtension->execute();
 

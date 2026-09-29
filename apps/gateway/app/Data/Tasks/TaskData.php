@@ -59,7 +59,7 @@ final class TaskData extends Data
             title: $task->title,
             brief: $task->brief,
             deliverables: array_map(static fn (TaskDeliverable $deliverable): array => $deliverable->toArray(), $task->deliverableList()),
-            status: $task->status,
+            status: $task->status instanceof TaskStatus ? $task->status : TaskStatus::from($task->status->value),
             implementerAgentThreadId: $task->implementer_agent_thread_id,
             tokens: $task->tokens,
             lineDiff: $task->line_diff,

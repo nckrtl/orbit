@@ -9,7 +9,7 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Models\Instance;
 use App\Models\Node;
-use App\Models\TaskGroup;
+use App\Models\Task;
 
 /**
  * The task checkouts on one Node that its agent watches: the Instances that hold the workspace of a
@@ -32,7 +32,7 @@ final readonly class ListAgentWorkspacesAction
             TaskGroupStatus::Backlog, TaskGroupStatus::Todo, TaskGroupStatus::Reserved,
             TaskGroupStatus::Running, TaskGroupStatus::Reviewing, TaskGroupStatus::Settling,
         ];
-        $groups = TaskGroup::query()
+        $groups = Task::topLevel()
             ->with(['project', 'taskable'])
             ->where('taskable_type', 'instance')
             ->whereNotNull('taskable_id')

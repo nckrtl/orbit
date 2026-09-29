@@ -19,10 +19,9 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskComment;
-use App\Models\TaskGroup;
 use Illuminate\Support\Facades\DB;
 
-function cancellable_task_group(TaskGroupStatus $status, ?string $prUrl = null): TaskGroup
+function cancellable_task_group(TaskGroupStatus $status, ?string $prUrl = null): Task
 {
     $project = Project::query()->create([
         'name' => 'cancel-app',
@@ -44,7 +43,7 @@ function cancellable_task_group(TaskGroupStatus $status, ?string $prUrl = null):
         'checkout_path' => '/srv/orbit/apps/cancel-app/task-21',
         'status' => 'source_resolved',
     ]);
-    $group = TaskGroup::query()->create([
+    $group = Task::topLevel()->create([
         'project_id' => $project->id,
         'title' => 'Cancel me',
         'brief' => 'Remove the stuck task workspace.',
@@ -94,12 +93,12 @@ function cancel_recording_publisher(int $failures = 0): object
 
         public function __construct(private int $failures) {}
 
-        public function publish(TaskGroup $group, string $body, string $commit): string
+        public function publish(Task $group, string $body, string $commit): string
         {
             throw new LogicException('Cancel never opens a pull request.');
         }
 
-        public function push(TaskGroup $group, string $commit): void
+        public function push(Task $group, string $commit): void
         {
             $this->pushes[] = $group->id;
             $this->commits[] = $commit;
@@ -128,7 +127,7 @@ function cancel_approval(Task $task, string $commit): void
     ]);
 }
 
-function cancel_subtask(TaskGroup $group, TaskStatus $status, int $position = 1): Task
+function cancel_subtask(Task $group, TaskStatus $status, int $position = 1): Task
 {
     return Task::query()->create([
         'task_group_id' => $group->id,
@@ -397,7 +396,7 @@ describe('a workspace the group never attached', function (): void {
             {
                 $this->calls[] = $instance->id;
                 if ($this->calls === [$instance->id] && $instance->id !== $this->late->id) {
-                    $group = TaskGroup::query()->findOrFail($this->groupId);
+                    $group = Task::topLevel()->findOrFail($this->groupId);
                     $group->taskable()->associate($this->late);
                     $group->save();
                 }
@@ -466,7 +465,7 @@ it('cancels open subtasks left in a cancelled group', function (): void {
     $completed->forceFill(['assistance_requested' => true, 'settled_at' => $completedAt])->save();
     $failed = cancel_subtask($group, TaskStatus::Failed, 5);
     $already = cancel_subtask($group, TaskStatus::Cancelled, 6);
-    $active = TaskGroup::query()->create([
+    $active = Task::topLevel()->create([
         'project_id' => $group->project_id,
         'title' => 'Still running',
         'brief' => 'Its open subtask stays open.',
