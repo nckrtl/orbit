@@ -10,7 +10,7 @@ Orbit exposes the repository record as a Project, not an App. Compatibility path
 
 ## Status
 
-Proposed. Amends [ADR 0105](/reference/projects#project-and-instance), which established a temporary `/apps` dual-read and dual-write surface, and [ADR 0112](/reference/tasks#drivers) for the task agent driver environment variables. [ADR 0181](/decisions/0181-name-the-domain-project-and-instance-everywhere) names the stored records.
+Proposed. Amends [ADR 0105](/reference/projects#project-and-instance), which established a temporary `/apps` dual-read and dual-write surface, and [ADR 0112](/reference/tasks#drivers) for the task agent driver environment variables. [Project and Instance](/reference/projects#project-and-instance) names the stored records.
 
 ## Context
 
@@ -37,14 +37,14 @@ This amends ADR 0105 as follows:
 - Remove `--wireguard-address`, the alias for `--wireguard-ip`, from `node:add` and Gateway console commands. `--wireguard-ip` is the supported name.
 - Remove the `ORBIT_TASKS_AGENT_DRIVER` environment fallback. `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` and `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` each default directly to `t3`; a configured role-specific driver continues to select the driver for that role.
 
-Stored table, column, and class names are [ADR 0181](/decisions/0181-name-the-domain-project-and-instance-everywhere). This decision does not rename unrelated names such as the GitHub App or Node roles. There is no fleet conversion period or inert compatibility endpoint.
+Stored table, column, and class names are [Project and Instance](/reference/projects#project-and-instance). This decision does not rename unrelated names such as the GitHub App or Node roles. There is no fleet conversion period or inert compatibility endpoint.
 
 ## Rejected alternatives
 
 - Retain `/apps` until older clients have migrated: rejected because the operator does not value legacy support and there is no other user whose migration needs protection.
 - Keep aliases that are cheap or harmless: rejected because duplicate names obscure the supported interface and still require maintenance.
 - Add a conversion window or an inert endpoint: rejected because neither provides value to this operator.
-- Fold the stored-name change into this cleanup: rejected because removing the public compatibility surface and naming the stored records are separate decisions. [ADR 0181](/decisions/0181-name-the-domain-project-and-instance-everywhere) names the stored records.
+- Fold the stored-name change into this cleanup: rejected because removing the public compatibility surface and naming the stored records are separate decisions. [Project and Instance](/reference/projects#project-and-instance) names the stored records.
 
 ## Consequences
 

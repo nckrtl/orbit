@@ -177,7 +177,7 @@ jobs:
         run: |
           case "$PROJECT" in
             apps/cli) architecture_tests='tests/Feature/CommandSurfaceTest.php' ;;
-            apps/gateway) architecture_tests='tests/Unit/Architecture tests/Feature/Infrastructure/AppInstances/ConfiguredOriginReadTest.php tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php' ;;
+            apps/gateway) architecture_tests='tests/Unit/Architecture tests/Feature/Infrastructure/Instances/ConfiguredOriginReadTest.php tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php' ;;
             apps/e2e) architecture_tests='tests/Unit/E2E/ProofFixtureContractTest.php tests/Unit/E2E/ProofFixtureShellContractTest.php' ;;
             packages/php-sdk) architecture_tests='tests/Unit/SuccessRequestIdBoundaryTest.php tests/Unit/RepositoryGuidanceTest.php tests/Unit/Requests/Workspaces/WorkspaceRequestsTest.php tests/Unit/Requests/Deployments/DeploymentRequestsTest.php' ;;
             *) exit 0 ;;
@@ -207,6 +207,9 @@ jobs:
           php-version: '8.5'
           coverage: none
           tools: composer:v2
+
+      - name: Reject App-domain names
+        run: php bin/project-vocabulary
 
       - name: Install Gateway and CLI dependencies
         run: |

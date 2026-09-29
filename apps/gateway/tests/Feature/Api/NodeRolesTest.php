@@ -1278,7 +1278,7 @@ it('does not let force offline or purge remove an app-dev role beneath an Instan
         ->deleteJson("/api/v1/nodes/{$this->node->id}/roles/app-dev", $body)
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation.failed')
-        ->assertJsonPath('error.details.reason', 'app_instances_attached');
+        ->assertJsonPath('error.details.reason', 'instances_attached');
 
     expect($assignment->refresh()->status)
         ->toBe(LifecycleStatus::Active)

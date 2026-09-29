@@ -73,7 +73,7 @@ final readonly class RemoveNodeRoleAction
             throw new NodeRoleValidationException(
                 message: "Role [{$role->value}] cannot be removed while node [{$node->name}] owns Instances.",
                 details: [
-                    'reason' => 'app_instances_attached',
+                    'reason' => 'instances_attached',
                     'role' => $role->value,
                 ],
             );
@@ -359,7 +359,7 @@ final readonly class RemoveNodeRoleAction
                 throw new NodeRoleValidationException(
                     message: "Role [{$role->value}] cannot be removed while node [{$node->name}] owns Instances.",
                     details: [
-                        'reason' => 'app_instances_attached',
+                        'reason' => 'instances_attached',
                         'role' => $role->value,
                     ],
                 );

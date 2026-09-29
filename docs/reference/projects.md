@@ -199,6 +199,22 @@ Instances of one repository share one serving contract. Per-Instance route or PH
 
 ### Project and Instance
 
-The repository record is a Project, and one copy on a Node is an Instance. The model, the table, the foreign key, the class, and these docs use those names. `projects` stores the repository record. `instances` stores the running copy. Related Instance rows use `instance_*`, and Project update rows use `project_updates`. The foreign keys are `project_id` and `instance_id`.
+Project is the repository record. Instance is one running copy of a Project on a Node. Those are the only names for this domain: the model, the table, the foreign key, the class, the API, the CLI, and these docs. Nothing keeps a second name as an alias, a route, a JSON field, a class, a table, or a column.
 
-Monorepo folders such as `apps/cli` and `apps/gateway`, the Laravel root namespace `App\`, `app/` source folders, `config/app.php`, `APP_*` variables, Node roles `app-dev` and `app-prod`, the GitHub App, the type `laravel-app`, the Route kind `app`, and the node storage setting `apps` are not this domain. An alias or a second name was rejected. [ADR 0181](/decisions/0181-name-the-domain-project-and-instance-everywhere) records the choice.
+The model for the repository record is `Project`, and the model for the running copy is `Instance`. Tables are `projects`, `instances`, and `instance_*`. Project update rows are `project_updates`. Foreign keys are `project_id` and `instance_id`. A path parameter that identifies a Project is `{project}`.
+
+Project actions live in `Actions/Projects`. A class is `Project*` or `Instance*` according to whether it belongs to the repository record or the running copy. The Gateway, the CLI, the PHP SDK, and the web app follow that rule. Laravel's root namespace stays `App\`, so those actions are `App\Actions\Projects`.
+
+Environment placeholders are `{{instance.domain}}` and `{{instance.environment}}`. A stored value that contains any other `{{...}}` placeholder is invalid. Synchronization returns `env.reference_unavailable`. A write that fails placeholder validation returns `env.configuration_invalid`. The migration rewrites stored placeholders to these two names. Project has no morph alias. The public subject type is `project`. The Instance morph alias is `instance`. The migration rewrites stored activity class names to `App\Models\Project`.
+
+Realtime types are `project.created`, `project.updated`, and `project.deleted`. Payload classes are `ProjectData`, `InstanceData`, and `InstanceDeploymentData`. Project error codes use the `project.` prefix. `project.has_instances` means removal found Instances. `node.has_instances` means the Node still has Instances. `instance.placement_unavailable` means placement failed. Doctor's repository family is `project`.
+
+Monorepo folders such as `apps/cli` and `apps/gateway`, the Laravel root namespace `App\`, `app/` source folders, `config/app.php`, `APP_*` variables, Node roles `app-dev` and `app-prod`, the GitHub App, the type `laravel-app`, the Route kind `app`, and the node storage setting `apps` are not this domain.
+
+Keeping a stored name that differs from Project or Instance was rejected, because every reader would translate. An alias that accepts another name was rejected, because an alias is a second supported path.
+
+Renaming the monorepo folders, the Laravel root namespace, the `app/` source folders, `config/app.php`, the `APP_*` variables, Node roles, the GitHub App, the type `laravel-app`, the Route kind, or the node storage setting was rejected, because those names are not the Project or Instance record.
+
+Reading a stored placeholder or activity class under a different spelling, as if it were the current name, was rejected: that reading is an alias, and synchronization and activity resolution then fail on rows that use the other spelling. The migration renames tables and columns in place. There is no compatibility view and no dual-write. A caller that sends a removed field, or code that imports a removed class, fails. There is no compatibility period.
+
+A repository check fails when an App-domain name is present in app code, database code, the SDK, the CLI, web sources, or these pages. A monorepo path under `apps/` is not that name. A `covers:` glob names a file that exists, and the check rejects an App-domain name left in that glob.

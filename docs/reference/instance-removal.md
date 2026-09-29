@@ -5,7 +5,8 @@ covers:
   - apps/gateway/app/Actions/Instances/RemoveInstanceAction.php
   - apps/gateway/app/Domain/Instances/{InstanceRemover,InstanceRemovalStatus,InstanceRemovalStep}.php
   - apps/gateway/app/Domain/Instances/Removal/**
-  - apps/gateway/app/Infrastructure/{Instances/{NativeInstanceRemovalProjector,RemoteDevelopmentInstanceSourceRemoval,RecordedProductionInstanceContentRetention},AppInstances/RecordedProductionAppInstanceContentRetention}.php
+  - apps/gateway/app/Infrastructure/*/RecordedProduction*ContentRetention.php
+  - apps/gateway/app/Infrastructure/Instances/{NativeInstanceRemovalProjector,RemoteDevelopmentInstanceSourceRemoval}.php
   - apps/gateway/app/Http/Requests/Instances/RemoveInstanceRequest.php
   - apps/gateway/app/Models/{InstanceRemoval,InstanceRemovalMember}.php
   - apps/cli/app/Commands/Instances/DestroyInstanceCommand.php

@@ -1091,8 +1091,8 @@ it('keeps the specific code behind a role operation failure', function (string $
 ]);
 
 it('drops a malformed operation field and keeps the valid ones', function (mixed $step): void {
-    expect(GatewayFailureRenderer::safeDetails('node_role.remove_failed', ['step' => $step, 'reason' => 'app_instances_attached', 'role' => 'app-dev']))
-        ->toBe(['reason' => 'app_instances_attached', 'role' => 'app-dev']);
+    expect(GatewayFailureRenderer::safeDetails('node_role.remove_failed', ['step' => $step, 'reason' => 'instances_attached', 'role' => 'app-dev']))
+        ->toBe(['reason' => 'instances_attached', 'role' => 'app-dev']);
 })->with([
     'control character' => ["remove:host\nfirewall"],
     'upper case' => ['Remove:Host-Firewall'],

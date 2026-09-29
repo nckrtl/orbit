@@ -777,8 +777,7 @@
                 "Task"
             ],
             "governing_adrs": [
-                "0177",
-                "0181"
+                "0177"
             ]
         },
         {
@@ -805,32 +804,6 @@
             ],
             "governing_adrs": [
                 "0178"
-            ]
-        },
-        {
-            "path": "docs/decisions/0181-name-the-domain-project-and-instance-everywhere.md",
-            "title": "ADR 0181: Name the domain Project and Instance everywhere",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway",
-                "apps/web",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Activity",
-                "Doctor",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Project",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0177",
-                "0181"
             ]
         },
         {
@@ -879,8 +852,7 @@
                 "0145",
                 "0174",
                 "0175",
-                "0178",
-                "0181"
+                "0178"
             ]
         },
         {
@@ -1848,9 +1820,7 @@
                 "Task check",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0181"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/proxycli.md",

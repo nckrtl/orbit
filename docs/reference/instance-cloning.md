@@ -5,7 +5,8 @@ covers:
   - apps/gateway/app/Actions/Instances/{CloneInstanceAction,CloneInstanceEnvironmentAction,InstantiateProjectRuntimeDefinitionsAction}.php
   - apps/gateway/app/Domain/Instances/{InstanceCloneCandidateInspector,CloneCandidateSource,ProductionCloneRouteProjector,ProductionInstanceProvisioner,ProductionInstanceSourceLifecycle}.php
   - apps/gateway/app/Domain/Instances/Sqlite/**
-  - apps/gateway/app/Infrastructure/{Instances/{RemoteInstanceCloneCandidateInspector,RemoteInstanceSqliteSeeder,ProtectedSqliteSnapshotTransfer,RemoteProductionInstanceSourceLifecycle,NativeProductionInstanceProvisioner},AppInstances/NativeProductionAppInstanceProvisioner}.php
+  - apps/gateway/app/Infrastructure/*/NativeProduction*Provisioner.php
+  - apps/gateway/app/Infrastructure/Instances/{RemoteInstanceCloneCandidateInspector,RemoteInstanceSqliteSeeder,ProtectedSqliteSnapshotTransfer,RemoteProductionInstanceSourceLifecycle}.php
   - apps/gateway/app/Http/{Controllers/Api/InstanceClonesController.php,Requests/Instances/CloneInstanceRequest.php}
   - apps/cli/app/Commands/Instances/CloneInstanceCommand.php
   - packages/php-sdk/src/Requests/Instances/CloneInstanceRequest.php

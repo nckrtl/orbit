@@ -3,7 +3,7 @@ title: "Instance environment variables"
 description: "How the Gateway imports, stores, updates, and synchronizes an Instance .env file without exposing its values."
 covers:
   - apps/gateway/app/Domain/Instances/Environment/**
-  - apps/gateway/app/Actions/{Instances/{Import,Update,Synchronize}InstanceEnvironmentAction,AppInstances/{Import,Update,Synchronize}AppInstanceEnvironmentAction}.php
+  - apps/gateway/app/Actions/*/{Import,Update,Synchronize}*EnvironmentAction.php
   - apps/gateway/app/Http/Controllers/Api/InstanceEnvironment*Controller.php
   - apps/gateway/app/Infrastructure/Instances/{RemoteInstanceEnvironmentAccess,NativeInstanceEnvironmentOperationLock}.php
   - apps/gateway/app/Models/{Instance,InstanceEnvironmentValue}.php

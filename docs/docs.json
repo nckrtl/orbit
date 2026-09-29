@@ -563,8 +563,7 @@
               "decisions/0145-publish-the-proxycli-collector-on-collector-cli-proxy-api-orbit",
               "decisions/0174-match-the-task-gate-to-ci-and-repeated-findings",
               "decisions/0175-docs-impact-check-in-orbit-repo",
-              "decisions/0178-run-project-agnostic-tasks-without-a-planner",
-              "decisions/0181-name-the-domain-project-and-instance-everywhere"
+              "decisions/0178-run-project-agnostic-tasks-without-a-planner"
             ]
           }
         ]
@@ -1302,6 +1301,10 @@
     {
       "source": "/decisions/0179-gate-all-extension-surfaces-with-one-gateway-switch",
       "destination": "/cli/extension#why-it-works-this-way"
+    },
+    {
+      "source": "/decisions/0181-name-the-domain-project-and-instance-everywhere",
+      "destination": "/reference/projects#project-and-instance"
     },
     {
       "source": "/decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop",
