@@ -1012,7 +1012,7 @@
                   "version": {
                     "type": "string",
                     "pattern": "^\\d+\\.\\d+\\.\\d+$",
-                    "description": "Display this application version"
+                    "description": "Plausible Community Edition version, for example 3.2.1"
                   }
                 },
                 "required": [
@@ -17146,12 +17146,14 @@
                   },
                   "cache_connection": {
                     "type": "string",
-                    "maxLength": 64
+                    "maxLength": 64,
+                    "description": "Redis Database connection slug for shared Valkey"
                   },
                   "cliproxy_url": {
                     "type": "string",
                     "format": "uri",
-                    "maxLength": 512
+                    "maxLength": 512,
+                    "description": "CLIProxyAPI Management API origin"
                   },
                   "cliproxy_management_key": {
                     "type": "string",
@@ -17288,7 +17290,8 @@
                 "type": "object",
                 "properties": {
                   "disabled": {
-                    "type": "boolean"
+                    "type": "boolean",
+                    "description": "Disable the account"
                   }
                 },
                 "required": [
@@ -19347,18 +19350,22 @@
                   },
                   "title": {
                     "type": "string",
-                    "maxLength": 160
+                    "maxLength": 160,
+                    "description": "Short name of the feature"
                   },
                   "brief": {
                     "type": "string",
-                    "maxLength": 8000
+                    "maxLength": 8000,
+                    "description": "Goal and acceptance"
                   },
                   "status": {
                     "type": "string",
-                    "enum": []
+                    "enum": [],
+                    "description": "backlog (default) or todo"
                   },
                   "notify_coder": {
-                    "type": "boolean"
+                    "type": "boolean",
+                    "description": "Post the Coder settle webhook when the group settles"
                   },
                   "notify_on_settle": {
                     "type": "boolean"
@@ -19667,15 +19674,18 @@
                 "properties": {
                   "title": {
                     "type": "string",
-                    "maxLength": 160
+                    "maxLength": 160,
+                    "description": "New title"
                   },
                   "brief": {
                     "type": "string",
-                    "maxLength": 8000
+                    "maxLength": 8000,
+                    "description": "New brief"
                   },
                   "status": {
                     "type": "string",
-                    "enum": []
+                    "enum": [],
+                    "description": "backlog or todo"
                   }
                 },
                 "additionalProperties": false
@@ -19781,6 +19791,7 @@
           }
         ],
         "x-orbit-extension": "tasks",
+        "description": "List a task group's agent threads.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -20186,11 +20197,13 @@
                 "properties": {
                   "title": {
                     "type": "string",
-                    "maxLength": 160
+                    "maxLength": 160,
+                    "description": "Short name of the step"
                   },
                   "brief": {
                     "type": "string",
-                    "maxLength": 8000
+                    "maxLength": 8000,
+                    "description": "Goal and acceptance of the step"
                   },
                   "deliverables": {
                     "type": "array",
@@ -20255,7 +20268,8 @@
                         "type",
                         "description"
                       ]
-                    }
+                    },
+                    "description": "JSON file with an array of typed deliverables for the step"
                   }
                 },
                 "required": [
@@ -20523,15 +20537,18 @@
                 "properties": {
                   "title": {
                     "type": "string",
-                    "maxLength": 160
+                    "maxLength": 160,
+                    "description": "New title"
                   },
                   "brief": {
                     "type": "string",
-                    "maxLength": 8000
+                    "maxLength": 8000,
+                    "description": "New brief"
                   },
                   "position": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "description": "New position, starting at 1"
                   },
                   "deliverables": {
                     "type": "array",
@@ -20596,7 +20613,8 @@
                         "type",
                         "description"
                       ]
-                    }
+                    },
+                    "description": "JSON file with an array of typed deliverables that replaces the list"
                   }
                 },
                 "additionalProperties": false
@@ -20953,6 +20971,7 @@
           }
         ],
         "x-orbit-extension": "tasks",
+        "description": "List a subtask's comments, newest first.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -21051,6 +21070,7 @@
           }
         ],
         "x-orbit-extension": "tasks",
+        "description": "Ask for assistance on a subtask or resolve a request.",
         "requestBody": {
           "required": true,
           "content": {
@@ -21063,15 +21083,18 @@
                     "enum": [
                       "assistance_requested",
                       "resolution"
-                    ]
+                    ],
+                    "description": "assistance_requested or resolution"
                   },
                   "body": {
                     "type": "string",
-                    "maxLength": 100000
+                    "maxLength": 100000,
+                    "description": "Comment text"
                   },
                   "author": {
                     "type": "string",
-                    "maxLength": 255
+                    "maxLength": 255,
+                    "description": "Who wrote the comment"
                   },
                   "agent_thread_id": {
                     "type": [
