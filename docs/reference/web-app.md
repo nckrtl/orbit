@@ -52,16 +52,16 @@ CPU and memory come from [`process.usage`](/reference/events#process-usage) even
 
 ## Live tasks
 
-When the Gateway reports Tasks enabled, the app keeps the task board, each task group, its agent threads, its comments, and the extension status current from [task events](/reference/events#tasks). When disabled, it hides task navigation and task routes; enabling the extension makes those views available again without removing stored task records.
+When the Gateway reports Tasks enabled, the app keeps the task board, each task, its agent threads, its comments, and the extension status current from [task events](/reference/events#tasks). When disabled, it hides task navigation and task routes; enabling the extension makes those views available again without removing stored task records.
 
 | Event | The app refetches |
 | --- | --- |
-| `task_group.created`, `task_group.updated` | The task list and that group |
-| `task_comment.created` | That Task's comments |
-| `agent_thread.updated` | That group's agent threads and the group |
+| `task_group.created`, `task_group.updated` | The task list and that task |
+| `task_comment.created` | That subtask's comments |
+| `agent_thread.updated` | That task's agent threads and the task |
 | `tasks.updated` | Nothing. It stores the new `enabled` value. |
 
-The app waits 100 milliseconds after a task event and refetches each named query once. A refetch that an event starts replaces a request that is still running. An active group's duration counts forward on the page. Token and line counts change with the next event, and the agent thread stream shows live tokens.
+The app waits 100 milliseconds after a task event and refetches each named query once. A refetch that an event starts replaces a request that is still running. An active task's duration counts forward on the page. Token and line counts change with the next event, and the agent thread stream shows live tokens.
 
 ## Live Activity
 

@@ -53,7 +53,7 @@ The Gateway needs outbound HTTPS to `api.github.com` for every read of a covered
 
 ## How Orbit publishes a task pull request
 
-After the Gateway commits an approved Task, it asks GitHub for a token with `contents: write` and `pull_requests: write` for the Project repository. The token reaches the Node in the same way as a read token. `git` pushes the stored commit as `<commit_sha>:refs/heads/task-{group id}` and never uses `HEAD`. After the last approval, the Gateway opens the pull request with the same kind of token.
+After the Gateway commits an approved subtask, it asks GitHub for a token with `contents: write` and `pull_requests: write` for the Project repository. The token reaches the Node in the same way as a read token. `git` pushes the stored commit as `<commit_sha>:refs/heads/task-{id}` and never uses `HEAD`. After the last approval, the Gateway opens the pull request with the same kind of token.
 
 Publishing has no path without the App. Without an installation that covers the repository, the task counts a communication failure and then asks for assistance. [Tasks](/reference/tasks#pull-request-and-settle-metrics) describes the retry.
 

@@ -172,7 +172,7 @@ The origin key is the SHA-256 of the origin URL's lowercase host and its path, s
 
 The mirror leaves the bridge's other ignored files, such as `.e2e/`, `.env`, and Gateway storage, because the harness and the guests write them. So a file that a guest writes into the mount appears in the bridge, not in the clone. The evidence log is in the bridge too. Every command mirrors the clone first, so any command, such as `status`, pushes an edit. Set `ORBIT_E2E_BRIDGE=0` to run in the clone itself. `bin/e2e-topology-snapshot` never bridges, because snapshot operations belong to the primary checkout.
 
-In a task workspace on branch `task-58`, run `bin/e2e-topology acquire TASK-58 .`, then the other commands with `TASK-58`. The topology snapshot [registers](/reference/topology-snapshot#commands) the primary checkout. When the Gateway ends a task group, it removes the group's bridge. [Tasks](/reference/tasks#complete-and-cleanup) describes that cleanup. Release the topology before the group ends, because bridge removal does not release it.
+In a task workspace on branch `task-58`, run `bin/e2e-topology acquire TASK-58 .`, then the other commands with `TASK-58`. The topology snapshot [registers](/reference/topology-snapshot#commands) the primary checkout. When the Gateway ends a task, it removes the task's bridge. [Tasks](/reference/tasks#complete-and-cleanup) describes that cleanup. Release the topology before the task ends, because bridge removal does not release it.
 
 ## Release
 

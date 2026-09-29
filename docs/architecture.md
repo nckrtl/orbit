@@ -52,7 +52,7 @@ A role refuses a Node that holds a conflicting role. For example, the `gateway` 
 
 **Observation.** Node agents publish state to the `websocket` Node. The Gateway keeps a view of it, and the web app shows it live. [Doctor](/cli/doctor) compares the state the Gateway expects with each Node's actual state and reports every difference without changing anything.
 
-**Tasks.** With the Tasks extension enabled, the Gateway provisions a task workspace on an `app-dev` Node. It runs coding agents there one task at a time and checks each handoff with the Project's task check. At the end, it opens a pull request through the GitHub App. See [Tasks](/reference/tasks).
+**Tasks.** With the Tasks extension enabled, the Gateway provisions a task workspace on an `app-dev` Node. It runs coding agents there one subtask at a time and checks each handoff with the Project's task check. At the end, it opens a pull request through the GitHub App. See [Tasks](/reference/tasks).
 
 ## Data
 

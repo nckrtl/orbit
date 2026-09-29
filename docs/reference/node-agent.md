@@ -57,7 +57,7 @@ The agent asks `GET /api/v1/agent/workspaces` which checkouts to watch, at start
 }
 ```
 
-The list holds the Instances on the caller's Node that hold the workspace of an unfinished task group: `backlog` or `todo` with an Instance, `reserved`, `running`, `reviewing`, or `settling`. `base` is the Project's default branch. `start` is the Instance's starting commit, or null. The list is empty while Tasks is disabled, and it holds at most 64 entries.
+The list holds the Instances on the caller's Node that hold the workspace of an unfinished task: `backlog` or `todo` with an Instance, `reserved`, `running`, `reviewing`, or `settling`. `base` is the Project's default branch. `start` is the Instance's starting commit, or null. The list is empty while Tasks is disabled, and it holds at most 64 entries.
 
 The agent accepts only a normalized absolute path of at most 4,096 bytes that opens as the root of a Git work tree. A linked worktree works. It never opens a path that the list does not name, and never opens a submodule.
 
@@ -251,15 +251,15 @@ These reads ask the view first and fall back when it is not fresh.
 | [`process:logs`](/cli/process#orbit-processlogs) | When the view lists the exact unit or container, the Gateway runs only the log read. | Ownership check over SSH, then the log read |
 | The hibernator's [idle halt](/reference/app-dev-runtime-hibernation#idle-window-and-sweep) | When the view shows the Process stopped, the hibernator skips the stop. | Ownership check and stop over SSH |
 | The [scheduler tick](/reference/tasks#session-routing)'s check for new commits | `commits` is greater than 0 | `git` over SSH |
-| The line diff of an active [task group](/reference/tasks#tokens-and-line-diff) | `diff.added` and `diff.removed`, unless truncated | `git diff --shortstat` over SSH |
+| The line diff of an active [task](/reference/tasks#tokens-and-line-diff) | `diff.added` and `diff.removed`, unless truncated | `git diff --shortstat` over SSH |
 
-A task read uses a workspace only when its `base` and `start` equal the values the reader would use. Reads that decide what the Gateway commits or tells an agent stay on SSH: the branch check before an approval commit, a subtask's start commit, run receipts, and the Project check. The status that a start, stop, or restart returns also stays on SSH, because it must show the change the Gateway just made.
+A task read uses a workspace only when its `base` and `start` equal the values the reader would use. Reads that decide what the Gateway commits or tells an agent stay on SSH: the branch check before an approval commit, a subtask's start commit, turn receipts, and the Project check. The status that a start, stop, or restart returns also stays on SSH, because it must show the change the Gateway just made.
 
 ### Publish runs
 
 The subscriber never reads Prometheus, writes the database, or broadcasts in its socket loop. It starts `php artisan orbit:agent-view-publish` as a child process with the queued work and does not wait for it. Task workspaces, Process usage, and log lines each have their own lane, with one run at a time. A run that takes longer than 12 seconds is stopped.
 
-When a workspace of an unfinished task group reports a new `head` or new diff counts, a run stores the group's line counts when the diff is complete and broadcasts [`task_group.updated`](/reference/events#tasks). A failed run retries after 15 seconds. After five failures in a row, the workspace is dropped until the agent reports a new change.
+When a workspace of an unfinished task reports a new `head` or new diff counts, a run stores the task's line counts when the diff is complete and broadcasts [`task_group.updated`](/reference/events#tasks). A failed run retries after 15 seconds. After five failures in a row, the workspace is dropped until the agent reports a new change.
 
 ### Process usage
 

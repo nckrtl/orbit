@@ -15,7 +15,7 @@ Read the [mission](/mission) and the affected documentation pages first. Every A
 
 ## Write and review
 
-The docs-first subtask of a task group writes the ADR, when one is needed, together with the documentation change. The ADR and the changed pages are the contract for the later subtasks. The [contributor guide](/contributor-guide) describes the docs-first subtask and the docs-impact check.
+The docs-first subtask of a task writes the ADR, when one is needed, together with the documentation change. The ADR and the changed pages are the contract for the later subtasks. The [contributor guide](/contributor-guide) describes the docs-first subtask and the docs-impact check.
 
 A new ADR has the status `In progress.` The maintainer reviews it together with the feature. A change to a decision that is still in progress edits that ADR. A change to built behavior edits the documentation directly, and needs a new ADR only when it is itself a significant decision.
 
@@ -32,7 +32,7 @@ The pull request that completes a decision absorbs it into the documentation and
 
 Older records can share a number. Record each retired slug separately under that number, and keep a live record in the legacy allowlist until it retires. Docs-lint checks the redirect against each slug, not against any redirect that shares the number. This keeps a deleted Incus ADR distinct from a live Tasks ADR that used the same number.
 
-Most decisions are built in one task group, so their ADR is retired in the same pull request that adds it. An ADR stays on main only while its decision spans more than one pull request. A code comment can keep an ADR number, because the overview resolves every retired number.
+Most decisions are built in one task, so their ADR is retired in the same pull request that adds it. An ADR stays on main only while its decision spans more than one pull request. A code comment can keep an ADR number, because the overview resolves every retired number.
 
 ## Record format
 

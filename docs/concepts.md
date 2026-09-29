@@ -34,8 +34,9 @@ These are the terms every part of Orbit shares. Each domain page defines the ter
 
 ## Tasks
 
-- **Task group**: One feature or bug fix, delivered as one pull request. See [Tasks](/reference/tasks).
-- **Task**: One ordered unit of work in a task group. A fresh coding agent implements it. A reviewer approves it. The CLI and web app call it a subtask because it has a parent group.
-- **Deliverable**: A checkable item that a task must produce, such as a file, a test, or a command that passes.
-- **Task check**: The command that a Project runs to verify every task handoff.
-- **Task workspace**: The Instance that Orbit provisions for a task group, and its checkout on an `app-dev` Node.
+- **Task**: One feature or bug fix, delivered as one pull request. The Tasks board shows this top-level `tasks` row, which has no `parent_id`. See [Tasks](/reference/tasks).
+- **Subtask**: A child task with `parent_id` set to its task and with no children of its own. See [Tasks](/reference/tasks).
+- **Deliverable**: A checkable item that a subtask must produce, such as a file, a test, or a command that passes.
+- **Task check**: The command that a Project runs to verify every subtask handoff.
+- **Task workspace**: The Instance that Orbit provisions for a task, and its checkout on an `app-dev` Node.
+- **Turn receipt**: The file `.git/orbit/receipt.json` that the command `.git/orbit/turn` writes. See [Tasks](/reference/tasks#turn-receipt).

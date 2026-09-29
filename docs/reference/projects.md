@@ -153,7 +153,7 @@ Every origin check reads the `remote.origin.url` stored in the checkout. It igno
 
 `project:destroy` removes a Project that has no Instances and no Routes. It deletes the Project's process and Schedule definitions, setup and teardown steps, Node exclusions, and update records.
 
-A Project with task groups cannot be removed. The Gateway refuses the request with HTTP 409 and `project.has_task_groups`.
+A Project with tasks cannot be removed. The Gateway refuses the request with HTTP 409 and `project.has_task_groups`.
 
 ## Errors
 
