@@ -198,8 +198,7 @@ export const proxycliStatusQuery = queryOptions({
 });
 
 /**
- * Task status gates token spend display; task payloads currently lack provider attribution. A
- * `tasks.updated` event stores a change, so callers poll it only with `useTaskPoll()`.
+ * A `tasks.updated` event stores a change, so callers poll task status only with `useTaskPoll()`.
  */
 export const tasksStatusQuery = queryOptions({
     queryKey: ["tasks-status"],

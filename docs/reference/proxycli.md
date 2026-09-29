@@ -118,7 +118,7 @@ The Gateway reads the snapshot from Valkey through the cache connection. `proxyc
 
 `proxycli:update` checks that the account is in the snapshot, or fails with `resource.not_found`. The Gateway then sends `PATCH https://{node-wireguard-ip}:443/v1/accounts/{account}` with `Host: collector.cli-proxy-api.orbit`, Orbit CA verification, and the control token. The account ID must match `[A-Za-z0-9._-]+`. The Gateway then writes the snapshot again with the new state. That write sets `collected_at` to the toggle time and drops each account's `checked_at` and `next_check_at` until the next collection round. The schedule itself is unchanged. When the collector refuses or cannot be reached, the call fails with `proxycli.upstream_failed` (502).
 
-The web app shows the Quota section while the `proxycli` extension is enabled, and reads it every 60 seconds. It shows provider pools only when the collector is set up and the `tasks` extension is also enabled, because the page includes token spend from Tasks. Otherwise it names what is missing. A provider page lists the accounts, the remaining quota and reset time of each window, and the controls to enable or disable an account.
+The web app shows the Quota section while the `proxycli` extension is enabled, and reads it every 60 seconds. It shows provider quota when the collector is configured, whether or not the `tasks` extension is enabled. When the collector is not configured, the page names what is missing. A provider page lists the accounts, the remaining quota and reset time of each window, and the controls to enable or disable an account.
 
 `proxycli:status` reports whether the collector is set up, its hostname, Node, cache connection, and `collected_at`.
 

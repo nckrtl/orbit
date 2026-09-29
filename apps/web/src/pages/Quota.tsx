@@ -17,7 +17,6 @@ import { Status } from "../ui/Status";
 function useQuotaAvailability() {
     const extensions = useQuery(extensionsQuery);
     const proxycliEnabled = extensions.data?.proxycli === true;
-    const tasksEnabled = extensions.data?.tasks === true;
     const status = useQuery({ ...proxycliStatusQuery, enabled: proxycliEnabled });
     let message: string | null = null;
 
@@ -29,9 +28,6 @@ function useQuotaAvailability() {
     } else if (status.data?.enabled !== true) {
         message =
             "The CLIProxyAPI collector is not configured. Run orbit proxycli:setup to configure Quota.";
-    } else if (!tasksEnabled) {
-        message =
-            "Provider quota and token spend require both the CLIProxyAPI collector and the tasks extension. Enable both to view this data.";
     }
 
     return { extensions, status, available: message === null, message };
@@ -195,12 +191,6 @@ const providerColumns: Column<QuotaProvider>[] = [
         width: 46,
         value: (row) => row.windows.map(windowRemaining).join("  ") || "—",
         cell: (row) => <QuotaWindows windows={row.windows} accounts={row.accounts} />,
-    },
-    {
-        header: "Token spend",
-        width: 24,
-        value: () => "Unavailable",
-        cell: () => <span className="text-dim">Not reported by Gateway</span>,
     },
     { header: "Accounts", width: 14, align: "right", value: (row) => String(row.accounts.length) },
     {

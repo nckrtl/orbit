@@ -181,7 +181,7 @@
             },
             {
                 "testid": "quota-unavailable",
-                "purpose": "Shown on Quota when collection or tasks are off."
+                "purpose": "Shown on Quota when the proxycli extension is disabled or the collector is not configured."
             }
         ]
     },
@@ -207,7 +207,7 @@
             },
             {
                 "testid": "quota-unavailable",
-                "purpose": "Shown when quota collection or tasks are off."
+                "purpose": "Shown when the proxycli extension is disabled or the collector is not configured."
             }
         ]
     }

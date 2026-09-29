@@ -11,12 +11,20 @@ it("keeps Quota out of the sidebar while proxycli is disabled", async () => {
     expect(screenText()).not.toContain("Quota");
 });
 
-it("shows an explicit disabled state when tasks are disabled", async () => {
+it("shows provider quota when proxycli is configured and tasks are disabled", async () => {
     await openApp("/quota", { proxycli: true, tasks: false });
 
-    await expect
-        .poll(() => screenText())
-        .toContain("require both the CLIProxyAPI collector and the tasks extension");
+    await expect.element(row("Quota", "Codex")).toBeVisible();
+    await expect.element(row("Quota", "7d 60%")).toBeVisible();
+    expect(screenText()).not.toContain(
+        "require both the CLIProxyAPI collector and the tasks extension",
+    );
+    expect(document.querySelector('[data-testid="quota-unavailable"]')).toBeNull();
+    const headers = [...document.querySelectorAll('[role="columnheader"]')].map((header) =>
+        (header.textContent ?? "").replace(/\s+/g, " ").trim(),
+    );
+    expect(headers).not.toContain("Token spend");
+    expect(screenText()).not.toContain("Token spend");
 });
 
 it("shows Quota as unconfigured while the proxycli extension is enabled without collector setup", async () => {
@@ -65,7 +73,8 @@ it("lists provider windows from the snapshot without Primary or Secondary labels
     await expect.element(row("Quota", "Codex")).toBeVisible();
     await expect.element(row("Quota", "7d 60%")).toBeVisible();
     await expect.element(row("Quota", "5h 90%")).toBeVisible();
-    await expect.element(row("Quota", "Not reported by Gateway")).toBeVisible();
+    expect(screenText()).not.toContain("Not reported by Gateway");
+    expect(screenText()).not.toContain("Token spend");
     expect(screenText()).not.toContain("Primary");
     expect(screenText()).not.toContain("Secondary");
     expect(screenText()).toContain("Cache updated");
