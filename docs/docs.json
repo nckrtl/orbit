@@ -559,7 +559,8 @@
             "pages": [
               "decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
               "decisions/0175-docs-impact-check-in-orbit-repo",
-              "decisions/0178-run-project-agnostic-tasks-without-a-planner"
+              "decisions/0178-run-project-agnostic-tasks-without-a-planner",
+              "decisions/0182-start-tasks-from-project-task-definitions"
             ]
           }
         ]

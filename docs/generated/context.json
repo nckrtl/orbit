@@ -714,6 +714,33 @@
             ]
         },
         {
+            "path": "docs/decisions/0182-start-tasks-from-project-task-definitions.md",
+            "title": "ADR 0182: Start tasks from Project task definitions",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Deliverable",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Route",
+                "Schedule",
+                "Task",
+                "Task workspace"
+            ],
+            "governing_adrs": [
+                "0178",
+                "0182"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -755,7 +782,8 @@
             "governing_adrs": [
                 "0097",
                 "0175",
-                "0178"
+                "0178",
+                "0182"
             ]
         },
         {
