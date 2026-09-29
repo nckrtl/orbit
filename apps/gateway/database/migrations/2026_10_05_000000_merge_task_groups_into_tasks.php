@@ -11,10 +11,15 @@ use Illuminate\Support\Facades\Schema;
 /**
  * One tasks table holds a top-level task and its subtasks.
  * A top-level row keeps its task group id. A subtask gets a new id above those ids.
- * Threads, comments, checks, decisions, annotations, and continuations follow the new id.
+ * Threads, comments, checks, decisions, annotations, continuations, and activity subjects follow the new id.
+ * Activity for a task group becomes activity for the top-level task with the same id.
  */
 return new class extends Migration
 {
+    private const string TaskType = 'App\\Models\\Task';
+
+    private const string TaskGroupType = 'App\\Models\\TaskGroup';
+
     public $withinTransaction = false;
 
     public function up(): void
@@ -229,6 +234,30 @@ return new class extends Migration
         if (Schema::hasTable('jev_decisions') && Schema::hasColumn('jev_decisions', 'task_ids')) {
             $this->remapDecisionTaskIds($map);
         }
+
+        $this->remapActivitySubjects($map);
+    }
+
+    /** @param  array<int, int>  $map */
+    private function remapActivitySubjects(array $map): void
+    {
+        if (! Schema::hasTable('activity_log') || ! Schema::hasColumn('activity_log', 'subject_type') || ! Schema::hasColumn('activity_log', 'subject_id')) {
+            return;
+        }
+
+        if ($map !== []) {
+            foreach ($map as $old => $new) {
+                DB::table('activity_log')->where('subject_type', self::TaskType)->where('subject_id', $old)->update(['subject_id' => -$new]);
+            }
+
+            foreach (array_chunk(array_map(static fn (int $new): int => -$new, array_values($map)), 500) as $chunk) {
+                DB::table('activity_log')->where('subject_type', self::TaskType)->whereIn('subject_id', $chunk)->update([
+                    'subject_id' => $this->negatedColumn('subject_id'),
+                ]);
+            }
+        }
+
+        DB::table('activity_log')->where('subject_type', self::TaskGroupType)->update(['subject_type' => self::TaskType]);
     }
 
     /** @param  array<int, int>  $map */
@@ -369,6 +398,7 @@ return new class extends Migration
     {
         return match ($column) {
             'task_id' => DB::raw('-task_id'),
+            'subject_id' => DB::raw('-subject_id'),
             default => throw new RuntimeException("Cannot remap {$column}."),
         };
     }

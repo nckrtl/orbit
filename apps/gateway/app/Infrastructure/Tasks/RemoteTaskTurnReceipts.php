@@ -60,6 +60,7 @@ final readonly class RemoteTaskTurnReceipts implements TaskTurnReceipts
             printf '%s' "$turn" | base64 -d > "$dir/turn.json.new"
             printf '\n' >> "$dir/turn.json.new"
             mv -f -- "$dir/turn.json.new" "$dir/turn.json"
+            rm -f -- "$dir/run" "$dir/run.json"
             BASH);
     }
 

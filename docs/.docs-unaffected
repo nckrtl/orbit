@@ -59,3 +59,4 @@ docs/cli/doctor.mdx: Doctor findings are unchanged. Renaming the task relation i
 docs/reference/environment-variables.md: Environment variables are unchanged. Renaming the Instance task relation is internal.
 docs/solutions/doctor-incus-proof.md: The Incus doctor proof is unchanged. Renaming the task relation is internal.
 docs/reference/web-verification.md: The quota-unavailable purpose in the feature map now follows proxycli-only Quota. Web verification commands, the map schema, and the demo routes on this page are unchanged.
+docs/reference/cli-ux.md: Task contract snapshots follow the new subtask and group ids. Input, consent, and presentation rules on this page are unchanged.

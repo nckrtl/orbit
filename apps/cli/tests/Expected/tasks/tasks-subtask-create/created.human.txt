@@ -7,7 +7,7 @@ Creating subtask...
 └  Created subtask.
 
 
-┌  Subtask: 3
+┌  Subtask: 4
 │
 ├  Task group           1
 │

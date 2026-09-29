@@ -108,6 +108,24 @@ it('installs the turn command outside the tracked tree and reads the receipt it 
         ->and($status)->toBe('');
 });
 
+it('removes the old run command and receipt when it installs turn', function (): void {
+    $checkout = turn_receipt_checkout();
+    $instance = turn_receipt_instance($checkout);
+    $receipts = turn_receipts(new LocalShellSshExecutor);
+    $orbit = $checkout.'/.git/orbit';
+    mkdir($orbit, 0755, true);
+    file_put_contents($orbit.'/run', "#!/usr/bin/env python3\n");
+    chmod($orbit.'/run', 0755);
+    file_put_contents($orbit.'/run.json', "{\"role\":\"implementer\"}\n");
+
+    $receipts->prepare($instance, TaskThreadRole::Implementer, threadId: 17);
+
+    expect(is_file($orbit.'/run'))->toBeFalse()
+        ->and(is_file($orbit.'/run.json'))->toBeFalse()
+        ->and(is_executable($orbit.'/turn'))->toBeTrue()
+        ->and(is_file($orbit.'/turn.json'))->toBeTrue();
+});
+
 it('does not read a receipt left at the old run path', function (): void {
     $checkout = turn_receipt_checkout();
     $instance = turn_receipt_instance($checkout);

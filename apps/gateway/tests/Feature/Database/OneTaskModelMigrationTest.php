@@ -78,6 +78,16 @@ it('moves groups, subtasks, and every reference into one tasks table without los
             'task_ids' => json_encode([1, 2], JSON_THROW_ON_ERROR), 'questions' => '[]', 'input_state' => '{}',
             'created_at' => now(), 'updated_at' => now(),
         ]);
+        foreach ([
+            ['subtask one', 'App\\Models\\Task', 1],
+            ['fixup', 'App\\Models\\Task', 2],
+            ['annotation', 'App\\Models\\Task', 3],
+            ['group one', 'App\\Models\\TaskGroup', 1],
+            ['group two', 'App\\Models\\TaskGroup', 2],
+            ['project', 'App\\Models\\Project', 1],
+        ] as [$description, $subjectType, $subjectId]) {
+            one_task_activity($description, $subjectType, $subjectId);
+        }
 
         $migration = require database_path('migrations/2026_10_05_000000_merge_task_groups_into_tasks.php');
         $migration->up();
@@ -116,6 +126,12 @@ it('moves groups, subtasks, and every reference into one tasks table without los
             ->and(DB::table('jev_decisions')->where('id', $decisionId)->value('task_group_id'))->toBe(1)
             ->and(DB::table('jev_decisions')->where('id', $decisionId)->value('task_id'))->toBe($fixup)
             ->and(json_decode((string) DB::table('jev_decisions')->where('id', $decisionId)->value('task_ids'), true))->toBe([$subOne, $fixup])
+            ->and(one_task_activity_subject('subtask one'))->toBe(['App\\Models\\Task', $subOne])
+            ->and(one_task_activity_subject('fixup'))->toBe(['App\\Models\\Task', $fixup])
+            ->and(one_task_activity_subject('annotation'))->toBe(['App\\Models\\Task', $annotation])
+            ->and(one_task_activity_subject('group one'))->toBe(['App\\Models\\Task', 1])
+            ->and(one_task_activity_subject('group two'))->toBe(['App\\Models\\Task', 2])
+            ->and(one_task_activity_subject('project'))->toBe(['App\\Models\\Project', 1])
             ->and(DB::select('pragma foreign_key_check'))->toBe([])
             ->and(array_column(Schema::getIndexes('tasks'), 'name'))->toContain(
                 'tasks_parent_id_position_unique',
@@ -178,6 +194,8 @@ it('rolls the merge back when a reference cannot move', function (): void {
             'task_ids' => json_encode([1, 99], JSON_THROW_ON_ERROR), 'questions' => '[]', 'input_state' => '{}',
             'created_at' => now(), 'updated_at' => now(),
         ]);
+        one_task_activity('rolled back subtask', 'App\\Models\\Task', 1);
+        one_task_activity('rolled back group', 'App\\Models\\TaskGroup', 1);
         $migration = require database_path('migrations/2026_10_05_000000_merge_task_groups_into_tasks.php');
 
         expect(fn () => $migration->up())->toThrow(RuntimeException::class, 'lists task 99, which is not a subtask');
@@ -191,19 +209,47 @@ it('rolls the merge back when a reference cannot move', function (): void {
             ->and(DB::table('agent_threads')->where('id', $threadId)->value('task_id'))->toBe(1)
             ->and(DB::table('task_comments')->where('id', $commentId)->value('task_id'))->toBe(1)
             ->and(DB::table('task_checks')->where('id', $checkId)->value('task_id'))->toBe(1)
-            ->and(json_decode((string) DB::table('jev_decisions')->where('id', $decisionId)->value('task_ids'), true))->toBe([1, 99]);
+            ->and(json_decode((string) DB::table('jev_decisions')->where('id', $decisionId)->value('task_ids'), true))->toBe([1, 99])
+            ->and(one_task_activity_subject('rolled back subtask'))->toBe(['App\\Models\\Task', 1])
+            ->and(one_task_activity_subject('rolled back group'))->toBe(['App\\Models\\TaskGroup', 1]);
 
         DB::table('jev_decisions')->where('id', $decisionId)->update([
             'task_ids' => json_encode([1], JSON_THROW_ON_ERROR),
         ]);
         $migration->up();
 
+        $subOne = (int) DB::table('tasks')->where('title', 'Sub One')->value('id');
+
         expect(Schema::hasTable('task_groups'))->toBeFalse()
             ->and(DB::table('tasks')->where('title', 'Group One')->value('id'))->toBe(1)
             ->and(DB::table('tasks')->where('title', 'Sub One')->value('parent_id'))->toBe(1)
-            ->and(DB::table('agent_threads')->where('id', $threadId)->value('task_group_id'))->toBe(1);
+            ->and(DB::table('agent_threads')->where('id', $threadId)->value('task_group_id'))->toBe(1)
+            ->and(one_task_activity_subject('rolled back subtask'))->toBe(['App\\Models\\Task', $subOne])
+            ->and(one_task_activity_subject('rolled back group'))->toBe(['App\\Models\\Task', 1]);
     } finally {
         DB::setDefaultConnection($default);
         DB::purge('one_task_model_rollback');
     }
 });
+
+function one_task_activity(string $description, string $subjectType, int $subjectId): void
+{
+    DB::table('activity_log')->insert([
+        'description' => $description,
+        'subject_type' => $subjectType,
+        'subject_id' => $subjectId,
+        'request_id' => '00000000-0000-4000-8000-000000000001',
+        'command' => 'tasks:show',
+        'status' => 'success',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+}
+
+/** @return array{0: string, 1: int} */
+function one_task_activity_subject(string $description): array
+{
+    $row = DB::table('activity_log')->where('description', $description)->first(['subject_type', 'subject_id']);
+
+    return [(string) $row->subject_type, (int) $row->subject_id];
+}
