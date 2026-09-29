@@ -429,7 +429,11 @@ The scheduler identifies the process by its id and its start time, so a reused p
 
 ### Baseline check
 
-Before the first implementer of a group starts, the check runs on the fresh workspace, with `kind` `baseline`. It first runs the Project's [setup steps](/reference/instance-setup) with their own timeouts. Then it prepares dependencies:
+Before the first implementer of a group starts, the check runs on the fresh workspace, with `kind` `baseline`.
+
+A subtask runs at most one baseline check at a time. Moving a group to Todo and the scheduler tick can both reach the start. Only the first one starts the check. The other finds the running check and waits for its result. The verdict comes from that check, never from a duplicate.
+
+The check first runs the Project's [setup steps](/reference/instance-setup) with their own timeouts. Then it prepares dependencies:
 
 - When the task check runs `composer` or names `vendor/`, it runs `composer install --no-interaction --prefer-dist` where a tracked `composer.json` has no `vendor/autoload.php`.
 - When the task check names Bun, npm, pnpm, Yarn, Node, Vite+, or `node_modules`, it runs `vp install --frozen-lockfile` for each tracked `package.json` with a lockfile and without `node_modules`.
