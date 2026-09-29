@@ -55,3 +55,4 @@ docs/cli/database.mdx: mechanical App to Project/Instance rename, no behavior ch
 docs/cli/profile.mdx: mechanical App to Project/Instance rename, no behavior change
 docs/reference/topology-snapshot.md: prepared-state paths follow the Project and Instance rename; the snapshot procedure is unchanged
 docs/solutions/migrate-unmanaged-executor-hostname.md: mechanical App to Project/Instance rename, no behavior change
+docs/reference/api-reference.md: mechanical App to Project/Instance rename, no behavior change
