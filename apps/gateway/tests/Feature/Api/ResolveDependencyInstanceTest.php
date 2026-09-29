@@ -3,29 +3,29 @@
 declare(strict_types=1);
 
 use App\Infrastructure\Ssh\SshExecutor;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 
 use function Pest\Laravel\mock;
 
-/** @return array{Node, Route, AppInstance, AppInstance} */
+/** @return array{Node, Route, Instance, Instance} */
 function resolution_fixture(): array
 {
     $cluster = Cluster::query()->create(['name' => 'resolution', 'state' => 'active']);
     $caller = Node::query()->create(['name' => 'resolver-caller', 'public_ssh_host' => '192.0.2.80', 'wireguard_ip' => '10.44.0.80', 'user' => 'orbit', 'status' => 'active']);
-    $app = OrbitApp::query()->create(['name' => 'Resolve', 'slug' => 'resolve', 'repository_url' => 'https://example.test/resolve.git']);
+    $project = Project::query()->create(['name' => 'Resolve', 'slug' => 'resolve', 'repository_url' => 'https://example.test/resolve.git']);
     $instances = [];
     foreach ([81, 82] as $octet) {
         $node = Node::query()->create(['name' => 'private-owner-'.$octet, 'public_ssh_host' => '192.0.2.'.$octet, 'wireguard_ip' => '10.44.0.'.$octet, 'user' => 'orbit', 'status' => 'active', 'cluster_id' => $cluster->id]);
         $node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
-        $instances[] = $app->appInstances()->create(['node_id' => $node->id, 'name' => 'private-instance-'.$octet, 'environment' => 'production', 'status' => 'active', 'checkout_path' => '/home/orbit/resolve-'.$octet]);
+        $instances[] = $project->instances()->create(['node_id' => $node->id, 'name' => 'private-instance-'.$octet, 'environment' => 'production', 'status' => 'active', 'checkout_path' => '/home/orbit/resolve-'.$octet]);
         $caller->accessibleNodes()->attach($node);
     }
-    $route = Route::query()->create(['app_id' => $app->id, 'cluster_id' => $cluster->id, 'domain' => 'resolve.example.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
-    $route->targets()->create(['app_instance_id' => $instances[0]->id, 'position' => 0]);
+    $route = Route::query()->create(['project_id' => $project->id, 'cluster_id' => $cluster->id, 'domain' => 'resolve.example.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+    $route->targets()->create(['instance_id' => $instances[0]->id, 'position' => 0]);
     $route->update(['status' => 'active']);
 
     return [$caller, $route, ...$instances];
@@ -37,15 +37,15 @@ describe('dependency domain resolution', function (): void {
         mock(SshExecutor::class)->shouldNotReceive('execute');
         $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->get('/api/v1/instances/resolve?domain=%20RESOLVE.EXAMPLE.TEST%20')
             ->assertOk()->assertExactJson(['data' => [
-                'domain' => $route->domain, 'instance_id' => $instance->id, 'project_id' => $instance->app_id,
+                'domain' => $route->domain, 'instance_id' => $instance->id, 'project_id' => $instance->project_id,
                 'node_id' => $instance->node_id, 'environment' => 'production',
             ], 'meta' => ['request_id' => $this->app['request']->attributes->get('orbit.request_id')]]);
-        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 0);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 0);
     });
 
     it('refuses the entire pool even when every member is accessible', function (): void {
         [$caller, $route, , $second] = resolution_fixture();
-        $route->targets()->create(['app_instance_id' => $second->id, 'position' => 1]);
+        $route->targets()->create(['instance_id' => $second->id, 'position' => 1]);
         $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->get('/api/v1/instances/resolve?domain='.$route->domain)
             ->assertStatus(409)->assertJsonPath('error.code', 'dependencies.target_ambiguous')->assertJsonMissingPath('data');
     });
@@ -53,12 +53,12 @@ describe('dependency domain resolution', function (): void {
     it('does not reveal inaccessible pool members or turn a filtered pool into one target', function (bool $pool): void {
         [$caller, $route, $first, $second] = resolution_fixture();
         if ($pool) {
-            $route->targets()->create(['app_instance_id' => $second->id, 'position' => 1]);
+            $route->targets()->create(['instance_id' => $second->id, 'position' => 1]);
         }
         $caller->accessibleNodes()->detach($pool ? $second->node_id : $first->node_id);
         $response = $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->get('/api/v1/instances/resolve?domain='.$route->domain);
         $response->assertNotFound()->assertJsonPath('error.code', 'dependencies.target_not_found')->assertJsonMissingPath('data');
-        expect($response->getContent())->not->toContain('private-owner', 'private-instance', 'app_id', 'node_id', 'instance_id', 'target_ambiguous');
+        expect($response->getContent())->not->toContain('private-owner', 'private-instance', 'project_id', 'node_id', 'instance_id', 'target_ambiguous');
         $missing = $this->get('/api/v1/instances/resolve?domain=missing.example.test');
         expect($response->json('error.code'))->toBe($missing->json('error.code'))
             ->and($response->json('error.message'))->toBe($missing->json('error.message'))

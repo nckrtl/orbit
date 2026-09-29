@@ -19,7 +19,7 @@ use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Domain\Schedules\ScheduleTargetType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Schedule;
 use Illuminate\Support\Facades\DB;
@@ -40,7 +40,7 @@ final readonly class AddScheduleAction
     {
         $this->validator->validate($data);
         $this->targets->resolve($data->targetType, $data->targetId);
-        $ownerIds = $data->targetType === ScheduleTargetType::AppInstance ? [$data->targetId] : [];
+        $ownerIds = $data->targetType === ScheduleTargetType::Instance ? [$data->targetId] : [];
 
         try {
             return $this->admissions->run($ownerIds, fn (): array => $this->executeOwned($data));
@@ -64,7 +64,7 @@ final readonly class AddScheduleAction
         $target = DB::transaction(function () use ($data): ScheduleTarget {
             $model = match ($data->targetType) {
                 ScheduleTargetType::Node => Node::query()->lockForUpdate()->findOrFail($data->targetId),
-                ScheduleTargetType::AppInstance => AppInstance::query()->lockForUpdate()->findOrFail($data->targetId),
+                ScheduleTargetType::Instance => Instance::query()->lockForUpdate()->findOrFail($data->targetId),
             };
 
             return $this->targets->resolve($data->targetType, $model->id);

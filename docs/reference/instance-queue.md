@@ -2,15 +2,15 @@
 title: "Instance queue"
 description: "How the Gateway reads the Laravel Horizon queue of an Instance, what it returns, and what it never returns."
 covers:
-  - apps/gateway/app/Actions/AppInstances/ShowAppInstanceQueueAction.php
-  - apps/gateway/app/Http/Controllers/Api/AppInstanceQueueController.php
-  - apps/gateway/app/Http/Requests/AppInstances/AppInstanceQueueRequest.php
-  - apps/gateway/app/Infrastructure/AppInstances/RemoteAppInstanceQueueReader.php
+  - apps/gateway/app/Actions/Instances/ShowInstanceQueueAction.php
+  - apps/gateway/app/Http/Controllers/Api/InstanceQueueController.php
+  - apps/gateway/app/Http/Requests/Instances/InstanceQueueRequest.php
+  - apps/gateway/app/Infrastructure/Instances/RemoteInstanceQueueReader.php
 ---
 
 # Instance queue
 
-The Gateway reports the queue of an Instance that runs Laravel Horizon. The report shows the state of Horizon, the load of each queue, and the newest pending, completed, or failed jobs. [Processes and schedules](/reference/app-processes-and-schedules) describes the Process that runs Horizon.
+The Gateway reports the queue of an Instance that runs Laravel Horizon. The report shows the state of Horizon, the load of each queue, and the newest pending, completed, or failed jobs. [Processes and schedules](/reference/processes-and-schedules) describes the Process that runs Horizon.
 
 ## Read the queue
 

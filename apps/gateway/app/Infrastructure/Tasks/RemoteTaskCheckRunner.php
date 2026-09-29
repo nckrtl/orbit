@@ -10,9 +10,9 @@ use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskWorkspaceSnapshot;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Support\ValidatedData;
 use JsonException;
 
@@ -24,9 +24,9 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
     /** A finished status carries the result, the deliverable evidence and a 16 KiB output tail. It outgrows the 64 KiB process default. */
     public const int OutputLimitBytes = 8 * 1024 * 1024;
 
-    public function __construct(private AppDevSshExecutor $ssh) {}
+    public function __construct(private DevelopmentSshExecutor $ssh) {}
 
-    public function start(AppInstance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess
+    public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess
     {
         $script = file_get_contents(resource_path('tasks/check'));
         if ($script === false) {
@@ -65,7 +65,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         return new TaskCheckProcess($pid, $started, $head, $tree);
     }
 
-    public function read(AppInstance $instance, TaskCheckProcess $process): TaskCheckReading
+    public function read(Instance $instance, TaskCheckProcess $process): TaskCheckReading
     {
         $data = $this->run($instance, [(string) $process->pid, $process->started], 'python3 "$dir/check" status "$2" "$3"');
         $output = is_string($data['output'] ?? null) ? $data['output'] : '';
@@ -78,12 +78,12 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         };
     }
 
-    public function cancel(AppInstance $instance, TaskCheckProcess $process): void
+    public function cancel(Instance $instance, TaskCheckProcess $process): void
     {
         $this->run($instance, [(string) $process->pid, $process->started], 'python3 "$dir/check" cancel "$2" "$3"');
     }
 
-    public function snapshot(AppInstance $instance): TaskWorkspaceSnapshot
+    public function snapshot(Instance $instance): TaskWorkspaceSnapshot
     {
         $script = file_get_contents(resource_path('tasks/check'));
         if ($script === false) {
@@ -143,7 +143,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
      * @return array<string, mixed>
      */
     private function run(
-        AppInstance $instance,
+        Instance $instance,
         array $arguments,
         string $command,
         string $unreachable = 'The task workspace could not be reached for the check.',

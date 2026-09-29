@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\TaskGroup;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -21,21 +21,21 @@ final readonly class TaskConcurrencyGuard
         return $this->activeForNode($nodeId, $group->id) < TaskCeilings::PerNode;
     }
 
-    public function activeForApp(int $appId, ?int $exceptGroupId = null): int
+    public function activeForApp(int $projectId, ?int $exceptGroupId = null): int
     {
         return $this->activeQuery($exceptGroupId)
-            ->where('app_id', $appId)
+            ->where('project_id', $projectId)
             ->count();
     }
 
     public function activeForNode(int $nodeId, ?int $exceptGroupId = null): int
     {
-        $instanceIds = AppInstance::query()
+        $instanceIds = Instance::query()
             ->where('node_id', $nodeId)
             ->select('id');
 
         return $this->activeQuery($exceptGroupId)
-            ->whereIn('taskable_type', AppInstance::morphTypes())
+            ->whereIn('taskable_type', Instance::morphTypes())
             ->whereIn('taskable_id', $instanceIds)
             ->count();
     }
@@ -44,7 +44,7 @@ final readonly class TaskConcurrencyGuard
     {
         $taskable = $group->taskable;
 
-        return $taskable instanceof AppInstance ? $taskable->node_id : null;
+        return $taskable instanceof Instance ? $taskable->node_id : null;
     }
 
     /** @return Builder<TaskGroup> */

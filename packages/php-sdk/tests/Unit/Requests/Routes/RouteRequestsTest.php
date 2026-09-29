@@ -17,7 +17,7 @@ use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
 it('transports explicit Route creation values without applying Gateway policy', function (): void {
-    $request = new CreateRouteRequest(domain: 'Odd_Value', publication: 'future-policy', appInstanceId: 7);
+    $request = new CreateRouteRequest(domain: 'Odd_Value', publication: 'future-policy', instanceId: 7);
 
     expect($request->getMethod())
         ->toBe(Method::POST)
@@ -27,13 +27,13 @@ it('transports explicit Route creation values without applying Gateway policy', 
         ->toBe([
             'domain' => 'Odd_Value',
             'publication' => 'future-policy',
-            'app_instance_id' => 7,
+            'instance_id' => 7,
         ]);
 });
 
 it('defaults Route publication to private', function (): void {
-    expect(new CreateRouteRequest(domain: 'shop.test', appInstanceId: 7)->body()->all())
-        ->toBe(['domain' => 'shop.test', 'publication' => 'private', 'app_instance_id' => 7]);
+    expect(new CreateRouteRequest(domain: 'shop.test', instanceId: 7)->body()->all())
+        ->toBe(['domain' => 'shop.test', 'publication' => 'private', 'instance_id' => 7]);
 });
 
 it('omits optional custom proxy fields from create transport', function (): void {
@@ -153,16 +153,16 @@ it('defines the exact update, target, clear, and remove transports', function ()
         ->and($set->resolveEndpoint())
         ->toBe('/api/v1/routes/11/target')
         ->and($set->body()->all())
-        ->toBe(['app_instance_id' => 8])
+        ->toBe(['instance_id' => 8])
         ->and((new SetRouteTargetRequest(11, targetIds: [8, 9], dispositions: [
-            ['app_instance_id' => 10, 'route_id' => 4],
-            ['app_instance_id' => 11, 'remove' => true],
+            ['instance_id' => 10, 'route_id' => 4],
+            ['instance_id' => 11, 'remove' => true],
         ]))->body()->all())
         ->toBe([
             'targets' => [8, 9],
             'dispositions' => [
-                ['app_instance_id' => 10, 'route_id' => 4],
-                ['app_instance_id' => 11, 'remove' => true],
+                ['instance_id' => 10, 'route_id' => 4],
+                ['instance_id' => 11, 'remove' => true],
             ],
         ])
         ->and($clear->getMethod())
@@ -221,7 +221,7 @@ function route_data(): array
     return [
         'id' => 11,
         'kind' => 'app',
-        'app_id' => 3,
+        'project_id' => 3,
         'node_id' => 4,
         'cluster_id' => null,
         'generation_basis_node_id' => null,
@@ -235,8 +235,8 @@ function route_data(): array
         'replaced_by_route_id' => 12,
         'replacement_step' => 'router-caddy',
         'target_set_step' => null,
-        'target' => ['id' => 12, 'app_instance_id' => 7, 'position' => 0],
-        'targets' => [['id' => 12, 'app_instance_id' => 7, 'position' => 0]],
+        'target' => ['id' => 12, 'instance_id' => 7, 'position' => 0],
+        'targets' => [['id' => 12, 'instance_id' => 7, 'position' => 0]],
         'process_id' => null,
         'upstream' => null,
     ];

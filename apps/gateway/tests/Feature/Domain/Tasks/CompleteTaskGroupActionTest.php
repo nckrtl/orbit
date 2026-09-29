@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
-use App\Domain\AppInstances\AppInstanceRemover;
+use App\Domain\Instances\InstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Infrastructure\Ssh\SshExecutor;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
-use App\Models\AppInstanceRemoval;
+use App\Models\Instance;
+use App\Models\InstanceRemoval;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\TaskGroup;
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
@@ -21,7 +21,7 @@ use Tests\Support\LocalShellSshExecutor;
 
 function complete_group(TaskGroupStatus $status = TaskGroupStatus::Settling): TaskGroup
 {
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'complete-app',
         'slug' => 'complete-app',
         'repository_url' => 'git@github.com:nckrtl/orbit.git',
@@ -34,15 +34,15 @@ function complete_group(TaskGroupStatus $status = TaskGroupStatus::Settling): Ta
         'public_ssh_host' => '10.44.0.150',
         'wireguard_ip' => '10.44.0.150',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'task-20',
         'checkout_path' => '/srv/orbit/apps/complete-app/task-20',
         'status' => 'source_resolved',
     ]);
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Complete me',
         'brief' => 'Remove the workspace after merge.',
         'status' => $status,
@@ -51,27 +51,27 @@ function complete_group(TaskGroupStatus $status = TaskGroupStatus::Settling): Ta
     $group->taskable()->associate($instance);
     $group->save();
 
-    return $group->fresh(['app', 'taskable']) ?? $group;
+    return $group->fresh(['project', 'taskable']) ?? $group;
 }
 
 it('removes the shared App instance and marks a settling group completed', function (): void {
     app(TaskExtensionState::class)->enable();
     $group = complete_group();
     $instanceId = $group->taskable_id;
-    $remover = new class implements AppInstanceRemover
+    $remover = new class implements InstanceRemover
     {
         /** @var list<array{0: int, 1: bool}> */
         public array $calls = [];
 
-        public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
+        public function execute(Instance $instance, bool $force): InstanceRemoval
         {
             $this->calls[] = [$instance->id, $force];
             $instance->delete();
 
-            return new AppInstanceRemoval;
+            return new InstanceRemoval;
         }
     };
-    app()->instance(AppInstanceRemover::class, $remover);
+    app()->instance(InstanceRemover::class, $remover);
 
     $completed = app(CompleteTaskGroupAction::class)->execute($group);
 
@@ -79,27 +79,27 @@ it('removes the shared App instance and marks a settling group completed', funct
         ->and($completed->taskable_id)->toBeNull()
         ->and($completed->settled_at)->not->toBeNull()
         ->and($remover->calls)->toBe([[$instanceId, true]])
-        ->and(AppInstance::query()->find($instanceId))->toBeNull();
+        ->and(Instance::query()->find($instanceId))->toBeNull();
 });
 
 it('is idempotent for an already completed group and retries a leftover workspace', function (): void {
     app(TaskExtensionState::class)->enable();
     $group = complete_group(TaskGroupStatus::Completed);
     $instanceId = $group->taskable_id;
-    $remover = new class implements AppInstanceRemover
+    $remover = new class implements InstanceRemover
     {
         /** @var list<array{0: int, 1: bool}> */
         public array $calls = [];
 
-        public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
+        public function execute(Instance $instance, bool $force): InstanceRemoval
         {
             $this->calls[] = [$instance->id, $force];
             $instance->delete();
 
-            return new AppInstanceRemoval;
+            return new InstanceRemoval;
         }
     };
-    app()->instance(AppInstanceRemover::class, $remover);
+    app()->instance(InstanceRemover::class, $remover);
 
     $completed = app(CompleteTaskGroupAction::class)->execute($group);
     $again = app(CompleteTaskGroupAction::class)->execute($completed);
@@ -108,26 +108,26 @@ it('is idempotent for an already completed group and retries a leftover workspac
         ->and($again->status)->toBe(TaskGroupStatus::Completed)
         ->and($remover->calls)->toBe([[$instanceId, true]])
         ->and($again->taskable_id)->toBeNull()
-        ->and(AppInstance::query()->find($instanceId))->toBeNull();
+        ->and(Instance::query()->find($instanceId))->toBeNull();
 });
 
 it('marks the group completed and reports the removal failure when the workspace cannot be removed', function (): void {
     app(TaskExtensionState::class)->enable();
-    $remover = new class implements AppInstanceRemover
+    $remover = new class implements InstanceRemover
     {
         public bool $fail = true;
 
-        public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
+        public function execute(Instance $instance, bool $force): InstanceRemoval
         {
             if ($this->fail) {
                 throw new ResourceOperationException('instance.force_failed', 'The Node is unreachable.', 409);
             }
             $instance->delete();
 
-            return new AppInstanceRemoval;
+            return new InstanceRemoval;
         }
     };
-    app()->instance(AppInstanceRemover::class, $remover);
+    app()->instance(InstanceRemover::class, $remover);
     $group = complete_group();
     $instanceId = $group->taskable_id;
 
@@ -137,7 +137,7 @@ it('marks the group completed and reports the removal failure when the workspace
         ->and($completed->taskable_id)->toBe($instanceId)
         ->and($completed->assistance_requested)->toBeTrue()
         ->and($completed->assistance_reason)->toBe('Workspace removal failed: The Node is unreachable.')
-        ->and(AppInstance::query()->find($instanceId))->not->toBeNull();
+        ->and(Instance::query()->find($instanceId))->not->toBeNull();
 
     $remover->fail = false;
     $retried = app(CompleteTaskGroupAction::class)->execute($completed);
@@ -145,7 +145,7 @@ it('marks the group completed and reports the removal failure when the workspace
     expect($retried->status)->toBe(TaskGroupStatus::Completed)
         ->and($retried->taskable_id)->toBeNull()
         ->and($retried->assistance_requested)->toBeFalse()
-        ->and(AppInstance::query()->find($instanceId))->toBeNull();
+        ->and(Instance::query()->find($instanceId))->toBeNull();
 });
 
 it('returns 409 tasks.not_settling when the group is still running', function (): void {
@@ -455,7 +455,7 @@ function bridge_workspace(TaskGroupStatus $status, string $kind): array
         }
 
         $instance = $group->taskable;
-        if (! $instance instanceof AppInstance) {
+        if (! $instance instanceof Instance) {
             throw new RuntimeException('The bridge fixture has no workspace.');
         }
         $instance->update([
@@ -464,8 +464,8 @@ function bridge_workspace(TaskGroupStatus $status, string $kind): array
             'branch' => $name,
             'checkout_path' => $checkout,
         ]);
-        $group->app?->update(['repository_url' => $origin]);
-        $group = $group->fresh(['app', 'taskable']) ?? $group;
+        $group->project?->update(['repository_url' => $origin]);
+        $group = $group->fresh(['project', 'taskable']) ?? $group;
 
         putenv('XDG_STATE_HOME='.$state);
         $_ENV['XDG_STATE_HOME'] = $state;
@@ -493,14 +493,14 @@ function bridge_bind(): void
     bind_task_node_reachability();
     config(['orbit.tasks.remove_bridge_worktree' => true]);
     app()->instance(SshExecutor::class, new LocalShellSshExecutor);
-    app()->instance(AppInstanceRemover::class, new class implements AppInstanceRemover
+    app()->instance(InstanceRemover::class, new class implements InstanceRemover
     {
-        public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
+        public function execute(Instance $instance, bool $force): InstanceRemoval
         {
             (new Filesystem)->deleteDirectory($instance->checkout_path);
             $instance->delete();
 
-            return new AppInstanceRemoval;
+            return new InstanceRemoval;
         }
     });
 }

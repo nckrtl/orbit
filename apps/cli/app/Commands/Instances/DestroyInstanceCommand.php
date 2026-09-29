@@ -11,11 +11,11 @@ use App\Support\Console\ConsoleWriter;
 use App\Support\Console\ProgressState;
 use App\Support\GatewayFailureRenderer;
 use Orbit\Sdk\GatewayApiException;
-use Orbit\Sdk\Requests\AppInstances\DestroyAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
-use Orbit\Sdk\Responses\AppInstances\AppInstanceRemovalProgressResponse;
-use Orbit\Sdk\Responses\AppInstances\AppInstanceRemovalResponse;
-use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
+use Orbit\Sdk\Requests\Instances\DestroyInstanceRequest;
+use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
+use Orbit\Sdk\Responses\Instances\InstanceRemovalProgressResponse;
+use Orbit\Sdk\Responses\Instances\InstanceRemovalResponse;
+use Orbit\Sdk\Responses\Instances\InstanceResponse;
 
 final class DestroyInstanceCommand extends GatewayCommand
 {
@@ -46,9 +46,9 @@ final class DestroyInstanceCommand extends GatewayCommand
         }
 
         if ($this->option('yes') !== true) {
-            $existing = $this->sendWithProgress($connector, new ShowAppInstanceRequest($instanceId), AppInstanceResponse::class,
+            $existing = $this->sendWithProgress($connector, new ShowInstanceRequest($instanceId), InstanceResponse::class,
                 ['Resolve Instance', 'Loading Instance', 'Loaded Instance']);
-            if (! $existing instanceof AppInstanceResponse) {
+            if (! $existing instanceof InstanceResponse) {
                 return self::FAILURE;
             }
             $isProduction = $existing->productionHome !== null;
@@ -68,11 +68,11 @@ final class DestroyInstanceCommand extends GatewayCommand
         try {
             $response = $progress->during('remove', fn (): object => $this->sendOrThrow(
                 $connector,
-                new DestroyAppInstanceRequest(
+                new DestroyInstanceRequest(
                     $instanceId,
                     force: $this->option('force') === true ? true : null,
                 ),
-                AppInstanceRemovalResponse::class,
+                InstanceRemovalResponse::class,
             ));
         } catch (GatewayApiException $exception) {
             $this->renderRemovalFailure($exception);
@@ -109,7 +109,7 @@ final class DestroyInstanceCommand extends GatewayCommand
                 }
             }
 
-            $progress = AppInstanceRemovalProgressResponse::fromGatewayData($removalData);
+            $progress = InstanceRemovalProgressResponse::fromGatewayData($removalData);
         }
 
         $code = $exception->errorCode() ?? 'gateway.request_failed';
@@ -120,17 +120,17 @@ final class DestroyInstanceCommand extends GatewayCommand
             $code,
             $exception->getMessage(),
             $exception->requestId(),
-            details: $progress instanceof AppInstanceRemovalProgressResponse
+            details: $progress instanceof InstanceRemovalProgressResponse
                 ? [...$details, 'removal' => $progress->toArray()]
                 : $details,
         );
 
-        if ($this->option('json') !== true && $progress instanceof AppInstanceRemovalProgressResponse) {
+        if ($this->option('json') !== true && $progress instanceof InstanceRemovalProgressResponse) {
             $this->writeProgress($progress);
         }
     }
 
-    private function writeProgress(AppInstanceRemovalProgressResponse $progress): void
+    private function writeProgress(InstanceRemovalProgressResponse $progress): void
     {
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Removal: {$progress->name}", [
             'ID' => $progress->id,

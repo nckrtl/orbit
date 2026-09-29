@@ -3,13 +3,12 @@
 declare(strict_types=1);
 
 use Orbit\Sdk\Responses\Activities\ActivityResponse;
-use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
-use Orbit\Sdk\Responses\Apps\AppResponse;
 use Orbit\Sdk\Responses\Doctor\DoctorFamilyResponse;
 use Orbit\Sdk\Responses\Doctor\DoctorIssueResponse;
 use Orbit\Sdk\Responses\Doctor\DoctorNodeResponse;
 use Orbit\Sdk\Responses\Doctor\DoctorReportResponse;
 use Orbit\Sdk\Responses\Firewall\FirewallRuleResponse;
+use Orbit\Sdk\Responses\Instances\InstanceResponse;
 use Orbit\Sdk\Responses\Metrics\MetricsStatusResponse;
 use Orbit\Sdk\Responses\Nodes\AddedNodeAccessResponse;
 use Orbit\Sdk\Responses\Nodes\NodeAccessNodeResponse;
@@ -18,6 +17,7 @@ use Orbit\Sdk\Responses\Nodes\NodeResponse;
 use Orbit\Sdk\Responses\Nodes\RemovedNodeAccessResponse;
 use Orbit\Sdk\Responses\Nodes\RemovedNodeResponse;
 use Orbit\Sdk\Responses\Processes\ProcessResponse;
+use Orbit\Sdk\Responses\Projects\ProjectResponse;
 use Orbit\Sdk\Responses\Routes\RouteResponse;
 use Orbit\Sdk\Responses\Schedules\ScheduleCompletionResponse;
 use Orbit\Sdk\Responses\Schedules\ScheduleLogsResponse;
@@ -78,7 +78,7 @@ it('preserves valid success error codes', function (): void {
 it('normalizes unsafe Route and Metrics success error codes before diagnostics', function (mixed $unsafeCode): void {
     $requestId = '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
     $route = RouteResponse::fromGatewayData(['error_code' => $unsafeCode], $requestId);
-    $appInstance = AppInstanceResponse::fromGatewayData([
+    $instance = InstanceResponse::fromGatewayData([
         'route' => ['error_code' => $unsafeCode],
     ], $requestId);
     $metrics = MetricsStatusResponse::fromGatewayData([
@@ -99,12 +99,12 @@ it('normalizes unsafe Route and Metrics success error codes before diagnostics',
 
     expect($route->errorCode)
         ->toBeNull()
-        ->and($appInstance->route?->errorCode)
+        ->and($instance->route?->errorCode)
         ->toBeNull()
         ->and($metrics->assignment['error_code'])
         ->toBeNull();
 
-    foreach ([$route, $appInstance, $metrics] as $response) {
+    foreach ([$route, $instance, $metrics] as $response) {
         $diagnostics = implode("\n", [
             print_r($response, return: true),
             serialize($response),
@@ -128,7 +128,7 @@ it('redacts credentials from nested success payloads and response diagnostics', 
     $credentialUrl = "https://operator:{$credential}@git.example.test/orbit.git?access_token={$credential}";
     $requestId = '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
     $responses = [
-        AppResponse::fromGatewayData([
+        ProjectResponse::fromGatewayData([
             'repository_url' => $credentialUrl,
         ], $requestId),
         ActivityResponse::fromGatewayData([
@@ -155,13 +155,13 @@ it('redacts credentials from nested success payloads and response diagnostics', 
 it('marks every public gateway DTO factory ingress as sensitive', function (): void {
     $responseFactories = [
         ActivityResponse::class => ['fromGatewayData'],
-        AppResponse::class => ['fromGatewayData'],
+        ProjectResponse::class => ['fromGatewayData'],
         DoctorFamilyResponse::class => ['fromGatewayData'],
         DoctorIssueResponse::class => ['fromGatewayData'],
         DoctorNodeResponse::class => ['fromGatewayData'],
         DoctorReportResponse::class => ['fromGatewayData'],
         FirewallRuleResponse::class => ['fromGatewayData'],
-        AppInstanceResponse::class => ['fromGatewayData'],
+        InstanceResponse::class => ['fromGatewayData'],
         AddedNodeAccessResponse::class => ['fromGatewayData'],
         NodeAccessNodeResponse::class => ['tryFromGatewayData'],
         NodeAccessResponse::class => ['fromGatewayData'],
@@ -252,7 +252,7 @@ it('does not retain malformed response arguments in SDK-owned trace frames', fun
 
     try {
         /** @phpstan-ignore argument.type */
-        AppResponse::fromGatewayData($data, ['request_id' => $credential]);
+        ProjectResponse::fromGatewayData($data, ['request_id' => $credential]);
         $this->fail('Expected malformed request ID rejection.');
     } catch (TypeError $exception) {
         $sdkTrace = print_r(

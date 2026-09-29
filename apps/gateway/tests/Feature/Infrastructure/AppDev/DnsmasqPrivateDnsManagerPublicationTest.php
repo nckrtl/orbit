@@ -4,20 +4,20 @@ declare(strict_types=1);
 
 use App\Domain\AppDev\DnsRequester;
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
-use App\Infrastructure\AppDev\AppDevSiteRepository;
+use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\AppDev\PrivateDnsAnswerCatalog;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Tests\Support\PrivateDnsPublishHarness;
 
@@ -94,7 +94,7 @@ it('restores the previous working service after a restart failure and republishe
 
         $harness->clearRestartFailure();
         $harness->manager()->converge();
-        $expected = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
+        $expected = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render();
 
         expect(file_get_contents($harness->recordsPath()))
             ->toBe($expected)
@@ -219,14 +219,14 @@ function orb260_published_cluster(): array
         'role' => RoleName::Router,
         'status' => LifecycleStatus::Active,
     ]);
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'Published',
         'slug' => 'published',
         'repository_url' => 'https://example.test/published.git',
         'root' => 'public',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $member->id,
         'name' => 'default',
         'checkout_path' => '/home/orbit/apps/published',
@@ -234,17 +234,17 @@ function orb260_published_cluster(): array
         'branch' => 'main',
         'starting_commit' => str_repeat('a', 40),
         'selected_php_version' => '8.5',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $project->id,
         'cluster_id' => $cluster->id,
         'domain' => 'app.cluster.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
 
     return [$route->fresh(), $member->fresh()];

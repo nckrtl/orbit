@@ -2,26 +2,26 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\Dependencies\DependencyEcosystem;
-use App\Domain\AppInstances\Dependencies\DependencyRequirementKind;
-use App\Domain\AppInstances\Dependencies\DependencyScanResult;
-use App\Domain\AppInstances\Dependencies\DependencyScope;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
-use App\Models\AppInstanceDependencyEdge;
-use App\Models\AppInstanceDependencyObservation;
-use App\Models\AppInstanceDependencyResolution;
-use App\Models\AppInstanceDependencyScanAttempt;
+use App\Domain\Instances\Dependencies\DependencyEcosystem;
+use App\Domain\Instances\Dependencies\DependencyRequirementKind;
+use App\Domain\Instances\Dependencies\DependencyScanResult;
+use App\Domain\Instances\Dependencies\DependencyScope;
 use App\Models\DependencyPackage;
+use App\Models\Instance;
+use App\Models\InstanceDependencyEdge;
+use App\Models\InstanceDependencyObservation;
+use App\Models\InstanceDependencyResolution;
+use App\Models\InstanceDependencyScanAttempt;
 use App\Models\Node;
+use App\Models\Project;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-function dependency_inventory_instance(string $name = 'web'): AppInstance
+function dependency_inventory_instance(string $name = 'web'): Instance
 {
-    $app = OrbitApp::query()->firstOrCreate(['slug' => 'dependency-inventory'], [
+    $project = Project::query()->firstOrCreate(['slug' => 'dependency-inventory'], [
         'name' => 'Dependency inventory',
         'repository_url' => 'https://example.test/dependency-inventory.git',
     ]);
@@ -30,7 +30,7 @@ function dependency_inventory_instance(string $name = 'web'): AppInstance
         'status' => 'active',
     ]);
 
-    return $app->appInstances()->create([
+    return $project->instances()->create([
         'node_id' => $node->id,
         'name' => $name,
         'checkout_path' => '/srv/dependency-inventory/'.$name,
@@ -39,10 +39,10 @@ function dependency_inventory_instance(string $name = 'web'): AppInstance
 }
 
 function dependency_inventory_observation(
-    AppInstance $instance,
+    Instance $instance,
     DependencyEcosystem $ecosystem = DependencyEcosystem::Npm,
     bool $present = true,
-): AppInstanceDependencyObservation {
+): InstanceDependencyObservation {
     return $instance->dependencyObservations()->create([
         'ecosystem' => $ecosystem,
         'present' => $present,
@@ -55,10 +55,10 @@ function dependency_inventory_observation(
 }
 
 function dependency_inventory_resolution(
-    AppInstanceDependencyObservation $observation,
+    InstanceDependencyObservation $observation,
     string $locator = 'widget@1.0.0(peer@2.0.0)',
     string $version = '1.0.0',
-): AppInstanceDependencyResolution {
+): InstanceDependencyResolution {
     $package = DependencyPackage::query()->firstOrCreate([
         'ecosystem' => $observation->ecosystem,
         'name' => 'widget',
@@ -77,7 +77,7 @@ function dependency_inventory_resolution(
 }
 
 /** @param array<string, mixed> $attributes */
-function dependency_inventory_edge(AppInstanceDependencyObservation $observation, array $attributes = []): AppInstanceDependencyEdge
+function dependency_inventory_edge(InstanceDependencyObservation $observation, array $attributes = []): InstanceDependencyEdge
 {
     return $observation->edges()->create(array_replace([
         'from_resolution_id' => null,
@@ -116,7 +116,7 @@ describe('dependency inventory persistence', function (): void {
             'widget@1.0.0(peer@2.0.0)', 'widget@1.0.0(peer@3.0.0)', 'widget@2.0.0',
         ]);
         expect($stored->resolutions->pluck('version')->all())->toBe(['1.0.0', '1.0.0', '2.0.0']);
-        expect($stored->resolutions->every(fn (AppInstanceDependencyResolution $resolution): bool => $resolution->regular && $resolution->development))->toBeTrue();
+        expect($stored->resolutions->every(fn (InstanceDependencyResolution $resolution): bool => $resolution->regular && $resolution->development))->toBeTrue();
         expect($first->package->resolutions()->count())->toBe(4);
         expect($branch->fresh()->version)->toBe('dev-main');
         expect($direct->fresh()->fromResolution)->toBeNull();
@@ -130,7 +130,7 @@ describe('dependency inventory persistence', function (): void {
         expect($peer->fresh()->kind)->toBe(DependencyRequirementKind::Peer);
         expect($peer->fresh()->optional)->toBeTrue();
         expect($stored->edges->pluck('scope')->all())->toContain(DependencyScope::Regular, DependencyScope::Development);
-        expect($stored->appInstance->is($instance))->toBeTrue();
+        expect($stored->instance->is($instance))->toBeTrue();
         expect($first->observation->is($observation))->toBeTrue();
         expect($direct->observation->is($observation))->toBeTrue();
         $this->assertDatabaseCount('dependency_packages', 2);
@@ -167,7 +167,7 @@ describe('dependency inventory persistence', function (): void {
         expect($instance->dependencyScanAttempts()->orderBy('id')->pluck('error_code')->all())
             ->toBe(['source_unavailable', null, 'source_changed']);
         expect($firstFailure->fresh()->attempted_at)->toBeInstanceOf(CarbonImmutable::class);
-        expect($firstFailure->appInstance->is($instance))->toBeTrue();
+        expect($firstFailure->instance->is($instance))->toBeTrue();
     });
 
     it('rejects duplicate package, observation and resolution identities', function (): void {
@@ -232,9 +232,9 @@ describe('dependency inventory persistence', function (): void {
         $observation = dependency_inventory_observation($instance);
         $resolution = dependency_inventory_resolution($observation);
 
-        expect(fn () => $observation->update(['app_instance_id' => $instance->id + 100]))->toThrow(QueryException::class);
-        expect(fn () => AppInstanceDependencyScanAttempt::query()->create([
-            'app_instance_id' => $instance->id + 100, 'ecosystem' => 'npm', 'attempted_at' => now(),
+        expect(fn () => $observation->update(['instance_id' => $instance->id + 100]))->toThrow(QueryException::class);
+        expect(fn () => InstanceDependencyScanAttempt::query()->create([
+            'instance_id' => $instance->id + 100, 'ecosystem' => 'npm', 'attempted_at' => now(),
         ]))->toThrow(QueryException::class);
         expect(fn () => $resolution->update(['dependency_package_id' => $resolution->dependency_package_id + 100]))->toThrow(QueryException::class);
     });
@@ -259,15 +259,15 @@ describe('dependency inventory persistence', function (): void {
         $this->assertModelExists($second);
         $this->assertModelExists($secondResolution);
         $this->assertModelExists($retainedEdge);
-        $this->assertDatabaseCount('app_instance_dependency_edges', 1);
-        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 1);
+        $this->assertDatabaseCount('instance_dependency_edges', 1);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 1);
         expect(fn () => $secondResolution->package->delete())->toThrow(QueryException::class);
         $retained->delete();
         $this->assertDatabaseCount('dependency_packages', 1);
-        $this->assertDatabaseCount('app_instance_dependency_observations', 0);
-        $this->assertDatabaseCount('app_instance_dependency_resolutions', 0);
-        $this->assertDatabaseCount('app_instance_dependency_edges', 0);
-        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 0);
+        $this->assertDatabaseCount('instance_dependency_observations', 0);
+        $this->assertDatabaseCount('instance_dependency_resolutions', 0);
+        $this->assertDatabaseCount('instance_dependency_edges', 0);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 0);
     });
 
     it('rolls back an interrupted graph replacement without losing the previous graph or other ecosystem', function (): void {
@@ -299,19 +299,19 @@ describe('dependency inventory persistence', function (): void {
         $instance->dependencyScanAttempts()->create(['ecosystem' => 'npm', 'attempted_at' => now()]);
         $migration = require base_path('database/migrations/2026_09_15_200000_create_instance_dependency_inventory.php');
 
-        $migration->down();
+        run_legacy_schema_migration($migration, 'down');
         try {
-            foreach (['dependency_packages', 'app_instance_dependency_observations', 'app_instance_dependency_resolutions', 'app_instance_dependency_edges', 'app_instance_dependency_scan_attempts'] as $table) {
+            foreach (['dependency_packages', 'instance_dependency_observations', 'instance_dependency_resolutions', 'instance_dependency_edges', 'instance_dependency_scan_attempts'] as $table) {
                 expect(Schema::hasTable($table))->toBeFalse();
             }
             expect($instance->fresh()->getAttributes())->toBe($before);
         } finally {
-            $migration->up();
+            run_legacy_schema_migration($migration, 'up');
         }
 
         $new = dependency_inventory_observation($instance);
         dependency_inventory_resolution($new);
-        $this->assertDatabaseCount('app_instance_dependency_resolutions', 1);
+        $this->assertDatabaseCount('instance_dependency_resolutions', 1);
         expect($instance->fresh()->getAttributes())->toBe($before);
     });
 
@@ -325,7 +325,7 @@ describe('dependency inventory persistence', function (): void {
         expect($observation->fresh()->format)->toBe('pnpm:9.0');
         expect($resolution->fresh()->source_reference)->toBe('feature/opaque-branch');
         expect($resolution->fresh()->integrity)->toBe('sha512-fixture');
-        foreach ([$observation, $resolution, new AppInstanceDependencyScanAttempt] as $model) {
+        foreach ([$observation, $resolution, new InstanceDependencyScanAttempt] as $model) {
             foreach (['stdout', 'stderr', 'metadata', 'source_url', 'manifest', 'lockfile', 'credentials'] as $field) {
                 expect($model->isFillable($field))->toBeFalse();
                 expect(Schema::hasColumn($model->getTable(), $field))->toBeFalse();
@@ -386,7 +386,7 @@ describe('dependency inventory persistence', function (): void {
         expect(fn () => $instance->dependencyScanAttempts()->create([
             'ecosystem' => 'npm', 'attempted_at' => now(), 'error_code' => $errorCode,
         ]))->toThrow(InvalidArgumentException::class);
-        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 0);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 0);
     })->with([
         'process text' => 'Failed fetching https://user:secret@example.test',
         'url' => 'https://example.test',

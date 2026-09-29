@@ -19,9 +19,9 @@ it('records a certificate for every role site that renders today and for nothing
     $collector = caddy_certificate_migration_node('collector', []);
     app(ProxyCliState::class)->enable($collector->id, 'cache', 'http://127.0.0.1:8317', 'management', 'read', 'control');
     $migration = caddy_certificate_migration();
-    $migration->down();
+    run_legacy_schema_migration($migration, 'down');
 
-    $migration->up();
+    run_legacy_schema_migration($migration, 'up');
 
     $records = new CaddySiteCertificates;
 
@@ -33,7 +33,7 @@ it('records a certificate for every role site that renders today and for nothing
         ->and($records->published($removalFailed->id, CaddySiteCertificates::Analytics))->toBeFalse()
         ->and($records->published($metrics->id, CaddySiteCertificates::Metrics))->toBeFalse();
 
-    $migration->down();
+    run_legacy_schema_migration($migration, 'down');
 
     expect($records->published($websocket->id, CaddySiteCertificates::Websocket))->toBeFalse()
         ->and(app(ProxyCliState::class)->enabled())->toBeTrue();
@@ -42,9 +42,9 @@ it('records a certificate for every role site that renders today and for nothing
 it('records no Metrics certificate on the Gateway while no Metrics role renders', function (): void {
     $gateway = caddy_certificate_migration_node('gateway', [RoleName::Gateway->value => [LifecycleStatus::Active, null]]);
     $migration = caddy_certificate_migration();
-    $migration->down();
+    run_legacy_schema_migration($migration, 'down');
 
-    $migration->up();
+    run_legacy_schema_migration($migration, 'up');
 
     expect(new CaddySiteCertificates()->published($gateway->id, CaddySiteCertificates::Metrics))->toBeFalse();
 });

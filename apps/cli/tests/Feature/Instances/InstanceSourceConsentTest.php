@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\AppInstances\DestroyAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\TransferAppInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\DestroyInstanceDeployStepRequest;
 use Orbit\Sdk\Requests\Deployments\ListInstanceDeployStepsRequest;
+use Orbit\Sdk\Requests\Instances\DestroyInstanceRequest;
+use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
+use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
+use Orbit\Sdk\Requests\Instances\TransferInstanceRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
 use Symfony\Component\Process\Process;
 
@@ -29,33 +29,33 @@ function instance_source_consent_case(string $family): array
             'arguments' => ['instance:destroy', '11'],
             'prompt' => 'Remove Instance [source] (#11) and delete its owned development source, Route and runtime?',
             'reads' => 1, 'option' => '--yes', 'code' => 'input.confirmation_required',
-            'replies' => [instance_source_reply(ShowAppInstanceRequest::class, $instance),
-                instance_source_reply(DestroyAppInstanceRequest::class, ['id' => 11, 'name' => 'source', 'force' => false, 'status' => 'completed', 'total' => 1, 'completed' => 1, 'remaining' => 0])],
-            'mutation' => DestroyAppInstanceRequest::class, 'body' => [],
+            'replies' => [instance_source_reply(ShowInstanceRequest::class, $instance),
+                instance_source_reply(DestroyInstanceRequest::class, ['id' => 11, 'name' => 'source', 'force' => false, 'status' => 'completed', 'total' => 1, 'completed' => 1, 'remaining' => 0])],
+            'mutation' => DestroyInstanceRequest::class, 'body' => [],
         ],
         'step' => [
             'arguments' => ['instance:deploy-step:destroy', '11', 'migrate'],
             'prompt' => 'Remove deploy step [migrate] from Instance [source] (#11)?',
             'reads' => 2, 'option' => '--yes', 'code' => 'input.confirmation_required',
-            'replies' => [instance_source_reply(ShowAppInstanceRequest::class, $instance), instance_source_reply(ListInstanceDeployStepsRequest::class, [$step]), instance_source_reply(DestroyInstanceDeployStepRequest::class, $step)],
+            'replies' => [instance_source_reply(ShowInstanceRequest::class, $instance), instance_source_reply(ListInstanceDeployStepsRequest::class, [$step]), instance_source_reply(DestroyInstanceDeployStepRequest::class, $step)],
             'mutation' => DestroyInstanceDeployStepRequest::class, 'body' => [],
         ],
         'transfer' => [
             'arguments' => ['instance:transfer', '11', '8'],
             'prompt' => 'Transfer Instance [source] (#11) from Node #2 to Node [destination] (#8) with downtime and deletion of the old placement?',
             'reads' => 2, 'option' => '--force', 'code' => 'instance.confirmation_required',
-            'replies' => [instance_source_reply(ShowAppInstanceRequest::class, $instance),
+            'replies' => [instance_source_reply(ShowInstanceRequest::class, $instance),
                 instance_source_reply(ShowNodeRequest::class, ['id' => 8, 'name' => 'destination']),
-                instance_source_reply(TransferAppInstanceRequest::class, [...$instance, 'node_id' => 8, 'domain' => 'source.test', 'transfer' => ['id' => 11, 'cleanup_completed' => true]])],
-            'mutation' => TransferAppInstanceRequest::class, 'body' => ['node_id' => 8],
+                instance_source_reply(TransferInstanceRequest::class, [...$instance, 'node_id' => 8, 'domain' => 'source.test', 'transfer' => ['id' => 11, 'cleanup_completed' => true]])],
+            'mutation' => TransferInstanceRequest::class, 'body' => ['node_id' => 8],
         ],
         'register' => [
             'arguments' => ['instance:register'],
             'prompt' => 'Transfer source [/work/source] to Orbit ownership, allowing relocation and later removal?',
             'reads' => 0, 'option' => '--yes', 'code' => 'input.confirmation_required',
             'registration_facts' => ['path' => '/work/source', 'repositoryUrl' => 'git@github.com:acme/source.git', 'slug' => 'source', 'defaultBranch' => 'main', 'branch' => 'main', 'root' => 'public', 'layout' => 'checkout', 'commit' => str_repeat('a', 40)],
-            'replies' => [instance_source_reply(RegisterAppInstanceRequest::class, ['app' => ['id' => 3, 'slug' => 'source'], 'app_instance' => $instance, 'instances' => [$instance], 'status' => 'completed', 'source_count' => 1, 'completed_count' => 1])],
-            'mutation' => RegisterAppInstanceRequest::class, 'body' => ['source_path' => '/work/source'],
+            'replies' => [instance_source_reply(RegisterInstanceRequest::class, ['project' => ['id' => 3, 'slug' => 'source'], 'instance' => $instance, 'instances' => [$instance], 'status' => 'completed', 'source_count' => 1, 'completed_count' => 1])],
+            'mutation' => RegisterInstanceRequest::class, 'body' => ['source_path' => '/work/source'],
         ],
     };
 
@@ -130,7 +130,7 @@ it('names the original source when confirming a transfer retry after cutover', f
         ->and($result['output'])->toContain($case['prompt'])
         ->and($result['requests'])->toHaveCount($accepted ? 3 : 2);
     if ($accepted) {
-        expect($result['requests'][2]['class'])->toBe(TransferAppInstanceRequest::class)
+        expect($result['requests'][2]['class'])->toBe(TransferInstanceRequest::class)
             ->and($result['requests'][2]['body'])->toBe(['node_id' => 8]);
     }
 })->with([false, true]);
@@ -144,8 +144,8 @@ it('leaves changed transfer retry options to Gateway identity validation', funct
         'source_node_id' => 2, 'destination_node_id' => 8,
         'cutover_completed' => true, 'cleanup_completed' => false,
     ];
-    $message = 'Only the identical transfer request can resume this AppInstance.';
-    $case['replies'][2] = ['class' => TransferAppInstanceRequest::class, 'status' => 409,
+    $message = 'Only the identical transfer request can resume this Instance.';
+    $case['replies'][2] = ['class' => TransferInstanceRequest::class, 'status' => 409,
         'body' => ['error' => ['code' => 'instance.transfer_retry_conflict', 'message' => $message]]];
 
     $result = run_instance_source_consent($case, ['y', "\r"]);

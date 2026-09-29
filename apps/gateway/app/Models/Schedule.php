@@ -29,7 +29,7 @@ use Illuminate\Support\Str;
  * @property string|null $error_code
  * @property Carbon|null $last_run_at
  * @property ScheduleRunStatus|null $last_run_status
- * @property-read Node|AppInstance $target
+ * @property-read Node|Instance $target
  * @property-read Node $hostNode
  */
 final class Schedule extends Model

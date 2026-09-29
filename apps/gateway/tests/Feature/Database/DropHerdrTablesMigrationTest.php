@@ -17,8 +17,8 @@ it('leaves no Herdr tables after migration', function (): void {
 });
 
 it('drops Herdr tables that still hold rows and keeps Nodes and Processes', function (): void {
-    drop_herdr_tables_migration('2026_09_13_210000_create_herdr_sessions.php')->up();
-    drop_herdr_tables_migration('2026_09_14_145247_add_management_to_herdr_sessions_table.php')->up();
+    run_legacy_schema_migration(drop_herdr_tables_migration('2026_09_13_210000_create_herdr_sessions.php'), 'up');
+    run_legacy_schema_migration(drop_herdr_tables_migration('2026_09_14_145247_add_management_to_herdr_sessions_table.php'), 'up');
     $node = Node::query()->create([
         'name' => 'beast',
         'status' => LifecycleStatus::Active,
@@ -60,8 +60,8 @@ it('drops Herdr tables that still hold rows and keeps Nodes and Processes', func
     DB::table('herdr_observation_nonces')->insert(['jti' => 'retired-grant', 'expires_at' => now()]);
 
     $migration = drop_herdr_tables_migration('2026_09_25_120000_drop_herdr_tables.php');
-    $migration->up();
-    $migration->up();
+    run_legacy_schema_migration($migration, 'up');
+    run_legacy_schema_migration($migration, 'up');
 
     expect(Schema::hasTable('herdr_sessions'))->toBeFalse()
         ->and(Schema::hasTable('herdr_observation_nonces'))->toBeFalse()

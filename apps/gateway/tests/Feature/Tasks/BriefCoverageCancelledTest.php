@@ -12,8 +12,8 @@ use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Infrastructure\Tasks\JevRecorder;
 use App\Infrastructure\Tasks\LaravelAiTaskBriefCoverage;
-use App\Models\App as OrbitApp;
 use App\Models\JevDecision;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskGroup;
 use Illuminate\Contracts\Debug\ExceptionHandler;
@@ -29,14 +29,14 @@ use function Pest\Laravel\mock;
 /** @return array{TaskGroup, Task, Task, Task} */
 function cancelled_brief_coverage_group(): array
 {
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'Shop',
         'slug' => 'shop',
         'repository_url' => 'git@github.com:acme/shop.git',
         'default_branch' => 'main',
     ]);
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Export orders',
         'brief' => 'Export orders as CSV.',
         'status' => 'reviewing',

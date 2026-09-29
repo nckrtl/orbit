@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Metrics;
 
-use App\Domain\AppInstances\AppInstanceState;
-use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
+use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Metrics\MetricsExporterProjection;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Caddy\Build\CaddySiteRoles;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Route;
@@ -39,13 +39,13 @@ final readonly class ServiceMetricsProjection
         $roles = $node->roles->filter(static fn (NodeRole $role): bool => CaddySiteRoles::serves($role))->pluck('role');
         $caddy = $selected && $roles->contains(RoleName::Ingress);
         $fpm = $selected && $roles->contains(RoleName::AppProd);
-        $instances = array_values(AppInstance::query()->where('node_id', $node->id)
+        $instances = array_values(Instance::query()->where('node_id', $node->id)
             ->whereHas('node.roles', static fn ($query) => $query
                 ->where('role', RoleName::AppProd)
                 ->where('status', LifecycleStatus::Active))
-            ->where('status', AppInstanceState::Active)
+            ->where('status', InstanceState::Active)
             ->whereNotNull('production_php_service')->whereNotNull('selected_php_version')
-            ->with(['app', 'node'])->orderBy('id')->get()->all());
+            ->with(['project', 'node'])->orderBy('id')->get()->all());
         foreach ($instances as $instance) {
             ProductionPhpRuntimeIdentity::from($instance);
         }

@@ -6,12 +6,12 @@ namespace App\Infrastructure\Tasks;
 
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\AppInstances\AppInstanceDestinationGuard;
-use App\Domain\AppInstances\AppInstanceSourceLayout;
-use App\Domain\AppInstances\AppInstanceState;
-use App\Domain\AppInstances\DevelopmentAppInstanceProvisioner;
-use App\Domain\AppInstances\DevelopmentAppInstanceSourceLifecycle;
-use App\Domain\AppInstances\DevelopmentSourceResolution;
+use App\Domain\Instances\DevelopmentInstanceProvisioner;
+use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
+use App\Domain\Instances\DevelopmentSourceResolution;
+use App\Domain\Instances\InstanceDestinationGuard;
+use App\Domain\Instances\InstanceSourceLayout;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
@@ -29,9 +29,9 @@ use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCeilings;
 use App\Domain\Tasks\TaskConcurrencyGuard;
 use App\Domain\Tasks\TaskWorkspaceName;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\TaskGroup;
 use Illuminate\Support\Facades\DB;
 
@@ -42,28 +42,28 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         private StorageRootResolver $storageRoots,
         private NodeSettingsNormalizer $nodeSettings,
         private ManagedCheckoutOverlap $checkoutOverlap,
-        private AppInstanceDestinationGuard $destinationGuard,
+        private InstanceDestinationGuard $destinationGuard,
         private AppDevSourceOperationLock $sourceLock,
-        private DevelopmentAppInstanceSourceLifecycle $source,
-        private DevelopmentAppInstanceProvisioner $development,
+        private DevelopmentInstanceSourceLifecycle $source,
+        private DevelopmentInstanceProvisioner $development,
         private TaskConcurrencyGuard $ceilings,
         private AgentDriverRegistry $drivers,
     ) {}
 
-    public function provision(InstanceProvisionIntent $intent): ?AppInstance
+    public function provision(InstanceProvisionIntent $intent): ?Instance
     {
-        $group = $intent->group->loadMissing(['app', 'taskable']);
+        $group = $intent->group->loadMissing(['project', 'taskable']);
         $existing = $group->taskable;
 
-        if ($existing instanceof AppInstance) {
+        if ($existing instanceof Instance) {
             return $existing;
         }
 
-        if (! $this->hasSourceDefaults($group->app, $intent->visitable)) {
+        if (! $this->hasSourceDefaults($group->project, $intent->visitable)) {
             return null;
         }
 
-        $node = $this->selectNode($group->app, [$intent->group->implementer_agent_driver, $intent->group->reviewer_agent_driver], $this->existingWorkspaceNodeId($group));
+        $node = $this->selectNode($group->project, [$intent->group->implementer_agent_driver, $intent->group->reviewer_agent_driver], $this->existingWorkspaceNodeId($group));
 
         if (! $node instanceof Node) {
             return null;
@@ -76,15 +76,15 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         }
     }
 
-    private function createWorkspace(TaskGroup $group, Node $node, bool $visitable): AppInstance
+    private function createWorkspace(TaskGroup $group, Node $node, bool $visitable): Instance
     {
         $name = TaskWorkspaceName::for($group);
-        $existing = AppInstance::query()
-            ->where('app_id', $group->app_id)
+        $existing = Instance::query()
+            ->where('project_id', $group->project_id)
             ->where('name', $name)
             ->first();
 
-        if ($existing instanceof AppInstance) {
+        if ($existing instanceof Instance) {
             // Only the group's own workspace carries its task branch. Another Instance with the name is never adopted.
             if ($existing->branch_override !== $name) {
                 throw new ResourceOperationException(
@@ -97,38 +97,38 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             if ($existing->node_id !== $node->id) {
                 throw new ResourceOperationException(
                     'instance.placement_conflict',
-                    'AppInstance placement is immutable.',
+                    'Instance placement is immutable.',
                     409,
                 );
             }
 
-            $appInstance = $existing;
+            $instance = $existing;
         } else {
             $account = $this->accounts->resolve($node);
             $roots = $this->storageRoots->resolveApps(
                 $this->nodeSettings->fromStored($node->settings),
                 $account,
             );
-            $checkout = $roots->append($group->app->slug, $name);
+            $checkout = $roots->append($group->project->slug, $name);
             $this->checkoutOverlap->assertAvailable($node->id, $checkout, 'instance.path_taken');
             $this->destinationGuard->assertUnoccupied($node, $checkout);
 
-            $appInstance = AppInstance::query()->create([
-                'app_id' => $group->app_id,
+            $instance = Instance::query()->create([
+                'project_id' => $group->project_id,
                 'node_id' => $node->id,
                 'name' => $name,
-                'source_layout' => AppInstanceSourceLayout::Checkout,
+                'source_layout' => InstanceSourceLayout::Checkout,
                 'checkout_path' => $checkout->value,
-                'root' => $visitable ? $group->app->root : null,
+                'root' => $visitable ? $group->project->root : null,
                 'branch_override' => $name,
-                'status' => AppInstanceState::Reserved,
+                'status' => InstanceState::Reserved,
             ]);
         }
 
         return $this->sourceLock->synchronized(
-            $appInstance->node_id,
-            function () use ($appInstance, $visitable): AppInstance {
-                $resolved = $this->prepareSource($appInstance);
+            $instance->node_id,
+            function () use ($instance, $visitable): Instance {
+                $resolved = $this->prepareSource($instance);
 
                 if (! $visitable) {
                     return $resolved;
@@ -141,50 +141,50 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         );
     }
 
-    private function prepareSource(AppInstance $appInstance): AppInstance
+    private function prepareSource(Instance $instance): Instance
     {
         while (true) {
-            $appInstance->refresh()->loadMissing(['app', 'node']);
+            $instance->refresh()->loadMissing(['project', 'node']);
 
-            if ($appInstance->status === AppInstanceState::Reserved) {
-                $this->source->prepare($appInstance, false);
-                $this->transition($appInstance, AppInstanceState::Reserved, [
-                    'status' => AppInstanceState::CheckoutPrepared,
+            if ($instance->status === InstanceState::Reserved) {
+                $this->source->prepare($instance, false);
+                $this->transition($instance, InstanceState::Reserved, [
+                    'status' => InstanceState::CheckoutPrepared,
                 ]);
 
                 continue;
             }
 
-            if ($appInstance->status === AppInstanceState::CheckoutPrepared) {
-                $this->source->inspectPrepared($appInstance);
-                $resolution = $this->source->resolve($appInstance);
-                $this->assertResolution($appInstance, $resolution);
-                $this->transition($appInstance, AppInstanceState::CheckoutPrepared, [
+            if ($instance->status === InstanceState::CheckoutPrepared) {
+                $this->source->inspectPrepared($instance);
+                $resolution = $this->source->resolve($instance);
+                $this->assertResolution($instance, $resolution);
+                $this->transition($instance, InstanceState::CheckoutPrepared, [
                     'branch' => $resolution->branch,
                     'starting_commit' => $resolution->startingCommit,
-                    'status' => AppInstanceState::SourceResolved,
+                    'status' => InstanceState::SourceResolved,
                 ]);
 
                 continue;
             }
 
-            $this->source->inspectPrepared($appInstance);
-            $this->assertStoredResolution($appInstance, $this->source->inspectResolved($appInstance));
+            $this->source->inspectPrepared($instance);
+            $this->assertStoredResolution($instance, $this->source->inspectResolved($instance));
 
-            return $appInstance->refresh();
+            return $instance->refresh();
         }
     }
 
     /** @param array<string, mixed> $attributes */
-    private function transition(AppInstance $appInstance, AppInstanceState $from, array $attributes): void
+    private function transition(Instance $instance, InstanceState $from, array $attributes): void
     {
-        DB::transaction(function () use ($appInstance, $from, $attributes): void {
-            $locked = AppInstance::query()->lockForUpdate()->findOrFail($appInstance->id);
+        DB::transaction(function () use ($instance, $from, $attributes): void {
+            $locked = Instance::query()->lockForUpdate()->findOrFail($instance->id);
 
             if ($locked->status !== $from) {
                 throw new ResourceOperationException(
                     'instance.lifecycle_conflict',
-                    'AppInstance lifecycle evidence changed.',
+                    'Instance lifecycle evidence changed.',
                     409,
                 );
             }
@@ -193,10 +193,10 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         });
     }
 
-    private function assertResolution(AppInstance $appInstance, DevelopmentSourceResolution $resolution): void
+    private function assertResolution(Instance $instance, DevelopmentSourceResolution $resolution): void
     {
         if (
-            $resolution->branch !== $this->expectedBranch($appInstance)
+            $resolution->branch !== $this->expectedBranch($instance)
             || preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $resolution->startingCommit) !== 1
         ) {
             throw new ResourceOperationException(
@@ -208,51 +208,51 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
     }
 
     private function assertStoredResolution(
-        AppInstance $appInstance,
+        Instance $instance,
         DevelopmentSourceResolution $resolution,
     ): void {
         if (
-            $appInstance->branch !== $this->expectedBranch($appInstance)
-            || ! is_string($appInstance->starting_commit)
-            || preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $appInstance->starting_commit) !== 1
+            $instance->branch !== $this->expectedBranch($instance)
+            || ! is_string($instance->starting_commit)
+            || preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $instance->starting_commit) !== 1
         ) {
             throw new ResourceOperationException(
                 'instance.source_identity_changed',
-                'AppInstance source identity changed.',
+                'Instance source identity changed.',
                 409,
             );
         }
 
-        $this->assertResolution($appInstance, $resolution);
+        $this->assertResolution($instance, $resolution);
 
         if (
-            $appInstance->branch !== $resolution->branch
-            || $appInstance->starting_commit !== $resolution->startingCommit
+            $instance->branch !== $resolution->branch
+            || $instance->starting_commit !== $resolution->startingCommit
         ) {
             throw new ResourceOperationException(
                 'instance.source_identity_changed',
-                'AppInstance source identity changed.',
+                'Instance source identity changed.',
                 409,
             );
         }
     }
 
-    private function expectedBranch(AppInstance $appInstance): string
+    private function expectedBranch(Instance $instance): string
     {
-        if (is_string($appInstance->branch_override) && $appInstance->branch_override !== '') {
-            return $appInstance->branch_override;
+        if (is_string($instance->branch_override) && $instance->branch_override !== '') {
+            return $instance->branch_override;
         }
 
-        return $appInstance->name;
+        return $instance->name;
     }
 
-    private function hasSourceDefaults(OrbitApp $app, bool $visitable): bool
+    private function hasSourceDefaults(Project $project, bool $visitable): bool
     {
-        if (! is_string($app->default_branch) || ! GitBranchName::isValid($app->default_branch)) {
+        if (! is_string($project->default_branch) || ! GitBranchName::isValid($project->default_branch)) {
             return false;
         }
 
-        if (! GitRepositoryOrigin::isValid($app->repository_url)) {
+        if (! GitRepositoryOrigin::isValid($project->repository_url)) {
             return false;
         }
 
@@ -260,7 +260,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             return true;
         }
 
-        return is_string($app->root) && ProjectRoot::isValid($app->root, $app->type);
+        return is_string($project->root) && ProjectRoot::isValid($project->root, $project->type);
     }
 
     /**
@@ -270,8 +270,8 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
     private function existingWorkspaceNodeId(TaskGroup $group): ?int
     {
         $name = TaskWorkspaceName::for($group);
-        $nodeId = AppInstance::query()
-            ->where('app_id', $group->app_id)
+        $nodeId = Instance::query()
+            ->where('project_id', $group->project_id)
             ->where('name', $name)
             ->where('branch_override', $name)
             ->value('node_id');
@@ -283,7 +283,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
      * @param  list<string>  $drivers  Every driver the group uses must allow the Node.
      * @param  int|null  $pinnedNodeId  The Node of the group's existing workspace. Only that Node can then fit.
      */
-    private function selectNode(OrbitApp $app, array $drivers, ?int $pinnedNodeId = null): ?Node
+    private function selectNode(Project $project, array $drivers, ?int $pinnedNodeId = null): ?Node
     {
         $nodes = Node::query()
             ->where('status', LifecycleStatus::Active)
@@ -296,7 +296,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             )
             ->whereDoesntHave(
                 'projectNodeExclusions',
-                static fn ($query) => $query->where('app_id', $app->id),
+                static fn ($query) => $query->where('project_id', $project->id),
             )
             ->orderBy('id')
             ->get();

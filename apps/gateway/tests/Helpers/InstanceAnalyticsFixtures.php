@@ -5,15 +5,15 @@ declare(strict_types=1);
 use App\Actions\Routes\CreateRouteAction;
 use App\Data\Routes\CreateRouteData;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
-use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 
 function instance_analytics_node(string $name, string $wireguardIp, ?Cluster $cluster, RoleName $role): Node
@@ -39,27 +39,27 @@ function instance_analytics_node(string $name, string $wireguardIp, ?Cluster $cl
     return $node;
 }
 
-function instance_analytics_instance(OrbitApp $app, Node $node, string $name): AppInstance
+function instance_analytics_instance(Project $project, Node $node, string $name): Instance
 {
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => $name,
-        'checkout_path' => "/srv/orbit/apps/{$app->slug}/{$name}",
+        'checkout_path' => "/srv/orbit/apps/{$project->slug}/{$name}",
         'branch' => $name,
         'starting_commit' => str_repeat('a', 40),
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
         'environment' => 'production',
         'source_is_laravel' => false,
         'provisioning_step' => 'active',
-        'production_home' => "/var/www/{$app->slug}-{$name}",
-        'production_user' => "orbit-{$app->slug}",
+        'production_home' => "/var/www/{$project->slug}-{$name}",
+        'production_user' => "orbit-{$project->slug}",
         'selected_php_version' => '8.5',
     ]);
 }
 
 /** A Node holds one production App instance of an App, so every further instance gets a Node of its own. */
-function instance_analytics_extra_instance(string $name): AppInstance
+function instance_analytics_extra_instance(string $name): Instance
 {
     static $octet = 60;
     $octet++;
@@ -72,16 +72,16 @@ function instance_analytics_extra_instance(string $name): AppInstance
 }
 
 function instance_analytics_app_route(
-    AppInstance $instance,
+    Instance $instance,
     string $domain,
     RoutePublication $publication,
     bool $activate = true,
 ): Route {
     $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        appId: $instance->app_id,
+        projectId: $instance->project_id,
         domain: $domain,
         publication: $publication,
-        appInstanceId: $instance->id,
+        instanceId: $instance->id,
         nodeId: null,
         clusterId: null,
     ))['route'];

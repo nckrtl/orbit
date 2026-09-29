@@ -4,27 +4,27 @@ declare(strict_types=1);
 
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
-use Orbit\Sdk\Requests\Environment\ImportAppInstanceEnvironmentRequest;
-use Orbit\Sdk\Requests\Environment\SynchronizeAppInstanceEnvironmentRequest;
-use Orbit\Sdk\Requests\Environment\UpdateAppInstanceEnvironmentRequest;
+use Orbit\Sdk\Requests\Environment\ImportInstanceEnvironmentRequest;
+use Orbit\Sdk\Requests\Environment\SynchronizeInstanceEnvironmentRequest;
+use Orbit\Sdk\Requests\Environment\UpdateInstanceEnvironmentRequest;
 use Orbit\Sdk\Responses\Environment\EnvironmentOperationResponse;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
-describe('AppInstance environment response', function (): void {
+describe('Instance environment response', function (): void {
     it('exposes one immutable bounded correlated operation result', function (): void {
         $mock = new MockClient([
-            UpdateAppInstanceEnvironmentRequest::class => MockResponse::make(environment_response_success_envelope(
+            UpdateInstanceEnvironmentRequest::class => MockResponse::make(environment_response_success_envelope(
                 'update',
             )),
         ]);
         $response = environment_response_connector($mock)
-            ->send(new UpdateAppInstanceEnvironmentRequest(17, 'KEY', 'value'))
+            ->send(new UpdateInstanceEnvironmentRequest(17, 'KEY', 'value'))
             ->dto();
 
         expect($response)
             ->toBeInstanceOf(EnvironmentOperationResponse::class)
-            ->and($response->appInstanceId)
+            ->and($response->instanceId)
             ->toBe(17)
             ->and($response->operation)
             ->toBe('update')
@@ -36,7 +36,7 @@ describe('AppInstance environment response', function (): void {
             ->toBe('11111111-1111-4111-8111-111111111111')
             ->and($response->toArray())
             ->toBe([
-                'app_instance_id' => 17,
+                'instance_id' => 17,
                 'operation' => 'update',
                 'changed' => true,
                 'key_count' => 3,
@@ -49,14 +49,14 @@ describe('AppInstance environment response', function (): void {
     it('rejects missing wrongly typed contradictory extra and out-of-bound data safely', function (array $data): void {
         $sentinel = 'malformed-environment-value-8c2d';
         $mock = new MockClient([
-            ImportAppInstanceEnvironmentRequest::class => MockResponse::make([
+            ImportInstanceEnvironmentRequest::class => MockResponse::make([
                 'data' => $data,
                 'meta' => ['request_id' => '11111111-1111-4111-8111-111111111111'],
             ]),
         ]);
 
         try {
-            environment_response_connector($mock)->send(new ImportAppInstanceEnvironmentRequest(17))->dto();
+            environment_response_connector($mock)->send(new ImportInstanceEnvironmentRequest(17))->dto();
             $this->fail('Expected malformed environment response rejection.');
         } catch (GatewayApiException $exception) {
             $diagnostics = implode("\n", [
@@ -84,44 +84,44 @@ describe('AppInstance environment response', function (): void {
             'key_count' => 1,
         ]],
         'non-positive id' => [[
-            'app_instance_id' => 0,
+            'instance_id' => 0,
             'operation' => 'import',
             'changed' => true,
             'key_count' => 1,
         ]],
         'wrong changed type' => [[
-            'app_instance_id' => 17,
+            'instance_id' => 17,
             'operation' => 'import',
             'changed' => 1,
             'key_count' => 1,
         ]],
         'negative key count' => [[
-            'app_instance_id' => 17,
+            'instance_id' => 17,
             'operation' => 'import',
             'changed' => true,
             'key_count' => -1,
         ]],
         'excessive key count' => [[
-            'app_instance_id' => 17,
+            'instance_id' => 17,
             'operation' => 'import',
             'changed' => true,
             'key_count' => 1_025,
         ]],
         'contradictory operation' => [[
-            'app_instance_id' => 17,
+            'instance_id' => 17,
             'operation' => 'sync',
             'changed' => true,
             'key_count' => 1,
         ]],
         'extra value' => [[
-            'app_instance_id' => 17,
+            'instance_id' => 17,
             'operation' => 'import',
             'changed' => true,
             'key_count' => 1,
             'value' => 'malformed-environment-value-8c2d',
         ]],
         'value-bearing collection' => [[
-            'app_instance_id' => 17,
+            'instance_id' => 17,
             'operation' => 'import',
             'changed' => true,
             'key_count' => 1,
@@ -131,9 +131,9 @@ describe('AppInstance environment response', function (): void {
 
     it('rejects missing or invalid request correlation safely', function (array $meta): void {
         $mock = new MockClient([
-            SynchronizeAppInstanceEnvironmentRequest::class => MockResponse::make([
+            SynchronizeInstanceEnvironmentRequest::class => MockResponse::make([
                 'data' => [
-                    'app_instance_id' => 17,
+                    'instance_id' => 17,
                     'operation' => 'sync',
                     'changed' => false,
                     'key_count' => 0,
@@ -144,7 +144,7 @@ describe('AppInstance environment response', function (): void {
 
         expect(
             fn (): mixed => environment_response_connector($mock)
-                ->send(new SynchronizeAppInstanceEnvironmentRequest(17))
+                ->send(new SynchronizeInstanceEnvironmentRequest(17))
                 ->dto(),
         )
             ->toThrow(GatewayApiException::class, 'Gateway response contains invalid environment operation data.');
@@ -160,13 +160,13 @@ describe('AppInstance environment response', function (): void {
     ): void {
         $credential = 'environment-failure-credential-4c81';
         $requestId = '22222222-2222-4222-8222-222222222222';
-        $request = new SynchronizeAppInstanceEnvironmentRequest(17);
+        $request = new SynchronizeInstanceEnvironmentRequest(17);
         $expectedDetails = [
             'field' => 'replace',
             'APP_KEY' => '[REDACTED]',
         ];
         $mock = new MockClient([
-            SynchronizeAppInstanceEnvironmentRequest::class => MockResponse::make(
+            SynchronizeInstanceEnvironmentRequest::class => MockResponse::make(
                 [
                     'error' => [
                         'code' => $errorCode,
@@ -238,27 +238,27 @@ describe('AppInstance environment response', function (): void {
         'missing resource' => ['http.404', 'Resource not found.', 404],
         'unavailable target' => [
             'env.owner_unavailable',
-            'The AppInstance environment owner is not available for this operation.',
+            'The Instance environment owner is not available for this operation.',
             409,
         ],
         'failed preflight' => [
             'env.write_preflight_failed',
-            'The recorded AppInstance environment file cannot be replaced safely.',
+            'The recorded Instance environment file cannot be replaced safely.',
             409,
         ],
         'unresolved reference' => [
             'env.reference_unavailable',
-            'The stored AppInstance environment configuration has an unavailable reference.',
+            'The stored Instance environment configuration has an unavailable reference.',
             409,
         ],
         'failed synchronization' => [
             'env.write_failed',
-            'The AppInstance environment file replacement failed safely.',
+            'The Instance environment file replacement failed safely.',
             409,
         ],
         'unconfirmed synchronization' => [
             'env.sync_unconfirmed',
-            'The AppInstance environment synchronization result is unconfirmed. Retry the request.',
+            'The Instance environment synchronization result is unconfirmed. Retry the request.',
             409,
         ],
     ]);
@@ -266,11 +266,11 @@ describe('AppInstance environment response', function (): void {
     it('rejects a malformed value-bearing response without retaining its body', function (): void {
         $sentinel = 'malformed-body-environment-value-b3e1';
         $mock = new MockClient([
-            ImportAppInstanceEnvironmentRequest::class => MockResponse::make("not-json {$sentinel}"),
+            ImportInstanceEnvironmentRequest::class => MockResponse::make("not-json {$sentinel}"),
         ]);
 
         try {
-            environment_response_connector($mock)->send(new ImportAppInstanceEnvironmentRequest(17))->dto();
+            environment_response_connector($mock)->send(new ImportInstanceEnvironmentRequest(17))->dto();
             $this->fail('Expected malformed response rejection.');
         } catch (GatewayApiException $exception) {
             $diagnostics = implode("\n", [
@@ -293,12 +293,12 @@ function environment_response_connector(MockClient $mock): GatewayConnector
     return $connector;
 }
 
-/** @return array{data: array{app_instance_id: int, operation: string, changed: bool, key_count: int}, meta: array{request_id: string}} */
+/** @return array{data: array{instance_id: int, operation: string, changed: bool, key_count: int}, meta: array{request_id: string}} */
 function environment_response_success_envelope(string $operation): array
 {
     return [
         'data' => [
-            'app_instance_id' => 17,
+            'instance_id' => 17,
             'operation' => $operation,
             'changed' => true,
             'key_count' => 3,

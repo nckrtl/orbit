@@ -126,7 +126,7 @@ export function useGo() {
                     void router.navigate({
                         to: "/instances/$id/deployments/$deploymentId",
                         params: {
-                            id: String(deployment.app_instance_id),
+                            id: String(deployment.instance_id),
                             deploymentId: String(deployment.id),
                         },
                     });

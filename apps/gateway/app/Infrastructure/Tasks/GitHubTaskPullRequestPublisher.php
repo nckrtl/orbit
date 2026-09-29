@@ -14,11 +14,11 @@ use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\TaskGroup;
 use SensitiveParameter;
 
@@ -40,13 +40,13 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
     public function __construct(
         private RepositoryPullRequestAccess $access,
         private GitHubApi $github,
-        private AppDevSshExecutor $ssh,
+        private DevelopmentSshExecutor $ssh,
     ) {}
 
     public function publish(TaskGroup $group, string $body, string $commit): string
     {
         [$repository, $instance, $branch] = $this->target($group);
-        $base = $group->app->default_branch;
+        $base = $group->project->default_branch;
         if (! is_string($base) || ! GitBranchName::isValid($base)) {
             throw new TaskPullRequestException('The Project has no valid default branch.');
         }
@@ -73,26 +73,26 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
     }
 
     /**
-     * @return array{GitHubRepository, AppInstance, string}
+     * @return array{GitHubRepository, Instance, string}
      *
      * @throws TaskPullRequestException
      */
     private function target(TaskGroup $group): array
     {
-        $group->loadMissing(['app', 'taskable']);
-        $repository = GitHubRepository::fromOrigin((string) $group->app->repository_url);
+        $group->loadMissing(['project', 'taskable']);
+        $repository = GitHubRepository::fromOrigin((string) $group->project->repository_url);
         if (! $repository instanceof GitHubRepository) {
             throw new TaskPullRequestException('The Project repository is not on github.com.');
         }
         $instance = $group->taskable;
-        if (! $instance instanceof AppInstance || $instance->checkout_path === '') {
+        if (! $instance instanceof Instance || $instance->checkout_path === '') {
             throw new TaskPullRequestException('The task workspace is unavailable.');
         }
 
         return [$repository, $instance, 'task-'.$group->id];
     }
 
-    private function pushBranch(AppInstance $instance, string $branch, #[SensitiveParameter] string $token, string $commit): void
+    private function pushBranch(Instance $instance, string $branch, #[SensitiveParameter] string $token, string $commit): void
     {
         if (preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) !== 1) {
             throw new TaskPullRequestException('The approved commit is not a Git SHA.');
@@ -117,7 +117,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
 
     /**
      * Git's own message is the only sign of a rejected push. Keep the last lines, without the
-     * installation token. GitHub's workflow refusal names the permission the App needs.
+     * installation token. GitHub's workflow refusal names the permission the Project needs.
      */
     private function failedPush(RuntimeConvergenceException $exception, #[SensitiveParameter] string $token): never
     {

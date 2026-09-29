@@ -6,9 +6,6 @@ namespace App\Actions\Doctor;
 
 use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorIssueData;
-use App\Domain\AppInstances\AppInstanceProvisioning;
-use App\Domain\AppInstances\AppInstanceSourceLayout;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorInspectionException;
@@ -18,11 +15,14 @@ use App\Domain\Doctor\InstanceDoctorIssueCode;
 use App\Domain\Doctor\InstanceStateInspector;
 use App\Domain\Doctor\PrivateRouteProjectionInspector;
 use App\Domain\Doctor\PublicRouteEdgeInspector;
+use App\Domain\Instances\InstanceProvisionProgress;
+use App\Domain\Instances\InstanceSourceLayout;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Tasks\TaskWorkspaceLifecycle;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Database\Eloquent\Collection;
@@ -47,7 +47,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
 
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
-        $rows = AppInstance::query()->with(['app', 'taskGroups'])->where('node_id', $context->node->id)->orderBy('id')->get();
+        $rows = Instance::query()->with(['project', 'taskGroups'])->where('node_id', $context->node->id)->orderBy('id')->get();
         if ($rows->isEmpty()) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, 0, []);
         }
@@ -67,7 +67,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
         foreach ($rows as $instance) {
             $instanceIssueOffset = count($issues);
 
-            if ($instance->status === AppInstanceState::Removing) {
+            if ($instance->status === InstanceState::Removing) {
                 if ($instance->updated_at?->lessThanOrEqualTo(now()->subMinutes(self::StuckRemovalMinutes))) {
                     $issues[] = new DoctorIssueData(
                         InstanceDoctorIssueCode::RemovalStuck,
@@ -111,7 +111,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
                     'instance',
                     $instance->id,
                     $instance->name,
-                    $settled === AppInstanceState::Active
+                    $settled === InstanceState::Active
                         ? 'Instance lifecycle is not active.'
                         : 'Task workspace lifecycle is not source resolved.',
                     $settled->value,
@@ -119,7 +119,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
                 );
             }
 
-            if (! AppInstanceSourceLayout::tryFrom($instance->source_layout) instanceof AppInstanceSourceLayout) {
+            if (! InstanceSourceLayout::tryFrom($instance->source_layout) instanceof InstanceSourceLayout) {
                 $issues[] = new DoctorIssueData(
                     InstanceDoctorIssueCode::SourceLayoutMismatch,
                     DoctorIssueKind::Drift,
@@ -182,13 +182,13 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
             $issues = [...$issues, ...$this->privateRouteIssues($instance, $context), ...$this->publicRouteIssues($instance, $context)];
 
             if (count($issues) > $instanceIssueOffset) {
-                $current = AppInstance::query()->find($instance->id);
+                $current = Instance::query()->find($instance->id);
 
-                if (! $current instanceof AppInstance || $current->status === AppInstanceState::Removing) {
+                if (! $current instanceof Instance || $current->status === InstanceState::Removing) {
                     $issues = array_slice($issues, 0, $instanceIssueOffset);
 
                     if (
-                        $current instanceof AppInstance
+                        $current instanceof Instance
                         && $current->updated_at?->lessThanOrEqualTo(now()->subMinutes(self::StuckRemovalMinutes))
                     ) {
                         $issues[] = new DoctorIssueData(
@@ -209,12 +209,12 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
         return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, $rows->count(), $issues);
     }
 
-    private function isProvisioning(AppInstance $instance, AppInstanceState $settled): bool
+    private function isProvisioning(Instance $instance, InstanceState $settled): bool
     {
-        return AppInstanceProvisioning::isInFlight($instance, $settled);
+        return InstanceProvisionProgress::isInFlight($instance, $settled);
     }
 
-    private function productionAssociationMissing(AppInstance $instance): bool
+    private function productionAssociationMissing(Instance $instance): bool
     {
         if ($instance->selected_php_version === null) {
             return false;
@@ -230,14 +230,14 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
         );
     }
 
-    /** @param Collection<int, AppInstance> $instances */
-    private function productionAssociationShared(AppInstance $instance, Collection $instances): bool
+    /** @param Collection<int, Instance> $instances */
+    private function productionAssociationShared(Instance $instance, Collection $instances): bool
     {
         if ($instance->selected_php_version === null || $this->productionAssociationMissing($instance)) {
             return false;
         }
 
-        return $instances->contains(function (AppInstance $other) use ($instance): bool {
+        return $instances->contains(function (Instance $other) use ($instance): bool {
             if (
                 $other->id === $instance->id
                 || ! $other->placedOnAppProd()
@@ -254,13 +254,13 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
     }
 
     /** @return list<DoctorIssueData> */
-    private function privateRouteIssues(AppInstance $instance, DoctorNodeContext $context): array
+    private function privateRouteIssues(Instance $instance, DoctorNodeContext $context): array
     {
         $routes = Route::query()
             ->with(['cluster.routerAssignment.node'])
             ->where('publication', RoutePublication::Private)
             ->where('status', RouteStatus::Active)
-            ->whereHas('targets', static fn ($query) => $query->where('app_instance_id', $instance->id))
+            ->whereHas('targets', static fn ($query) => $query->where('instance_id', $instance->id))
             ->orderBy('id')
             ->get();
 
@@ -341,12 +341,12 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
     }
 
     /** @return list<DoctorIssueData> */
-    private function publicRouteIssues(AppInstance $instance, DoctorNodeContext $context): array
+    private function publicRouteIssues(Instance $instance, DoctorNodeContext $context): array
     {
         $routes = Route::query()
             ->with(['cluster.routerAssignment.node', 'cluster.ingressAssignment.node'])
             ->where('publication', RoutePublication::Public)
-            ->whereHas('targets', static fn ($query) => $query->where('app_instance_id', $instance->id))
+            ->whereHas('targets', static fn ($query) => $query->where('instance_id', $instance->id))
             ->orderBy('id')
             ->get();
 
@@ -415,7 +415,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
         return $issues;
     }
 
-    private function projectionIssue(AppInstance $instance, InstanceDoctorIssueCode $code): DoctorIssueData
+    private function projectionIssue(Instance $instance, InstanceDoctorIssueCode $code): DoctorIssueData
     {
         return new DoctorIssueData(
             $code,
@@ -429,7 +429,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
         );
     }
 
-    private function inspectionFailedIssue(AppInstance $instance): DoctorIssueData
+    private function inspectionFailedIssue(Instance $instance): DoctorIssueData
     {
         return new DoctorIssueData(
             InstanceDoctorIssueCode::InspectionFailed,

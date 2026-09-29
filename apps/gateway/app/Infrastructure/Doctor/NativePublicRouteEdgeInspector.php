@@ -8,19 +8,20 @@ use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\PublicRouteEdgeInspector;
 use App\Domain\Doctor\PublicRouteEdgeObservation;
 use App\Domain\Nodes\RoleName;
-use App\Infrastructure\AppDev\AppDevSite;
-use App\Infrastructure\AppDev\AppDevSiteRepository;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSite;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 use Throwable;
 
 /**
- * Compares the live public site with the site the App development publisher renders for the Ingress
+ * Compares the live public site with the site the Project development publisher renders for the Ingress
  * Node, and the Ingress firewall with its managed public HTTP rules.
  *
  * The expected site comes from the Node Caddy build's render of the Ingress Node, so a
@@ -32,9 +33,9 @@ use Throwable;
 final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeInspector
 {
     public function __construct(
-        private AppDevSshExecutor $ssh,
+        private DevelopmentSshExecutor $ssh,
         private CommandDeadline $deadline,
-        private AppDevSiteRepository $sites = new AppDevSiteRepository,
+        private DevelopmentSiteRepository $sites = new DevelopmentSiteRepository,
         private ?NodeCaddyfileRenderer $builds = null,
         private NodeFirewallRuleCatalog $firewall = new NodeFirewallRuleCatalog,
         private UfwManagedRulesCheck $ufw = new UfwManagedRulesCheck,
@@ -161,14 +162,14 @@ final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeIn
         );
     }
 
-    private function publicSite(Node $node, Route $route): AppDevSite
+    private function publicSite(Node $node, Route $route): DevelopmentSite
     {
         $site = $this->sites->forNode($node)->first(
-            static fn (AppDevSite $candidate): bool => $candidate->publicListener
+            static fn (DevelopmentSite $candidate): bool => $candidate->publicListener
                 && $candidate->domain === $route->domain,
         );
 
-        if (! $site instanceof AppDevSite) {
+        if (! $site instanceof DevelopmentSite) {
             throw new DoctorInspectionException;
         }
 
@@ -182,7 +183,7 @@ final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeIn
      *
      * @return list<string>
      */
-    private function forwardingTargets(AppDevSite $site): array
+    private function forwardingTargets(DevelopmentSite $site): array
     {
         $targets = [];
 
@@ -208,7 +209,7 @@ final readonly class NativePublicRouteEdgeInspector implements PublicRouteEdgeIn
      * The public site as the Node Caddy build renders it on this Node, so it carries the build's listeners, without
      * its source comment, its trailing newline, and its TLS lines.
      */
-    private function expectedBlock(Node $node, AppDevSite $site): string
+    private function expectedBlock(Node $node, DevelopmentSite $site): string
     {
         $block = ($this->builds ?? app(NodeCaddyfileRenderer::class))->render($node)->blocksFor($site->scope)[0] ?? null;
 

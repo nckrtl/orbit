@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Analytics;
 
+use App\Models\Instance;
+
 /**
  * Reads visits for one Instance from the fleet analytics service.
  *

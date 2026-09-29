@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Metrics;
 
-use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
+use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use Symfony\Component\Yaml\Yaml;
 
 final readonly class PrometheusConfigRenderer
@@ -53,7 +53,7 @@ final readonly class PrometheusConfigRenderer
                     $rules[] = ['source_labels' => ['__name__'], 'regex' => 'phpfpm_process_.*', 'action' => 'drop'];
                     foreach ($target->instances as $instance) {
                         $pool = ProductionPhpRuntimeIdentity::from($instance)->pool;
-                        $rules[] = ['source_labels' => ['pool'], 'regex' => preg_quote($pool, '/'), 'target_label' => 'app_instance_id', 'replacement' => (string) $instance->id];
+                        $rules[] = ['source_labels' => ['pool'], 'regex' => preg_quote($pool, '/'), 'target_label' => 'instance_id', 'replacement' => (string) $instance->id];
                     }
                 }
                 $jobs[] = [

@@ -12,9 +12,9 @@ use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\App as OrbitApp;
 use App\Models\Cluster;
 use App\Models\Node;
+use App\Models\Project;
 use Tests\Support\FakeAnalyticsStatsDriver;
 use Tests\Support\FakeAnalyticsTrackingRouteProjector;
 use Tests\Support\FakePublicRouteEdgeProjector;
@@ -37,7 +37,7 @@ beforeEach(function (): void {
     $this->markAsGateway($this->gateway);
     $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.1']);
 
-    $this->orbitApp = OrbitApp::query()->create([
+    $this->orbitApp = Project::query()->create([
         'name' => 'Shop',
         'slug' => 'shop',
         'repository_url' => 'https://example.test/shop.git',
@@ -55,7 +55,7 @@ beforeEach(function (): void {
 });
 
 describe('instance:analytics:stats', function (): void {
-    it('hides the report when the App instance has no tracking host', function (): void {
+    it('hides the report when the Project instance has no tracking host', function (): void {
         $this->getJson($this->url)
             ->assertOk()
             ->assertJsonPath('data', ['available' => false]);
@@ -122,7 +122,7 @@ describe('instance:analytics:stats', function (): void {
             ->and($response->json('data'))->not->toHaveKey('pages');
     });
 
-    it('maps the App instance domain, not a client-supplied site', function (): void {
+    it('maps the Project instance domain, not a client-supplied site', function (): void {
         $this->postJson("/api/v1/instances/{$this->instance->id}/analytics")->assertOk();
 
         $this->getJson($this->url.'?site_id=other.example.com')->assertOk();

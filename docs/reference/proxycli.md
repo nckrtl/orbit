@@ -69,7 +69,7 @@ Setup places these pieces on the collector Node and in Gateway settings.
 | Private DNS `host-record` | VPN DNS | `collector.cli-proxy-api.orbit` to the Node's WireGuard address |
 | Management key, read token, and control token | Gateway settings | Stored as secrets |
 
-The Process runs `/usr/bin/python3 /var/lib/orbit/proxycli/server.py`. systemd does not search `PATH`, so the command names the absolute path. The unit receives the `PROXYCLI_*` values as `Environment=` directives: the CLIProxyAPI URL and management key, the read and control tokens, the port, and the Valkey host, port, username, and password. [Processes and schedules](/reference/app-processes-and-schedules#environment-of-a-systemd-process) describes that environment.
+The Process runs `/usr/bin/python3 /var/lib/orbit/proxycli/server.py`. systemd does not search `PATH`, so the command names the absolute path. The unit receives the `PROXYCLI_*` values as `Environment=` directives: the CLIProxyAPI URL and management key, the read and control tokens, the port, and the Valkey host, port, username, and password. [Processes and schedules](/reference/processes-and-schedules#environment-of-a-systemd-process) describes that environment.
 
 While setup holds the collector, `process:destroy` refuses to remove the Process with `process.required_by_proxycli`.
 

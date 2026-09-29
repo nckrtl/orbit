@@ -8,6 +8,8 @@ use App\Domain\Analytics\AnalyticsTrackingRouteProjector;
 use App\Domain\AppDev\PrivateDnsAnswerExpiry;
 use App\Domain\Routes\RoutePlacement;
 use App\Domain\Routes\RouteReplacementStep;
+use App\Models\Instance;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Carbon;
 use Throwable;

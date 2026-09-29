@@ -12,10 +12,10 @@ use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskPullRequestException;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\TaskGroup;
 
 /**
@@ -27,7 +27,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
 {
     public function __construct(
         private RepositoryPullRequestAccess $access,
-        private AppDevSshExecutor $ssh,
+        private DevelopmentSshExecutor $ssh,
     ) {}
 
     public function fetch(TaskGroup $group, string $base): void
@@ -36,10 +36,10 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
             throw new TaskPullRequestException('The base branch could not be fetched.');
         }
 
-        $group->loadMissing(['app', 'taskable']);
-        $repository = GitHubRepository::fromOrigin((string) $group->app->repository_url);
+        $group->loadMissing(['project', 'taskable']);
+        $repository = GitHubRepository::fromOrigin((string) $group->project->repository_url);
         $instance = $group->taskable;
-        if (! $repository instanceof GitHubRepository || ! $instance instanceof AppInstance || $instance->checkout_path === '') {
+        if (! $repository instanceof GitHubRepository || ! $instance instanceof Instance || $instance->checkout_path === '') {
             throw new TaskPullRequestException('The base branch could not be fetched.');
         }
 
@@ -52,10 +52,10 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
 
     public function fastForward(TaskGroup $group, bool $missingRefOk = false): void
     {
-        $group->loadMissing(['app', 'taskable']);
-        $repository = GitHubRepository::fromOrigin((string) $group->app->repository_url);
+        $group->loadMissing(['project', 'taskable']);
+        $repository = GitHubRepository::fromOrigin((string) $group->project->repository_url);
         $instance = $group->taskable;
-        if (! $repository instanceof GitHubRepository || ! $instance instanceof AppInstance || $instance->checkout_path === '') {
+        if (! $repository instanceof GitHubRepository || ! $instance instanceof Instance || $instance->checkout_path === '') {
             throw new TaskPullRequestException('The task branch could not be fetched.');
         }
 
@@ -103,7 +103,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         }
     }
 
-    private function fetchRef(AppInstance $instance, string $base, string $token): void
+    private function fetchRef(Instance $instance, string $base, string $token): void
     {
         $instance->loadMissing('node');
         $script = GitReadScript::for(GitReadEnvironment::forGitHubToken($token), <<<'BASH'

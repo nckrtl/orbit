@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 namespace App\Commands\Processes;
 
-use App\Commands\Concerns\RendersAppRuntimeDefinitions;
+use App\Commands\Concerns\RendersProjectRuntimeDefinitions;
 use App\Commands\Concerns\SelectsProjectDefinitionTarget;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\Apps\ShowProcessDefinitionRequest;
-use Orbit\Sdk\Responses\Apps\AppRuntimeDefinitionResponse;
+use Orbit\Sdk\Requests\Projects\ShowProcessDefinitionRequest;
+use Orbit\Sdk\Responses\Projects\ProjectRuntimeDefinitionResponse;
 
 final class ShowProcessCommand extends ProcessCommand
 {
-    use RendersAppRuntimeDefinitions;
+    use RendersProjectRuntimeDefinitions;
     use SelectsProjectDefinitionTarget;
 
     #[\Override]
@@ -29,14 +29,14 @@ final class ShowProcessCommand extends ProcessCommand
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $appId = $this->projectIdOption();
+        $projectId = $this->projectIdOption();
         $name = $this->stringArgument('name', 'Process definition name', 'process.name_required');
 
-        if ($appId === false) {
+        if ($projectId === false) {
             return self::FAILURE;
         }
 
-        if ($appId === null) {
+        if ($projectId === null) {
             return $this->renderGatewayFailure(
                 'process.target_invalid',
                 'The --project option is required.',
@@ -55,12 +55,12 @@ final class ShowProcessCommand extends ProcessCommand
 
         $response = $this->sendWithProgress(
             $connector,
-            new ShowProcessDefinitionRequest($appId, $name),
-            AppRuntimeDefinitionResponse::class,
+            new ShowProcessDefinitionRequest($projectId, $name),
+            ProjectRuntimeDefinitionResponse::class,
             ['Show Process definition', 'Loading Process definition', 'Loaded Process definition'],
         );
 
-        return $response instanceof AppRuntimeDefinitionResponse
+        return $response instanceof ProjectRuntimeDefinitionResponse
             ? $this->renderDefinition($response, 'Process')
             : self::FAILURE;
     }

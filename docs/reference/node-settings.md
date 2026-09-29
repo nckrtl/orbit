@@ -5,7 +5,7 @@ covers:
   - apps/gateway/app/Domain/Nodes/Storage/**
   - apps/gateway/app/Actions/Nodes/UpdateNodeSettingsAction.php
   - apps/gateway/app/Infrastructure/Nodes/RemoteNodeStorageRootPreparer.php
-  - apps/gateway/app/Data/Nodes/{NodeSettingsData,AppsSettingsData}.php
+  - apps/gateway/app/Data/Nodes/{NodeSettingsData,NodeStorageAppsData}.php
   - apps/gateway/app/Http/Requests/Nodes/UpdateNodeSettingsRequest.php
   - apps/cli/app/{Support/NodeSettingOptions,Commands/Nodes/UpdateNodeSettingsCommand}.php
   - packages/php-sdk/src/{Responses/Nodes/NodeSettings,Requests/Nodes/UpdateNodeSettingsRequest}.php

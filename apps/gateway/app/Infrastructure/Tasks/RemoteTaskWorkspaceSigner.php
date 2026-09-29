@@ -6,17 +6,17 @@ namespace App\Infrastructure\Tasks;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Tasks\TaskWorkspaceSigner;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class RemoteTaskWorkspaceSigner implements TaskWorkspaceSigner
 {
     public function __construct(
-        private AppDevSshExecutor $ssh,
+        private DevelopmentSshExecutor $ssh,
     ) {}
 
-    public function commit(AppInstance $instance, string $message): ?string
+    public function commit(Instance $instance, string $message): ?string
     {
         $instance->loadMissing('node');
 

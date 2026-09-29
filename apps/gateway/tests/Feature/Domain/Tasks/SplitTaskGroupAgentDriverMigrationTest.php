@@ -19,9 +19,9 @@ function split_driver_migration(): object
 
 function split_driver_group(string $driver, string $code): int
 {
-    $appId = DB::table('apps')->insertGetId(['name' => 'split-'.$driver, 'slug' => 'split-'.$driver, 'code' => $code, 'repository_url' => 'git@example.test:split.git', 'repository_identity' => 'example.test/split-'.$driver]);
+    $projectId = DB::table('projects')->insertGetId(['name' => 'split-'.$driver, 'slug' => 'split-'.$driver, 'code' => $code, 'repository_url' => 'git@example.test:split.git', 'repository_identity' => 'example.test/split-'.$driver]);
 
-    return DB::table('task_groups')->insertGetId(['app_id' => $appId, 'title' => 'Split', 'brief' => 'Split', 'agent_driver' => $driver]);
+    return DB::table('task_groups')->insertGetId(['project_id' => $projectId, 'title' => 'Split', 'brief' => 'Split', 'agent_driver' => $driver]);
 }
 
 it('copies the existing group driver into both roles and removes the single column', function (): void {
@@ -31,7 +31,7 @@ it('copies the existing group driver into both roles and removes the single colu
         $t3 = split_driver_group('t3', 'TTT');
         $pi = split_driver_group('pi', 'PPP');
 
-        $migration->up();
+        run_legacy_schema_migration($migration, 'up');
 
         expect(Schema::hasColumn('task_groups', 'agent_driver'))->toBeFalse()
             ->and((array) DB::table('task_groups')->where('id', $t3)->first(['implementer_agent_driver', 'reviewer_agent_driver']))
@@ -49,14 +49,14 @@ it('rolls back only while every group uses one driver for both roles', function 
     try {
         $migration = split_driver_migration();
         $group = split_driver_group('t3', 'TTT');
-        $migration->up();
+        run_legacy_schema_migration($migration, 'up');
         DB::table('task_groups')->where('id', $group)->update(['implementer_agent_driver' => 'pi']);
 
-        expect(fn () => $migration->down())->toThrow(RuntimeException::class, 'different implementer and reviewer drivers');
+        expect(fn () => run_legacy_schema_migration($migration, 'down'))->toThrow(RuntimeException::class, 'different implementer and reviewer drivers');
         expect(Schema::hasColumn('task_groups', 'agent_driver'))->toBeFalse();
 
         DB::table('task_groups')->where('id', $group)->update(['implementer_agent_driver' => 't3']);
-        $migration->down();
+        run_legacy_schema_migration($migration, 'down');
 
         expect(DB::table('task_groups')->where('id', $group)->value('agent_driver'))->toBe('t3')
             ->and(Schema::hasColumn('task_groups', 'implementer_agent_driver'))->toBeFalse();

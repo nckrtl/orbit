@@ -7,7 +7,7 @@ namespace App\Domain\GitHub;
 use SensitiveParameter;
 
 /**
- * The owner and name of a `github.com` repository, read from an App repository origin in its HTTPS,
+ * The owner and name of a `github.com` repository, read from a Project repository origin in its HTTPS,
  * `ssh://`, or `git@github.com:` form.
  */
 final readonly class GitHubRepository

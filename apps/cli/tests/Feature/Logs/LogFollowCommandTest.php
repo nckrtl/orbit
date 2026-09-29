@@ -13,7 +13,7 @@ use App\Support\Realtime\WebSocketTransport;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\AppInstances\InstanceLogsRequest;
+use Orbit\Sdk\Requests\Instances\InstanceLogsRequest;
 use Orbit\Sdk\Requests\Logs\CreateLogStreamRequest;
 use Orbit\Sdk\Requests\Logs\DestroyLogStreamRequest;
 use Orbit\Sdk\Requests\Logs\RenewLogStreamRequest;

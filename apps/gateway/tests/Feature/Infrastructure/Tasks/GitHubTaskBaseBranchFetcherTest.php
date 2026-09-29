@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskPullRequestException;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\GitHubTaskBaseBranchFetcher;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\TaskGroup;
 use Illuminate\Support\Facades\Http;
 use Symfony\Component\Process\Process;
@@ -30,29 +30,29 @@ function fetcher_git(string $directory, array $arguments): string
 
 function fetcher_group(string $checkout): TaskGroup
 {
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@github.com:acme/shop.git', 'default_branch' => 'main',
     ]);
     $node = Node::query()->create([
         'name' => 'fetch-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
         'public_ssh_host' => '10.44.0.150', 'wireguard_ip' => '10.44.0.150', 'user' => 'orbit',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-7', 'checkout_path' => $checkout,
+    $instance = Instance::query()->create([
+        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-7', 'checkout_path' => $checkout,
         'branch' => 'task-7', 'status' => 'source_resolved',
     ]);
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id, 'title' => 'Export orders', 'brief' => 'Add an export.', 'status' => 'settling',
+        'project_id' => $project->id, 'title' => 'Export orders', 'brief' => 'Add an export.', 'status' => 'settling',
     ]);
     $group->taskable()->associate($instance);
     $group->save();
 
-    return $group->fresh(['app', 'taskable']) ?? $group;
+    return $group->fresh(['project', 'taskable']) ?? $group;
 }
 
 function fetcher(SshExecutor $transport): GitHubTaskBaseBranchFetcher
 {
-    app()->instance(AppDevSshExecutor::class, new AppDevSshExecutor(
+    app()->instance(DevelopmentSshExecutor::class, new DevelopmentSshExecutor(
         $transport,
         new class implements SshKeyProvider
         {

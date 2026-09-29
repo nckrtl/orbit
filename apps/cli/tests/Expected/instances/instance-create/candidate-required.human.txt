@@ -6,4 +6,4 @@ Creating Instance...
 │
 └  Operation failed.
 
-New production AppInstances require a candidate. Use instance:clone.
+New production Instances require a candidate. Use instance:clone.

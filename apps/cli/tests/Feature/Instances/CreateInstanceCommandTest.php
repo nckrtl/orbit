@@ -11,8 +11,8 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
+use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
+use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -35,9 +35,9 @@ afterEach(function (): void {
 });
 
 describe('instance:create development contract', function (): void {
-    it('creates a development AppInstance through the ordinary create request', function (): void {
+    it('creates a development Instance through the ordinary create request', function (): void {
         $mock = MockClient::global([
-            CreateAppInstanceRequest::class => instance_mock_response(201),
+            CreateInstanceRequest::class => instance_mock_response(201),
         ]);
 
         $this
@@ -51,7 +51,7 @@ describe('instance:create development contract', function (): void {
             ->assertExitCode(0);
 
         expect($mock->getLastRequest())
-            ->toBeInstanceOf(CreateAppInstanceRequest::class)
+            ->toBeInstanceOf(CreateInstanceRequest::class)
             ->and($mock->getLastRequest()?->body()->all())
             ->toBe(['project_id' => 3, 'node_id' => 2, 'name' => 'dev'])
             ->and($mock->getLastRequest()?->body()->all())
@@ -80,7 +80,7 @@ describe('process:create preset target validation', function (): void {
 describe('instance:create production refusal', function (): void {
     it('renders the candidate-required error and directs callers to instance:clone', function (): void {
         MockClient::global([
-            CreateAppInstanceRequest::class => MockResponse::make([
+            CreateInstanceRequest::class => MockResponse::make([
                 'error' => [
                     'code' => 'instance.candidate_required',
                     'message' => 'New production Instances require a candidate. Use instance:clone.',
@@ -120,7 +120,7 @@ describe('instance:create production refusal', function (): void {
             ->assertExitCode(1);
     });
 
-    it('documents that new production AppInstances use instance:clone', function (): void {
+    it('documents that new production Instances use instance:clone', function (): void {
         $commands = app(Kernel::class)->all();
 
         expect($commands['instance:create'])
@@ -151,7 +151,7 @@ describe('instance registration project options', function (): void {
             }
         });
         $mock = MockClient::global([
-            RegisterAppInstanceRequest::class => registration_mock_response(),
+            RegisterInstanceRequest::class => registration_mock_response(),
         ]);
 
         $this->artisan('instance:register', [
@@ -164,8 +164,8 @@ describe('instance registration project options', function (): void {
 
         expect($mock->getLastRequest()?->body()->all())->toBe([
             'source_path' => '/work/acme',
-            'app_name' => 'Confirmed',
-            'app_slug' => 'confirmed',
+            'project_name' => 'Confirmed',
+            'project_slug' => 'confirmed',
         ]);
 
         MockClient::destroyGlobal();

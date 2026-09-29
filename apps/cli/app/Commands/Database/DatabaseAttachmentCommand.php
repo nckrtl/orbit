@@ -9,7 +9,7 @@ use Orbit\Sdk\Responses\DatabaseConnections\DatabaseConnectionAttachmentResponse
 
 abstract class DatabaseAttachmentCommand extends DatabaseCommand
 {
-    protected function appInstanceSelector(): ?string
+    protected function instanceSelector(): ?string
     {
         $selector = $this->option('instance');
 
@@ -54,7 +54,7 @@ abstract class DatabaseAttachmentCommand extends DatabaseCommand
         }
 
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail($message, [
-            'Instance ID' => $attachment->appInstanceId,
+            'Instance ID' => $attachment->instanceId,
             'Slug' => $attachment->slug,
             'Prefix' => $attachment->prefix,
             'Keys' => $attachment->keys === [] ? null : implode(', ', $attachment->keys),

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
-use App\Models\App as OrbitApp;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
 
 beforeEach(function (): void {
@@ -17,7 +17,7 @@ beforeEach(function (): void {
     ]);
     $this->markAsGateway($gateway);
     $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.1']);
-    $this->project = OrbitApp::query()->create([
+    $this->project = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
@@ -56,7 +56,7 @@ it('records ordered setup steps and keeps the command out of activity', function
 
     $this->deleteJson($this->url.'/install-php')->assertOk();
 
-    expect(ProjectLifecycleStep::query()->where('app_id', $this->project->id)->pluck('name')->all())->toBe(['install-js']);
+    expect(ProjectLifecycleStep::query()->where('project_id', $this->project->id)->pluck('name')->all())->toBe(['install-js']);
 });
 
 it('refuses a duplicate name and a timeout above the cap without storing a change', function (): void {
@@ -72,7 +72,7 @@ it('refuses a duplicate name and a timeout above the cap without storing a chang
     $this->postJson($this->url, ['name' => 'slow', 'command' => 'composer install', 'timeout_seconds' => 301])
         ->assertUnprocessable();
 
-    expect(ProjectLifecycleStep::query()->where('app_id', $this->project->id)->count())->toBe(1);
+    expect(ProjectLifecycleStep::query()->where('project_id', $this->project->id)->count())->toBe(1);
 });
 
 it('records a teardown step on its own list', function (): void {
@@ -88,7 +88,7 @@ it('records a teardown step on its own list', function (): void {
 it('lowers stored step timeouts that one request could never honor', function (): void {
     foreach ([['slow', 900, 0], ['default', 600, 1], ['fits', 120, 2]] as [$name, $timeout, $position]) {
         ProjectLifecycleStep::query()->create([
-            'app_id' => $this->project->id,
+            'project_id' => $this->project->id,
             'phase' => 'setup',
             'name' => $name,
             'command' => 'true',
@@ -97,7 +97,7 @@ it('lowers stored step timeouts that one request could never honor', function ()
         ]);
     }
 
-    (require database_path('migrations/2026_09_26_090000_cap_project_lifecycle_step_timeouts.php'))->up();
+    run_legacy_schema_migration(require database_path('migrations/2026_09_26_090000_cap_project_lifecycle_step_timeouts.php'), 'up');
 
     expect(ProjectLifecycleStep::query()->orderBy('position')->pluck('timeout_seconds')->all())->toBe([540, 540, 120]);
 
@@ -107,7 +107,7 @@ it('lowers stored step timeouts that one request could never honor', function ()
 it('keeps a list over the total limit editable after the migration, as long as an edit does not raise its total', function (): void {
     foreach (range(0, 6) as $position) {
         ProjectLifecycleStep::query()->create([
-            'app_id' => $this->project->id,
+            'project_id' => $this->project->id,
             'phase' => 'setup',
             'name' => "step-{$position}",
             'command' => 'true',
@@ -116,7 +116,7 @@ it('keeps a list over the total limit editable after the migration, as long as a
         ]);
     }
 
-    (require database_path('migrations/2026_09_26_090000_cap_project_lifecycle_step_timeouts.php'))->up();
+    run_legacy_schema_migration(require database_path('migrations/2026_09_26_090000_cap_project_lifecycle_step_timeouts.php'), 'up');
 
     // 7 x 540 = 3,780 seconds, over the 540-second list limit.
     expect(ProjectLifecycleStep::query()->sum('timeout_seconds'))->toBe(3_780);

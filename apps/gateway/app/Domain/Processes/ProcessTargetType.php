@@ -4,19 +4,19 @@ declare(strict_types=1);
 
 namespace App\Domain\Processes;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 
 enum ProcessTargetType: string
 {
-    case AppInstance = 'instance';
+    case Instance = 'instance';
     case Node = 'node';
 
-    /** @return class-string<AppInstance|Node> */
+    /** @return class-string<Instance|Node> */
     public function modelClass(): string
     {
         return match ($this) {
-            self::AppInstance => AppInstance::class,
+            self::Instance => Instance::class,
             self::Node => Node::class,
         };
     }
@@ -24,7 +24,7 @@ enum ProcessTargetType: string
     public function storedType(): string
     {
         return match ($this) {
-            self::AppInstance => AppInstance::MorphAlias,
+            self::Instance => Instance::MorphAlias,
             self::Node => Node::class,
         };
     }
@@ -33,7 +33,7 @@ enum ProcessTargetType: string
     public function storedTypes(): array
     {
         return match ($this) {
-            self::AppInstance => [AppInstance::MorphAlias],
+            self::Instance => [Instance::MorphAlias],
             self::Node => [Node::class],
         };
     }
@@ -41,7 +41,7 @@ enum ProcessTargetType: string
     public static function fromModelClass(string $modelClass): self
     {
         return match (true) {
-            AppInstance::isMorphType($modelClass) => self::AppInstance,
+            Instance::isMorphType($modelClass) => self::Instance,
             $modelClass === Node::class => self::Node,
             default => throw new \InvalidArgumentException('Unsupported process target model.'),
         };

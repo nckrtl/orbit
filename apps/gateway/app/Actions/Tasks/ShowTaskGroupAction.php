@@ -18,7 +18,7 @@ final readonly class ShowTaskGroupAction
     {
         $this->requireExtension->execute();
 
-        $group->loadMissing(['app', 'tasks', 'taskable']);
+        $group->loadMissing(['project', 'tasks', 'taskable']);
 
         if (! $group->status->isActive()) {
             return $group;

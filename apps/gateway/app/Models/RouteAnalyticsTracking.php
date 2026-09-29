@@ -9,9 +9,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * @property int $route_id
- * @property int $app_instance_id
+ * @property int $instance_id
  * @property-read Route|null $route
- * @property-read AppInstance|null $appInstance
+ * @property-read Instance|null $instance
  */
 final class RouteAnalyticsTracking extends Model
 {
@@ -28,7 +28,7 @@ final class RouteAnalyticsTracking extends Model
     #[\Override]
     protected $fillable = [
         'route_id',
-        'app_instance_id',
+        'instance_id',
     ];
 
     /** @return BelongsTo<Route, $this> */
@@ -37,9 +37,9 @@ final class RouteAnalyticsTracking extends Model
         return $this->belongsTo(Route::class);
     }
 
-    /** @return BelongsTo<AppInstance, $this> */
-    public function appInstance(): BelongsTo
+    /** @return BelongsTo<Instance, $this> */
+    public function instance(): BelongsTo
     {
-        return $this->belongsTo(AppInstance::class);
+        return $this->belongsTo(Instance::class, 'instance_id');
     }
 }

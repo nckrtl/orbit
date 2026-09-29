@@ -20,7 +20,7 @@ final class UpdateInstanceDeployStepRequest extends GatewayRequest implements Ha
     protected Method $method = Method::PATCH;
 
     public function __construct(
-        private readonly int $appInstanceId,
+        private readonly int $instanceId,
         private readonly string $name,
         private readonly bool $hasCommand = false,
         #[SensitiveParameter]
@@ -37,7 +37,7 @@ final class UpdateInstanceDeployStepRequest extends GatewayRequest implements Ha
 
     public function resolveEndpoint(): string
     {
-        return "/api/v1/instances/{$this->appInstanceId}/deploy-steps/{$this->name}";
+        return "/api/v1/instances/{$this->instanceId}/deploy-steps/{$this->name}";
     }
 
     public function createDtoFromResponse(#[SensitiveParameter] Response $response): DeploymentStepResponse

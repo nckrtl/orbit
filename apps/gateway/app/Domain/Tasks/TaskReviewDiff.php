@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 /**
  * The tracked and untracked diff of a subtask since its start commit (ADR 0169).
@@ -27,5 +27,5 @@ interface TaskReviewDiff
      *
      * @throws TaskReviewDiffException
      */
-    public function read(AppInstance $instance, string $startCommit): array;
+    public function read(Instance $instance, string $startCommit): array;
 }

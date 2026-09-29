@@ -13,7 +13,7 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Logs\OpenLogStreamRequest;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -23,17 +23,17 @@ final class InstanceLogStreamsController extends Controller
 {
     use RespondsWithLogStreams;
 
-    public function store(OpenLogStreamRequest $request, AppInstance $instance, LogStreamTargetResolver $targets, OpenLogStreamAction $action): JsonResponse
+    public function store(OpenLogStreamRequest $request, Instance $instance, LogStreamTargetResolver $targets, OpenLogStreamAction $action): JsonResponse
     {
         return $this->opened($request, $action->execute($targets->forInstance($instance), $this->viewer($request), $request->socketId(), $request->lines()));
     }
 
-    public function update(Request $request, AppInstance $instance, string $stream, RenewLogStreamAction $action): JsonResponse
+    public function update(Request $request, Instance $instance, string $stream, RenewLogStreamAction $action): JsonResponse
     {
         return $this->renewed($request, $action->execute(LogStreamRecordType::Instance, (int) $instance->id, $stream, $this->viewer($request)));
     }
 
-    public function destroy(Request $request, AppInstance $instance, string $stream, CloseLogStreamAction $action): JsonResponse
+    public function destroy(Request $request, Instance $instance, string $stream, CloseLogStreamAction $action): JsonResponse
     {
         return $this->closed($request, $action->execute(LogStreamRecordType::Instance, (int) $instance->id, $stream, $this->viewer($request)));
     }

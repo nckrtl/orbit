@@ -16,7 +16,7 @@ final class ListTaskGroupsRequest extends GatewayRequest
     protected Method $method = Method::GET;
 
     public function __construct(
-        private readonly ?int $appId = null,
+        private readonly ?int $projectId = null,
         private readonly ?string $status = null,
     ) {}
 
@@ -29,7 +29,7 @@ final class ListTaskGroupsRequest extends GatewayRequest
     protected function defaultQuery(): array
     {
         return array_filter(
-            ['app_id' => $this->appId, 'status' => $this->status],
+            ['project_id' => $this->projectId, 'status' => $this->status],
             static fn (int|string|null $value): bool => $value !== null,
         );
     }

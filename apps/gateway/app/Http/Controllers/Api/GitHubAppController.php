@@ -41,7 +41,7 @@ final class GitHubAppController extends Controller
         return $this->response($request, $action->handle()->toArray());
     }
 
-    /** The page that sends the App manifest from the operator's browser to GitHub. */
+    /** The page that sends the Project manifest from the operator's browser to GitHub. */
     public function register(Request $request, GitHubAppStore $store): Response
     {
         $registration = $store->registration();
@@ -61,7 +61,7 @@ final class GitHubAppController extends Controller
             ->header('Referrer-Policy', 'no-referrer');
     }
 
-    /** GitHub redirects the operator's browser here after it registers the App. */
+    /** GitHub redirects the operator's browser here after it registers the Project. */
     public function callback(Request $request, CompleteGitHubAppRegistrationAction $action): RedirectResponse
     {
         $state = $request->query('state');

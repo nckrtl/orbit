@@ -14,7 +14,7 @@ function schedule_validation_data(
     int $timeout = 3600,
 ): AddScheduleData {
     return new AddScheduleData(
-        ScheduleTargetType::AppInstance,
+        ScheduleTargetType::Instance,
         1,
         $name,
         $calendar,

@@ -14,8 +14,8 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPositions;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\AgentThread;
-use App\Models\App as OrbitApp;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskComment;
 use App\Models\TaskGroup;
@@ -24,13 +24,13 @@ use Illuminate\Support\Facades\Event;
 
 function live_group(string $status = 'running'): TaskGroup
 {
-    $app = OrbitApp::query()->firstOrCreate(['slug' => 'live-tasks'], [
+    $project = Project::query()->firstOrCreate(['slug' => 'live-tasks'], [
         'name' => 'Live tasks',
         'repository_url' => 'git@example.test:live-tasks.git',
         'default_branch' => 'main',
     ]);
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Secret title',
         'brief' => 'A brief that must never reach a broadcast.',
         'status' => TaskGroupStatus::from($status),

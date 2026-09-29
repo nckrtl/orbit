@@ -3,30 +3,30 @@
 declare(strict_types=1);
 
 use App\Domain\AppDev\DnsRequester;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
-use App\Infrastructure\AppDev\AppDevSiteRepository;
 use App\Infrastructure\AppDev\CatalogPrivateDnsAnswerSelector;
+use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\AppDev\InMemoryPrivateDnsAnswerCache;
 use App\Infrastructure\AppDev\PrivateDnsAnswerCatalog;
 use App\Infrastructure\AppDev\PrivateDnsMessageCodec;
 use App\Infrastructure\AppDev\PrivateDnsRequestHandler;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Tests\Support\RegisteredNodeDnsRequesterResolver;
 
 it('returns the Router LAN address to an eligible Cluster member for the TLD and Cluster-scoped Routes', function (): void {
     [$route, $outside, $eligible] = orb260_cluster_routes();
-    $catalog = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->catalog();
+    $catalog = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->catalog();
     $handler = orb260_handler($catalog);
     $codec = new PrivateDnsMessageCodec;
 
@@ -40,7 +40,7 @@ it('returns the Router LAN address to an eligible Cluster member for the TLD and
 
 it('returns the Router WireGuard address when any LAN-selection condition is absent', function (string $source): void {
     [$route, $outside] = orb260_cluster_routes();
-    $catalog = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->catalog();
+    $catalog = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->catalog();
     $handler = orb260_handler($catalog);
     $codec = new PrivateDnsMessageCodec;
 
@@ -59,7 +59,7 @@ it('returns the Router WireGuard address when any LAN-selection condition is abs
 
 it('ignores a caller-supplied EDNS identity when selecting a Router address', function (): void {
     [$route, , $eligible] = orb260_cluster_routes();
-    $handler = orb260_handler(new AppDevDnsConfigRenderer(new AppDevSiteRepository)->catalog());
+    $handler = orb260_handler(new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->catalog());
     $codec = new PrivateDnsMessageCodec;
     $claimed = $codec->encodeQuery($route->domain, ednsClientSubnet: (string) $eligible->wireguard_ip);
 
@@ -72,7 +72,7 @@ it('ignores a caller-supplied EDNS identity when selecting a Router address', fu
 it('keeps interleaved eligible and ineligible answers isolated across cache flush', function (): void {
     [$route, , $eligible] = orb260_cluster_routes();
     $cache = new InMemoryPrivateDnsAnswerCache;
-    $handler = orb260_handler(new AppDevDnsConfigRenderer(new AppDevSiteRepository)->catalog(), $cache);
+    $handler = orb260_handler(new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->catalog(), $cache);
     $codec = new PrivateDnsMessageCodec;
     $query = fn (): string => $codec->encodeQuery($route->domain);
 
@@ -109,14 +109,14 @@ it('leaves Node-scoped Routes and control-plane names on their established addre
         'user' => 'orbit',
     ]);
     $solo->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'Solo',
         'slug' => 'solo',
         'repository_url' => 'https://example.test/solo.git',
         'root' => 'public',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $solo->id,
         'name' => 'default',
         'checkout_path' => '/home/orbit/apps/solo',
@@ -124,17 +124,17 @@ it('leaves Node-scoped Routes and control-plane names on their established addre
         'branch' => 'main',
         'starting_commit' => str_repeat('c', 40),
         'selected_php_version' => '8.5',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $solo->id,
         'domain' => 'solo.app.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
     $gateway = Node::query()->create([
         'name' => 'gateway',
@@ -157,7 +157,7 @@ it('leaves Node-scoped Routes and control-plane names on their established addre
     ]);
     $metrics->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
     $eligible = Node::query()->where('name', 'lan-member')->sole();
-    $handler = orb260_handler(new AppDevDnsConfigRenderer(new AppDevSiteRepository)->catalog());
+    $handler = orb260_handler(new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->catalog());
     $codec = new PrivateDnsMessageCodec;
 
     expect(orb260_answer($handler->handle((string) $eligible->wireguard_ip, $codec->encodeQuery('solo.app.test'))))
@@ -173,7 +173,7 @@ it('leaves Node-scoped Routes and control-plane names on their established addre
 it('publishes Cluster TLD wildcards to the Router WireGuard address', function (): void {
     orb260_cluster_routes();
 
-    $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
+    $configuration = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render();
 
     expect($configuration)
         ->toContain('address=/.cluster.test/10.44.0.20')
@@ -185,12 +185,12 @@ it('publishes Cluster TLD wildcards to the Router WireGuard address', function (
 
 it('releases an untargeted retiring Route hostname from Cluster Router DNS selection', function (): void {
     [$route, $outside, $eligible] = orb260_cluster_routes();
-    $instance = $route->targets->sole()->appInstance;
-    $instance->update(['status' => AppInstanceState::Reserved]);
+    $instance = $route->targets->sole()->instance;
+    $instance->update(['status' => InstanceState::Reserved]);
     $route->targets()->delete();
     $route->update(['status' => RouteStatus::Retiring]);
 
-    $catalog = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->catalog();
+    $catalog = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->catalog();
     $eligibleKey = DnsRequester::registered($eligible->id, (string) $eligible->wireguard_ip)->cacheKey();
 
     expect($catalog->exact[$route->domain] ?? null)
@@ -203,7 +203,7 @@ it('releases an untargeted retiring Route hostname from Cluster Router DNS selec
 
 it('fills requester catalog overrides for eligible LAN members only', function (): void {
     [$route, $outside, $eligible] = orb260_cluster_routes();
-    $catalog = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->catalog();
+    $catalog = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->catalog();
     $eligibleKey = DnsRequester::registered($eligible->id, (string) $eligible->wireguard_ip)->cacheKey();
     $vpn = Node::query()->where('name', 'vpn-only')->sole();
     $vpnKey = DnsRequester::registered($vpn->id, (string) $vpn->wireguard_ip)->cacheKey();
@@ -286,14 +286,14 @@ function orb260_cluster_routes(): array
         'wireguard_public_key' => 'other-key',
         'user' => 'orbit',
     ]);
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'Clustered',
         'slug' => 'clustered',
         'repository_url' => 'https://example.test/clustered.git',
         'root' => 'public',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $workload->id,
         'name' => 'default',
         'checkout_path' => '/home/orbit/apps/clustered',
@@ -301,20 +301,20 @@ function orb260_cluster_routes(): array
         'branch' => 'main',
         'starting_commit' => str_repeat('d', 40),
         'selected_php_version' => '8.5',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $project->id,
         'cluster_id' => $cluster->id,
         'domain' => 'app.cluster.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
-    $preview = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $preview = Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $workload->id,
         'name' => 'preview',
         'checkout_path' => '/home/orbit/apps/clustered-preview',
@@ -322,17 +322,17 @@ function orb260_cluster_routes(): array
         'branch' => 'main',
         'starting_commit' => str_repeat('e', 40),
         'selected_php_version' => '8.5',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
     $outside = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $project->id,
         'cluster_id' => $cluster->id,
         'domain' => 'other.example.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $outside->targets()->create(['app_instance_id' => $preview->id, 'position' => 0]);
+    $outside->targets()->create(['instance_id' => $preview->id, 'position' => 0]);
     $outside->update(['status' => RouteStatus::Active]);
 
     return [$route->fresh(), $outside->fresh(), $workload->fresh()];

@@ -13,15 +13,15 @@ use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Models\AgentThread;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskGroup;
 
 function metrics_running_group(): TaskGroup
 {
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'live-metrics',
         'slug' => 'live-metrics',
         'repository_url' => 'git@example.test:live-metrics.git',
@@ -34,15 +34,15 @@ function metrics_running_group(): TaskGroup
         'public_ssh_host' => '10.44.0.161',
         'wireguard_ip' => '10.44.0.161',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'task-7',
         'checkout_path' => '/tmp/task-7',
         'status' => 'source_resolved',
     ]);
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Live metrics',
         'brief' => 'Show session totals.',
         'status' => TaskGroupStatus::Running,
@@ -61,7 +61,7 @@ function metrics_running_group(): TaskGroup
 
     test_link_agent_threads($group, implementer: 'implementer-1');
 
-    return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+    return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
 }
 
 it('fills subtask session metrics from T3 and the group line diff from git', function (): void {
@@ -96,19 +96,19 @@ it('fills subtask session metrics from T3 and the group line diff from git', fun
     };
     $diff = new class implements TaskWorkspaceDiffReader
     {
-        public function lineChanges(AppInstance $instance, string $baseBranch): ?array
+        public function lineChanges(Instance $instance, string $baseBranch): ?array
         {
             return ['additions' => $this->lineDiff($instance, $baseBranch), 'deletions' => 0];
         }
 
-        public function lineDiff(AppInstance $instance, string $baseBranch): int
+        public function lineDiff(Instance $instance, string $baseBranch): int
         {
             expect($baseBranch)->toBe('main');
 
             return 22;
         }
 
-        public function hasCommitsSince(AppInstance $instance, string $since): bool
+        public function hasCommitsSince(Instance $instance, string $since): bool
         {
             return false;
         }
@@ -129,7 +129,7 @@ it('fills subtask session metrics from T3 and the group line diff from git', fun
 it('does not observe a reserved reviewer row', function (): void {
     $group = metrics_running_group();
     $instance = $group->taskable;
-    $nodeId = $instance instanceof AppInstance ? $instance->node_id : null;
+    $nodeId = $instance instanceof Instance ? $instance->node_id : null;
     AgentThread::query()->create([
         'task_group_id' => $group->id,
         'task_id' => $group->tasks->first()?->id,
@@ -179,23 +179,23 @@ it('keeps stored thread metrics when T3 refuses the snapshot', function (): void
     };
     $diff = new class implements TaskWorkspaceDiffReader
     {
-        public function lineChanges(AppInstance $instance, string $baseBranch): ?array
+        public function lineChanges(Instance $instance, string $baseBranch): ?array
         {
             return ['additions' => $this->lineDiff($instance, $baseBranch), 'deletions' => 0];
         }
 
-        public function lineDiff(AppInstance $instance, string $baseBranch): int
+        public function lineDiff(Instance $instance, string $baseBranch): int
         {
             return 11;
         }
 
-        public function hasCommitsSince(AppInstance $instance, string $since): bool
+        public function hasCommitsSince(Instance $instance, string $since): bool
         {
             return false;
         }
     };
 
-    $refreshed = new TaskGroupMetricsRefresher(test_agent_observer($threads), $diff)->refresh($group->fresh(['app', 'tasks', 'taskable']) ?? $group);
+    $refreshed = new TaskGroupMetricsRefresher(test_agent_observer($threads), $diff)->refresh($group->fresh(['project', 'tasks', 'taskable']) ?? $group);
 
     expect($refreshed->tokens)->toBe(90)
         ->and($refreshed->line_diff)->toBe(11)
@@ -225,17 +225,17 @@ it('refreshes an active group when it is shown', function (): void {
     });
     app()->instance(TaskWorkspaceDiffReader::class, new class implements TaskWorkspaceDiffReader
     {
-        public function lineChanges(AppInstance $instance, string $baseBranch): ?array
+        public function lineChanges(Instance $instance, string $baseBranch): ?array
         {
             return ['additions' => $this->lineDiff($instance, $baseBranch), 'deletions' => 0];
         }
 
-        public function lineDiff(AppInstance $instance, string $baseBranch): int
+        public function lineDiff(Instance $instance, string $baseBranch): int
         {
             return 9;
         }
 
-        public function hasCommitsSince(AppInstance $instance, string $since): bool
+        public function hasCommitsSince(Instance $instance, string $since): bool
         {
             return false;
         }
@@ -269,17 +269,17 @@ it('does not query T3 for a finished group', function (): void {
 
     $refreshed = new TaskGroupMetricsRefresher(test_agent_observer($threads), new class implements TaskWorkspaceDiffReader
     {
-        public function lineChanges(AppInstance $instance, string $baseBranch): ?array
+        public function lineChanges(Instance $instance, string $baseBranch): ?array
         {
             return ['additions' => $this->lineDiff($instance, $baseBranch), 'deletions' => 0];
         }
 
-        public function lineDiff(AppInstance $instance, string $baseBranch): int
+        public function lineDiff(Instance $instance, string $baseBranch): int
         {
             return 99;
         }
 
-        public function hasCommitsSince(AppInstance $instance, string $since): bool
+        public function hasCommitsSince(Instance $instance, string $since): bool
         {
             return false;
         }

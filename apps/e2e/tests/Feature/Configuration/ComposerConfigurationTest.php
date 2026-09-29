@@ -232,7 +232,7 @@ describe('Composer configuration', function (): void {
             ->and($steps['Run architecture tests']['run'])
             ->toContain('tests/Feature/CommandSurfaceTest.php')
             ->toContain('tests/Unit/Architecture')
-            ->toContain('tests/Feature/Infrastructure/AppInstances/ConfiguredOriginReadTest.php')
+            ->toContain('tests/Feature/Infrastructure/Instances/ConfiguredOriginReadTest.php')
             ->toContain('tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php')
             ->toContain('tests/Unit/E2E/ProofFixtureContractTest.php')
             ->toContain('tests/Unit/E2E/ProofFixtureShellContractTest.php')

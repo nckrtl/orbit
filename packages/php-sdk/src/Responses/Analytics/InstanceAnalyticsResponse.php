@@ -8,8 +8,8 @@ use Orbit\Sdk\GatewayApiException;
 use SensitiveParameter;
 
 /**
- * The tracking hosts an App instance publishes for the analytics role, with what the operator
- * needs next: the DNS record for each host and the script tag for the App.
+ * The tracking hosts an Instance publishes for the analytics role, with what the operator
+ * needs next: the DNS record for each host and the script tag for the Project.
  */
 final readonly class InstanceAnalyticsResponse
 {
@@ -89,7 +89,7 @@ final readonly class InstanceAnalyticsResponse
                 'error_code' => $errorCode,
                 'script_url' => $host['script_url'],
                 'event_url' => $host['event_url'],
-                // Null while the App instance has no domain to point the host at.
+                // Null while the Instance has no domain to point the host at.
                 'dns' => $dns === null ? null : ['type' => $dns['type'], 'name' => $dns['name'], 'value' => $dns['value']],
             ];
         }

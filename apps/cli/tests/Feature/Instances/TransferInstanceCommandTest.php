@@ -9,8 +9,8 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\TransferAppInstanceRequest;
+use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
+use Orbit\Sdk\Requests\Instances\TransferInstanceRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -53,7 +53,7 @@ describe('instance:transfer request', function (): void {
         $request = $response->getPendingRequest()->getRequest();
 
         expect($request)
-            ->toBeInstanceOf(TransferAppInstanceRequest::class)
+            ->toBeInstanceOf(TransferInstanceRequest::class)
             ->and($request->resolveEndpoint())
             ->toBe('/api/v1/instances/11/transfer')
             ->and($request->body()->all())
@@ -113,7 +113,7 @@ describe('instance:transfer request', function (): void {
 
     it('requires explicit force consent for noninteractive transfer', function (): void {
         $mock = MockClient::global([
-            ShowAppInstanceRequest::class => MockResponse::make(['data' => transfer_cli_payload(), 'meta' => ['request_id' => transfer_cli_request_id()]]),
+            ShowInstanceRequest::class => MockResponse::make(['data' => transfer_cli_payload(), 'meta' => ['request_id' => transfer_cli_request_id()]]),
             ShowNodeRequest::class => MockResponse::make(['data' => ['id' => 8, 'name' => 'destination'], 'meta' => ['request_id' => transfer_cli_request_id()]]),
         ]);
 
@@ -198,7 +198,7 @@ describe('instance:transfer help and execution boundary', function (): void {
 
         expect($source)
             ->toBeString()
-            ->toContain(TransferAppInstanceRequest::class)
+            ->toContain(TransferInstanceRequest::class)
             ->not->toContain('Symfony\\Component\\Process', 'shell_exec', 'proc_open', 'passthru');
     });
 });
@@ -207,7 +207,7 @@ describe('instance:transfer help and execution boundary', function (): void {
 function transfer_cli_responses(): array
 {
     return [
-        TransferAppInstanceRequest::class => MockResponse::make([
+        TransferInstanceRequest::class => MockResponse::make([
             'data' => transfer_cli_payload(),
             'meta' => ['request_id' => transfer_cli_request_id()],
         ], 201),
@@ -247,7 +247,7 @@ function transfer_cli_payload(): array
             'status' => 'active',
             'failed_step' => null,
             'error_code' => null,
-            'target' => ['id' => 51, 'app_instance_id' => 11, 'position' => 0],
+            'target' => ['id' => 51, 'instance_id' => 11, 'position' => 0],
             'process_id' => null,
             'upstream' => null,
         ],

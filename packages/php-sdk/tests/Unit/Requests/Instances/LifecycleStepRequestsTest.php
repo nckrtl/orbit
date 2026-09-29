@@ -6,7 +6,7 @@ use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Instances\CreateProjectLifecycleStepRequest;
 use Orbit\Sdk\Requests\Instances\DestroyProjectLifecycleStepRequest;
 use Orbit\Sdk\Requests\Instances\ListProjectLifecycleStepsRequest;
-use Orbit\Sdk\Requests\Instances\SetupAppInstanceRequest;
+use Orbit\Sdk\Requests\Instances\SetupInstanceRequest;
 use Orbit\Sdk\Requests\Instances\UpdateProjectLifecycleStepRequest;
 use Orbit\Sdk\Responses\Instances\LifecycleStepResponse;
 use Saloon\Enums\Method;
@@ -52,7 +52,7 @@ describe('project lifecycle transport', function (): void {
 
     it('bounds malformed response fields and transports the setup operation without a body', function (): void {
         $step = LifecycleStepResponse::fromData(['name' => [], 'command' => false, 'timeout_seconds' => '10']);
-        $setup = new SetupAppInstanceRequest(8);
+        $setup = new SetupInstanceRequest(8);
         expect($step->toArray())->toBe(['name' => '', 'command' => '', 'timeout_seconds' => 0])
             ->and($setup->getMethod())->toBe(Method::POST)
             ->and($setup->resolveEndpoint())->toBe('/api/v1/instances/8/setup');

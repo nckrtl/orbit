@@ -7,9 +7,9 @@ use App\Repositories\GatewayConfigRepository;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\Environment\ImportAppInstanceEnvironmentRequest;
-use Orbit\Sdk\Requests\Environment\SynchronizeAppInstanceEnvironmentRequest;
-use Orbit\Sdk\Requests\Environment\UpdateAppInstanceEnvironmentRequest;
+use Orbit\Sdk\Requests\Environment\ImportInstanceEnvironmentRequest;
+use Orbit\Sdk\Requests\Environment\SynchronizeInstanceEnvironmentRequest;
+use Orbit\Sdk\Requests\Environment\UpdateInstanceEnvironmentRequest;
 use Saloon\Exceptions\Request\FatalRequestException;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -55,7 +55,7 @@ describe('environment request wiring', function (): void {
         'import without replacement' => [[
             'command' => 'env:import',
             'arguments' => ['--instance' => 'app.com'],
-            'request_class' => ImportAppInstanceEnvironmentRequest::class,
+            'request_class' => ImportInstanceEnvironmentRequest::class,
             'path' => '/api/v1/instances/app.com/environment/import',
             'body' => [],
             'operation' => 'import',
@@ -63,7 +63,7 @@ describe('environment request wiring', function (): void {
         'import with replacement' => [[
             'command' => 'env:import',
             'arguments' => ['--instance' => 'app.com', '--replace' => true],
-            'request_class' => ImportAppInstanceEnvironmentRequest::class,
+            'request_class' => ImportInstanceEnvironmentRequest::class,
             'path' => '/api/v1/instances/app.com/environment/import',
             'body' => ['replace' => true],
             'operation' => 'import',
@@ -71,7 +71,7 @@ describe('environment request wiring', function (): void {
         'update' => [[
             'command' => 'env:update',
             'arguments' => ['--instance' => 'app.com', '--key' => 'APP_DEBUG', '--value' => 'true'],
-            'request_class' => UpdateAppInstanceEnvironmentRequest::class,
+            'request_class' => UpdateInstanceEnvironmentRequest::class,
             'path' => '/api/v1/instances/app.com/environment/APP_DEBUG',
             'body' => ['value' => 'true'],
             'operation' => 'update',
@@ -79,14 +79,14 @@ describe('environment request wiring', function (): void {
         'synchronize' => [[
             'command' => 'env:sync',
             'arguments' => ['--instance' => 'app.com'],
-            'request_class' => SynchronizeAppInstanceEnvironmentRequest::class,
+            'request_class' => SynchronizeInstanceEnvironmentRequest::class,
             'path' => '/api/v1/instances/app.com/environment/sync',
             'body' => [],
             'operation' => 'sync',
         ]],
     ]);
 
-    it('accepts a numeric AppInstance ID for every operation', function (
+    it('accepts a numeric Instance ID for every operation', function (
         string $command,
         array $arguments,
         string $requestClass,
@@ -106,22 +106,22 @@ describe('environment request wiring', function (): void {
             ->and($mock->getRecordedResponses())
             ->toHaveCount(1);
     })->with([
-        'import' => ['env:import', [], ImportAppInstanceEnvironmentRequest::class, 'import', 'import'],
+        'import' => ['env:import', [], ImportInstanceEnvironmentRequest::class, 'import', 'import'],
         'update' => [
             'env:update',
             ['--key' => 'APP_DEBUG', '--value' => 'true'],
-            UpdateAppInstanceEnvironmentRequest::class,
+            UpdateInstanceEnvironmentRequest::class,
             'update',
             'APP_DEBUG',
         ],
-        'synchronize' => ['env:sync', [], SynchronizeAppInstanceEnvironmentRequest::class, 'sync', 'sync'],
+        'synchronize' => ['env:sync', [], SynchronizeInstanceEnvironmentRequest::class, 'sync', 'sync'],
     ]);
 });
 
 describe('environment value preservation', function (): void {
     it('preserves the explicitly supplied update value as an exact string', function (string $value): void {
         $mock = MockClient::global([
-            UpdateAppInstanceEnvironmentRequest::class => environment_cli_response('update'),
+            UpdateInstanceEnvironmentRequest::class => environment_cli_response('update'),
         ]);
 
         $this
@@ -138,7 +138,7 @@ describe('environment value preservation', function (): void {
         'false string' => ['false'],
         'zero string' => ['0'],
         'newlines' => ["first\nsecond"],
-        'Route domain placeholder' => ['https://{{app_instance.domain}}'],
+        'Route domain placeholder' => ['https://{{instance.domain}}'],
     ]);
 
     it('refuses every missing required option before an HTTP request', function (
@@ -170,7 +170,7 @@ describe('environment value preservation', function (): void {
 describe('environment output', function (): void {
     it('renders a complete value-free human result and states that a store leaves the workload file unchanged', function (): void {
         MockClient::global([
-            UpdateAppInstanceEnvironmentRequest::class => environment_cli_response('update'),
+            UpdateInstanceEnvironmentRequest::class => environment_cli_response('update'),
         ]);
 
         [$exit, $output] = environment_cli_display('env:update', [
@@ -191,7 +191,7 @@ describe('environment output', function (): void {
 
     it('renders the exact value-free JSON store result', function (): void {
         MockClient::global([
-            ImportAppInstanceEnvironmentRequest::class => environment_cli_response('import'),
+            ImportInstanceEnvironmentRequest::class => environment_cli_response('import'),
         ]);
 
         $this
@@ -202,7 +202,7 @@ describe('environment output', function (): void {
 
     it('reports synchronization without claiming cache or process refreshes', function (): void {
         MockClient::global([
-            SynchronizeAppInstanceEnvironmentRequest::class => environment_cli_response('sync', changed: false),
+            SynchronizeInstanceEnvironmentRequest::class => environment_cli_response('sync', changed: false),
         ]);
 
         [$exit, $output] = environment_cli_display('env:sync', ['--instance' => 'app.com']);
@@ -222,11 +222,11 @@ describe('environment output', function (): void {
 describe('environment failures', function (): void {
     it('renders a bounded Gateway failure with its request ID and without the submitted value', function (): void {
         MockClient::global([
-            UpdateAppInstanceEnvironmentRequest::class => MockResponse::make(
+            UpdateInstanceEnvironmentRequest::class => MockResponse::make(
                 [
                     'error' => [
                         'code' => 'env.configuration_invalid',
-                        'message' => 'The complete AppInstance environment configuration is invalid.',
+                        'message' => 'The complete Instance environment configuration is invalid.',
                         'details' => ['value' => 'environment-secret-sentinel'],
                     ],
                 ],
@@ -247,7 +247,7 @@ describe('environment failures', function (): void {
         expect(trim($output))
             ->toBe(environment_cli_error_json(
                 code: 'env.configuration_invalid',
-                message: 'The complete AppInstance environment configuration is invalid.',
+                message: 'The complete Instance environment configuration is invalid.',
                 requestId: environment_cli_request_id(),
             ))
             ->not->toContain('environment-secret-sentinel')
@@ -257,11 +257,11 @@ describe('environment failures', function (): void {
 
     it('renders redacted configuration details for an invalid key and drops submitted values', function (): void {
         MockClient::global([
-            UpdateAppInstanceEnvironmentRequest::class => MockResponse::make(
+            UpdateInstanceEnvironmentRequest::class => MockResponse::make(
                 [
                     'error' => [
                         'code' => 'env.configuration_invalid',
-                        'message' => 'The complete AppInstance environment configuration is invalid.',
+                        'message' => 'The complete Instance environment configuration is invalid.',
                         'details' => [
                             'key' => 'BAD KEY',
                             'rule' => 'key',
@@ -286,7 +286,7 @@ describe('environment failures', function (): void {
         expect(trim($output))
             ->toBe(environment_cli_error_json(
                 code: 'env.configuration_invalid',
-                message: 'The complete AppInstance environment configuration is invalid.',
+                message: 'The complete Instance environment configuration is invalid.',
                 requestId: environment_cli_request_id(),
                 details: ['key' => 'BAD KEY', 'rule' => 'key'],
             ))
@@ -295,11 +295,11 @@ describe('environment failures', function (): void {
 
     it('renders redacted placeholder-rule details in human output', function (): void {
         MockClient::global([
-            UpdateAppInstanceEnvironmentRequest::class => MockResponse::make(
+            UpdateInstanceEnvironmentRequest::class => MockResponse::make(
                 [
                     'error' => [
                         'code' => 'env.configuration_invalid',
-                        'message' => 'The complete AppInstance environment configuration is invalid.',
+                        'message' => 'The complete Instance environment configuration is invalid.',
                         'details' => [
                             'key' => 'KEY',
                             'rule' => 'placeholder',
@@ -322,7 +322,7 @@ describe('environment failures', function (): void {
 
         expect($exitCode)->toBe(1);
         $output = trim($output);
-        expect($output)->toContain('The complete AppInstance environment configuration is invalid.');
+        expect($output)->toContain('The complete Instance environment configuration is invalid.');
         expect($output)->toContain('key: KEY');
         expect($output)->toContain('rule: placeholder');
         expect($output)->toContain('placeholder: {{instance.domain}}');
@@ -332,7 +332,7 @@ describe('environment failures', function (): void {
 
     it('renders the Gateway import-conflict message instead of an HTTP status wrapper', function (): void {
         MockClient::global([
-            ImportAppInstanceEnvironmentRequest::class => MockResponse::make(
+            ImportInstanceEnvironmentRequest::class => MockResponse::make(
                 [
                     'error' => [
                         'code' => 'env.import_conflict',
@@ -363,7 +363,7 @@ describe('environment failures', function (): void {
 
     it('renders the Gateway not-found message instead of an HTTP status wrapper', function (): void {
         MockClient::global([
-            ImportAppInstanceEnvironmentRequest::class => MockResponse::make(
+            ImportInstanceEnvironmentRequest::class => MockResponse::make(
                 [
                     'error' => [
                         'code' => 'http.404',
@@ -394,7 +394,7 @@ describe('environment failures', function (): void {
 
     it('renders a bounded transport failure without exception-chain diagnostics or the submitted value', function (): void {
         MockClient::global([
-            UpdateAppInstanceEnvironmentRequest::class => static function (PendingRequest $pendingRequest): never {
+            UpdateInstanceEnvironmentRequest::class => static function (PendingRequest $pendingRequest): never {
                 throw new FatalRequestException(
                     new RuntimeException('transport failed with environment-secret-sentinel'),
                     $pendingRequest,
@@ -438,7 +438,7 @@ function environment_cli_response(string $operation, bool $changed = true): Mock
 {
     return MockResponse::make([
         'data' => [
-            'app_instance_id' => 17,
+            'instance_id' => 17,
             'operation' => $operation,
             'changed' => $changed,
             'key_count' => 3,
@@ -450,7 +450,7 @@ function environment_cli_response(string $operation, bool $changed = true): Mock
 function environment_cli_result_json(string $operation, ?bool $workloadFileChanged = null): string
 {
     $payload = [
-        'app_instance_id' => 17,
+        'instance_id' => 17,
         'operation' => $operation,
         'changed' => true,
         'key_count' => 3,

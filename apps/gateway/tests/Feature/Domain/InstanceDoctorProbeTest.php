@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Actions\Annotations\AnnotationStoreAction;
 use App\Actions\Doctor\InstanceDoctorProbe;
 use App\Data\Annotations\AnnotationInput;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorInspectionScope;
@@ -17,6 +16,7 @@ use App\Domain\Doctor\PrivateRouteProjectionInspector;
 use App\Domain\Doctor\PrivateRouteProjectionObservation;
 use App\Domain\Doctor\PublicRouteEdgeInspector;
 use App\Domain\Doctor\PublicRouteEdgeObservation;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -24,12 +24,12 @@ use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
-use App\Models\App;
-use App\Models\AppInstance;
-use App\Models\AppInstanceRemoval;
 use App\Models\Cluster;
+use App\Models\Instance;
+use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Project;
 use App\Models\Route;
 use App\Models\TaskGroup;
 use Illuminate\Support\Facades\DB;
@@ -47,7 +47,7 @@ it('returns a healthy empty instance report and excludes other nodes', function 
             private int &$calls,
         ) {}
 
-        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        public function inspect(Instance $instance): InstanceInspectionData
         {
             $this->calls++;
             throw new DoctorInspectionException;
@@ -57,7 +57,7 @@ it('returns a healthy empty instance report and excludes other nodes', function 
     expect($report->checked)->toBe(0)->and($report->issues)->toBeEmpty()->and($calls)->toBe(0);
 });
 
-it('checks healthy AppInstances in id order', function (): void {
+it('checks healthy Instances in id order', function (): void {
     $node = instance_probe_node();
     $first = instance_probe_instance(instance_probe_app(), $node);
     $second = instance_probe_instance(instance_probe_app(), $node);
@@ -69,9 +69,9 @@ it('checks healthy AppInstances in id order', function (): void {
             private array &$seen,
         ) {}
 
-        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        public function inspect(Instance $instance): InstanceInspectionData
         {
-            $this->seen[] = $appInstance->id;
+            $this->seen[] = $instance->id;
 
             return new InstanceInspectionData(true, true, true, true);
         }
@@ -87,12 +87,12 @@ it('checks healthy AppInstances in id order', function (): void {
 
 it('reports lifecycle and every false instance field in stable order', function (): void {
     $node = instance_probe_node();
-    $instance = instance_probe_instance(instance_probe_app(), $node, AppInstanceState::Active);
+    $instance = instance_probe_instance(instance_probe_app(), $node, InstanceState::Active);
     $instance->update(['provisioning_step' => null]);
 
     $report = new InstanceDoctorProbe(new class implements InstanceStateInspector
     {
-        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        public function inspect(Instance $instance): InstanceInspectionData
         {
             return new InstanceInspectionData(false, false, false, false);
         }
@@ -117,7 +117,7 @@ it('reports lifecycle and every false instance field in stable order', function 
 
 it('does not report drift for an Instance with provisioning in flight', function (): void {
     $node = instance_probe_node();
-    $instance = instance_probe_instance(instance_probe_app(), $node, AppInstanceState::CheckoutPrepared);
+    $instance = instance_probe_instance(instance_probe_app(), $node, InstanceState::CheckoutPrepared);
     $instance->update(['provisioning_step' => null]);
     $calls = 0;
 
@@ -125,7 +125,7 @@ it('does not report drift for an Instance with provisioning in flight', function
     {
         public function __construct(private int &$calls) {}
 
-        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        public function inspect(Instance $instance): InstanceInspectionData
         {
             $this->calls++;
 
@@ -140,7 +140,7 @@ it('does not report drift for an Instance with provisioning in flight', function
 
 it('reports failed provisioning reports immediately', function (): void {
     $node = instance_probe_node();
-    $instance = instance_probe_instance(instance_probe_app(), $node, AppInstanceState::CheckoutPrepared);
+    $instance = instance_probe_instance(instance_probe_app(), $node, InstanceState::CheckoutPrepared);
     $instance->update([
         'provisioning_step' => 'checkout',
         'failed_step' => 'checkout',
@@ -157,9 +157,9 @@ it('reports failed provisioning reports immediately', function (): void {
 
 it('reports one stuck issue for an Instance with provisioning in flight beyond the bound', function (): void {
     $node = instance_probe_node();
-    $instance = instance_probe_instance(instance_probe_app(), $node, AppInstanceState::CheckoutPrepared);
+    $instance = instance_probe_instance(instance_probe_app(), $node, InstanceState::CheckoutPrepared);
     $instance->update(['provisioning_step' => 'checkout']);
-    DB::table('app_instances')->where('id', $instance->id)
+    DB::table('instances')->where('id', $instance->id)
         ->update(['updated_at' => now()->subMinutes(InstanceDoctorProbe::StuckProvisioningMinutes + 1)]);
     $calls = 0;
 
@@ -167,7 +167,7 @@ it('reports one stuck issue for an Instance with provisioning in flight beyond t
     {
         public function __construct(private int &$calls) {}
 
-        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        public function inspect(Instance $instance): InstanceInspectionData
         {
             $this->calls++;
 
@@ -190,7 +190,7 @@ it('checks Instances with the active provisioning step inside and beyond the stu
             $instance = instance_probe_instance(instance_probe_app(), $node);
             $instance->update(['provisioning_step' => $step]);
             if ($olderThanBound) {
-                DB::table('app_instances')->where('id', $instance->id)
+                DB::table('instances')->where('id', $instance->id)
                     ->update(['updated_at' => now()->subMinutes(InstanceDoctorProbe::StuckProvisioningMinutes + 1)]);
             }
         }
@@ -201,7 +201,7 @@ it('checks Instances with the active provisioning step inside and beyond the stu
     {
         public function __construct(private int &$calls) {}
 
-        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        public function inspect(Instance $instance): InstanceInspectionData
         {
             $this->calls++;
 
@@ -216,15 +216,15 @@ it('checks Instances with the active provisioning step inside and beyond the stu
 
 it('reports a settled task workspace in a later lifecycle state as lifecycle drift', function (): void {
     $node = instance_probe_node();
-    $instance = instance_probe_task_workspace(instance_probe_orbit_app(), $node, AppInstanceState::Active);
+    $instance = instance_probe_task_workspace(instance_probe_orbit_app(), $node, InstanceState::Active);
     $instance->update(['provisioning_step' => null]);
 
     $report = new InstanceDoctorProbe(instance_probe_healthy_inspector())->inspect(instance_probe_context($node));
 
     expect($report->issues)->toHaveCount(1)
         ->and($report->issues[0]->code)->toBe('instance.lifecycle_not_active')
-        ->and($report->issues[0]->expected)->toBe(AppInstanceState::SourceResolved->value)
-        ->and($report->issues[0]->observed)->toBe(AppInstanceState::Active->value);
+        ->and($report->issues[0]->expected)->toBe(InstanceState::SourceResolved->value)
+        ->and($report->issues[0]->observed)->toBe(InstanceState::Active->value);
 });
 
 it('does not report drift for a task workspace being removed', function (): void {
@@ -238,7 +238,7 @@ it('does not report drift for a task workspace being removed', function (): void
     {
         public function __construct(private int &$calls) {}
 
-        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        public function inspect(Instance $instance): InstanceInspectionData
         {
             $this->calls++;
 
@@ -256,23 +256,23 @@ it('does not report drift for a task workspace being removed', function (): void
 
 it('drops projection issues when removal started during inspection', function (): void {
     $instance = instance_probe_task_workspace_for_removal();
-    $instance->update(['status' => AppInstanceState::Active, 'provisioning_step' => null]);
+    $instance->update(['status' => InstanceState::Active, 'provisioning_step' => null]);
     $node = $instance->node;
 
     $report = new InstanceDoctorProbe(new class implements InstanceStateInspector
     {
-        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        public function inspect(Instance $instance): InstanceInspectionData
         {
-            expect($appInstance->status)->toBe(AppInstanceState::Active);
-            $appInstance->update(['status' => AppInstanceState::Active]);
-            instance_probe_mark_removing($appInstance);
+            expect($instance->status)->toBe(InstanceState::Active);
+            $instance->update(['status' => InstanceState::Active]);
+            instance_probe_mark_removing($instance);
 
             return new InstanceInspectionData(false, true, true, true);
         }
     })->inspect(instance_probe_context($node));
 
     expect($instance->fresh()->status)
-        ->toBe(AppInstanceState::Removing)
+        ->toBe(InstanceState::Removing)
         ->and($report->issues)
         ->toBeEmpty();
 });
@@ -281,7 +281,7 @@ it('reports only a stuck removal for a task workspace being removed beyond the b
     $instance = instance_probe_task_workspace_for_removal();
     $node = $instance->node;
     instance_probe_mark_removing($instance);
-    DB::table('app_instances')
+    DB::table('instances')
         ->where('id', $instance->id)
         ->update(['updated_at' => now()->subMinutes(InstanceDoctorProbe::StuckRemovalMinutes + 1)]);
     $calls = 0;
@@ -290,7 +290,7 @@ it('reports only a stuck removal for a task workspace being removed beyond the b
     {
         public function __construct(private int &$calls) {}
 
-        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        public function inspect(Instance $instance): InstanceInspectionData
         {
             $this->calls++;
 
@@ -321,7 +321,7 @@ it('short-circuits instance inspection when the node is unreachable', function (
             private int &$calls,
         ) {}
 
-        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        public function inspect(Instance $instance): InstanceInspectionData
         {
             $this->calls++;
             throw new DoctorInspectionException;
@@ -343,15 +343,15 @@ it('reports only stuck provisioning instead of inspecting an unsettled Instance'
     $instance = instance_probe_instance(
         instance_probe_app(),
         $node,
-        AppInstanceState::Reserved,
+        InstanceState::Reserved,
     );
 
-    DB::table('app_instances')->where('id', $instance->id)
+    DB::table('instances')->where('id', $instance->id)
         ->update(['updated_at' => now()->subMinutes(InstanceDoctorProbe::StuckProvisioningMinutes + 1)]);
 
     $report = new InstanceDoctorProbe(new class implements InstanceStateInspector
     {
-        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        public function inspect(Instance $instance): InstanceInspectionData
         {
             throw new RuntimeException('Unsettled Instances are not inspected.');
         }
@@ -365,17 +365,17 @@ it('reports only stuck provisioning instead of inspecting an unsettled Instance'
 
 it('accepts source_resolved for a task workspace that is not visitable', function (): void {
     $node = instance_probe_node();
-    instance_probe_task_workspace(instance_probe_orbit_app(), $node, AppInstanceState::SourceResolved);
+    instance_probe_task_workspace(instance_probe_orbit_app(), $node, InstanceState::SourceResolved);
 
     $report = new InstanceDoctorProbe(instance_probe_healthy_inspector())->inspect(instance_probe_context($node));
 
     expect($report->checked)->toBe(1)->and($report->issues)->toBe([]);
 });
 
-it('reports a task workspace that is not visitable and stuck before source resolution', function (AppInstanceState $status): void {
+it('reports a task workspace that is not visitable and stuck before source resolution', function (InstanceState $status): void {
     $node = instance_probe_node();
     $instance = instance_probe_task_workspace(instance_probe_orbit_app(), $node, $status);
-    DB::table('app_instances')->where('id', $instance->id)
+    DB::table('instances')->where('id', $instance->id)
         ->update(['updated_at' => now()->subMinutes(InstanceDoctorProbe::StuckProvisioningMinutes + 1)]);
 
     $report = new InstanceDoctorProbe(instance_probe_healthy_inspector())->inspect(instance_probe_context($node));
@@ -386,16 +386,16 @@ it('reports a task workspace that is not visitable and stuck before source resol
         ->and($report->issues[0]->expected)->toBe('source_resolved')
         ->and($report->issues[0]->observed)->toBe($status->value);
 })->with([
-    'reserved' => [AppInstanceState::Reserved],
-    'checkout_prepared' => [AppInstanceState::CheckoutPrepared],
+    'reserved' => [InstanceState::Reserved],
+    'checkout_prepared' => [InstanceState::CheckoutPrepared],
 ]);
 
-it('expects active for a visitable task workspace and for an Instance outside a task', function (App $app, bool $taskWorkspace): void {
+it('expects active for a visitable task workspace and for an Instance outside a task', function (Project $project, bool $taskWorkspace): void {
     $node = instance_probe_node();
     $instance = $taskWorkspace
-        ? instance_probe_task_workspace($app, $node, AppInstanceState::SourceResolved)
-        : instance_probe_instance($app, $node, AppInstanceState::SourceResolved);
-    DB::table('app_instances')->where('id', $instance->id)
+        ? instance_probe_task_workspace($project, $node, InstanceState::SourceResolved)
+        : instance_probe_instance($project, $node, InstanceState::SourceResolved);
+    DB::table('instances')->where('id', $instance->id)
         ->update(['updated_at' => now()->subMinutes(InstanceDoctorProbe::StuckProvisioningMinutes + 1)]);
 
     $report = new InstanceDoctorProbe(instance_probe_healthy_inspector())->inspect(instance_probe_context($node));
@@ -406,8 +406,8 @@ it('expects active for a visitable task workspace and for an Instance outside a 
         ->and($report->issues[0]->expected)->toBe('active')
         ->and($report->issues[0]->observed)->toBe('source_resolved');
 })->with([
-    'visitable task workspace' => [fn (): App => instance_probe_app(), true],
-    'Orbit Instance outside a task' => [fn (): App => instance_probe_orbit_app(), false],
+    'visitable task workspace' => [fn (): Project => instance_probe_app(), true],
+    'Orbit Instance outside a task' => [fn (): Project => instance_probe_orbit_app(), false],
 ]);
 
 it('keeps an annotated active Orbit Instance healthy after the annotation resolves', function (): void {
@@ -432,12 +432,12 @@ it('continues after a typed instance inspection failure', function (): void {
     $report = new InstanceDoctorProbe(new class($failed) implements InstanceStateInspector
     {
         public function __construct(
-            private AppInstance $failed,
+            private Instance $failed,
         ) {}
 
-        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        public function inspect(Instance $instance): InstanceInspectionData
         {
-            if ($appInstance->is($this->failed)) {
+            if ($instance->is($this->failed)) {
                 throw new DoctorInspectionException;
             }
 
@@ -471,7 +471,7 @@ it('inspects the supported worktree source layout', function (): void {
             private int &$calls,
         ) {}
 
-        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        public function inspect(Instance $instance): InstanceInspectionData
         {
             $this->calls++;
 
@@ -491,7 +491,7 @@ it('reports every production projection field in stable order without exposing p
 
     $report = new InstanceDoctorProbe(new class implements InstanceStateInspector
     {
-        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        public function inspect(Instance $instance): InstanceInspectionData
         {
             return new InstanceInspectionData(
                 true,
@@ -535,7 +535,7 @@ it('reports missing and shared production PHP associations before native project
 
     $report = new InstanceDoctorProbe(new class implements InstanceStateInspector
     {
-        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        public function inspect(Instance $instance): InstanceInspectionData
         {
             return new InstanceInspectionData(
                 true,
@@ -568,7 +568,7 @@ it('reports unavailable production observations without hiding established drift
 
     $report = new InstanceDoctorProbe(new class implements InstanceStateInspector
     {
-        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        public function inspect(Instance $instance): InstanceInspectionData
         {
             return new InstanceInspectionData(
                 true,
@@ -602,7 +602,7 @@ it('reports public-route drift without placement and skips unselected related no
     $inspector = new InstanceProbePublicEdgeInspector;
     $healthy = new class implements InstanceStateInspector
     {
-        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        public function inspect(Instance $instance): InstanceInspectionData
         {
             return new InstanceInspectionData(
                 checkoutExists: true,
@@ -743,7 +743,7 @@ it('maps missing stale malformed and unreachable private observations to bounded
     ))->inspect($scope);
     $unreachable = new InstanceDoctorProbe($healthy, null, new class implements PrivateRouteProjectionInspector
     {
-        public function inspect(AppInstance $instance, Route $route): PrivateRouteProjectionObservation
+        public function inspect(Instance $instance, Route $route): PrivateRouteProjectionObservation
         {
             throw new DoctorInspectionException;
         }
@@ -793,7 +793,7 @@ it('inspects private Routes without mutating managed state', function (): void {
         ->and($router->fresh()->getAttributes())
         ->toBe($before[3])
         ->and($instance->fresh()->status)
-        ->toBe(AppInstanceState::Active)
+        ->toBe(InstanceState::Active)
         ->and($route->fresh()->status)
         ->toBe(RouteStatus::Active);
 });
@@ -865,7 +865,7 @@ function instance_probe_healthy_inspector(): InstanceStateInspector
 {
     return new class implements InstanceStateInspector
     {
-        public function inspect(AppInstance $appInstance): InstanceInspectionData
+        public function inspect(Instance $instance): InstanceInspectionData
         {
             return new InstanceInspectionData(
                 checkoutExists: true,
@@ -899,12 +899,12 @@ function instance_probe_node(): Node
     ]);
 }
 
-function instance_probe_app(): App
+function instance_probe_app(): Project
 {
     static $number = 0;
     $number++;
 
-    return App::query()->create([
+    return Project::query()->create([
         'name' => "Instance App {$number}",
         'slug' => "instance-app-{$number}",
         'repository_url' => "https://github.com/acme/private-instance-{$number}.git",
@@ -914,31 +914,31 @@ function instance_probe_app(): App
 }
 
 function instance_probe_instance(
-    App $app,
+    Project $project,
     Node $node,
-    AppInstanceState $status = AppInstanceState::Active,
-): AppInstance {
+    InstanceState $status = InstanceState::Active,
+): Instance {
     NodeRole::query()->firstOrCreate(
         ['node_id' => $node->id, 'role' => RoleName::AppDev],
         ['status' => LifecycleStatus::Active],
     );
-    $suffix = $app->appInstances()->count() + 1;
+    $suffix = $project->instances()->count() + 1;
 
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => "development-{$suffix}",
         'environment' => 'development',
-        'checkout_path' => "/private/instance/{$app->slug}/development-{$suffix}",
+        'checkout_path' => "/private/instance/{$project->slug}/development-{$suffix}",
         'branch' => "development-{$suffix}",
         'starting_commit' => str_repeat((string) $suffix, 40),
         'status' => $status,
     ]);
 }
 
-function instance_probe_orbit_app(): App
+function instance_probe_orbit_app(): Project
 {
-    return App::query()->create([
+    return Project::query()->create([
         'name' => 'Orbit',
         'slug' => 'orbit',
         'repository_url' => 'https://github.com/acme/orbit.git',
@@ -946,13 +946,13 @@ function instance_probe_orbit_app(): App
     ]);
 }
 
-function instance_probe_mark_removing(AppInstance $instance): void
+function instance_probe_mark_removing(Instance $instance): void
 {
     $instance->update(['root' => 'public']);
     $route = $instance->routes()->firstOrFail();
-    $removal = AppInstanceRemoval::query()->create([
+    $removal = InstanceRemoval::query()->create([
         'id' => (string) Str::uuid(),
-        'requested_app_instance_id' => $instance->id,
+        'requested_instance_id' => $instance->id,
         'requested_name' => $instance->name,
         'force' => true,
         'inventory_digest' => str_repeat('d', 64),
@@ -962,14 +962,14 @@ function instance_probe_mark_removing(AppInstance $instance): void
     ]);
     $removal->members()->create([
         'position' => 0,
-        'app_instance_id' => $instance->id,
-        'app_id' => $instance->app_id,
+        'instance_id' => $instance->id,
+        'project_id' => $instance->project_id,
         'node_id' => $instance->node_id,
         'route_id' => $route->id,
         'name' => $instance->name,
         'environment' => $instance->defaultAppEnv(),
         'source_layout' => $instance->source_layout,
-        'repository_identity' => $instance->app->repository_identity,
+        'repository_identity' => $instance->project->repository_identity,
         'checkout_path' => $instance->checkout_path,
         'root' => $instance->effectiveRoot(),
         'branch' => $instance->branch,
@@ -980,14 +980,14 @@ function instance_probe_mark_removing(AppInstance $instance): void
         'linked_worktree_paths' => [],
         'source_digest' => str_repeat('d', 64),
     ]);
-    $instance->update(['status' => AppInstanceState::Removing]);
+    $instance->update(['status' => InstanceState::Removing]);
 }
 
-function instance_probe_task_workspace_for_removal(): AppInstance
+function instance_probe_task_workspace_for_removal(): Instance
 {
     [$node, , $instance] = instance_probe_private_cluster_route();
     $group = TaskGroup::query()->create([
-        'app_id' => $instance->app_id,
+        'project_id' => $instance->project_id,
         'title' => 'Task workspace removal',
         'brief' => 'Build the feature.',
         'status' => 'running',
@@ -997,18 +997,18 @@ function instance_probe_task_workspace_for_removal(): AppInstance
     $group->taskable()->associate($instance);
     $group->save();
 
-    return $instance->fresh()->load(['app', 'node', 'taskGroups', 'routes.targets']);
+    return $instance->fresh()->load(['project', 'node', 'taskGroups', 'routes.targets']);
 }
 
-function instance_probe_task_workspace(App $app, Node $node, AppInstanceState $status): AppInstance
+function instance_probe_task_workspace(Project $project, Node $node, InstanceState $status): Instance
 {
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Task workspace',
         'brief' => 'Build the feature.',
         'status' => 'running',
     ]);
-    $instance = instance_probe_instance($app, $node, $status);
+    $instance = instance_probe_instance($project, $node, $status);
     $instance->update(['name' => TaskWorkspaceName::for($group), 'branch_override' => TaskWorkspaceName::for($group)]);
     $group->taskable()->associate($instance);
     $group->save();
@@ -1016,16 +1016,16 @@ function instance_probe_task_workspace(App $app, Node $node, AppInstanceState $s
     return $instance;
 }
 
-function instance_probe_production_instance(App $app, Node $node): AppInstance
+function instance_probe_production_instance(Project $project, Node $node): Instance
 {
     NodeRole::query()->firstOrCreate(
         ['node_id' => $node->id, 'role' => RoleName::AppProd],
         ['status' => LifecycleStatus::Active],
     );
-    $user = "orbit-app-{$app->id}";
+    $user = "orbit-app-{$project->id}";
 
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'production',
         'environment' => 'production',
@@ -1039,7 +1039,7 @@ function instance_probe_production_instance(App $app, Node $node): AppInstance
         'root' => 'public',
         'branch' => 'main',
         'starting_commit' => str_repeat('a', 40),
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
 }
 
@@ -1048,7 +1048,7 @@ function instance_probe_context(Node $node, bool $reachable = true): DoctorNodeC
     return new DoctorNodeContext($node, new NodeInspectionData($reachable, 'linux', 'x86_64', true));
 }
 
-/** @return array{Node, Node, Node, AppInstance} */
+/** @return array{Node, Node, Node, Instance} */
 function instance_probe_public_route(): array
 {
     $cluster = Cluster::query()->create(['name' => 'doctor-public', 'state' => ClusterState::Active]);
@@ -1071,14 +1071,14 @@ function instance_probe_public_route(): array
     $workload->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $instance = instance_probe_production_instance(instance_probe_app(), $workload);
     $route = Route::query()->create([
-        'app_id' => $instance->app_id,
+        'project_id' => $instance->project_id,
         'cluster_id' => $cluster->id,
         'domain' => 'doctor.example.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Public,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update([
         'status' => RouteStatus::Active,
         'replacement_step' => RouteReplacementStep::IngressFirewall,
@@ -1087,7 +1087,7 @@ function instance_probe_public_route(): array
     return [$workload, $ingress, $router, $instance];
 }
 
-/** @return array{Node, Node, AppInstance, Route} */
+/** @return array{Node, Node, Instance, Route} */
 function instance_probe_private_cluster_route(): array
 {
     static $number = 0;
@@ -1110,14 +1110,14 @@ function instance_probe_private_cluster_route(): array
     $instance = instance_probe_instance(instance_probe_app(), $workload);
     $instance->update(['source_is_laravel' => true]);
     $route = Route::query()->create([
-        'app_id' => $instance->app_id,
+        'project_id' => $instance->project_id,
         'cluster_id' => $cluster->id,
         'domain' => "private-{$number}.doctor.test",
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
 
     return [$workload, $router, $instance->fresh(), $route->fresh()];
@@ -1166,7 +1166,7 @@ final class InstanceProbePrivateProjectionInspector implements PrivateRouteProje
         );
     }
 
-    public function inspect(AppInstance $instance, Route $route): PrivateRouteProjectionObservation
+    public function inspect(Instance $instance, Route $route): PrivateRouteProjectionObservation
     {
         $this->nodes[] = $instance->node_id;
         $this->routes[] = $route->id;

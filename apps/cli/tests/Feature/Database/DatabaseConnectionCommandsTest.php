@@ -134,7 +134,7 @@ it('updates supplied fields and requires at least one option', function (): void
         ->assertExitCode(1);
 });
 
-it('adds a connection on an AppInstance through the typed request and hides the password', function (): void {
+it('adds a connection on an Instance through the typed request and hides the password', function (): void {
     $mockClient = database_cli_mock(AddInstanceDatabaseRequest::class, database_cli_attachment_data());
 
     $this
@@ -157,7 +157,7 @@ it('adds a connection on an AppInstance through the typed request and hides the 
         ->toBe([]);
 });
 
-it('removes a connection from an AppInstance after --force', function (): void {
+it('removes a connection from an Instance after --force', function (): void {
     $mockClient = database_cli_mock(RemoveInstanceDatabaseRequest::class, [
         ...database_cli_attachment_data(),
         'operation' => 'detach',
@@ -620,7 +620,7 @@ function database_cli_request_id(): string
 function database_cli_attachment_data(): array
 {
     return [
-        'app_instance_id' => 12,
+        'instance_id' => 12,
         'slug' => 'app',
         'prefix' => 'DB',
         'keys' => ['DB_CONNECTION', 'DB_DATABASE', 'DB_HOST', 'DB_PASSWORD', 'DB_PORT', 'DB_USERNAME'],

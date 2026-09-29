@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Actions\Routes;
 
 use App\Data\Routes\RouteData;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Routes\RouteAssociationGuard;
 use App\Domain\Routes\RouteReconciliationGuard;
@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\DB;
 final readonly class ClearRouteTargetAction
 {
     public function __construct(
-        private AppInstanceEnvironmentOperationLock $environmentOperations,
+        private InstanceEnvironmentOperationLock $environmentOperations,
         private RouteAssociationGuard $associations,
         private ?RecordEventBroadcaster $broadcaster = null,
         private ?MetricsFleetReconciler $metrics = null,
@@ -37,8 +37,8 @@ final readonly class ClearRouteTargetAction
 
         $expectedTargetIds = $route
             ->targets()
-            ->orderBy('app_instance_id')
-            ->pluck('app_instance_id')
+            ->orderBy('instance_id')
+            ->pluck('instance_id')
             ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->values()
             ->all();
@@ -66,8 +66,8 @@ final readonly class ClearRouteTargetAction
             $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
             $currentTargetIds = $locked
                 ->targets()
-                ->orderBy('app_instance_id')
-                ->pluck('app_instance_id')
+                ->orderBy('instance_id')
+                ->pluck('instance_id')
                 ->map(static fn (mixed $id): int => StoredInteger::from($id))
                 ->values()
                 ->all();

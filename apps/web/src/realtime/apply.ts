@@ -10,7 +10,6 @@ export type RealtimeEvent = { type: string; id: number; at: string; data: Record
 
 const COLLECTIONS: Record<string, string> = {
     node: "nodes",
-    app: "projects",
     project: "projects",
     instance: "instances",
     process: "processes",
@@ -246,7 +245,7 @@ export function applyEvent(client: QueryClient, event: RealtimeEvent): void {
 
     // The event carries the row; the history and the open log reload from the Gateway.
     if (family === "deployment") {
-        const instanceId = event.data.app_instance_id;
+        const instanceId = event.data.instance_id;
         void client.invalidateQueries({
             queryKey:
                 typeof instanceId === "number" ? ["deployments", instanceId] : ["deployments"],

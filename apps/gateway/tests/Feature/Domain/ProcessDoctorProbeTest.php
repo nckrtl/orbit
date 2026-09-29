@@ -4,23 +4,23 @@ declare(strict_types=1);
 
 use App\Actions\Doctor\ProcessDoctorProbe;
 use App\Data\Doctor\DoctorFamilyReportData;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\ProcessInspectionData;
 use App\Domain\Doctor\ProcessInspectionStatus;
 use App\Domain\Doctor\ProcessStateInspector;
-use App\Domain\Hibernation\AppDevHibernationPolicy;
+use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\Hibernation\RuntimeHibernation;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use Illuminate\Support\Facades\DB;
 
 it('returns a healthy empty report without runtime inspection when the node has no processes', function (): void {
@@ -72,13 +72,13 @@ it('compares selected process runtimes in process id order', function (): void {
         'user' => 'orbit',
         'wireguard_ip' => '10.44.0.3',
     ]);
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'App',
         'slug' => 'app',
         'repository_url' => 'git@example.test:app.git',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'main',
         'environment' => 'development',
@@ -88,7 +88,7 @@ it('compares selected process runtimes in process id order', function (): void {
         'status' => 'active',
     ]);
     $first = Process::query()->create([
-        'owner_type' => AppInstance::MorphAlias,
+        'owner_type' => Instance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => 'first',
         'runtime' => ProcessRuntime::Systemd,
@@ -132,7 +132,7 @@ it('compares selected process runtimes in process id order', function (): void {
 it('skips Process inspection for an Instance already removing', function (): void {
     $node = doctor_process_node();
     $process = doctor_process($node, ProcessRuntime::Systemd, DesiredProcessState::Running);
-    $instance = AppInstance::query()->findOrFail($process->owner_id);
+    $instance = Instance::query()->findOrFail($process->owner_id);
     doctor_process_mark_removing($instance);
 
     $runtime = Mockery::mock(ProcessStateInspector::class);
@@ -146,7 +146,7 @@ it('skips Process inspection for an Instance already removing', function (): voi
 it('drops removing Instance Process issues after inspection and retains Node-owned issues', function (): void {
     $node = doctor_process_node();
     $owned = doctor_process($node, ProcessRuntime::Systemd, DesiredProcessState::Running, name: 'owned');
-    $instance = AppInstance::query()->findOrFail($owned->owner_id);
+    $instance = Instance::query()->findOrFail($owned->owner_id);
     $nodeOwned = $node->processes()->create([
         'name' => 'node-owned',
         'runtime' => ProcessRuntime::Systemd,
@@ -158,11 +158,11 @@ it('drops removing Instance Process issues after inspection and retains Node-own
     ]);
     $runtime = new class($instance) implements ProcessStateInspector
     {
-        public function __construct(private AppInstance $instance) {}
+        public function __construct(private Instance $instance) {}
 
         public function inspect(Process $process): ProcessInspectionData
         {
-            if ($process->owner_type === AppInstance::MorphAlias) {
+            if ($process->owner_type === Instance::MorphAlias) {
                 doctor_process_mark_removing($this->instance);
 
                 throw new DoctorInspectionException;
@@ -192,7 +192,7 @@ it('drops an Instance Process issue when its owner row is deleted during inspect
 
         public function inspect(Process $process): ProcessInspectionData
         {
-            DB::table('app_instances')->where('id', $this->instanceId)->delete();
+            DB::table('instances')->where('id', $this->instanceId)->delete();
 
             return new ProcessInspectionData(false, null);
         }
@@ -312,7 +312,7 @@ it('bounds unknown status and reports absent runtime', function (): void {
         ->toBe('absent');
 });
 
-it('selects only AppInstance processes on the exact target Node', function (): void {
+it('selects only Instance processes on the exact target Node', function (): void {
     $node = doctor_process_node();
     $other = doctor_process_node();
     $selected = doctor_process($node, ProcessRuntime::Systemd, DesiredProcessState::Running, name: 'selected');
@@ -343,7 +343,7 @@ it('does not treat a sleeping non-keep-alive Process as drift', function (): voi
         ->with(Mockery::on(fn (Process $process): bool => $process->is($vite)))
         ->andReturn(new ProcessInspectionData(true, ProcessInspectionStatus::Inactive));
 
-    $report = new ProcessDoctorProbe($runtime, new AppDevHibernationPolicy, $markers)
+    $report = new ProcessDoctorProbe($runtime, new DevelopmentHibernationPolicy, $markers)
         ->inspect(doctor_process_context($node));
 
     expect($report->checked)
@@ -363,7 +363,7 @@ it('still reports a keep-alive Process that is down while the group is asleep', 
         ->with(Mockery::on(fn (Process $process): bool => $process->is($queue)))
         ->andReturn(new ProcessInspectionData(true, ProcessInspectionStatus::Inactive));
 
-    $report = new ProcessDoctorProbe($runtime, new AppDevHibernationPolicy, $markers)
+    $report = new ProcessDoctorProbe($runtime, new DevelopmentHibernationPolicy, $markers)
         ->inspect(doctor_process_context($node));
 
     expect($report->issues)
@@ -374,7 +374,7 @@ it('still reports a keep-alive Process that is down while the group is asleep', 
         ->toBe($queue->id);
 });
 
-it('reports a non-keep-alive Process that is down while the AppInstance is awake', function (): void {
+it('reports a non-keep-alive Process that is down while the Instance is awake', function (): void {
     [$node, $instance] = doctor_app_dev_instance();
     $vite = doctor_owned_process($instance, name: 'vite');
     $markers = new DoctorFakeHibernationMarkerStore;
@@ -385,7 +385,7 @@ it('reports a non-keep-alive Process that is down while the AppInstance is awake
         ->once()
         ->andReturn(new ProcessInspectionData(true, ProcessInspectionStatus::Inactive));
 
-    $report = new ProcessDoctorProbe($runtime, new AppDevHibernationPolicy, $markers)
+    $report = new ProcessDoctorProbe($runtime, new DevelopmentHibernationPolicy, $markers)
         ->inspect(doctor_process_context($node));
 
     expect($report->issues)
@@ -410,17 +410,17 @@ function doctor_process_node(): Node
     ]);
 }
 
-function doctor_process_mark_removing(AppInstance $instance): void
+function doctor_process_mark_removing(Instance $instance): void
 {
     $trigger = DB::table('sqlite_master')
         ->where('type', 'trigger')
-        ->where('name', 'app_instances_removal_status_update')
+        ->where('name', 'instances_removal_status_update')
         ->value('sql');
     expect($trigger)->toBeString();
-    DB::statement('DROP TRIGGER app_instances_removal_status_update');
+    DB::statement('DROP TRIGGER instances_removal_status_update');
 
     try {
-        $instance->update(['status' => AppInstanceState::Removing]);
+        $instance->update(['status' => InstanceState::Removing]);
     } finally {
         DB::statement($trigger);
     }
@@ -438,13 +438,13 @@ function doctor_process(
     string $name = 'process',
 ): Process {
     $slug = fake()->unique()->slug();
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => fake()->word(),
         'slug' => $slug,
         'repository_url' => "git@example.test:{$slug}.git",
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => fake()->word(),
         'environment' => 'development',
@@ -455,7 +455,7 @@ function doctor_process(
     ]);
 
     return Process::query()->create([
-        'owner_type' => AppInstance::MorphAlias,
+        'owner_type' => Instance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => $name,
         'runtime' => $runtime,
@@ -467,18 +467,18 @@ function doctor_process(
     ]);
 }
 
-/** @return array{0: Node, 1: AppInstance} */
+/** @return array{0: Node, 1: Instance} */
 function doctor_app_dev_instance(): array
 {
     $node = doctor_process_node();
     $node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'Docs',
         'slug' => fake()->unique()->slug(),
         'repository_url' => 'git@example.test:docs.git',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'main',
         'environment' => 'development',
@@ -491,10 +491,10 @@ function doctor_app_dev_instance(): array
     return [$node, $instance];
 }
 
-function doctor_owned_process(AppInstance $instance, string $name, bool $keepAlive = false): Process
+function doctor_owned_process(Instance $instance, string $name, bool $keepAlive = false): Process
 {
     return Process::query()->create([
-        'owner_type' => AppInstance::MorphAlias,
+        'owner_type' => Instance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => $name,
         'runtime' => ProcessRuntime::Systemd,

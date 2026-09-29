@@ -8,10 +8,10 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\Tasks\TaskBridgeWorktreeRemover;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 /**
  * Removes one task group's bridge worktree from the registered primary checkout.
@@ -21,15 +21,15 @@ use App\Models\AppInstance;
  */
 final readonly class RemoteTaskBridgeWorktreeRemover implements TaskBridgeWorktreeRemover
 {
-    public function __construct(private AppDevSshExecutor $ssh) {}
+    public function __construct(private DevelopmentSshExecutor $ssh) {}
 
-    public function remove(AppInstance $instance): void
+    public function remove(Instance $instance): void
     {
         if (preg_match('/\Atask-[0-9]+\z/', $instance->name) !== 1) {
             return;
         }
 
-        $instance->loadMissing(['app', 'node']);
+        $instance->loadMissing(['project', 'node']);
         $checkout = StoragePath::tryParse($instance->checkout_path);
 
         if (! $checkout instanceof StoragePath) {
@@ -40,7 +40,7 @@ final readonly class RemoteTaskBridgeWorktreeRemover implements TaskBridgeWorktr
             );
         }
 
-        $repository = $instance->app->repository_url;
+        $repository = $instance->project->repository_url;
         $origin = GitRepositoryOrigin::isValid($repository) ? $repository : '';
 
         try {

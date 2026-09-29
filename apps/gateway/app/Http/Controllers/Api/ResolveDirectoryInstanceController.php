@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Actions\AppInstances\Dependencies\ResolveDirectoryInstanceAction;
+use App\Actions\Instances\Dependencies\ResolveDirectoryInstanceAction;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\AppInstances\ResolveDirectoryInstanceRequest;
+use App\Http\Requests\Instances\ResolveDirectoryInstanceRequest;
 use App\Models\Node;
 use Illuminate\Http\JsonResponse;
 

@@ -5,10 +5,10 @@ declare(strict_types=1);
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AgentView\CacheAgentStateView;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 
 /**
  * Writes a complete agent view for one Node, as the subscriber does after a snapshot.
@@ -42,8 +42,8 @@ function agent_view_node(string $name = 'app-dev', string $address = '10.44.0.3'
 
 function agent_view_instance_process(Node $node, string $name, ProcessRuntime $runtime = ProcessRuntime::Systemd): Process
 {
-    $app = OrbitApp::query()->firstOrCreate(['slug' => 'docs'], ['name' => 'Docs', 'repository_url' => 'git@example.test:docs.git']);
-    $instance = AppInstance::query()->firstOrCreate(['app_id' => $app->id, 'name' => 'main'], [
+    $project = Project::query()->firstOrCreate(['slug' => 'docs'], ['name' => 'Docs', 'repository_url' => 'git@example.test:docs.git']);
+    $instance = Instance::query()->firstOrCreate(['project_id' => $project->id, 'name' => 'main'], [
         'node_id' => $node->id,
         'environment' => 'development',
         'checkout_path' => '/home/orbit/apps/docs',
@@ -53,7 +53,7 @@ function agent_view_instance_process(Node $node, string $name, ProcessRuntime $r
     ]);
 
     return Process::query()->create([
-        'owner_type' => AppInstance::MorphAlias,
+        'owner_type' => Instance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => $name,
         'runtime' => $runtime,

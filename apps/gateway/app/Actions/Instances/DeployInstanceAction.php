@@ -1,0 +1,218 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Actions\Instances;
+
+use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Instances\Deployment\DeploymentCommandResult;
+use App\Domain\Instances\Deployment\DeploymentConfig;
+use App\Domain\Instances\Deployment\DeploymentDeadline;
+use App\Domain\Instances\Deployment\DeploymentFailureBoundary;
+use App\Domain\Instances\Deployment\DeploymentPhase;
+use App\Domain\Instances\Deployment\DeploymentProgressPhase;
+use App\Domain\Instances\Deployment\DeploymentRelease;
+use App\Domain\Instances\Deployment\DeploymentRequest;
+use App\Domain\Instances\Deployment\DeploymentResult;
+use App\Domain\Instances\Deployment\ProductionDeployment;
+use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Instances\Environment\InstanceEnvironmentSynchronizer;
+use App\Domain\Instances\ProductionPhpRuntimeManager;
+use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Processes\CommandDeadline;
+use App\Infrastructure\Processes\ProcessCancelledException;
+use App\Models\Instance;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
+use Throwable;
+
+final readonly class DeployInstanceAction
+{
+    public function __construct(
+        private InstanceDeploymentConfigResolver $configs,
+        private InstanceEnvironmentOperationLock $operations,
+        private InstanceEnvironmentSynchronizer $environment,
+        private ProductionDeployment $deployment,
+        private ProductionPhpRuntimeManager $runtime,
+        private InstantiateProjectRuntimeDefinitionsAction $definitions,
+        private CommandDeadline $deadline,
+    ) {}
+
+    public function execute(Instance $instance, ?DeploymentRequest $request = null): DeploymentResult
+    {
+        $request ??= DeploymentRequest::withoutOutput();
+
+        try {
+            $config = $this->configs->resolve($instance->refresh());
+        } catch (Throwable $exception) {
+            return DeploymentResult::failed(
+                null,
+                null,
+                DeploymentFailureBoundary::Operation,
+                $this->errorCode($exception),
+            );
+        }
+
+        try {
+            return $this->operations->run(
+                [$instance->id],
+                fn (): DeploymentResult => $this->deadline->within(DeploymentDeadline::for($config)->seconds, fn (): DeploymentResult => $this->deploy($instance->refresh(), $config, $request)),
+            );
+        } catch (Throwable $exception) {
+            return DeploymentResult::failed(
+                null,
+                null,
+                DeploymentFailureBoundary::Operation,
+                $this->errorCode($exception),
+            );
+        }
+    }
+
+    private function deploy(
+        Instance $instance,
+        DeploymentConfig $config,
+        DeploymentRequest $request,
+    ): DeploymentResult {
+        $boundary = DeploymentFailureBoundary::Preparation;
+        $release = null;
+        $selected = null;
+        $commands = [];
+
+        try {
+            $request->emitPhase(DeploymentProgressPhase::SourcePreparation);
+            $this->assertNotCancelled($request);
+            $selected = $this->deployment->selected($instance);
+            $release = $this->deployment->prepare($instance, $config->branch);
+            $boundary = DeploymentFailureBoundary::Environment;
+            $request->emitPhase(DeploymentProgressPhase::EnvironmentSync);
+            $this->assertNotCancelled($request);
+            $this->environment->execute($instance);
+            $boundary = DeploymentFailureBoundary::BeforeActivation;
+            $this->executeSteps($instance, $release, $config, DeploymentPhase::BeforeActivation, $request, $commands);
+            $boundary = DeploymentFailureBoundary::Activation;
+            $request->emitPhase(DeploymentProgressPhase::Activation);
+            $this->assertNotCancelled($request);
+            $selected = $this->deployment->activate($instance, $release);
+            $instance->update(['checkout_path' => $selected->path]);
+            $boundary = DeploymentFailureBoundary::AfterActivation;
+            $this->definitions->installCaptured($instance);
+
+            if (is_string($instance->selected_php_version)) {
+                $boundary = DeploymentFailureBoundary::CacheRefresh;
+                $request->emitPhase(DeploymentProgressPhase::PhpRefresh);
+                $this->assertNotCancelled($request);
+                $this->runtime->refreshCache($instance);
+            }
+
+            $boundary = DeploymentFailureBoundary::AfterActivation;
+            $this->executeSteps($instance, $release, $config, DeploymentPhase::AfterActivation, $request, $commands);
+
+            return DeploymentResult::succeeded($release, $commands);
+        } catch (Throwable $exception) {
+            $this->appendFailedCommand($commands, $exception);
+
+            if ($boundary === DeploymentFailureBoundary::Activation) {
+                $selected = $this->selectionAfterActivationFailure($instance, $selected);
+            }
+
+            return DeploymentResult::failed(
+                $release,
+                $selected,
+                $boundary,
+                $this->errorCode($exception),
+                $commands,
+            );
+        }
+    }
+
+    private function selectionAfterActivationFailure(
+        Instance $instance,
+        ?DeploymentRelease $lastKnownSelection,
+    ): ?DeploymentRelease {
+        try {
+            $selected = $this->deployment->selected($instance);
+        } catch (Throwable) {
+            return $lastKnownSelection;
+        }
+
+        if ($selected !== null) {
+            try {
+                $instance->update(['checkout_path' => $selected->path]);
+            } catch (Throwable) {
+                return $selected;
+            }
+        }
+
+        return $selected;
+    }
+
+    /**
+     * @param  list<DeploymentCommandResult>  $commands
+     */
+    private function executeSteps(
+        Instance $instance,
+        DeploymentRelease $release,
+        DeploymentConfig $config,
+        DeploymentPhase $phase,
+        DeploymentRequest $request,
+        array &$commands,
+    ): void {
+        foreach ($config->steps as $step) {
+            if ($step->phase !== $phase) {
+                continue;
+            }
+
+            $request->emitPhase(
+                $phase === DeploymentPhase::BeforeActivation
+                    ? DeploymentProgressPhase::BeforeActivation
+                    : DeploymentProgressPhase::AfterActivation,
+                $step->name,
+            );
+            $this->assertNotCancelled($request);
+            $commands[] = new DeploymentCommandResult(
+                $step->name,
+                $this->deployment->executeStep($instance, $release, $step, $request),
+            );
+        }
+    }
+
+    /** @param list<DeploymentCommandResult> $commands */
+    private function appendFailedCommand(array &$commands, Throwable $exception): void
+    {
+        if (! $exception instanceof RuntimeConvergenceException || $exception->result === null) {
+            return;
+        }
+
+        $name = str_starts_with($exception->step, 'deployment-step-')
+            ? substr($exception->step, strlen('deployment-step-'))
+            : $exception->step;
+        $commands[] = new DeploymentCommandResult($name, $exception->result);
+    }
+
+    private function assertNotCancelled(DeploymentRequest $request): void
+    {
+        if ($request->cancellation->requested()) {
+            throw new ProcessCancelledException;
+        }
+    }
+
+    private function errorCode(Throwable $exception): string
+    {
+        if ($exception instanceof ResourceOperationException && $exception->errorCode === 'command.deadline_exceeded') {
+            return 'deployment.deadline_exceeded';
+        }
+
+        if ($exception instanceof ResourceOperationException || $exception instanceof RuntimeConvergenceException) {
+            return $exception->errorCode;
+        }
+
+        if ($exception instanceof ProcessCancelledException) {
+            return 'deployment.cancelled';
+        }
+
+        if ($exception instanceof ProcessTimedOutException) {
+            return 'deployment.command_timed_out';
+        }
+
+        return 'deployment.interrupted';
+    }
+}

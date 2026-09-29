@@ -10,11 +10,11 @@ use Illuminate\Support\Str;
 
 /**
  * @property string $id
- * @property int $app_id
+ * @property int $project_id
  * @property string $name
  * @property list<string> $environments
  * @property array<string, mixed> $spec
- * @property-read App $app
+ * @property-read Project $project
  */
 final class ProcessDefinition extends Model
 {
@@ -26,7 +26,7 @@ final class ProcessDefinition extends Model
 
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['app_id', 'name', 'environments', 'spec'];
+    protected $fillable = ['project_id', 'name', 'environments', 'spec'];
 
     /** @var list<string> */
     #[\Override]
@@ -51,10 +51,10 @@ final class ProcessDefinition extends Model
         return 'name';
     }
 
-    /** @return BelongsTo<App, $this> */
-    public function app(): BelongsTo
+    /** @return BelongsTo<Project, $this> */
+    public function project(): BelongsTo
     {
-        return $this->belongsTo(App::class);
+        return $this->belongsTo(Project::class, 'project_id');
     }
 
     /** @return array<string, string> */

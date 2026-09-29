@@ -37,7 +37,7 @@ Both commands store the same row. A second `add` of the same pair returns the st
 
 In a terminal, an omitted Project or Node opens a searchable selector. JSON and noninteractive calls must name both for `add` and `remove`, and the owner for `list`. `remove` asks for no confirmation, because it moves and stops nothing.
 
-`project:show` includes `excluded_nodes`, and `node:show` includes `excluded_projects`. Each entry has the Project ID and slug, the Node ID and name, and `development_instance_count`: the number of development Instances of the Project already on the Node. Those Instances stay where they are. Use [transfer](/reference/appinstance-transfer) to move one.
+`project:show` includes `excluded_nodes`, and `node:show` includes `excluded_projects`. Each entry has the Project ID and slug, the Node ID and name, and `development_instance_count`: the number of development Instances of the Project already on the Node. Those Instances stay where they are. Use [transfer](/reference/instance-transfer) to move one.
 
 Removing the `app-dev` role from a Node deletes its rows. Adding the role again does not restore them. Deleting the Node or the Project deletes its rows.
 
@@ -65,7 +65,7 @@ The operations are Gateway API routes, so the [MCP server](/reference/mcp) offer
 | `node-excluded-project-list` | `node:excluded-project:list` |
 | `node-excluded-project-remove` | `node:excluded-project:remove` |
 
-A tool takes the route's path parameters as arguments. `app` is the numeric Project ID, and `node` is the numeric Node ID.
+A tool takes the route's path parameters as arguments. `project` is the numeric Project ID, and `node` is the numeric Node ID.
 
 ## Errors
 

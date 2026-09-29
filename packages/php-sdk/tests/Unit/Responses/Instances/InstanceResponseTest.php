@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-use Orbit\Sdk\Responses\AppInstances\AppInstanceRemovalProgressResponse;
-use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
+use Orbit\Sdk\Responses\Instances\InstanceRemovalProgressResponse;
+use Orbit\Sdk\Responses\Instances\InstanceResponse;
 
-describe(AppInstanceResponse::class, function (): void {
-    it('maps every public AppInstance field from gateway data', function (): void {
-        $response = AppInstanceResponse::fromGatewayData([
+describe(InstanceResponse::class, function (): void {
+    it('maps every public Instance field from gateway data', function (): void {
+        $response = InstanceResponse::fromGatewayData([
             'id' => 7,
             'project_id' => 3,
             'node_id' => 4,
@@ -56,7 +56,7 @@ describe(AppInstanceResponse::class, function (): void {
     });
 
     it('uses safe values for invalid gateway fields', function (): void {
-        $response = AppInstanceResponse::fromGatewayData([
+        $response = InstanceResponse::fromGatewayData([
             'id' => 'invalid',
             'root' => ['invalid'],
         ], 'request-id');
@@ -68,7 +68,7 @@ describe(AppInstanceResponse::class, function (): void {
     });
 
     it('maps bounded removal progress and rejects an unsafe error code', function (): void {
-        $response = AppInstanceRemovalProgressResponse::fromGatewayData([
+        $response = InstanceRemovalProgressResponse::fromGatewayData([
             'operation_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a845',
             'id' => 7,
             'name' => 'main',
@@ -99,9 +99,9 @@ describe(AppInstanceResponse::class, function (): void {
 });
 
 it('exposes a valid assigned Vite port and rejects invalid transport values', function (): void {
-    $response = AppInstanceResponse::fromGatewayData(['id' => 7, 'vite_port' => 5210], 'request-id');
+    $response = InstanceResponse::fromGatewayData(['id' => 7, 'vite_port' => 5210], 'request-id');
     expect($response->vitePort)->toBe(5210)->and($response->toArray()['vite_port'])->toBe(5210);
     foreach ([0, 1023, 65536, '5173', false] as $invalid) {
-        expect(AppInstanceResponse::fromGatewayData(['vite_port' => $invalid], 'request-id')->vitePort)->toBeNull();
+        expect(InstanceResponse::fromGatewayData(['vite_port' => $invalid], 'request-id')->vitePort)->toBeNull();
     }
 });

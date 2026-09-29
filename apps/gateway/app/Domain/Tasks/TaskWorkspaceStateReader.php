@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 interface TaskWorkspaceStateReader
 {
-    public function headCommit(AppInstance $instance): ?string;
+    public function headCommit(Instance $instance): ?string;
 
-    public function currentBranch(AppInstance $instance): ?string;
+    public function currentBranch(Instance $instance): ?string;
 
-    public function definesComposerCheckScript(AppInstance $instance): bool;
+    public function definesComposerCheckScript(Instance $instance): bool;
 }

@@ -375,7 +375,7 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
     const projects = useQuery({ ...lists.projects, enabled: tasksEnabled });
     const go = useGo();
     const task = group.data;
-    const project = projects.data?.find((item) => item.id === task?.app_id);
+    const project = projects.data?.find((item) => item.id === task?.project_id);
     const detail =
         subtaskId === undefined ? task : task?.tasks.find((item) => String(item.id) === subtaskId);
     // The group's duration counts forward every second while it is active. A subtask's duration is
@@ -431,7 +431,7 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
                                 "tasks" in detail
                                     ? liveDurationMs(detail, group.dataUpdatedAt, now)
                                     : detail.duration_ms,
-                                project?.name ?? task.app,
+                                project?.name ?? task.project,
                                 project === undefined
                                     ? undefined
                                     : () => go.record("projects", project),

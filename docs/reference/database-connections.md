@@ -14,7 +14,7 @@ covers:
 
 # Database connections
 
-A Database connection is a Gateway record that describes one database: its driver, where it is, and how to log in. The Gateway stores the password encrypted. You can inspect a registered database, create a MySQL user through a Docker Process, and attach a connection to an Instance. The registry never starts or stops a database. A shared database server runs as a Docker [Node Process](/reference/app-processes-and-schedules#owners). [`database`](/cli/database) lists the commands.
+A Database connection is a Gateway record that describes one database: its driver, where it is, and how to log in. The Gateway stores the password encrypted. You can inspect a registered database, create a MySQL user through a Docker Process, and attach a connection to an Instance. The registry never starts or stops a database. A shared database server runs as a Docker [Node Process](/reference/processes-and-schedules#owners). [`database`](/cli/database) lists the commands.
 
 ## Drivers and fields
 

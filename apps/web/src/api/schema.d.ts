@@ -791,7 +791,7 @@ export interface paths {
          * Clone an Instance
          * @description Clone a candidate into a prepared production Instance.
          *
-         *     The candidate supplies source, stored environment values, and an optional SQLite snapshot. The App supplies production Process and Schedule definitions; candidate-specific overrides are not copied.
+         *     The candidate supplies source, stored environment values, and an optional SQLite snapshot. The Project supplies production Process and Schedule definitions; candidate-specific overrides are not copied.
          *
          *     Provision the production Node with node:add --tld before cloning. Clean application state on the target only. Use env:update and env:sync for target configuration, then configure deploy steps with instance:deploy-step:create and deploy with instance:deploy.
          */
@@ -1536,7 +1536,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/nodes/{node}/excluded-projects/{app}": {
+    "/api/v1/nodes/{node}/excluded-projects/{project}": {
         parameters: {
             query?: never;
             header?: never;
@@ -2040,7 +2040,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/projects/{app}": {
+    "/api/v1/projects/{project}": {
         parameters: {
             query?: never;
             header?: never;
@@ -2068,7 +2068,7 @@ export interface paths {
         patch: operations["project-update"];
         trace?: never;
     };
-    "/api/v1/projects/{app}/excluded-nodes": {
+    "/api/v1/projects/{project}/excluded-nodes": {
         parameters: {
             query?: never;
             header?: never;
@@ -2088,7 +2088,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/projects/{app}/excluded-nodes/{node}": {
+    "/api/v1/projects/{project}/excluded-nodes/{node}": {
         parameters: {
             query?: never;
             header?: never;
@@ -2112,7 +2112,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/projects/{app}/process-definitions": {
+    "/api/v1/projects/{project}/process-definitions": {
         parameters: {
             query?: never;
             header?: never;
@@ -2136,7 +2136,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/projects/{app}/process-definitions/{process_definition}": {
+    "/api/v1/projects/{project}/process-definitions/{process_definition}": {
         parameters: {
             query?: never;
             header?: never;
@@ -2164,7 +2164,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/projects/{app}/schedule-definitions": {
+    "/api/v1/projects/{project}/schedule-definitions": {
         parameters: {
             query?: never;
             header?: never;
@@ -2188,7 +2188,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/projects/{app}/schedule-definitions/{schedule_definition}": {
+    "/api/v1/projects/{project}/schedule-definitions/{schedule_definition}": {
         parameters: {
             query?: never;
             header?: never;
@@ -2216,7 +2216,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/projects/{app}/setup-steps": {
+    "/api/v1/projects/{project}/setup-steps": {
         parameters: {
             query?: never;
             header?: never;
@@ -2240,7 +2240,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/projects/{app}/setup-steps/{step}": {
+    "/api/v1/projects/{project}/setup-steps/{step}": {
         parameters: {
             query?: never;
             header?: never;
@@ -2264,7 +2264,7 @@ export interface paths {
         patch: operations["instance-setup-step-update"];
         trace?: never;
     };
-    "/api/v1/projects/{app}/teardown-steps": {
+    "/api/v1/projects/{project}/teardown-steps": {
         parameters: {
             query?: never;
             header?: never;
@@ -2288,7 +2288,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/projects/{app}/teardown-steps/{step}": {
+    "/api/v1/projects/{project}/teardown-steps/{step}": {
         parameters: {
             query?: never;
             header?: never;
@@ -2653,7 +2653,7 @@ export interface paths {
         };
         /**
          * List Task groups
-         * @description Lists Task groups, newest first. Optional `app_id` and `status` filters. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.
+         * @description Lists Task groups, newest first. Optional `project_id` and `status` filters. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.
          */
         get: operations["tasks-list"];
         put?: never;
@@ -3060,9 +3060,9 @@ export interface components {
             created_by?: string | null;
             created_at?: string;
         };
-        AppInstanceDeployment: {
+        InstanceDeployment: {
             id?: number;
-            app_instance_id?: number;
+            instance_id?: number;
             release?: string | null;
             branch?: string | null;
             commit?: string | null;
@@ -3090,7 +3090,7 @@ export interface components {
         };
         DoctorFamilyReport: {
             /** @enum {string} */
-            family?: "node" | "role" | "app" | "instance" | "schedule" | "tool" | "process" | "firewall" | "database_connection" | "route";
+            family?: "node" | "role" | "project" | "instance" | "schedule" | "tool" | "process" | "firewall" | "database_connection" | "route";
             /** @enum {string} */
             status?: "healthy" | "drift" | "unverifiable";
             checked?: number;
@@ -3127,11 +3127,11 @@ export interface components {
             php_version?: string;
             laravel_version?: string;
         };
-        AppInstance: {
+        Instance: {
             id?: number;
             project_id?: number;
             node_id?: number;
-            project?: components["schemas"]["AppIdentity"];
+            project?: components["schemas"]["ProjectIdentity"];
             node?: components["schemas"]["NodeIdentity"];
             name?: string;
             source_layout?: string;
@@ -3148,12 +3148,12 @@ export interface components {
             route?: components["schemas"]["Route"] | null;
             domain?: string | null;
             url?: string | null;
-            removal?: components["schemas"]["AppInstanceRemoval"] | null;
-            transfer?: components["schemas"]["AppInstanceTransfer"] | null;
+            removal?: components["schemas"]["InstanceRemoval"] | null;
+            transfer?: components["schemas"]["InstanceTransfer"] | null;
             deploy_steps?: components["schemas"]["DeploymentStep"][];
             vite_port?: number | null;
         };
-        AppIdentity: {
+        ProjectIdentity: {
             id?: number;
             name?: string;
             slug?: string;
@@ -3167,7 +3167,7 @@ export interface components {
         Route: {
             id?: number;
             kind?: string;
-            app_id?: number | null;
+            project_id?: number | null;
             node_id?: number | null;
             cluster_id?: number | null;
             generation_basis_node_id?: number | null;
@@ -3189,10 +3189,10 @@ export interface components {
         };
         RouteTarget: {
             id?: number;
-            app_instance_id?: number;
+            instance_id?: number;
             position?: number;
         };
-        AppInstanceRemoval: {
+        InstanceRemoval: {
             operation_id?: string;
             id?: number;
             name?: string;
@@ -3205,7 +3205,7 @@ export interface components {
             failed_step?: string | null;
             error_code?: string | null;
         };
-        AppInstanceTransfer: {
+        InstanceTransfer: {
             operation_id?: string;
             id?: number;
             source_node_id?: number;
@@ -3230,15 +3230,15 @@ export interface components {
             command?: string;
             timeout_seconds?: number;
         };
-        AppInstanceRegistration: {
-            app?: components["schemas"]["App"];
-            app_instance?: components["schemas"]["AppInstance"];
-            instances?: components["schemas"]["AppInstance"][];
+        InstanceRegistration: {
+            project?: components["schemas"]["Project"];
+            instance?: components["schemas"]["Instance"];
+            instances?: components["schemas"]["Instance"][];
             status?: string;
             source_count?: number;
             completed_count?: number;
         };
-        App: {
+        Project: {
             id?: number;
             name?: string;
             slug?: string;
@@ -3289,7 +3289,7 @@ export interface components {
             summary?: string | null;
         };
         DatabaseConnectionAttachment: {
-            app_instance_id?: number;
+            instance_id?: number;
             slug?: string;
             prefix?: string;
             keys?: string[];
@@ -3366,9 +3366,9 @@ export interface components {
             settings?: components["schemas"]["NodeSettings"] | null;
         };
         NodeSettings: {
-            apps?: components["schemas"]["AppsSettings"] | null;
+            apps?: components["schemas"]["NodeStorageApps"] | null;
         };
-        AppsSettings: {
+        NodeStorageApps: {
             path?: string | null;
         };
         NodeAccess: {
@@ -3449,9 +3449,9 @@ export interface components {
             cpu?: number | null;
             memory_bytes?: number | null;
         };
-        AppRuntimeDefinition: {
+        ProjectRuntimeDefinition: {
             id?: string;
-            app_id?: number;
+            project_id?: number;
             name?: string;
             environments?: string[];
             spec?: {
@@ -3479,8 +3479,8 @@ export interface components {
         };
         TaskGroup: {
             id?: number;
-            app_id?: number;
-            app?: string;
+            project_id?: number;
+            project?: string;
             project_code?: string;
             taskable_type?: string | null;
             taskable_id?: number | null;
@@ -3589,8 +3589,8 @@ export interface components {
         };
         TaskAssistance: {
             id?: number;
-            app_id?: number;
-            app?: string;
+            project_id?: number;
+            project?: string;
             project_code?: string;
             title?: string;
             /** @enum {string} */
@@ -5310,7 +5310,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["AppInstanceDeployment"];
+                        data: components["schemas"]["InstanceDeployment"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -5346,7 +5346,7 @@ export interface operations {
             content: {
                 "application/json": {
                     node_id?: number;
-                    families?: ("node" | "role" | "app" | "instance" | "schedule" | "tool" | "process" | "firewall" | "database_connection" | "route")[];
+                    families?: ("node" | "role" | "project" | "instance" | "schedule" | "tool" | "process" | "firewall" | "database_connection" | "route")[];
                 };
             };
         };
@@ -5811,7 +5811,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["AppInstance"][];
+                        data: components["schemas"]["Instance"][];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -5858,7 +5858,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["AppInstance"];
+                        data: components["schemas"]["Instance"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -5870,7 +5870,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["AppInstance"];
+                        data: components["schemas"]["Instance"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -5918,8 +5918,10 @@ export interface operations {
                     /** @description Adopt the checkout and every linked worktree */
                     include_worktrees?: boolean;
                     project_id?: number;
-                    app_name?: string;
-                    app_slug?: string;
+                    /** @description Confirmed Project display name */
+                    project_name?: string;
+                    /** @description Confirmed Project slug */
+                    project_slug?: string;
                     /** @description Confirmed Project default branch */
                     default_branch?: string;
                     instance_name?: string;
@@ -5940,7 +5942,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["AppInstanceRegistration"];
+                        data: components["schemas"]["InstanceRegistration"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -5952,7 +5954,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["AppInstanceRegistration"];
+                        data: components["schemas"]["InstanceRegistration"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -6087,7 +6089,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["AppInstance"];
+                        data: components["schemas"]["Instance"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -6099,7 +6101,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["AppInstance"];
+                        data: components["schemas"]["Instance"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -6161,7 +6163,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["AppInstance"];
+                        data: components["schemas"]["Instance"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -6212,7 +6214,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["AppInstanceRemoval"];
+                        data: components["schemas"]["InstanceRemoval"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -6278,7 +6280,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["AppInstance"];
+                        data: components["schemas"]["Instance"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -7639,7 +7641,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["AppInstanceDeployment"][];
+                        data: components["schemas"]["InstanceDeployment"][];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -7691,7 +7693,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: {
-                            app_instance_id?: number;
+                            instance_id?: number;
                             operation?: string;
                             changed?: boolean;
                             key_count?: number;
@@ -7762,7 +7764,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: {
-                            app_instance_id?: number;
+                            instance_id?: number;
                             operation?: string;
                             changed?: boolean;
                             key_count?: number;
@@ -7838,7 +7840,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: {
-                            app_instance_id?: number;
+                            instance_id?: number;
                             operation?: string;
                             changed?: boolean;
                             key_count?: number;
@@ -8391,7 +8393,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["AppInstance"];
+                        data: components["schemas"]["Instance"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -8454,7 +8456,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["AppInstance"];
+                        data: components["schemas"]["Instance"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -8466,7 +8468,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["AppInstance"];
+                        data: components["schemas"]["Instance"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -9215,7 +9217,7 @@ export interface operations {
                 /** @description Numeric Node ID. */
                 node: number;
                 /** @description Numeric Project ID. */
-                app: number;
+                project: number;
             };
             cookie?: never;
         };
@@ -9282,7 +9284,7 @@ export interface operations {
                 /** @description Numeric Node ID. */
                 node: number;
                 /** @description Numeric Project ID. */
-                app: number;
+                project: number;
             };
             cookie?: never;
         };
@@ -11091,7 +11093,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["App"][];
+                        data: components["schemas"]["Project"][];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -11145,7 +11147,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["App"];
+                        data: components["schemas"]["Project"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -11157,7 +11159,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["App"];
+                        data: components["schemas"]["Project"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -11197,7 +11199,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Numeric Project ID. */
-                app: number;
+                project: number;
             };
             cookie?: never;
         };
@@ -11210,7 +11212,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["App"] & {
+                        data: components["schemas"]["Project"] & {
                             excluded_nodes?: components["schemas"]["DevelopmentNodeExclusion"][];
                         };
                         meta: components["schemas"]["Meta"];
@@ -11243,7 +11245,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Numeric Project ID. */
-                app: number;
+                project: number;
             };
             cookie?: never;
         };
@@ -11256,7 +11258,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["App"];
+                        data: components["schemas"]["Project"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -11296,7 +11298,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Numeric Project ID. */
-                app: number;
+                project: number;
             };
             cookie?: never;
         };
@@ -11329,7 +11331,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["App"];
+                        data: components["schemas"]["Project"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -11378,7 +11380,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Numeric Project ID. */
-                app: number;
+                project: number;
             };
             cookie?: never;
         };
@@ -11422,7 +11424,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Numeric Project ID. */
-                app: number;
+                project: number;
                 /** @description Numeric Node ID. */
                 node: number;
             };
@@ -11489,7 +11491,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Numeric Project ID. */
-                app: number;
+                project: number;
                 /** @description Numeric Node ID. */
                 node: number;
             };
@@ -11544,7 +11546,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Numeric Project ID. */
-                app: number;
+                project: number;
             };
             cookie?: never;
         };
@@ -11557,7 +11559,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["AppRuntimeDefinition"][];
+                        data: components["schemas"]["ProjectRuntimeDefinition"][];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -11588,7 +11590,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Numeric Project ID. */
-                app: number;
+                project: number;
             };
             cookie?: never;
         };
@@ -11626,7 +11628,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["AppRuntimeDefinition"];
+                        data: components["schemas"]["ProjectRuntimeDefinition"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -11638,7 +11640,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["AppRuntimeDefinition"];
+                        data: components["schemas"]["ProjectRuntimeDefinition"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -11687,7 +11689,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Numeric Project ID. */
-                app: number;
+                project: number;
                 /** @description Process definition name, unique within the Project. */
                 process_definition: string;
             };
@@ -11702,7 +11704,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["AppRuntimeDefinition"];
+                        data: components["schemas"]["ProjectRuntimeDefinition"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -11733,7 +11735,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Numeric Project ID. */
-                app: number;
+                project: number;
                 /** @description Process definition name, unique within the Project. */
                 process_definition: string;
             };
@@ -11773,7 +11775,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["AppRuntimeDefinition"];
+                        data: components["schemas"]["ProjectRuntimeDefinition"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -11822,7 +11824,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Numeric Project ID. */
-                app: number;
+                project: number;
                 /** @description Process definition name, unique within the Project. */
                 process_definition: string;
             };
@@ -11837,7 +11839,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["AppRuntimeDefinition"];
+                        data: components["schemas"]["ProjectRuntimeDefinition"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -11877,7 +11879,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Numeric Project ID. */
-                app: number;
+                project: number;
             };
             cookie?: never;
         };
@@ -11890,7 +11892,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["AppRuntimeDefinition"][];
+                        data: components["schemas"]["ProjectRuntimeDefinition"][];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -11921,7 +11923,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Numeric Project ID. */
-                app: number;
+                project: number;
             };
             cookie?: never;
         };
@@ -11946,7 +11948,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["AppRuntimeDefinition"];
+                        data: components["schemas"]["ProjectRuntimeDefinition"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -11958,7 +11960,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["AppRuntimeDefinition"];
+                        data: components["schemas"]["ProjectRuntimeDefinition"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -12007,7 +12009,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Numeric Project ID. */
-                app: number;
+                project: number;
                 /** @description Schedule definition name, unique within the Project. */
                 schedule_definition: string;
             };
@@ -12022,7 +12024,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["AppRuntimeDefinition"];
+                        data: components["schemas"]["ProjectRuntimeDefinition"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -12053,7 +12055,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Numeric Project ID. */
-                app: number;
+                project: number;
                 /** @description Schedule definition name, unique within the Project. */
                 schedule_definition: string;
             };
@@ -12080,7 +12082,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["AppRuntimeDefinition"];
+                        data: components["schemas"]["ProjectRuntimeDefinition"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -12129,7 +12131,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Numeric Project ID. */
-                app: number;
+                project: number;
                 /** @description Schedule definition name, unique within the Project. */
                 schedule_definition: string;
             };
@@ -12144,7 +12146,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["AppRuntimeDefinition"];
+                        data: components["schemas"]["ProjectRuntimeDefinition"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -12184,7 +12186,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Numeric Project ID. */
-                app: number;
+                project: number;
             };
             cookie?: never;
         };
@@ -12228,7 +12230,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Numeric Project ID. */
-                app: number;
+                project: number;
             };
             cookie?: never;
         };
@@ -12304,7 +12306,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Numeric Project ID. */
-                app: number;
+                project: number;
                 /** @description Deploy step name. */
                 step: string;
             };
@@ -12359,7 +12361,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Numeric Project ID. */
-                app: number;
+                project: number;
                 /** @description Deploy step name. */
                 step: string;
             };
@@ -12435,7 +12437,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Numeric Project ID. */
-                app: number;
+                project: number;
             };
             cookie?: never;
         };
@@ -12479,7 +12481,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Numeric Project ID. */
-                app: number;
+                project: number;
             };
             cookie?: never;
         };
@@ -12555,7 +12557,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Numeric Project ID. */
-                app: number;
+                project: number;
                 /** @description Deploy step name. */
                 step: string;
             };
@@ -12610,7 +12612,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Numeric Project ID. */
-                app: number;
+                project: number;
                 /** @description Deploy step name. */
                 step: string;
             };
@@ -13076,7 +13078,7 @@ export interface operations {
                     domain: string;
                     /** @enum {string} */
                     publication?: "private" | "public";
-                    app_instance_id: number;
+                    instance_id: number;
                 } | ({
                     domain: string;
                     /** @enum {string} */
@@ -13339,11 +13341,11 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @description Required when `targets` is absent. */
-                    app_instance_id?: number;
-                    /** @description Required when `app_instance_id` is absent. */
+                    instance_id?: number;
+                    /** @description Required when `instance_id` is absent. */
                     targets?: number[];
                     dispositions?: {
-                        app_instance_id: number;
+                        instance_id: number;
                         route_id?: number;
                         remove?: boolean;
                     }[];
@@ -13962,7 +13964,7 @@ export interface operations {
     "tasks-list": {
         parameters: {
             query?: {
-                app_id?: number;
+                project_id?: number;
                 status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "completed" | "failed" | "cancelled";
             };
             header?: never;
@@ -14013,7 +14015,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    app_id: number;
+                    project_id: number;
                     /** @description Short name of the feature */
                     title: string;
                     /** @description Goal and acceptance */

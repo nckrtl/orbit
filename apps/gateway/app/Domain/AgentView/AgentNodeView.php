@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\AgentView;
 
 use App\Domain\Processes\ProcessRuntime;
+use App\Models\Instance;
 
 /**
  * The Gateway's view of one Node agent at the moment a reader asked for it.

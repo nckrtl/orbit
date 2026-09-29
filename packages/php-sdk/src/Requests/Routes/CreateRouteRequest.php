@@ -21,7 +21,7 @@ final class CreateRouteRequest extends GatewayRequest implements HasBody
     public function __construct(
         private readonly string $domain,
         private readonly string $publication = 'private',
-        private readonly ?int $appInstanceId = null,
+        private readonly ?int $instanceId = null,
         private readonly ?int $nodeId = null,
         private readonly ?string $upstream = null,
         private readonly ?int $processId = null,
@@ -44,7 +44,7 @@ final class CreateRouteRequest extends GatewayRequest implements HasBody
             [
                 'domain' => $this->domain,
                 'publication' => $this->publication,
-                'app_instance_id' => $this->appInstanceId,
+                'instance_id' => $this->instanceId,
                 'node_id' => $this->nodeId,
                 'upstream' => $this->upstream,
                 'process_id' => $this->processId,

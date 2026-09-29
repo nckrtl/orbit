@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Data\Schedules;
 
 use App\Domain\Schedules\ScheduleTargetType;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Schedule;
 use DateTimeInterface;
 use SensitiveParameter;
@@ -38,8 +38,8 @@ final class ScheduleData extends Data
     {
         return new self(
             id: $schedule->id,
-            targetType: AppInstance::isMorphType($schedule->target_type)
-                ? ScheduleTargetType::AppInstance->value
+            targetType: Instance::isMorphType($schedule->target_type)
+                ? ScheduleTargetType::Instance->value
                 : ScheduleTargetType::Node->value,
             targetId: $schedule->target_id,
             name: $schedule->name,

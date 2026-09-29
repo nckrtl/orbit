@@ -9,13 +9,13 @@ use App\Domain\Routes\ClusterRouterReplacementProjector;
 use App\Domain\Routes\RouteCertificateStaging;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 
@@ -26,7 +26,7 @@ final readonly class NativeClusterRouterReplacementProjector implements ClusterR
         private RemoteAppDevCaddyManager $caddy,
         private RemoteAppDevRouteFirewallManager $firewall,
         private DnsmasqPrivateDnsManager $dns,
-        private AppDevSshExecutor $ssh,
+        private DevelopmentSshExecutor $ssh,
     ) {}
 
     /**
@@ -34,7 +34,7 @@ final readonly class NativeClusterRouterReplacementProjector implements ClusterR
      * domain change replacement answers from its staging Router scope until its cleanup, also
      * when a crash left it `pending`, and only once its own change has issued that scope.
      */
-    public function prepareRouterCertificate(Route $route, Node $router, AppInstance $workload): void
+    public function prepareRouterCertificate(Route $route, Node $router, Instance $workload): void
     {
         if ($this->colocated($router, $workload) || ! $this->rendersRouterSites($route)) {
             return;
@@ -49,7 +49,7 @@ final readonly class NativeClusterRouterReplacementProjector implements ClusterR
         $this->certificates->convergeRouteRouter($route, $router);
     }
 
-    public function prepareFirewallPolicy(Route $route, Node $router, AppInstance $workload): void
+    public function prepareFirewallPolicy(Route $route, Node $router, Instance $workload): void
     {
         if ($this->colocated($router, $workload)) {
             return;
@@ -58,7 +58,7 @@ final readonly class NativeClusterRouterReplacementProjector implements ClusterR
         $this->allowLan($workload, $route, $router);
     }
 
-    public function verifyWorkload(Route $route, Node $router, AppInstance $workload): void
+    public function verifyWorkload(Route $route, Node $router, Instance $workload): void
     {
         if ($this->colocated($router, $workload) || ! $this->rendersRouterSites($route)) {
             return;
@@ -151,29 +151,29 @@ final readonly class NativeClusterRouterReplacementProjector implements ClusterR
             && RouteCertificateStaging::reached($route, RouteReplacementStep::RouterCertificate);
     }
 
-    private function colocated(Node $router, AppInstance $workload): bool
+    private function colocated(Node $router, Instance $workload): bool
     {
         $workload->loadMissing('node');
 
         return $router->is($workload->node);
     }
 
-    /** @return list<AppInstance> */
+    /** @return list<Instance> */
     private function workloads(Route $route): array
     {
-        $route->loadMissing('targets.appInstance.node');
+        $route->loadMissing('targets.instance.node');
 
         return array_values($route
             ->targets
-            ->map(static fn ($target) => $target->appInstance)
-            ->filter(static fn ($target): bool => $target instanceof AppInstance)
+            ->map(static fn ($target) => $target->instance)
+            ->filter(static fn ($target): bool => $target instanceof Instance)
             ->all());
     }
 
-    private function allowLan(AppInstance $appInstance, Route $route, Node $router): void
+    private function allowLan(Instance $instance, Route $route, Node $router): void
     {
-        $appInstance->loadMissing('node');
-        $workloadAddress = $appInstance->node->lan_ip;
+        $instance->loadMissing('node');
+        $workloadAddress = $instance->node->lan_ip;
 
         if (! is_string($workloadAddress) || $workloadAddress === '') {
             return;
@@ -190,7 +190,7 @@ final readonly class NativeClusterRouterReplacementProjector implements ClusterR
         }
 
         $this->ssh->execute(
-            $appInstance->node,
+            $instance->node,
             new RemoteCommand([
                 'sudo',
                 'ufw',
@@ -212,12 +212,12 @@ final readonly class NativeClusterRouterReplacementProjector implements ClusterR
         );
     }
 
-    private function verifyLeaf(AppInstance $appInstance, Route $route, Node $router): void
+    private function verifyLeaf(Instance $instance, Route $route, Node $router): void
     {
-        $appInstance->loadMissing('node');
-        $address = is_string($appInstance->node->lan_ip) && $appInstance->node->lan_ip !== ''
-            ? $appInstance->node->lan_ip
-            : $appInstance->node->wireguard_ip;
+        $instance->loadMissing('node');
+        $address = is_string($instance->node->lan_ip) && $instance->node->lan_ip !== ''
+            ? $instance->node->lan_ip
+            : $instance->node->wireguard_ip;
 
         if (! is_string($address) || $address === '') {
             throw new RuntimeConvergenceException(

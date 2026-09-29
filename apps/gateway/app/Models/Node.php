@@ -100,10 +100,10 @@ final class Node extends Model
         return $this->belongsTo(Cluster::class);
     }
 
-    /** @return HasMany<AppInstance, $this> */
-    public function appInstances(): HasMany
+    /** @return HasMany<Instance, $this> */
+    public function instances(): HasMany
     {
-        return $this->hasMany(AppInstance::class);
+        return $this->hasMany(Instance::class);
     }
 
     /** @return MorphMany<Schedule, $this> */

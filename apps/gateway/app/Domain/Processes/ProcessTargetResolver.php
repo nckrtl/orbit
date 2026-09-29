@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace App\Domain\Processes;
 
-use App\Domain\AppInstances\AppInstanceState;
-use App\Domain\Hibernation\AppDevHibernationPolicy;
+use App\Domain\Hibernation\DevelopmentHibernationPolicy;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Route;
@@ -20,8 +20,8 @@ final readonly class ProcessTargetResolver
     public function resolve(ProcessTargetType $type, int $id): ProcessTarget
     {
         return match ($type) {
-            ProcessTargetType::AppInstance => $this->forAdmission(
-                AppInstance::query()
+            ProcessTargetType::Instance => $this->forAdmission(
+                Instance::query()
                     ->with('node')
                     ->findOrFail($id),
             ),
@@ -31,7 +31,7 @@ final readonly class ProcessTargetResolver
         };
     }
 
-    public function forAdmission(AppInstance $instance): ProcessTarget
+    public function forAdmission(Instance $instance): ProcessTarget
     {
         $instance->loadMissing('node');
         $this->ensureActiveInstance($instance);
@@ -59,10 +59,10 @@ final readonly class ProcessTargetResolver
 
         $owner = $this->owner($process);
 
-        if (! $owner instanceof AppInstance) {
+        if (! $owner instanceof Instance) {
             throw new ResourceOperationException(
                 errorCode: 'process.target_unsupported',
-                message: 'The Process owner is not a supported AppInstance.',
+                message: 'The Process owner is not a supported Instance.',
                 status: 409,
             );
         }
@@ -70,18 +70,18 @@ final readonly class ProcessTargetResolver
         return $this->forPreparation($owner);
     }
 
-    public function forPreparation(AppInstance $instance): ProcessTarget
+    public function forPreparation(Instance $instance): ProcessTarget
     {
         $instance->loadMissing('node');
         $this->ensureLinux($instance->node);
 
         if (
             $instance->node->status !== LifecycleStatus::Active
-            || $instance->status === AppInstanceState::Removing
+            || $instance->status === InstanceState::Removing
         ) {
             throw new ResourceOperationException(
                 errorCode: 'process.target_inactive',
-                message: "AppInstance [{$instance->name}] or its Node is not available for preparation.",
+                message: "Instance [{$instance->name}] or its Node is not available for preparation.",
             );
         }
 
@@ -131,23 +131,23 @@ final readonly class ProcessTargetResolver
         return $this->instanceContext($owner, allowRemovingRole: true);
     }
 
-    private function forAdmissionOwner(AppInstance|Node $owner): ProcessTarget
+    private function forAdmissionOwner(Instance|Node $owner): ProcessTarget
     {
         return $owner instanceof Node
             ? $this->forNodeAdmission($owner)
             : $this->forAdmission($owner);
     }
 
-    private function owner(#[SensitiveParameter] Process $process): AppInstance|Node
+    private function owner(#[SensitiveParameter] Process $process): Instance|Node
     {
         return match (true) {
-            AppInstance::isMorphType($process->owner_type) => AppInstance::query()
+            Instance::isMorphType($process->owner_type) => Instance::query()
                 ->with('node')
                 ->findOrFail($process->owner_id),
             $process->owner_type === Node::class => Node::query()->findOrFail($process->owner_id),
             default => throw new ResourceOperationException(
                 errorCode: 'process.target_unsupported',
-                message: 'The Process owner is not a supported AppInstance or Node.',
+                message: 'The Process owner is not a supported Instance or Node.',
                 status: 409,
             ),
         };
@@ -176,7 +176,7 @@ final readonly class ProcessTargetResolver
         );
     }
 
-    private function instanceContext(AppInstance $instance, bool $allowRemovingRole = false): ProcessTarget
+    private function instanceContext(Instance $instance, bool $allowRemovingRole = false): ProcessTarget
     {
         $this->ensureLinux($instance->node);
 
@@ -230,15 +230,15 @@ final readonly class ProcessTargetResolver
             user: $user,
             checkoutPath: $workingDirectory,
             certificateScope: $certificateScope,
-            appInstance: $instance,
+            instance: $instance,
             environmentFile: $environmentFile,
             productionReleaseLayout: $productionReleaseLayout,
             routeDomain: $this->developmentRouteDomain($instance),
-            onDemandHostStart: new AppDevHibernationPolicy()->usesOnDemandHostStart($instance),
+            onDemandHostStart: new DevelopmentHibernationPolicy()->usesOnDemandHostStart($instance),
         );
     }
 
-    private function developmentRouteDomain(AppInstance $instance): ?string
+    private function developmentRouteDomain(Instance $instance): ?string
     {
         if (! $instance->placedOnAppDev()) {
             return null;
@@ -253,12 +253,12 @@ final readonly class ProcessTargetResolver
         return is_string($domain) && $domain !== '' ? $domain : null;
     }
 
-    private function ensureActiveInstance(AppInstance $instance): void
+    private function ensureActiveInstance(Instance $instance): void
     {
         $this->ensureLinux($instance->node);
 
         if (
-            $instance->status === AppInstanceState::Active
+            $instance->status === InstanceState::Active
             && $instance->node->status === LifecycleStatus::Active
             && $instance->provisioning_step === 'active'
         ) {
@@ -267,7 +267,7 @@ final readonly class ProcessTargetResolver
 
         throw new ResourceOperationException(
             errorCode: 'process.target_inactive',
-            message: "AppInstance [{$instance->name}] or its Node is not active.",
+            message: "Instance [{$instance->name}] or its Node is not active.",
         );
     }
 
@@ -314,11 +314,11 @@ final readonly class ProcessTargetResolver
             );
     }
 
-    private function unavailable(AppInstance $instance): never
+    private function unavailable(Instance $instance): never
     {
         throw new ResourceOperationException(
             errorCode: 'process.target_unavailable',
-            message: "AppInstance [{$instance->name}] has no valid Process placement.",
+            message: "Instance [{$instance->name}] has no valid Process placement.",
             status: 409,
         );
     }

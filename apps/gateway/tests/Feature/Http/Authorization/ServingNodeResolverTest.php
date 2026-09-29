@@ -13,10 +13,10 @@ use App\Domain\Tools\ToolStatus;
 use App\Http\Authorization\ActiveGatewayMissing;
 use App\Http\Authorization\ServingNode;
 use App\Http\Authorization\ServingNodeResolver;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Schedule;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
@@ -57,46 +57,46 @@ it('resolves target route models from both public parameter names', function (st
 })->with(['node', 'servingNode']);
 
 it('resolves every distinct app-owning node in stable id order', function (): void {
-    $app = resolver_app('multi-node-app');
+    $project = resolver_app('multi-node-app');
     $first = resolver_node('first');
     $second = resolver_node('second');
-    resolver_app_instance($app, $second, name: 'second');
-    resolver_app_instance($app, $first, name: 'first');
+    resolver_app_instance($project, $second, name: 'second');
+    resolver_app_instance($project, $first, name: 'first');
 
-    expect(resolver_node_ids(resolver()->resolve(resolver_request(['app' => $app]), ServingNode::AppOwning)))
+    expect(resolver_node_ids(resolver()->resolve(resolver_request(['project' => $project]), ServingNode::ProjectOwning)))
         ->toBe([$first->id, $second->id]);
 });
 
 it('uses the active Gateway for an unplaced app', function (): void {
     $gateway = resolver_node('gateway');
     $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
-    $app = resolver_app('unplaced');
+    $project = resolver_app('unplaced');
 
-    expect(resolver_node_ids(resolver()->resolve(resolver_request(['app' => $app]), ServingNode::AppOwning)))
+    expect(resolver_node_ids(resolver()->resolve(resolver_request(['project' => $project]), ServingNode::ProjectOwning)))
         ->toBe([$gateway->id]);
 });
 
 it('fails closed for an unplaced app without an active Gateway', function (): void {
-    $app = resolver_app('unplaced-without-gateway');
+    $project = resolver_app('unplaced-without-gateway');
 
-    resolver()->resolve(resolver_request(['app' => $app]), ServingNode::AppOwning);
+    resolver()->resolve(resolver_request(['project' => $project]), ServingNode::ProjectOwning);
 })->throws(ActiveGatewayMissing::class);
 
 it('resolves an app-owning node from raw app input', function (): void {
-    $app = resolver_app('raw-app');
+    $project = resolver_app('raw-app');
     $node = resolver_node('raw-app-node');
-    resolver_app_instance($app, $node, name: 'raw-app-instance');
+    resolver_app_instance($project, $node, name: 'raw-app-instance');
 
     expect(resolver_node_ids(resolver()->resolve(
-        resolver_request(input: ['app_id' => $app->id]),
-        ServingNode::AppOwning,
+        resolver_request(input: ['project_id' => $project->id]),
+        ServingNode::ProjectOwning,
     )))->toBe([$node->id]);
 });
 
 it('resolves instance-owning nodes from a bound instance and create input', function (): void {
-    $app = resolver_app('instance-owner');
+    $project = resolver_app('instance-owner');
     $node = resolver_node('instance-node');
-    $instance = resolver_app_instance($app, $node, name: 'instance');
+    $instance = resolver_app_instance($project, $node, name: 'instance');
 
     expect(resolver_node_ids(resolver()->resolve(
         resolver_request(['instance' => $instance]),
@@ -111,10 +111,10 @@ it('resolves instance-owning nodes from a bound instance and create input', func
 });
 
 it('resolves both candidate clone Nodes in request order', function (): void {
-    $app = resolver_app('candidate-clone');
+    $project = resolver_app('candidate-clone');
     $candidateNode = resolver_node('candidate-clone-source');
     $destinationNode = resolver_node('candidate-clone-destination');
-    $candidate = resolver_app_instance($app, $candidateNode, name: 'candidate');
+    $candidate = resolver_app_instance($project, $candidateNode, name: 'candidate');
 
     expect(resolver_node_ids(resolver()->resolve(
         resolver_request(['candidate' => $candidate], ['node_id' => $destinationNode->id]),
@@ -123,9 +123,9 @@ it('resolves both candidate clone Nodes in request order', function (): void {
 });
 
 it('deduplicates a candidate clone on one Node', function (): void {
-    $app = resolver_app('same-node-clone');
+    $project = resolver_app('same-node-clone');
     $node = resolver_node('same-node-clone');
-    $candidate = resolver_app_instance($app, $node, name: 'candidate');
+    $candidate = resolver_app_instance($project, $node, name: 'candidate');
 
     expect(resolver_node_ids(resolver()->resolve(
         resolver_request(['candidate' => $candidate], ['node_id' => $node->id]),
@@ -134,10 +134,10 @@ it('deduplicates a candidate clone on one Node', function (): void {
 });
 
 it('keeps the candidate Node in scope when destination input is incomplete', function (): void {
-    $app = resolver_app('incomplete-candidate-clone');
+    $project = resolver_app('incomplete-candidate-clone');
     $candidateNode = resolver_node('incomplete-candidate-clone-source');
     $destinationNode = resolver_node('incomplete-candidate-clone-destination');
-    $candidate = resolver_app_instance($app, $candidateNode, name: 'candidate');
+    $candidate = resolver_app_instance($project, $candidateNode, name: 'candidate');
 
     expect(resolver()->resolve(
         resolver_request(input: ['node_id' => $destinationNode->id]),
@@ -157,9 +157,9 @@ it('keeps the candidate Node in scope when destination input is incomplete', fun
 });
 
 it('throws for a missing candidate clone destination Node', function (): void {
-    $app = resolver_app('missing-clone-destination');
+    $project = resolver_app('missing-clone-destination');
     $candidateNode = resolver_node('missing-clone-destination-source');
-    $candidate = resolver_app_instance($app, $candidateNode, name: 'candidate');
+    $candidate = resolver_app_instance($project, $candidateNode, name: 'candidate');
 
     resolver()->resolve(
         resolver_request(['candidate' => $candidate], ['node_id' => 999_999]),
@@ -168,10 +168,10 @@ it('throws for a missing candidate clone destination Node', function (): void {
 })->throws(ModelNotFoundException::class);
 
 it('resolves both instance transfer Nodes in request order', function (): void {
-    $app = resolver_app('instance-transfer');
+    $project = resolver_app('instance-transfer');
     $sourceNode = resolver_node('instance-transfer-source');
     $destinationNode = resolver_node('instance-transfer-destination');
-    $instance = resolver_app_instance($app, $sourceNode, name: 'web');
+    $instance = resolver_app_instance($project, $sourceNode, name: 'web');
 
     expect(resolver_node_ids(resolver()->resolve(
         resolver_request(['instance' => $instance], ['node_id' => $destinationNode->id]),
@@ -180,9 +180,9 @@ it('resolves both instance transfer Nodes in request order', function (): void {
 });
 
 it('deduplicates an instance transfer on one Node', function (): void {
-    $app = resolver_app('same-node-transfer');
+    $project = resolver_app('same-node-transfer');
     $node = resolver_node('same-node-transfer');
-    $instance = resolver_app_instance($app, $node, name: 'web');
+    $instance = resolver_app_instance($project, $node, name: 'web');
 
     expect(resolver_node_ids(resolver()->resolve(
         resolver_request(['instance' => $instance], ['node_id' => $node->id]),
@@ -191,10 +191,10 @@ it('deduplicates an instance transfer on one Node', function (): void {
 });
 
 it('keeps the source Node in scope when transfer destination input is incomplete', function (): void {
-    $app = resolver_app('incomplete-instance-transfer');
+    $project = resolver_app('incomplete-instance-transfer');
     $sourceNode = resolver_node('incomplete-instance-transfer-source');
     $destinationNode = resolver_node('incomplete-instance-transfer-destination');
-    $instance = resolver_app_instance($app, $sourceNode, name: 'web');
+    $instance = resolver_app_instance($project, $sourceNode, name: 'web');
 
     expect(resolver()->resolve(
         resolver_request(input: ['node_id' => $destinationNode->id]),
@@ -214,9 +214,9 @@ it('keeps the source Node in scope when transfer destination input is incomplete
 });
 
 it('throws for a missing instance transfer destination Node', function (): void {
-    $app = resolver_app('missing-transfer-destination');
+    $project = resolver_app('missing-transfer-destination');
     $sourceNode = resolver_node('missing-transfer-destination-source');
-    $instance = resolver_app_instance($app, $sourceNode, name: 'web');
+    $instance = resolver_app_instance($project, $sourceNode, name: 'web');
 
     resolver()->resolve(
         resolver_request(['instance' => $instance], ['node_id' => 999_999]),
@@ -271,9 +271,9 @@ it('resolves process-owning nodes from bound and raw Node targets', function ():
 });
 
 it('resolves process-owning nodes from bound and raw instance targets', function (): void {
-    $app = resolver_app('process-owner');
+    $project = resolver_app('process-owner');
     $node = resolver_node('process-node');
-    $instance = resolver_app_instance($app, $node, name: 'process-instance');
+    $instance = resolver_app_instance($project, $node, name: 'process-instance');
     $process = resolver_process($instance);
 
     expect(resolver_node_ids(resolver()->resolve(
@@ -314,11 +314,11 @@ it('resolves the recorded Schedule host and leaves deleted callbacks unresolved'
         ->toBeEmpty();
 });
 
-it('resolves the AppInstance host for runtime activation', function (): void {
+it('resolves the Instance host for runtime activation', function (): void {
     $node = resolver_node('activation-host');
-    $app = resolver_app('activation-app');
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $project = resolver_app('activation-app');
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'main',
         'environment' => 'development',
@@ -330,7 +330,7 @@ it('resolves the AppInstance host for runtime activation', function (): void {
 
     expect(resolver_node_ids(resolver()->resolve(
         resolver_request(['instance' => $instance]),
-        ServingNode::AppInstanceHost,
+        ServingNode::InstanceHost,
     )))
         ->toBe([$node->id]);
 });
@@ -351,7 +351,7 @@ it('rejects a bound leftover Workspace Process owner', function (): void {
         resolver_request(['process' => $process]),
         ServingNode::ProcessOwning,
     );
-})->throws(ResourceOperationException::class, 'not a supported AppInstance or Node');
+})->throws(ResourceOperationException::class, 'not a supported Instance or Node');
 
 it('returns no concrete nodes for a collection', function (): void {
     expect(resolver()->resolve(resolver_request(), ServingNode::Collection))->toBeEmpty();
@@ -363,8 +363,8 @@ it('leaves malformed or absent raw identifiers to validation', function (string 
 
     expect(resolver()->resolve(resolver_request(input: $input), $scope))->toBeEmpty();
 })->with([
-    'missing app' => ['AppOwning', []],
-    'malformed app' => ['AppOwning', ['app_id' => 'not-a-number']],
+    'missing app' => ['ProjectOwning', []],
+    'malformed app' => ['ProjectOwning', ['project_id' => 'not-a-number']],
     'missing instance node' => ['InstanceOwning', []],
     'malformed instance node' => ['InstanceOwning', ['node_id' => 'not-a-number']],
     'missing process target' => ['ProcessOwning', []],
@@ -380,7 +380,7 @@ it('throws for syntactically valid missing raw identifiers', function (string $s
 
     resolver()->resolve(resolver_request(input: $input), $scope);
 })->with([
-    'app' => ['AppOwning', ['app_id' => 999_999]],
+    'app' => ['ProjectOwning', ['project_id' => 999_999]],
     'instance node' => ['InstanceOwning', ['node_id' => 999_999]],
     'process instance' => ['ProcessOwning', ['target_type' => 'instance', 'target_id' => 999_999]],
     'tool node' => ['ToolOwning', ['node_id' => 999_999]],
@@ -422,19 +422,19 @@ function resolver_node(string $name, LifecycleStatus $status = LifecycleStatus::
     ]);
 }
 
-function resolver_app(string $slug): OrbitApp
+function resolver_app(string $slug): Project
 {
-    return OrbitApp::query()->create([
+    return Project::query()->create([
         'name' => $slug,
         'slug' => $slug,
         'repository_url' => 'https://example.test/'.$slug.'.git',
     ]);
 }
 
-function resolver_app_instance(OrbitApp $app, Node $node, string $name): AppInstance
+function resolver_app_instance(Project $project, Node $node, string $name): Instance
 {
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => $name,
         'environment' => 'development',
@@ -445,7 +445,7 @@ function resolver_app_instance(OrbitApp $app, Node $node, string $name): AppInst
     ]);
 }
 
-function resolver_process(AppInstance|Node $owner): Process
+function resolver_process(Instance|Node $owner): Process
 {
     return $owner
         ->processes()

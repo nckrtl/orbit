@@ -9,10 +9,10 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\AppInstances\ListAppInstancesRequest;
-use Orbit\Sdk\Requests\AppInstances\ResolveAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\ResolveDirectoryInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\ScanInstanceDependenciesRequest;
+use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
+use Orbit\Sdk\Requests\Instances\ResolveDirectoryInstanceRequest;
+use Orbit\Sdk\Requests\Instances\ResolveInstanceRequest;
+use Orbit\Sdk\Requests\Instances\ScanInstanceDependenciesRequest;
 use Saloon\Exceptions\Request\FatalRequestException;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -98,8 +98,8 @@ function fleet_cli_listed_instance(int $id, string $name, string $environment, s
     $payload['domain'] = $domain;
     $payload['url'] = 'https://'.$domain;
     $payload['route']['domain'] = $domain;
-    $payload['route']['target']['app_instance_id'] = $id;
-    $payload['route']['targets'][0]['app_instance_id'] = $id;
+    $payload['route']['target']['instance_id'] = $id;
+    $payload['route']['targets'][0]['instance_id'] = $id;
 
     return $payload;
 }
@@ -129,7 +129,7 @@ function scan_cli_mock(string $state = 'present', bool $domain = true): MockClie
     }
 
     return MockClient::global([
-        ($domain ? ResolveAppInstanceRequest::class : ResolveDirectoryInstanceRequest::class) => MockResponse::make(['data' => $target, 'meta' => ['request_id' => scan_cli_id()]]),
+        ($domain ? ResolveInstanceRequest::class : ResolveDirectoryInstanceRequest::class) => MockResponse::make(['data' => $target, 'meta' => ['request_id' => scan_cli_id()]]),
         ScanInstanceDependenciesRequest::class => MockResponse::make(scan_cli_inventory($state)),
     ]);
 }
@@ -178,7 +178,7 @@ describe('single instance dependency scan', function (): void {
         $inventory = scan_cli_inventory('unknown');
         $inventory['data']['javascript']['error_code'] = $code;
         MockClient::global([
-            ResolveAppInstanceRequest::class => MockResponse::make(['data' => ['domain' => 'fixture.example.test', 'instance_id' => 17, 'project_id' => 3, 'node_id' => 9, 'environment' => 'development'], 'meta' => ['request_id' => scan_cli_id()]]),
+            ResolveInstanceRequest::class => MockResponse::make(['data' => ['domain' => 'fixture.example.test', 'instance_id' => 17, 'project_id' => 3, 'node_id' => 9, 'environment' => 'development'], 'meta' => ['request_id' => scan_cli_id()]]),
             ScanInstanceDependenciesRequest::class => MockResponse::make($inventory),
         ]);
 
@@ -199,7 +199,7 @@ describe('single instance dependency scan', function (): void {
     });
 
     it('never scans or falls back after target refusal', function (string $error): void {
-        $mock = MockClient::global([ResolveAppInstanceRequest::class => MockResponse::make(['error' => ['code' => $error, 'message' => 'Target refused.', 'details' => []]], 409, ['X-Orbit-Request-Id' => scan_cli_id()])]);
+        $mock = MockClient::global([ResolveInstanceRequest::class => MockResponse::make(['error' => ['code' => $error, 'message' => 'Target refused.', 'details' => []]], 409, ['X-Orbit-Request-Id' => scan_cli_id()])]);
         expect(Artisan::call('instance:dependencies:scan', ['--project' => 'fixture.example.test', '--json' => true]))->toBe(1);
         $json = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
         expect($json['error']['code'])->toBe($error)->and($json['error']['request_id'])->toBe(scan_cli_id())
@@ -250,7 +250,7 @@ describe('fleet dependency scan', function (): void {
 
     it('succeeds for an empty authorized fleet without scanning', function (): void {
         $mock = MockClient::global([
-            ListAppInstancesRequest::class => MockResponse::make(['data' => [], 'meta' => ['request_id' => fleet_cli_list_id()]]),
+            ListInstancesRequest::class => MockResponse::make(['data' => [], 'meta' => ['request_id' => fleet_cli_list_id()]]),
             ScanInstanceDependenciesRequest::class => static function (): never {
                 throw new RuntimeException('scan should not run');
             },
@@ -266,13 +266,13 @@ describe('fleet dependency scan', function (): void {
             'instances' => [],
             'request_id' => fleet_cli_list_id(),
         ])->and($mock->getRecordedResponses())->toHaveCount(1)
-            ->and($mock->getLastPendingRequest()?->getRequest())->toBeInstanceOf(ListAppInstancesRequest::class)
+            ->and($mock->getLastPendingRequest()?->getRequest())->toBeInstanceOf(ListInstancesRequest::class)
             ->and(Artisan::output())->not->toContain("\e", 'Choose');
     });
 
     it('stops after listing failure without scanning', function (): void {
         $mock = MockClient::global([
-            ListAppInstancesRequest::class => MockResponse::make([
+            ListInstancesRequest::class => MockResponse::make([
                 'error' => ['code' => 'node_access.required', 'message' => 'Access required.', 'details' => []],
             ], 403, ['X-Orbit-Request-Id' => fleet_cli_list_id()]),
             ScanInstanceDependenciesRequest::class => static function (): never {
@@ -289,7 +289,7 @@ describe('fleet dependency scan', function (): void {
 
     it('treats a raw empty JSON array as a successful empty fleet', function (): void {
         $mock = MockClient::global([
-            ListAppInstancesRequest::class => MockResponse::make(fleet_cli_listing_json('[]')),
+            ListInstancesRequest::class => MockResponse::make(fleet_cli_listing_json('[]')),
             ScanInstanceDependenciesRequest::class => static function (): never {
                 throw new RuntimeException('scan should not run');
             },
@@ -304,7 +304,7 @@ describe('fleet dependency scan', function (): void {
 
     it('rejects malformed listings before scanning', function (string $body): void {
         $mock = MockClient::global([
-            ListAppInstancesRequest::class => MockResponse::make($body),
+            ListInstancesRequest::class => MockResponse::make($body),
             ScanInstanceDependenciesRequest::class => static function (): never {
                 throw new RuntimeException('scan should not run');
             },
@@ -319,7 +319,7 @@ describe('fleet dependency scan', function (): void {
             ->and($json)->not->toHaveKey('succeeded')
             ->and(Artisan::output())->not->toContain('invalid-listing-sentinel')
             ->and($mock->getRecordedResponses())->toHaveCount(1)
-            ->and($mock->getLastPendingRequest()?->getRequest())->toBeInstanceOf(ListAppInstancesRequest::class);
+            ->and($mock->getLastPendingRequest()?->getRequest())->toBeInstanceOf(ListInstancesRequest::class);
     })->with([
         'missing data' => [fleet_cli_listing_without_data()],
         'scalar data' => [fleet_cli_listing_json('"invalid-listing-sentinel"')],
@@ -336,7 +336,7 @@ describe('fleet dependency scan', function (): void {
     it('scans captured targets in list order and continues after one failure', function (): void {
         $scanned = [];
         $mock = MockClient::global([
-            ListAppInstancesRequest::class => MockResponse::make([
+            ListInstancesRequest::class => MockResponse::make([
                 'data' => fleet_cli_targets(),
                 'meta' => ['request_id' => fleet_cli_list_id()],
             ]),
@@ -372,7 +372,7 @@ describe('fleet dependency scan', function (): void {
     it('records a timed-out target and still scans later captured instances', function (): void {
         $scanned = [];
         MockClient::global([
-            ListAppInstancesRequest::class => MockResponse::make([
+            ListInstancesRequest::class => MockResponse::make([
                 'data' => fleet_cli_targets(),
                 'meta' => ['request_id' => fleet_cli_list_id()],
             ]),
@@ -399,7 +399,7 @@ describe('fleet dependency scan', function (): void {
     it('does not mark unattempted targets complete after cancellation', function (): void {
         $scanned = [];
         MockClient::global([
-            ListAppInstancesRequest::class => MockResponse::make([
+            ListInstancesRequest::class => MockResponse::make([
                 'data' => fleet_cli_targets(),
                 'meta' => ['request_id' => fleet_cli_list_id()],
             ]),
@@ -424,7 +424,7 @@ describe('fleet dependency scan', function (): void {
 
     it('shows later targets and a nonzero summary after a failed instance', function (): void {
         MockClient::global([
-            ListAppInstancesRequest::class => MockResponse::make([
+            ListInstancesRequest::class => MockResponse::make([
                 'data' => fleet_cli_targets(),
                 'meta' => ['request_id' => fleet_cli_list_id()],
             ]),

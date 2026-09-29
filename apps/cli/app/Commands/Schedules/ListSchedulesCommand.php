@@ -4,19 +4,19 @@ declare(strict_types=1);
 
 namespace App\Commands\Schedules;
 
-use App\Commands\Concerns\RendersAppRuntimeDefinitions;
+use App\Commands\Concerns\RendersProjectRuntimeDefinitions;
 use App\Commands\Concerns\SelectsProjectDefinitionTarget;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
-use Orbit\Sdk\Requests\Apps\ListScheduleDefinitionsRequest;
+use Orbit\Sdk\Requests\Projects\ListScheduleDefinitionsRequest;
 use Orbit\Sdk\Requests\Schedules\ListSchedulesRequest;
-use Orbit\Sdk\Responses\Apps\AppRuntimeDefinitionsResponse;
+use Orbit\Sdk\Responses\Projects\ProjectRuntimeDefinitionsResponse;
 use Orbit\Sdk\Responses\Schedules\SchedulesResponse;
 
 final class ListSchedulesCommand extends ScheduleCommand
 {
-    use RendersAppRuntimeDefinitions;
+    use RendersProjectRuntimeDefinitions;
     use SelectsProjectDefinitionTarget;
 
     #[\Override]
@@ -37,21 +37,21 @@ final class ListSchedulesCommand extends ScheduleCommand
             return self::FAILURE;
         }
 
-        $appId = $this->projectIdOption();
+        $projectId = $this->projectIdOption();
 
-        if ($appId === false) {
+        if ($projectId === false) {
             return self::FAILURE;
         }
 
-        if ($appId !== null) {
+        if ($projectId !== null) {
             $response = $this->sendWithProgress(
                 $connector,
-                new ListScheduleDefinitionsRequest($appId),
-                AppRuntimeDefinitionsResponse::class,
+                new ListScheduleDefinitionsRequest($projectId),
+                ProjectRuntimeDefinitionsResponse::class,
                 ['List Schedule definitions', 'Loading Schedule definitions', 'Loaded Schedule definitions'],
             );
 
-            return $response instanceof AppRuntimeDefinitionsResponse
+            return $response instanceof ProjectRuntimeDefinitionsResponse
                 ? $this->renderDefinitions($response)
                 : self::FAILURE;
         }

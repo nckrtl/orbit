@@ -10,7 +10,7 @@ use App\Models\Node;
 final readonly class RemoteAppDevRouteFirewallManager
 {
     public function __construct(
-        private AppDevSshExecutor $ssh,
+        private DevelopmentSshExecutor $ssh,
     ) {}
 
     public function remove(Node $node, int $routeId): void

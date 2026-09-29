@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace App\Infrastructure\Metrics;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
-use App\Domain\AppInstances\ProductionPhpRuntimeManager;
+use App\Domain\Instances\ProductionPhpRuntimeIdentity;
+use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppProd\AppProdSshExecutor;
+use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Caddy\Build\CaddySiteRoles;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
@@ -21,7 +21,7 @@ use JsonException;
 final readonly class NativeServiceMetricsRuntime implements ServiceMetricsRuntime
 {
     public function __construct(
-        private AppProdSshExecutor $ssh,
+        private ProductionSshExecutor $ssh,
         private NodeCaddyBuilds $builds,
         private ServiceMetricsConfigRenderer $renderer = new ServiceMetricsConfigRenderer,
         private ?ProductionPhpRuntimeManager $productionPhp = null,

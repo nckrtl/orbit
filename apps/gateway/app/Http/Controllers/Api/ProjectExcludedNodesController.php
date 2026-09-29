@@ -10,8 +10,8 @@ use App\Domain\Projects\DevelopmentNodeExclusion;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
-use App\Models\App as OrbitApp;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\ProjectNodeExclusion;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -20,11 +20,11 @@ final class ProjectExcludedNodesController extends Controller
 {
     public function __construct(private readonly DevelopmentNodeExclusion $exclusions) {}
 
-    #[RequiresNodeAccess(ServingNode::AppOwning)]
-    public function index(Request $request, OrbitApp $app): JsonResponse
+    #[RequiresNodeAccess(ServingNode::ProjectOwning)]
+    public function index(Request $request, Project $project): JsonResponse
     {
         return response()->json([
-            'data' => $this->exclusions->forProject($app)
+            'data' => $this->exclusions->forProject($project)
                 ->map(static fn (ProjectNodeExclusion $exclusion): array => DevelopmentNodeExclusionData::fromModel($exclusion)->toArray())
                 ->values()
                 ->all(),
@@ -32,10 +32,10 @@ final class ProjectExcludedNodesController extends Controller
         ]);
     }
 
-    #[RequiresNodeAccess(ServingNode::AppOwning)]
-    public function store(Request $request, OrbitApp $app, Node $node): JsonResponse
+    #[RequiresNodeAccess(ServingNode::ProjectOwning)]
+    public function store(Request $request, Project $project, Node $node): JsonResponse
     {
-        $result = $this->exclusions->add($app, $node);
+        $result = $this->exclusions->add($project, $node);
 
         return response()->json([
             'data' => DevelopmentNodeExclusionResultData::fromModel($result['exclusion'], ! $result['created'])->toArray(),
@@ -43,11 +43,11 @@ final class ProjectExcludedNodesController extends Controller
         ], $result['created'] ? 201 : 200);
     }
 
-    #[RequiresNodeAccess(ServingNode::AppOwning)]
-    public function destroy(Request $request, OrbitApp $app, Node $node): JsonResponse
+    #[RequiresNodeAccess(ServingNode::ProjectOwning)]
+    public function destroy(Request $request, Project $project, Node $node): JsonResponse
     {
         return response()->json([
-            'data' => DevelopmentNodeExclusionData::fromModel($this->exclusions->remove($app, $node))->toArray(),
+            'data' => DevelopmentNodeExclusionData::fromModel($this->exclusions->remove($project, $node))->toArray(),
             'meta' => $this->meta($request),
         ]);
     }

@@ -13,7 +13,7 @@ final readonly class EnvironmentOperationResponse
     private const int MAX_KEY_COUNT = 1_024;
 
     private function __construct(
-        public int $appInstanceId,
+        public int $instanceId,
         public string $operation,
         public bool $changed,
         public int $keyCount,
@@ -32,8 +32,8 @@ final readonly class EnvironmentOperationResponse
 
         if (
             ! self::hasExactFields($data)
-            || ! is_int($data['app_instance_id'])
-            || $data['app_instance_id'] < 1
+            || ! is_int($data['instance_id'])
+            || $data['instance_id'] < 1
             || ! is_string($data['operation'])
             || ! in_array($expectedOperation, ['import', 'update', 'sync'], strict: true)
             || $data['operation'] !== $expectedOperation
@@ -50,7 +50,7 @@ final readonly class EnvironmentOperationResponse
         }
 
         return new self(
-            appInstanceId: $data['app_instance_id'],
+            instanceId: $data['instance_id'],
             operation: $data['operation'],
             changed: $data['changed'],
             keyCount: $data['key_count'],
@@ -58,11 +58,11 @@ final readonly class EnvironmentOperationResponse
         );
     }
 
-    /** @return array{app_instance_id: int, operation: string, changed: bool, key_count: int, request_id: string} */
+    /** @return array{instance_id: int, operation: string, changed: bool, key_count: int, request_id: string} */
     public function toArray(): array
     {
         return [
-            'app_instance_id' => $this->appInstanceId,
+            'instance_id' => $this->instanceId,
             'operation' => $this->operation,
             'changed' => $this->changed,
             'key_count' => $this->keyCount,
@@ -73,7 +73,7 @@ final readonly class EnvironmentOperationResponse
     /** @param array<array-key, mixed> $data */
     private static function hasExactFields(#[SensitiveParameter] array $data): bool
     {
-        $expected = ['app_instance_id', 'operation', 'changed', 'key_count'];
+        $expected = ['instance_id', 'operation', 'changed', 'key_count'];
 
         if (count($data) !== count($expected)) {
             return false;

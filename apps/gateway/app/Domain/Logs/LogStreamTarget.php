@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Logs;
 
+use App\Models\Instance;
 use App\Models\Node;
 
 /**

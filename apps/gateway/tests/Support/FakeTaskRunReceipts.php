@@ -8,7 +8,7 @@ use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskRunReceipt;
 use App\Domain\Tasks\TaskRunReceipts;
 use App\Domain\Tasks\TaskThreadRole;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final class FakeTaskRunReceipts implements TaskRunReceipts
 {
@@ -46,13 +46,13 @@ final class FakeTaskRunReceipts implements TaskRunReceipts
     /** @var list<list<string>> the deliverable IDs written into each prepared turn */
     public array $turnDeliverables = [];
 
-    public function prepare(AppInstance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void
+    public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void
     {
         $this->prepared[] = $role->value.($final ? ':final' : '');
         $this->turnDeliverables[] = array_map(static fn (TaskDeliverable $deliverable): string => $deliverable->id, $deliverables);
     }
 
-    public function read(AppInstance $instance, ?int $actingThreadId = null): ?TaskRunReceipt
+    public function read(Instance $instance, ?int $actingThreadId = null): ?TaskRunReceipt
     {
         $this->reads++;
         $contents = array_shift($this->receipts);
@@ -67,12 +67,12 @@ final class FakeTaskRunReceipts implements TaskRunReceipts
         return $receipt;
     }
 
-    public function hasLegacyTurn(AppInstance $instance): bool
+    public function hasLegacyTurn(Instance $instance): bool
     {
         return false;
     }
 
-    public function clear(AppInstance $instance, TaskRunReceipt $receipt): void
+    public function clear(Instance $instance, TaskRunReceipt $receipt): void
     {
         $this->cleared[] = $receipt->hash;
     }

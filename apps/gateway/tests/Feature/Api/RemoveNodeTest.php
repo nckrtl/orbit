@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 use App\Actions\Nodes\RemoveNodeAction;
 use App\Domain\AppDev\PrivateDnsManager;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\RouterLanIngressReconciler;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\MetricsAccessRevoker;
@@ -34,13 +34,13 @@ use App\Infrastructure\Metrics\MetricsExporterState;
 use App\Infrastructure\Metrics\ServiceMetricsRuntime;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
 use App\Models\Activity;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\FirewallRule;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Schedule;
 use Illuminate\Support\Facades\Log;
 use Tests\Support\FakeNodeAgentRuntime;
@@ -127,27 +127,27 @@ it('re-reads removal eligibility after acquiring the lifecycle guard', function 
     $target = remove_node_record(name: 'app-dev', wireguardIp: '10.44.0.3');
     $cluster = Cluster::query()->create(['name' => 'development', 'state' => ClusterState::Active]);
     $target->update(['cluster_id' => $cluster->id]);
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    app()->instance(NodeProvisioningLock::class, new class($target, $app) implements NodeProvisioningLock
+    app()->instance(NodeProvisioningLock::class, new class($target, $project) implements NodeProvisioningLock
     {
-        public function __construct(private Node $target, private OrbitApp $app) {}
+        public function __construct(private Node $target, private Project $project) {}
 
         public function run(string $nodeName, Closure $callback): mixed
         {
-            AppInstance::query()->create([
-                'app_id' => $this->app->id,
+            Instance::query()->create([
+                'project_id' => $this->project->id,
                 'node_id' => $this->target->id,
                 'name' => 'dev',
                 'checkout_path' => '/srv/orbit/apps/acme/dev',
                 'branch' => 'dev',
                 'starting_commit' => str_repeat('a', 40),
-                'status' => AppInstanceState::Active,
+                'status' => InstanceState::Active,
             ]);
 
             return $callback();
@@ -155,7 +155,7 @@ it('re-reads removal eligibility after acquiring the lifecycle guard', function 
     });
 
     expect(fn () => app(RemoveNodeAction::class)->execute($target, $caller))
-        ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'node.has_app_instances');
+        ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'node.has_instances');
 
     expect($target->refresh()->status)
         ->toBe(LifecycleStatus::Active)
@@ -297,40 +297,40 @@ it('retries Grafana stream revocation before removing membership', function (): 
         ->toBeNull();
 });
 
-it('refuses Node removal around an AppInstance for ordinary and forced offline paths', function (array $body): void {
+it('refuses Node removal around an Instance for ordinary and forced offline paths', function (array $body): void {
     $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
     $target = remove_node_record(name: 'app-dev', wireguardIp: '10.44.0.3');
     $caller->accessibleNodes()->attach($target);
     $cluster = Cluster::query()->create(['name' => 'development', 'state' => ClusterState::Active]);
     $target->update(['cluster_id' => $cluster->id]);
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    AppInstance::query()->create([
-        'app_id' => $app->id,
+    Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $target->id,
         'name' => 'dev',
         'checkout_path' => '/srv/orbit/apps/acme/dev',
         'branch' => 'dev',
         'starting_commit' => str_repeat('a', 40),
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
         ->deleteJson("/api/v1/nodes/{$target->id}", $body)
         ->assertConflict()
-        ->assertJsonPath('error.code', 'node.has_app_instances');
+        ->assertJsonPath('error.code', 'node.has_instances');
 
     expect($target->refresh()->status)
         ->toBe(LifecycleStatus::Active)
         ->and($target->cluster_id)
         ->toBe($cluster->id)
-        ->and(AppInstance::query()->count())
+        ->and(Instance::query()->count())
         ->toBe(1)
         ->and($this->peers->removed)
         ->toBeEmpty()

@@ -2,19 +2,19 @@
 title: "Dependency contracts"
 description: "The graph values, lockfile reader rules, collection limits, stored tables, and response shapes behind Instance dependency inventory."
 covers:
-  - apps/gateway/app/Domain/AppInstances/Dependencies/**
-  - apps/gateway/app/Actions/AppInstances/Dependencies/**
-  - apps/gateway/app/Infrastructure/AppInstances/{*DependencyUpdate*Program,DependencyFilesProgram,DependencyUpdateSupervisorHost}.php
-  - apps/gateway/app/Models/{DependencyPackage,AppInstanceDependencyObservation,AppInstanceDependencyResolution,AppInstanceDependencyEdge,AppInstanceDependencyScanAttempt}.php
+  - apps/gateway/app/Domain/Instances/Dependencies/**
+  - apps/gateway/app/Actions/Instances/Dependencies/**
+  - apps/gateway/app/Infrastructure/Instances/{*DependencyUpdate*Program,DependencyFilesProgram,DependencyUpdateSupervisorHost}.php
+  - apps/gateway/app/Models/{DependencyPackage,InstanceDependencyObservation,InstanceDependencyResolution,InstanceDependencyEdge,InstanceDependencyScanAttempt}.php
   - apps/gateway/database/migrations/2026_09_15_200000_create_instance_dependency_inventory.php
   - packages/php-sdk/src/Support/{DependencyInventoryDecoder,InstanceResolutionDecoder}.php
-  - packages/php-sdk/src/Requests/AppInstances/{Show,Scan,Update}InstanceDependenciesRequest.php
-  - packages/php-sdk/src/Requests/AppInstances/{ResolveAppInstanceRequest,ResolveDirectoryInstanceRequest}.php
+  - packages/php-sdk/src/Requests/Instances/{Show,Scan,Update}InstanceDependenciesRequest.php
+  - packages/php-sdk/src/Requests/Instances/{ResolveInstanceRequest,ResolveDirectoryInstanceRequest}.php
 ---
 
 # Dependency contracts
 
-This page holds the details behind [Instance dependencies](/reference/instance-dependencies): how the readers build a graph, how collection reads files, what the Gateway stores, and what the API returns. The code lives in `App\Domain\AppInstances\Dependencies` and `App\Actions\AppInstances\Dependencies`.
+This page holds the details behind [Instance dependencies](/reference/instance-dependencies): how the readers build a graph, how collection reads files, what the Gateway stores, and what the API returns. The code lives in `App\Domain\Instances\Dependencies` and `App\Actions\Instances\Dependencies`.
 
 ## Graph values
 
@@ -100,10 +100,10 @@ The Gateway stores the inventory in five tables.
 | Table | Contents |
 | --- | --- |
 | `dependency_packages` | One row per ecosystem and name, shared by all Instances. |
-| `app_instance_dependency_observations` | The last successful observation per Instance and ecosystem: time, presence, project root, source reference, format, and file hashes. No row means unknown. |
-| `app_instance_dependency_resolutions` | The resolutions of one observation. |
-| `app_instance_dependency_edges` | The requirements of one observation. |
-| `app_instance_dependency_scan_attempts` | Every attempt with its time and error code, null on success. |
+| `instance_dependency_observations` | The last successful observation per Instance and ecosystem: time, presence, project root, source reference, format, and file hashes. No row means unknown. |
+| `instance_dependency_resolutions` | The resolutions of one observation. |
+| `instance_dependency_edges` | The requirements of one observation. |
+| `instance_dependency_scan_attempts` | Every attempt with its time and error code, null on success. |
 
 `PublishInstanceDependencyScanAction` replaces one ecosystem's observation, resolutions, edges, and attempt in one transaction. A failure records only the attempt and keeps the stored observation. A database failure records `dependencies.persistence_failed`. An Instance in removal gets `dependencies.instance_unavailable`. Removing an Instance deletes its rows but keeps shared package rows.
 

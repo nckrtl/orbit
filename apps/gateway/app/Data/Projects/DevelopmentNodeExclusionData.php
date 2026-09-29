@@ -22,11 +22,11 @@ final class DevelopmentNodeExclusionData extends Data
 
     public static function fromModel(ProjectNodeExclusion $exclusion): self
     {
-        $exclusion->loadMissing(['app', 'node']);
+        $exclusion->loadMissing(['project', 'node']);
 
         return new self(
-            projectId: $exclusion->app_id,
-            projectSlug: $exclusion->app->slug,
+            projectId: $exclusion->project_id,
+            projectSlug: $exclusion->project->slug,
             nodeId: $exclusion->node_id,
             nodeName: $exclusion->node->name,
             developmentInstanceCount: $exclusion->developmentInstanceCount(),

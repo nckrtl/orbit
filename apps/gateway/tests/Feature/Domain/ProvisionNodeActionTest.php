@@ -7,8 +7,8 @@ use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Metrics\MetricsFleetReconcileException;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Metrics\MetricsReconcileComponent;
@@ -33,11 +33,11 @@ use App\Domain\Tools\ToolManagerName;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Infrastructure\Nodes\NativeNodeProvisioningLock;
 use App\Infrastructure\Processes\CommandResult;
-use App\Models\App;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Project;
 use App\Models\ToolManagerRecord;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
@@ -331,7 +331,7 @@ describe(ProvisionNodeAction::class, function (): void {
             ->toBe(LifecycleStatus::Failed);
     });
 
-    it('refuses existing Node reprovisioning while it owns an AppInstance', function (): void {
+    it('refuses existing Node reprovisioning while it owns an Instance', function (): void {
         $cluster = Cluster::query()->create(['name' => 'development', 'state' => ClusterState::Active]);
         $existing = Node::query()->create([
             'cluster_id' => $cluster->id,
@@ -343,21 +343,21 @@ describe(ProvisionNodeAction::class, function (): void {
             'wireguard_ip' => '10.44.0.71',
             'user' => 'orbit',
         ]);
-        $app = App::query()->create([
+        $project = Project::query()->create([
             'name' => 'Acme',
             'slug' => 'acme',
             'repository_url' => 'https://github.com/acme/site.git',
             'default_branch' => 'main',
             'root' => 'public',
         ]);
-        AppInstance::query()->create([
-            'app_id' => $app->id,
+        Instance::query()->create([
+            'project_id' => $project->id,
             'node_id' => $existing->id,
             'name' => 'dev',
             'checkout_path' => '/srv/orbit/apps/acme/dev',
             'branch' => 'dev',
             'starting_commit' => str_repeat('a', 40),
-            'status' => AppInstanceState::Active,
+            'status' => InstanceState::Active,
         ]);
         $converged = false;
         app()->instance(NodeConverger::class, new class($converged) implements NodeConverger
@@ -383,7 +383,7 @@ describe(ProvisionNodeAction::class, function (): void {
             publicSshHost: $existing->public_ssh_host,
         )))
             ->toThrow(
-                fn (ResourceOperationException $exception): bool => $exception->errorCode === 'node.has_app_instances',
+                fn (ResourceOperationException $exception): bool => $exception->errorCode === 'node.has_instances',
             );
 
         expect($converged)
@@ -392,7 +392,7 @@ describe(ProvisionNodeAction::class, function (): void {
             ->toBe(LifecycleStatus::Active)
             ->and($existing->cluster_id)
             ->toBe($cluster->id)
-            ->and(AppInstance::query()->count())
+            ->and(Instance::query()->count())
             ->toBe(1);
     });
 
@@ -1785,18 +1785,18 @@ describe(ProvisionNodeAction::class, function (): void {
         app()->instance(NodeConverger::class, $nodeConverger);
         $node = provision_node_tld_change_record();
         $node->roles()->update(['status' => $roleStatus]);
-        $app = App::query()->create([
+        $project = Project::query()->create([
             'name' => 'Orbit',
             'slug' => 'orbit',
             'repository_url' => 'git@example.test:orbit.git',
         ]);
-        $appInstance = AppInstance::query()->create([
-            'app_id' => $app->id,
+        $instance = Instance::query()->create([
+            'project_id' => $project->id,
             'node_id' => $node->id,
             'name' => 'main',
             'environment' => 'development',
             'checkout_path' => '/home/orbit/apps/orbit/main',
-            'status' => AppInstanceState::Active,
+            'status' => InstanceState::Active,
         ]);
         $converger = new class implements AppDevTldConverger
         {
@@ -1815,13 +1815,13 @@ describe(ProvisionNodeAction::class, function (): void {
             tld: 'new.orbit',
         )))->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)
-                ->toBe('node.has_app_instances')
+                ->toBe('node.has_instances')
                 ->and($exception->status)
                 ->toBe(409);
         });
 
         expect($node->refresh()->tld)->toBe('old.orbit');
-        expect($appInstance->refresh()->checkout_path)->toBe('/home/orbit/apps/orbit/main');
+        expect($instance->refresh()->checkout_path)->toBe('/home/orbit/apps/orbit/main');
         expect($nodeConverger->calls)->toBe(0);
         expect($converger->calls)->toBe(0);
     })->with([
@@ -1942,7 +1942,7 @@ describe(ProvisionNodeAction::class, function (): void {
             ->toBe(['new.orbit', 'old.orbit']);
     });
 
-    it('rejects a managed user change while the node owns AppInstances', function (): void {
+    it('rejects a managed user change while the node owns Instances', function (): void {
         $converger = new class implements NodeConverger
         {
             public int $calls = 0;
@@ -1969,18 +1969,18 @@ describe(ProvisionNodeAction::class, function (): void {
             'wireguard_ip' => '10.44.0.3',
             'ssh_host_fingerprint' => 'SHA256:pinned',
         ]);
-        $app = App::query()->create([
+        $project = Project::query()->create([
             'name' => 'Orbit',
             'slug' => 'orbit',
             'repository_url' => 'git@example.test:orbit.git',
         ]);
-        AppInstance::query()->create([
-            'app_id' => $app->id,
+        Instance::query()->create([
+            'project_id' => $project->id,
             'node_id' => $node->id,
             'name' => 'main',
             'environment' => 'development',
             'checkout_path' => '/home/orbit/apps/orbit/main',
-            'status' => AppInstanceState::Active,
+            'status' => InstanceState::Active,
         ]);
 
         expect(fn () => app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
@@ -1989,7 +1989,7 @@ describe(ProvisionNodeAction::class, function (): void {
             orbitUser: 'deploy',
         )))->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)
-                ->toBe('node.has_app_instances')
+                ->toBe('node.has_instances')
                 ->and($exception->status)
                 ->toBe(409);
         });

@@ -14,14 +14,14 @@ payloads, bounded responses, structured errors, and request IDs without
 applying Gateway policy. It does not define command-line presentation or
 remote execution behavior.
 
-## App runtime definitions
+## Project runtime definitions
 
-The SDK exposes typed list, create, show, update, and destroy requests for App process and Schedule definitions. Create and update requests send the caller's exact JSON document to the Gateway. Item and collection responses are immutable and bounded, preserve the request ID, and redact credential-shaped specification values. Collection responses omit definition commands.
+The SDK exposes typed list, create, show, update, and destroy requests for Project process and Schedule definitions. Create and update requests send the caller's exact JSON document to the Gateway. Item and collection responses are immutable and bounded, preserve the request ID, and redact credential-shaped specification values. Collection responses omit definition commands.
 
 ## Schedules
 
 The SDK exposes typed list, add, show, run, logs, complete, remove, and activate
-requests for Node and AppInstance Schedules. Add requests preserve omitted
+requests for Node and Instance Schedules. Add requests preserve omitted
 optional values separately from explicit values. Item and collection responses
 are immutable, bounded, and redacted. Completion preserves the Gateway's empty
 response and exposes only its validated response-header request ID. The Gateway
@@ -40,15 +40,15 @@ $response = $connector
 assert($response instanceof ToolResponse);
 ```
 
-## AppInstance deployment and environment
+## Instance deployment and environment
 
 The SDK exposes typed deploy-step, deploy, rollback, and retained-release operations. Deployment streams are incremental, closeable, bounded, correlated, and never retried or replayed. Configuration commands and application output stay out of generic diagnostics.
 
 The SDK exposes typed import, update, and synchronization requests for
-AppInstance environment configuration. Import preserves omission and explicit
+Instance environment configuration. Import preserves omission and explicit
 `false` for its optional replacement flag. Update preserves the exact string
 value, and synchronization sends an empty JSON object. Each response contains
-only the AppInstance ID, operation, changed flag, bounded key count, and request
+only the Instance ID, operation, changed flag, bounded key count, and request
 ID. Environment values remain outside normal SDK diagnostics and errors.
 
 ## Doctor
@@ -61,7 +61,7 @@ Doctor accepts the current Gateway family set, including Schedule and Database c
 
 ## Database connections
 
-The SDK exposes typed list, show, add, update, remove, attach, detach, query, tables, schema, describe, and user create requests for Gateway-owned database connection records. Add and update send host, port, database, sqlite path, username, and password only when supplied. Attach and detach send an AppInstance selector, the connection slug, and an optional prefix. User create sends a numeric Process ID, slug, database, username, and password. Query sends SQL and an optional write flag against a registered slug. Tables, schema, and describe are bodyless reads. Item, collection, attachment, and inspection responses omit passwords and environment values, expose has_password on registry records, and redact credential-shaped values. The Gateway owns validation, encryption, persistence, Process execution, stored-environment writes, and inspection execution.
+The SDK exposes typed list, show, add, update, remove, attach, detach, query, tables, schema, describe, and user create requests for Gateway-owned database connection records. Add and update send host, port, database, sqlite path, username, and password only when supplied. Attach and detach send an Instance selector, the connection slug, and an optional prefix. User create sends a numeric Process ID, slug, database, username, and password. Query sends SQL and an optional write flag against a registered slug. Tables, schema, and describe are bodyless reads. Item, collection, attachment, and inspection responses omit passwords and environment values, expose has_password on registry records, and redact credential-shaped values. The Gateway owns validation, encryption, persistence, Process execution, stored-environment writes, and inspection execution.
 
 ## proxycli
 

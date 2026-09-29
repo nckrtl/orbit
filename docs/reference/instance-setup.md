@@ -3,9 +3,9 @@ title: "Instance setup and teardown"
 description: "How a Project stores named setup and teardown commands, and when Orbit runs them for a development Instance."
 covers:
   - apps/gateway/app/Domain/Projects/{LifecyclePhase,LifecycleStep,ProjectLifecycleRunner,ProjectLifecycleStepStore}.php
-  - apps/gateway/app/Actions/AppInstances/{CreateAppInstanceAction,RunInstanceSetupAction}.php
-  - apps/gateway/app/Infrastructure/AppInstances/NativeDevelopmentAppInstanceProvisioner.php
-  - apps/gateway/app/Domain/AppInstances/DevelopmentAppInstanceProvisioner.php
+  - apps/gateway/app/Actions/*/{Create*InstanceAction,RegisterInstanceAction,RunInstanceSetupAction}.php
+  - apps/gateway/app/Infrastructure/{*/NativeDevelopment*Provisioner,Instances/{RemoteDevelopmentInstanceConfigurator,RemoteDevelopmentInstanceSourceLifecycle,RemoteRegistrationSourceManager,RemoteInstanceDestinationGuard},AppDev/DevelopmentSshExecutor,AppProd/ProductionSshExecutor}.php
+  - apps/gateway/app/Domain/Instances/{DevelopmentInstanceProvisioner,InstanceSourceProfileGuard}.php
   - apps/gateway/app/Http/Controllers/Api/ProjectLifecycleStepsController.php
   - apps/gateway/app/Models/ProjectLifecycleStep.php
   - apps/gateway/resources/instances/lifecycle.py
@@ -95,7 +95,7 @@ A step that the request deadline stops, or that has no time left to start, is no
 
 ## Run teardown
 
-`instance:destroy` of a development Instance runs the teardown list after the [removal checks](/reference/appinstance-removal) accept the source. Then Orbit checks the source again and deletes the Route, the source, and the record. In a forced removal of a checkout with worktrees, each member runs its own teardown list.
+`instance:destroy` of a development Instance runs the teardown list after the [removal checks](/reference/instance-removal) accept the source. Then Orbit checks the source again and deletes the Route, the source, and the record. In a forced removal of a checkout with worktrees, each member runs its own teardown list.
 
 Teardown may delete ignored files. It must keep the checkout, its Git identity, and its worktrees. When teardown changes tracked files, normal removal refuses. Retry with `--force` to discard them.
 

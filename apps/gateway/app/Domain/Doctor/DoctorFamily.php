@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Domain\Doctor;
 
+use App\Models\Instance;
+
 enum DoctorFamily: string
 {
     case Node = 'node';
     case Role = 'role';
-    case App = 'app';
+    case Project = 'project';
     case Instance = 'instance';
     case Schedule = 'schedule';
     case Tool = 'tool';

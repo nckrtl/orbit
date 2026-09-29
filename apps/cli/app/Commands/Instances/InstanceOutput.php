@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace App\Commands\Instances;
 
 use App\Support\Console\ConsoleWriter;
-use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
 use Orbit\Sdk\Responses\Deployments\DeploymentStepResponse;
+use Orbit\Sdk\Responses\Instances\InstanceResponse;
 
 trait InstanceOutput
 {
-    private function writeInstanceDetails(AppInstanceResponse $instance): void
+    private function writeInstanceDetails(InstanceResponse $instance): void
     {
         $fields = [
             'ID' => $instance->id,

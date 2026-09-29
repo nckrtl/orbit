@@ -5,10 +5,10 @@ declare(strict_types=1);
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\GatewayRootCaClient;
-use Orbit\Sdk\Requests\Apps\CreateAppRequest;
 use Orbit\Sdk\Requests\Doctor\RunDoctorRequest;
-use Orbit\Sdk\Requests\Processes\AppInstanceProcessTarget;
 use Orbit\Sdk\Requests\Processes\CreateProcessRequest;
+use Orbit\Sdk\Requests\Processes\InstanceProcessTarget;
+use Orbit\Sdk\Requests\Projects\CreateProjectRequest;
 use Orbit\Sdk\Requests\Tools\InstallToolRequest;
 use Orbit\Sdk\Responses\Tools\ToolManagerResponse;
 use Orbit\Sdk\Responses\Tools\ToolManagersResponse;
@@ -157,7 +157,7 @@ describe('gateway object-state boundary', function (): void {
             ->not->toContain($credential);
     });
 
-    it('hides app request credentials while preserving the exact fake transport body', function (): void {
+    it('hides project request credentials while preserving the exact fake transport body', function (): void {
         $repositoryCredential = gateway_object_state_credential('repository');
         $repositoryUrl = "https://operator:{$repositoryCredential}@git.example.test/orbit.git?access_token={$repositoryCredential}";
         $expectedBody = [
@@ -167,7 +167,7 @@ describe('gateway object-state boundary', function (): void {
             'repository_url' => $repositoryUrl,
             'root' => 'public',
         ];
-        $request = new CreateAppRequest(
+        $request = new CreateProjectRequest(
             slug: 'orbit',
             repositoryUrl: $repositoryUrl,
             root: 'public',
@@ -193,7 +193,7 @@ describe('gateway object-state boundary', function (): void {
             'serialization SDK trace' => gateway_object_state_sdk_trace($serializationException),
         ], $needles))->toBeEmpty();
 
-        $constructorException = gateway_object_state_app_constructor_exception($repositoryUrl);
+        $constructorException = gateway_object_state_project_constructor_exception($repositoryUrl);
         $constructorTrace = gateway_object_state_sdk_trace($constructorException);
 
         expect($constructorTrace)->toContain('SensitiveParameterValue');
@@ -230,7 +230,7 @@ describe('gateway object-state boundary', function (): void {
             'image' => 'orbit-worker:latest',
         ];
         $request = new CreateProcessRequest(
-            target: new AppInstanceProcessTarget(7),
+            target: new InstanceProcessTarget(7),
             name: 'worker',
             runtime: 'docker',
             command: ['php', 'artisan', 'queue:work'],
@@ -403,7 +403,7 @@ describe('gateway object-state boundary', function (): void {
 
     it('rejects inherited raw Saloon debugging', function (string $target, string $operation): void {
         $transport = $target === 'request'
-            ? new CreateAppRequest('orbit', 'https://git.example.test/orbit.git', 'public')
+            ? new CreateProjectRequest('orbit', 'https://git.example.test/orbit.git', 'public')
             : new GatewayConnector('https://gateway.test');
 
         expect(fn (): object => gateway_object_state_raw_debug_operation($transport, $operation))
@@ -423,7 +423,7 @@ describe('gateway object-state boundary', function (): void {
         expect(fn (): mixed => unserialize($serialized))
             ->toThrow(LogicException::class, $message);
     })->with([
-        'request' => [CreateAppRequest::class, 'Orbit gateway requests cannot be unserialized.'],
+        'request' => [CreateProjectRequest::class, 'Orbit gateway requests cannot be unserialized.'],
         'connector' => [GatewayConnector::class, 'Orbit gateway connectors cannot be unserialized.'],
         'root CA client' => [GatewayRootCaClient::class, 'Orbit gateway root CA clients cannot be unserialized.'],
     ]);
@@ -463,10 +463,10 @@ function gateway_object_state_serialization_exception(
     throw new RuntimeException('Expected gateway request serialization to fail closed.');
 }
 
-function gateway_object_state_app_constructor_exception(string $repositoryUrl): TypeError
+function gateway_object_state_project_constructor_exception(string $repositoryUrl): TypeError
 {
     try {
-        new CreateAppRequest(
+        new CreateProjectRequest(
             slug: 'orbit',
             repositoryUrl: $repositoryUrl,
             root: 'public',
@@ -476,7 +476,7 @@ function gateway_object_state_app_constructor_exception(string $repositoryUrl): 
         return $exception;
     }
 
-    throw new RuntimeException('Expected the app request constructor to reject an invalid name.');
+    throw new RuntimeException('Expected the project request constructor to reject an invalid name.');
 }
 
 /** @param array<string, string> $environment */
@@ -484,7 +484,7 @@ function gateway_object_state_process_constructor_exception(array $environment):
 {
     try {
         new CreateProcessRequest(
-            target: new AppInstanceProcessTarget(7),
+            target: new InstanceProcessTarget(7),
             name: 'worker',
             runtime: 'docker',
             command: ['php', 'artisan', 'queue:work'],

@@ -9,6 +9,7 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
+use App\Models\Instance;
 use App\Models\Node;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 

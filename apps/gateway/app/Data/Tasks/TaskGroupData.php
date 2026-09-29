@@ -6,7 +6,7 @@ namespace App\Data\Tasks;
 
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskGroup;
 use Spatie\LaravelData\Attributes\MapOutputName;
@@ -21,8 +21,8 @@ final class TaskGroupData extends Data
      */
     public function __construct(
         public int $id,
-        public int $appId,
-        public string $app,
+        public int $projectId,
+        public string $project,
         public string $projectCode,
         public ?string $taskableType,
         public ?int $taskableId,
@@ -47,17 +47,17 @@ final class TaskGroupData extends Data
 
     public static function fromModel(TaskGroup $group): self
     {
-        $group->loadMissing(['app', 'tasks']);
+        $group->loadMissing(['project', 'tasks']);
         $taskable = $group->taskable;
 
         return new self(
             executionMode: $group->execution_mode,
 
             id: $group->id,
-            appId: $group->app_id,
-            app: $group->app->slug,
-            projectCode: $group->app->code,
-            taskableType: $taskable instanceof AppInstance ? 'instance' : $group->taskable_type,
+            projectId: $group->project_id,
+            project: $group->project->slug,
+            projectCode: $group->project->code,
+            taskableType: $taskable instanceof Instance ? 'instance' : $group->taskable_type,
             taskableId: $group->taskable_id,
             title: $group->title,
             brief: $group->brief,

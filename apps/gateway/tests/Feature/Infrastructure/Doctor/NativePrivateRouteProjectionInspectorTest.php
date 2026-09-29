@@ -2,26 +2,26 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\PrivateRouteProjectionObservation;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Doctor\NativePrivateRouteProjectionInspector;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Tests\Support\AppDevFakeSshExecutor;
 
@@ -99,10 +99,10 @@ it('inspects Router Caddy on a selected Cluster Route', function (): void {
         ->and(array_slice($ssh->commands[1]->arguments, 0, 3))->toBe(['sudo', 'bash', '-seu']);
 });
 
-/** @return array{AppInstance, Route} */
+/** @return array{Instance, Route} */
 function private_route_inspector_standalone(): array
 {
-    $app = App::query()->create([
+    $project = Project::query()->create([
         'name' => 'Private Doctor App',
         'slug' => 'private-doctor-app-'.uniqid(),
         'repository_url' => 'https://git.example.test/acme/private-doctor.git',
@@ -119,8 +119,8 @@ function private_route_inspector_standalone(): array
         'wireguard_ip' => private_route_inspector_address(),
     ]);
     $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'development',
         'environment' => 'development',
@@ -128,23 +128,23 @@ function private_route_inspector_standalone(): array
         'branch' => 'development',
         'starting_commit' => str_repeat('a', 40),
         'source_is_laravel' => true,
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'domain' => 'private-doctor-'.uniqid().'.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
 
-    return [$instance->fresh(['node', 'app']), $route->fresh()];
+    return [$instance->fresh(['node', 'project']), $route->fresh()];
 }
 
-/** @return array{AppInstance, Route, Node} */
+/** @return array{Instance, Route, Node} */
 function private_route_inspector_cluster(): array
 {
     [$instance, $route] = private_route_inspector_standalone();
@@ -171,13 +171,13 @@ function private_route_inspector_cluster(): array
     ]);
     $route->update(['node_id' => null, 'cluster_id' => $cluster->id]);
 
-    return [$instance->fresh(['node', 'app']), $route->fresh(['cluster.routerAssignment.node']), $router];
+    return [$instance->fresh(['node', 'project']), $route->fresh(['cluster.routerAssignment.node']), $router];
 }
 
 function private_route_inspector(AppDevFakeSshExecutor $ssh): NativePrivateRouteProjectionInspector
 {
     return new NativePrivateRouteProjectionInspector(
-        new AppDevSshExecutor($ssh, private_route_inspector_keys(), private_route_inspector_hosts()),
+        new DevelopmentSshExecutor($ssh, private_route_inspector_keys(), private_route_inspector_hosts()),
         new CommandDeadline,
     );
 }

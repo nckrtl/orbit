@@ -10,7 +10,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\NativeAppDevTldConverger;
 use App\Models\Node;
 
-it('republishes AppInstance projections when the app-dev TLD converges', function (): void {
+it('republishes Instance projections when the app-dev TLD converges', function (): void {
     $node = tld_converger_node('dev', 'new.test', LifecycleStatus::Provisioning);
     $unrelated = tld_converger_node('other-dev', 'other.test');
     $events = [];
@@ -27,7 +27,7 @@ it('republishes AppInstance projections when the app-dev TLD converges', functio
         ->toContain("caddy:{$unrelated->id}", "dns:{$unrelated->id}", "route:{$unrelated->id}");
 });
 
-it('repeats AppInstance publication without rewriting leftover hostnames', function (): void {
+it('repeats Instance publication without rewriting leftover hostnames', function (): void {
     $node = tld_converger_node('dev', 'new.test', LifecycleStatus::Provisioning);
     $events = [];
     $converger = tld_converger_runtime($events);

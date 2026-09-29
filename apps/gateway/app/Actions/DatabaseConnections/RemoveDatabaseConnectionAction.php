@@ -18,7 +18,7 @@ final readonly class RemoveDatabaseConnectionAction
         if ($connection->targets()->exists()) {
             throw new ResourceOperationException(
                 errorCode: 'database.connection_attached',
-                message: "Detach Database connection [{$connection->slug}] from every AppInstance before removing it.",
+                message: "Detach Database connection [{$connection->slug}] from every Instance before removing it.",
                 status: 409,
             );
         }

@@ -18,8 +18,8 @@ use App\Support\Console\TerminalText;
 use App\Support\GatewayFailureRenderer;
 use Laravel\Prompts\ConfirmPrompt;
 use Laravel\Prompts\TextPrompt;
-use Orbit\Sdk\Requests\AppInstances\RegisterAppInstanceRequest;
-use Orbit\Sdk\Responses\AppInstances\AppInstanceRegistrationResponse;
+use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
+use Orbit\Sdk\Responses\Instances\InstanceRegistrationResponse;
 
 final class RegisterInstanceCommand extends GatewayCommand
 {
@@ -91,23 +91,23 @@ final class RegisterInstanceCommand extends GatewayCommand
 
         $response = $this->sendWithProgress(
             $connector,
-            new RegisterAppInstanceRequest(
+            new RegisterInstanceRequest(
                 sourcePath: $facts->path,
                 includeWorktrees: $this->option('include-worktrees') === true,
-                projectId: $values['appId'],
-                appName: $values['appName'],
-                appSlug: $values['appSlug'],
+                projectId: $values['projectId'],
+                projectName: $values['projectName'],
+                projectSlug: $values['projectSlug'],
                 defaultBranch: $values['defaultBranch'],
                 instanceName: $this->stringOption('name'),
                 root: $values['root'],
                 domain: $this->stringOption('domain'),
                 setup: $this->option('setup') === true,
             ),
-            AppInstanceRegistrationResponse::class,
+            InstanceRegistrationResponse::class,
             ['Register source', 'Registering source', 'Registered source'],
         );
 
-        if (! $response instanceof AppInstanceRegistrationResponse) {
+        if (! $response instanceof InstanceRegistrationResponse) {
             return self::FAILURE;
         }
 
@@ -117,11 +117,11 @@ final class RegisterInstanceCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $instance = $response->appInstance;
+        $instance = $response->instance;
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Instance: {$instance->name}", [
             'ID' => $instance->id,
             'Status' => $instance->status,
-            'Project' => "{$response->app->slug} (#{$response->app->id})",
+            'Project' => "{$response->project->slug} (#{$response->project->id})",
             'Source layout' => $instance->sourceLayout,
             'Managed path' => $instance->checkoutPath,
             'Effective root' => $instance->effectiveRoot,
@@ -136,28 +136,28 @@ final class RegisterInstanceCommand extends GatewayCommand
     }
 
     /**
-     * @return array{appId: ?int, appName: ?string, appSlug: ?string, defaultBranch: ?string, root: ?string}|null
+     * @return array{projectId: ?int, projectName: ?string, projectSlug: ?string, defaultBranch: ?string, root: ?string}|null
      */
     private function confirmedValues(GitRegistrationFacts $facts): ?array
     {
-        $appId = $this->stringOption('project');
-        $appIdValue = $appId === null ? null : filter_var($appId, FILTER_VALIDATE_INT, ['options' => [
+        $projectId = $this->stringOption('project');
+        $projectIdValue = $projectId === null ? null : filter_var($projectId, FILTER_VALIDATE_INT, ['options' => [
             'min_range' => 1,
         ]]);
 
-        if ($appId !== null && ! is_int($appIdValue)) {
-            $this->renderGatewayFailure('app.id_invalid', 'Project ID must be a positive integer.');
+        if ($projectId !== null && ! is_int($projectIdValue)) {
+            $this->renderGatewayFailure('project.id_invalid', 'Project ID must be a positive integer.');
 
             return null;
         }
 
-        $selectedApp = is_int($appIdValue);
-        $appValues = $selectedApp ? $this->explicitAppValues() : $this->inferredAppValues();
+        $selectedProject = is_int($projectIdValue);
+        $projectValues = $selectedProject ? $this->explicitProjectValues() : $this->inferredProjectValues();
         $errors = [];
-        if ($appValues['branch'] !== null && self::branchError($appValues['branch']) !== null) {
+        if ($projectValues['branch'] !== null && self::branchError($projectValues['branch']) !== null) {
             $errors['default_branch'] = ['The default branch is not a valid Git branch name.'];
         }
-        if ($appValues['root'] !== null && self::rootError($appValues['root']) !== null) {
+        if ($projectValues['root'] !== null && self::rootError($projectValues['root']) !== null) {
             $errors['root'] = ['The root must be a normalized relative web path.'];
         }
         if ($errors !== []) {
@@ -170,9 +170,9 @@ final class RegisterInstanceCommand extends GatewayCommand
 
         if ($nonInteractive) {
             if (
-                ! $selectedApp
-                && (($appValues['branch'] ?? $facts->defaultBranch) === null
-                || ($appValues['root'] ?? $facts->root) === null)
+                ! $selectedProject
+                && (($projectValues['branch'] ?? $facts->defaultBranch) === null
+                || ($projectValues['root'] ?? $facts->root) === null)
             ) {
                 $this->renderGatewayFailure(
                     'instance.registration_values_unresolved',
@@ -183,36 +183,36 @@ final class RegisterInstanceCommand extends GatewayCommand
             }
 
             return [
-                'appId' => is_int($appIdValue) ? $appIdValue : null,
-                'appName' => $name,
-                'appSlug' => $appValues['slug'],
-                'defaultBranch' => $appValues['branch'],
-                'root' => $appValues['root'],
+                'projectId' => is_int($projectIdValue) ? $projectIdValue : null,
+                'projectName' => $name,
+                'projectSlug' => $projectValues['slug'],
+                'defaultBranch' => $projectValues['branch'],
+                'root' => $projectValues['root'],
             ];
         }
 
         return $this->confirmInteractiveValues(
             $facts,
-            is_int($appIdValue) ? $appIdValue : null,
+            is_int($projectIdValue) ? $projectIdValue : null,
             $name,
-            $appValues,
+            $projectValues,
         );
     }
 
     /**
-     * @param  array{slug: ?string, branch: ?string, root: ?string}  $appValues
-     * @return array{appId: ?int, appName: ?string, appSlug: ?string, defaultBranch: ?string, root: ?string}|null
+     * @param  array{slug: ?string, branch: ?string, root: ?string}  $projectValues
+     * @return array{projectId: ?int, projectName: ?string, projectSlug: ?string, defaultBranch: ?string, root: ?string}|null
      */
     private function confirmInteractiveValues(
         GitRegistrationFacts $facts,
-        ?int $appId,
+        ?int $projectId,
         ?string $name,
-        array $appValues,
+        array $projectValues,
     ): ?array {
-        $slug = $appValues['slug'] ?? $facts->slug;
-        $branch = $appValues['branch'] ?? $facts->defaultBranch;
-        $root = $appValues['root'] ?? $facts->root;
-        $selectedApp = $appId !== null;
+        $slug = $projectValues['slug'] ?? $facts->slug;
+        $branch = $projectValues['branch'] ?? $facts->defaultBranch;
+        $root = $projectValues['root'] ?? $facts->root;
+        $selectedProject = $projectId !== null;
 
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail('Source: '.$facts->path, [
             'Repository' => $facts->repositoryUrl,
@@ -220,25 +220,25 @@ final class RegisterInstanceCommand extends GatewayCommand
             'Default branch' => $branch ?? $facts->defaultBranch ?? 'unresolved',
             'Web root' => $root ?? $facts->root ?? 'unresolved',
         ]));
-        if (! $selectedApp && $branch === null) {
+        if (! $selectedProject && $branch === null) {
 
             $branchAnswer = $this->commandPrompts()->run(fn (): TextPrompt => new TextPrompt(
                 'Default branch', required: true, validate: self::branchError(...),
             ));
             $branch = is_string($branchAnswer) ? $branchAnswer : null;
-            $appValues['branch'] = $branch;
+            $projectValues['branch'] = $branch;
         }
 
-        if (! $selectedApp && $root === null) {
+        if (! $selectedProject && $root === null) {
 
             $rootAnswer = $this->commandPrompts()->run(fn (): TextPrompt => new TextPrompt(
                 'Web root', required: true, validate: self::rootError(...),
             ));
             $root = is_string($rootAnswer) ? $rootAnswer : null;
-            $appValues['root'] = $root;
+            $projectValues['root'] = $root;
         }
 
-        if (! $selectedApp && (! is_string($branch) || $branch === '' || ! is_string($root) || $root === '')) {
+        if (! $selectedProject && (! is_string($branch) || $branch === '' || ! is_string($root) || $root === '')) {
             $this->renderGatewayFailure(
                 'instance.registration_values_unresolved',
                 'Required Project values remain unresolved.',
@@ -248,11 +248,11 @@ final class RegisterInstanceCommand extends GatewayCommand
         }
 
         return [
-            'appId' => $appId,
-            'appName' => $name,
-            'appSlug' => $appValues['slug'],
-            'defaultBranch' => $appValues['branch'],
-            'root' => $appValues['root'],
+            'projectId' => $projectId,
+            'projectName' => $name,
+            'projectSlug' => $projectValues['slug'],
+            'defaultBranch' => $projectValues['branch'],
+            'root' => $projectValues['root'],
         ];
     }
 
@@ -302,7 +302,7 @@ final class RegisterInstanceCommand extends GatewayCommand
     }
 
     /** @return array{slug: ?string, branch: ?string, root: ?string} */
-    private function explicitAppValues(): array
+    private function explicitProjectValues(): array
     {
         return [
             'slug' => $this->stringOption('project-slug'),
@@ -312,7 +312,7 @@ final class RegisterInstanceCommand extends GatewayCommand
     }
 
     /** @return array{slug: ?string, branch: ?string, root: ?string} */
-    private function inferredAppValues(): array
+    private function inferredProjectValues(): array
     {
         return [
             'slug' => $this->stringOption('project-slug'),

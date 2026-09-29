@@ -22,12 +22,12 @@ use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\AppInstances\AppInstanceState;
-use App\Domain\AppInstances\DevelopmentAppInstanceConfigurator;
-use App\Domain\AppInstances\DevelopmentSourceProfile;
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Instances\DevelopmentInstanceConfigurator;
+use App\Domain\Instances\DevelopmentSourceProfile;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeObservation;
@@ -48,11 +48,11 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Infrastructure\AppDev\NativeDevelopmentProjectionOperationLock;
 use App\Infrastructure\Processes\CommandDeadline;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Event;
@@ -78,7 +78,7 @@ function ensure_active_app_dev_role(Node $node): void
 }
 
 beforeEach(function (): void {
-    $this->orbitApp = OrbitApp::query()->create([
+    $this->orbitApp = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
@@ -92,8 +92,8 @@ beforeEach(function (): void {
 it('broadcasts a cleared Route target before a metrics reconcile failure', function (): void {
     Event::fake();
     $route = reconciliation_route($this->orbitApp, 'clear-before-reconcile.test', $this->node);
-    $this->target->update(['status' => AppInstanceState::Reserved]);
-    $route->targets()->create(['app_instance_id' => $this->target->id, 'position' => 0]);
+    $this->target->update(['status' => InstanceState::Reserved]);
+    $route->targets()->create(['instance_id' => $this->target->id, 'position' => 0]);
     $metrics = Mockery::mock(MetricsFleetReconciler::class);
     $metrics->shouldReceive('reconcile')->once()->andThrow(new RuntimeException('metrics unavailable'));
     app()->instance(MetricsFleetReconciler::class, $metrics);
@@ -117,16 +117,16 @@ it('broadcasts a changed Route target before a metrics reconcile failure', funct
         ->toThrow(RuntimeException::class, 'metrics unavailable');
 
     Event::assertDispatched(RecordBroadcast::class);
-    expect($route->refresh()->targets->sole()->app_instance_id)->toBe($replacement->id);
+    expect($route->refresh()->targets->sole()->instance_id)->toBe($replacement->id);
 });
 
 it('converges an eligible active explicit development Route domain', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        appId: $this->orbitApp->id,
+        projectId: $this->orbitApp->id,
         domain: 'active.example.test',
         publication: RoutePublication::Private,
-        appInstanceId: $this->target->id,
+        instanceId: $this->target->id,
         nodeId: null,
         clusterId: null,
     ))['route'];
@@ -149,8 +149,8 @@ it('converges an eligible active explicit development Route domain', function ()
 
     app()->instance(RouteDomainProjector::class, $projector);
     app()->instance(
-        DevelopmentAppInstanceConfigurator::class,
-        Mockery::mock(DevelopmentAppInstanceConfigurator::class),
+        DevelopmentInstanceConfigurator::class,
+        Mockery::mock(DevelopmentInstanceConfigurator::class),
     );
     app()->instance(DevelopmentProjectionOperationLock::class, new RouteMutationProjectionOwner);
 
@@ -171,10 +171,10 @@ it('converges an eligible active explicit development Route domain', function ()
 
 it('reports association conflicts before active Route reconciliation refusals', function (): void {
     $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        appId: $this->orbitApp->id,
+        projectId: $this->orbitApp->id,
         domain: 'active.example.test',
         publication: RoutePublication::Private,
-        appInstanceId: $this->target->id,
+        instanceId: $this->target->id,
         nodeId: null,
         clusterId: null,
     ))['route'];
@@ -200,15 +200,15 @@ it('reports association conflicts before active Route reconciliation refusals', 
 
 it('retains reconciliation refusals for active Route changes without association conflicts', function (): void {
     $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        appId: $this->orbitApp->id,
+        projectId: $this->orbitApp->id,
         domain: 'active.example.test',
         publication: RoutePublication::Private,
-        appInstanceId: $this->target->id,
+        instanceId: $this->target->id,
         nodeId: null,
         clusterId: null,
     ))['route'];
     $route->update(['status' => RouteStatus::Active]);
-    $this->target->update(['status' => AppInstanceState::Reserved]);
+    $this->target->update(['status' => InstanceState::Reserved]);
     $replacement = reconciliation_instance(
         $this->orbitApp,
         reconciliation_node('replacement', 'replacement.test'),
@@ -233,15 +233,15 @@ it('retains reconciliation refusals for active Route changes without association
 
 it('removes a fully reconciled untargeted Route without route.reconciliation_required', function (): void {
     $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        appId: $this->orbitApp->id,
+        projectId: $this->orbitApp->id,
         domain: 'active.example.test',
         publication: RoutePublication::Private,
-        appInstanceId: $this->target->id,
+        instanceId: $this->target->id,
         nodeId: null,
         clusterId: null,
     ))['route'];
     $route->update(['status' => RouteStatus::Active]);
-    $this->target->update(['status' => AppInstanceState::Reserved]);
+    $this->target->update(['status' => InstanceState::Reserved]);
     $route->targets()->delete();
     $removal = new FakeRouteRemovalProjector;
     app()->instance(RouteRemovalProjector::class, $removal);
@@ -258,13 +258,13 @@ it('removes a fully reconciled untargeted Route without route.reconciliation_req
 
 it('retains domain reconciliation refusals for generated Routes before projection', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $generated->update(['status' => RouteStatus::Active]);
 
     app()->instance(RouteDomainProjector::class, Mockery::mock(RouteDomainProjector::class));
     app()->instance(
-        DevelopmentAppInstanceConfigurator::class,
-        Mockery::mock(DevelopmentAppInstanceConfigurator::class),
+        DevelopmentInstanceConfigurator::class,
+        Mockery::mock(DevelopmentInstanceConfigurator::class),
     );
     app()->instance(DevelopmentProjectionOperationLock::class, new RouteMutationProjectionOwner);
 
@@ -282,7 +282,7 @@ it('retains domain reconciliation refusals for generated Routes before projectio
 
 it('retains Router-clearing refusal after a reconciled attach', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $standalone = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $standalone = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $standalone->update(['status' => RouteStatus::Active]);
     $cluster = reconciliation_active_cluster('active-refusal', 'cluster.test');
     bind_node_tld_projection();
@@ -314,7 +314,7 @@ it('does not return reconciliation_required after Router replacement and still r
     $workload = reconciliation_node('router-replaced-workload', null);
     $workload->update(['cluster_id' => $cluster->id]);
     $target = reconciliation_instance($this->orbitApp, $workload, 'replaced');
-    $route = app(CreateRouteAction::class)->ensureForAppInstance($target, null);
+    $route = app(CreateRouteAction::class)->ensureForInstance($target, null);
     $route->update(['status' => RouteStatus::Active]);
     $replacement = reconciliation_node('router-replaced-next', null);
     $replacement->update(['cluster_id' => $cluster->id]);
@@ -345,7 +345,7 @@ it('does not return reconciliation_required after Router replacement and still r
 });
 
 it('atomically reconciles attach, activation, TLD changes, deactivation, and detach', function (): void {
-    $route = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $route = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $cluster = Cluster::query()->create([
         'name' => 'routing',
         'state' => ClusterState::Inactive,
@@ -387,14 +387,14 @@ it('atomically reconciles attach, activation, TLD changes, deactivation, and det
 it('bypasses Route reconciliation when a Cluster patch leaves placement inputs unchanged', function (): void {
     $unrelatedNode = reconciliation_node('unrelated', 'unrelated.test');
     $unrelatedTarget = reconciliation_instance($this->orbitApp, $unrelatedNode, 'unrelated');
-    $unrelatedTarget->update(['status' => AppInstanceState::CheckoutPrepared]);
+    $unrelatedTarget->update(['status' => InstanceState::CheckoutPrepared]);
     $unrelatedRoute = reconciliation_route(
         $this->orbitApp,
         'unrelated.acme.unrelated.test',
         node: $unrelatedNode,
         basis: $unrelatedNode,
     );
-    $unrelatedRoute->targets()->create(['app_instance_id' => $unrelatedTarget->id, 'position' => 0]);
+    $unrelatedRoute->targets()->create(['instance_id' => $unrelatedTarget->id, 'position' => 0]);
     $unrelatedRoute->update([
         'status' => RouteStatus::Failed,
         'failed_step' => 'provisioning',
@@ -431,11 +431,11 @@ it('bypasses Route reconciliation when a Cluster patch leaves placement inputs u
 });
 
 it('hydrates and reconciles the complete affected Route dependency closure', function (): void {
-    $targeted = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $targeted = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $targetlessDirect = reconciliation_route($this->orbitApp, 'direct.example.test', node: $this->node);
     $retainedTarget = reconciliation_instance($this->orbitApp, $this->node, 'retained');
-    $retained = app(CreateRouteAction::class)->ensureForAppInstance($retainedTarget, null);
-    $retainedTarget->update(['status' => AppInstanceState::Reserved]);
+    $retained = app(CreateRouteAction::class)->ensureForInstance($retainedTarget, null);
+    $retainedTarget->update(['status' => InstanceState::Reserved]);
     app(ClearRouteTargetAction::class)->execute($retained);
 
     $cluster = reconciliation_active_cluster('production', 'cluster.test');
@@ -447,26 +447,26 @@ it('hydrates and reconciles the complete affected Route dependency closure', fun
     }
     $firstTarget = reconciliation_instance($this->orbitApp, $firstNode, 'production-one');
     $secondTarget = reconciliation_instance($this->orbitApp, $secondNode, 'production-two');
-    $firstTarget->update(['environment' => 'production', 'status' => AppInstanceState::SourceResolved]);
-    $secondTarget->update(['environment' => 'production', 'status' => AppInstanceState::SourceResolved]);
+    $firstTarget->update(['environment' => 'production', 'status' => InstanceState::SourceResolved]);
+    $secondTarget->update(['environment' => 'production', 'status' => InstanceState::SourceResolved]);
     $multiTarget = reconciliation_route($this->orbitApp, 'production.example.test', cluster: $cluster);
-    $multiTarget->targets()->create(['app_instance_id' => $firstTarget->id, 'position' => 0]);
-    $multiTarget->targets()->create(['app_instance_id' => $secondTarget->id, 'position' => 1]);
+    $multiTarget->targets()->create(['instance_id' => $firstTarget->id, 'position' => 0]);
+    $multiTarget->targets()->create(['instance_id' => $secondTarget->id, 'position' => 1]);
     $multiTarget->update(['status' => RouteStatus::Active]);
-    $firstTarget->update(['status' => AppInstanceState::Active]);
-    $secondTarget->update(['status' => AppInstanceState::Active]);
+    $firstTarget->update(['status' => InstanceState::Active]);
+    $secondTarget->update(['status' => InstanceState::Active]);
     $targetlessCluster = reconciliation_route($this->orbitApp, 'targetless.example.test', cluster: $cluster);
 
     $unrelatedNode = reconciliation_node('unrelated-closure', 'unrelated.test');
     $unrelatedTarget = reconciliation_instance($this->orbitApp, $unrelatedNode, 'failed');
-    $unrelatedTarget->update(['status' => AppInstanceState::CheckoutPrepared]);
+    $unrelatedTarget->update(['status' => InstanceState::CheckoutPrepared]);
     $unrelated = reconciliation_route(
         $this->orbitApp,
         'failed.acme.unrelated.test',
         node: $unrelatedNode,
         basis: $unrelatedNode,
     );
-    $unrelated->targets()->create(['app_instance_id' => $unrelatedTarget->id, 'position' => 0]);
+    $unrelated->targets()->create(['instance_id' => $unrelatedTarget->id, 'position' => 0]);
     $unrelated->update([
         'status' => RouteStatus::Failed,
         'failed_step' => 'provisioning',
@@ -501,8 +501,8 @@ it('hydrates and reconciles the complete affected Route dependency closure', fun
 });
 
 it('uses provisioning baseline overrides to select retained generated Routes', function (): void {
-    $route = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
-    $this->target->update(['status' => AppInstanceState::Reserved]);
+    $route = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
+    $this->target->update(['status' => InstanceState::Reserved]);
     app(ClearRouteTargetAction::class)->execute($route);
     $this->node->update(['tld' => 'next.test']);
 
@@ -519,7 +519,7 @@ it('uses provisioning baseline overrides to select retained generated Routes', f
 });
 
 it('rejects a proposed domain owned by an unaffected Route before any write', function (): void {
-    $affected = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $affected = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $unaffectedNode = reconciliation_node('unaffected-owner', 'owner.test');
     $unaffected = reconciliation_route(
         $this->orbitApp,
@@ -542,7 +542,7 @@ it('rejects a proposed domain owned by an unaffected Route before any write', fu
 });
 
 it('keeps affected Route hydration bounded as unrelated graph state grows', function (): void {
-    $affected = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $affected = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $hydrated = [];
     Route::retrieved(static function (Route $route) use (&$hydrated): void {
         $hydrated[] = $route->id;
@@ -573,8 +573,8 @@ it('keeps affected Route hydration bounded as unrelated graph state grows', func
 it('reconciles a zero-target generated Route from its retained basis', function (): void {
     $cluster = reconciliation_active_cluster('routing', 'old.test');
     $this->node->update(['cluster_id' => $cluster->id, 'tld' => null]);
-    $route = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
-    $this->target->update(['status' => AppInstanceState::Reserved]);
+    $route = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
+    $this->target->update(['status' => InstanceState::Reserved]);
     app(ClearRouteTargetAction::class)->execute($route);
     $owner = new RouteReconciliationClusterRouterOperationLock;
     app()->instance(ClusterRouterOperationLock::class, $owner);
@@ -604,7 +604,7 @@ it('refuses an invalid proposal and preserves Route, Cluster, and membership sta
         'tld' => 'cluster.test',
     ]);
     app(AttachClusterNodeAction::class)->execute($cluster, $this->node);
-    $route = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $route = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $routeBefore = $route->fresh(['targets'])->toArray();
     $clusterBefore = $cluster->fresh()->toArray();
 
@@ -625,7 +625,7 @@ it('refuses an invalid proposal and preserves Route, Cluster, and membership sta
 it('requires an effective TLD when deactivation would strand a generated basis', function (): void {
     $cluster = reconciliation_active_cluster('routing', 'cluster.test');
     $this->node->update(['cluster_id' => $cluster->id, 'tld' => null]);
-    $route = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $route = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $before = $route->fresh(['targets'])->toArray();
 
     expect(fn () => app(UpdateClusterAction::class)->execute(
@@ -643,8 +643,8 @@ it('requires an effective TLD when deactivation would strand a generated basis',
 it('reconciles a retained generated Route and Node TLD before remote provisioning', function (): void {
     $this->node->update(['ssh_host_fingerprint' => 'SHA256:pinned']);
     ensure_active_app_dev_role($this->node);
-    $route = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
-    $this->target->update(['status' => AppInstanceState::Reserved]);
+    $route = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
+    $this->target->update(['status' => InstanceState::Reserved]);
     app(ClearRouteTargetAction::class)->execute($route);
     $this->target->delete();
     $observed = [];
@@ -694,7 +694,7 @@ it('preserves Instance source while regenerating a generated domain during Route
         node: $this->node,
         basis: $this->node,
     );
-    $route->targets()->create(['app_instance_id' => $this->target->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $this->target->id, 'position' => 0]);
     $cluster = Cluster::query()->create([
         'name' => 'legacy-routing',
         'state' => ClusterState::Inactive,
@@ -729,7 +729,7 @@ it('preserves Instance source while regenerating a generated domain during Route
         ->toBe($sourceBefore)
         ->and($current->cluster_id)
         ->toBe($cluster->id)
-        ->and($current->targets()->firstOrFail()->app_instance_id)
+        ->and($current->targets()->firstOrFail()->instance_id)
         ->toBe($this->target->id)
         ->and(Route::query()->whereKey($route->id)->exists())
         ->toBeFalse();
@@ -738,8 +738,8 @@ it('preserves Instance source while regenerating a generated domain during Route
 it('preserves Node and Route state when the last app-dev TLD has no active fallback', function (): void {
     $this->node->update(['ssh_host_fingerprint' => 'SHA256:pinned']);
     ensure_active_app_dev_role($this->node);
-    $route = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
-    $this->target->update(['status' => AppInstanceState::Reserved]);
+    $route = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
+    $this->target->update(['status' => InstanceState::Reserved]);
     app(ClearRouteTargetAction::class)->execute($route);
     $this->target->delete();
     $nodeBefore = $this->node->fresh()->getAttributes();
@@ -767,8 +767,8 @@ it('keeps the Cluster TLD when a retained basis Node TLD is cleared', function (
         'ssh_host_fingerprint' => 'SHA256:pinned',
     ]);
     ensure_active_app_dev_role($this->node);
-    $route = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
-    $this->target->update(['status' => AppInstanceState::Reserved]);
+    $route = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
+    $this->target->update(['status' => InstanceState::Reserved]);
     app(ClearRouteTargetAction::class)->execute($route);
     $this->target->delete();
     bind_route_reconciliation_provisioning();
@@ -798,7 +798,7 @@ it('keeps an explicit app-prod Route valid when its Node has no TLD', function (
     $this->node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
     $this->target->delete();
     $route = Route::query()->create([
-        'app_id' => $this->orbitApp->id,
+        'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
         'domain' => 'production.example.test',
         'provenance' => 'explicit',
@@ -866,7 +866,7 @@ it('inventories Node TLD changes and refuses an occupied generated domain before
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $this->node->update(['ssh_host_fingerprint' => 'SHA256:pinned']);
     ensure_active_app_dev_role($this->node);
-    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $generated->update(['status' => RouteStatus::Active]);
     $owner = reconciliation_node('occupied-owner', 'owner.test');
     reconciliation_route($this->orbitApp, 'feature.acme.next.test', node: $owner);
@@ -900,7 +900,7 @@ it('prepares generated private projections before publishing a Node TLD change',
     $this->target->update(['source_is_laravel' => true, 'provisioning_step' => 'active']);
     $this->node->update(['ssh_host_fingerprint' => 'SHA256:pinned']);
     ensure_active_app_dev_role($this->node);
-    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $generated->update(['status' => RouteStatus::Active]);
     $events = bind_node_tld_projection();
 
@@ -948,7 +948,7 @@ it('does not rename a generated Route when a Cluster member Node TLD changes', f
         'ssh_host_fingerprint' => 'SHA256:pinned',
     ]);
     ensure_active_app_dev_role($this->node);
-    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $generated->update(['status' => RouteStatus::Active]);
     bind_node_tld_projection();
 
@@ -972,10 +972,10 @@ it('keeps an explicit Route domain fixed when the Node TLD changes', function ()
     $this->node->update(['ssh_host_fingerprint' => 'SHA256:pinned']);
     ensure_active_app_dev_role($this->node);
     $explicit = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        appId: $this->orbitApp->id,
+        projectId: $this->orbitApp->id,
         domain: 'fixed.example.test',
         publication: RoutePublication::Private,
-        appInstanceId: $this->target->id,
+        instanceId: $this->target->id,
         nodeId: null,
         clusterId: null,
     ))['route'];
@@ -1005,7 +1005,7 @@ it('keeps the Cluster TLD when a targeted member Node TLD is cleared', function 
         'ssh_host_fingerprint' => 'SHA256:pinned',
     ]);
     ensure_active_app_dev_role($this->node);
-    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $generated->update(['status' => RouteStatus::Active]);
     bind_node_tld_projection();
 
@@ -1031,7 +1031,7 @@ it('does not return reconciliation_required after a Node TLD change and still re
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $this->node->update(['ssh_host_fingerprint' => 'SHA256:pinned']);
     ensure_active_app_dev_role($this->node);
-    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $generated->update(['status' => RouteStatus::Active]);
     bind_node_tld_projection();
 
@@ -1080,7 +1080,7 @@ it('inventories Cluster TLD changes and refuses an occupied generated domain bef
     $workload->update(['cluster_id' => $cluster->id]);
     $target = reconciliation_instance($this->orbitApp, $workload, 'occupied');
     $target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $generated = app(CreateRouteAction::class)->ensureForAppInstance($target, null);
+    $generated = app(CreateRouteAction::class)->ensureForInstance($target, null);
     $generated->update(['status' => RouteStatus::Active]);
     $owner = reconciliation_node('cluster-occupied-owner', 'owner.test');
     reconciliation_route($this->orbitApp, 'occupied.acme.next-cluster.test', node: $owner);
@@ -1123,7 +1123,7 @@ it('prepares generated private projections before publishing a Cluster TLD chang
     $workload->update(['cluster_id' => $cluster->id]);
     $target = reconciliation_instance($this->orbitApp, $workload, 'prepared');
     $target->update(['source_is_laravel' => true, 'provisioning_step' => 'active']);
-    $generated = app(CreateRouteAction::class)->ensureForAppInstance($target, null);
+    $generated = app(CreateRouteAction::class)->ensureForInstance($target, null);
     $generated->update(['status' => RouteStatus::Active]);
     $events = bind_cluster_tld_projection();
 
@@ -1177,10 +1177,10 @@ it('keeps an explicit Route domain fixed when the Cluster TLD changes', function
     $target = reconciliation_instance($this->orbitApp, $workload, 'explicit');
     $target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $explicit = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        appId: $this->orbitApp->id,
+        projectId: $this->orbitApp->id,
         domain: 'fixed.cluster.example.test',
         publication: RoutePublication::Private,
-        appInstanceId: $target->id,
+        instanceId: $target->id,
         nodeId: null,
         clusterId: null,
     ))['route'];
@@ -1210,7 +1210,7 @@ it('clears a Cluster TLD onto the member Node TLD and keeps Cluster routing', fu
     $workload->update(['cluster_id' => $cluster->id]);
     $target = reconciliation_instance($this->orbitApp, $workload, 'cleared');
     $target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $generated = app(CreateRouteAction::class)->ensureForAppInstance($target, null);
+    $generated = app(CreateRouteAction::class)->ensureForInstance($target, null);
     $generated->update(['status' => RouteStatus::Active]);
     $routerBefore = $cluster->routerAssignment()->get()->map->getAttributes()->all();
     bind_cluster_tld_projection();
@@ -1245,7 +1245,7 @@ it('refuses clearing a Cluster TLD that would leave a generated Route without an
     $workload = reconciliation_node('cluster-stranded-workload', null);
     $workload->update(['cluster_id' => $cluster->id]);
     $target = reconciliation_instance($this->orbitApp, $workload, 'stranded');
-    $generated = app(CreateRouteAction::class)->ensureForAppInstance($target, null);
+    $generated = app(CreateRouteAction::class)->ensureForInstance($target, null);
     $generated->update(['status' => RouteStatus::Active]);
     $clusterBefore = $cluster->fresh()->toArray();
     $routeBefore = $generated->fresh(['targets'])->toArray();
@@ -1271,7 +1271,7 @@ it('does not return reconciliation_required after a Cluster TLD change and still
     $workload->update(['cluster_id' => $cluster->id]);
     $target = reconciliation_instance($this->orbitApp, $workload, 'reconciled');
     $target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $generated = app(CreateRouteAction::class)->ensureForAppInstance($target, null);
+    $generated = app(CreateRouteAction::class)->ensureForInstance($target, null);
     $generated->update(['status' => RouteStatus::Active]);
     bind_cluster_tld_projection();
 
@@ -1289,7 +1289,7 @@ it('does not return reconciliation_required after a Cluster TLD change and still
     $outsider = reconciliation_node('cluster-still-refused', 'outsider.test');
     $outsiderTarget = reconciliation_instance($this->orbitApp, $outsider, 'outsider');
     $outsiderTarget->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $outsiderRoute = app(CreateRouteAction::class)->ensureForAppInstance($outsiderTarget, null);
+    $outsiderRoute = app(CreateRouteAction::class)->ensureForInstance($outsiderTarget, null);
     $outsiderRoute->update(['status' => RouteStatus::Active]);
     bind_node_tld_projection();
 
@@ -1320,7 +1320,7 @@ it('does not return reconciliation_required after a Cluster TLD change and still
 
 it('validates Cluster activation and deactivation before they become authoritative', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $cluster = Cluster::query()->create([
         'name' => 'activation-validation',
         'state' => ClusterState::Inactive,
@@ -1346,14 +1346,14 @@ it('validates Cluster activation and deactivation before they become authoritati
 
 it('prepares Cluster Router paths before activation and Node scope before deactivation', function (): void {
     $this->target->update(['source_is_laravel' => true, 'provisioning_step' => 'active']);
-    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $explicitTarget = reconciliation_instance($this->orbitApp, $this->node, 'explicit');
     $explicitTarget->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $explicit = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        appId: $this->orbitApp->id,
+        projectId: $this->orbitApp->id,
         domain: 'fixed.example.test',
         publication: RoutePublication::Private,
-        appInstanceId: $explicitTarget->id,
+        instanceId: $explicitTarget->id,
         nodeId: null,
         clusterId: null,
     ))['route'];
@@ -1419,7 +1419,7 @@ it('prepares Cluster Router paths before activation and Node scope before deacti
 
 it('activates a TLD-less Cluster with owned Routes on one colocated Router', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $cluster = Cluster::query()->create([
         'name' => 'tldless-activation',
         'state' => ClusterState::Inactive,
@@ -1449,7 +1449,7 @@ it('activates a TLD-less Cluster with owned Routes on one colocated Router', fun
 
 it('restores Cluster and Route state when activation fails before publication', function (): void {
     $this->target->update(['source_is_laravel' => true, 'provisioning_step' => 'active']);
-    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $cluster = Cluster::query()->create([
         'name' => 'activation-failure',
         'state' => ClusterState::Inactive,
@@ -1488,15 +1488,15 @@ it('restores Cluster and Route state when activation fails before publication', 
         ])
         ->and(Route::query()->where('domain', 'feature.acme.cluster.test')->exists())
         ->toBeFalse()
-        ->and($generated->targets()->pluck('app_instance_id')->all())
-        ->toBe(array_column($routeBefore['targets'], 'app_instance_id'))
+        ->and($generated->targets()->pluck('instance_id')->all())
+        ->toBe(array_column($routeBefore['targets'], 'instance_id'))
         ->and($events->values)
         ->toContain('rollback-dns');
 });
 
 it('does not return reconciliation_required after Cluster activation or deactivation', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $cluster = Cluster::query()->create([
         'name' => 'activation-complete',
         'state' => ClusterState::Inactive,
@@ -1535,10 +1535,10 @@ it('requires a Router only after a TLD-less active Cluster owns a Route', functi
     $member->update(['cluster_id' => $cluster->id]);
     $memberTarget = reconciliation_instance($this->orbitApp, $member, 'member');
     $explicit = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        appId: $this->orbitApp->id,
+        projectId: $this->orbitApp->id,
         domain: 'fixed.example.test',
         publication: RoutePublication::Private,
-        appInstanceId: $this->target->id,
+        instanceId: $this->target->id,
         nodeId: null,
         clusterId: null,
     ))['route'];
@@ -1546,7 +1546,7 @@ it('requires a Router only after a TLD-less active Cluster owns a Route', functi
 
     expect($cluster->routerAssignment()->count())
         ->toBe(0)
-        ->and(fn () => app(CreateRouteAction::class)->ensureForAppInstance($memberTarget, null))
+        ->and(fn () => app(CreateRouteAction::class)->ensureForInstance($memberTarget, null))
         ->toThrow(ResourceOperationException::class, 'requires one active Router')
         ->and(fn () => app(SetRouteTargetAction::class)->execute($explicit, $memberTarget->id))
         ->toThrow(ResourceOperationException::class, 'requires one active Router');
@@ -1562,18 +1562,18 @@ it('requires a Router only after a TLD-less active Cluster owns a Route', functi
             'status' => LifecycleStatus::Active,
         ]);
 
-    expect(app(CreateRouteAction::class)->ensureForAppInstance($memberTarget, null)->cluster_id)
+    expect(app(CreateRouteAction::class)->ensureForInstance($memberTarget, null)->cluster_id)
         ->toBe($cluster->id)
         ->and(fn () => app(SetRouteTargetAction::class)->execute($explicit, $memberTarget->id))
         ->toThrow(
             ResourceOperationException::class,
-            "AppInstance [{$memberTarget->id}] is already associated with Route",
+            "Instance [{$memberTarget->id}] is already associated with Route",
         );
 });
 
 it('inventories attach and refuses an occupied generated domain before any write', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $generated->update(['status' => RouteStatus::Active]);
     $this->node->update(['tld' => null]);
     $cluster = reconciliation_active_cluster('occupied-attach', 'next.test');
@@ -1607,7 +1607,7 @@ it('inventories attach and refuses an occupied generated domain before any write
 
 it('prepares private projections before an attach becomes authoritative', function (): void {
     $this->target->update(['source_is_laravel' => true, 'provisioning_step' => 'active']);
-    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $generated->update(['status' => RouteStatus::Active]);
     $cluster = reconciliation_active_cluster('attach-projections', 'cluster.test');
     $events = bind_node_tld_projection();
@@ -1649,10 +1649,10 @@ it('prepares private projections before an attach becomes authoritative', functi
 it('keeps an explicit Route domain fixed when a Node attaches or detaches', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $explicit = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        appId: $this->orbitApp->id,
+        projectId: $this->orbitApp->id,
         domain: 'fixed.example.test',
         publication: RoutePublication::Private,
-        appInstanceId: $this->target->id,
+        instanceId: $this->target->id,
         nodeId: null,
         clusterId: null,
     ))['route'];
@@ -1686,10 +1686,10 @@ it('keeps an explicit Route domain fixed when a Node attaches or detaches', func
 it('keeps a custom proxy Route on its Node when the Node attaches or detaches', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $explicit = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        appId: $this->orbitApp->id,
+        projectId: $this->orbitApp->id,
         domain: 'fixed.example.test',
         publication: RoutePublication::Private,
-        appInstanceId: $this->target->id,
+        instanceId: $this->target->id,
         nodeId: null,
         clusterId: null,
     ))['route'];
@@ -1748,10 +1748,10 @@ it('keeps a custom proxy Route on its member Node when a TLD-less Cluster activa
 it('moves an analytics tracking host with its Instance Route when the Node attaches or detaches', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $owner = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        appId: $this->orbitApp->id,
+        projectId: $this->orbitApp->id,
         domain: 'site.example.test',
         publication: RoutePublication::Private,
-        appInstanceId: $this->target->id,
+        instanceId: $this->target->id,
         nodeId: null,
         clusterId: null,
     ))['route'];
@@ -1806,10 +1806,10 @@ it('moves an analytics tracking host with its Instance Route when the Node attac
 it('leaves a tracking host withdrawal to a later DNS move without waiting under the projection owner', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $owner = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        appId: $this->orbitApp->id,
+        projectId: $this->orbitApp->id,
         domain: 'site.example.test',
         publication: RoutePublication::Private,
-        appInstanceId: $this->target->id,
+        instanceId: $this->target->id,
         nodeId: null,
         clusterId: null,
     ))['route'];
@@ -1878,10 +1878,10 @@ it('leaves a tracking host withdrawal to a later DNS move without waiting under 
 it('keeps a tracking host serving its old placement when its move fails before cutover', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $owner = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        appId: $this->orbitApp->id,
+        projectId: $this->orbitApp->id,
         domain: 'site.example.test',
         publication: RoutePublication::Private,
-        appInstanceId: $this->target->id,
+        instanceId: $this->target->id,
         nodeId: null,
         clusterId: null,
     ))['route'];
@@ -1929,10 +1929,10 @@ it('keeps a tracking host serving its old placement when its move fails before c
 it('refuses an attach before any Route moves when a later Route cannot move', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $first = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        appId: $this->orbitApp->id,
+        projectId: $this->orbitApp->id,
         domain: 'first.example.test',
         publication: RoutePublication::Private,
-        appInstanceId: $this->target->id,
+        instanceId: $this->target->id,
         nodeId: null,
         clusterId: null,
     ))['route'];
@@ -1940,10 +1940,10 @@ it('refuses an attach before any Route moves when a later Route cannot move', fu
     $legacy = reconciliation_instance($this->orbitApp, $this->node, 'legacy');
     $legacy->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $second = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        appId: $this->orbitApp->id,
+        projectId: $this->orbitApp->id,
         domain: 'legacy.example.test',
         publication: RoutePublication::Private,
-        appInstanceId: $legacy->id,
+        instanceId: $legacy->id,
         nodeId: null,
         clusterId: null,
     ))['route'];
@@ -2076,7 +2076,7 @@ it('refuses a Node TLD change before any Route moves when a later Route cannot m
 
 it('refuses an attach whose generated domain would take a custom proxy domain', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $generated->update(['status' => RouteStatus::Active]);
     $proxy = reconciliation_custom_proxy(reconciliation_node('proxy-host', null), 'feature.acme.cluster.test');
     $cluster = reconciliation_active_cluster('proxy-collision', 'cluster.test');
@@ -2100,10 +2100,10 @@ it('refuses an attach whose generated domain would take a custom proxy domain', 
 it('refuses a conflicting Cluster LAN address before any Route moves', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        appId: $this->orbitApp->id,
+        projectId: $this->orbitApp->id,
         domain: 'lan.example.test',
         publication: RoutePublication::Private,
-        appInstanceId: $this->target->id,
+        instanceId: $this->target->id,
         nodeId: null,
         clusterId: null,
     ))['route'];
@@ -2133,10 +2133,10 @@ it('waits once for private DNS answers when an attach moves many Routes, without
         $target = $index === 0 ? $this->target : reconciliation_instance($this->orbitApp, $this->node, $name);
         $target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
         $route = app(CreateRouteAction::class)->execute(new CreateRouteData(
-            appId: $this->orbitApp->id,
+            projectId: $this->orbitApp->id,
             domain: "{$name}.example.test",
             publication: RoutePublication::Private,
-            appInstanceId: $target->id,
+            instanceId: $target->id,
             nodeId: null,
             clusterId: null,
         ))['route'];
@@ -2196,10 +2196,10 @@ it('waits once for private DNS answers when an attach moves many Routes, without
 it('resumes a cut over placement cleanup when the same attach is retried', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
     $explicit = app(CreateRouteAction::class)->execute(new CreateRouteData(
-        appId: $this->orbitApp->id,
+        projectId: $this->orbitApp->id,
         domain: 'resumed.example.test',
         publication: RoutePublication::Private,
-        appInstanceId: $this->target->id,
+        instanceId: $this->target->id,
         nodeId: null,
         clusterId: null,
     ))['route'];
@@ -2242,7 +2242,7 @@ it('resumes a cut over placement cleanup when the same attach is retried', funct
 
 it('follows the retained Node TLD when attaching to a TLD-less active Cluster', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $generated->update(['status' => RouteStatus::Active]);
     $cluster = reconciliation_active_cluster('tldless-attach', null);
     $events = bind_node_tld_projection();
@@ -2262,7 +2262,7 @@ it('follows the retained Node TLD when attaching to a TLD-less active Cluster', 
 
 it('prepares direct Node scope before detach removes Cluster membership', function (): void {
     $this->target->update(['source_is_laravel' => true, 'provisioning_step' => 'active']);
-    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $generated->update(['status' => RouteStatus::Active]);
     $cluster = reconciliation_active_cluster('detach-projections', 'cluster.test');
     bind_node_tld_projection();
@@ -2305,7 +2305,7 @@ it('prepares direct Node scope before detach removes Cluster membership', functi
 
 it('restores membership and Route scope when attach projection fails before publication', function (): void {
     $this->target->update(['source_is_laravel' => true, 'provisioning_step' => 'active']);
-    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $generated->update(['status' => RouteStatus::Active]);
     $cluster = reconciliation_active_cluster('attach-failure', 'cluster.test');
     $events = bind_node_tld_projection();
@@ -2345,7 +2345,7 @@ it('restores membership and Route scope when attach projection fails before publ
 
 it('refuses attach without a Router and leaves membership unchanged', function (): void {
     $this->target->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
-    $generated = app(CreateRouteAction::class)->ensureForAppInstance($this->target, null);
+    $generated = app(CreateRouteAction::class)->ensureForInstance($this->target, null);
     $generated->update(['status' => RouteStatus::Active]);
     $cluster = Cluster::query()->create(['name' => 'no-router', 'state' => ClusterState::Active, 'tld' => null]);
     $before = $generated->fresh(['targets'])->toArray();
@@ -2401,7 +2401,7 @@ function bind_cluster_tld_projection(): NodeTldProjectionEvents
 {
     $events = new NodeTldProjectionEvents;
     app()->instance(RouteDomainProjector::class, new NodeTldRouteProjector($events));
-    app()->instance(DevelopmentAppInstanceConfigurator::class, new NodeTldRouteConfigurator($events));
+    app()->instance(DevelopmentInstanceConfigurator::class, new NodeTldRouteConfigurator($events));
     app()->instance(DevelopmentProjectionOperationLock::class, new RouteMutationProjectionOwner);
 
     return $events;
@@ -2456,20 +2456,20 @@ function bind_route_reconciliation_provisioning(?Closure $onConverge = null): vo
     app()->instance(MetricsFleetReconciler::class, $metrics);
 }
 
-function reconciliation_instance(OrbitApp $app, Node $node, string $name): AppInstance
+function reconciliation_instance(Project $project, Node $node, string $name): Instance
 {
     if (! $node->roles()->whereIn('role', [RoleName::AppDev->value, RoleName::AppProd->value])->exists()) {
         ensure_active_app_dev_role($node);
     }
 
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => $name,
         'checkout_path' => "/srv/{$name}",
         'branch' => $name,
         'starting_commit' => str_repeat('a', 40),
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
 }
 
@@ -2495,14 +2495,14 @@ function reconciliation_route_by_domain(string $domain): Route
 }
 
 function reconciliation_route(
-    OrbitApp $app,
+    Project $project,
     string $domain,
     ?Node $node = null,
     ?Cluster $cluster = null,
     ?Node $basis = null,
 ): Route {
     return Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node?->id,
         'cluster_id' => $cluster?->id,
         'generation_basis_node_id' => $basis?->id,
@@ -2517,7 +2517,7 @@ function reconciliation_custom_proxy(Node $node, string $domain): Route
 {
     $route = Route::query()->create([
         'kind' => RouteKind::CustomProxy,
-        'app_id' => null,
+        'project_id' => null,
         'node_id' => $node->id,
         'cluster_id' => null,
         'generation_basis_node_id' => null,
@@ -2539,22 +2539,22 @@ function reconciliation_custom_proxy(Node $node, string $domain): Route
  * Two active private Routes on the target's Node: the first one movable and the second one on an
  * Instance whose source profile the caller removes to make it refuse.
  *
- * @return array{0: Route, 1: AppInstance}
+ * @return array{0: Route, 1: Instance}
  */
-function reconciliation_routes_with_legacy(OrbitApp $app, AppInstance $target, bool $generated): array
+function reconciliation_routes_with_legacy(Project $project, Instance $target, bool $generated): array
 {
-    $legacy = reconciliation_instance($app, $target->node, 'legacy');
+    $legacy = reconciliation_instance($project, $target->node, 'legacy');
     $routes = [];
 
     foreach ([$target, $legacy] as $instance) {
         $instance->update(['source_is_laravel' => false, 'provisioning_step' => 'active']);
         $route = $generated
-            ? app(CreateRouteAction::class)->ensureForAppInstance($instance, null)
+            ? app(CreateRouteAction::class)->ensureForInstance($instance, null)
             : app(CreateRouteAction::class)->execute(new CreateRouteData(
-                appId: $app->id,
+                projectId: $project->id,
                 domain: "{$instance->name}.example.test",
                 publication: RoutePublication::Private,
-                appInstanceId: $instance->id,
+                instanceId: $instance->id,
                 nodeId: null,
                 clusterId: null,
             ))['route'];
@@ -2565,11 +2565,11 @@ function reconciliation_routes_with_legacy(OrbitApp $app, AppInstance $target, b
     return [$routes[0], $legacy];
 }
 
-function reconciliation_tracking_route(AppInstance $instance, Route $owner, string $domain): Route
+function reconciliation_tracking_route(Instance $instance, Route $owner, string $domain): Route
 {
     $route = Route::query()->create([
         'kind' => RouteKind::AnalyticsTracking,
-        'app_id' => null,
+        'project_id' => null,
         'node_id' => $owner->node_id,
         'cluster_id' => $owner->cluster_id,
         'generation_basis_node_id' => null,
@@ -2578,7 +2578,7 @@ function reconciliation_tracking_route(AppInstance $instance, Route $owner, stri
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $route->analyticsTracking()->create(['app_instance_id' => $instance->id]);
+    $route->analyticsTracking()->create(['instance_id' => $instance->id]);
     $route->update(['status' => RouteStatus::Active]);
 
     return $route;
@@ -2655,32 +2655,32 @@ final class NodeTldRouteProjector implements RouteDomainProjector
         private NodeTldProjectionEvents $events,
     ) {}
 
-    public function prepareWorkloadCertificate(AppInstance $appInstance, Route $current, Route $candidate): void
+    public function prepareWorkloadCertificate(Instance $instance, Route $current, Route $candidate): void
     {
         $this->event('workload-certificate', $candidate);
     }
 
-    public function prepareWorkloadCaddy(AppInstance $appInstance, Route $current, Route $candidate): void
+    public function prepareWorkloadCaddy(Instance $instance, Route $current, Route $candidate): void
     {
         $this->event('workload-caddy', $candidate);
     }
 
-    public function prepareRouterCertificate(AppInstance $appInstance, Route $current, Route $candidate): void
+    public function prepareRouterCertificate(Instance $instance, Route $current, Route $candidate): void
     {
         $this->event('router-certificate', $candidate);
     }
 
-    public function prepareFirewallPolicy(AppInstance $appInstance, Route $candidate): void
+    public function prepareFirewallPolicy(Instance $instance, Route $candidate): void
     {
         $this->event('firewall-policy', $candidate);
     }
 
-    public function verifyWorkload(AppInstance $appInstance, Route $candidate): void
+    public function verifyWorkload(Instance $instance, Route $candidate): void
     {
         $this->event('workload-verify', $candidate);
     }
 
-    public function prepareRouterCaddy(AppInstance $appInstance, Route $current, Route $candidate): void
+    public function prepareRouterCaddy(Instance $instance, Route $current, Route $candidate): void
     {
         $this->event('router-caddy', $candidate);
     }
@@ -2700,12 +2700,12 @@ final class NodeTldRouteProjector implements RouteDomainProjector
         $this->event('dns-publication');
     }
 
-    public function prepareCleanup(AppInstance $appInstance, Route $route): void
+    public function prepareCleanup(Instance $instance, Route $route): void
     {
         $this->event('prepare-cleanup');
     }
 
-    public function cleanup(AppInstance $appInstance, Route $route): void
+    public function cleanup(Instance $instance, Route $route): void
     {
         $this->event('cleanup');
     }
@@ -2715,12 +2715,12 @@ final class NodeTldRouteProjector implements RouteDomainProjector
         $this->events->values[] = 'rollback-dns';
     }
 
-    public function rollbackCaddy(AppInstance $appInstance, Route $route): void
+    public function rollbackCaddy(Instance $instance, Route $route): void
     {
         $this->events->values[] = 'rollback-caddy';
     }
 
-    public function rollbackCertificates(AppInstance $appInstance, Route $route): void
+    public function rollbackCertificates(Instance $instance, Route $route): void
     {
         $this->events->values[] = 'rollback-certificates';
     }
@@ -2754,18 +2754,18 @@ final class NodeTldRouteProjector implements RouteDomainProjector
     }
 }
 
-final class NodeTldRouteConfigurator implements DevelopmentAppInstanceConfigurator
+final class NodeTldRouteConfigurator implements DevelopmentInstanceConfigurator
 {
     public function __construct(
         private NodeTldProjectionEvents $events,
     ) {}
 
-    public function inspect(AppInstance $appInstance): DevelopmentSourceProfile
+    public function inspect(Instance $instance): DevelopmentSourceProfile
     {
-        return new DevelopmentSourceProfile('8.5', (bool) $appInstance->source_is_laravel);
+        return new DevelopmentSourceProfile('8.5', (bool) $instance->source_is_laravel);
     }
 
-    public function configureLaravelUrl(AppInstance $appInstance, string $url): void
+    public function configureLaravelUrl(Instance $instance, string $url): void
     {
         $this->events->values[] = "url:{$url}";
     }

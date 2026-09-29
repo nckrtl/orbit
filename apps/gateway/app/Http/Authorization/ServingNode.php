@@ -8,7 +8,7 @@ enum ServingNode
 {
     case Gateway;
     case Target;
-    case AppOwning;
+    case ProjectOwning;
     case InstanceOwning;
     case DeploymentOwning;
     case CandidateClone;
@@ -17,7 +17,7 @@ enum ServingNode
     case ProcessOwning;
     case ScheduleOwning;
     case ScheduleHost;
-    case AppInstanceHost;
+    case InstanceHost;
     case ToolOwning;
     case ClusterOwning;
     case RouteOwning;

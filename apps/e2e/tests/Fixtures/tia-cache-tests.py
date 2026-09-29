@@ -1225,6 +1225,9 @@ printf '%s|%s\\n' "$PWD" "$*" >> "$GATE_TEST_DOCS"
 if [ "$GATE_TEST_MODE" = docs ]; then exit 5; fi
 """)
         docs_impact.chmod(0o755)
+        vocabulary = self.root / 'bin/project-vocabulary'
+        vocabulary.write_text('#!/bin/sh\nexit 0\n')
+        vocabulary.chmod(0o755)
         for project in cache.PROJECTS:
             directory = self.root / project
             directory.mkdir(parents=True)
@@ -1277,7 +1280,7 @@ fi
         architecture_tests = {
             'apps/cli': ['tests/Feature/CommandSurfaceTest.php'],
             'apps/gateway': ['tests/Unit/Architecture',
-                             'tests/Feature/Infrastructure/AppInstances/ConfiguredOriginReadTest.php',
+                             'tests/Feature/Infrastructure/Instances/ConfiguredOriginReadTest.php',
                              'tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php'],
             'apps/e2e': ['tests/Unit/E2E/ProofFixtureContractTest.php',
                          'tests/Unit/E2E/ProofFixtureShellContractTest.php'],
@@ -1287,7 +1290,8 @@ fi
                                  'tests/Unit/Requests/Deployments/DeploymentRequestsTest.php'],
         }
         self.assertEqual(self.commit, report['base'])
-        expected = [('repository', ['bin/docs-impact', '--gate', '--base', self.commit])]
+        expected = [('repository', ['bin/docs-impact', '--gate', '--base', self.commit]),
+                    ('repository', ['bin/project-vocabulary'])]
         for project in cache.PROJECTS:
             expected.extend((project, command) for command in [
                 ['composer', 'validate', '--strict'], ['composer', 'check'], ['composer', 'test:affected']])

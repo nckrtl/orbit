@@ -14,7 +14,7 @@ use App\Support\Console\ProgressState;
 use App\Support\DependencyErrorHint;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
-use Orbit\Sdk\Requests\AppInstances\UpdateInstanceDependenciesRequest;
+use Orbit\Sdk\Requests\Instances\UpdateInstanceDependenciesRequest;
 use Orbit\Sdk\Responses\Dependencies\DependencyInventoryResponse;
 use Orbit\Sdk\Responses\Dependencies\DependencyUpdateStepResponse;
 use Orbit\Sdk\Responses\Dependencies\InstanceDependencyUpdateResponse;
@@ -121,7 +121,7 @@ final class UpdateInstanceDependenciesCommand extends GatewayCommand
 
     private function renderIdentity(
         int $instanceId,
-        int $appId,
+        int $projectId,
         int $nodeId,
         string $environment,
         bool $succeeded,
@@ -131,7 +131,7 @@ final class UpdateInstanceDependenciesCommand extends GatewayCommand
         ?bool $mayHaveMutated = null,
     ): void {
         $fields = [
-            'Project' => $appId,
+            'Project' => $projectId,
             'Node' => $nodeId,
             'Environment' => $environment,
         ];

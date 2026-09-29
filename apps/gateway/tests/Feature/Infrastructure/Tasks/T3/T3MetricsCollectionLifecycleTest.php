@@ -20,8 +20,8 @@ use App\Infrastructure\Tasks\T3\T3ThreadCreator;
 use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Models\AgentThread;
 use App\Models\AgentThreadSendLease;
-use App\Models\App as OrbitApp;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\TaskGroup;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
@@ -30,7 +30,7 @@ use Mockery\MockInterface;
 /** @return array{AgentThread, T3Driver, MockInterface, MockInterface} */
 function metrics_collection_driver(): array
 {
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'T3 metrics lifecycle',
         'slug' => 't3-metrics-lifecycle',
         'repository_url' => 'https://example.test/t3-metrics.git',
@@ -44,7 +44,7 @@ function metrics_collection_driver(): array
         'wireguard_ip' => '10.44.0.200',
     ]);
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Metrics lifecycle',
         'brief' => 'Exercise T3 metric stream behavior',
         'status' => 'running',

@@ -18,9 +18,9 @@ enum RecordEventType: string
     case NodeUpdated = 'node.updated';
     case NodeDeleted = 'node.deleted';
 
-    case AppCreated = 'app.created';
-    case AppUpdated = 'app.updated';
-    case AppDeleted = 'app.deleted';
+    case ProjectCreated = 'project.created';
+    case ProjectUpdated = 'project.updated';
+    case ProjectDeleted = 'project.deleted';
 
     case InstanceCreated = 'instance.created';
     case InstanceUpdated = 'instance.updated';

@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\GitHub;
 
 /**
- * The HTML page that posts the App manifest to GitHub. GitHub accepts a manifest only as a form post
- * from the browser of the person who will own the App. The manifest asks for read access to
+ * The HTML page that posts the Project manifest to GitHub. GitHub accepts a manifest only as a form post
+ * from the browser of the person who will own the Project. The manifest asks for read access to
  * repository contents and metadata, no webhook, and a public App that other accounts can install
  * ([ADR 0098](/decisions/0098-read-github-repositories-through-a-gateway-owned-github-app)).
  * An empty `default_events` list is omitted: GitHub's convert endpoint rejects `[]`.
@@ -59,7 +59,7 @@ final readonly class GitHubAppManifestPage
             <body>
             <form id="manifest" action="{$action}" method="post">
             <input type="hidden" name="manifest" value="{$manifest}">
-            <p>Orbit sends the App definition to GitHub. Confirm it there.</p>
+            <p>Orbit sends the Project definition to GitHub. Confirm it there.</p>
             <button type="submit">Continue to GitHub</button>
             </form>
             <script>document.getElementById('manifest').submit();</script>

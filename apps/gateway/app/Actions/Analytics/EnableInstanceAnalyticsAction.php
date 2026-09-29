@@ -10,9 +10,9 @@ use App\Data\Routes\RouteData;
 use App\Domain\Analytics\AnalyticsTrackingHosts;
 use App\Domain\Analytics\AnalyticsTrackingRouteProjector;
 use App\Domain\Analytics\AnalyticsTrackingUpstream;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteKind;
@@ -21,7 +21,7 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Database\QueryException;
@@ -36,13 +36,13 @@ final readonly class EnableInstanceAnalyticsAction
         private AnalyticsTrackingRouteProjector $projection,
         private PublishPublicRouteAction $publication,
         private RouteStateResolver $state,
-        private AppInstanceEnvironmentOperationLock $operations,
+        private InstanceEnvironmentOperationLock $operations,
         private RecordEventBroadcaster $broadcaster,
         private ?MetricsFleetReconciler $metrics = null,
     ) {}
 
     /** @param list<string> $hosts The exact host set; empty means the default host. */
-    public function execute(AppInstance $instance, array $hosts): InstanceAnalyticsData
+    public function execute(Instance $instance, array $hosts): InstanceAnalyticsData
     {
         $result = $this->operations->run(
             [$instance->id],
@@ -55,7 +55,7 @@ final readonly class EnableInstanceAnalyticsAction
     }
 
     /** @param list<string> $hosts */
-    private function executeOwned(AppInstance $instance, array $hosts): InstanceAnalyticsData
+    private function executeOwned(Instance $instance, array $hosts): InstanceAnalyticsData
     {
         if (! AnalyticsTrackingUpstream::node() instanceof Node) {
             throw new ResourceOperationException(
@@ -98,7 +98,7 @@ final readonly class EnableInstanceAnalyticsAction
      * and a node-scoped private Route is served by the instance's own Node behind whatever edge
      * already fronts it.
      */
-    private function instanceRoute(AppInstance $instance): Route
+    private function instanceRoute(Instance $instance): Route
     {
         $route = $instance->unsetRelation('routes')->authoritativeRoute();
 
@@ -113,13 +113,13 @@ final readonly class EnableInstanceAnalyticsAction
         return $route;
     }
 
-    private function create(AppInstance $instance, Route $owner, string $host): Route
+    private function create(Instance $instance, Route $owner, string $host): Route
     {
         try {
             $route = DB::transaction(static function () use ($instance, $owner, $host): Route {
                 $route = Route::query()->create([
                     'kind' => RouteKind::AnalyticsTracking,
-                    'app_id' => null,
+                    'project_id' => null,
                     'node_id' => $owner->node_id,
                     'cluster_id' => $owner->cluster_id,
                     'generation_basis_node_id' => null,
@@ -130,7 +130,7 @@ final readonly class EnableInstanceAnalyticsAction
                     'failed_step' => null,
                     'error_code' => null,
                 ]);
-                $route->analyticsTracking()->create(['app_instance_id' => $instance->id]);
+                $route->analyticsTracking()->create(['instance_id' => $instance->id]);
 
                 return $route;
             });

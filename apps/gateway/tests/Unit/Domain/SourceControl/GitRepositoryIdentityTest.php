@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\SourceControl\GitRepositoryIdentity;
-use App\Models\App as OrbitApp;
+use App\Models\Project;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -42,7 +42,7 @@ it('finds at most one App from equivalent checkout origins', function (
     string $storedRepository,
     string $checkoutOrigin,
 ): void {
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => $storedRepository,
@@ -50,9 +50,9 @@ it('finds at most one App from equivalent checkout origins', function (
         'root' => 'public',
     ]);
 
-    expect(OrbitApp::findByRepositoryOrigin($checkoutOrigin))
+    expect(Project::findByRepositoryOrigin($checkoutOrigin))
         ->not->toBeNull()
-        ->id->toBe($app->id)->and(OrbitApp::findByRepositoryOrigin('https://github.com/acme/missing.git'))->toBeNull();
+        ->id->toBe($project->id)->and(Project::findByRepositoryOrigin('https://github.com/acme/missing.git'))->toBeNull();
 })->with([
     'SSH-created and HTTPS checkout' => [
         'git@github.com:acme/site.git',
@@ -78,7 +78,7 @@ it('uses a bounded error for an invalid credential-bearing origin', function ():
     $exception = null;
 
     try {
-        OrbitApp::findByRepositoryOrigin($repository);
+        Project::findByRepositoryOrigin($repository);
     } catch (InvalidArgumentException $caught) {
         $exception = $caught;
     }

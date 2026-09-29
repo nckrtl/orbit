@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Models\AgentThread;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskGroup;
 
@@ -22,7 +22,7 @@ final readonly class TaskGroupMetricsRefresher
 
     public function refresh(TaskGroup $group): TaskGroup
     {
-        $group->loadMissing(['app', 'tasks', 'taskable']);
+        $group->loadMissing(['project', 'tasks', 'taskable']);
 
         if ($group->execution_mode !== TaskExecutionMode::Managed || ! $group->status->isActive()) {
             return $group;
@@ -58,9 +58,9 @@ final readonly class TaskGroupMetricsRefresher
         }
 
         $instance = $group->taskable;
-        $base = $group->app->default_branch;
+        $base = $group->project->default_branch;
 
-        if ($instance instanceof AppInstance && is_string($base) && $base !== '') {
+        if ($instance instanceof Instance && is_string($base) && $base !== '') {
             $changes = $this->diff->lineChanges($instance, $base);
             if ($changes !== null) {
                 $group->lines_added = $changes['additions'];
@@ -79,7 +79,7 @@ final readonly class TaskGroupMetricsRefresher
             $group->save();
         }
 
-        return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+        return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
     }
 
     private function refreshTask(Task $task): void

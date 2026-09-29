@@ -156,7 +156,7 @@ describe('database connection requests', function (): void {
     it('maps attachment envelopes without exposing a password', function (): void {
         $requestId = '11111111-1111-4111-8111-111111111111';
         $payload = [
-            'app_instance_id' => 12,
+            'instance_id' => 12,
             'slug' => 'app',
             'prefix' => 'DB',
             'keys' => ['DB_CONNECTION', 'DB_HOST'],

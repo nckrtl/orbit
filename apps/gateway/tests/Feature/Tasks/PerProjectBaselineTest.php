@@ -3,15 +3,15 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 use Tests\Support\LocalShellSshExecutor;
@@ -27,7 +27,7 @@ function per_project_baseline_checkout(): string
 
 function per_project_baseline_runner(SshExecutor $transport): RemoteTaskCheckRunner
 {
-    return new RemoteTaskCheckRunner(new AppDevSshExecutor(
+    return new RemoteTaskCheckRunner(new DevelopmentSshExecutor(
         $transport,
         new class implements SshKeyProvider
         {
@@ -64,7 +64,7 @@ afterEach(function (): void {
 
 it('per-project baseline skips an unset command and preserves custom command failure output', function (): void {
     $checkout = per_project_baseline_checkout();
-    $project = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'Project',
         'slug' => 'project',
         'repository_url' => 'git@github.com:acme/project.git',
@@ -80,8 +80,8 @@ it('per-project baseline skips an unset command and preserves custom command fai
         'wireguard_ip' => '10.44.0.222',
         'user' => 'orbit',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $project->id,
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'task-85',
         'checkout_path' => $checkout,
@@ -102,13 +102,13 @@ it('per-project baseline skips an unset command and preserves custom command fai
     expect($reading?->exitCode)->toBe(7)
         ->and($reading?->output)->toContain('custom baseline failed');
 
-    $unsetProject = OrbitApp::query()->create([
+    $unsetProject = Project::query()->create([
         'name' => 'No check',
         'slug' => 'no-check',
         'repository_url' => 'git@github.com:acme/no-check.git',
     ]);
     expect($unsetProject->taskCheckCommand())->toBeNull();
-    $instance->app()->associate($unsetProject);
+    $instance->project()->associate($unsetProject);
     $instance->save();
     $noCheck = $runner->start($instance, command: $unsetProject->taskCheckCommand());
     $noOp = null;

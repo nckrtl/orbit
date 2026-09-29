@@ -47,7 +47,7 @@ For each read of a `github.com` repository that an installation covers, the Gate
 | On `github.com`, not covered | Without a credential. A public repository works, and a private repository fails. |
 | On another host | Without a credential. A private repository needs an SSH key that you place on the Node. |
 
-When the Gateway cannot resolve the default branch of a `github.com` repository, `app.default_branch_unavailable` names a missing installation as a possible cause.
+When the Gateway cannot resolve the default branch of a `github.com` repository, `project.default_branch_unavailable` names a missing installation as a possible cause.
 
 The Gateway needs outbound HTTPS to `api.github.com` for every read of a covered repository. When GitHub does not answer, Orbit reads without a credential, so a public repository still works.
 
@@ -81,7 +81,7 @@ The `github` commands return these codes.
 | `github.unavailable` | The Gateway could not reach `api.github.com`, or GitHub refused the App credential. |
 | `github.installation_pending` | The command stopped waiting before the Gateway saw a new installation. Finish the installation in the browser and check with `github:app:show`. |
 
-A read that fails for a repository reason keeps its own error code, such as `app.default_branch_unavailable`.
+A read that fails for a repository reason keeps its own error code, such as `project.default_branch_unavailable`.
 
 ## Recover and remove
 

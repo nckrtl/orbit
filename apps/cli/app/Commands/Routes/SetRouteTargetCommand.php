@@ -49,12 +49,12 @@ final class SetRouteTargetCommand extends RouteCommand
         $dispositions = [];
         foreach ((array) $this->option('reassign') as $value) {
             if (! is_string($value) || preg_match('/\A([1-9][0-9]*):([1-9][0-9]*)\z/', $value, $matches) !== 1) {
-                $this->renderGatewayFailure('route.target_disposition_invalid', 'Reassignment must be app-instance-id:route-id.');
+                $this->renderGatewayFailure('route.target_disposition_invalid', 'Reassignment must be instance-id:route-id.');
 
                 return self::FAILURE;
             }
             $dispositions[] = [
-                'app_instance_id' => (int) $matches[1],
+                'instance_id' => (int) $matches[1],
                 'route_id' => (int) $matches[2],
             ];
         }
@@ -66,7 +66,7 @@ final class SetRouteTargetCommand extends RouteCommand
                 return self::FAILURE;
             }
             $dispositions[] = [
-                'app_instance_id' => $id,
+                'instance_id' => $id,
                 'remove' => true,
             ];
         }

@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 
 final readonly class AgentThreadStart
 {
     public function __construct(
         public Node $node,
-        public AppInstance $workspace,
+        public Instance $workspace,
         public string $title,
         public string $prompt,
         public string $model,

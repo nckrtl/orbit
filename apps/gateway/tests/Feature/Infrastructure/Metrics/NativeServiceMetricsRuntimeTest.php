@@ -3,12 +3,12 @@
 declare(strict_types=1);
 
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\AppInstances\ProductionPhpRuntimeManager;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppProd\AppProdSshExecutor;
+use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Metrics\NativeServiceMetricsRuntime;
 use App\Infrastructure\Metrics\ServiceMetricsNode;
 use App\Infrastructure\Processes\CommandResult;
@@ -18,10 +18,10 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Tests\Support\FakeNodeCaddyBuilds;
 
 beforeEach(function (): void {
@@ -43,7 +43,7 @@ beforeEach(function (): void {
     $this->builds = new FakeNodeCaddyBuilds;
     $this->productionPhp = Mockery::mock(ProductionPhpRuntimeManager::class)->shouldIgnoreMissing();
     $this->runtime = new NativeServiceMetricsRuntime(
-        new AppProdSshExecutor(
+        new ProductionSshExecutor(
             $this->ssh,
             new class implements SshKeyProvider
             {
@@ -219,20 +219,20 @@ function service_metrics_runtime_node(string $name, string $address, array $role
     return $node;
 }
 
-function service_metrics_runtime_instance(Node $node): AppInstance
+function service_metrics_runtime_instance(Node $node): Instance
 {
     $node->roles()->firstOrCreate(
         ['role' => RoleName::AppProd],
         ['status' => LifecycleStatus::Active],
     );
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'Metrics fixture',
         'slug' => 'metrics-fixture',
         'repository_url' => 'https://example.test/metrics-fixture.git',
     ]);
 
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'production',
         'environment' => 'production',

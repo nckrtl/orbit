@@ -11,6 +11,7 @@ use App\Domain\Logs\LogStreamStore;
 use App\Domain\Logs\LogStreamTarget;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\CacheAgentStateView;
+use App\Models\Instance;
 use App\Models\Node;
 
 /**

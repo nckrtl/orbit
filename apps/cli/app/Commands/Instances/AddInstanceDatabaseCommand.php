@@ -25,7 +25,7 @@ final class AddInstanceDatabaseCommand extends DatabaseAttachmentCommand
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
         $slug = $this->slug();
-        $instance = $this->appInstanceSelector();
+        $instance = $this->instanceSelector();
         $prefix = $this->prefixOption();
 
         if ($slug === null || $instance === null || ($this->input->getOption('prefix') !== null && $prefix === null)) {
@@ -41,7 +41,7 @@ final class AddInstanceDatabaseCommand extends DatabaseAttachmentCommand
         $attachment = $this->sendWithProgress(
             $connector,
             new AddInstanceDatabaseRequest(
-                appInstance: $instance,
+                instance: $instance,
                 slug: $slug,
                 prefix: $prefix,
             ),
@@ -55,7 +55,7 @@ final class AddInstanceDatabaseCommand extends DatabaseAttachmentCommand
 
         return $this->renderAttachment(
             $attachment,
-            "Database connection [{$attachment->slug}] added to Instance [{$attachment->appInstanceId}].",
+            "Database connection [{$attachment->slug}] added to Instance [{$attachment->instanceId}].",
         );
     }
 }

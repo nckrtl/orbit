@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
@@ -19,11 +19,11 @@ final readonly class TaskReviewPacketBuilder
 
     public function build(Task $task, bool $continued, ?int $threadId = null): string
     {
-        $task->loadMissing(['taskGroup.app', 'taskGroup.taskable']);
+        $task->loadMissing(['taskGroup.project', 'taskGroup.taskable']);
         $group = $task->taskGroup;
         $start = TaskReviewBase::commit($task);
         $instance = $group->taskable;
-        if (! $instance instanceof AppInstance) {
+        if (! $instance instanceof Instance) {
             throw new TaskReviewDiffException('The review diff could not be read.');
         }
         $diff = $this->diffs->read($instance, $start);
@@ -40,7 +40,7 @@ final readonly class TaskReviewPacketBuilder
             approvals: $continued ? [] : $this->approvals($group, $task),
             diffFiles: $filesComplete ? $diff['files'] : [],
             diff: $diffAvailable ? $diff['diff'] : '',
-            taskCheck: $group->app->taskCheckCommand(),
+            taskCheck: $group->project->taskCheckCommand(),
             handoffStatus: $handoff['status'],
             handoffExitCode: $handoff['exit'],
             evidence: $handoff['evidence'],

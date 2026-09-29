@@ -6,12 +6,12 @@ namespace App\Domain\Routes;
 
 use App\Data\Routes\RouteTargetDispositionData;
 use App\Data\Routes\SetRouteTargetsData;
-use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Route;
 use App\Models\RouteTarget;
 use Illuminate\Support\Collection;
@@ -64,7 +64,7 @@ final readonly class RouteTargetSetGuard
 
     /**
      * @param  list<int>  $ids
-     * @return Collection<int, AppInstance>
+     * @return Collection<int, Instance>
      */
     public function instances(array $ids): Collection
     {
@@ -72,8 +72,8 @@ final readonly class RouteTargetSetGuard
             return new Collection;
         }
 
-        $instances = AppInstance::query()
-            ->with(['app', 'node.roles', 'node.cluster'])
+        $instances = Instance::query()
+            ->with(['project', 'node.roles', 'node.cluster'])
             ->whereIn('id', $ids)
             ->lockForUpdate()
             ->get()
@@ -107,7 +107,7 @@ final readonly class RouteTargetSetGuard
         }
 
         $dispositionIds = array_map(
-            static fn (RouteTargetDispositionData $disposition): int => $disposition->appInstanceId,
+            static fn (RouteTargetDispositionData $disposition): int => $disposition->instanceId,
             $proposal->dispositions,
         );
 
@@ -128,12 +128,12 @@ final readonly class RouteTargetSetGuard
         $current = $route
             ->targets()
             ->orderBy('position')
-            ->pluck('app_instance_id')
+            ->pluck('instance_id')
             ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->all();
         $detached = array_values(array_diff($current, $proposal->targetIds));
         $accounted = array_map(
-            static fn (RouteTargetDispositionData $disposition): int => $disposition->appInstanceId,
+            static fn (RouteTargetDispositionData $disposition): int => $disposition->instanceId,
             $proposal->dispositions,
         );
 
@@ -148,17 +148,17 @@ final readonly class RouteTargetSetGuard
         }
     }
 
-    /** @param Collection<int, AppInstance> $instances */
+    /** @param Collection<int, Instance> $instances */
     private function assertAssignableTargets(Route $route, Collection $instances): void
     {
         $nodeIds = [];
 
         foreach ($instances as $instance) {
-            if ($instance->app_id !== $route->app_id) {
+            if ($instance->project_id !== $route->project_id) {
                 $this->refuse('route.target_app_conflict', 'The Route target must belong to the Route Project.');
             }
 
-            if ($instance->status !== AppInstanceState::Active) {
+            if ($instance->status !== InstanceState::Active) {
                 $this->refuse('route.target_inactive', 'The Route target must be active.');
             }
 
@@ -202,7 +202,7 @@ final readonly class RouteTargetSetGuard
             $nodeIds[] = $node->id;
 
             $association = RouteTarget::query()
-                ->where('app_instance_id', $instance->id)
+                ->where('instance_id', $instance->id)
                 ->lockForUpdate()
                 ->first();
 
@@ -217,13 +217,13 @@ final readonly class RouteTargetSetGuard
         RouteTargetDispositionData $disposition,
         SetRouteTargetsData $proposal,
     ): void {
-        $instance = $this->instances([$disposition->appInstanceId])->first();
+        $instance = $this->instances([$disposition->instanceId])->first();
 
-        if (! $instance instanceof AppInstance) {
+        if (! $instance instanceof Instance) {
             $this->refuse('route.target_inactive', 'The Route target must be active.');
         }
 
-        if ($instance->status === AppInstanceState::Active && ! $disposition->remove && $disposition->routeId === null) {
+        if ($instance->status === InstanceState::Active && ! $disposition->remove && $disposition->routeId === null) {
             $this->refuse(
                 'route.target_disposition_required',
                 'A detached active Instance must be reassigned or authorized for removal.',
@@ -244,7 +244,7 @@ final readonly class RouteTargetSetGuard
             $this->refuse('route.target_disposition_invalid', 'A detached Instance cannot be reassigned to the same Route.');
         }
 
-        if ($destination->app_id !== $route->app_id) {
+        if ($destination->project_id !== $route->project_id) {
             $this->refuse('route.target_app_conflict', 'The Route target must belong to the Route Project.');
         }
 
@@ -261,7 +261,7 @@ final readonly class RouteTargetSetGuard
 
         $existing = $destination
             ->targets()
-            ->pluck('app_instance_id')
+            ->pluck('instance_id')
             ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->all();
 
@@ -269,7 +269,7 @@ final readonly class RouteTargetSetGuard
             return;
         }
 
-        $destinationNodeIds = AppInstance::query()
+        $destinationNodeIds = Instance::query()
             ->whereIn('id', $existing)
             ->pluck('node_id')
             ->all();

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Models\Project;
+
 /**
  * Renders the pull request description from the reviewer's fields, in a fixed order.
  */

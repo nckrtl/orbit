@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
+use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Metrics\ExporterPreference;
 use App\Domain\Metrics\ExporterPreferenceRepository;
 use App\Domain\Metrics\MetricsCredentialManager;
@@ -17,10 +17,10 @@ use App\Infrastructure\Metrics\PrometheusConfigRenderer;
 use App\Infrastructure\Metrics\ServiceMetricsConfigRenderer;
 use App\Infrastructure\Metrics\ServiceMetricsNode;
 use App\Infrastructure\Metrics\ServiceMetricsProjection;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Symfony\Component\Yaml\Yaml;
 
@@ -38,11 +38,11 @@ it('combines metrics preferences with applicable roles', function (): void {
     $node->roles()->where('role', 'ingress')->update(['status' => 'active']);
     $instance = service_metrics_instance($node, 'public-app', '8.5');
     $route = Route::query()->create([
-        'app_id' => $instance->app_id, 'cluster_id' => $cluster->id,
+        'project_id' => $instance->project_id, 'cluster_id' => $cluster->id,
         'domain' => 'app.example.test', 'provenance' => 'explicit',
         'publication' => 'private', 'status' => 'pending',
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['publication' => 'public', 'status' => 'active']);
     $published = $projection->forNode($metrics, $node);
     expect($published->caddy)->toBeTrue();
@@ -110,11 +110,11 @@ it('wires selected service monitoring into container-resolved publication and in
     $instance = service_metrics_instance($node, 'monitored', '8.5');
     $instance->update(['provisioning_step' => 'active', 'source_is_laravel' => false]);
     $route = Route::query()->create([
-        'app_id' => $instance->app_id, 'cluster_id' => $cluster->id,
+        'project_id' => $instance->project_id, 'cluster_id' => $cluster->id,
         'domain' => 'app.example.test', 'provenance' => 'explicit',
         'publication' => 'private', 'status' => 'pending',
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['publication' => 'public', 'status' => 'active']);
     $host = Mockery::mock(MetricsRuntimeHost::class);
     $host->shouldReceive('snapshotConfiguration')->once()->andReturn(new MetricsConfigurationSnapshot(true, []));
@@ -155,15 +155,15 @@ function service_metrics_node(string $name): Node
     return Node::query()->create(['name' => $name, 'status' => 'active', 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.81', 'wireguard_ip' => '10.44.0.'.(Node::query()->count() + 10), 'ssh_host_fingerprint' => 'SHA256:metrics-proof']);
 }
 
-function service_metrics_instance(Node $node, string $name, string $version): AppInstance
+function service_metrics_instance(Node $node, string $name, string $version): Instance
 {
     if (! $node->roles()->where('role', 'app-prod')->exists()) {
         $node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
     }
 
-    $app = OrbitApp::query()->create(['name' => $name, 'slug' => $name, 'repository_url' => 'https://example.test/'.$name.'.git', 'default_branch' => 'main', 'root' => 'public']);
-    $user = 'orbit-app-'.$app->id;
-    $instance = AppInstance::query()->create(['app_id' => $app->id, 'node_id' => $node->id, 'name' => 'default', 'environment' => 'production', 'status' => 'active', 'checkout_path' => '/home/'.$user.'/releases/initial', 'production_user' => $user, 'production_home' => '/home/'.$user, 'root' => 'public', 'selected_php_version' => $version]);
+    $project = Project::query()->create(['name' => $name, 'slug' => $name, 'repository_url' => 'https://example.test/'.$name.'.git', 'default_branch' => 'main', 'root' => 'public']);
+    $user = 'orbit-app-'.$project->id;
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'environment' => 'production', 'status' => 'active', 'checkout_path' => '/home/'.$user.'/releases/initial', 'production_user' => $user, 'production_home' => '/home/'.$user, 'root' => 'public', 'selected_php_version' => $version]);
     $instance->update(ProductionPhpRuntimeIdentity::forProvisioning($instance, $version)->attributes());
 
     return $instance->refresh();

@@ -8,9 +8,9 @@ use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
-use Orbit\Sdk\Requests\Deployments\ListAppInstanceDeploymentsRequest;
-use Orbit\Sdk\Responses\Deployments\AppInstanceDeploymentResponse;
-use Orbit\Sdk\Responses\Deployments\AppInstanceDeploymentsResponse;
+use Orbit\Sdk\Requests\Deployments\ListInstanceDeploymentsRequest;
+use Orbit\Sdk\Responses\Deployments\InstanceDeploymentResponse;
+use Orbit\Sdk\Responses\Deployments\InstanceDeploymentsResponse;
 
 final class ListDeploymentsCommand extends GatewayCommand
 {
@@ -38,12 +38,12 @@ final class ListDeploymentsCommand extends GatewayCommand
 
         $response = $this->sendWithProgress(
             $connector,
-            new ListAppInstanceDeploymentsRequest($instanceId),
-            AppInstanceDeploymentsResponse::class,
+            new ListInstanceDeploymentsRequest($instanceId),
+            InstanceDeploymentsResponse::class,
             ['List deployments', 'Loading deployments', 'Loaded deployments'],
         );
 
-        if (! $response instanceof AppInstanceDeploymentsResponse) {
+        if (! $response instanceof InstanceDeploymentsResponse) {
             return self::FAILURE;
         }
 
@@ -56,7 +56,7 @@ final class ListDeploymentsCommand extends GatewayCommand
         ConsoleWriter::write($this->output, $this->humanRenderer()->table(
             ['Started', 'Release', 'Branch', 'Commit', 'By', 'Duration', 'Status'],
             array_map(
-                fn (AppInstanceDeploymentResponse $deployment): array => [
+                fn (InstanceDeploymentResponse $deployment): array => [
                     $deployment->startedAt,
                     $deployment->release ?? '—',
                     $deployment->branch ?? '—',

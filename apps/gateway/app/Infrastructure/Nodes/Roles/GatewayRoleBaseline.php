@@ -15,7 +15,7 @@ use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Nodes\RoleName;
 use App\Domain\WireGuard\VpnSettings;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Gateway\GatewayPrivateDnsResolver;
 use App\Infrastructure\Processes\SystemdVpnOrderingDropIn;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -33,7 +33,7 @@ final readonly class GatewayRoleBaseline implements GatewayPrivateDnsRoute, Role
         private NodeRoleFirewallManager $firewall,
         private PrivateDnsManager $dns,
         private NodeRolePrerequisiteCommandFactory $commands,
-        private AppDevSshExecutor $ssh,
+        private DevelopmentSshExecutor $ssh,
         private ?GrantGatewayRoleAccessAction $access = null,
         private SystemdVpnOrderingDropIn $vpnOrdering = new SystemdVpnOrderingDropIn,
         private ?VpnSettings $vpnSettings = null,

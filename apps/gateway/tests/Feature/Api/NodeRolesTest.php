@@ -5,8 +5,8 @@ declare(strict_types=1);
 use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\AppDev\PrivateDnsManager;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\GatewayPrivateDnsRoute;
 use App\Domain\Nodes\NodeConverger;
@@ -27,11 +27,11 @@ use App\Infrastructure\Nodes\NodeLocks;
 use App\Infrastructure\Nodes\Roles\NodeRoleConvergeLock;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Activity;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Project;
 use App\Models\Route as OrbitRoute;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Str;
@@ -1248,7 +1248,7 @@ it('returns the exact mutation snapshot and records the complete SDK input on co
     'explicit offline true' => [true],
 ]);
 
-it('does not let force offline or purge remove an app-dev role beneath an AppInstance', function (array $body): void {
+it('does not let force offline or purge remove an app-dev role beneath an Instance', function (array $body): void {
     $cluster = Cluster::query()->create(['name' => 'development', 'state' => ClusterState::Active]);
     $this->node->update(['cluster_id' => $cluster->id]);
     $assignment = $this->node
@@ -1257,32 +1257,32 @@ it('does not let force offline or purge remove an app-dev role beneath an AppIns
             'role' => RoleName::AppDev,
             'status' => LifecycleStatus::Active,
         ]);
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    AppInstance::query()->create([
-        'app_id' => $app->id,
+    Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $this->node->id,
         'name' => 'dev',
         'checkout_path' => '/srv/orbit/apps/acme/dev',
         'branch' => 'dev',
         'starting_commit' => str_repeat('a', 40),
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
 
     $this
         ->deleteJson("/api/v1/nodes/{$this->node->id}/roles/app-dev", $body)
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation.failed')
-        ->assertJsonPath('error.details.reason', 'app_instances_attached');
+        ->assertJsonPath('error.details.reason', 'instances_attached');
 
     expect($assignment->refresh()->status)
         ->toBe(LifecycleStatus::Active)
-        ->and(AppInstance::query()->count())
+        ->and(Instance::query()->count())
         ->toBe(1)
         ->and($this->roleLifecycle->removed)
         ->toBeEmpty();
@@ -1656,7 +1656,7 @@ function node_roles_api_node(
 
 function node_roles_api_public_route(Cluster $cluster): OrbitRoute
 {
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'Public',
         'slug' => 'public-'.$cluster->id,
         'repository_url' => 'https://github.com/acme/public.git',
@@ -1665,7 +1665,7 @@ function node_roles_api_public_route(Cluster $cluster): OrbitRoute
     ]);
 
     return OrbitRoute::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $project->id,
         'cluster_id' => $cluster->id,
         'domain' => "public-{$cluster->id}.example.com",
         'provenance' => RouteProvenance::Explicit,

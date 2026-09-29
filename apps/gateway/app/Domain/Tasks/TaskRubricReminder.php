@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Models\Project;
+
 /**
  * Writes the one rubric reminder a thread receives per attempt.
  */

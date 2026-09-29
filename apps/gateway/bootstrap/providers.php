@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Providers\AppServiceProvider;
+use App\Providers\ApplicationServiceProvider;
 use App\Providers\GatewayBoostServiceProvider;
 use App\Providers\TasksServiceProvider;
 
 return [
-    AppServiceProvider::class,
+    ApplicationServiceProvider::class,
     GatewayBoostServiceProvider::class,
     TasksServiceProvider::class,
 ];

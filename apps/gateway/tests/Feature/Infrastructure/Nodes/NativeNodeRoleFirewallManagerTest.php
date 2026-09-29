@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Firewall\FirewallOperationException;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
@@ -15,9 +15,9 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 
 it('preserves public SSH before enabling inactive UFW', function (): void {
     expect(class_exists(NativeNodeRoleFirewallManager::class))->toBeTrue();
@@ -288,22 +288,22 @@ it('retires public Ingress HTTP and HTTPS when the Cluster has no live public Ro
 it('keeps a conflicting private production footprint private during role convergence', function (): void {
     $ssh = new RoleFirewallSshExecutor;
     $node = orb197_persisted_firewall_node('private-conflict');
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'Private production',
         'slug' => 'private-production',
         'repository_url' => 'https://example.test/private-production.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    AppInstance::query()->create([
-        'app_id' => $app->id,
+    Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'primary',
         'environment' => 'production',
         'checkout_path' => '/home/orbit-app-private',
         'production_user' => 'orbit-app-private',
         'production_home' => '/home/orbit-app-private',
-        'status' => AppInstanceState::Reserved,
+        'status' => InstanceState::Reserved,
     ]);
     $ssh->seed(['orbit:app-prod-http', 'orbit:app-prod-https']);
 

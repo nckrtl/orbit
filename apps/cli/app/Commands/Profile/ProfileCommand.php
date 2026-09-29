@@ -13,12 +13,12 @@ use App\Services\Profile\ProfileInputFailure;
 use App\Services\Profile\ProfileInputResolver;
 use App\Services\Profile\ProfileRequestProfiler;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
-use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
+use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
+use Orbit\Sdk\Responses\Instances\InstanceResponse;
 
 final class ProfileCommand extends GatewayCommand
 {
-    /** Tells a development AppInstance's Caddy site this request is a measurement, not traffic. */
+    /** Tells a development Instance's Caddy site this request is a measurement, not traffic. */
     public const string PROBE_HEADER = 'X-Orbit-Probe';
 
     /** The active profile's Orbit root certificate, set when --instance resolved its URL. */
@@ -200,7 +200,7 @@ final class ProfileCommand extends GatewayCommand
         ];
 
         if ($this->option('instance') !== null) {
-            // A development AppInstance hibernates its own Processes after an idle window, and
+            // A development Instance hibernates its own Processes after an idle window, and
             // its Caddy site wakes them for any request that reaches the wake handler. This
             // header tells that site the request is a measurement: do not wake it, and do not
             // count it as the activity that keeps it awake.
@@ -353,19 +353,19 @@ final class ProfileCommand extends GatewayCommand
             return null;
         }
 
-        // An AppInstance's domain presents an Orbit CA leaf, which curl's own bundle cannot
+        // An Instance's domain presents an Orbit CA leaf, which curl's own bundle cannot
         // chain, so the profiled request verifies against the same root the API calls use.
         $this->instanceCaPath = $this->activeGatewayProfile($repository)?->caPath;
 
         $instance = $this->sendWithProgress(
             $connector,
-            new ShowAppInstanceRequest($instanceId),
-            AppInstanceResponse::class,
+            new ShowInstanceRequest($instanceId),
+            InstanceResponse::class,
             ['Show Instance', 'Fetching Instance', 'Fetched Instance'],
             dismiss: true,
         );
 
-        if (! $instance instanceof AppInstanceResponse) {
+        if (! $instance instanceof InstanceResponse) {
             return null;
         }
 

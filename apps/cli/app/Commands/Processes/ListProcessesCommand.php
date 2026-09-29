@@ -4,18 +4,18 @@ declare(strict_types=1);
 
 namespace App\Commands\Processes;
 
-use App\Commands\Concerns\RendersAppRuntimeDefinitions;
+use App\Commands\Concerns\RendersProjectRuntimeDefinitions;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
-use Orbit\Sdk\Requests\Apps\ListProcessDefinitionsRequest;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
-use Orbit\Sdk\Responses\Apps\AppRuntimeDefinitionsResponse;
+use Orbit\Sdk\Requests\Projects\ListProcessDefinitionsRequest;
 use Orbit\Sdk\Responses\Processes\ProcessesResponse;
+use Orbit\Sdk\Responses\Projects\ProjectRuntimeDefinitionsResponse;
 
 final class ListProcessesCommand extends TargetedProcessCommand
 {
-    use RendersAppRuntimeDefinitions;
+    use RendersProjectRuntimeDefinitions;
 
     #[\Override]
     protected $signature = 'process:list
@@ -44,20 +44,20 @@ final class ListProcessesCommand extends TargetedProcessCommand
         }
 
         if ($selector === 'app') {
-            $appId = $this->projectIdOption();
+            $projectId = $this->projectIdOption();
 
-            if ($appId === false || $appId === null) {
+            if ($projectId === false || $projectId === null) {
                 return self::FAILURE;
             }
 
             $response = $this->sendWithProgress(
                 $connector,
-                new ListProcessDefinitionsRequest($appId),
-                AppRuntimeDefinitionsResponse::class,
+                new ListProcessDefinitionsRequest($projectId),
+                ProjectRuntimeDefinitionsResponse::class,
                 ['List Process definitions', 'Loading Process definitions', 'Loaded Process definitions'],
             );
 
-            return $response instanceof AppRuntimeDefinitionsResponse
+            return $response instanceof ProjectRuntimeDefinitionsResponse
                 ? $this->renderDefinitions($response)
                 : self::FAILURE;
         }

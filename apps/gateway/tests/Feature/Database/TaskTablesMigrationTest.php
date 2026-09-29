@@ -3,9 +3,9 @@
 declare(strict_types=1);
 
 use App\Domain\Tasks\TaskableType;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Support\Facades\Schema;
 
@@ -13,7 +13,7 @@ it('creates task_groups and tasks with morph, metrics, and ordering columns', fu
     expect(Schema::hasTable('task_groups'))->toBeTrue()
         ->and(Schema::hasTable('tasks'))->toBeTrue()
         ->and(Schema::hasColumns('task_groups', [
-            'app_id',
+            'project_id',
             'taskable_type',
             'taskable_id',
             'title',
@@ -76,36 +76,36 @@ it('rolls back archive backoff columns and their index', function (): void {
     $migration = require database_path('migrations/2026_09_29_120000_add_archive_backoff_to_agent_threads.php');
 
     try {
-        $migration->down();
+        run_legacy_schema_migration($migration, 'down');
 
         expect(Schema::hasColumns('agent_threads', ['archive_attempts', 'archive_retry_at']))->toBeFalse()
             ->and(Schema::hasIndex('agent_threads', 'agent_threads_archive_retry_at_index'))->toBeFalse();
     } finally {
-        $migration->up();
+        run_legacy_schema_migration($migration, 'up');
     }
 });
 
-it('persists a TaskGroup morph to an App instance and ordered subtasks', function (): void {
+it('persists a TaskGroup morph to a Project instance and ordered subtasks', function (): void {
     $node = Node::query()->create([
         'name' => 'task-migration-node',
         'status' => 'active',
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.99',
     ]);
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'Task migration',
         'slug' => 'task-migration',
         'repository_url' => 'git@example.test:task-migration.git',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'feature',
         'checkout_path' => '/tmp/task-migration',
         'status' => 'reserved',
     ]);
 
-    $group = $app->taskGroups()->create([
+    $group = $project->taskGroups()->create([
         'title' => 'Morph',
         'brief' => 'Attach the instance.',
     ]);
@@ -122,7 +122,7 @@ it('persists a TaskGroup morph to an App instance and ordered subtasks', functio
 
     $fresh = $group->fresh(['taskable', 'tasks']);
 
-    expect($fresh?->taskable)->toBeInstanceOf(AppInstance::class)
+    expect($fresh?->taskable)->toBeInstanceOf(Instance::class)
         ->and($fresh?->taskable_type)->toBe(TaskableType::Instance)
         ->and($fresh?->taskable_id)->toBe($instance->id)
         ->and($fresh?->tokens)->toBe(12)

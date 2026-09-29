@@ -81,7 +81,7 @@ final class CreateTaskGroupCommand extends TaskCommand
         $group = $this->sendWithProgress(
             $connector,
             new CreateTaskGroupRequest(
-                appId: $projectId,
+                projectId: $projectId,
                 title: $title,
                 brief: $brief,
                 status: is_string($status) ? $status : null,

@@ -32,7 +32,7 @@
                 "route": {
                     "id": 1,
                     "kind": "app",
-                    "app_id": 3,
+                    "project_id": 3,
                     "node_id": 1,
                     "cluster_id": null,
                     "generation_basis_node_id": 1,
@@ -48,13 +48,13 @@
                     "target_set_step": null,
                     "target": {
                         "id": 1,
-                        "app_instance_id": 1,
+                        "instance_id": 1,
                         "position": 0
                     },
                     "targets": [
                         {
                             "id": 1,
-                            "app_instance_id": 1,
+                            "instance_id": 1,
                             "position": 0
                         }
                     ],
@@ -109,7 +109,7 @@
                 "route": {
                     "id": 1,
                     "kind": "app",
-                    "app_id": 3,
+                    "project_id": 3,
                     "node_id": 1,
                     "cluster_id": null,
                     "generation_basis_node_id": 1,
@@ -125,13 +125,13 @@
                     "target_set_step": null,
                     "target": {
                         "id": 1,
-                        "app_instance_id": 1,
+                        "instance_id": 1,
                         "position": 0
                     },
                     "targets": [
                         {
                             "id": 1,
-                            "app_instance_id": 1,
+                            "instance_id": 1,
                             "position": 0
                         }
                     ],
@@ -173,7 +173,7 @@
                 "route": {
                     "id": 1,
                     "kind": "app",
-                    "app_id": 3,
+                    "project_id": 3,
                     "node_id": 1,
                     "cluster_id": null,
                     "generation_basis_node_id": 1,
@@ -189,13 +189,13 @@
                     "target_set_step": null,
                     "target": {
                         "id": 1,
-                        "app_instance_id": 1,
+                        "instance_id": 1,
                         "position": 0
                     },
                     "targets": [
                         {
                             "id": 1,
-                            "app_instance_id": 1,
+                            "instance_id": 1,
                             "position": 0
                         }
                     ],
@@ -237,7 +237,7 @@
                 "route": {
                     "id": 1,
                     "kind": "app",
-                    "app_id": 3,
+                    "project_id": 3,
                     "node_id": 1,
                     "cluster_id": null,
                     "generation_basis_node_id": 1,
@@ -253,13 +253,13 @@
                     "target_set_step": null,
                     "target": {
                         "id": 1,
-                        "app_instance_id": 1,
+                        "instance_id": 1,
                         "position": 0
                     },
                     "targets": [
                         {
                             "id": 1,
-                            "app_instance_id": 1,
+                            "instance_id": 1,
                             "position": 0
                         }
                     ],

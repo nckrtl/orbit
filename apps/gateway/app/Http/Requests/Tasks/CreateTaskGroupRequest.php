@@ -9,7 +9,7 @@ use App\Data\Tasks\TaskInputData;
 use App\Domain\Tasks\TaskDeliverableType;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Http\Requests\TopLevelJsonObjectInspector;
-use App\Models\App;
+use App\Models\Project;
 use App\Rules\CommandPaths;
 use App\Rules\DistinctDeliverableIds;
 use App\Rules\FailsOnBase;
@@ -27,7 +27,7 @@ final class CreateTaskGroupRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'app_id' => ['required', 'integer:strict', 'min:1', Rule::exists(App::class, 'id')],
+            'project_id' => ['required', 'integer:strict', 'min:1', Rule::exists(Project::class, 'id')],
             'title' => ['required', 'string', 'max:160'],
             'brief' => ['required', 'string', 'max:8000'],
             'status' => ['sometimes', 'string', Rule::in([TaskGroupStatus::Backlog->value, TaskGroupStatus::Todo->value])],
@@ -56,7 +56,7 @@ final class CreateTaskGroupRequest extends FormRequest
     {
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), [
-                'app_id',
+                'project_id',
                 'title',
                 'brief',
                 'status',
@@ -87,7 +87,7 @@ final class CreateTaskGroupRequest extends FormRequest
         }
 
         return new CreateTaskGroupData(
-            appId: $this->integer('app_id'),
+            projectId: $this->integer('project_id'),
             title: $this->string('title')->toString(),
             brief: $this->string('brief')->toString(),
             status: TaskGroupStatus::from($this->string('status', TaskGroupStatus::Backlog->value)->toString()),

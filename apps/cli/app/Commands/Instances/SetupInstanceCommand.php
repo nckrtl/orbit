@@ -7,8 +7,8 @@ namespace App\Commands\Instances;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\Requests\Instances\SetupAppInstanceRequest;
-use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
+use Orbit\Sdk\Requests\Instances\SetupInstanceRequest;
+use Orbit\Sdk\Responses\Instances\InstanceResponse;
 
 final class SetupInstanceCommand extends GatewayCommand
 {
@@ -38,12 +38,12 @@ final class SetupInstanceCommand extends GatewayCommand
 
         $response = $this->sendWithProgress(
             $connector,
-            new SetupAppInstanceRequest($instanceId),
-            AppInstanceResponse::class,
+            new SetupInstanceRequest($instanceId),
+            InstanceResponse::class,
             ['Run setup', 'Running setup', 'Ran setup'],
         );
 
-        if (! $response instanceof AppInstanceResponse) {
+        if (! $response instanceof InstanceResponse) {
             return self::FAILURE;
         }
 

@@ -12,6 +12,7 @@
             "concepts": [
                 "Cluster",
                 "Gateway",
+                "Instance",
                 "Node",
                 "Process",
                 "Role",
@@ -611,7 +612,7 @@
         },
         {
             "path": "docs/decisions/0097-publish-analytics-tracking-hosts-for-app-instances.md",
-            "title": "ADR 0097: Publish analytics tracking hosts for App instances",
+            "title": "ADR 0097: Publish analytics tracking hosts for Instances",
             "kind": "decision",
             "components": [
                 "apps/cli",
@@ -624,6 +625,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Project",
                 "Role",
                 "Route"
             ],
@@ -938,122 +940,6 @@
                 "Node agent",
                 "Process",
                 "Role"
-            ],
-            "governing_adrs": []
-        },
-        {
-            "path": "docs/reference/app-processes-and-schedules.md",
-            "title": "Processes and schedules",
-            "kind": "reference",
-            "components": [
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Access grant",
-                "Activity",
-                "Deployment",
-                "Doctor",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Project",
-                "Role",
-                "Route",
-                "Schedule"
-            ],
-            "governing_adrs": []
-        },
-        {
-            "path": "docs/reference/appinstance-cloning.md",
-            "title": "Instance cloning",
-            "kind": "reference",
-            "components": [
-                "apps/cli",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Access grant",
-                "Cluster",
-                "Deployment",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Project",
-                "Role",
-                "Route"
-            ],
-            "governing_adrs": []
-        },
-        {
-            "path": "docs/reference/appinstance-removal.md",
-            "title": "Instance removal",
-            "kind": "reference",
-            "components": [
-                "apps/cli",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Activity",
-                "Cluster",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Project",
-                "Route",
-                "Schedule",
-                "Task",
-                "Task workspace"
-            ],
-            "governing_adrs": []
-        },
-        {
-            "path": "docs/reference/appinstance-transfer.md",
-            "title": "Instance transfer",
-            "kind": "reference",
-            "components": [
-                "apps/cli",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Access grant",
-                "Cluster",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Project",
-                "Role",
-                "Route",
-                "Schedule"
-            ],
-            "governing_adrs": []
-        },
-        {
-            "path": "docs/reference/apps.md",
-            "title": "Projects",
-            "kind": "reference",
-            "components": [
-                "apps/cli",
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Activity",
-                "Deployment",
-                "Doctor",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Project",
-                "Route",
-                "Schedule",
-                "Task",
-                "Task check",
-                "Tool"
             ],
             "governing_adrs": []
         },
@@ -1446,6 +1332,28 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/instance-cloning.md",
+            "title": "Instance cloning",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Deployment",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Role",
+                "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/reference/instance-dependencies.md",
             "title": "Instance dependencies",
             "kind": "reference",
@@ -1515,6 +1423,29 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/instance-removal.md",
+            "title": "Instance removal",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Activity",
+                "Cluster",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Route",
+                "Schedule",
+                "Task",
+                "Task workspace"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/reference/instance-setup.md",
             "title": "Instance setup and teardown",
             "kind": "reference",
@@ -1532,6 +1463,29 @@
                 "Route",
                 "Task",
                 "Task check"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/instance-transfer.md",
+            "title": "Instance transfer",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Access grant",
+                "Cluster",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Schedule"
             ],
             "governing_adrs": []
         },
@@ -1571,6 +1525,7 @@
                 "Node",
                 "Node agent",
                 "Process",
+                "Project",
                 "Route",
                 "Schedule",
                 "Task",
@@ -1735,6 +1690,54 @@
                 "Process",
                 "Role",
                 "Route",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/processes-and-schedules.md",
+            "title": "Processes and schedules",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Access grant",
+                "Activity",
+                "Deployment",
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/projects.md",
+            "title": "Projects",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Activity",
+                "Deployment",
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Route",
+                "Schedule",
+                "Task",
+                "Task check",
                 "Tool"
             ],
             "governing_adrs": []
@@ -1906,6 +1909,7 @@
                 "Node",
                 "Node agent",
                 "Process",
+                "Project",
                 "Role",
                 "Route",
                 "Task",

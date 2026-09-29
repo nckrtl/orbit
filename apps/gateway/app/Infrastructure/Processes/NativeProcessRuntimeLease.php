@@ -7,7 +7,7 @@ namespace App\Infrastructure\Processes;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Infrastructure\Shared\StoredValue;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use Closure;
@@ -106,7 +106,7 @@ final class NativeProcessRuntimeLease implements ProcessRuntimeLease
     private function key(#[SensitiveParameter] Process $process): string
     {
         $nodeId = match (true) {
-            AppInstance::isMorphType($process->owner_type) => StoredValue::integer(AppInstance::query()->whereKey($process->owner_id)->value('node_id')),
+            Instance::isMorphType($process->owner_type) => StoredValue::integer(Instance::query()->whereKey($process->owner_id)->value('node_id')),
             $process->owner_type === Node::class => $process->owner_id,
             default => 0,
         };

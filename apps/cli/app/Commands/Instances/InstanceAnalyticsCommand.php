@@ -53,7 +53,7 @@ abstract class InstanceAnalyticsCommand extends GatewayCommand
         }
 
         if ($response->snippet !== null) {
-            $this->writeHumanMessage('Add this tag to the App, and create the site in Plausible yourself:');
+            $this->writeHumanMessage('Add this tag to the Project, and create the site in Plausible yourself:');
             $this->writeHumanMessage($response->snippet);
         }
 

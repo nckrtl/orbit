@@ -17,9 +17,9 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Schedule;
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
@@ -66,12 +66,12 @@ it('requires the selected production release even when installing a disabled Sch
         'wireguard_ip' => '10.44.0.4',
     ]);
     $node->roles()->create(['role' => 'app-prod', 'status' => LifecycleStatus::Active]);
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'Release target',
         'slug' => 'release-target',
         'repository_url' => 'https://example.test/release-target.git',
     ]);
-    $instance = $app->appInstances()->create([
+    $instance = $project->instances()->create([
         'node_id' => $node->id,
         'name' => 'main',
         'checkout_path' => '/home/managed/releases/prepared',
@@ -83,7 +83,7 @@ it('requires the selected production release even when installing a disabled Sch
         'status' => 'active',
     ]);
     $schedule = Schedule::query()->create([
-        'target_type' => AppInstance::MorphAlias,
+        'target_type' => Instance::MorphAlias,
         'target_id' => $instance->id,
         'host_node_id' => $node->id,
         'name' => 'disabled-production',

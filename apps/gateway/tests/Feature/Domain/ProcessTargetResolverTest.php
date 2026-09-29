@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Processes\ProcessTargetType;
 use App\Domain\Routes\RouteProvenance;
@@ -10,18 +10,18 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Route;
 
-it('derives development placement from the AppInstance', function (): void {
+it('derives development placement from the Instance', function (): void {
     $instance = process_target_instance();
 
-    $target = app(ProcessTargetResolver::class)->resolve(ProcessTargetType::AppInstance, $instance->id);
+    $target = app(ProcessTargetResolver::class)->resolve(ProcessTargetType::Instance, $instance->id);
 
-    expect($target->appInstance?->is($instance))
+    expect($target->instance?->is($instance))
         ->toBeTrue()
         ->and($target->node->is($instance->node))
         ->toBeTrue()
@@ -39,20 +39,20 @@ it('derives development placement from the AppInstance', function (): void {
         ->toBeNull();
 });
 
-it('derives the development-server origin hostname from the AppInstance Route', function (): void {
+it('derives the development-server origin hostname from the Instance Route', function (): void {
     $instance = process_target_instance();
     $route = Route::query()->create([
-        'app_id' => $instance->app_id,
+        'project_id' => $instance->project_id,
         'node_id' => $instance->node_id,
         'domain' => 'tasks.commander.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
 
-    $target = app(ProcessTargetResolver::class)->resolve(ProcessTargetType::AppInstance, $instance->id);
+    $target = app(ProcessTargetResolver::class)->resolve(ProcessTargetType::Instance, $instance->id);
 
     expect($target->routeDomain)->toBe('tasks.commander.test');
 });
@@ -90,14 +90,14 @@ it('refuses the legacy flat production home as a process working directory', fun
     app(ProcessTargetResolver::class)->forStart(process_target_process($instance));
 })->throws(ResourceOperationException::class, 'no valid Process placement');
 
-it('rejects inactive AppInstances and Nodes for admission', function (array $instanceChanges, array $nodeChanges): void {
+it('rejects inactive Instances and Nodes for admission', function (array $instanceChanges, array $nodeChanges): void {
     $instance = process_target_instance();
     $instance->update($instanceChanges);
     $instance->node->update($nodeChanges);
 
     app(ProcessTargetResolver::class)->forAdmission($instance->refresh()->load('node'));
 })->with([
-    'inactive AppInstance' => [['status' => AppInstanceState::SourceResolved], []],
+    'inactive Instance' => [['status' => InstanceState::SourceResolved], []],
     'unfinished provisioning' => [['provisioning_step' => 'source'], []],
     'inactive Node' => [[], ['status' => LifecycleStatus::Failed]],
 ])->throws(ResourceOperationException::class, 'not active');
@@ -105,16 +105,16 @@ it('rejects inactive AppInstances and Nodes for admission', function (array $ins
 it('allows inspection and cleanup during incomplete removal when the Node remains reachable', function (): void {
     $instance = process_target_instance();
     $instance->update([
-        'status' => AppInstanceState::SourceResolved,
+        'status' => InstanceState::SourceResolved,
         'failed_step' => 'runtime_cleanup',
         'error_code' => 'process.remove_failed',
     ]);
     $process = process_target_process($instance->refresh());
     $resolver = app(ProcessTargetResolver::class);
 
-    expect($resolver->forInspection($process)->appInstance?->id)
+    expect($resolver->forInspection($process)->instance?->id)
         ->toBe($instance->id)
-        ->and($resolver->forRemoval($process)->appInstance?->id)
+        ->and($resolver->forRemoval($process)->instance?->id)
         ->toBe($instance->id);
 });
 
@@ -141,7 +141,7 @@ it('derives Node placement from the managed user home', function (): void {
 
     $target = app(ProcessTargetResolver::class)->resolve(ProcessTargetType::Node, $node->id);
 
-    expect($target->appInstance)
+    expect($target->instance)
         ->toBeNull()
         ->and($target->node->is($node))
         ->toBeTrue()
@@ -210,11 +210,11 @@ it('rejects a leftover Process owner before target resolution', function (): voi
     ]);
 
     app(ProcessTargetResolver::class)->forInspection($process);
-})->throws(ResourceOperationException::class, 'not a supported AppInstance or Node');
+})->throws(ResourceOperationException::class, 'not a supported Instance or Node');
 
-function process_target_instance(string $environment = 'development', array $attributes = []): AppInstance
+function process_target_instance(string $environment = 'development', array $attributes = []): Instance
 {
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'https://example.test/docs.git',
@@ -233,19 +233,19 @@ function process_target_instance(string $environment = 'development', array $att
         'status' => LifecycleStatus::Active,
     ]);
 
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'main',
         'checkout_path' => '/srv/orbit/docs/main',
         'source_is_laravel' => false,
         'provisioning_step' => 'active',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
         ...$attributes,
     ])->load('node');
 }
 
-function process_target_process(AppInstance $instance): Process
+function process_target_process(Instance $instance): Process
 {
     return $instance->processes()->create([
         'name' => 'queue',

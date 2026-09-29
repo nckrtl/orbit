@@ -59,7 +59,7 @@ final class CreateDeployStepCommand extends DeploymentCommand
         }
 
         $response = $this->sendWithProgress($connector, new CreateInstanceDeployStepRequest(
-            appInstanceId: $instanceId,
+            instanceId: $instanceId,
             name: $name,
             command: $command,
             phase: $this->stringOption('phase'),

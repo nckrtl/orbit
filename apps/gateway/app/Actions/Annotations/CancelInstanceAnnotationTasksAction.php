@@ -8,7 +8,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskType;
 use App\Models\Annotation;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Task;
 use Illuminate\Support\Facades\DB;
 
@@ -21,7 +21,7 @@ final readonly class CancelInstanceAnnotationTasksAction
         DB::transaction(function () use ($instanceId): void {
             $tasks = Task::query()->where('type', TaskType::Annotation)
                 ->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Cancelled])
-                ->whereHas('taskGroup', static fn ($q) => $q->whereIn('taskable_type', AppInstance::morphTypes())->where('taskable_id', $instanceId))
+                ->whereHas('taskGroup', static fn ($q) => $q->whereIn('taskable_type', Instance::morphTypes())->where('taskable_id', $instanceId))
                 ->lockForUpdate()->get();
             foreach ($tasks as $task) {
                 $task->update(['status' => TaskStatus::Cancelled, 'settled_at' => now(), 'completion_summary' => 'Cancelled because the Instance is being removed.']);

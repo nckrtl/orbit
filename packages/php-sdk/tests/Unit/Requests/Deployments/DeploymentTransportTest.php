@@ -8,9 +8,9 @@ use GuzzleHttp\Psr7\Response as PsrResponse;
 use GuzzleHttp\Psr7\Utils;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
-use Orbit\Sdk\Requests\Deployments\DeployAppInstanceRequest;
+use Orbit\Sdk\Requests\Deployments\DeployInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\ListInstanceDeployStepsRequest;
-use Orbit\Sdk\Requests\Deployments\RollbackAppInstanceRequest;
+use Orbit\Sdk\Requests\Deployments\RollbackInstanceRequest;
 use Orbit\Sdk\Responses\Deployments\DeploymentStream;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -19,11 +19,11 @@ describe('deployment transport', function (): void {
     it('uses request-local streaming and the bounded Gateway budget without weakening TLS', function (): void {
         $requestId = deployment_transport_request_id();
         $mock = new MockClient([
-            DeployAppInstanceRequest::class => MockResponse::make(
+            DeployInstanceRequest::class => MockResponse::make(
                 deployment_transport_result(),
                 headers: deployment_transport_headers(),
             ),
-            RollbackAppInstanceRequest::class => MockResponse::make(
+            RollbackInstanceRequest::class => MockResponse::make(
                 deployment_transport_result(),
                 headers: deployment_transport_headers(),
             ),
@@ -37,8 +37,8 @@ describe('deployment transport', function (): void {
         $connector->withMockClient($mock);
 
         foreach ([
-            new DeployAppInstanceRequest(17),
-            new RollbackAppInstanceRequest(17, 'release-a'),
+            new DeployInstanceRequest(17),
+            new RollbackInstanceRequest(17, 'release-a'),
         ] as $request) {
             $response = $connector->send($request);
             $pending = $mock->getLastPendingRequest();
@@ -85,13 +85,13 @@ describe('deployment transport', function (): void {
 
     it('closes the actual HTTP response when the consumer cancels', function (): void {
         $mock = new MockClient([
-            DeployAppInstanceRequest::class => MockResponse::make(
+            DeployInstanceRequest::class => MockResponse::make(
                 deployment_transport_result(),
                 headers: deployment_transport_headers(),
             ),
         ]);
         $connector = deployment_transport_connector($mock);
-        $response = $connector->send(new DeployAppInstanceRequest(17));
+        $response = $connector->send(new DeployInstanceRequest(17));
         $stream = $response->dto();
 
         expect($stream)->toBeInstanceOf(DeploymentStream::class)
@@ -103,7 +103,7 @@ describe('deployment transport', function (): void {
 
     it('keeps pre-admission JSON errors and performs no retry or replay', function (): void {
         $mock = new MockClient([
-            DeployAppInstanceRequest::class => MockResponse::make([
+            DeployInstanceRequest::class => MockResponse::make([
                 'error' => [
                     'code' => 'deployment.busy',
                     'message' => 'The deployment operation is busy.',
@@ -114,20 +114,20 @@ describe('deployment transport', function (): void {
         $connector = deployment_transport_connector($mock);
 
         try {
-            $connector->send(new DeployAppInstanceRequest(17));
+            $connector->send(new DeployInstanceRequest(17));
             $this->fail('Expected a structured Gateway error.');
         } catch (GatewayApiException $exception) {
             expect($exception->errorCode())->toBe('deployment.busy')
                 ->and($exception->requestId())->toBe(deployment_transport_request_id());
         }
 
-        $mock->assertSentCount(1, DeployAppInstanceRequest::class);
+        $mock->assertSentCount(1, DeployInstanceRequest::class);
     });
 
     it('preserves structured errors from a non-seekable streaming response', function (): void {
         foreach ([
-            new DeployAppInstanceRequest(17),
-            new RollbackAppInstanceRequest(17, 'release-a'),
+            new DeployInstanceRequest(17),
+            new RollbackInstanceRequest(17, 'release-a'),
         ] as $request) {
             $sendCount = 0;
             $connector = new GatewayConnector(
@@ -172,13 +172,13 @@ describe('deployment transport', function (): void {
 
     it('rejects an invalid stream response boundary and closes it', function (array $headers): void {
         $mock = new MockClient([
-            DeployAppInstanceRequest::class => MockResponse::make(
+            DeployInstanceRequest::class => MockResponse::make(
                 deployment_transport_result(),
                 headers: $headers,
             ),
         ]);
         $connector = deployment_transport_connector($mock);
-        $response = $connector->send(new DeployAppInstanceRequest(17));
+        $response = $connector->send(new DeployInstanceRequest(17));
 
         expect(fn (): mixed => $response->dto())
             ->toThrow(GatewayApiException::class, 'Gateway response is not a valid deployment stream.')
@@ -217,7 +217,7 @@ describe('deployment transport', function (): void {
                 ));
             },
         );
-        $response = $connector->send(new DeployAppInstanceRequest(17));
+        $response = $connector->send(new DeployInstanceRequest(17));
 
         expect(fn (): mixed => $response->dto())
             ->toThrow(GatewayApiException::class, 'Gateway response is not a valid deployment stream.')
@@ -226,18 +226,18 @@ describe('deployment transport', function (): void {
 
     it('does not resend or replay a truncated admitted stream', function (): void {
         $mock = new MockClient([
-            DeployAppInstanceRequest::class => MockResponse::make(
+            DeployInstanceRequest::class => MockResponse::make(
                 rtrim(deployment_transport_result(), "\n"),
                 headers: deployment_transport_headers(),
             ),
         ]);
         $connector = deployment_transport_connector($mock);
-        $stream = $connector->send(new DeployAppInstanceRequest(17))->dto();
+        $stream = $connector->send(new DeployInstanceRequest(17))->dto();
 
         expect($stream)->toBeInstanceOf(DeploymentStream::class)
             ->and(fn (): array => iterator_to_array($stream))
             ->toThrow(GatewayApiException::class, 'Gateway deployment stream is invalid.');
-        $mock->assertSentCount(1, DeployAppInstanceRequest::class);
+        $mock->assertSentCount(1, DeployInstanceRequest::class);
     });
 });
 

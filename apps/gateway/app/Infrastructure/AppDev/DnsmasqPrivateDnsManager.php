@@ -29,7 +29,7 @@ final readonly class DnsmasqPrivateDnsManager implements PrivateDnsManager
      */
     public function __construct(
         private ProcessRunner $processes,
-        private AppDevDnsConfigRenderer $renderer,
+        private DevelopmentDnsConfigRenderer $renderer,
         private ?DevelopmentProjectionOperationLock $projection = null,
         private string $recordsDirectory = '/etc/dnsmasq.d',
         private string $recordsFile = 'orbit-records.conf',

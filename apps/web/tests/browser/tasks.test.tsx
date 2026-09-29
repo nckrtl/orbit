@@ -9,9 +9,9 @@ import { screenText } from "./screen";
 function group(id: number, status: TaskGroup["status"]): TaskGroup {
     return {
         id,
-        app_id: 999,
+        project_id: 999,
         execution_mode: "managed",
-        app: "example-project",
+        project: "example-project",
         project_code: "EXA",
         title: `Feature ${id}`,
         brief: "Deliver the requested feature.\nKeep its existing behavior.",

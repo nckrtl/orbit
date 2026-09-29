@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Models\Project;
+
 /**
  * HEAD and the working-tree hash the Project check stores: the whole working tree, uncommitted and
  * untracked files included, without touching the Git index (ADR 0133).

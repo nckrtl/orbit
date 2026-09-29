@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Actions\Doctor\RunDoctorAction;
 use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorNodeReportData;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorInspectionException;
@@ -15,17 +14,18 @@ use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\NodeStateInspector;
 use App\Domain\Doctor\PublicRouteEdgeInspector;
 use App\Domain\Doctor\PublicRouteEdgeObservation;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\App;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -300,16 +300,16 @@ describe('RunDoctorAction', function (): void {
             'role' => RoleName::Router,
             'status' => LifecycleStatus::Active,
         ]);
-        $app = App::query()->create([
+        $project = Project::query()->create([
             'name' => 'Doctor Run',
             'slug' => 'doctor-run',
             'repository_url' => 'https://example.test/doctor-run.git',
             'default_branch' => 'main',
             'root' => 'public',
         ]);
-        $user = "orbit-app-{$app->id}";
-        $instance = AppInstance::query()->create([
-            'app_id' => $app->id,
+        $user = "orbit-app-{$project->id}";
+        $instance = Instance::query()->create([
+            'project_id' => $project->id,
             'node_id' => $workload->id,
             'name' => 'production',
             'environment' => 'production',
@@ -323,17 +323,17 @@ describe('RunDoctorAction', function (): void {
             'root' => 'public',
             'branch' => 'main',
             'starting_commit' => str_repeat('a', 40),
-            'status' => AppInstanceState::Active,
+            'status' => InstanceState::Active,
         ]);
         $route = Route::query()->create([
-            'app_id' => $app->id,
+            'project_id' => $project->id,
             'cluster_id' => $cluster->id,
             'domain' => 'run-doctor.example.test',
             'provenance' => RouteProvenance::Explicit,
             'publication' => RoutePublication::Public,
             'status' => RouteStatus::Pending,
         ]);
-        $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+        $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
         $route->update([
             'status' => RouteStatus::Active,
             'replacement_step' => RouteReplacementStep::IngressFirewall,
@@ -342,7 +342,7 @@ describe('RunDoctorAction', function (): void {
         bind_run_doctor_inspector();
         app()->instance(InstanceStateInspector::class, new class implements InstanceStateInspector
         {
-            public function inspect(AppInstance $appInstance): InstanceInspectionData
+            public function inspect(Instance $instance): InstanceInspectionData
             {
                 return new InstanceInspectionData(
                     true,

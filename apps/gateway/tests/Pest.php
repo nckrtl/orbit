@@ -5,11 +5,11 @@ declare(strict_types=1);
 use App\Domain\AppDev\AgentationSiteProjection;
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\VitePortRuntime;
-use App\Domain\AppInstances\Deployment\AppInstanceDeployStepStore;
-use App\Domain\AppInstances\Deployment\DeploymentPhase;
-use App\Domain\AppInstances\Deployment\DeploymentStep;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\RouterLanIngressReconciler;
+use App\Domain\Instances\Deployment\DeploymentPhase;
+use App\Domain\Instances\Deployment\DeploymentStep;
+use App\Domain\Instances\Deployment\InstanceDeployStepStore;
 use App\Domain\Logs\LogStreamStore;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\RoleName;
@@ -21,19 +21,19 @@ use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskRunReceipts;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\AgentView\CacheAgentStateView;
-use App\Infrastructure\AppInstances\DependencyUpdateSupervisorHost;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
+use App\Infrastructure\Instances\DependencyUpdateSupervisorHost;
 use App\Infrastructure\Logs\CacheLogStreamStore;
 use App\Infrastructure\Nodes\NodeLocks;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Tasks\RemoteTaskBridgeWorktreeRemover;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Project;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -50,7 +50,8 @@ use Tests\Support\FakeVitePortRuntime;
 use Tests\Support\TestToolchain;
 use Tests\TestCase;
 
-require_once __DIR__.'/Support/AppInstanceEnvironmentMigration.php';
+require_once __DIR__.'/Support/InstanceEnvironmentMigration.php';
+require_once __DIR__.'/Support/LegacySchemaMigration.php';
 require_once __DIR__.'/Support/FakeNodeAgentRuntime.php';
 require_once __DIR__.'/Support/Orb245TransferFakes.php';
 require_once __DIR__.'/Support/AgentDriverTestSupport.php';
@@ -77,7 +78,7 @@ uses(TestCase::class, RefreshDatabase::class)
         // Bridge removal runs Git on the Node. Feature tests skip it unless they opt in.
         app()->instance(TaskBridgeWorktreeRemover::class, new class implements TaskBridgeWorktreeRemover
         {
-            public function remove(AppInstance $instance): void
+            public function remove(Instance $instance): void
             {
                 if (config('orbit.tasks.remove_bridge_worktree') === true) {
                     app(RemoteTaskBridgeWorktreeRemover::class)->remove($instance);
@@ -121,9 +122,9 @@ pest()->tia()->watch([
 ]);
 
 /** @param list<array{name: string, phase: string, command: string, timeout_seconds: int}> $steps */
-function store_deploy_steps(AppInstance $instance, array $steps): void
+function store_deploy_steps(Instance $instance, array $steps): void
 {
-    app(AppInstanceDeployStepStore::class)->replaceAll(
+    app(InstanceDeployStepStore::class)->replaceAll(
         $instance,
         array_map(static fn (array $step): DeploymentStep => new DeploymentStep(
             $step['name'],
@@ -153,11 +154,11 @@ function orbit_test_set_app_placement_role(Node $node, bool $production): void
     ]));
 }
 
-function normalized_deploy_steps(AppInstance $instance): array
+function normalized_deploy_steps(Instance $instance): array
 {
     return array_map(
         static fn (DeploymentStep $step): array => $step->toArray(),
-        app(AppInstanceDeployStepStore::class)->ordered($instance),
+        app(InstanceDeployStepStore::class)->ordered($instance),
     );
 }
 
@@ -175,7 +176,7 @@ function app_instance_deployment_config_migration(): object
     );
 }
 
-/** @return array{OrbitApp, Node} */
+/** @return array{Project, Node} */
 function deployment_migration_parents(): array
 {
     $count = Node::query()->count();
@@ -185,7 +186,7 @@ function deployment_migration_parents(): array
         'platform' => 'linux',
         'public_ssh_host' => '192.0.2.'.(130 + $count),
     ]);
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => "Deployment migration {$count}",
         'slug' => "deployment-migration-{$count}",
         'repository_url' => "https://example.test/deployment-migration-{$count}.git",
@@ -193,10 +194,10 @@ function deployment_migration_parents(): array
         'root' => 'public',
     ]);
 
-    return [$app, $node];
+    return [$project, $node];
 }
 
-/** @return array{Node, Node, OrbitApp, AppInstance} */
+/** @return array{Node, Node, Project, Instance} */
 function deployment_api_fixture(): array
 {
     $caller = Node::query()->create([
@@ -217,15 +218,15 @@ function deployment_api_fixture(): array
         'user' => 'orbit',
     ]);
     $owner->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'Deployment API',
         'slug' => 'deployment-api',
         'repository_url' => 'https://example.test/deployment-api.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $owner->id,
         'name' => 'production',
         'environment' => 'production',
@@ -237,7 +238,7 @@ function deployment_api_fixture(): array
         'status' => 'source_resolved',
     ]);
 
-    return [$caller, $owner, $app, $instance->fresh()];
+    return [$caller, $owner, $project, $instance->fresh()];
 }
 
 function orb183_production_route_migration(): Migration
@@ -253,14 +254,14 @@ function app_instance_removal_migration_boundary(): Migration
     {
         public function down(): void
         {
-            orb183_production_route_migration()->down();
-            $this->removalMigration()->down();
+            run_legacy_schema_migration(orb183_production_route_migration(), 'down');
+            run_legacy_schema_migration($this->removalMigration(), 'down');
         }
 
         public function up(): void
         {
-            $this->removalMigration()->up();
-            orb183_production_route_migration()->up();
+            run_legacy_schema_migration($this->removalMigration(), 'up');
+            run_legacy_schema_migration(orb183_production_route_migration(), 'up');
         }
 
         private function removalMigration(): Migration

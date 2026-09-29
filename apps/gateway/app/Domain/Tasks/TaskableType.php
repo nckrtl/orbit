@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class TaskableType
 {
@@ -12,6 +12,6 @@ final readonly class TaskableType
 
     public static function allows(string $type): bool
     {
-        return AppInstance::isMorphType($type);
+        return Instance::isMorphType($type);
     }
 }

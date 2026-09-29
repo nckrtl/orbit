@@ -7,7 +7,7 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\CaddyGlobalOptions;
 use App\Infrastructure\Doctor\NativeCustomProxyRouteInspector;
@@ -76,7 +76,7 @@ it('does not read a site that the live file only imports from a fragment of an e
 function custom_proxy_inspector(LocalRootShellSshExecutor $ssh, string $caddy): NativeCustomProxyRouteInspector
 {
     return new NativeCustomProxyRouteInspector(
-        new AppDevSshExecutor(
+        new DevelopmentSshExecutor(
             $ssh,
             new class implements SshKeyProvider
             {

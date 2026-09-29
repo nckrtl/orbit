@@ -24,7 +24,7 @@ it('keeps the caller command only in the protected UUID script', function (): vo
         workingDirectory: '/home/orbit-app/current',
         shell: '/bin/bash',
         loginShell: false,
-        appInstance: null,
+        instance: null,
     );
     $renderer = schedule_renderer('https://10.44.0.1');
     $script = $renderer->renderScript($schedule, $target);
@@ -67,7 +67,7 @@ it('uses a non-interactive login shell for Node and development contexts', funct
         workingDirectory: '/home/orbit',
         shell: '/bin/zsh',
         loginShell: true,
-        appInstance: null,
+        instance: null,
     );
 
     expect(schedule_renderer('https://gateway.test')->renderScript($schedule, $target))

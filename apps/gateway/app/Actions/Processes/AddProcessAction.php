@@ -26,7 +26,7 @@ use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Processes\ProcessTargetType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Support\Facades\DB;
@@ -69,7 +69,7 @@ final readonly class AddProcessAction
     public function execute(#[SensitiveParameter] AddProcessData $data): array
     {
         $this->targets->resolve($data->targetType, $data->targetId);
-        $ownerIds = $data->targetType === ProcessTargetType::AppInstance ? [$data->targetId] : [];
+        $ownerIds = $data->targetType === ProcessTargetType::Instance ? [$data->targetId] : [];
 
         return $this->admissions->run(
             $ownerIds,
@@ -138,8 +138,8 @@ final readonly class AddProcessAction
     private function reserveAdmission(#[SensitiveParameter] AddProcessData $data): array
     {
         $target = match ($data->targetType) {
-            ProcessTargetType::AppInstance => $this->targets->forAdmission(
-                AppInstance::query()
+            ProcessTargetType::Instance => $this->targets->forAdmission(
+                Instance::query()
                     ->with('node')
                     ->lockForUpdate()
                     ->findOrFail($data->targetId),
@@ -202,11 +202,11 @@ final readonly class AddProcessAction
             return;
         }
 
-        $owner = $process->owner instanceof AppInstance
+        $owner = $process->owner instanceof Instance
             ? $process->owner
-            : AppInstance::query()->find($process->owner_id);
+            : Instance::query()->find($process->owner_id);
 
-        if ($owner instanceof AppInstance) {
+        if ($owner instanceof Instance) {
             $this->agentationSites->project($owner);
         }
     }
@@ -217,10 +217,10 @@ final readonly class AddProcessAction
             throw new ResourceOperationException('process.preset_target_invalid', 'The Process preset is not supported.', 422);
         }
 
-        if (! $target->appInstance?->placedOnAppDev()) {
+        if (! $target->instance?->placedOnAppDev()) {
             throw new ResourceOperationException(
                 errorCode: 'process.preset_target_invalid',
-                message: "The {$data->preset} preset requires a development AppInstance.",
+                message: "The {$data->preset} preset requires a development Instance.",
                 status: 422,
             );
         }
@@ -228,13 +228,13 @@ final readonly class AddProcessAction
         if ($data->keepAlive && ProcessPresets::refusesKeepAlive($data->preset)) {
             throw new ResourceOperationException(
                 errorCode: 'process.preset_keep_alive_invalid',
-                message: "The {$data->preset} preset hibernates with the AppInstance and cannot keep-alive.",
+                message: "The {$data->preset} preset hibernates with the Instance and cannot keep-alive.",
                 status: 422,
             );
         }
 
         $siblings = Process::query()
-            ->whereIn('owner_type', AppInstance::morphTypes())
+            ->whereIn('owner_type', Instance::morphTypes())
             ->where('owner_id', $data->targetId)
             ->where('name', '!=', $data->name)
             ->get();
@@ -244,7 +244,7 @@ final readonly class AddProcessAction
         if ($duplicate) {
             throw new ResourceOperationException(
                 errorCode: 'process.preset_exists',
-                message: "This AppInstance already has a {$data->preset} Process.",
+                message: "This Instance already has a {$data->preset} Process.",
                 status: 409,
             );
         }
@@ -252,14 +252,14 @@ final readonly class AddProcessAction
         if ($data->preset === AntigravityWatchPreset::NAME && ! $siblings->contains(fn (Process $process): bool => $process->isAgentationMcp())) {
             throw new ResourceOperationException(
                 errorCode: 'process.preset_dependency_missing',
-                message: 'The antigravity-watch preset requires an agentation-mcp Process on this AppInstance.',
+                message: 'The antigravity-watch preset requires an agentation-mcp Process on this Instance.',
                 status: 422,
             );
         }
 
         if ($data->preset === AgentationMcpPreset::NAME) {
-            $this->agentationPorts->assign($target->appInstance);
-            $this->agentationUrls->project($target->appInstance);
+            $this->agentationPorts->assign($target->instance);
+            $this->agentationUrls->project($target->instance);
         }
     }
 }

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Domain\AppInstances\AppInstanceState;
-use App\Models\AppInstance;
+use App\Domain\Instances\InstanceState;
+use App\Models\Instance;
 use App\Models\TaskGroup;
 
 /**
@@ -16,22 +16,22 @@ use App\Models\TaskGroup;
  */
 final readonly class TaskWorkspaceLifecycle
 {
-    public static function settledState(AppInstance $instance): AppInstanceState
+    public static function settledState(Instance $instance): InstanceState
     {
-        $instance->loadMissing(['app', 'taskGroups']);
+        $instance->loadMissing(['project', 'taskGroups']);
 
-        if (self::isTaskWorkspace($instance) && ! InstanceProvisionIntent::visitableFor($instance->app)) {
-            return AppInstanceState::SourceResolved;
+        if (self::isTaskWorkspace($instance) && ! InstanceProvisionIntent::visitableFor($instance->project)) {
+            return InstanceState::SourceResolved;
         }
 
-        return AppInstanceState::Active;
+        return InstanceState::Active;
     }
 
     /**
      * The provisioner creates a workspace only for a managed group and names it after that group.
      * An annotation links an existing_thread group to an ordinary Instance, which is not a workspace.
      */
-    private static function isTaskWorkspace(AppInstance $instance): bool
+    private static function isTaskWorkspace(Instance $instance): bool
     {
         return $instance->taskGroups->contains(
             static fn (TaskGroup $group): bool => $group->execution_mode === TaskExecutionMode::Managed

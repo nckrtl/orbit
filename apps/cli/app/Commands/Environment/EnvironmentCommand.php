@@ -10,7 +10,7 @@ use Orbit\Sdk\Responses\Environment\EnvironmentOperationResponse;
 
 abstract class EnvironmentCommand extends GatewayCommand
 {
-    protected function appInstanceSelector(): ?string
+    protected function instanceSelector(): ?string
     {
         $selector = $this->option('instance');
 
@@ -41,7 +41,7 @@ abstract class EnvironmentCommand extends GatewayCommand
         }
 
         $fields = [
-            'Instance ID' => $response->appInstanceId,
+            'Instance ID' => $response->instanceId,
             'Operation' => $response->operation,
             'Changed' => $response->changed ? 'true' : 'false',
             'Stored keys' => $response->keyCount,

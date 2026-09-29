@@ -4,29 +4,29 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
-use App\Actions\Hibernation\ScheduleAppInstanceRuntimeWakeAction;
-use App\Domain\Hibernation\AppDevHibernationPolicy;
+use App\Actions\Hibernation\ScheduleInstanceRuntimeWakeAction;
+use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\Hibernation\HibernationWakeFailureStore;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Responses\RuntimeActivationPage;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use SensitiveParameter;
 
-#[RequiresNodeAccess(ServingNode::AppInstanceHost)]
+#[RequiresNodeAccess(ServingNode::InstanceHost)]
 final class RuntimeActivationsController extends Controller
 {
     public function show(
         Request $request,
         #[SensitiveParameter]
-        AppInstance $instance,
-        AppDevHibernationPolicy $policy,
+        Instance $instance,
+        DevelopmentHibernationPolicy $policy,
         HibernationWakeFailureStore $failures,
-        ScheduleAppInstanceRuntimeWakeAction $schedule,
+        ScheduleInstanceRuntimeWakeAction $schedule,
         RuntimeActivationPage $pages,
     ): Response {
         $caller = $request->user();
@@ -39,7 +39,7 @@ final class RuntimeActivationsController extends Controller
         $instance->loadMissing('node');
 
         if (! $policy->appliesToInstance($instance)) {
-            return $pages->failed("AppInstance [{$instance->name}] is not an app-dev development target.", $instance, $uri);
+            return $pages->failed("Instance [{$instance->name}] is not an app-dev development target.", $instance, $uri);
         }
 
         $failure = $failures->pull($instance->id);

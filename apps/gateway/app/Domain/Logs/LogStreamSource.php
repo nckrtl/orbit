@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Logs;
 
 use App\Domain\Nodes\Storage\StoragePath;
+use App\Models\Instance;
 use InvalidArgumentException;
 
 /**

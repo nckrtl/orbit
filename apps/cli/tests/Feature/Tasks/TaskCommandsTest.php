@@ -18,7 +18,7 @@ use Illuminate\Support\Str;
 use Laravel\Prompts\Key;
 use Laravel\Prompts\Prompt;
 use Laravel\Prompts\Terminal;
-use Orbit\Sdk\Requests\Apps\ListAppsRequest;
+use Orbit\Sdk\Requests\Projects\ListProjectsRequest;
 use Orbit\Sdk\Requests\Tasks\CancelSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CancelTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CreateSubtaskRequest;
@@ -129,7 +129,7 @@ describe('requests', function (): void {
         expect(Artisan::call('tasks:create', ['title' => 'Add the tasks CLI', '--project' => '1', '--brief' => 'Brief', '--status' => 'todo', '--subtasks' => $path, '--notify-coder' => true, '--json' => true]))->toBe(0);
 
         $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateTaskGroupRequest
-            && (string) $request->body() === '{"app_id":1,"title":"Add the tasks CLI","brief":"Brief","status":"todo","notify_coder":true,"tasks":[{"title":"One","brief":"First."},{"title":"Two","brief":"Second."}]}');
+            && (string) $request->body() === '{"project_id":1,"title":"Add the tasks CLI","brief":"Brief","status":"todo","notify_coder":true,"tasks":[{"title":"One","brief":"First."},{"title":"Two","brief":"Second."}]}');
     });
 
     it('omits the status and notification that the caller did not supply', function (): void {
@@ -138,7 +138,7 @@ describe('requests', function (): void {
         expect(Artisan::call('tasks:create', ['title' => 'Add the tasks CLI', '--project' => '1', '--brief' => 'Brief', '--json' => true]))->toBe(0);
 
         $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateTaskGroupRequest
-            && (string) $request->body() === '{"app_id":1,"title":"Add the tasks CLI","brief":"Brief"}');
+            && (string) $request->body() === '{"project_id":1,"title":"Add the tasks CLI","brief":"Brief"}');
     });
 
     it('sends only the supplied update fields', function (): void {
@@ -168,7 +168,7 @@ describe('requests', function (): void {
             ->and(Artisan::call('tasks:comment:create', ['group' => '1', 'subtask' => '2', '--type' => 'assistance_requested', '--body' => 'Stuck.', '--author' => 'nick', '--agent-thread' => '9', '--json' => true]))->toBe(0);
 
         $mock->assertSent(static fn (Request $request): bool => $request instanceof ListTaskGroupsRequest
-            && $request->query()->all() === ['app_id' => 4, 'status' => 'settling']);
+            && $request->query()->all() === ['project_id' => 4, 'status' => 'settling']);
         $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateTaskCommentRequest
             && (string) $request->body() === '{"type":"assistance_requested","body":"Stuck.","author":"nick","agent_thread_id":9}');
     });
@@ -330,7 +330,7 @@ describe('prompts', function (): void {
         expect($status)->toBe(0)
             ->and($display)->toContain('Title is required.')
             ->and($display)->toContain('project 42 · Feat · Brief');
-        $mock->assertSent(ListAppsRequest::class);
+        $mock->assertSent(ListProjectsRequest::class);
     });
 
     it('asks which fields change', function (): void {
@@ -365,7 +365,7 @@ function task_prompt_mock(): MockClient
 {
     $meta = ['request_id' => '11111111-1111-4111-8111-111111111111'];
     $group = static fn (int $id, string $title, string $status): array => [
-        'id' => $id, 'app_id' => 1, 'app' => 'orbit', 'project_code' => 'ORB', 'title' => $title, 'brief' => 'Brief', 'status' => $status, 'tasks' => [],
+        'id' => $id, 'project_id' => 1, 'project' => 'orbit', 'project_code' => 'ORB', 'title' => $title, 'brief' => 'Brief', 'status' => $status, 'tasks' => [],
     ];
 
     return MockClient::global([
@@ -374,7 +374,7 @@ function task_prompt_mock(): MockClient
             static fn (array $row): bool => ! isset($pending->getRequest()->query()->all()['status']) || $row['status'] === $pending->getRequest()->query()->all()['status'],
         )), 'meta' => $meta]),
         ShowTaskGroupRequest::class => MockResponse::make(['data' => $group(1, 'Feature', 'backlog'), 'meta' => $meta]),
-        ListAppsRequest::class => MockResponse::make(['data' => [
+        ListProjectsRequest::class => MockResponse::make(['data' => [
             ['id' => 7, 'name' => 'Alpha', 'slug' => 'alpha', 'type' => 'monorepo', 'repository_url' => 'https://example.test/alpha.git'],
             ['id' => 42, 'name' => 'Beta', 'slug' => 'beta', 'type' => 'monorepo', 'repository_url' => 'https://example.test/beta.git'],
         ], 'meta' => $meta]),
@@ -505,8 +505,8 @@ describe('assistance columns', function (): void {
                 'enabled' => true,
                 'assistance' => [[
                     'id' => 4,
-                    'app_id' => 1,
-                    'app' => 'orbit',
+                    'project_id' => 1,
+                    'project' => 'orbit',
                     'project_code' => 'ORB',
                     'title' => 'Blocked implementer',
                     'status' => 'running',

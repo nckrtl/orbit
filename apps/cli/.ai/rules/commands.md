@@ -16,7 +16,7 @@ Normal commands validate explicit input, send typed orbit-php-sdk HTTP requests 
 
 ## Keep Instance environment values on the Gateway boundary
 
-Environment commands use one typed SDK request and accept a numeric Instance ID or exact Route domain. Import retains existing stored values unless `--replace` allows stored-key conflicts, update changes stored configuration only, and synchronization is explicit. Preserve quoted empty, multiline, `false`, `0`, and `https://{{app_instance.domain}}` string values. Never display values, read or write local files, select a target, resolve a placeholder, refresh an application cache, or restart a process.
+Environment commands use one typed SDK request and accept a numeric Instance ID or exact Route domain. Import retains existing stored values unless `--replace` allows stored-key conflicts, update changes stored configuration only, and synchronization is explicit. Preserve quoted empty, multiline, `false`, `0`, and `https://{{instance.domain}}` string values. Never display values, read or write local files, select a target, resolve a placeholder, refresh an application cache, or restart a process.
 
 Node access commands use numeric consumer and serving node IDs. Add is idempotent. Remove requires interactive confirmation or --force. The CLI sends typed SDK requests and never decides access, Gateway identity, or role authority locally. Do not add granular permission options or output.
 

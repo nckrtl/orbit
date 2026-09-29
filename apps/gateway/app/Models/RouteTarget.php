@@ -10,16 +10,16 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 /**
  * @property int $id
  * @property int $route_id
- * @property int $app_instance_id
+ * @property int $instance_id
  * @property int $position
  * @property-read Route $route
- * @property-read AppInstance $appInstance
+ * @property-read Instance $instance
  */
 final class RouteTarget extends Model
 {
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['route_id', 'app_instance_id', 'position'];
+    protected $fillable = ['route_id', 'instance_id', 'position'];
 
     /** @return BelongsTo<Route, $this> */
     public function route(): BelongsTo
@@ -27,10 +27,10 @@ final class RouteTarget extends Model
         return $this->belongsTo(Route::class);
     }
 
-    /** @return BelongsTo<AppInstance, $this> */
-    public function appInstance(): BelongsTo
+    /** @return BelongsTo<Instance, $this> */
+    public function instance(): BelongsTo
     {
-        return $this->belongsTo(AppInstance::class);
+        return $this->belongsTo(Instance::class, 'instance_id');
     }
 
     /** @return array<string, string> */

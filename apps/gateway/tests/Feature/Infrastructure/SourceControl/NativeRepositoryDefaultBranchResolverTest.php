@@ -187,7 +187,7 @@ it('uses bounded argv-only Git calls and redacts timeout, error, and malformed o
         test()->fail('Expected branch resolution to fail.');
     } catch (ResourceOperationException $exception) {
         expect($exception->errorCode)
-            ->toBe('app.default_branch_unavailable')
+            ->toBe('project.default_branch_unavailable')
             ->and($exception->getMessage())
             ->toBe('The requested repository branch could not be determined or verified.')
             ->not->toContain('private-sentinel', 'diagnostic-sentinel');

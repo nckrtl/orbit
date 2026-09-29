@@ -16,7 +16,7 @@ final readonly class ShowTasksStatusAction
     public function execute(): TasksStatusData
     {
         $assistance = array_values(TaskGroup::query()
-            ->with('app')
+            ->with('project')
             ->where('assistance_requested', true)
             ->orderBy('id')
             ->get()

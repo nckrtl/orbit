@@ -2,12 +2,13 @@
 title: "project"
 description: "Create, inspect, update, and remove Projects. A Project owns one repository, a type, and the source defaults that Instances inherit."
 covers:
-  - apps/cli/app/Commands/Apps/**
-  - packages/php-sdk/src/Requests/Apps/{Create,List,Show,Update,Destroy}AppRequest.php
-  - packages/php-sdk/src/Responses/Apps/{AppResponse,AppsResponse,AppIdentityResponse}.php
+  - apps/cli/app/Commands/Projects/**
+  - packages/php-sdk/src/Requests/Projects/{Create,Show,Update,Destroy}ProjectRequest.php
+  - packages/php-sdk/src/Requests/Projects/ListProjectsRequest.php
+  - packages/php-sdk/src/Responses/Projects/{ProjectResponse,ProjectsResponse,ProjectIdentityResponse}.php
 ---
 
-A Project records one Git repository and the defaults for running it. [Projects](/reference/apps) owns the fields, types, update lifecycle, and error codes. [Applications](/domains/applications) shows how a Project becomes an Instance.
+A Project records one Git repository and the defaults for running it. [Projects](/reference/projects) owns the fields, types, update lifecycle, and error codes. [Applications](/domains/applications) shows how a Project becomes an Instance.
 
 ## Commands
 
@@ -58,7 +59,7 @@ orbit project:list [--json]
 
 ## orbit project:show
 
-Show one Project with its source defaults, task check, and excluded Nodes. Null `default_branch` or root values mean the source defaults are incomplete, and new Instance creation fails with `app.source_defaults_incomplete` until they exist. A null task check means tasks run no check command. Human output also lists the Project's Instances with ID, name, environment, Node, domain, and status. In a terminal, selecting an Instance opens `instance:show`.
+Show one Project with its source defaults, task check, and excluded Nodes. Null `default_branch` or root values mean the source defaults are incomplete, and new Instance creation fails with `project.source_defaults_incomplete` until they exist. A null task check means tasks run no check command. Human output also lists the Project's Instances with ID, name, environment, Node, domain, and status. In a terminal, selecting an Instance opens `instance:show`.
 
 ```bash
 orbit project:show <project> [--json]
@@ -66,7 +67,7 @@ orbit project:show <project> [--json]
 
 ## orbit project:update
 
-Change a Project's type, source defaults, or task check. Omitted fields stay unchanged. The Gateway reconciles affected development sources, checkouts, Routes, inherited web roots, and runtimes before publishing the change. It does not start a production deployment. See [Update a Project](/reference/apps#update-a-project) for validation, rollback, and retry behavior.
+Change a Project's type, source defaults, or task check. Omitted fields stay unchanged. The Gateway reconciles affected development sources, checkouts, Routes, inherited web roots, and runtimes before publishing the change. It does not start a production deployment. See [Update a Project](/reference/projects#update-a-project) for validation, rollback, and retry behavior.
 
 ```bash
 orbit project:update <project> [--type=TYPE] [--slug=SLUG] [--repository=URL] [--default-branch=BRANCH] [--root=PATH] [--task-check=COMMAND] [--clear-task-check]
@@ -80,11 +81,11 @@ orbit project:update <project> [--type=TYPE] [--slug=SLUG] [--repository=URL] [-
 | `--default-branch=BRANCH` | New default branch for development sources that inherit it. |
 | `--root=PATH` | New normalized repository-relative root for Instances without an override. Package types may use `.`. |
 | `--task-check=COMMAND` | New command that task baselines and handoffs run. A type change does not change it. |
-| `--clear-task-check` | Remove the task check so tasks run no check command. Combining it with `--task-check` fails with `app.task_check_conflict`. |
+| `--clear-task-check` | Remove the task check so tasks run no check command. Combining it with `--task-check` fails with `project.task_check_conflict`. |
 
 ## orbit project:destroy
 
-Remove a Project that has no Instances and no Routes. Its definitions, setup steps, Node exclusions, and update records go with it. A Project with task groups cannot be removed: the request fails with HTTP 409 and `project.has_task_groups`. See [Remove a Project](/reference/apps#remove-a-project).
+Remove a Project that has no Instances and no Routes. Its definitions, setup steps, Node exclusions, and update records go with it. A Project with task groups cannot be removed: the request fails with HTTP 409 and `project.has_task_groups`. See [Remove a Project](/reference/projects#remove-a-project).
 
 ```bash
 orbit project:destroy <project> [--yes] [--json]

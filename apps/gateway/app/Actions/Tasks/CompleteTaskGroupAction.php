@@ -6,7 +6,7 @@ namespace App\Actions\Tasks;
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\TaskGroup;
 use Throwable;
 
@@ -29,12 +29,12 @@ final readonly class CompleteTaskGroupAction
         $group->requireManagedExecution();
         $this->requireExtension->execute();
 
-        $group->loadMissing(['app', 'tasks', 'taskable']);
+        $group->loadMissing(['project', 'tasks', 'taskable']);
 
         if ($group->status === TaskGroupStatus::Completed) {
             $this->removeOrFinish($group, $finishWhenRemovalFails);
 
-            return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+            return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
         }
 
         if ($group->status !== TaskGroupStatus::Settling) {
@@ -51,7 +51,7 @@ final readonly class CompleteTaskGroupAction
             $group->settled_at ??= now();
             $group->save();
 
-            return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+            return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
         }
 
         $group->refresh();
@@ -60,7 +60,7 @@ final readonly class CompleteTaskGroupAction
         $group->settled_at ??= now();
         $group->save();
 
-        return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+        return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
     }
 
     /**
@@ -97,7 +97,7 @@ final readonly class CompleteTaskGroupAction
 
         $this->workspace->clearFailure($group);
 
-        if ($instanceId !== null && ! AppInstance::query()->whereKey($instanceId)->exists()) {
+        if ($instanceId !== null && ! Instance::query()->whereKey($instanceId)->exists()) {
             $group->refresh();
             $group->taskable()->dissociate();
             $group->save();

@@ -9,6 +9,7 @@ use App\Domain\Analytics\AnalyticsStatsDriver;
 use App\Domain\Analytics\AnalyticsStatsKeyStore;
 use App\Domain\Analytics\AnalyticsStatsRead;
 use App\Domain\Analytics\AnalyticsTrackingUpstream;
+use App\Models\Instance;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Pool;
 use Illuminate\Http\Client\Response;

@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\AppInstanceRemover;
+use App\Domain\Instances\InstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
-use App\Models\AppInstanceRemoval;
+use App\Models\Instance;
+use App\Models\InstanceRemoval;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\TaskGroup;
 use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -43,7 +43,7 @@ beforeEach(function (): void {
         'wireguard_ip' => '10.44.0.85',
     ]));
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip]);
-    $this->appRecord = OrbitApp::query()->create([
+    $this->appRecord = Project::query()->create([
         'name' => 'MCP demo',
         'slug' => 'mcp-demo',
         'repository_url' => 'git@example.test:mcp-demo.git',
@@ -57,7 +57,7 @@ it('creates and lists a task group through MCP after the extension is enabled', 
     $created = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [
         'name' => 'tasks-create',
         'arguments' => [
-            'app_id' => $this->appRecord->id,
+            'project_id' => $this->appRecord->id,
             'title' => 'MCP create',
             'brief' => 'Create through the generated tool.',
             'tasks' => [
@@ -75,7 +75,7 @@ it('creates and lists a task group through MCP after the extension is enabled', 
 
     $listed = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [
         'name' => 'tasks-list',
-        'arguments' => ['app_id' => $this->appRecord->id],
+        'arguments' => ['project_id' => $this->appRecord->id],
     ]));
     $listDocument = json_decode($listed['result']['content'][0]['text'], true);
 
@@ -98,7 +98,7 @@ it('hides the tasks MCP tools before the extension is enabled', function (): voi
 
     expect($names)->not->toContain('tasks-create');
     $this->postJson('/api/v1/task-groups', [
-        'app_id' => $this->appRecord->id,
+        'project_id' => $this->appRecord->id,
         'title' => 'Too soon',
         'brief' => 'Must refuse.',
     ])->assertStatus(409)->assertJsonPath('error.code', 'extension.disabled');
@@ -114,28 +114,28 @@ it('cancels a running or queued group through MCP and removes its shared Instanc
         'public_ssh_host' => '192.0.2.86',
         'wireguard_ip' => '10.44.0.86',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $this->appRecord->id,
+    $instance = Instance::query()->create([
+        'project_id' => $this->appRecord->id,
         'node_id' => $node->id,
         'name' => 'task-mcp-cancel',
         'checkout_path' => '/srv/orbit/apps/mcp-demo/task-mcp-cancel',
         'status' => 'source_resolved',
     ]);
     $group = TaskGroup::query()->create([
-        'app_id' => $this->appRecord->id,
+        'project_id' => $this->appRecord->id,
         'title' => 'MCP cancel',
         'brief' => 'Cancel a stuck group.',
         'status' => $status,
     ]);
     $group->taskable()->associate($instance);
     $group->save();
-    app()->instance(AppInstanceRemover::class, new class implements AppInstanceRemover
+    app()->instance(InstanceRemover::class, new class implements InstanceRemover
     {
-        public function execute(AppInstance $instance, bool $force): AppInstanceRemoval
+        public function execute(Instance $instance, bool $force): InstanceRemoval
         {
             $instance->delete();
 
-            return new AppInstanceRemoval;
+            return new InstanceRemoval;
         }
     });
 
@@ -148,7 +148,7 @@ it('cancels a running or queued group through MCP and removes its shared Instanc
     expect($cancelled['result']['isError'] ?? true)->toBeFalse()
         ->and($document['data']['status'])->toBe('cancelled')
         ->and($document['data']['taskable_id'])->toBeNull()
-        ->and(AppInstance::query()->find($instance->id))->toBeNull();
+        ->and(Instance::query()->find($instance->id))->toBeNull();
 })->with([
     'backlog' => TaskGroupStatus::Backlog,
     'todo' => TaskGroupStatus::Todo,
@@ -158,7 +158,7 @@ it('cancels a running or queued group through MCP and removes its shared Instanc
 it('returns a structured MCP error for canceling a settling group with a pull request and still completes it', function (): void {
     app(TaskExtensionState::class)->enable();
     $group = TaskGroup::query()->create([
-        'app_id' => $this->appRecord->id,
+        'project_id' => $this->appRecord->id,
         'title' => 'MCP settle',
         'brief' => 'Complete after review.',
         'status' => TaskGroupStatus::Settling,
@@ -188,7 +188,7 @@ it('returns a structured MCP error for canceling a settling group with a pull re
 it('returns a structured MCP error for canceling a completed group', function (): void {
     app(TaskExtensionState::class)->enable();
     $group = TaskGroup::query()->create([
-        'app_id' => $this->appRecord->id,
+        'project_id' => $this->appRecord->id,
         'title' => 'MCP completed',
         'brief' => 'Already complete.',
         'status' => TaskGroupStatus::Completed,
@@ -220,7 +220,7 @@ it('prepares a backlog group and moves it to todo through MCP', function (): voi
     expect($tools)->toContain('tasks-update', 'tasks-subtask-create', 'tasks-subtask-update', 'tasks-subtask-destroy')
         ->and($tools)->not->toContain('tasks-add');
 
-    $group = $call('tasks-create', ['app_id' => $this->appRecord->id, 'title' => 'MCP backlog', 'brief' => 'Prepare first.']);
+    $group = $call('tasks-create', ['project_id' => $this->appRecord->id, 'title' => 'MCP backlog', 'brief' => 'Prepare first.']);
     $first = $call('tasks-subtask-create', ['group' => $group['id'], 'title' => 'First', 'brief' => 'One.']);
     $second = $call('tasks-subtask-create', ['group' => $group['id'], 'title' => 'Second', 'brief' => 'Two.', 'deliverables' => [
         ['id' => 'second-page', 'type' => 'file', 'description' => 'Document the second step', 'path' => 'docs/second.md', 'change' => 'created'],

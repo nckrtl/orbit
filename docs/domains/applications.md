@@ -2,31 +2,31 @@
 title: "Applications"
 description: "How a Project becomes an Instance on a Node: create or adopt a development checkout, provision its endpoint, clone to production, move, and remove."
 covers:
-  - apps/gateway/app/Actions/AppInstances/{CreateAppInstanceAction,RegisterAppInstanceAction,ListAppInstancesAction,ShowAppInstanceAction}.php
-  - apps/gateway/app/Domain/AppInstances/{AppInstanceState,AppInstanceSourceLayout,AppInstanceDestinationGuard,ComposerSourceClassifier,Development*}.php
-  - apps/gateway/app/Domain/AppInstances/Registration/**
-  - apps/gateway/app/Infrastructure/AppInstances/{NativeDevelopmentAppInstanceProvisioner,RemoteDevelopmentAppInstanceSourceLifecycle,RemoteDevelopmentAppInstanceConfigurator,RemoteRegistrationSourceManager,RemoteAppInstanceDestinationGuard}.php
-  - apps/gateway/app/{Http/Controllers/Api/AppInstancesController.php,Http/Requests/AppInstances/**,Data/AppInstances/**,Models/AppInstance.php}
+  - apps/gateway/app/Actions/Instances/{CreateInstanceAction,RegisterInstanceAction,ListInstancesAction,ShowInstanceAction}.php
+  - apps/gateway/app/Domain/Instances/{InstanceState,InstanceSourceLayout,InstanceDestinationGuard,ComposerSourceClassifier,Development*}.php
+  - apps/gateway/app/Domain/Instances/Registration/**
+  - apps/gateway/app/Infrastructure/Instances/{NativeDevelopmentInstanceProvisioner,RemoteDevelopmentInstanceSourceLifecycle,RemoteDevelopmentInstanceConfigurator,RemoteRegistrationSourceManager,RemoteInstanceDestinationGuard}.php
+  - apps/gateway/app/{Http/Controllers/Api/InstancesController.php,Http/Requests/Instances/**,Data/Instances/**,Models/Instance.php}
   - apps/cli/app/Commands/Instances/{CreateInstanceCommand,RegisterInstanceCommand,ListInstancesCommand,ShowInstanceCommand,InstanceOutput}.php
   - apps/cli/app/Services/Git/**
 ---
 
 # Applications
 
-A Project records one Git repository and the defaults for running it. An Instance is one copy of that Project on one Node. An Instance on an `app-dev` Node owns a checkout or a linked worktree. An Instance on an `app-prod` Node owns a production home with releases. The Project [type](/reference/apps#project-types) decides whether an Instance gets a Route and serves PHP.
+A Project records one Git repository and the defaults for running it. An Instance is one copy of that Project on one Node. An Instance on an `app-dev` Node owns a checkout or a linked worktree. An Instance on an `app-prod` Node owns a production home with releases. The Project [type](/reference/projects#project-types) decides whether an Instance gets a Route and serves PHP.
 
 This page follows an Instance from creation to removal. Each step links to the page that owns its details.
 
 | Step | Command | Details |
 | --- | --- | --- |
-| Record the repository | `project:create` | [Projects](/reference/apps) |
+| Record the repository | `project:create` | [Projects](/reference/projects) |
 | Create a development checkout | `instance:create` | [Create a development Instance](#create-a-development-instance) |
 | Adopt an existing checkout | `instance:register` | [Register an existing checkout](#register-an-existing-checkout) |
 | Run application commands | `instance:setup` | [Instance setup and teardown](/reference/instance-setup) |
-| Create a production copy | `instance:clone` | [Instance cloning](/reference/appinstance-cloning) |
+| Create a production copy | `instance:clone` | [Instance cloning](/reference/instance-cloning) |
 | Deploy production code | `instance:deploy` | [Production release layout](/reference/deployments) |
-| Move to another Node | `instance:transfer` | [Instance transfer](/reference/appinstance-transfer) |
-| Remove | `instance:destroy` | [Instance removal](/reference/appinstance-removal) |
+| Move to another Node | `instance:transfer` | [Instance transfer](/reference/instance-transfer) |
+| Remove | `instance:destroy` | [Instance removal](/reference/instance-removal) |
 
 ## Create a development Instance
 
@@ -51,19 +51,20 @@ The response returns `selected_branch` and `branch_override`. `branch_override` 
 
 Creation moves through recorded states: `reserved`, `checkout_prepared`, `source_resolved`, and `active`. An identical retry resumes at the first unfinished state. The retry must name the same Project, Node, root, and branch override. A retry that changes one of them returns `instance.placement_conflict`.
 
-After activation, you can commit and move `HEAD`. The recorded branch and starting commit stay as they are. One exception: when the Project default branch changes, Orbit switches a `default` Instance without `branch_override` and records the new branch. Keep the recorded branch checked out. [Removal](/reference/appinstance-removal#checks-before-removal) refuses a checkout on another branch with `instance.source_branch_mismatch`, also with `--force`. [Cloning](/reference/appinstance-cloning#candidate-rules) refuses such a candidate with `instance.clone_candidate_branch_invalid`.
+After activation, you can commit and move `HEAD`. The recorded branch and starting commit stay as they are. One exception: when the Project default branch changes, Orbit switches a `default` Instance without `branch_override` and records the new branch. Keep the recorded branch checked out. [Removal](/reference/instance-removal#checks-before-removal) refuses a checkout on another branch with `instance.source_branch_mismatch`, also with `--force`. [Cloning](/reference/instance-cloning#candidate-rules) refuses such a candidate with `instance.clone_candidate_branch_invalid`.
 
 The Gateway refuses these requests before it changes anything:
 
 | Code | Cause |
 | --- | --- |
-| `app.source_defaults_incomplete` | The Project has no valid default branch or root. |
+| `project.source_defaults_incomplete` | The Project has no valid default branch or root. |
 | `instance.node_inactive` | The Node is not an active Linux Node. |
 | `instance.node_not_app_dev` | The Node has no active `app-dev` role. |
 | `instance.node_excluded` | The Project [excludes](/reference/development-node-exclusions) the Node. |
 | `instance.path_taken` | The name is not `default`, and another managed Instance uses the path. |
 | `instance.default_path_occupied` | The name is `default`, and its path is used by a managed Instance or holds an unmanaged directory. |
-| `instance.candidate_required` | The Node has the active `app-prod` role. A repeat for an existing production Instance is refused the same way. Use [`instance:clone`](/reference/appinstance-cloning). |
+| `instance.candidate_required` | The Node has the active `app-prod` role. A repeat for an existing production Instance is refused the same way. Use [`instance:clone`](/reference/instance-cloning). |
+| `instance.placement_unavailable` | The owning Node does not have exactly one active `app-dev` or `app-prod` role. |
 
 ## Register an existing checkout
 
@@ -77,7 +78,7 @@ orbit instance:register --path=/srv/src/acme --include-worktrees --yes --json
 
 Registration transfers ownership of the source to Orbit. Orbit moves the source into its managed path, and `instance:destroy` later deletes it. There is no unregister command.
 
-The CLI reads the stored `remote.origin.url` of the checkout. It sends no request for a directory outside Git or for an unsafe origin. A safe origin is `https://` without a user or password, `ssh://` without a password, or `git@host:path`. Any other scheme, a query, a fragment, whitespace, or a control character is unsafe. The Gateway finds the Project by [repository identity](/reference/apps#repository-identity). When no Project owns the repository, the CLI shows the inferred values and asks the Gateway to create one. The [Projects page](/reference/apps#create-a-project-during-registration) lists those values.
+The CLI reads the stored `remote.origin.url` of the checkout. It sends no request for a directory outside Git or for an unsafe origin. A safe origin is `https://` without a user or password, `ssh://` without a password, or `git@host:path`. Any other scheme, a query, a fragment, whitespace, or a control character is unsafe. The Gateway finds the Project by [repository identity](/reference/projects#repository-identity). When no Project owns the repository, the CLI shows the inferred values and asks the Gateway to create one. The [Projects page](/reference/projects#create-a-project-during-registration) lists those values.
 
 The Gateway then inspects the source on the caller's Node. It trusts none of the facts the CLI sends.
 
@@ -138,7 +139,7 @@ A symlinked file, two `APP_URL` lines, or an unclear cached value stops provisio
 
 ## Production Instances
 
-`instance:create` refuses an `app-prod` Node with `instance.candidate_required`, including a repeat for a production Instance that already exists. A production Instance always starts as a [clone](/reference/appinstance-cloning) of a development or production Instance. Its first [deployment](/reference/deployments) creates its first release.
+`instance:create` refuses an `app-prod` Node with `instance.candidate_required`, including a repeat for a production Instance that already exists. A production Instance always starts as a [clone](/reference/instance-cloning) of a development or production Instance. Its first [deployment](/reference/deployments) creates its first release.
 
 A Project can have one production Instance per `app-prod` Node. Each production Instance has its own Unix user, home, and [PHP-FPM service](/reference/php-runtime#production-runtime).
 

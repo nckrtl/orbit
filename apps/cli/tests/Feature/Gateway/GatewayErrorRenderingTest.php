@@ -10,7 +10,7 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Activities\ListActivitiesRequest;
-use Orbit\Sdk\Requests\Apps\CreateAppRequest;
+use Orbit\Sdk\Requests\Projects\CreateProjectRequest;
 use Orbit\Sdk\Requests\Tools\InstallToolRequest;
 use Orbit\Sdk\Requests\Tools\ListToolManagersRequest;
 use Orbit\Sdk\Requests\Tools\ListToolsRequest;
@@ -79,7 +79,7 @@ it('renders one deterministic json envelope for a resource gateway error', funct
 
 it('renders validation field details in the json envelope', function (): void {
     MockClient::global([
-        CreateAppRequest::class => gateway_validation_failure([
+        CreateProjectRequest::class => gateway_validation_failure([
             'slug' => ['The slug field must only contain letters, numbers, dashes, and underscores.'],
         ]),
     ]);
@@ -111,7 +111,7 @@ it('prints each validation field message on its own line after the error message
     });
 
     MockClient::global([
-        CreateAppRequest::class => gateway_validation_failure([
+        CreateProjectRequest::class => gateway_validation_failure([
             'slug' => [
                 'The slug field must only contain letters, numbers, dashes, and underscores.',
                 'The slug has already been taken.',
@@ -142,11 +142,11 @@ it('renders a validation failure without details as before in both modes', funct
         ],
     ];
 
-    MockClient::global([CreateAppRequest::class => gateway_validation_failure($details)]);
+    MockClient::global([CreateProjectRequest::class => gateway_validation_failure($details)]);
     $jsonExitCode = Artisan::call('project:create', [...gateway_validation_arguments(), '--json' => true]);
     $jsonOutput = trim(Artisan::output());
 
-    MockClient::global([CreateAppRequest::class => gateway_validation_failure($details)]);
+    MockClient::global([CreateProjectRequest::class => gateway_validation_failure($details)]);
     $humanExitCode = Artisan::call('project:create', gateway_validation_arguments());
     $humanOutput = trim(Artisan::output());
 
@@ -164,7 +164,7 @@ it('renders a validation failure without details as before in both modes', funct
 
 it('keeps non-validation failure details out of human output', function (): void {
     MockClient::global([
-        CreateAppRequest::class => MockResponse::make(
+        CreateProjectRequest::class => MockResponse::make(
             [
                 'error' => [
                     'code' => 'gateway.unavailable',
@@ -203,11 +203,11 @@ it('never prints secret-looking validation details in either mode', function ():
         ],
     ];
 
-    MockClient::global([CreateAppRequest::class => gateway_validation_failure($details)]);
+    MockClient::global([CreateProjectRequest::class => gateway_validation_failure($details)]);
     $jsonExitCode = Artisan::call('project:create', [...gateway_validation_arguments(), '--json' => true]);
     $jsonOutput = trim(Artisan::output());
 
-    MockClient::global([CreateAppRequest::class => gateway_validation_failure($details)]);
+    MockClient::global([CreateProjectRequest::class => gateway_validation_failure($details)]);
     $humanExitCode = Artisan::call('project:create', gateway_validation_arguments());
     $humanOutput = trim(Artisan::output());
 
@@ -231,7 +231,7 @@ it('never prints secret-looking validation details in either mode', function ():
 
 it('bounds validation details to sanitized field messages', function (): void {
     MockClient::global([
-        CreateAppRequest::class => gateway_validation_failure([
+        CreateProjectRequest::class => gateway_validation_failure([
             'slug' => [
                 "Line\x1b[31mone\nbreak",
                 '',
@@ -272,7 +272,7 @@ it('caps validation details at fifty field messages', function (): void {
         $details["field_{$index}"] = ["Message {$index}"];
     }
 
-    MockClient::global([CreateAppRequest::class => gateway_validation_failure($details)]);
+    MockClient::global([CreateProjectRequest::class => gateway_validation_failure($details)]);
 
     $exitCode = Artisan::call('project:create', gateway_validation_arguments());
     $output = trim(Artisan::output());
@@ -581,13 +581,13 @@ it('renders local validation failures through the exact json boundary', function
     'string argument helper' => [
         'project:create',
         ['slug' => '', 'type' => 'laravel-app', 'repository' => 'https://example.test/repository.git'],
-        'app.slug_required',
+        'project.slug_required',
         'Project slug is required.',
     ],
     'app slug' => [
         'project:create',
         ['slug' => "validation\nsecret", 'type' => 'laravel-app', 'repository' => 'https://example.test/repository.git'],
-        'app.slug_invalid',
+        'project.slug_invalid',
         'Project slug is invalid.',
     ],
     'firewall node ID' => [
@@ -772,7 +772,7 @@ it('renders local validation failures through the exact json boundary', function
     'multiple instance values fail at the first error' => [
         'instance:create',
         ['project' => 'validation-secret', 'node' => '0', 'name' => ''],
-        'app.id_invalid',
+        'project.id_invalid',
         'Project ID must be a positive integer.',
     ],
     'node role list id' => [
@@ -1091,8 +1091,8 @@ it('keeps the specific code behind a role operation failure', function (string $
 ]);
 
 it('drops a malformed operation field and keeps the valid ones', function (mixed $step): void {
-    expect(GatewayFailureRenderer::safeDetails('node_role.remove_failed', ['step' => $step, 'reason' => 'app_instances_attached', 'role' => 'app-dev']))
-        ->toBe(['reason' => 'app_instances_attached', 'role' => 'app-dev']);
+    expect(GatewayFailureRenderer::safeDetails('node_role.remove_failed', ['step' => $step, 'reason' => 'instances_attached', 'role' => 'app-dev']))
+        ->toBe(['reason' => 'instances_attached', 'role' => 'app-dev']);
 })->with([
     'control character' => ["remove:host\nfirewall"],
     'upper case' => ['Remove:Host-Firewall'],

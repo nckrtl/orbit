@@ -17,9 +17,9 @@ use Illuminate\Support\Str;
 use Laravel\Prompts\Key;
 use Laravel\Prompts\Prompt;
 use Laravel\Prompts\Terminal;
-use Orbit\Sdk\Requests\Apps\ListAppsRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Requests\Projects\AddProjectExcludedNodeRequest;
+use Orbit\Sdk\Requests\Projects\ListProjectsRequest;
 use Orbit\Sdk\Responses\Projects\DevelopmentNodeExclusionResponse;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -46,10 +46,10 @@ it('refuses omitted selectors without sending requests in machine mode', functio
     expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe($code);
     $mock->assertNothingSent();
 })->with([
-    ['project:excluded-node:add', [], 'app.id_invalid'],
-    ['project:excluded-node:list', [], 'app.id_invalid'],
+    ['project:excluded-node:add', [], 'project.id_invalid'],
+    ['project:excluded-node:list', [], 'project.id_invalid'],
     ['project:excluded-node:remove', ['--project' => '4'], 'node.reference_required'],
-    ['node:excluded-project:add', [], 'app.id_invalid'],
+    ['node:excluded-project:add', [], 'project.id_invalid'],
     ['node:excluded-project:list', [], 'node.reference_required'],
     ['node:excluded-project:remove', ['project' => '4'], 'node.reference_required'],
 ]);
@@ -88,7 +88,7 @@ function exclusion_selection_mock(bool $emptyProjects = false, bool $emptyNodes 
     $meta = ['request_id' => '11111111-1111-4111-8111-111111111111'];
 
     return MockClient::global([
-        ListAppsRequest::class => MockResponse::make(['data' => $emptyProjects ? [] : [
+        ListProjectsRequest::class => MockResponse::make(['data' => $emptyProjects ? [] : [
             ['id' => 7, 'name' => 'Alpha', 'slug' => 'alpha', 'type' => 'monorepo', 'repository_url' => 'https://example.test/alpha.git'],
             ['id' => 42, 'name' => 'Beta', 'slug' => 'beta', 'type' => 'monorepo', 'repository_url' => 'https://example.test/beta.git'],
         ], 'meta' => $meta]),

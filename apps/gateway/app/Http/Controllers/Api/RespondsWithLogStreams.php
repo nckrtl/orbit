@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api;
 use App\Domain\Logs\LogStream;
 use App\Domain\Logs\LogStreamStore;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Instance;
 use App\Models\Node;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;

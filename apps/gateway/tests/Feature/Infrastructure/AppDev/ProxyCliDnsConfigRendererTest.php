@@ -9,8 +9,8 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
-use App\Infrastructure\AppDev\AppDevSiteRepository;
+use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Models\Node;
 use App\Models\Route;
 
@@ -41,7 +41,7 @@ it('publishes collector.cli-proxy-api.orbit on the collector Node, not the Gatew
         'control-token',
     );
 
-    $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
+    $configuration = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render();
 
     expect($configuration)
         ->toContain('host-record=collector.cli-proxy-api.orbit,10.44.0.8')
@@ -74,7 +74,7 @@ it('publishes one collector record while a custom proxy Route still serves the n
     $route->update(['status' => RouteStatus::Active]);
     app(ProxyCliState::class)->enable($collector->id, 'valkey', 'http://127.0.0.1:8317', 'key', 'read', 'control');
 
-    $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
+    $configuration = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render();
 
     expect(substr_count($configuration, 'host-record=collector.cli-proxy-api.orbit,'))->toBe(1)
         ->and($configuration)->toContain('host-record=collector.cli-proxy-api.orbit,10.44.0.17'.PHP_EOL);
@@ -93,7 +93,7 @@ it('omits collector.cli-proxy-api.orbit when the fleet feature is disabled', fun
     $state->enable($node->id, 'valkey', 'http://127.0.0.1:8317', 'key', 'read', 'control');
     $state->disable();
 
-    $configuration = new AppDevDnsConfigRenderer(new AppDevSiteRepository)->render();
+    $configuration = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->render();
 
     expect($configuration)
         ->not

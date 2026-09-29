@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Actions\AppInstances\RemoveAppInstanceAction;
+use App\Actions\Instances\RemoveInstanceAction;
 use App\Domain\Analytics\AnalyticsTrackingRouteProjector;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\Clusters\ClusterState;
@@ -15,10 +15,10 @@ use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use App\Models\RouteAnalyticsTracking;
 use Illuminate\Support\Facades\DB;
@@ -44,7 +44,7 @@ beforeEach(function (): void {
     $this->markAsGateway($this->gateway);
     $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.1']);
 
-    $this->orbitApp = OrbitApp::query()->create([
+    $this->orbitApp = Project::query()->create([
         'name' => 'Shop',
         'slug' => 'shop',
         'repository_url' => 'https://example.test/shop.git',
@@ -62,7 +62,7 @@ beforeEach(function (): void {
 });
 
 describe('instance:analytics:show', function (): void {
-    it('reports an App instance without tracking', function (): void {
+    it('reports a Project instance without tracking', function (): void {
         $this->getJson($this->url)
             ->assertOk()
             ->assertJsonPath('data', [
@@ -126,7 +126,7 @@ describe('instance:analytics:enable', function (): void {
         ]);
 
         expect($route->domain)->toBe('analytics.shop.example.com')
-            ->and($route->app_id)->toBeNull()
+            ->and($route->project_id)->toBeNull()
             ->and($route->node_id)->toBeNull()
             ->and($route->cluster_id)->toBe($this->cluster->id)
             ->and($route->publication)->toBe(RoutePublication::Public)
@@ -134,7 +134,7 @@ describe('instance:analytics:enable', function (): void {
             ->and($route->replacement_step)->toBe(RouteReplacementStep::IngressFirewall)
             ->and($route->targets()->count())->toBe(0)
             ->and(RouteAnalyticsTracking::query()->sole()->getAttributes())
-            ->toMatchArray(['route_id' => $route->id, 'app_instance_id' => $this->instance->id])
+            ->toMatchArray(['route_id' => $route->id, 'instance_id' => $this->instance->id])
             ->and($this->projector->routeIds)->toBe([$route->id])
             ->and($this->edge->calls)->toBe([
                 'ingress-certificate',
@@ -155,7 +155,7 @@ describe('instance:analytics:enable', function (): void {
             ->assertJsonPath('data.analytics_instance_id', null);
     });
 
-    it('publishes a public tracking host through Ingress and Router when both roles sit on the App instance Node', function (): void {
+    it('publishes a public tracking host through Ingress and Router when both roles sit on the Project instance Node', function (): void {
         $this->router->roles()->delete();
         $this->ingress->roles()->delete();
 
@@ -359,7 +359,7 @@ describe('instance:analytics:enable', function (): void {
             ->and($this->edge->calls)->toBe([]);
     });
 
-    it('refuses an App instance that serves no domain', function (Closure $instance): void {
+    it('refuses a Project instance that serves no domain', function (Closure $instance): void {
         $target = $instance();
 
         $this->postJson("/api/v1/instances/{$target->id}/analytics", ['hosts' => ['stats.shop.example.com']])
@@ -368,8 +368,8 @@ describe('instance:analytics:enable', function (): void {
         expect(Route::query()->where('kind', RouteKind::AnalyticsTracking->value)->count())->toBe(0)
             ->and($this->projector->routeIds)->toBe([]);
     })->with([
-        'no Route' => [fn (): AppInstance => instance_analytics_extra_instance('bare')],
-        'a Route that is not authoritative' => [function (): AppInstance {
+        'no Route' => [fn (): Instance => instance_analytics_extra_instance('bare')],
+        'a Route that is not authoritative' => [function (): Instance {
             $pending = instance_analytics_extra_instance('pending');
             instance_analytics_app_route($pending, 'pending.example.com', RoutePublication::Public, activate: false);
 
@@ -390,7 +390,7 @@ describe('instance:analytics:enable', function (): void {
         }
 
         expect(Route::query()->where('domain', 'fresh.shop.example.com')->exists())->toBeFalse()
-            ->and(RouteAnalyticsTracking::query()->where('app_instance_id', $this->instance->id)->count())->toBe(0)
+            ->and(RouteAnalyticsTracking::query()->where('instance_id', $this->instance->id)->count())->toBe(0)
             ->and($this->projector->routeIds)->toBe([]);
     });
 
@@ -398,7 +398,7 @@ describe('instance:analytics:enable', function (): void {
         $this->postJson($this->url)->assertOk();
 
         $this->postJson('/api/v1/routes', [
-            'app_instance_id' => $this->instance->id,
+            'instance_id' => $this->instance->id,
             'domain' => 'analytics.shop.example.com',
             'publication' => 'public',
         ])->assertConflict()->assertJsonPath('error.code', 'route.domain_conflict');
@@ -411,7 +411,7 @@ describe('instance:analytics:enable', function (): void {
 });
 
 describe('instance:analytics:disable', function (): void {
-    it('removes every tracking Route of the App instance and is idempotent', function (): void {
+    it('removes every tracking Route of the Project instance and is idempotent', function (): void {
         $other = instance_analytics_extra_instance('other');
         instance_analytics_app_route($other, 'other.example.com', RoutePublication::Public);
         $this->postJson("/api/v1/instances/{$other->id}/analytics")->assertOk();
@@ -431,7 +431,7 @@ describe('instance:analytics:disable', function (): void {
 
         expect(Route::query()->where('kind', RouteKind::AnalyticsTracking->value)->pluck('domain')->all())
             ->toBe(['analytics.other.example.com'])
-            ->and(RouteAnalyticsTracking::query()->pluck('app_instance_id')->all())->toBe([$other->id])
+            ->and(RouteAnalyticsTracking::query()->pluck('instance_id')->all())->toBe([$other->id])
             ->and($this->edge->calls)->toBe(['remove-public-edge', 'remove-public-edge'])
             ->and($this->removal->events)->toBe([
                 'dns', 'caddy', 'certificates', 'firewall',
@@ -473,7 +473,7 @@ describe('generic Route commands on a tracking Route', function (): void {
         $this->patchJson("/api/v1/routes/{$routeId}", ['domain' => 'moved.shop.example.com'])
             ->assertConflict()
             ->assertJsonPath('error.code', 'route.kind_unsupported');
-        $this->putJson("/api/v1/routes/{$routeId}/target", ['app_instance_id' => $this->instance->id])
+        $this->putJson("/api/v1/routes/{$routeId}/target", ['instance_id' => $this->instance->id])
             ->assertConflict()
             ->assertJsonPath('error.code', 'route.kind_unsupported');
         $this->deleteJson("/api/v1/routes/{$routeId}/target")
@@ -508,14 +508,14 @@ describe('guards around a tracking host', function (): void {
         expect($this->analytics->roles()->where('role', RoleName::Analytics->value)->exists())->toBeTrue();
     });
 
-    it('refuses to remove an App instance that still publishes a tracking host', function (): void {
+    it('refuses to remove a Project instance that still publishes a tracking host', function (): void {
         $this->postJson($this->url)->assertOk();
 
-        expect(fn () => app(RemoveAppInstanceAction::class)->execute($this->instance->refresh(), force: true))
+        expect(fn () => app(RemoveInstanceAction::class)->execute($this->instance->refresh(), force: true))
             ->toThrow(function (ResourceOperationException $exception): void {
                 expect($exception->errorCode)->toBe('analytics.tracking_hosts_exist');
             });
-        expect(DB::table('app_instance_removals')->count())->toBe(0)
+        expect(DB::table('instance_removals')->count())->toBe(0)
             ->and(RouteAnalyticsTracking::query()->count())->toBe(1);
     });
 });

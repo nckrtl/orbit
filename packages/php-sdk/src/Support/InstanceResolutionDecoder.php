@@ -6,8 +6,8 @@ namespace Orbit\Sdk\Support;
 
 use JsonException;
 use Orbit\Sdk\GatewayApiException;
-use Orbit\Sdk\Responses\AppInstances\ResolvedAppInstanceResponse;
-use Orbit\Sdk\Responses\AppInstances\ResolvedDirectoryInstanceResponse;
+use Orbit\Sdk\Responses\Instances\ResolvedDirectoryInstanceResponse;
+use Orbit\Sdk\Responses\Instances\ResolvedInstanceResponse;
 use Saloon\Http\Response;
 use SensitiveParameter;
 use stdClass;
@@ -30,10 +30,10 @@ final class InstanceResolutionDecoder
         #[SensitiveParameter] string $body,
         #[SensitiveParameter] string $domain,
         #[SensitiveParameter] mixed $headerRequestId,
-    ): ResolvedAppInstanceResponse {
+    ): ResolvedInstanceResponse {
         [$data, $requestId] = self::envelope($body, $headerRequestId, ['domain', 'instance_id', 'project_id', 'node_id', 'environment']);
 
-        return ResolvedAppInstanceResponse::fromGatewayData($data, $domain, $requestId);
+        return ResolvedInstanceResponse::fromGatewayData($data, $domain, $requestId);
     }
 
     public static function decodeDirectory(
@@ -48,7 +48,7 @@ final class InstanceResolutionDecoder
     public static function decodeFromResponse(
         #[SensitiveParameter] Response $response,
         #[SensitiveParameter] string $domain,
-    ): ResolvedAppInstanceResponse {
+    ): ResolvedInstanceResponse {
         return self::decode($response->body(), $domain, $response->header('X-Orbit-Request-Id'));
     }
 

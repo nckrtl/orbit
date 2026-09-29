@@ -8,7 +8,7 @@ use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\GatewayVpnInspectionData;
 use App\Domain\Doctor\GatewayVpnStateInspector;
 use App\Domain\Nodes\RoleName;
-use App\Infrastructure\AppDev\AppDevDnsConfigRenderer;
+use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
@@ -51,7 +51,7 @@ final readonly class NativeGatewayVpnStateInspector implements GatewayVpnStateIn
         private KnownHostsStore $knownHosts,
         private VpnConfigurationRepository $configuration,
         private WireGuardServerConfigRenderer $serverRenderer,
-        private AppDevDnsConfigRenderer $dnsRenderer,
+        private DevelopmentDnsConfigRenderer $dnsRenderer,
         private CommandDeadline $deadline,
     ) {}
 

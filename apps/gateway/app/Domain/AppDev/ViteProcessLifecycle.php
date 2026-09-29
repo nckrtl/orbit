@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\AppDev;
 
 use App\Domain\Processes\ProcessOperationException;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Process;
 use Closure;
 
@@ -35,12 +35,12 @@ final readonly class ViteProcessLifecycle
      */
     public function run(Process $process, Closure $launch, Closure $stop, bool $start, bool $restart = false, bool $explicitStart = false): void
     {
-        $instance = AppInstance::query()->with('node')->findOrFail($process->owner_id);
+        $instance = Instance::query()->with('node')->findOrFail($process->owner_id);
         $this->owner->synchronized($instance->node_id, function () use ($process, $instance, $launch, $stop, $start, $restart, $explicitStart): void {
             try {
                 $port = $this->ports->assign($instance);
                 if ($port === null) {
-                    throw new ProcessOperationException('vite-prepare', 'vite.development_required', 'The Vite preset requires a development AppInstance.');
+                    throw new ProcessOperationException('vite-prepare', 'vite.development_required', 'The Vite preset requires a development Instance.');
                 }
                 $owned = $this->runtime->ownsListener($process, $instance, $port);
                 if ($owned && $start && ! $restart && $this->runtime->ready($process, $instance, $port)) {

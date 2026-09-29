@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\App as OrbitApp;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
@@ -71,16 +71,16 @@ it('still refuses a Project create without a type', function (): void {
     ])->assertUnprocessable()
         ->assertJsonPath('error.details.type.0', 'The type field is required.');
 
-    expect(OrbitApp::query()->where('slug', 'untyped')->exists())->toBeFalse();
+    expect(Project::query()->where('slug', 'untyped')->exists())->toBeFalse();
 });
 
 it('gives every existing Project the composer check task check whatever its type', function (): void {
     $migration = require database_path('migrations/2026_09_25_140000_add_task_check_to_apps.php');
     assert($migration instanceof Migration);
-    $migration->down();
+    run_legacy_schema_migration($migration, 'down');
 
     foreach (ProjectType::cases() as $index => $type) {
-        DB::table('apps')->insert([
+        DB::table('projects')->insert([
             'name' => $type->value,
             'slug' => $type->value,
             'code' => 'MG'.chr(65 + $index),
@@ -92,9 +92,9 @@ it('gives every existing Project the composer check task check whatever its type
         ]);
     }
 
-    $migration->up();
+    run_legacy_schema_migration($migration, 'up');
 
-    expect(DB::table('apps')->orderBy('slug')->pluck('task_check', 'type')->all())->toBe([
+    expect(DB::table('projects')->orderBy('slug')->pluck('task_check', 'type')->all())->toBe([
         'laravel-app' => 'composer check',
         'laravel-package' => 'composer check',
         'monorepo' => 'composer check',

@@ -11,15 +11,15 @@ use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Models\AgentThread;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskGroup;
 
 function observer_group(): TaskGroup
 {
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'observe-app',
         'slug' => 'observe-app',
         'repository_url' => 'git@example.test:observe.git',
@@ -32,8 +32,8 @@ function observer_group(): TaskGroup
         'public_ssh_host' => '10.44.0.210',
         'wireguard_ip' => '10.44.0.210',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'task-21',
         'checkout_path' => '/srv/orbit/apps/observe-app/task-21',
@@ -42,7 +42,7 @@ function observer_group(): TaskGroup
         'starting_commit' => str_repeat('a', 40),
     ]);
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Observe idle sessions',
         'brief' => 'Route idle implementer threads.',
         'status' => TaskGroupStatus::Running,
@@ -61,7 +61,7 @@ function observer_group(): TaskGroup
 
     test_link_agent_threads($group);
 
-    return $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+    return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
 }
 
 /**
@@ -109,17 +109,17 @@ it('marks an idle implementer observation with the last turn text', function ():
     ]);
     $diff = new class implements TaskWorkspaceDiffReader
     {
-        public function lineChanges(AppInstance $instance, string $baseBranch): ?array
+        public function lineChanges(Instance $instance, string $baseBranch): ?array
         {
             return null;
         }
 
-        public function lineDiff(AppInstance $instance, string $baseBranch): int
+        public function lineDiff(Instance $instance, string $baseBranch): int
         {
             return 0;
         }
 
-        public function hasCommitsSince(AppInstance $instance, string $since): bool
+        public function hasCommitsSince(Instance $instance, string $since): bool
         {
             return $since === str_repeat('a', 40);
         }
@@ -193,17 +193,17 @@ it('defers a task while the thread that acts in its phase is active, before insp
     ];
     $diff = new class implements TaskWorkspaceDiffReader
     {
-        public function hasCommitsSince(AppInstance $instance, string $since): bool
+        public function hasCommitsSince(Instance $instance, string $since): bool
         {
             throw new LogicException('Active tasks must not inspect workspace commits.');
         }
 
-        public function lineChanges(AppInstance $instance, string $baseBranch): ?array
+        public function lineChanges(Instance $instance, string $baseBranch): ?array
         {
             return null;
         }
 
-        public function lineDiff(AppInstance $instance, string $baseBranch): int
+        public function lineDiff(Instance $instance, string $baseBranch): int
         {
             return 0;
         }

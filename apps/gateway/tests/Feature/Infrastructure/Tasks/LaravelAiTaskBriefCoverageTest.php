@@ -6,7 +6,7 @@ use App\Domain\Tasks\TaskRunPullRequest;
 use App\Domain\Tasks\TaskSessionClassificationException;
 use App\Infrastructure\Tasks\Jev;
 use App\Infrastructure\Tasks\LaravelAiTaskBriefCoverage;
-use App\Models\App as OrbitApp;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskGroup;
 use Illuminate\Contracts\Debug\ExceptionHandler;
@@ -27,8 +27,8 @@ use function Pest\Laravel\mock;
 /** @return array{TaskGroup, Task, Task} */
 function coverage_group(): array
 {
-    $app = OrbitApp::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@github.com:acme/shop.git', 'default_branch' => 'main']);
-    $group = TaskGroup::query()->create(['app_id' => $app->id, 'title' => 'Export orders', 'brief' => 'Export orders as CSV and add a download route.', 'status' => 'reviewing']);
+    $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@github.com:acme/shop.git', 'default_branch' => 'main']);
+    $group = TaskGroup::query()->create(['project_id' => $project->id, 'title' => 'Export orders', 'brief' => 'Export orders as CSV and add a download route.', 'status' => 'reviewing']);
     $models = Task::query()->create(['task_group_id' => $group->id, 'position' => 1, 'title' => 'Export', 'brief' => 'Write the CSV export.', 'status' => 'completed']);
     $routes = Task::query()->create(['task_group_id' => $group->id, 'position' => 2, 'title' => 'Route', 'brief' => 'Add the download route.', 'status' => 'reviewing']);
 

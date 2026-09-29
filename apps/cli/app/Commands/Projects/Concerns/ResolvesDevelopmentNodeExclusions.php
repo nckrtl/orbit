@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace App\Commands\Projects\Concerns;
 
 use Orbit\Sdk\GatewayConnector;
-use Orbit\Sdk\Requests\Apps\ListAppsRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
-use Orbit\Sdk\Responses\Apps\AppsResponse;
+use Orbit\Sdk\Requests\Projects\ListProjectsRequest;
 use Orbit\Sdk\Responses\Nodes\NodesResponse;
+use Orbit\Sdk\Responses\Projects\ProjectsResponse;
 
 trait ResolvesDevelopmentNodeExclusions
 {
@@ -19,7 +19,7 @@ trait ResolvesDevelopmentNodeExclusions
         }
 
         if (! is_int(filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]))) {
-            $this->renderGatewayFailure('app.id_invalid', 'Project ID must be a positive integer.');
+            $this->renderGatewayFailure('project.id_invalid', 'Project ID must be a positive integer.');
 
             return false;
         }
@@ -33,7 +33,7 @@ trait ResolvesDevelopmentNodeExclusions
             $projectId = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 
             if (! is_int($projectId)) {
-                $this->renderGatewayFailure('app.id_invalid', 'Project ID must be a positive integer.');
+                $this->renderGatewayFailure('project.id_invalid', 'Project ID must be a positive integer.');
 
                 return null;
             }
@@ -43,18 +43,18 @@ trait ResolvesDevelopmentNodeExclusions
 
         $projects = $this->sendWithProgress(
             $connector,
-            new ListAppsRequest,
-            AppsResponse::class,
+            new ListProjectsRequest,
+            ProjectsResponse::class,
             ['List Projects', 'Loading Projects', 'Loaded Projects'],
             dismiss: true,
         );
 
-        if (! $projects instanceof AppsResponse) {
+        if (! $projects instanceof ProjectsResponse) {
             return null;
         }
 
         $rows = [];
-        foreach ($projects->apps as $project) {
+        foreach ($projects->projects as $project) {
             $rows[$project->id] = [(string) $project->id, $project->name, $project->slug];
         }
 

@@ -2,6 +2,33 @@
 
 declare(strict_types=1);
 
-// This inert path remains a prepared-state fingerprint input during the legacy
-// Instance conversion window. AppInstance requests own the concise routes.
-return;
+namespace Orbit\Sdk\Requests\Instances;
+
+use Orbit\Sdk\GatewayRequest;
+use Orbit\Sdk\Responses\Instances\InstanceResponse;
+use Orbit\Sdk\Responses\Instances\InstancesResponse;
+use Saloon\Enums\Method;
+use Saloon\Http\Response;
+
+final class ListInstancesRequest extends GatewayRequest
+{
+    #[\Override]
+    protected Method $method = Method::GET;
+
+    public function resolveEndpoint(): string
+    {
+        return '/api/v1/instances';
+    }
+
+    public function createDtoFromResponse(#[\SensitiveParameter] Response $response): InstancesResponse
+    {
+        $requestId = $this->successRequestId($response);
+        $instances = [];
+
+        foreach ($this->unwrapDataList($response) as $instance) {
+            $instances[] = InstanceResponse::fromGatewayData($instance, $requestId);
+        }
+
+        return new InstancesResponse($instances, $requestId);
+    }
+}

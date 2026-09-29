@@ -9,7 +9,7 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Processes\PrometheusProcessRuntimeStatusIndex;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Support\Collection;
@@ -56,7 +56,7 @@ function status_index_process(int $id, string $name, ProcessRuntime $runtime = P
     $process->id = $id;
     $process->name = $name;
     $process->runtime = $runtime;
-    $process->owner_type = AppInstance::class;
+    $process->owner_type = Instance::class;
     $process->owner_id = 1;
     $process->status = LifecycleStatus::Active;
 

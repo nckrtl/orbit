@@ -14,14 +14,14 @@ final class ListTaskGroupsRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'app_id' => ['sometimes', 'integer', 'min:1'],
+            'project_id' => ['sometimes', 'integer', 'min:1'],
             'status' => ['sometimes', 'string', Rule::enum(TaskGroupStatus::class)],
         ];
     }
 
-    public function appId(): ?int
+    public function projectId(): ?int
     {
-        $value = $this->validated('app_id');
+        $value = $this->validated('project_id');
 
         return is_numeric($value) ? (int) $value : null;
     }

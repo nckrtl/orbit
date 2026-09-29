@@ -3,20 +3,20 @@
 declare(strict_types=1);
 
 use App\Infrastructure\Ssh\SshExecutor;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 
 use function Pest\Laravel\mock;
 
-/** @return array{Node, AppInstance} */
+/** @return array{Node, Instance} */
 function directory_resolution_fixture(): array
 {
     $caller = Node::query()->create(['name' => 'directory-caller', 'public_ssh_host' => '192.0.2.80', 'wireguard_ip' => '10.44.0.80', 'user' => 'orbit', 'status' => 'active']);
     orbit_test_set_app_placement_role($caller, false);
     $caller->accessibleNodes()->attach($caller);
-    $app = OrbitApp::query()->create(['name' => 'Directory', 'slug' => 'directory', 'repository_url' => 'https://example.test/app.git']);
-    $instance = $app->appInstances()->create(['node_id' => $caller->id, 'name' => 'fixture', 'environment' => 'development', 'status' => 'active', 'checkout_path' => '/home/orbit/project']);
+    $project = Project::query()->create(['name' => 'Directory', 'slug' => 'directory', 'repository_url' => 'https://example.test/app.git']);
+    $instance = $project->instances()->create(['node_id' => $caller->id, 'name' => 'fixture', 'environment' => 'development', 'status' => 'active', 'checkout_path' => '/home/orbit/project']);
     mock(SshExecutor::class)->shouldNotReceive('execute');
 
     return [$caller, $instance];
@@ -26,9 +26,9 @@ describe('caller directory resolution', function (): void {
     it('selects the root and its descendants without requiring a Route', function (string $directory): void {
         [$caller, $instance] = directory_resolution_fixture();
         $response = $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->get('/api/v1/instances/resolve-directory?directory='.rawurlencode($directory));
-        $response->assertOk()->assertJsonPath('data', ['instance_id' => $instance->id, 'project_id' => $instance->app_id, 'node_id' => $caller->id, 'environment' => 'development']);
+        $response->assertOk()->assertJsonPath('data', ['instance_id' => $instance->id, 'project_id' => $instance->project_id, 'node_id' => $caller->id, 'environment' => 'development']);
         expect($response->getContent())->not->toContain('/home/orbit');
-        $this->assertDatabaseCount('app_instance_dependency_scan_attempts', 0);
+        $this->assertDatabaseCount('instance_dependency_scan_attempts', 0);
     })->with(['/home/orbit/project', '/home/orbit/project/public', '/home/orbit/project/child directory']);
 
     it('preserves trailing spaces as path bytes rather than selecting a trimmed sibling', function (): void {
@@ -54,7 +54,7 @@ describe('caller directory resolution', function (): void {
 
     it('rejects nested ownership without filtering unavailable instances', function (string $root, string $status): void {
         [$caller, $instance] = directory_resolution_fixture();
-        $instance->app->appInstances()->create(['node_id' => $caller->id, 'name' => 'overlap', 'environment' => 'development', 'status' => $status, 'checkout_path' => $root]);
+        $instance->project->instances()->create(['node_id' => $caller->id, 'name' => 'overlap', 'environment' => 'development', 'status' => $status, 'checkout_path' => $root]);
         $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->get('/api/v1/instances/resolve-directory?directory=/home/orbit/project/child')
             ->assertStatus(409)->assertJsonPath('error.code', 'dependencies.target_ambiguous')->assertJsonMissingPath('data');
     })->with([['/home/orbit/project/child', 'active'], ['/home/orbit/project/child', 'reserved']]);

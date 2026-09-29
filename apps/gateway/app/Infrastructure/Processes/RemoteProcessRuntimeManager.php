@@ -298,7 +298,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
             set -euo pipefail
             if sudo test -e "$1"; then
                 test ! -L "$1"
-                sudo grep -Fx -- "# Orbit AppInstance $2" "$1" >/dev/null
+                sudo grep -Fx -- "# Orbit Instance $2" "$1" >/dev/null
                 sudo rm -f -- "$1" "$1.pending"
             fi
             BASH, 'orbit-remove-vite-environment', $path, (string) $process->owner_id], 'remove-vite-environment', 'vite.environment_cleanup_failed', target: $target);

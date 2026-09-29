@@ -7,20 +7,20 @@ namespace App\Domain\Routes;
 use App\Domain\Nodes\NodeRoleValidationException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\App as OrbitApp;
 use App\Models\Cluster;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use App\Models\RouteTarget;
 
 final readonly class RouteRemovalGuard
 {
-    public function assertAppRemovable(OrbitApp $app): void
+    public function assertAppRemovable(Project $project): void
     {
-        if ($app->routes()->exists()) {
+        if ($project->routes()->exists()) {
             throw new ResourceOperationException(
-                errorCode: 'app.has_routes',
-                message: "Project [{$app->slug}] still owns Routes.",
+                errorCode: 'project.has_routes',
+                message: "Project [{$project->slug}] still owns Routes.",
                 status: 409,
             );
         }
@@ -44,7 +44,7 @@ final readonly class RouteRemovalGuard
             || $node->generatedRoutes()->exists()
             || RouteTarget::query()
                 ->whereHas(
-                    'appInstance',
+                    'instance',
                     static fn ($query) => $query->where('node_id', $node->id),
                 )
                 ->exists();
@@ -54,7 +54,7 @@ final readonly class RouteRemovalGuard
                 $query
                     ->where('node_id', $node->id)
                     ->orWhere('generation_basis_node_id', $node->id)
-                    ->orWhereHas('targets.appInstance', static fn ($target) => $target->where('node_id', $node->id));
+                    ->orWhereHas('targets.instance', static fn ($target) => $target->where('node_id', $node->id));
             })->exists()) {
                 new RouteReconciliationGuard()->refuse();
             }
@@ -73,7 +73,7 @@ final readonly class RouteRemovalGuard
             ($role === RoleName::AppDev
             || $role === RoleName::AppProd)
             && RouteTarget::query()->whereHas(
-                'appInstance',
+                'instance',
                 static fn ($query) => $query->where('node_id', $node->id),
             )->exists()
         ) {

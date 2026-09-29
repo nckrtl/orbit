@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\ProductionPhpRuntimeIdentity;
-use App\Infrastructure\AppInstances\ProductionPhpRuntimeConfigRenderer;
+use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Infrastructure\Caddy\CaddyGlobalOptions;
+use App\Infrastructure\Instances\ProductionPhpRuntimeConfigRenderer;
 use App\Infrastructure\Metrics\ServiceMetricsConfigRenderer;
 use App\Infrastructure\Metrics\ServiceMetricsDashboardRenderer;
 

@@ -12,7 +12,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskStatus;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskComment;
 use App\Models\TaskGroup;
@@ -33,7 +33,7 @@ final readonly class CancelTaskGroupAction
         $group->requireManagedExecution();
         $this->requireExtension->execute();
 
-        $group->refresh()->load(['app', 'tasks', 'taskable']);
+        $group->refresh()->load(['project', 'tasks', 'taskable']);
 
         $unpublished = $group->status === TaskGroupStatus::Settling && ($group->pr_url === null || $group->pr_url === '');
         if ($group->status === TaskGroupStatus::Completed || ($group->status === TaskGroupStatus::Settling && ! $unpublished)) {
@@ -50,24 +50,24 @@ final readonly class CancelTaskGroupAction
         $instance = $claimInFlight ? null : $this->workspace->find($group);
         // An unreachable Node cannot accept a push or a removal. Cancel still ends the group and keeps the Instance,
         // so the sweep can delete the checkout later. A Node that answers keeps the fail-closed path below.
-        $offlineId = $instance instanceof AppInstance && $this->nodeUnreachable($instance) ? $instance->id : null;
+        $offlineId = $instance instanceof Instance && $this->nodeUnreachable($instance) ? $instance->id : null;
 
-        if ($instance instanceof AppInstance && $offlineId === null) {
+        if ($instance instanceof Instance && $offlineId === null) {
             if ($unpublished) {
                 $this->pushApprovedWork($group);
             }
             $this->removeWorkspace($group, $instance);
         }
 
-        $removedId = $instance instanceof AppInstance && $offlineId === null ? $instance->id : null;
-        $attachedByClaim = DB::transaction(static function () use ($group, $removedId, $offlineId): ?AppInstance {
+        $removedId = $instance instanceof Instance && $offlineId === null ? $instance->id : null;
+        $attachedByClaim = DB::transaction(static function () use ($group, $removedId, $offlineId): ?Instance {
             $locked = TaskGroup::query()->with('taskable')->lockForUpdate()->findOrFail($group->id);
             // A claim can attach an Instance between the checks above and this lock. Cancel removes whatever is still
             // attached and was not removed above, whether or not it saw a claim in flight. The unreachable Instance
             // stays attached so the sweep can find the checkout.
-            $current = $locked->taskable instanceof AppInstance ? $locked->taskable : null;
-            $keepOffline = $current instanceof AppInstance && $current->id === $offlineId;
-            $attached = $current instanceof AppInstance && $current->id !== $removedId && ! $keepOffline ? $current : null;
+            $current = $locked->taskable instanceof Instance ? $locked->taskable : null;
+            $keepOffline = $current instanceof Instance && $current->id === $offlineId;
+            $attached = $current instanceof Instance && $current->id !== $removedId && ! $keepOffline ? $current : null;
             if ($keepOffline) {
                 $locked->assistance_requested = true;
                 $locked->assistance_reason = RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.';
@@ -81,7 +81,7 @@ final readonly class CancelTaskGroupAction
             return $attached;
         });
 
-        if ($attachedByClaim instanceof AppInstance) {
+        if ($attachedByClaim instanceof Instance) {
             try {
                 $this->removeWorkspace($group, $attachedByClaim);
             } catch (Throwable $exception) {
@@ -97,18 +97,18 @@ final readonly class CancelTaskGroupAction
         $group->tasks()
             ->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])
             ->update(['status' => TaskStatus::Cancelled, 'settled_at' => now()]);
-        $cancelled = $group->fresh(['app', 'tasks', 'taskable']) ?? $group;
+        $cancelled = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
         // Removal success clears the assistance flag and keeps the last reason. An unreachable Node keeps the flag.
         if (! $cancelled->assistance_requested) {
             $group->tasks()->where('assistance_requested', true)->update(['assistance_requested' => false]);
-            $cancelled = $group->fresh(['app', 'tasks', 'taskable']) ?? $cancelled;
+            $cancelled = $group->fresh(['project', 'tasks', 'taskable']) ?? $cancelled;
         }
 
         return $cancelled;
     }
 
     /** The probe is the one check that separates a Node that is gone from a Node that answered and refused. */
-    private function nodeUnreachable(AppInstance $instance): bool
+    private function nodeUnreachable(Instance $instance): bool
     {
         $instance->loadMissing('node');
 
@@ -116,7 +116,7 @@ final readonly class CancelTaskGroupAction
     }
 
     /** A refused removal keeps the checkout and the Instance row, asks for assistance, and returns the error. */
-    private function removeWorkspace(TaskGroup $group, AppInstance $instance): void
+    private function removeWorkspace(TaskGroup $group, Instance $instance): void
     {
         try {
             $this->workspace->remove($instance);

@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Streaming;
 
-use App\Domain\AppInstances\Deployment\DeploymentEvent;
-use App\Domain\AppInstances\Deployment\DeploymentProgressPhase;
-use App\Domain\AppInstances\Deployment\DeploymentResult;
+use App\Domain\Instances\Deployment\DeploymentEvent;
+use App\Domain\Instances\Deployment\DeploymentProgressPhase;
+use App\Domain\Instances\Deployment\DeploymentResult;
 use RuntimeException;
 
 final class DeploymentNdjsonStream

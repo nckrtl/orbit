@@ -6,7 +6,6 @@ namespace App\Actions\Doctor;
 
 use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorIssueData;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorInspectionException;
@@ -15,12 +14,13 @@ use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\ProcessDoctorIssueCode;
 use App\Domain\Doctor\ProcessInspectionStatus;
 use App\Domain\Doctor\ProcessStateInspector;
-use App\Domain\Hibernation\AppDevHibernationPolicy;
+use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\Hibernation\RuntimeHibernation;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 
@@ -28,7 +28,7 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
 {
     public function __construct(
         private ProcessStateInspector $inspector,
-        private AppDevHibernationPolicy $policy = new AppDevHibernationPolicy,
+        private DevelopmentHibernationPolicy $policy = new DevelopmentHibernationPolicy,
         private ?HibernationMarkerStore $markers = null,
     ) {}
 
@@ -44,13 +44,13 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
                 $query
                     ->where(function ($query) use ($context): void {
                         $query
-                            ->whereIn('owner_type', AppInstance::morphTypes())
+                            ->whereIn('owner_type', Instance::morphTypes())
                             ->whereIn(
                                 'owner_id',
-                                AppInstance::query()
+                                Instance::query()
                                     ->select('id')
                                     ->where('node_id', $context->node->id)
-                                    ->where('status', '!=', AppInstanceState::Removing),
+                                    ->where('status', '!=', InstanceState::Removing),
                             );
                     })
                     ->orWhere(function ($query) use ($context): void {
@@ -123,7 +123,7 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
                 continue;
             }
 
-            if (in_array($process->owner_type, AppInstance::morphTypes(), strict: true)) {
+            if (in_array($process->owner_type, Instance::morphTypes(), strict: true)) {
                 $instanceIssues[(int) $process->owner_id][] = $issue;
             } else {
                 $issues[] = $issue;
@@ -132,14 +132,14 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
         }
 
         if ($instanceIssues !== []) {
-            $instances = AppInstance::query()
+            $instances = Instance::query()
                 ->whereKey(array_keys($instanceIssues))
                 ->get()
                 ->keyBy('id');
 
             foreach ($instanceIssues as $instanceId => $ownedIssues) {
                 $instance = $instances->get($instanceId);
-                if (! $instance instanceof AppInstance || $instance->status === AppInstanceState::Removing) {
+                if (! $instance instanceof Instance || $instance->status === InstanceState::Removing) {
                     continue;
                 }
 
@@ -187,7 +187,7 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
 
         $owner = $process->owner;
 
-        if (! $owner instanceof AppInstance) {
+        if (! $owner instanceof Instance) {
             return false;
         }
 

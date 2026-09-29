@@ -9,8 +9,8 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\AppInstances\CloneAppInstanceRequest;
-use Orbit\Sdk\Requests\Deployments\ListAppInstanceReleasesRequest;
+use Orbit\Sdk\Requests\Deployments\ListInstanceReleasesRequest;
+use Orbit\Sdk\Requests\Instances\CloneInstanceRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -58,7 +58,7 @@ describe('instance:clone request', function (): void {
         expect($requests)
             ->toHaveCount(2)
             ->and($requests[0])
-            ->toBeInstanceOf(CloneAppInstanceRequest::class)
+            ->toBeInstanceOf(CloneInstanceRequest::class)
             ->and($requests[0]->resolveEndpoint())
             ->toBe('/api/v1/instances/11/clone')
             ->and($requests[0]->body()->all())
@@ -68,7 +68,7 @@ describe('instance:clone request', function (): void {
                 'preview_name' => 'shop.com',
             ])
             ->and($requests[1])
-            ->toBeInstanceOf(ListAppInstanceReleasesRequest::class)
+            ->toBeInstanceOf(ListInstanceReleasesRequest::class)
             ->and($requests[1]->resolveEndpoint())
             ->toBe('/api/v1/instances/29/releases');
     });
@@ -210,7 +210,7 @@ describe('instance:clone output', function (): void {
         $payload['domain'] = null;
         $payload['url'] = null;
         $mock = MockClient::global([
-            CloneAppInstanceRequest::class => MockResponse::make([
+            CloneInstanceRequest::class => MockResponse::make([
                 'data' => $payload,
                 'meta' => ['request_id' => clone_cli_request_id()],
             ], 201),
@@ -236,7 +236,7 @@ describe('instance:clone output', function (): void {
     it('keeps a rejected SQLite path out of the bounded correlated error', function (): void {
         $path = '/srv/candidate/private-clone-secret.sqlite';
         MockClient::global([
-            CloneAppInstanceRequest::class => MockResponse::make([
+            CloneInstanceRequest::class => MockResponse::make([
                 'error' => [
                     'code' => 'instance.clone_sqlite_source_invalid',
                     'message' => 'The selected SQLite source is invalid.',
@@ -268,12 +268,12 @@ describe('instance:clone output', function (): void {
 });
 
 describe('instance:clone help and execution boundary', function (): void {
-    it('describes candidate and App definitions, target cleanup, production TLD, environment, and deployment', function (): void {
+    it('describes candidate and Project definitions, target cleanup, production TLD, environment, and deployment', function (): void {
         $commands = app(Kernel::class)->all();
         expect($commands['instance:clone']->getHelp())
             ->toContain(
                 'candidate supplies source, stored environment values, and an optional SQLite snapshot',
-                'App supplies production Process and Schedule definitions',
+                'Project supplies production Process and Schedule definitions',
                 'Clean application state on the target only',
                 'node:add --tld',
                 'env:update and env:sync',
@@ -289,7 +289,7 @@ describe('instance:clone help and execution boundary', function (): void {
 
         expect($source)
             ->toBeString()
-            ->toContain(CloneAppInstanceRequest::class, ListAppInstanceReleasesRequest::class)
+            ->toContain(CloneInstanceRequest::class, ListInstanceReleasesRequest::class)
             ->not->toContain('Symfony\\Component\\Process', 'shell_exec', 'proc_open', 'passthru');
     });
 });
@@ -298,11 +298,11 @@ describe('instance:clone help and execution boundary', function (): void {
 function clone_cli_responses(): array
 {
     return [
-        CloneAppInstanceRequest::class => MockResponse::make([
+        CloneInstanceRequest::class => MockResponse::make([
             'data' => clone_cli_payload(),
             'meta' => ['request_id' => clone_cli_request_id()],
         ], 201),
-        ListAppInstanceReleasesRequest::class => MockResponse::make([
+        ListInstanceReleasesRequest::class => MockResponse::make([
             'data' => ['releases' => [], 'selected_release' => null],
             'meta' => ['request_id' => clone_cli_release_request_id()],
         ]),
@@ -342,7 +342,7 @@ function clone_cli_payload(): array
             'status' => 'active',
             'failed_step' => null,
             'error_code' => null,
-            'target' => ['id' => 51, 'app_instance_id' => 29, 'position' => 1],
+            'target' => ['id' => 51, 'instance_id' => 29, 'position' => 1],
             'process_id' => null,
             'upstream' => null,
         ],
@@ -377,7 +377,7 @@ function clone_cli_release_request_id(): string
 
 it('reports the created clone when the following release lookup fails', function (bool $json): void {
     $responses = clone_cli_responses();
-    $responses[ListAppInstanceReleasesRequest::class] = MockResponse::make([
+    $responses[ListInstanceReleasesRequest::class] = MockResponse::make([
         'error' => ['code' => 'deployment.releases_unavailable', 'message' => 'Releases are unavailable.'],
     ], 503, ['X-Orbit-Request-Id' => clone_cli_release_request_id()]);
     $mock = MockClient::global($responses);

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskExtensionState;
-use App\Models\App as OrbitApp;
 use App\Models\Node;
+use App\Models\Project;
 
 beforeEach(function (): void {
     $operator = Node::query()->create([
@@ -16,9 +16,9 @@ beforeEach(function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
 });
 
-function projectForCode(string $slug): OrbitApp
+function projectForCode(string $slug): Project
 {
-    return OrbitApp::query()->create([
+    return Project::query()->create([
         'name' => $slug, 'slug' => $slug, 'repository_url' => "https://github.com/example/{$slug}.git",
         'default_branch' => 'main', 'root' => 'public',
     ]);
@@ -53,8 +53,8 @@ it('backfills distinct codes and prioritizes ORB for Orbit', function (): void {
     $other = projectForCode('orbital');
     $orbit = projectForCode('orbit');
     $migration = require database_path('migrations/2026_09_21_132029_add_code_to_apps.php');
-    $migration->down();
-    $migration->up();
+    run_legacy_schema_migration($migration, 'down');
+    run_legacy_schema_migration($migration, 'up');
     expect($orbit->fresh()?->code)->toBe('ORB')
         ->and($other->fresh()?->code)->toMatch('/^[A-Z]{3}$/')
         ->not->toBe('ORB');
@@ -77,7 +77,7 @@ it('accepts an explicit code on creation and rejects another project claiming it
 it('allocates another code when a concurrent project claims the suggested code', function (): void {
     $this->fakeRepositoryBranches();
     $claimed = false;
-    OrbitApp::creating(static function (OrbitApp $project) use (&$claimed): void {
+    Project::creating(static function (Project $project) use (&$claimed): void {
         if ($claimed || $project->slug !== 'orbit') {
             return;
         }
@@ -91,6 +91,6 @@ it('allocates another code when a concurrent project claims the suggested code',
         'default_branch' => 'main', 'root' => 'public',
     ])->assertCreated();
 
-    expect(OrbitApp::query()->where('slug', 'orbital')->sole()->code)->toBe('ORB')
-        ->and(OrbitApp::query()->where('slug', 'orbit')->sole()->code)->toMatch('/^[A-Z]{3}$/')->not->toBe('ORB');
+    expect(Project::query()->where('slug', 'orbital')->sole()->code)->toBe('ORB')
+        ->and(Project::query()->where('slug', 'orbit')->sole()->code)->toMatch('/^[A-Z]{3}$/')->not->toBe('ORB');
 });

@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 use App\Data\Metrics\MetricsMutationData;
 use App\Domain\AppDev\PrivateDnsManager;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentContext;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentReader;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriter;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentWriteResult;
-use App\Domain\AppInstances\Environment\AppInstanceOperationPreflight;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\NodeStateInspector;
 use App\Domain\Firewall\FirewallBackendStatus;
 use App\Domain\Firewall\FirewallManager;
+use App\Domain\Instances\Environment\InstanceEnvironmentContext;
+use App\Domain\Instances\Environment\InstanceEnvironmentReader;
+use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
+use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
+use App\Domain\Instances\Environment\InstanceOperationPreflight;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\MetricsPublicationCleanup;
 use App\Domain\Metrics\MetricsRoleManager;
@@ -39,12 +39,12 @@ use App\Infrastructure\Gateway\GatewayCaddyConfigRenderer;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Activity;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
 use App\Models\FirewallRule;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Project;
 use App\Models\Route;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
@@ -61,9 +61,9 @@ it('records environment commands without submitted imported or rejected values',
     $imported = 'arbitrary-imported-value';
     [$caller, $instance] = command_activity_environment_fixture();
     $access = new CommandActivityEnvironmentAccess("IMPORTED={$imported}\n");
-    app()->instance(AppInstanceOperationPreflight::class, $access);
-    app()->instance(AppInstanceEnvironmentReader::class, $access);
-    app()->instance(AppInstanceEnvironmentWriter::class, $access);
+    app()->instance(InstanceOperationPreflight::class, $access);
+    app()->instance(InstanceEnvironmentReader::class, $access);
+    app()->instance(InstanceEnvironmentWriter::class, $access);
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
@@ -111,12 +111,12 @@ it('records environment commands without submitted imported or rejected values',
         ->not->toContain($submitted, $imported);
 });
 
-it('records database create destroy add and remove command names and AppInstance targets', function (): void {
+it('records database create destroy add and remove command names and Instance targets', function (): void {
     [$caller, $instance] = command_activity_environment_fixture();
     $access = new CommandActivityEnvironmentAccess('');
-    app()->instance(AppInstanceOperationPreflight::class, $access);
-    app()->instance(AppInstanceEnvironmentReader::class, $access);
-    app()->instance(AppInstanceEnvironmentWriter::class, $access);
+    app()->instance(InstanceOperationPreflight::class, $access);
+    app()->instance(InstanceEnvironmentReader::class, $access);
+    app()->instance(InstanceEnvironmentWriter::class, $access);
 
     $create = $this
         ->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
@@ -238,7 +238,7 @@ it('rejects a removed doctor family without attributing leftover subjects', func
 
     expect(Activity::query()->where('subject_type', 'App\\Models\\Workspace')->exists())
         ->toBeFalse()
-        ->and(Activity::query()->where('subject_type', 'App\\Models\\Instance')->exists())
+        ->and(Activity::query()->where('subject_type', 'App\\Models\\AppInstance')->exists())
         ->toBeFalse();
 });
 
@@ -432,12 +432,12 @@ it('records project update activity for project create and update targets', func
         ])
         ->assertCreated();
 
-    $project = OrbitApp::query()->where('slug', 'activity-project')->sole();
+    $project = Project::query()->where('slug', 'activity-project')->sole();
     $createActivity = Activity::query()->where('request_id', $createRequestId)->sole();
     expect($createActivity->command)
         ->toBe('project:create')
         ->and($createActivity->subject_type)
-        ->toBe(OrbitApp::class)
+        ->toBe(Project::class)
         ->and($createActivity->subject_id)
         ->toBe($project->id);
 
@@ -451,7 +451,7 @@ it('records project update activity for project create and update targets', func
     expect($updateActivity->command)
         ->toBe('project:update')
         ->and($updateActivity->subject_type)
-        ->toBe(OrbitApp::class)
+        ->toBe(Project::class)
         ->and($updateActivity->subject_id)
         ->toBe($project->id)
         ->and($updateActivity->properties?->get('input'))
@@ -513,8 +513,8 @@ it('records renamed App Cluster and Route lifecycle command names', function ():
         'default_branch' => 'main',
         'root' => 'public',
     ]))->toBe('project:create');
-    $app = OrbitApp::query()->where('slug', 'lifecycle')->sole();
-    expect($recorded('DELETE', "/api/v1/projects/{$app->id}"))->toBe('project:destroy');
+    $project = Project::query()->where('slug', 'lifecycle')->sole();
+    expect($recorded('DELETE', "/api/v1/projects/{$project->id}"))->toBe('project:destroy');
 
     expect($recorded('POST', '/api/v1/clusters', ['name' => 'lifecycle']))->toBe('cluster:create');
     $cluster = Cluster::query()->where('name', 'lifecycle')->sole();
@@ -530,7 +530,7 @@ it('records renamed App Cluster and Route lifecycle command names', function ():
         ->toBe('cluster:node:remove');
     expect($recorded('DELETE', "/api/v1/clusters/{$cluster->id}"))->toBe('cluster:destroy');
 
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'Lifecycle',
         'slug' => 'lifecycle-route',
         'repository_url' => 'https://example.test/lifecycle-route.git',
@@ -545,13 +545,13 @@ it('records renamed App Cluster and Route lifecycle command names', function ():
         'tld' => 'test',
     ]);
     $this->postJson('/api/v1/routes', [
-        'app_id' => $app->id,
+        'project_id' => $project->id,
         'domain' => 'lifecycle.example.test',
         'publication' => 'private',
         'node_id' => $node->id,
     ])->assertUnprocessable();
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'domain' => 'lifecycle.example.test',
         'provenance' => 'explicit',
@@ -735,7 +735,7 @@ it('correlates unhandled failures without exposing exception text', function ():
         'wireguard_ip' => '10.44.0.2',
     ]);
     $this->markAsGateway($operator);
-    OrbitApp::creating(static function () use ($secret): never {
+    Project::creating(static function () use ($secret): never {
         throw new RuntimeException("Unexpected APP_KEY={$secret}");
     });
 
@@ -1657,14 +1657,14 @@ it('keeps failed remove tools retained and redacted', function (): void {
         ->not->toContain('REMOVE_EXCEPTION_SENTINEL');
 });
 
-it('records definition commands against the App instead of a Process or Schedule target', function (): void {
+it('records definition commands against the Project instead of a Process or Schedule target', function (): void {
     $gateway = $this->markAsGateway(Node::query()->create([
         'name' => 'definition-activity-gateway',
         'status' => LifecycleStatus::Active,
         'public_ssh_host' => '192.0.2.41',
         'wireguard_ip' => '10.44.0.41',
     ]));
-    $orbitApp = OrbitApp::query()->create([
+    $orbitApp = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
@@ -1689,7 +1689,7 @@ it('records definition commands against the App instead of a Process or Schedule
     expect($activity->command)
         ->toBe('project:process-definition:create')
         ->and($activity->subject_type)
-        ->toBe(OrbitApp::class)
+        ->toBe(Project::class)
         ->and($activity->subject_id)
         ->toBe($orbitApp->id)
         ->and($activity->target_node_id)
@@ -1793,22 +1793,22 @@ function command_activity_doctor_node(string $name): Node
     ]);
 }
 
-/** @return array{Node, AppInstance} */
+/** @return array{Node, Instance} */
 function command_activity_environment_fixture(): array
 {
     $caller = command_activity_doctor_node('environment-activity-caller');
     $caller->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
     $owner = command_activity_doctor_node('environment-activity-owner');
     $owner->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'Environment activity',
         'slug' => 'environment-activity',
         'repository_url' => 'https://example.test/environment-activity.git',
         'default_branch' => 'main',
         'root' => 'public',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $owner->id,
         'name' => 'default',
         'environment' => 'development',
@@ -1818,14 +1818,14 @@ function command_activity_environment_fixture(): array
         'status' => 'source_resolved',
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $project->id,
         'node_id' => $owner->id,
         'domain' => 'environment-activity.example.test',
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
     $instance->update(['status' => 'active']);
 
@@ -1845,30 +1845,30 @@ final class CommandActivityFirewallFakeManager implements FirewallManager
     }
 }
 
-final readonly class CommandActivityEnvironmentAccess implements AppInstanceEnvironmentReader, AppInstanceEnvironmentWriter, AppInstanceOperationPreflight
+final readonly class CommandActivityEnvironmentAccess implements InstanceEnvironmentReader, InstanceEnvironmentWriter, InstanceOperationPreflight
 {
     public function __construct(
         private string $contents,
     ) {}
 
-    public function assertEnvironmentReadable(AppInstanceEnvironmentContext $context): void {}
+    public function assertEnvironmentReadable(InstanceEnvironmentContext $context): void {}
 
     public function assertEnvironmentWritable(
-        AppInstanceEnvironmentContext $context,
+        InstanceEnvironmentContext $context,
         int $requiredCapacityBytes,
     ): void {}
 
-    public function read(AppInstanceEnvironmentContext $context): string
+    public function read(InstanceEnvironmentContext $context): string
     {
         return $this->contents;
     }
 
     public function write(
-        AppInstanceEnvironmentContext $context,
+        InstanceEnvironmentContext $context,
         #[SensitiveParameter]
         string $contents,
-    ): AppInstanceEnvironmentWriteResult {
-        return AppInstanceEnvironmentWriteResult::changed();
+    ): InstanceEnvironmentWriteResult {
+        return InstanceEnvironmentWriteResult::changed();
     }
 }
 

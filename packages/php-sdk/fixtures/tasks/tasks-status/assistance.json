@@ -9,8 +9,8 @@
             "assistance": [
                 {
                     "id": 1,
-                    "app_id": 1,
-                    "app": "orbit",
+                    "project_id": 1,
+                    "project": "orbit",
                     "project_code": "ORB",
                     "title": "Blocked implementer",
                     "status": "running",
@@ -18,8 +18,8 @@
                 },
                 {
                     "id": 2,
-                    "app_id": 1,
-                    "app": "orbit",
+                    "project_id": 1,
+                    "project": "orbit",
                     "project_code": "ORB",
                     "title": "Settling question",
                     "status": "settling",

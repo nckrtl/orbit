@@ -8,9 +8,9 @@ use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
-use Orbit\Sdk\Requests\Deployments\ShowAppInstanceDeploymentRequest;
-use Orbit\Sdk\Responses\Deployments\AppInstanceDeploymentEvent;
-use Orbit\Sdk\Responses\Deployments\AppInstanceDeploymentResponse;
+use Orbit\Sdk\Requests\Deployments\ShowInstanceDeploymentRequest;
+use Orbit\Sdk\Responses\Deployments\InstanceDeploymentEvent;
+use Orbit\Sdk\Responses\Deployments\InstanceDeploymentResponse;
 
 final class ShowDeploymentCommand extends GatewayCommand
 {
@@ -38,12 +38,12 @@ final class ShowDeploymentCommand extends GatewayCommand
 
         $deployment = $this->sendWithProgress(
             $connector,
-            new ShowAppInstanceDeploymentRequest($deploymentId),
-            AppInstanceDeploymentResponse::class,
+            new ShowInstanceDeploymentRequest($deploymentId),
+            InstanceDeploymentResponse::class,
             ['Show deployment', 'Loading deployment', 'Loaded deployment'],
         );
 
-        if (! $deployment instanceof AppInstanceDeploymentResponse) {
+        if (! $deployment instanceof InstanceDeploymentResponse) {
             return self::FAILURE;
         }
 
@@ -56,7 +56,7 @@ final class ShowDeploymentCommand extends GatewayCommand
         $events = $deployment->events ?? [];
 
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Deployment: {$deployment->id}", [
-            'Instance ID' => $deployment->appInstanceId,
+            'Instance ID' => $deployment->instanceId,
             'Release' => $deployment->release,
             'Branch' => $deployment->branch,
             'Commit' => $deployment->commit,
@@ -71,12 +71,12 @@ final class ShowDeploymentCommand extends GatewayCommand
             'Request ID' => $deployment->requestId,
         ]));
 
-        $phases = array_values(array_filter($events, static fn (AppInstanceDeploymentEvent $event): bool => $event->type === 'phase'));
+        $phases = array_values(array_filter($events, static fn (InstanceDeploymentEvent $event): bool => $event->type === 'phase'));
 
         ConsoleWriter::write($this->output, $this->humanRenderer()->table(
             ['Phase', 'Step'],
             array_map(
-                static fn (AppInstanceDeploymentEvent $event): array => [
+                static fn (InstanceDeploymentEvent $event): array => [
                     str_replace('_', ' ', (string) $event->phase),
                     $event->stepName ?? '—',
                 ],
@@ -90,7 +90,7 @@ final class ShowDeploymentCommand extends GatewayCommand
         return self::SUCCESS;
     }
 
-    /** @param list<AppInstanceDeploymentEvent> $events */
+    /** @param list<InstanceDeploymentEvent> $events */
     private function writeLog(array $events): void
     {
         $lines = [];

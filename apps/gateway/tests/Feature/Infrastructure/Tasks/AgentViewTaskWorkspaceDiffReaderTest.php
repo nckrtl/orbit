@@ -5,35 +5,35 @@ declare(strict_types=1);
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Infrastructure\AgentView\CacheAgentStateView;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\AgentViewTaskWorkspaceDiffReader;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceDiffReader;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Tests\Support\AppDevFakeSshExecutor;
 
-function view_diff_instance(): AppInstance
+function view_diff_instance(): Instance
 {
-    $app = OrbitApp::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'git@github.com:nckrtl/orbit.git', 'default_branch' => 'main']);
+    $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'git@github.com:nckrtl/orbit.git', 'default_branch' => 'main']);
     $node = Node::query()->create([
         'name' => 'view-diff-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
         'public_ssh_host' => '10.44.0.143', 'wireguard_ip' => '10.44.0.143', 'user' => 'orbit',
     ]);
 
-    return AppInstance::query()->create([
-        'app_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-12',
+    return Instance::query()->create([
+        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-12',
         'checkout_path' => '/srv/orbit/apps/orbit/task-12', 'branch' => 'task-12', 'status' => 'source_resolved',
     ]);
 }
 
-function view_diff_ssh(AppDevFakeSshExecutor $transport): AppDevSshExecutor
+function view_diff_ssh(AppDevFakeSshExecutor $transport): DevelopmentSshExecutor
 {
-    return new AppDevSshExecutor(
+    return new DevelopmentSshExecutor(
         $transport,
         new class implements SshKeyProvider
         {
@@ -60,7 +60,7 @@ function view_diff_ssh(AppDevFakeSshExecutor $transport): AppDevSshExecutor
 }
 
 /** @param array<string, mixed> $overrides */
-function view_workspace(AppInstance $instance, array $overrides = [], float $ageSeconds = 0.0): void
+function view_workspace(Instance $instance, array $overrides = [], float $ageSeconds = 0.0): void
 {
     app(CacheAgentStateView::class)->putNode($instance->node_id, [], 'available', 3, CacheAgentStateView::now() - $ageSeconds, null, [
         $instance->id => [

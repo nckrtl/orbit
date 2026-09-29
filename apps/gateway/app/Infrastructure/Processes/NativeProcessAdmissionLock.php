@@ -39,9 +39,9 @@ final class NativeProcessAdmissionLock implements ProcessAdmissionLock
         };
     }
 
-    public function run(array $appInstanceIds, Closure $operation): mixed
+    public function run(array $instanceIds, Closure $operation): mixed
     {
-        $ids = array_values(array_unique(array_map(intval(...), $appInstanceIds)));
+        $ids = array_values(array_unique(array_map(intval(...), $instanceIds)));
         sort($ids, SORT_NUMERIC);
 
         if ($ids === []) {
@@ -49,13 +49,13 @@ final class NativeProcessAdmissionLock implements ProcessAdmissionLock
         }
 
         if (array_any($ids, static fn (int $id): bool => $id < 1)) {
-            throw new LogicException('A Process admission lock requires positive AppInstance identifiers.');
+            throw new LogicException('A Process admission lock requires positive Instance identifiers.');
         }
 
         $newIds = array_values(array_filter($ids, fn (int $id): bool => ! array_key_exists($id, $this->depths)));
 
         if ($this->depths !== [] && $newIds !== []) {
-            throw new LogicException('A nested Process admission operation cannot acquire another AppInstance owner.');
+            throw new LogicException('A nested Process admission operation cannot acquire another Instance owner.');
         }
 
         if ($newIds === []) {
@@ -157,7 +157,7 @@ final class NativeProcessAdmissionLock implements ProcessAdmissionLock
     {
         return new ResourceOperationException(
             errorCode: 'process.operation_busy',
-            message: 'Another Process operation is active for this AppInstance. Retry the request.',
+            message: 'Another Process operation is active for this Instance. Retry the request.',
             status: 409,
         );
     }

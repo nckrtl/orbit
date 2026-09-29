@@ -23,7 +23,7 @@ ARCHITECTURE_TESTS = {
     'apps/cli': ('tests/Feature/CommandSurfaceTest.php',),
     'apps/gateway': (
         'tests/Unit/Architecture',
-        'tests/Feature/Infrastructure/AppInstances/ConfiguredOriginReadTest.php',
+        'tests/Feature/Infrastructure/Instances/ConfiguredOriginReadTest.php',
         'tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php',
     ),
     'apps/e2e': (
@@ -185,6 +185,18 @@ def main():
         report['checks'].append({'project': 'repository', 'command': ['bin/docs-impact', '--gate'],
                                  'exit_code': 1, 'seconds': 0, 'log': str(log)})
         print(f'[repository] bin/docs-impact --gate: FAILED ({log})', flush=True)
+        print(log.read_text(), flush=True)
+    log = directory / 'project-vocabulary.log'
+    started = time.monotonic()
+    with log.open('w') as output:
+        result = subprocess.run([str(root / 'bin/project-vocabulary')], cwd=root,
+                                stdout=output, stderr=subprocess.STDOUT)
+    report['checks'].append({'project': 'repository', 'command': ['bin/project-vocabulary'],
+                             'exit_code': result.returncode,
+                             'seconds': round(time.monotonic() - started, 3), 'log': str(log)})
+    print(f'[repository] bin/project-vocabulary: '
+          f'{"passed" if result.returncode == 0 else "FAILED"} ({log})', flush=True)
+    if result.returncode:
         print(log.read_text(), flush=True)
     # Seed absent quality and test caches first, so a fresh clone does not run every check cold.
     # A cache miss or a missing seeding script only makes the checks slower.

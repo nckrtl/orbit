@@ -9,10 +9,10 @@ use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
 use App\Support\Console\PromptAborted;
-use Orbit\Sdk\Requests\AppInstances\ShowAppInstanceRequest;
-use Orbit\Sdk\Requests\Processes\AppInstanceProcessTarget;
+use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
+use Orbit\Sdk\Requests\Processes\InstanceProcessTarget;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
-use Orbit\Sdk\Responses\AppInstances\AppInstanceResponse;
+use Orbit\Sdk\Responses\Instances\InstanceResponse;
 use Orbit\Sdk\Responses\Processes\ProcessesResponse;
 
 final class ShowInstanceCommand extends GatewayCommand
@@ -43,9 +43,9 @@ final class ShowInstanceCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        $instance = $this->sendWithProgress($connector, new ShowAppInstanceRequest($instanceId), AppInstanceResponse::class, ['Show Instance', 'Fetching Instance', 'Fetched Instance'], dismiss: true);
+        $instance = $this->sendWithProgress($connector, new ShowInstanceRequest($instanceId), InstanceResponse::class, ['Show Instance', 'Fetching Instance', 'Fetched Instance'], dismiss: true);
 
-        if (! $instance instanceof AppInstanceResponse) {
+        if (! $instance instanceof InstanceResponse) {
             return self::FAILURE;
         }
 
@@ -55,7 +55,7 @@ final class ShowInstanceCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $processes = $this->sendWithProgress($connector, new ListProcessesRequest(new AppInstanceProcessTarget($instance->id)), ProcessesResponse::class, ['Processes', 'Fetching Processes', 'Fetched Processes'], dismiss: true);
+        $processes = $this->sendWithProgress($connector, new ListProcessesRequest(new InstanceProcessTarget($instance->id)), ProcessesResponse::class, ['Processes', 'Fetching Processes', 'Fetched Processes'], dismiss: true);
         if (! $processes instanceof ProcessesResponse) {
             return self::FAILURE;
         }

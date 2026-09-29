@@ -7,15 +7,15 @@ namespace App\Services;
 use LogicException;
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
-use Orbit\Sdk\Requests\AppInstances\ResolveAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\ResolveDirectoryInstanceRequest;
-use Orbit\Sdk\Responses\AppInstances\ResolvedAppInstanceResponse;
-use Orbit\Sdk\Responses\AppInstances\ResolvedDirectoryInstanceResponse;
+use Orbit\Sdk\Requests\Instances\ResolveDirectoryInstanceRequest;
+use Orbit\Sdk\Requests\Instances\ResolveInstanceRequest;
+use Orbit\Sdk\Responses\Instances\ResolvedDirectoryInstanceResponse;
+use Orbit\Sdk\Responses\Instances\ResolvedInstanceResponse;
 use SensitiveParameter;
 
 final readonly class DependencyInstanceSelector
 {
-    public function select(GatewayConnector $connector, #[SensitiveParameter] ?string $domain = null, bool $all = false): ResolvedAppInstanceResponse|ResolvedDirectoryInstanceResponse|null
+    public function select(GatewayConnector $connector, #[SensitiveParameter] ?string $domain = null, bool $all = false): ResolvedInstanceResponse|ResolvedDirectoryInstanceResponse|null
     {
         if ($all && $domain !== null) {
             throw new GatewayApiException('Project and all-instance selectors cannot be combined.', errorCode: 'dependencies.target_conflict');
@@ -46,10 +46,10 @@ final readonly class DependencyInstanceSelector
         return $resolved;
     }
 
-    public function resolveDomain(GatewayConnector $connector, #[SensitiveParameter] string $domain): ResolvedAppInstanceResponse
+    public function resolveDomain(GatewayConnector $connector, #[SensitiveParameter] string $domain): ResolvedInstanceResponse
     {
-        $resolved = $connector->send(new ResolveAppInstanceRequest($domain))->dtoOrFail();
-        if (! $resolved instanceof ResolvedAppInstanceResponse) {
+        $resolved = $connector->send(new ResolveInstanceRequest($domain))->dtoOrFail();
+        if (! $resolved instanceof ResolvedInstanceResponse) {
             throw new LogicException('Domain resolution returned an unexpected response.');
         }
 

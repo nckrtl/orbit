@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\Routes\RouteProvenance;
@@ -11,9 +11,9 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WireGuard\VpnSettings;
-use App\Infrastructure\AppDev\AppDevCaddyConfigRenderer;
-use App\Infrastructure\AppDev\AppDevSite;
-use App\Infrastructure\AppDev\AppDevSiteRepository;
+use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
+use App\Infrastructure\AppDev\DevelopmentSite;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Caddy\Build\CaddyListenerRule;
 use App\Infrastructure\Caddy\Build\CaddySite;
 use App\Infrastructure\Caddy\Build\CaddySiteCertificates;
@@ -21,10 +21,10 @@ use App\Infrastructure\Caddy\Build\NodeCaddyfile;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Caddy\Build\NodeCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\AnalyticsCaddySiteSource;
-use App\Infrastructure\Caddy\Build\Sources\AppCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\GatewayWebCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\MetricsCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\ProxyCliCaddySiteSource;
+use App\Infrastructure\Caddy\Build\Sources\RouteCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\ServiceMetricsCaddySiteSource;
 use App\Infrastructure\Caddy\Build\Sources\WebSocketCaddySiteSource;
 use App\Infrastructure\Caddy\CaddyGlobalOptions;
@@ -32,10 +32,10 @@ use App\Infrastructure\Gateway\GatewayCaddyConfigRenderer;
 use App\Infrastructure\Metrics\MetricsPublicationRenderer;
 use App\Infrastructure\Metrics\ServiceMetricsConfigRenderer;
 use App\Infrastructure\WebSocket\WebSocketCaddySiteRenderer;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Symfony\Component\Process\ExecutableFinder;
 use Tests\Support\CaddySiteCertificateFixtures;
@@ -147,25 +147,25 @@ describe('site sources', function (): void {
         $ingress->update(['cluster_id' => $cluster->id, 'ssh_host_fingerprint' => 'SHA256:ingress']);
         $ingress->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
         $ingress->roles()->create(['role' => RoleName::Ingress, 'status' => LifecycleStatus::Active, 'cluster_id' => $cluster->id]);
-        $app = OrbitApp::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'https://example.test/shop.git', 'root' => 'public']);
-        $instance = AppInstance::query()->create([
-            'app_id' => $app->id,
+        $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'https://example.test/shop.git', 'root' => 'public']);
+        $instance = Instance::query()->create([
+            'project_id' => $project->id,
             'node_id' => $ingress->id,
             'name' => 'default',
             'environment' => 'production',
             'checkout_path' => '/var/www/shop',
             'root' => 'public',
-            'status' => AppInstanceState::Active,
+            'status' => InstanceState::Active,
         ]);
         $route = Route::query()->create([
-            'app_id' => $app->id,
+            'project_id' => $project->id,
             'cluster_id' => $cluster->id,
             'domain' => 'shop.example.test',
             'provenance' => RouteProvenance::Explicit,
             'publication' => RoutePublication::Private,
             'status' => RouteStatus::Pending,
         ]);
-        $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+        $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
         $route->update(['publication' => RoutePublication::Public, 'status' => RouteStatus::Active]);
         $renderer = new NodeCaddyfileRenderer([app(ServiceMetricsCaddySiteSource::class)]);
 
@@ -180,8 +180,8 @@ describe('site sources', function (): void {
         $router = caddy_build_node('router', '10.44.0.1');
         [$instance, $route] = caddy_build_private_route($router, 'shop.test');
         $workload = $instance->node;
-        $renderer = new AppDevCaddyConfigRenderer;
-        $repository = new AppDevSiteRepository;
+        $renderer = new DevelopmentCaddyConfigRenderer;
+        $repository = new DevelopmentSiteRepository;
 
         $routerFile = caddy_build_renderer()->render($router);
         $workloadFile = caddy_build_renderer()->render($workload);
@@ -196,7 +196,7 @@ describe('site sources', function (): void {
     });
 
     it('classifies public, production, and composed sites and keeps unix listeners', function (): void {
-        $source = new AppCaddySiteSource(new AppDevSiteRepository, new AppDevCaddyConfigRenderer);
+        $source = new RouteCaddySiteSource(new DevelopmentSiteRepository, new DevelopmentCaddyConfigRenderer);
 
         $sites = $source->fromSites(collect([
             caddy_build_site('shop.example.com', 'route-1-ingress', publicListener: true),
@@ -412,7 +412,7 @@ describe('duplicate addresses', function (): void {
     });
 
     it('refuses a public Ingress site and a private site for one domain on one Node', function (): void {
-        $source = new AppCaddySiteSource(new AppDevSiteRepository, new AppDevCaddyConfigRenderer);
+        $source = new RouteCaddySiteSource(new DevelopmentSiteRepository, new DevelopmentCaddyConfigRenderer);
         $sites = $source->fromSites(collect([
             caddy_build_site('Shop.example.com', 'route-1-ingress', publicListener: true),
             caddy_build_site('shop.example.com', 'route-1-router'),
@@ -444,7 +444,7 @@ describe('duplicate addresses', function (): void {
     });
 
     it('refuses two sites on one unix socket', function (): void {
-        $source = new AppCaddySiteSource(new AppDevSiteRepository, new AppDevCaddyConfigRenderer);
+        $source = new RouteCaddySiteSource(new DevelopmentSiteRepository, new DevelopmentCaddyConfigRenderer);
         $sites = $source->fromSites(collect([
             caddy_build_site('a.test', 'route-3-router', localUnixUpstream: 'unix//run/orbit/route-3-local.sock'),
             caddy_build_site('b.test', 'route-4-router', localUnixUpstream: 'unix//run/orbit/route-3-local.sock'),
@@ -462,7 +462,7 @@ function caddy_build_renderer(): NodeCaddyfileRenderer
         new GatewayWebCaddySiteSource(new GatewayCaddyConfigRenderer, app(VpnSettings::class), '/srv/gateway', '/srv/web'),
         new MetricsCaddySiteSource,
         app(ServiceMetricsCaddySiteSource::class),
-        new AppCaddySiteSource(new AppDevSiteRepository, new AppDevCaddyConfigRenderer),
+        new RouteCaddySiteSource(new DevelopmentSiteRepository, new DevelopmentCaddyConfigRenderer),
         new WebSocketCaddySiteSource(new WebSocketCaddySiteRenderer, 8080),
         new AnalyticsCaddySiteSource,
         app(ProxyCliCaddySiteSource::class),
@@ -517,8 +517,8 @@ function caddy_build_site(
     bool $publicListener = false,
     string $environment = 'development',
     ?string $localUnixUpstream = null,
-): AppDevSite {
-    return new AppDevSite(
+): DevelopmentSite {
+    return new DevelopmentSite(
         nodeId: 1,
         nodeAddress: '10.44.0.1',
         scope: $scope,
@@ -545,7 +545,7 @@ function caddy_build_node(string $name, ?string $wireguardIp): Node
     ]);
 }
 
-/** @return array{AppInstance, Route} */
+/** @return array{Instance, Route} */
 function caddy_build_private_route(Node $router, string $domain): array
 {
     $cluster = Cluster::query()->create(['name' => "{$domain}-cluster", 'state' => ClusterState::Active]);
@@ -554,25 +554,25 @@ function caddy_build_private_route(Node $router, string $domain): array
     $workload = caddy_build_node("{$domain}-workload", '10.44.0.30');
     $workload->update(['cluster_id' => $cluster->id]);
     $workload->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
-    $app = OrbitApp::query()->create(['name' => $domain, 'slug' => str_replace('.', '-', $domain), 'repository_url' => "https://example.test/{$domain}.git", 'root' => 'public']);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $project = Project::query()->create(['name' => $domain, 'slug' => str_replace('.', '-', $domain), 'repository_url' => "https://example.test/{$domain}.git", 'root' => 'public']);
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $workload->id,
         'name' => 'default',
         'checkout_path' => "/home/orbit/apps/{$domain}",
         'root' => 'public',
         'selected_php_version' => '8.5',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
     $route = Route::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $project->id,
         'cluster_id' => $cluster->id,
         'domain' => $domain,
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
-    $route->targets()->create(['app_instance_id' => $instance->id, 'position' => 0]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => RouteStatus::Active]);
 
     return [$instance->fresh('node') ?? $instance, $route];

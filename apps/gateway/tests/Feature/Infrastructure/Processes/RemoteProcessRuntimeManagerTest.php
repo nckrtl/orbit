@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Logs\LogReadLimit;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -28,10 +28,10 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Cache;
 use Tests\Support\TestToolchain;
@@ -57,13 +57,13 @@ beforeEach(function (): void {
         'wireguard_ip' => '10.44.0.3',
     ]);
     $node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
-    $orbitApp = OrbitApp::query()->create([
+    $orbitApp = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
     ]);
-    $this->instance = AppInstance::query()->create([
-        'app_id' => $orbitApp->id,
+    $this->instance = Instance::query()->create([
+        'project_id' => $orbitApp->id,
         'node_id' => $node->id,
         'name' => 'main',
         'environment' => 'development',
@@ -170,7 +170,7 @@ it('rejects leftover Workspace ownership before systemd convergence', function (
     $process = runtime_manager_leftover_workspace_process();
 
     expect(fn () => $this->manager->converge($process))
-        ->toThrow(ResourceOperationException::class, 'not a supported AppInstance or Node');
+        ->toThrow(ResourceOperationException::class, 'not a supported Instance or Node');
 
     expect($this->ssh->commands)->toBeEmpty();
 });
@@ -1583,7 +1583,7 @@ it('requires a successful systemd stop before deleting an owned unit', function 
 it('removes an instance process after its role and resources enter removing state', function (): void {
     $process = runtime_manager_systemd_process($this->instance);
     $process->update(['status' => LifecycleStatus::Removing]);
-    $this->instance->update(['status' => AppInstanceState::SourceResolved]);
+    $this->instance->update(['status' => InstanceState::SourceResolved]);
     $this->instance->node->roles()->where('role', 'app-dev')->update(['status' => LifecycleStatus::Removing]);
     $ownedUnit = "[Unit]\nX-Orbit-Process-ID={$process->id}\n";
     $this->ssh->responses = [
@@ -1630,11 +1630,11 @@ it('removes a systemd process whose unit has no failed record to reset', functio
     ]);
 });
 
-it('derives the production removal target from persisted AppInstance identity', function (): void {
+it('derives the production removal target from persisted Instance identity', function (): void {
     $process = runtime_manager_systemd_process($this->instance);
     $process->update(['status' => LifecycleStatus::Removing]);
     $this->instance->update([
-        'status' => AppInstanceState::SourceResolved,
+        'status' => InstanceState::SourceResolved,
         'environment' => 'production',
         'checkout_path' => '/home/orbit-docs/releases/20260910',
         'production_user' => 'orbit-docs',
@@ -1752,7 +1752,7 @@ it('refuses desired-running production convergence before runtime mutation when 
 
 it('keeps the active-node prerequisite on the removal-only target path', function (): void {
     $process = runtime_manager_systemd_process($this->instance);
-    $this->instance->update(['status' => AppInstanceState::SourceResolved]);
+    $this->instance->update(['status' => InstanceState::SourceResolved]);
     $this->instance->node->update(['status' => LifecycleStatus::Failed]);
 
     expect(fn () => new ProcessTargetResolver()->forRemoval($process))
@@ -1765,7 +1765,7 @@ it('rejects leftover Workspace ownership before runtime cleanup', function (): v
     $process = runtime_manager_leftover_workspace_process();
 
     expect(fn () => $this->manager->remove($process))
-        ->toThrow(ResourceOperationException::class, 'not a supported AppInstance or Node');
+        ->toThrow(ResourceOperationException::class, 'not a supported Instance or Node');
 
     expect($this->ssh->commands)->toBeEmpty();
 });
@@ -1882,7 +1882,7 @@ it('returns a stable status error for a failed Docker probe', function (): void 
     $this->fail('Expected a failed status probe to return a stable error.');
 });
 
-function runtime_manager_place_on_app_prod(AppInstance $instance): void
+function runtime_manager_place_on_app_prod(Instance $instance): void
 {
     $instance->loadMissing('node.roles');
     $instance->node->roles()->where('role', 'app-dev')->delete();
@@ -1895,10 +1895,10 @@ function runtime_manager_place_on_app_prod(AppInstance $instance): void
     $instance->load('node.roles');
 }
 
-function runtime_manager_systemd_process(AppInstance $instance): Process
+function runtime_manager_systemd_process(Instance $instance): Process
 {
     return Process::query()->create([
-        'owner_type' => AppInstance::MorphAlias,
+        'owner_type' => Instance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => 'queue',
         'runtime' => ProcessRuntime::Systemd,
@@ -1932,10 +1932,10 @@ function runtime_manager_leftover_workspace_process(): Process
 }
 
 /** @param array<string, string> $environment */
-function runtime_manager_docker_process(AppInstance $instance, array $environment = []): Process
+function runtime_manager_docker_process(Instance $instance, array $environment = []): Process
 {
     return Process::query()->create([
-        'owner_type' => AppInstance::MorphAlias,
+        'owner_type' => Instance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => 'redis',
         'runtime' => ProcessRuntime::Docker,

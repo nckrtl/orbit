@@ -1079,7 +1079,7 @@
               "enum": [
                 "node",
                 "role",
-                "app",
+                "project",
                 "instance",
                 "schedule",
                 "tool",
@@ -1710,7 +1710,7 @@
       "name": "instance-clone",
       "extension": null,
       "title": "Clone an Instance",
-      "description": "Clone a candidate into a prepared production Instance.\n\nThe candidate supplies source, stored environment values, and an optional SQLite snapshot. The App supplies production Process and Schedule definitions; candidate-specific overrides are not copied.\n\nProvision the production Node with node:add --tld before cloning. Clean application state on the target only. Use env:update and env:sync for target configuration, then configure deploy steps with instance:deploy-step:create and deploy with instance:deploy.",
+      "description": "Clone a candidate into a prepared production Instance.\n\nThe candidate supplies source, stored environment values, and an optional SQLite snapshot. The Project supplies production Process and Schedule definitions; candidate-specific overrides are not copied.\n\nProvision the production Node with node:add --tld before cloning. Clean application state on the target only. Use env:update and env:sync for target configuration, then configure deploy steps with instance:deploy-step:create and deploy with instance:deploy.",
       "method": "POST",
       "path": "/api/v1/instances/{candidate}/clone",
       "path_inputs": [
@@ -2323,14 +2323,16 @@
           "project_id": {
             "type": "integer"
           },
-          "app_name": {
+          "project_name": {
             "type": "string",
-            "maxLength": 255
+            "maxLength": 255,
+            "description": "Confirmed Project display name"
           },
-          "app_slug": {
+          "project_slug": {
             "type": "string",
             "pattern": "^[A-Za-z0-9_-]+$",
-            "maxLength": 63
+            "maxLength": 63,
+            "description": "Confirmed Project slug"
           },
           "default_branch": {
             "type": "string",
@@ -2506,16 +2508,16 @@
       "title": "instance:setup-step:create",
       "description": "Record one named setup step on a Project.",
       "method": "POST",
-      "path": "/api/v1/projects/{app}/setup-steps",
+      "path": "/api/v1/projects/{project}/setup-steps",
       "path_inputs": [
-        "app"
+        "project"
       ],
       "query_inputs": [],
       "streams": false,
       "input_schema": {
         "type": "object",
         "properties": {
-          "app": {
+          "project": {
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Project ID."
@@ -2542,7 +2544,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "app",
+          "project",
           "name",
           "command"
         ]
@@ -2554,9 +2556,9 @@
       "title": "instance:setup-step:destroy",
       "description": "Remove one named setup step.",
       "method": "DELETE",
-      "path": "/api/v1/projects/{app}/setup-steps/{step}",
+      "path": "/api/v1/projects/{project}/setup-steps/{step}",
       "path_inputs": [
-        "app",
+        "project",
         "step"
       ],
       "query_inputs": [],
@@ -2564,7 +2566,7 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "app": {
+          "project": {
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Project ID."
@@ -2577,7 +2579,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "app",
+          "project",
           "step"
         ]
       }
@@ -2588,16 +2590,16 @@
       "title": "instance:setup-step:list",
       "description": "List a Project's setup steps.",
       "method": "GET",
-      "path": "/api/v1/projects/{app}/setup-steps",
+      "path": "/api/v1/projects/{project}/setup-steps",
       "path_inputs": [
-        "app"
+        "project"
       ],
       "query_inputs": [],
       "streams": false,
       "input_schema": {
         "type": "object",
         "properties": {
-          "app": {
+          "project": {
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Project ID."
@@ -2605,7 +2607,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "app"
+          "project"
         ]
       }
     },
@@ -2615,9 +2617,9 @@
       "title": "instance:setup-step:update",
       "description": "Change one named setup step.",
       "method": "PATCH",
-      "path": "/api/v1/projects/{app}/setup-steps/{step}",
+      "path": "/api/v1/projects/{project}/setup-steps/{step}",
       "path_inputs": [
-        "app",
+        "project",
         "step"
       ],
       "query_inputs": [],
@@ -2625,7 +2627,7 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "app": {
+          "project": {
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Project ID."
@@ -2653,7 +2655,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "app",
+          "project",
           "step"
         ]
       }
@@ -2691,16 +2693,16 @@
       "title": "instance:teardown-step:create",
       "description": "Record one named teardown step on a Project.",
       "method": "POST",
-      "path": "/api/v1/projects/{app}/teardown-steps",
+      "path": "/api/v1/projects/{project}/teardown-steps",
       "path_inputs": [
-        "app"
+        "project"
       ],
       "query_inputs": [],
       "streams": false,
       "input_schema": {
         "type": "object",
         "properties": {
-          "app": {
+          "project": {
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Project ID."
@@ -2727,7 +2729,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "app",
+          "project",
           "name",
           "command"
         ]
@@ -2739,9 +2741,9 @@
       "title": "instance:teardown-step:destroy",
       "description": "Remove one named teardown step.",
       "method": "DELETE",
-      "path": "/api/v1/projects/{app}/teardown-steps/{step}",
+      "path": "/api/v1/projects/{project}/teardown-steps/{step}",
       "path_inputs": [
-        "app",
+        "project",
         "step"
       ],
       "query_inputs": [],
@@ -2749,7 +2751,7 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "app": {
+          "project": {
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Project ID."
@@ -2762,7 +2764,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "app",
+          "project",
           "step"
         ]
       }
@@ -2773,16 +2775,16 @@
       "title": "instance:teardown-step:list",
       "description": "List a Project's teardown steps.",
       "method": "GET",
-      "path": "/api/v1/projects/{app}/teardown-steps",
+      "path": "/api/v1/projects/{project}/teardown-steps",
       "path_inputs": [
-        "app"
+        "project"
       ],
       "query_inputs": [],
       "streams": false,
       "input_schema": {
         "type": "object",
         "properties": {
-          "app": {
+          "project": {
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Project ID."
@@ -2790,7 +2792,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "app"
+          "project"
         ]
       }
     },
@@ -2800,9 +2802,9 @@
       "title": "instance:teardown-step:update",
       "description": "Change one named teardown step.",
       "method": "PATCH",
-      "path": "/api/v1/projects/{app}/teardown-steps/{step}",
+      "path": "/api/v1/projects/{project}/teardown-steps/{step}",
       "path_inputs": [
-        "app",
+        "project",
         "step"
       ],
       "query_inputs": [],
@@ -2810,7 +2812,7 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "app": {
+          "project": {
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Project ID."
@@ -2838,7 +2840,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "app",
+          "project",
           "step"
         ]
       }
@@ -3267,10 +3269,10 @@
       "title": "node:excluded-project:add",
       "description": "Exclude a Project from development placement on an app-dev Node.",
       "method": "POST",
-      "path": "/api/v1/nodes/{node}/excluded-projects/{app}",
+      "path": "/api/v1/nodes/{node}/excluded-projects/{project}",
       "path_inputs": [
         "node",
-        "app"
+        "project"
       ],
       "query_inputs": [],
       "streams": false,
@@ -3282,7 +3284,7 @@
             "minimum": 1,
             "description": "Numeric Node ID."
           },
-          "app": {
+          "project": {
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Project ID."
@@ -3291,7 +3293,7 @@
         "additionalProperties": false,
         "required": [
           "node",
-          "app"
+          "project"
         ]
       }
     },
@@ -3328,10 +3330,10 @@
       "title": "node:excluded-project:remove",
       "description": "Remove a Project from the development exclusions of an app-dev Node.",
       "method": "DELETE",
-      "path": "/api/v1/nodes/{node}/excluded-projects/{app}",
+      "path": "/api/v1/nodes/{node}/excluded-projects/{project}",
       "path_inputs": [
         "node",
-        "app"
+        "project"
       ],
       "query_inputs": [],
       "streams": false,
@@ -3343,7 +3345,7 @@
             "minimum": 1,
             "description": "Numeric Node ID."
           },
-          "app": {
+          "project": {
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Project ID."
@@ -3352,7 +3354,7 @@
         "additionalProperties": false,
         "required": [
           "node",
-          "app"
+          "project"
         ]
       }
     },
@@ -4115,16 +4117,16 @@
       "title": "Remove a Project",
       "description": "Remove a project.",
       "method": "DELETE",
-      "path": "/api/v1/projects/{app}",
+      "path": "/api/v1/projects/{project}",
       "path_inputs": [
-        "app"
+        "project"
       ],
       "query_inputs": [],
       "streams": false,
       "input_schema": {
         "type": "object",
         "properties": {
-          "app": {
+          "project": {
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Project ID."
@@ -4132,7 +4134,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "app"
+          "project"
         ]
       }
     },
@@ -4142,9 +4144,9 @@
       "title": "project:excluded-node:add",
       "description": "Exclude an app-dev Node from development placement for a Project.",
       "method": "POST",
-      "path": "/api/v1/projects/{app}/excluded-nodes/{node}",
+      "path": "/api/v1/projects/{project}/excluded-nodes/{node}",
       "path_inputs": [
-        "app",
+        "project",
         "node"
       ],
       "query_inputs": [],
@@ -4152,7 +4154,7 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "app": {
+          "project": {
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Project ID."
@@ -4165,7 +4167,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "app",
+          "project",
           "node"
         ]
       }
@@ -4176,16 +4178,16 @@
       "title": "project:excluded-node:list",
       "description": "List the app-dev Nodes a Project cannot use for development.",
       "method": "GET",
-      "path": "/api/v1/projects/{app}/excluded-nodes",
+      "path": "/api/v1/projects/{project}/excluded-nodes",
       "path_inputs": [
-        "app"
+        "project"
       ],
       "query_inputs": [],
       "streams": false,
       "input_schema": {
         "type": "object",
         "properties": {
-          "app": {
+          "project": {
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Project ID."
@@ -4193,7 +4195,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "app"
+          "project"
         ]
       }
     },
@@ -4203,9 +4205,9 @@
       "title": "project:excluded-node:remove",
       "description": "Remove a development Node exclusion from a Project.",
       "method": "DELETE",
-      "path": "/api/v1/projects/{app}/excluded-nodes/{node}",
+      "path": "/api/v1/projects/{project}/excluded-nodes/{node}",
       "path_inputs": [
-        "app",
+        "project",
         "node"
       ],
       "query_inputs": [],
@@ -4213,7 +4215,7 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "app": {
+          "project": {
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Project ID."
@@ -4226,7 +4228,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "app",
+          "project",
           "node"
         ]
       }
@@ -4253,16 +4255,16 @@
       "title": "Create a process definition",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "POST",
-      "path": "/api/v1/projects/{app}/process-definitions",
+      "path": "/api/v1/projects/{project}/process-definitions",
       "path_inputs": [
-        "app"
+        "project"
       ],
       "query_inputs": [],
       "streams": false,
       "input_schema": {
         "type": "object",
         "properties": {
-          "app": {
+          "project": {
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Project ID."
@@ -4379,7 +4381,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "app",
+          "project",
           "name",
           "environments",
           "spec"
@@ -4392,9 +4394,9 @@
       "title": "Remove a process definition",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "DELETE",
-      "path": "/api/v1/projects/{app}/process-definitions/{process_definition}",
+      "path": "/api/v1/projects/{project}/process-definitions/{process_definition}",
       "path_inputs": [
-        "app",
+        "project",
         "process_definition"
       ],
       "query_inputs": [],
@@ -4402,7 +4404,7 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "app": {
+          "project": {
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Project ID."
@@ -4414,7 +4416,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "app",
+          "project",
           "process_definition"
         ]
       }
@@ -4425,16 +4427,16 @@
       "title": "List process definitions",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "GET",
-      "path": "/api/v1/projects/{app}/process-definitions",
+      "path": "/api/v1/projects/{project}/process-definitions",
       "path_inputs": [
-        "app"
+        "project"
       ],
       "query_inputs": [],
       "streams": false,
       "input_schema": {
         "type": "object",
         "properties": {
-          "app": {
+          "project": {
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Project ID."
@@ -4442,7 +4444,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "app"
+          "project"
         ]
       }
     },
@@ -4452,9 +4454,9 @@
       "title": "Show a process definition",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "GET",
-      "path": "/api/v1/projects/{app}/process-definitions/{process_definition}",
+      "path": "/api/v1/projects/{project}/process-definitions/{process_definition}",
       "path_inputs": [
-        "app",
+        "project",
         "process_definition"
       ],
       "query_inputs": [],
@@ -4462,7 +4464,7 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "app": {
+          "project": {
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Project ID."
@@ -4474,7 +4476,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "app",
+          "project",
           "process_definition"
         ]
       }
@@ -4485,9 +4487,9 @@
       "title": "Replace a process definition",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "PUT",
-      "path": "/api/v1/projects/{app}/process-definitions/{process_definition}",
+      "path": "/api/v1/projects/{project}/process-definitions/{process_definition}",
       "path_inputs": [
-        "app",
+        "project",
         "process_definition"
       ],
       "query_inputs": [],
@@ -4495,7 +4497,7 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "app": {
+          "project": {
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Project ID."
@@ -4616,7 +4618,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "app",
+          "project",
           "process_definition",
           "name",
           "environments",
@@ -4630,16 +4632,16 @@
       "title": "Create a Schedule definition",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "POST",
-      "path": "/api/v1/projects/{app}/schedule-definitions",
+      "path": "/api/v1/projects/{project}/schedule-definitions",
       "path_inputs": [
-        "app"
+        "project"
       ],
       "query_inputs": [],
       "streams": false,
       "input_schema": {
         "type": "object",
         "properties": {
-          "app": {
+          "project": {
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Project ID."
@@ -4687,7 +4689,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "app",
+          "project",
           "name",
           "environments",
           "spec"
@@ -4700,9 +4702,9 @@
       "title": "Remove a Schedule definition",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "DELETE",
-      "path": "/api/v1/projects/{app}/schedule-definitions/{schedule_definition}",
+      "path": "/api/v1/projects/{project}/schedule-definitions/{schedule_definition}",
       "path_inputs": [
-        "app",
+        "project",
         "schedule_definition"
       ],
       "query_inputs": [],
@@ -4710,7 +4712,7 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "app": {
+          "project": {
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Project ID."
@@ -4722,7 +4724,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "app",
+          "project",
           "schedule_definition"
         ]
       }
@@ -4733,16 +4735,16 @@
       "title": "List Schedule definitions",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "GET",
-      "path": "/api/v1/projects/{app}/schedule-definitions",
+      "path": "/api/v1/projects/{project}/schedule-definitions",
       "path_inputs": [
-        "app"
+        "project"
       ],
       "query_inputs": [],
       "streams": false,
       "input_schema": {
         "type": "object",
         "properties": {
-          "app": {
+          "project": {
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Project ID."
@@ -4750,7 +4752,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "app"
+          "project"
         ]
       }
     },
@@ -4760,9 +4762,9 @@
       "title": "Show a Schedule definition",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "GET",
-      "path": "/api/v1/projects/{app}/schedule-definitions/{schedule_definition}",
+      "path": "/api/v1/projects/{project}/schedule-definitions/{schedule_definition}",
       "path_inputs": [
-        "app",
+        "project",
         "schedule_definition"
       ],
       "query_inputs": [],
@@ -4770,7 +4772,7 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "app": {
+          "project": {
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Project ID."
@@ -4782,7 +4784,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "app",
+          "project",
           "schedule_definition"
         ]
       }
@@ -4793,9 +4795,9 @@
       "title": "Replace a Schedule definition",
       "description": "Project-owned definitions carry the runtime specification that production preparation copies into a new Instance. Changing a definition changes Project configuration only.",
       "method": "PUT",
-      "path": "/api/v1/projects/{app}/schedule-definitions/{schedule_definition}",
+      "path": "/api/v1/projects/{project}/schedule-definitions/{schedule_definition}",
       "path_inputs": [
-        "app",
+        "project",
         "schedule_definition"
       ],
       "query_inputs": [],
@@ -4803,7 +4805,7 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "app": {
+          "project": {
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Project ID."
@@ -4855,7 +4857,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "app",
+          "project",
           "schedule_definition",
           "name",
           "environments",
@@ -4869,16 +4871,16 @@
       "title": "Show a Project",
       "description": "Show a project.",
       "method": "GET",
-      "path": "/api/v1/projects/{app}",
+      "path": "/api/v1/projects/{project}",
       "path_inputs": [
-        "app"
+        "project"
       ],
       "query_inputs": [],
       "streams": false,
       "input_schema": {
         "type": "object",
         "properties": {
-          "app": {
+          "project": {
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Project ID."
@@ -4886,7 +4888,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "app"
+          "project"
         ]
       }
     },
@@ -4896,16 +4898,16 @@
       "title": "Update a Project",
       "description": "Update a project.",
       "method": "PATCH",
-      "path": "/api/v1/projects/{app}",
+      "path": "/api/v1/projects/{project}",
       "path_inputs": [
-        "app"
+        "project"
       ],
       "query_inputs": [],
       "streams": false,
       "input_schema": {
         "type": "object",
         "properties": {
-          "app": {
+          "project": {
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Project ID."
@@ -4955,7 +4957,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "app"
+          "project"
         ]
       }
     },
@@ -5145,7 +5147,7 @@
               "public"
             ]
           },
-          "app_instance_id": {
+          "instance_id": {
             "type": "integer"
           },
           "node_id": {
@@ -5175,13 +5177,13 @@
                   "public"
                 ]
               },
-              "app_instance_id": {
+              "instance_id": {
                 "type": "integer"
               }
             },
             "required": [
               "domain",
-              "app_instance_id"
+              "instance_id"
             ],
             "additionalProperties": false
           },
@@ -5320,13 +5322,13 @@
             "minimum": 1,
             "description": "Numeric Route ID."
           },
-          "app_instance_id": {
+          "instance_id": {
             "type": "integer",
             "description": "Required when `targets` is absent."
           },
           "targets": {
             "type": "array",
-            "description": "Required when `app_instance_id` is absent.",
+            "description": "Required when `instance_id` is absent.",
             "items": {
               "type": "integer"
             }
@@ -5336,7 +5338,7 @@
             "items": {
               "type": "object",
               "properties": {
-                "app_instance_id": {
+                "instance_id": {
                   "type": "integer"
                 },
                 "route_id": {
@@ -5347,7 +5349,7 @@
                 }
               },
               "required": [
-                "app_instance_id"
+                "instance_id"
               ]
             }
           }
@@ -5860,7 +5862,7 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "app_id": {
+          "project_id": {
             "type": "integer",
             "minimum": 1
           },
@@ -5975,7 +5977,7 @@
         },
         "additionalProperties": false,
         "required": [
-          "app_id",
+          "project_id",
           "title",
           "brief"
         ]
@@ -5985,19 +5987,19 @@
       "name": "tasks-list",
       "extension": "tasks",
       "title": "List Task groups",
-      "description": "Lists Task groups, newest first. Optional `app_id` and `status` filters. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.",
+      "description": "Lists Task groups, newest first. Optional `project_id` and `status` filters. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.",
       "method": "GET",
       "path": "/api/v1/task-groups",
       "path_inputs": [],
       "query_inputs": [
-        "app_id",
+        "project_id",
         "status"
       ],
       "streams": false,
       "input_schema": {
         "type": "object",
         "properties": {
-          "app_id": {
+          "project_id": {
             "type": "integer",
             "minimum": 1
           },

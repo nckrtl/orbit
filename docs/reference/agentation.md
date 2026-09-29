@@ -11,7 +11,7 @@ covers:
 
 Orbit runs Agentation watch mode as two Processes of a development Instance. The `agentation-mcp` Process receives toolbar annotations. The `antigravity-watch` Process runs an Antigravity agent that applies them. Both sleep and wake with the Instance.
 
-The Agentation toolbar belongs to the application. Orbit does not install the toolbar, edit frontend code, or run a fleet-wide Agentation service. Orbit also does not install the binaries: the Node must provide `/usr/local/bin/agentation-mcp` and `/usr/local/bin/agy`. [Processes and schedules](/reference/app-processes-and-schedules) owns the Process lifecycle.
+The Agentation toolbar belongs to the application. Orbit does not install the toolbar, edit frontend code, or run a fleet-wide Agentation service. Orbit also does not install the binaries: the Node must provide `/usr/local/bin/agentation-mcp` and `/usr/local/bin/agy`. [Processes and schedules](/reference/processes-and-schedules) owns the Process lifecycle.
 
 | Piece | What it does |
 | --- | --- |
@@ -36,13 +36,13 @@ An Instance has at most one Process of each preset. A second `agentation-mcp` Pr
 
 Creation assigns the Instance an `agentation_port` on its Node. The first port is `4747`. The Gateway gives the next Instance on the same Node the lowest port from `4747` up that no other Instance on that Node holds in the Gateway database. It does not probe the Node, and it does not skip ports that Vite uses. Ports stay unique per Node. When no port is free, creation fails with `process.agentation_ports_exhausted`.
 
-The port stays through hibernation. A [transfer](/reference/appinstance-transfer) picks a free port on the destination Node. Removing the HTTP Process releases the port.
+The port stays through hibernation. A [transfer](/reference/instance-transfer) picks a free port on the destination Node. Removing the HTTP Process releases the port.
 
 Workload Caddy proxies `/__orbit/agentation` to `127.0.0.1:{agentation_port}` and strips the prefix. The Agentation API serves `/health` and `/sessions` at its root. A site without a port has no Agentation handle. Creating or removing the HTTP Process rebuilds the Node's Caddy when the Instance has a Route. [Routes](/reference/routes#agentation-endpoint) describes the path next to the Vite path.
 
 ## AGENTATION_URL
 
-Creation stores `AGENTATION_URL` in the Instance environment as `https://{{app_instance.domain}}/__orbit/agentation`. `env:sync` renders it with the Route domain, for example `https://commander.test/__orbit/agentation`. See [Instance environment variables](/reference/environment-variables).
+Creation stores `AGENTATION_URL` in the Instance environment as `https://{{instance.domain}}/__orbit/agentation`. `env:sync` renders it with the Route domain, for example `https://commander.test/__orbit/agentation`. See [Instance environment variables](/reference/environment-variables).
 
 Every systemd Process of the Instance also gets the concrete `AGENTATION_URL` and `ORBIT_AGENTATION_PORT` in its unit, when the Instance has a port and a Route. So the watcher does not need an earlier `env:sync`. Removing the HTTP Process deletes the stored value.
 

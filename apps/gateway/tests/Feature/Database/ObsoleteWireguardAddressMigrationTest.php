@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Schema;
 describe('obsolete WireGuard address migration', function (): void {
     it('removes the synchronized alias and preserves canonical identities', function (): void {
         $migration = obsoleteWireguardAddressMigration();
-        $migration->down();
+        run_legacy_schema_migration($migration, 'down');
 
         DB::table('nodes')->insert([
             obsoleteWireguardAddressNode('assigned', '192.0.2.10', '10.44.0.10'),
@@ -17,7 +17,7 @@ describe('obsolete WireGuard address migration', function (): void {
             obsoleteWireguardAddressNode('unassigned-second', '192.0.2.12', null),
         ]);
 
-        $migration->up();
+        run_legacy_schema_migration($migration, 'up');
 
         expect(Schema::hasColumn('nodes', 'wireguard_address'))
             ->toBeFalse()
@@ -47,7 +47,7 @@ describe('obsolete WireGuard address migration', function (): void {
             obsoleteWireguardAddressNode('unassigned', '192.0.2.21', null),
         ]);
 
-        obsoleteWireguardAddressMigration()->down();
+        run_legacy_schema_migration(obsoleteWireguardAddressMigration(), 'down');
 
         expect(Schema::hasColumn('nodes', 'wireguard_address'))
             ->toBeTrue()
@@ -71,7 +71,7 @@ describe('obsolete WireGuard address migration', function (): void {
 
     it('refuses to remove an alias that differs from the canonical identity', function (): void {
         $migration = obsoleteWireguardAddressMigration();
-        $migration->down();
+        run_legacy_schema_migration($migration, 'down');
         DB::table('nodes')->insert(
             obsoleteWireguardAddressNode('mismatched', '192.0.2.30', '10.44.0.30'),
         );
@@ -84,7 +84,7 @@ describe('obsolete WireGuard address migration', function (): void {
                 'wireguard_address' => '10.44.0.31',
             ]);
 
-        expect(fn () => $migration->up())
+        expect(fn () => run_legacy_schema_migration($migration, 'up'))
             ->toThrow(
                 RuntimeException::class,
                 'Cannot remove wireguard_address while Node WireGuard identities differ.',

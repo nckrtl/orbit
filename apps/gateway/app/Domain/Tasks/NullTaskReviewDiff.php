@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class NullTaskReviewDiff implements TaskReviewDiff
 {
-    public function read(AppInstance $instance, string $startCommit): array
+    public function read(Instance $instance, string $startCommit): array
     {
         return [
             'files' => [],

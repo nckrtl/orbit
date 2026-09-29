@@ -7,7 +7,7 @@ namespace App\Actions\Tasks;
 use App\Data\Tasks\AgentWorkspaceData;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\TaskGroup;
 
@@ -33,20 +33,20 @@ final readonly class ListAgentWorkspacesAction
             TaskGroupStatus::Running, TaskGroupStatus::Reviewing, TaskGroupStatus::Settling,
         ];
         $groups = TaskGroup::query()
-            ->with(['app', 'taskable'])
+            ->with(['project', 'taskable'])
             ->where('taskable_type', 'instance')
             ->whereNotNull('taskable_id')
             ->whereIn('status', $unfinished)
-            ->whereIn('taskable_id', AppInstance::query()->select('id')->where('node_id', $node->getKey()))
+            ->whereIn('taskable_id', Instance::query()->select('id')->where('node_id', $node->getKey()))
             ->orderBy('id')
             ->get();
         $workspaces = [];
 
         foreach ($groups as $group) {
             $instance = $group->taskable;
-            $base = $group->app->default_branch;
+            $base = $group->project->default_branch;
 
-            if (! $instance instanceof AppInstance || $instance->checkout_path === '' || ! is_string($base) || $base === '' || isset($workspaces[$instance->id])) {
+            if (! $instance instanceof Instance || $instance->checkout_path === '' || ! is_string($base) || $base === '' || isset($workspaces[$instance->id])) {
                 continue;
             }
 

@@ -61,7 +61,7 @@ abstract class RouteCommand extends GatewayCommand
         $details = [
             'ID' => $route->id,
             'Kind' => $route->kind,
-            'Project' => $route->appId,
+            'Project' => $route->projectId,
             'Provenance' => $route->provenance,
             'Scope' => $route->clusterId === null ? "Node {$route->nodeId}" : "Cluster {$route->clusterId}",
         ];
@@ -101,7 +101,7 @@ abstract class RouteCommand extends GatewayCommand
         $targets = $route->targets !== [] ? $route->targets : array_filter([$route->target]);
 
         return $targets === [] ? '—' : implode(', ', array_map(
-            static fn ($target): int => $target->appInstanceId,
+            static fn ($target): int => $target->instanceId,
             $targets,
         ));
     }

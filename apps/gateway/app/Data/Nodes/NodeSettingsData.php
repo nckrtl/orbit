@@ -9,7 +9,7 @@ use Spatie\LaravelData\Data;
 final class NodeSettingsData extends Data
 {
     public function __construct(
-        public ?AppsSettingsData $apps = null,
+        public ?NodeStorageAppsData $apps = null,
     ) {}
 
     public function appsPath(): ?string

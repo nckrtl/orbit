@@ -9,7 +9,7 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeRoleFirewallManager;
 use App\Domain\Nodes\RoleBaseline;
 use App\Domain\Nodes\RoleName;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -18,7 +18,7 @@ final readonly class RouterRoleBaseline implements RoleBaseline
 {
     public function __construct(
         private NodeRolePrerequisiteCommandFactory $commands,
-        private AppDevSshExecutor $ssh,
+        private DevelopmentSshExecutor $ssh,
         private AppDevCaddyManager $caddy,
         private NodeRoleFirewallManager $firewall,
         private ManagedUserAccountResolver $accounts,

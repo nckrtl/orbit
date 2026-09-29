@@ -16,7 +16,7 @@ final class CreateTaskGroupData extends Data
      * @param  list<TaskInputData>  $tasks
      */
     public function __construct(
-        public int $appId,
+        public int $projectId,
         public string $title,
         public string $brief,
         public TaskGroupStatus $status,

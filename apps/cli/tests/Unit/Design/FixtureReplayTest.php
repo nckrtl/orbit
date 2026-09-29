@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use Design\Support\FixtureReplay;
 use Illuminate\Filesystem\Filesystem;
-use Orbit\Sdk\Requests\AppInstances\CreateAppInstanceRequest;
+use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -22,7 +22,7 @@ it('replays a recorded fixture without turning empty objects into lists', functi
         expect($client)->not->toBeNull();
 
         $responses = (new ReflectionClass($client))->getProperty('requestResponses');
-        $response = $responses->getValue($client)[CreateAppInstanceRequest::class] ?? null;
+        $response = $responses->getValue($client)[CreateInstanceRequest::class] ?? null;
 
         expect($response)->toBeInstanceOf(MockResponse::class)
             ->and($response->body()->all())

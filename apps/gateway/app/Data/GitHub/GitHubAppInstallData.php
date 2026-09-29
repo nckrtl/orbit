@@ -6,8 +6,8 @@ namespace App\Data\GitHub;
 
 /**
  * The browser step that continues `github:app:install`. `register` opens the Gateway page that sends
- * the App manifest to GitHub; `install` opens the App's install page on GitHub. `accounts` lists the
- * accounts that had installed the App when the step was issued, so a caller can tell a new
+ * the Project manifest to GitHub; `install` opens the App's install page on GitHub. `accounts` lists the
+ * accounts that had installed the Project when the step was issued, so a caller can tell a new
  * installation apart.
  */
 final readonly class GitHubAppInstallData

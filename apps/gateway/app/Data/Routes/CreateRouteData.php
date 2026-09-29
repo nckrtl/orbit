@@ -11,8 +11,8 @@ final readonly class CreateRouteData
     public function __construct(
         public string $domain,
         public RoutePublication $publication,
-        public ?int $appId = null,
-        public ?int $appInstanceId = null,
+        public ?int $projectId = null,
+        public ?int $instanceId = null,
         public ?int $nodeId = null,
         public ?int $clusterId = null,
         public ?string $upstream = null,

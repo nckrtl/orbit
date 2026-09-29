@@ -9,13 +9,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * @property int $id
- * @property int $app_id
+ * @property int $project_id
  * @property string $phase
  * @property string $name
  * @property string $command
  * @property int $timeout_seconds
  * @property int $position
- * @property-read App $app
+ * @property-read Project $project
  */
 final class ProjectLifecycleStep extends Model
 {
@@ -26,7 +26,7 @@ final class ProjectLifecycleStep extends Model
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
-        'app_id',
+        'project_id',
         'phase',
         'name',
         'command',
@@ -34,10 +34,10 @@ final class ProjectLifecycleStep extends Model
         'position',
     ];
 
-    /** @return BelongsTo<App, $this> */
-    public function app(): BelongsTo
+    /** @return BelongsTo<Project, $this> */
+    public function project(): BelongsTo
     {
-        return $this->belongsTo(App::class);
+        return $this->belongsTo(Project::class, 'project_id');
     }
 
     /** @return array<string, string> */

@@ -27,14 +27,14 @@ final class RemoveInstanceDatabaseRequest extends GatewayRequest implements HasB
     protected Method $method = Method::DELETE;
 
     public function __construct(
-        private readonly int|string $appInstance,
+        private readonly int|string $instance,
         private readonly string $slug,
         private readonly ?string $prefix = null,
     ) {}
 
     public function resolveEndpoint(): string
     {
-        return '/api/v1/instances/'.rawurlencode((string) $this->appInstance)
+        return '/api/v1/instances/'.rawurlencode((string) $this->instance)
             .'/database-connections/'.rawurlencode($this->slug);
     }
 

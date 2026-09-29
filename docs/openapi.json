@@ -3182,7 +3182,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppInstanceDeployment"
+                      "$ref": "#/components/schemas/InstanceDeployment"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -3226,7 +3226,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\ShowAppInstanceDeploymentRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowAppInstanceDeploymentRequest(deploymentId: 1))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\ShowInstanceDeploymentRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowInstanceDeploymentRequest(deploymentId: 1))->dto();\n"
           }
         ]
       }
@@ -3258,7 +3258,7 @@
                       "enum": [
                         "node",
                         "role",
-                        "app",
+                        "project",
                         "instance",
                         "schedule",
                         "tool",
@@ -4062,7 +4062,7 @@
                     "data": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/AppInstance"
+                        "$ref": "#/components/schemas/Instance"
                       }
                     },
                     "meta": {
@@ -4097,7 +4097,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\AppInstances\\ListAppInstancesRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListAppInstancesRequest())->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Instances\\ListInstancesRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListInstancesRequest())->dto();\n"
           }
         ]
       },
@@ -4162,7 +4162,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppInstance"
+                      "$ref": "#/components/schemas/Instance"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -4184,7 +4184,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppInstance"
+                      "$ref": "#/components/schemas/Instance"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -4233,12 +4233,12 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/instances\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"project_id\": 1, \"node_id\": 7, \"name\": \"default\"}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/instances\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"project_id\": 4, \"node_id\": 7, \"name\": \"default\"}'\n"
           },
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\AppInstances\\CreateAppInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateAppInstanceRequest(projectId: 1, nodeId: 7, name: 'default'))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Instances\\CreateInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateInstanceRequest(projectId: 4, nodeId: 7, name: 'default'))->dto();\n"
           }
         ]
       }
@@ -4270,14 +4270,16 @@
                   "project_id": {
                     "type": "integer"
                   },
-                  "app_name": {
+                  "project_name": {
                     "type": "string",
-                    "maxLength": 255
+                    "maxLength": 255,
+                    "description": "Confirmed Project display name"
                   },
-                  "app_slug": {
+                  "project_slug": {
                     "type": "string",
                     "pattern": "^[A-Za-z0-9_-]+$",
-                    "maxLength": 63
+                    "maxLength": 63,
+                    "description": "Confirmed Project slug"
                   },
                   "default_branch": {
                     "type": "string",
@@ -4320,7 +4322,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppInstanceRegistration"
+                      "$ref": "#/components/schemas/InstanceRegistration"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -4342,7 +4344,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppInstanceRegistration"
+                      "$ref": "#/components/schemas/InstanceRegistration"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -4396,7 +4398,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\AppInstances\\RegisterAppInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new RegisterAppInstanceRequest(sourcePath: '/srv/orbit/apps/acme/main'))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Instances\\RegisterInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new RegisterInstanceRequest(sourcePath: '/srv/orbit/apps/acme/main'))->dto();\n"
           }
         ]
       }
@@ -4462,7 +4464,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\AppInstances\\ResolveAppInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ResolveAppInstanceRequest(domain: 'app.example.test'))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Instances\\ResolveInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ResolveInstanceRequest(domain: 'app.example.test'))->dto();\n"
           }
         ]
       }
@@ -4528,7 +4530,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\AppInstances\\ResolveDirectoryInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ResolveDirectoryInstanceRequest(directory: 'value'))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Instances\\ResolveDirectoryInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ResolveDirectoryInstanceRequest(directory: 'value'))->dto();\n"
           }
         ]
       }
@@ -4552,7 +4554,7 @@
             "description": "Numeric ID of the candidate Instance."
           }
         ],
-        "description": "Clone a candidate into a prepared production Instance.\n\nThe candidate supplies source, stored environment values, and an optional SQLite snapshot. The App supplies production Process and Schedule definitions; candidate-specific overrides are not copied.\n\nProvision the production Node with node:add --tld before cloning. Clean application state on the target only. Use env:update and env:sync for target configuration, then configure deploy steps with instance:deploy-step:create and deploy with instance:deploy.",
+        "description": "Clone a candidate into a prepared production Instance.\n\nThe candidate supplies source, stored environment values, and an optional SQLite snapshot. The Project supplies production Process and Schedule definitions; candidate-specific overrides are not copied.\n\nProvision the production Node with node:add --tld before cloning. Clean application state on the target only. Use env:update and env:sync for target configuration, then configure deploy steps with instance:deploy-step:create and deploy with instance:deploy.",
         "requestBody": {
           "required": true,
           "content": {
@@ -4606,7 +4608,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppInstance"
+                      "$ref": "#/components/schemas/Instance"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -4628,7 +4630,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppInstance"
+                      "$ref": "#/components/schemas/Instance"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -4692,7 +4694,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\AppInstances\\CloneAppInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CloneAppInstanceRequest(\n    candidateId: 12,\n    nodeId: 7,\n    name: 'default',\n    previewName: 'shop.com',\n))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Instances\\CloneInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CloneInstanceRequest(\n    candidateId: 12,\n    nodeId: 7,\n    name: 'default',\n    previewName: 'shop.com',\n))->dto();\n"
           }
         ]
       }
@@ -4743,7 +4745,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppInstanceRemoval"
+                      "$ref": "#/components/schemas/InstanceRemoval"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -4807,7 +4809,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\AppInstances\\DestroyAppInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DestroyAppInstanceRequest(appInstanceId: 12))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Instances\\DestroyInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DestroyInstanceRequest(instanceId: 4))->dto();\n"
           }
         ]
       },
@@ -4839,7 +4841,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppInstance"
+                      "$ref": "#/components/schemas/Instance"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -4883,7 +4885,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\AppInstances\\ShowAppInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowAppInstanceRequest(appInstanceId: 12))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Instances\\ShowInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowInstanceRequest(instanceId: 4))->dto();\n"
           }
         ]
       },
@@ -4926,7 +4928,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppInstance"
+                      "$ref": "#/components/schemas/Instance"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -4990,7 +4992,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\AppInstances\\UpdateAppInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateAppInstanceRequest(appInstanceId: 12, branch: 'main'))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Instances\\UpdateInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateInstanceRequest(instanceId: 4, branch: 'main'))->dto();\n"
           }
         ]
       }
@@ -6469,7 +6471,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\DatabaseConnections\\RemoveInstanceDatabaseRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new RemoveInstanceDatabaseRequest(appInstance: 12, slug: 'acme'))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\DatabaseConnections\\RemoveInstanceDatabaseRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new RemoveInstanceDatabaseRequest(instance: 12, slug: 'acme'))->dto();\n"
           }
         ]
       },
@@ -6592,7 +6594,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\DatabaseConnections\\AddInstanceDatabaseRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new AddInstanceDatabaseRequest(appInstance: 12, slug: 'acme'))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\DatabaseConnections\\AddInstanceDatabaseRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new AddInstanceDatabaseRequest(instance: 12, slug: 'acme'))->dto();\n"
           }
         ]
       }
@@ -6669,7 +6671,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\AppInstances\\ShowInstanceDependenciesRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowInstanceDependenciesRequest(instanceId: 4))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Instances\\ShowInstanceDependenciesRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowInstanceDependenciesRequest(instanceId: 4))->dto();\n"
           }
         ]
       }
@@ -6778,7 +6780,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\AppInstances\\ScanInstanceDependenciesRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ScanInstanceDependenciesRequest(instanceId: 4))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Instances\\ScanInstanceDependenciesRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ScanInstanceDependenciesRequest(instanceId: 4))->dto();\n"
           }
         ]
       }
@@ -6887,7 +6889,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\AppInstances\\UpdateInstanceDependenciesRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateInstanceDependenciesRequest(instanceId: 4))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Instances\\UpdateInstanceDependenciesRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateInstanceDependenciesRequest(instanceId: 4))->dto();\n"
           }
         ]
       }
@@ -7105,7 +7107,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\DeployAppInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$stream = $connector->send(new DeployAppInstanceRequest(appInstanceId: 12))->dto();\n\nforeach ($stream as $event) {\n    // DeploymentPhaseEvent, DeploymentOutputEvent, or the final DeploymentResultEvent\n}\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\DeployInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$stream = $connector->send(new DeployInstanceRequest(instanceId: 4))->dto();\n\nforeach ($stream as $event) {\n    // DeploymentPhaseEvent, DeploymentOutputEvent, or the final DeploymentResultEvent\n}\n"
           }
         ]
       }
@@ -7186,7 +7188,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\ListInstanceDeployStepsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListInstanceDeployStepsRequest(appInstanceId: 12))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\ListInstanceDeployStepsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListInstanceDeployStepsRequest(instanceId: 4))->dto();\n"
           }
         ]
       },
@@ -7315,7 +7317,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\CreateInstanceDeployStepRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateInstanceDeployStepRequest(\n    appInstanceId: 12,\n    name: 'default',\n    command: 'php artisan report:send',\n))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\CreateInstanceDeployStepRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateInstanceDeployStepRequest(\n    instanceId: 4,\n    name: 'default',\n    command: 'php artisan report:send',\n))->dto();\n"
           }
         ]
       }
@@ -7413,7 +7415,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\DestroyInstanceDeployStepRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DestroyInstanceDeployStepRequest(appInstanceId: 12, name: 'default'))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\DestroyInstanceDeployStepRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DestroyInstanceDeployStepRequest(instanceId: 4, name: 'default'))->dto();\n"
           }
         ]
       },
@@ -7530,7 +7532,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\UpdateInstanceDeployStepRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateInstanceDeployStepRequest(appInstanceId: 12, name: 'default'))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\UpdateInstanceDeployStepRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateInstanceDeployStepRequest(instanceId: 4, name: 'default'))->dto();\n"
           }
         ]
       }
@@ -7566,7 +7568,7 @@
                     "data": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/AppInstanceDeployment"
+                        "$ref": "#/components/schemas/InstanceDeployment"
                       }
                     },
                     "meta": {
@@ -7611,7 +7613,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\ListAppInstanceDeploymentsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListAppInstanceDeploymentsRequest(appInstanceId: 12))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\ListInstanceDeploymentsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListInstanceDeploymentsRequest(instanceId: 4))->dto();\n"
           }
         ]
       }
@@ -7663,7 +7665,7 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "app_instance_id": {
+                        "instance_id": {
                           "type": "integer"
                         },
                         "operation": {
@@ -7739,7 +7741,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Environment\\ImportAppInstanceEnvironmentRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ImportAppInstanceEnvironmentRequest(appInstance: 12))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Environment\\ImportInstanceEnvironmentRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ImportInstanceEnvironmentRequest(instance: 12))->dto();\n"
           }
         ]
       }
@@ -7785,7 +7787,7 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "app_instance_id": {
+                        "instance_id": {
                           "type": "integer"
                         },
                         "operation": {
@@ -7861,7 +7863,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Environment\\SynchronizeAppInstanceEnvironmentRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new SynchronizeAppInstanceEnvironmentRequest(appInstance: 12))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Environment\\SynchronizeInstanceEnvironmentRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new SynchronizeInstanceEnvironmentRequest(instance: 12))->dto();\n"
           }
         ]
       }
@@ -7923,7 +7925,7 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "app_instance_id": {
+                        "instance_id": {
                           "type": "integer"
                         },
                         "operation": {
@@ -7999,7 +8001,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Environment\\UpdateAppInstanceEnvironmentRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateAppInstanceEnvironmentRequest(appInstance: 12, key: 'MAIL_MAILER', value: 'log'))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Environment\\UpdateInstanceEnvironmentRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateInstanceEnvironmentRequest(instance: 12, key: 'MAIL_MAILER', value: 'log'))->dto();\n"
           }
         ]
       }
@@ -8485,7 +8487,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\AppInstances\\InstanceLogsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new InstanceLogsRequest(instanceId: 4))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Instances\\InstanceLogsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new InstanceLogsRequest(instanceId: 4))->dto();\n"
           }
         ]
       }
@@ -8801,7 +8803,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\ListAppInstanceReleasesRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListAppInstanceReleasesRequest(appInstanceId: 12))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\ListInstanceReleasesRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListInstanceReleasesRequest(instanceId: 4))->dto();\n"
           }
         ]
       }
@@ -9028,7 +9030,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\RollbackAppInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$stream = $connector->send(new RollbackAppInstanceRequest(appInstanceId: 12, release: '20260914T101500Z'))->dto();\n\nforeach ($stream as $event) {\n    // DeploymentPhaseEvent, DeploymentOutputEvent, or the final DeploymentResultEvent\n}\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Deployments\\RollbackInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$stream = $connector->send(new RollbackInstanceRequest(instanceId: 4, release: '20260914T101500Z'))->dto();\n\nforeach ($stream as $event) {\n    // DeploymentPhaseEvent, DeploymentOutputEvent, or the final DeploymentResultEvent\n}\n"
           }
         ]
       }
@@ -9062,7 +9064,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppInstance"
+                      "$ref": "#/components/schemas/Instance"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -9116,7 +9118,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Instances\\SetupAppInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new SetupAppInstanceRequest(appInstanceId: 12))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Instances\\SetupInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new SetupInstanceRequest(instanceId: 4))->dto();\n"
           }
         ]
       }
@@ -9182,7 +9184,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppInstance"
+                      "$ref": "#/components/schemas/Instance"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -9204,7 +9206,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppInstance"
+                      "$ref": "#/components/schemas/Instance"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -9268,7 +9270,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\AppInstances\\TransferAppInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new TransferAppInstanceRequest(instanceId: 4, nodeId: 7))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Instances\\TransferInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new TransferInstanceRequest(instanceId: 4, nodeId: 7))->dto();\n"
           }
         ]
       }
@@ -10520,7 +10522,7 @@
         ]
       }
     },
-    "/api/v1/nodes/{node}/excluded-projects/{app}": {
+    "/api/v1/nodes/{node}/excluded-projects/{project}": {
       "delete": {
         "operationId": "node-excluded-project-remove",
         "summary": "node:excluded-project:remove",
@@ -10539,7 +10541,7 @@
             "description": "Numeric Node ID."
           },
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -10613,7 +10615,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Nodes\\RemoveNodeExcludedProjectRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new RemoveNodeExcludedProjectRequest(nodeId: 7, projectId: 1))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Nodes\\RemoveNodeExcludedProjectRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new RemoveNodeExcludedProjectRequest(nodeId: 7, projectId: 4))->dto();\n"
           }
         ]
       },
@@ -10635,7 +10637,7 @@
             "description": "Numeric Node ID."
           },
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -10731,7 +10733,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Nodes\\AddNodeExcludedProjectRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new AddNodeExcludedProjectRequest(nodeId: 7, projectId: 1))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Nodes\\AddNodeExcludedProjectRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new AddNodeExcludedProjectRequest(nodeId: 7, projectId: 4))->dto();\n"
           }
         ]
       }
@@ -12953,7 +12955,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Processes\\CreateProcessRequest;\nuse Orbit\\Sdk\\Requests\\Processes\\AppInstanceProcessTarget;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateProcessRequest(target: new AppInstanceProcessTarget(12), name: 'vite'))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Processes\\CreateProcessRequest;\nuse Orbit\\Sdk\\Requests\\Processes\\InstanceProcessTarget;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateProcessRequest(target: new InstanceProcessTarget(12), name: 'vite'))->dto();\n"
           }
         ]
       }
@@ -13977,7 +13979,7 @@
                     "data": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/App"
+                        "$ref": "#/components/schemas/Project"
                       }
                     },
                     "meta": {
@@ -14012,7 +14014,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Apps\\ListAppsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListAppsRequest())->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Projects\\ListProjectsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListProjectsRequest())->dto();\n"
           }
         ]
       },
@@ -14098,7 +14100,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/App"
+                      "$ref": "#/components/schemas/Project"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -14120,7 +14122,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/App"
+                      "$ref": "#/components/schemas/Project"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -14174,12 +14176,12 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Apps\\CreateAppRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateAppRequest(\n    slug: 'acme',\n    repositoryUrl: 'https://github.com/acme/site.git',\n    root: 'value',\n))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Projects\\CreateProjectRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateProjectRequest(\n    slug: 'acme',\n    repositoryUrl: 'https://github.com/acme/site.git',\n    root: 'value',\n))->dto();\n"
           }
         ]
       }
     },
-    "/api/v1/projects/{app}": {
+    "/api/v1/projects/{project}": {
       "delete": {
         "operationId": "project-destroy",
         "summary": "Remove a Project",
@@ -14188,7 +14190,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -14208,7 +14210,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/App"
+                      "$ref": "#/components/schemas/Project"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -14262,7 +14264,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Apps\\DestroyAppRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DestroyAppRequest(appId: 4))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Projects\\DestroyProjectRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DestroyProjectRequest(projectId: 4))->dto();\n"
           }
         ]
       },
@@ -14274,7 +14276,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -14296,7 +14298,7 @@
                     "data": {
                       "allOf": [
                         {
-                          "$ref": "#/components/schemas/App"
+                          "$ref": "#/components/schemas/Project"
                         },
                         {
                           "type": "object",
@@ -14353,7 +14355,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Apps\\ShowAppRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowAppRequest(appId: 4))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Projects\\ShowProjectRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowProjectRequest(projectId: 4))->dto();\n"
           }
         ]
       },
@@ -14365,7 +14367,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -14440,7 +14442,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/App"
+                      "$ref": "#/components/schemas/Project"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -14504,12 +14506,12 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Apps\\UpdateAppRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateAppRequest(appId: 4))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Projects\\UpdateProjectRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateProjectRequest(projectId: 4))->dto();\n"
           }
         ]
       }
     },
-    "/api/v1/projects/{app}/excluded-nodes": {
+    "/api/v1/projects/{project}/excluded-nodes": {
       "get": {
         "operationId": "project-excluded-node-list",
         "summary": "project:excluded-node:list",
@@ -14518,7 +14520,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -14585,12 +14587,12 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Projects\\ListProjectExcludedNodesRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListProjectExcludedNodesRequest(projectId: 1))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Projects\\ListProjectExcludedNodesRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListProjectExcludedNodesRequest(projectId: 4))->dto();\n"
           }
         ]
       }
     },
-    "/api/v1/projects/{app}/excluded-nodes/{node}": {
+    "/api/v1/projects/{project}/excluded-nodes/{node}": {
       "delete": {
         "operationId": "project-excluded-node-remove",
         "summary": "project:excluded-node:remove",
@@ -14599,7 +14601,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -14683,7 +14685,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Projects\\RemoveProjectExcludedNodeRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new RemoveProjectExcludedNodeRequest(projectId: 1, nodeId: 7))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Projects\\RemoveProjectExcludedNodeRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new RemoveProjectExcludedNodeRequest(projectId: 4, nodeId: 7))->dto();\n"
           }
         ]
       },
@@ -14695,7 +14697,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -14801,12 +14803,12 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Projects\\AddProjectExcludedNodeRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new AddProjectExcludedNodeRequest(projectId: 1, nodeId: 7))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Projects\\AddProjectExcludedNodeRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new AddProjectExcludedNodeRequest(projectId: 4, nodeId: 7))->dto();\n"
           }
         ]
       }
     },
-    "/api/v1/projects/{app}/process-definitions": {
+    "/api/v1/projects/{project}/process-definitions": {
       "get": {
         "operationId": "project-process-definition-list",
         "summary": "List process definitions",
@@ -14815,7 +14817,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -14837,7 +14839,7 @@
                     "data": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/AppRuntimeDefinition"
+                        "$ref": "#/components/schemas/ProjectRuntimeDefinition"
                       }
                     },
                     "meta": {
@@ -14882,7 +14884,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Apps\\ListProcessDefinitionsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListProcessDefinitionsRequest(appId: 4))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Projects\\ListProcessDefinitionsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListProcessDefinitionsRequest(projectId: 4))->dto();\n"
           }
         ]
       },
@@ -14894,7 +14896,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -15041,7 +15043,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
+                      "$ref": "#/components/schemas/ProjectRuntimeDefinition"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -15063,7 +15065,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
+                      "$ref": "#/components/schemas/ProjectRuntimeDefinition"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -15127,12 +15129,12 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Apps\\CreateProcessDefinitionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateProcessDefinitionRequest(\n    appId: 4,\n    definition: '{\"name\": \"queue\", \"environments\": [\"production\"], \"spec\": {\"runtime\": \"systemd\", \"command\": [\"/usr/bin/php\", \"artisan\", \"queue:work\"]}}',\n))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Projects\\CreateProcessDefinitionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateProcessDefinitionRequest(\n    projectId: 4,\n    definition: '{\"name\": \"queue\", \"environments\": [\"production\"], \"spec\": {\"runtime\": \"systemd\", \"command\": [\"/usr/bin/php\", \"artisan\", \"queue:work\"]}}',\n))->dto();\n"
           }
         ]
       }
     },
-    "/api/v1/projects/{app}/process-definitions/{process_definition}": {
+    "/api/v1/projects/{project}/process-definitions/{process_definition}": {
       "delete": {
         "operationId": "project-process-definition-destroy",
         "summary": "Remove a process definition",
@@ -15141,7 +15143,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -15170,7 +15172,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
+                      "$ref": "#/components/schemas/ProjectRuntimeDefinition"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -15224,7 +15226,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Apps\\DestroyProcessDefinitionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DestroyProcessDefinitionRequest(appId: 4, name: 'example'))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Projects\\DestroyProcessDefinitionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DestroyProcessDefinitionRequest(projectId: 4, name: 'example'))->dto();\n"
           }
         ]
       },
@@ -15236,7 +15238,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -15265,7 +15267,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
+                      "$ref": "#/components/schemas/ProjectRuntimeDefinition"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -15309,7 +15311,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Apps\\ShowProcessDefinitionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowProcessDefinitionRequest(appId: 4, name: 'example'))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Projects\\ShowProcessDefinitionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowProcessDefinitionRequest(projectId: 4, name: 'example'))->dto();\n"
           }
         ]
       },
@@ -15321,7 +15323,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -15477,7 +15479,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
+                      "$ref": "#/components/schemas/ProjectRuntimeDefinition"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -15541,12 +15543,12 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Apps\\UpdateProcessDefinitionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateProcessDefinitionRequest(\n    appId: 4,\n    name: 'example',\n    definition: '{\"name\": \"queue\", \"environments\": [\"production\"], \"spec\": {\"runtime\": \"systemd\", \"command\": [\"/usr/bin/php\", \"artisan\", \"queue:work\"]}}',\n))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Projects\\UpdateProcessDefinitionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateProcessDefinitionRequest(\n    projectId: 4,\n    name: 'example',\n    definition: '{\"name\": \"queue\", \"environments\": [\"production\"], \"spec\": {\"runtime\": \"systemd\", \"command\": [\"/usr/bin/php\", \"artisan\", \"queue:work\"]}}',\n))->dto();\n"
           }
         ]
       }
     },
-    "/api/v1/projects/{app}/schedule-definitions": {
+    "/api/v1/projects/{project}/schedule-definitions": {
       "get": {
         "operationId": "project-schedule-definition-list",
         "summary": "List Schedule definitions",
@@ -15555,7 +15557,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -15577,7 +15579,7 @@
                     "data": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/AppRuntimeDefinition"
+                        "$ref": "#/components/schemas/ProjectRuntimeDefinition"
                       }
                     },
                     "meta": {
@@ -15622,7 +15624,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Apps\\ListScheduleDefinitionsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListScheduleDefinitionsRequest(appId: 4))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Projects\\ListScheduleDefinitionsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListScheduleDefinitionsRequest(projectId: 4))->dto();\n"
           }
         ]
       },
@@ -15634,7 +15636,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -15712,7 +15714,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
+                      "$ref": "#/components/schemas/ProjectRuntimeDefinition"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -15734,7 +15736,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
+                      "$ref": "#/components/schemas/ProjectRuntimeDefinition"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -15798,12 +15800,12 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Apps\\CreateScheduleDefinitionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateScheduleDefinitionRequest(\n    appId: 4,\n    definition: '{\"name\": \"queue\", \"environments\": [\"production\"], \"spec\": {\"runtime\": \"systemd\", \"command\": [\"/usr/bin/php\", \"artisan\", \"queue:work\"]}}',\n))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Projects\\CreateScheduleDefinitionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateScheduleDefinitionRequest(\n    projectId: 4,\n    definition: '{\"name\": \"queue\", \"environments\": [\"production\"], \"spec\": {\"runtime\": \"systemd\", \"command\": [\"/usr/bin/php\", \"artisan\", \"queue:work\"]}}',\n))->dto();\n"
           }
         ]
       }
     },
-    "/api/v1/projects/{app}/schedule-definitions/{schedule_definition}": {
+    "/api/v1/projects/{project}/schedule-definitions/{schedule_definition}": {
       "delete": {
         "operationId": "project-schedule-definition-destroy",
         "summary": "Remove a Schedule definition",
@@ -15812,7 +15814,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -15841,7 +15843,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
+                      "$ref": "#/components/schemas/ProjectRuntimeDefinition"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -15895,7 +15897,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Apps\\DestroyScheduleDefinitionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DestroyScheduleDefinitionRequest(appId: 4, name: 'example'))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Projects\\DestroyScheduleDefinitionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DestroyScheduleDefinitionRequest(projectId: 4, name: 'example'))->dto();\n"
           }
         ]
       },
@@ -15907,7 +15909,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -15936,7 +15938,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
+                      "$ref": "#/components/schemas/ProjectRuntimeDefinition"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -15980,7 +15982,7 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Apps\\ShowScheduleDefinitionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowScheduleDefinitionRequest(appId: 4, name: 'example'))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Projects\\ShowScheduleDefinitionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowScheduleDefinitionRequest(projectId: 4, name: 'example'))->dto();\n"
           }
         ]
       },
@@ -15992,7 +15994,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -16079,7 +16081,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/AppRuntimeDefinition"
+                      "$ref": "#/components/schemas/ProjectRuntimeDefinition"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -16143,12 +16145,12 @@
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Apps\\UpdateScheduleDefinitionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateScheduleDefinitionRequest(\n    appId: 4,\n    name: 'example',\n    definition: '{\"name\": \"queue\", \"environments\": [\"production\"], \"spec\": {\"runtime\": \"systemd\", \"command\": [\"/usr/bin/php\", \"artisan\", \"queue:work\"]}}',\n))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Projects\\UpdateScheduleDefinitionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateScheduleDefinitionRequest(\n    projectId: 4,\n    name: 'example',\n    definition: '{\"name\": \"queue\", \"environments\": [\"production\"], \"spec\": {\"runtime\": \"systemd\", \"command\": [\"/usr/bin/php\", \"artisan\", \"queue:work\"]}}',\n))->dto();\n"
           }
         ]
       }
     },
-    "/api/v1/projects/{app}/setup-steps": {
+    "/api/v1/projects/{project}/setup-steps": {
       "get": {
         "operationId": "instance-setup-step-list",
         "summary": "instance:setup-step:list",
@@ -16157,7 +16159,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -16228,7 +16230,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -16348,7 +16350,7 @@
         ]
       }
     },
-    "/api/v1/projects/{app}/setup-steps/{step}": {
+    "/api/v1/projects/{project}/setup-steps/{step}": {
       "delete": {
         "operationId": "instance-setup-step-destroy",
         "summary": "instance:setup-step:destroy",
@@ -16357,7 +16359,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -16448,7 +16450,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -16570,7 +16572,7 @@
         ]
       }
     },
-    "/api/v1/projects/{app}/teardown-steps": {
+    "/api/v1/projects/{project}/teardown-steps": {
       "get": {
         "operationId": "instance-teardown-step-list",
         "summary": "instance:teardown-step:list",
@@ -16579,7 +16581,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -16650,7 +16652,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -16770,7 +16772,7 @@
         ]
       }
     },
-    "/api/v1/projects/{app}/teardown-steps/{step}": {
+    "/api/v1/projects/{project}/teardown-steps/{step}": {
       "delete": {
         "operationId": "instance-teardown-step-destroy",
         "summary": "instance:teardown-step:destroy",
@@ -16779,7 +16781,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -16870,7 +16872,7 @@
         ],
         "parameters": [
           {
-            "name": "app",
+            "name": "project",
             "in": "path",
             "required": true,
             "schema": {
@@ -17677,13 +17679,13 @@
                           "public"
                         ]
                       },
-                      "app_instance_id": {
+                      "instance_id": {
                         "type": "integer"
                       }
                     },
                     "required": [
                       "domain",
-                      "app_instance_id"
+                      "instance_id"
                     ],
                     "additionalProperties": false
                   },
@@ -18265,13 +18267,13 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "app_instance_id": {
+                  "instance_id": {
                     "type": "integer",
                     "description": "Required when `targets` is absent."
                   },
                   "targets": {
                     "type": "array",
-                    "description": "Required when `app_instance_id` is absent.",
+                    "description": "Required when `instance_id` is absent.",
                     "items": {
                       "type": "integer"
                     }
@@ -18281,7 +18283,7 @@
                     "items": {
                       "type": "object",
                       "properties": {
-                        "app_instance_id": {
+                        "instance_id": {
                           "type": "integer"
                         },
                         "route_id": {
@@ -18292,7 +18294,7 @@
                         }
                       },
                       "required": [
-                        "app_instance_id"
+                        "instance_id"
                       ]
                     }
                   }
@@ -18370,7 +18372,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PUT \"https://gateway.orbit/api/v1/routes/9/target\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"app_instance_id\": 12, \"targets\": [1], \"dispositions\": [{\"app_instance_id\": 12}]}'\n"
+            "source": "curl -sS -X PUT \"https://gateway.orbit/api/v1/routes/9/target\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"instance_id\": 4, \"targets\": [1], \"dispositions\": [{\"instance_id\": 4}]}'\n"
           },
           {
             "lang": "php",
@@ -19237,7 +19239,7 @@
         ],
         "parameters": [
           {
-            "name": "app_id",
+            "name": "project_id",
             "in": "query",
             "required": false,
             "schema": {
@@ -19266,7 +19268,7 @@
           }
         ],
         "x-orbit-extension": "tasks",
-        "description": "Lists Task groups, newest first. Optional `app_id` and `status` filters. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.",
+        "description": "Lists Task groups, newest first. Optional `project_id` and `status` filters. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -19318,7 +19320,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS \"https://gateway.orbit/api/v1/task-groups?app_id=4&status=success\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+            "source": "curl -sS \"https://gateway.orbit/api/v1/task-groups?project_id=4&status=success\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
           },
           {
             "lang": "php",
@@ -19342,7 +19344,7 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "app_id": {
+                  "project_id": {
                     "type": "integer",
                     "minimum": 1
                   },
@@ -19456,7 +19458,7 @@
                   }
                 },
                 "required": [
-                  "app_id",
+                  "project_id",
                   "title",
                   "brief"
                 ],
@@ -19545,12 +19547,12 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/task-groups\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"app_id\": 4, \"title\": \"Absorb Commander\", \"brief\": \"Persist groups. Accept when create and list work.\"}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/task-groups\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"project_id\": 4, \"title\": \"Absorb Commander\", \"brief\": \"Persist groups. Accept when create and list work.\"}'\n"
           },
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\CreateTaskGroupRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateTaskGroupRequest(appId: 4, title: 'value', brief: 'value'))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\CreateTaskGroupRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateTaskGroupRequest(projectId: 4, title: 'value', brief: 'value'))->dto();\n"
           }
         ]
       }
@@ -22057,13 +22059,13 @@
           }
         }
       },
-      "AppInstanceDeployment": {
+      "InstanceDeployment": {
         "type": "object",
         "properties": {
           "id": {
             "type": "integer"
           },
-          "app_instance_id": {
+          "instance_id": {
             "type": "integer"
           },
           "release": {
@@ -22174,7 +22176,7 @@
             "enum": [
               "node",
               "role",
-              "app",
+              "project",
               "instance",
               "schedule",
               "tool",
@@ -22315,7 +22317,7 @@
           }
         }
       },
-      "AppInstance": {
+      "Instance": {
         "type": "object",
         "properties": {
           "id": {
@@ -22328,7 +22330,7 @@
             "type": "integer"
           },
           "project": {
-            "$ref": "#/components/schemas/AppIdentity"
+            "$ref": "#/components/schemas/ProjectIdentity"
           },
           "node": {
             "$ref": "#/components/schemas/NodeIdentity"
@@ -22415,7 +22417,7 @@
           "removal": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/AppInstanceRemoval"
+                "$ref": "#/components/schemas/InstanceRemoval"
               },
               {
                 "type": "null"
@@ -22425,7 +22427,7 @@
           "transfer": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/AppInstanceTransfer"
+                "$ref": "#/components/schemas/InstanceTransfer"
               },
               {
                 "type": "null"
@@ -22446,7 +22448,7 @@
           }
         }
       },
-      "AppIdentity": {
+      "ProjectIdentity": {
         "type": "object",
         "properties": {
           "id": {
@@ -22489,7 +22491,7 @@
           "kind": {
             "type": "string"
           },
-          "app_id": {
+          "project_id": {
             "type": [
               "integer",
               "null"
@@ -22603,7 +22605,7 @@
           "id": {
             "type": "integer"
           },
-          "app_instance_id": {
+          "instance_id": {
             "type": "integer"
           },
           "position": {
@@ -22611,7 +22613,7 @@
           }
         }
       },
-      "AppInstanceRemoval": {
+      "InstanceRemoval": {
         "type": "object",
         "properties": {
           "operation_id": {
@@ -22658,7 +22660,7 @@
           }
         }
       },
-      "AppInstanceTransfer": {
+      "InstanceTransfer": {
         "type": "object",
         "properties": {
           "operation_id": {
@@ -22735,19 +22737,19 @@
           }
         }
       },
-      "AppInstanceRegistration": {
+      "InstanceRegistration": {
         "type": "object",
         "properties": {
-          "app": {
-            "$ref": "#/components/schemas/App"
+          "project": {
+            "$ref": "#/components/schemas/Project"
           },
-          "app_instance": {
-            "$ref": "#/components/schemas/AppInstance"
+          "instance": {
+            "$ref": "#/components/schemas/Instance"
           },
           "instances": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/AppInstance"
+              "$ref": "#/components/schemas/Instance"
             }
           },
           "status": {
@@ -22761,7 +22763,7 @@
           }
         }
       },
-      "App": {
+      "Project": {
         "type": "object",
         "properties": {
           "id": {
@@ -22983,7 +22985,7 @@
       "DatabaseConnectionAttachment": {
         "type": "object",
         "properties": {
-          "app_instance_id": {
+          "instance_id": {
             "type": "integer"
           },
           "slug": {
@@ -23309,7 +23311,7 @@
           "apps": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/AppsSettings"
+                "$ref": "#/components/schemas/NodeStorageApps"
               },
               {
                 "type": "null"
@@ -23318,7 +23320,7 @@
           }
         }
       },
-      "AppsSettings": {
+      "NodeStorageApps": {
         "type": "object",
         "properties": {
           "path": {
@@ -23559,13 +23561,13 @@
           }
         }
       },
-      "AppRuntimeDefinition": {
+      "ProjectRuntimeDefinition": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string"
           },
-          "app_id": {
+          "project_id": {
             "type": "integer"
           },
           "name": {
@@ -23656,10 +23658,10 @@
           "id": {
             "type": "integer"
           },
-          "app_id": {
+          "project_id": {
             "type": "integer"
           },
-          "app": {
+          "project": {
             "type": "string"
           },
           "project_code": {
@@ -24166,10 +24168,10 @@
           "id": {
             "type": "integer"
           },
-          "app_id": {
+          "project_id": {
             "type": "integer"
           },
-          "app": {
+          "project": {
             "type": "string"
           },
           "project_code": {

@@ -5,11 +5,11 @@ declare(strict_types=1);
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Requests\AppInstances\ResolveAppInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\ResolveDirectoryInstanceRequest;
-use Orbit\Sdk\Requests\AppInstances\ScanInstanceDependenciesRequest;
-use Orbit\Sdk\Requests\AppInstances\ShowInstanceDependenciesRequest;
-use Orbit\Sdk\Requests\AppInstances\UpdateInstanceDependenciesRequest;
+use Orbit\Sdk\Requests\Instances\ResolveDirectoryInstanceRequest;
+use Orbit\Sdk\Requests\Instances\ResolveInstanceRequest;
+use Orbit\Sdk\Requests\Instances\ScanInstanceDependenciesRequest;
+use Orbit\Sdk\Requests\Instances\ShowInstanceDependenciesRequest;
+use Orbit\Sdk\Requests\Instances\UpdateInstanceDependenciesRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Saloon\Http\Response;
@@ -98,7 +98,7 @@ function strict_decoder_fixture(string $factory): array
         'show' => new ShowInstanceDependenciesRequest(17),
         'scan' => new ScanInstanceDependenciesRequest(17),
         'update' => new UpdateInstanceDependenciesRequest(17),
-        'domain' => new ResolveAppInstanceRequest('fixture.example.test'),
+        'domain' => new ResolveInstanceRequest('fixture.example.test'),
         'directory' => new ResolveDirectoryInstanceRequest('/home/orbit/fixture'),
     };
     $failed = ['state' => 'unknown', 'succeeded' => false, 'attempted_at' => '2026-09-16T17:00:00+00:00',

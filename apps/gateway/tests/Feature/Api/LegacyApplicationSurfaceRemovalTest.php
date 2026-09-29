@@ -2,15 +2,14 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
-use App\Http\Controllers\Api\AppInstancesController;
 use App\Http\Controllers\Api\InstancesController;
 use App\Http\Controllers\Api\WorkspacesController;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Routing\Route as IlluminateRoute;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
@@ -33,24 +32,24 @@ describe('legacy application surface removal', function (): void {
             ]);
         $this->node->accessibleNodes()->attach($this->node);
         $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.3']);
-        $this->orbitApp = OrbitApp::query()->create([
+        $this->orbitApp = Project::query()->create([
             'name' => 'Acme',
             'slug' => 'acme',
             'repository_url' => 'git@github.com:acme/site.git',
             'default_branch' => 'main',
             'root' => 'public',
         ]);
-        $this->appInstance = AppInstance::query()->create([
-            'app_id' => $this->orbitApp->id,
+        $this->instance = Instance::query()->create([
+            'project_id' => $this->orbitApp->id,
             'node_id' => $this->node->id,
             'name' => 'default',
             'checkout_path' => '/srv/orbit/apps/acme/default',
             'source_layout' => 'worktree',
-            'status' => AppInstanceState::Active,
+            'status' => InstanceState::Active,
         ]);
     });
 
-    it('discovers no Workspace or leftover Instance operations and keeps AppInstance instance verbs', function (): void {
+    it('discovers no Workspace or leftover Instance operations and keeps Instance instance verbs', function (): void {
         $named = collect(Route::getRoutes()->getRoutes())
             ->filter(static fn (IlluminateRoute $route): bool => is_string($route->getName()))
             ->mapWithKeys(static fn (IlluminateRoute $route): array => [
@@ -72,27 +71,22 @@ describe('legacy application surface removal', function (): void {
                 'workspace:convert',
             ])
             ->and($named['instance:list'] ?? null)
-            ->toBe(['GET', 'api/v1/instances', AppInstancesController::class])
+            ->toBe(['GET', 'api/v1/instances', InstancesController::class])
             ->and($named['instance:show'] ?? null)
-            ->toBe(['GET', 'api/v1/instances/{instance}', AppInstancesController::class])
+            ->toBe(['GET', 'api/v1/instances/{instance}', InstancesController::class])
             ->and($named['instance:create'] ?? null)
-            ->toBe(['POST', 'api/v1/instances', AppInstancesController::class])
+            ->toBe(['POST', 'api/v1/instances', InstancesController::class])
             ->and($named['instance:destroy'] ?? null)
-            ->toBe(['DELETE', 'api/v1/instances/{instance}', AppInstancesController::class])
-            ->and(class_exists(InstancesController::class))
-            ->toBeFalse()
+            ->toBe(['DELETE', 'api/v1/instances/{instance}', InstancesController::class])
             ->and(class_exists(WorkspacesController::class))
             ->toBeFalse()
-            ->and(class_exists('App\\Models\\Instance'))
+            ->and(class_exists('App\\Models\\AppInstance', false))
             ->toBeFalse()
             ->and(class_exists('App\\Models\\Workspace'))
             ->toBeFalse();
 
         foreach ($named as [$method, $uri, $controller]) {
             expect($controller)
-                ->not
-                ->toBe(InstancesController::class)
-                ->and($controller)
                 ->not
                 ->toBe(WorkspacesController::class)
                 ->and($uri)
@@ -106,18 +100,18 @@ describe('legacy application surface removal', function (): void {
     });
 
     it('rejects retired Workspace and leftover Instance inputs without mutation', function (string $method, string $uri, array $payload): void {
-        $appInstanceBefore = $this->appInstance->only(['id', 'name', 'checkout_path', 'status', 'source_layout']);
+        $instanceBefore = $this->instance->only(['id', 'name', 'checkout_path', 'status', 'source_layout']);
 
         $this
             ->json($method, $uri, $payload)
             ->assertNotFound();
 
-        expect($this->appInstance->refresh()->only(['id', 'name', 'checkout_path', 'status', 'source_layout']))
-            ->toBe($appInstanceBefore)
-            ->and(AppInstance::query()->count())
+        expect($this->instance->refresh()->only(['id', 'name', 'checkout_path', 'status', 'source_layout']))
+            ->toBe($instanceBefore)
+            ->and(Instance::query()->count())
             ->toBe(1)
             ->and(Schema::hasTable('instances'))
-            ->toBeFalse()
+            ->toBeTrue()
             ->and(Schema::hasTable('workspaces'))
             ->toBeFalse();
     })->with([
@@ -138,11 +132,11 @@ describe('legacy application surface removal', function (): void {
         'workspace conversion' => ['POST', '/api/v1/workspaces/1/convert', []],
     ]);
 
-    it('keeps supported AppInstance request and response values on instance verbs', function (): void {
+    it('keeps supported Instance request and response values on instance verbs', function (): void {
         $this
             ->getJson('/api/v1/instances')
             ->assertOk()
-            ->assertJsonPath('data.0.id', $this->appInstance->id)
+            ->assertJsonPath('data.0.id', $this->instance->id)
             ->assertJsonPath('data.0.project_id', $this->orbitApp->id)
             ->assertJsonPath('data.0.node_id', $this->node->id)
             ->assertJsonPath('data.0.name', 'default')
@@ -153,9 +147,9 @@ describe('legacy application surface removal', function (): void {
             ->assertJsonMissingPath('data.0.instance_id');
 
         $this
-            ->getJson("/api/v1/instances/{$this->appInstance->id}")
+            ->getJson("/api/v1/instances/{$this->instance->id}")
             ->assertOk()
-            ->assertJsonPath('data.id', $this->appInstance->id)
+            ->assertJsonPath('data.id', $this->instance->id)
             ->assertJsonPath('data.project_id', $this->orbitApp->id)
             ->assertJsonPath('data.node_id', $this->node->id)
             ->assertJsonPath('data.name', 'default')

@@ -18,8 +18,8 @@ use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\AppInstance;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Route;
@@ -402,7 +402,7 @@ final readonly class SetClusterRouterAction
     private function clusterRoutes(int $clusterId): Collection
     {
         return Route::query()
-            ->with(['targets.appInstance.node', 'cluster'])
+            ->with(['targets.instance.node', 'cluster'])
             ->where('cluster_id', $clusterId)
             ->whereIn('status', [
                 RouteStatus::Active,
@@ -414,13 +414,13 @@ final readonly class SetClusterRouterAction
             ->get();
     }
 
-    /** @return list<AppInstance> */
+    /** @return list<Instance> */
     private function workloads(Route $route): array
     {
         return array_values($route
             ->targets
-            ->map(static fn ($target) => $target->appInstance)
-            ->filter(static fn ($target): bool => $target instanceof AppInstance)
+            ->map(static fn ($target) => $target->instance)
+            ->filter(static fn ($target): bool => $target instanceof Instance)
             ->all());
     }
 

@@ -46,7 +46,7 @@ final readonly class CreateTaskGroupAction
         }
 
         $group = TaskGroup::query()->create([
-            'app_id' => $data->appId,
+            'project_id' => $data->projectId,
             'implementer_agent_driver' => $implementerDriver,
             'reviewer_agent_driver' => $reviewerDriver,
             'title' => $data->title,
@@ -72,7 +72,7 @@ final readonly class CreateTaskGroupAction
             $this->scheduler->claimNext();
         }
 
-        return $group->refresh()->load(['app', 'tasks', 'taskable']);
+        return $group->refresh()->load(['project', 'tasks', 'taskable']);
     }
 
     private function model(string $key, string $default): string

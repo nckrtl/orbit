@@ -2,15 +2,15 @@
 title: "Instance logs"
 description: "How the Gateway reads the application log of an Instance, which file it reads, what it redacts, and how a viewer follows it live."
 covers:
-  - apps/gateway/app/Actions/AppInstances/ShowAppInstanceLogsAction.php
-  - apps/gateway/app/Http/Controllers/Api/AppInstanceLogsController.php
-  - apps/gateway/app/Infrastructure/AppInstances/RemoteAppInstanceLogReader.php
+  - apps/gateway/app/Actions/Instances/ShowInstanceLogsAction.php
+  - apps/gateway/app/Http/Controllers/Api/InstanceLogsController.php
+  - apps/gateway/app/Infrastructure/Instances/RemoteInstanceLogReader.php
   - apps/gateway/app/Domain/Logs/{LogReadLimit,LogRedactor}.php
 ---
 
 # Instance logs
 
-The Gateway returns the end of an Instance's application log. The application writes this file itself, so it shows errors that a Process log does not. [Processes and schedules](/reference/app-processes-and-schedules) and [Schedules](/reference/schedules) describe the other logs.
+The Gateway returns the end of an Instance's application log. The application writes this file itself, so it shows errors that a Process log does not. [Processes and schedules](/reference/processes-and-schedules) and [Schedules](/reference/schedules) describe the other logs.
 
 ## Read the log
 

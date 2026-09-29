@@ -7,15 +7,15 @@ use App\Actions\Routes\RemoveRouteAction;
 use App\Actions\Routes\UpdateRouteAction;
 use App\Data\Routes\CreateRouteData;
 use App\Data\Routes\UpdateRouteData;
-use App\Domain\AppInstances\AppInstanceState;
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Shared\LifecycleStatus;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\Event;
 use Tests\Support\FakeRouteRemovalProjector;
@@ -31,7 +31,7 @@ beforeEach(function (): void {
         'wireguard_ip' => '10.44.0.3',
         'tld' => 'dev.orbit',
     ]);
-    $this->orbitApp = OrbitApp::query()->create([
+    $this->orbitApp = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
@@ -39,10 +39,10 @@ beforeEach(function (): void {
     ]);
 });
 
-function route_record_pending(int $appId, int $nodeId): Route
+function route_record_pending(int $projectId, int $nodeId): Route
 {
     return Route::query()->create([
-        'app_id' => $appId,
+        'project_id' => $projectId,
         'node_id' => $nodeId,
         'domain' => 'docs.orbit',
         'provenance' => 'explicit',
@@ -58,13 +58,13 @@ describe('Route record events', function (): void {
         $data = new CreateRouteData(
             domain: 'docs.orbit',
             publication: RoutePublication::Private,
-            appId: $this->orbitApp->id,
-            appInstanceId: AppInstance::query()->create([
-                'app_id' => $this->orbitApp->id,
+            projectId: $this->orbitApp->id,
+            instanceId: Instance::query()->create([
+                'project_id' => $this->orbitApp->id,
                 'node_id' => $this->node->id,
                 'name' => 'docs',
                 'checkout_path' => '/srv/docs',
-                'status' => AppInstanceState::Active,
+                'status' => InstanceState::Active,
             ])->id,
         );
 

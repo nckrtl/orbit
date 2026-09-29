@@ -6,7 +6,7 @@ namespace App\Domain\Nodes\Storage;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Nodes\ManagedUserAccount;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 final readonly class CheckoutRemovalBoundary
 {
@@ -14,37 +14,37 @@ final readonly class CheckoutRemovalBoundary
         private ProtectedPathCatalog $catalog,
     ) {}
 
-    public function appInstanceRoot(AppInstance $appInstance, ManagedUserAccount $account): StoragePath
+    public function instanceRoot(Instance $instance, ManagedUserAccount $account): StoragePath
     {
-        $checkout = StoragePath::tryParse($appInstance->checkout_path);
+        $checkout = StoragePath::tryParse($instance->checkout_path);
 
         if (
             ! $checkout instanceof StoragePath
-            || ! $checkout->hasSuffix($appInstance->app->slug, $appInstance->name)
+            || ! $checkout->hasSuffix($instance->project->slug, $instance->name)
         ) {
-            $this->unsafeAppInstance($appInstance);
+            $this->unsafeInstance($instance);
         }
 
-        $root = $checkout->stripSuffix($appInstance->app->slug, $appInstance->name);
+        $root = $checkout->stripSuffix($instance->project->slug, $instance->name);
 
         if ($this->catalog->isProtected($root, $account) || ! $checkout->isInside($root)) {
-            $this->unsafeAppInstance($appInstance);
+            $this->unsafeInstance($instance);
         }
 
         return $root;
     }
 
-    public function appInstanceGroupingDirectory(AppInstance $appInstance, StoragePath $root): StoragePath
+    public function instanceGroupingDirectory(Instance $instance, StoragePath $root): StoragePath
     {
-        return $root->append($appInstance->app->slug);
+        return $root->append($instance->project->slug);
     }
 
-    private function unsafeAppInstance(AppInstance $appInstance): never
+    private function unsafeInstance(Instance $instance): never
     {
         throw new RuntimeConvergenceException(
             step: 'app-instance-source-path',
             errorCode: 'instance.checkout_path_unsafe',
-            message: "AppInstance [{$appInstance->name}] has an unsafe checkout path.",
+            message: "Instance [{$instance->name}] has an unsafe checkout path.",
         );
     }
 }

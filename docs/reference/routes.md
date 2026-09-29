@@ -5,10 +5,10 @@ covers:
   - apps/gateway/app/{Domain,Actions,Infrastructure,Data}/Routes/**
   - apps/gateway/app/Http/{Controllers/Api/RoutesController.php,Requests/Routes/**}
   - apps/gateway/app/Models/{Route,RouteTarget,RouteCustomProxy}.php
-  - apps/gateway/app/Infrastructure/AppDev/{AppDevCaddyConfigRenderer,AppDevSiteRepository,NativeDevelopmentProjectionOperationLock}.php
+  - apps/gateway/app/Infrastructure/AppDev/{DevelopmentCaddyConfigRenderer,DevelopmentSiteRepository,NativeDevelopmentProjectionOperationLock}.php
   - apps/gateway/app/Domain/AppDev/{DevelopmentServerEndpoint,AgentationEndpoint,PrivateDnsAnswerExpiry}.php
   - apps/gateway/app/Infrastructure/Clusters/NativeClusterRouterOperationLock.php
-  - apps/gateway/app/Infrastructure/AppInstances/NativeProductionRouteProjector.php
+  - apps/gateway/app/Infrastructure/Instances/{NativeProductionRouteProjector,NativeDevelopmentRouteProjector}.php
 ---
 
 # Routes
@@ -32,7 +32,7 @@ The Gateway stores these fields for each Route. `route:show` returns them.
 | Field | Meaning |
 | --- | --- |
 | `kind` | `app`, `custom_proxy`, or `analytics_tracking`. |
-| `app_id` | The Project that owns an `app` Route and every one of its targets. Null for the other kinds. |
+| `project_id` | The Project that owns an `app` Route and every one of its targets. Null for the other kinds. |
 | `node_id` or `cluster_id` | The routing scope: exactly one Node or one active Cluster. A custom proxy Route always has Node scope. |
 | `domain` | One normalized domain that no other Route owns. It never changes. A domain change creates a replacement Route. |
 | `provenance` | `generated` or `explicit`. It never changes, and Orbit does not infer it from the domain. |
@@ -76,7 +76,7 @@ A Node keeps its own TLD while it belongs to a Cluster. [cluster](/cli/cluster#p
 
 ### Generated domains after a Project slug update
 
-A Project slug update recomputes every generated development Route domain from the new slug, the Instance name, and the effective TLD. Orbit creates a replacement Route for each domain that changes. The replacement keeps the Project, scope, provenance, publication, and target. Explicit domains never change. A default-branch update changes no Route. [Projects](/reference/apps#update-a-project) owns the update lifecycle.
+A Project slug update recomputes every generated development Route domain from the new slug, the Instance name, and the effective TLD. Orbit creates a replacement Route for each domain that changes. The replacement keeps the Project, scope, provenance, publication, and target. Explicit domains never change. A default-branch update changes no Route. [Projects](/reference/projects#update-a-project) owns the update lifecycle.
 
 ## Create and change targets
 
@@ -89,7 +89,7 @@ orbit route:create 12 shop.example.test
 orbit route:create 12 shop.example.com --publication=public
 ```
 
-The Gateway API accepts `POST /api/v1/routes` with an app Route body such as `{"app_instance_id":12,"domain":"shop.example.test","publication":"private"}`. The Instance ID implies the Project and scope; the app Route request does not take `app_id`, `node_id`, or `cluster_id`. For a custom proxy Route, the request instead supplies `domain`, `node_id`, and exactly one of `upstream` or `process_id`. Custom proxy creation remains separate and converges its Node-local serving path.
+The Gateway API accepts `POST /api/v1/routes` with an app Route body such as `{"instance_id":12,"domain":"shop.example.test","publication":"private"}`. The Instance ID implies the Project and scope; the app Route request does not take `project_id`, `node_id`, or `cluster_id`. For a custom proxy Route, the request instead supplies `domain`, `node_id`, and exactly one of `upstream` or `process_id`. Custom proxy creation remains separate and converges its Node-local serving path.
 
 | Creation refusal | Meaning |
 | --- | --- |
@@ -402,11 +402,11 @@ The grace period covers clients whose resolver honors the TTL, such as systemd-r
 
 Removal releases the domain at once. The Node's shared runtime and Caddy service stay.
 
-A targeted Route can be removed only when none of its Instances is active and the Route is not `active`. The Gateway then deletes the record directly, without the DNS, Caddy, certificate, and firewall steps. Instance removal deletes a Route whose last target it removes, before it finalizes the source. A development removal first serves `503 Orbit Route unavailable` for the Route from stored state. Then it clears the site publication, builds Caddy without the Route, removes the Instance and Router certificates, and deletes the Route. A production removal republishes the remaining pool when a shared Route keeps other targets. [Instance removal](/reference/appinstance-removal) owns the cascade.
+A targeted Route can be removed only when none of its Instances is active and the Route is not `active`. The Gateway then deletes the record directly, without the DNS, Caddy, certificate, and firewall steps. Instance removal deletes a Route whose last target it removes, before it finalizes the source. A development removal first serves `503 Orbit Route unavailable` for the Route from stored state. Then it clears the site publication, builds Caddy without the Route, removes the Instance and Router certificates, and deletes the Route. A production removal republishes the remaining pool when a shared Route keeps other targets. [Instance removal](/reference/instance-removal) owns the cascade.
 
 | Removal | Guard |
 | --- | --- |
-| Project | Refused while it owns a Route (`app.has_routes`). |
+| Project | Refused while it owns a Route (`project.has_routes`). |
 | Cluster | Refused while it scopes a Route (`cluster.has_routes`). |
 | Node | Refused while a Route uses it as scope, target host, or generation basis (`node.has_routes`, or `route.reconciliation_required` for an active Route). |
 | `app-dev` or `app-prod` role | Refused while the Node hosts a Route target. |

@@ -1,0 +1,58 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Infrastructure\Nodes\Roles;
+
+use App\Domain\AppProd\AppProdCaddyManager;
+use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\NodeRoleFirewallManager;
+use App\Domain\Nodes\RoleBaseline;
+use App\Domain\Nodes\RoleName;
+use App\Infrastructure\AppProd\ProductionSshExecutor;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Models\Node;
+use App\Models\NodeRole;
+
+final readonly class ProductionRoleBaseline implements RoleBaseline
+{
+    public function __construct(
+        private NodeRolePrerequisiteCommandFactory $commands,
+        private ProductionSshExecutor $ssh,
+        private AppProdCaddyManager $caddy,
+        private NodeRoleFirewallManager $firewall,
+        private ManagedUserAccountResolver $accounts,
+    ) {}
+
+    public function converge(Node $node, NodeRole $assignment): void
+    {
+        $account = $this->accounts->resolve($node);
+        $caddySource = $this->commands->caddySource($node, RoleName::AppProd);
+        if ($caddySource instanceof RemoteCommand) {
+            $this->ssh->execute($node, $caddySource, 'caddy-package-source', 'app-prod.prerequisite_failed');
+        }
+        $this->ssh->execute(
+            $node,
+            $this->commands->make($node, RoleName::AppProd, $account),
+            'role-prerequisites',
+            'app-prod.prerequisite_failed',
+        );
+        $this->caddy->converge($node);
+        $this->firewall->converge($node, RoleName::AppProd, $node->user);
+    }
+
+    public function remove(Node $node, NodeRole $assignment, bool $purgeData): void
+    {
+        $this->caddy->remove($node);
+        $this->firewall->remove($node, RoleName::AppProd, $node->user);
+    }
+
+    /**
+     * Nothing here lives on the Gateway.
+     *
+     * The Caddy route and the firewall rule both live on the node itself, so
+     * both steps would have run over SSH. With the node unreachable, both are
+     * reported as retained.
+     */
+    public function removeUnreachable(Node $node, NodeRole $assignment): void {}
+}

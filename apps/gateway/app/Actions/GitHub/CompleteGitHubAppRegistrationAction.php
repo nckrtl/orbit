@@ -13,7 +13,7 @@ use App\Domain\Shared\ResourceOperationException;
 use SensitiveParameter;
 
 /**
- * Finishes an App registration when GitHub redirects the operator's browser to the Gateway. The
+ * Finishes a Project registration when GitHub redirects the operator's browser to the Gateway. The
  * `state` must match the pending registration, and the one-time code is exchanged once.
  */
 final readonly class CompleteGitHubAppRegistrationAction

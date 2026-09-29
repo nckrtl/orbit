@@ -4,18 +4,18 @@ declare(strict_types=1);
 
 namespace App\Commands\Processes;
 
-use App\Commands\Concerns\RendersAppRuntimeDefinitions;
+use App\Commands\Concerns\RendersProjectRuntimeDefinitions;
 use App\Commands\Concerns\SelectsProjectDefinitionTarget;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Requests\Apps\DestroyProcessDefinitionRequest;
 use Orbit\Sdk\Requests\Processes\DestroyProcessRequest;
-use Orbit\Sdk\Responses\Apps\AppRuntimeDefinitionResponse;
+use Orbit\Sdk\Requests\Projects\DestroyProcessDefinitionRequest;
+use Orbit\Sdk\Responses\Projects\ProjectRuntimeDefinitionResponse;
 
 final class DestroyProcessCommand extends ProcessActionCommand
 {
-    use RendersAppRuntimeDefinitions;
+    use RendersProjectRuntimeDefinitions;
     use SelectsProjectDefinitionTarget;
 
     #[\Override]
@@ -33,13 +33,13 @@ final class DestroyProcessCommand extends ProcessActionCommand
         GatewayConfigRepository $repository,
         GatewayConnectorFactory $connectors,
     ): int {
-        $appId = $this->projectIdOption();
+        $projectId = $this->projectIdOption();
 
-        if ($appId === false) {
+        if ($projectId === false) {
             return self::FAILURE;
         }
 
-        if ($appId === null) {
+        if ($projectId === null) {
             $processId = $this->positiveId('process', 'Process', 'process.id_invalid');
 
             if ($processId === null) {
@@ -81,12 +81,12 @@ final class DestroyProcessCommand extends ProcessActionCommand
 
         $response = $this->sendWithProgress(
             $connector,
-            new DestroyProcessDefinitionRequest($appId, $name),
-            AppRuntimeDefinitionResponse::class,
+            new DestroyProcessDefinitionRequest($projectId, $name),
+            ProjectRuntimeDefinitionResponse::class,
             $this->progressLabels(),
         );
 
-        return $response instanceof AppRuntimeDefinitionResponse
+        return $response instanceof ProjectRuntimeDefinitionResponse
             ? $this->renderDefinition($response, 'Process')
             : self::FAILURE;
     }

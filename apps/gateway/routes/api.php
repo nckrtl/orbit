@@ -7,21 +7,6 @@ use App\Http\Controllers\Api\AgentRealtimeController;
 use App\Http\Controllers\Api\AgentThreadsController;
 use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\AnnotationsController;
-use App\Http\Controllers\Api\AppInstanceClonesController;
-use App\Http\Controllers\Api\AppInstanceDependenciesController;
-use App\Http\Controllers\Api\AppInstanceDeploymentsController;
-use App\Http\Controllers\Api\AppInstanceDeployStepsController;
-use App\Http\Controllers\Api\AppInstanceEnvironmentImportsController;
-use App\Http\Controllers\Api\AppInstanceEnvironmentSynchronizationsController;
-use App\Http\Controllers\Api\AppInstanceEnvironmentValuesController;
-use App\Http\Controllers\Api\AppInstanceLogsController;
-use App\Http\Controllers\Api\AppInstanceQueueController;
-use App\Http\Controllers\Api\AppInstanceReleasesController;
-use App\Http\Controllers\Api\AppInstanceRollbacksController;
-use App\Http\Controllers\Api\AppInstancesController;
-use App\Http\Controllers\Api\AppInstanceTransfersController;
-use App\Http\Controllers\Api\AppRuntimeDefinitionsController;
-use App\Http\Controllers\Api\AppsController;
 use App\Http\Controllers\Api\ClustersController;
 use App\Http\Controllers\Api\DatabaseConnectionAttachmentsController;
 use App\Http\Controllers\Api\DatabaseConnectionsController;
@@ -34,7 +19,20 @@ use App\Http\Controllers\Api\GatewayStatusesController;
 use App\Http\Controllers\Api\GitHubAppController;
 use App\Http\Controllers\Api\GrafanaAccessAuthorizationController;
 use App\Http\Controllers\Api\InstanceAnalyticsController;
+use App\Http\Controllers\Api\InstanceClonesController;
+use App\Http\Controllers\Api\InstanceDependenciesController;
+use App\Http\Controllers\Api\InstanceDeploymentsController;
+use App\Http\Controllers\Api\InstanceDeployStepsController;
+use App\Http\Controllers\Api\InstanceEnvironmentImportsController;
+use App\Http\Controllers\Api\InstanceEnvironmentSynchronizationsController;
+use App\Http\Controllers\Api\InstanceEnvironmentValuesController;
+use App\Http\Controllers\Api\InstanceLogsController;
 use App\Http\Controllers\Api\InstanceLogStreamsController;
+use App\Http\Controllers\Api\InstanceQueueController;
+use App\Http\Controllers\Api\InstanceReleasesController;
+use App\Http\Controllers\Api\InstanceRollbacksController;
+use App\Http\Controllers\Api\InstancesController;
+use App\Http\Controllers\Api\InstanceTransfersController;
 use App\Http\Controllers\Api\MetricsController;
 use App\Http\Controllers\Api\NodeAccessController;
 use App\Http\Controllers\Api\NodeExcludedProjectsController;
@@ -45,6 +43,8 @@ use App\Http\Controllers\Api\ProcessesController;
 use App\Http\Controllers\Api\ProcessLogStreamsController;
 use App\Http\Controllers\Api\ProjectExcludedNodesController;
 use App\Http\Controllers\Api\ProjectLifecycleStepsController;
+use App\Http\Controllers\Api\ProjectRuntimeDefinitionsController;
+use App\Http\Controllers\Api\ProjectsController;
 use App\Http\Controllers\Api\ProxyCliController;
 use App\Http\Controllers\Api\RealtimeAuthController;
 use App\Http\Controllers\Api\RealtimeConfigController;
@@ -211,13 +211,13 @@ Route::prefix('v1')->group(function (): void {
         Route::get('nodes/{node}/excluded-projects', [NodeExcludedProjectsController::class, 'index'])
             ->whereNumber('node')
             ->name('node:excluded-project:list');
-        Route::post('nodes/{node}/excluded-projects/{app}', [NodeExcludedProjectsController::class, 'store'])
+        Route::post('nodes/{node}/excluded-projects/{project}', [NodeExcludedProjectsController::class, 'store'])
             ->whereNumber('node')
-            ->whereNumber('app')
+            ->whereNumber('project')
             ->name('node:excluded-project:add');
-        Route::delete('nodes/{node}/excluded-projects/{app}', [NodeExcludedProjectsController::class, 'destroy'])
+        Route::delete('nodes/{node}/excluded-projects/{project}', [NodeExcludedProjectsController::class, 'destroy'])
             ->whereNumber('node')
-            ->whereNumber('app')
+            ->whereNumber('project')
             ->name('node:excluded-project:remove');
         Route::get('activities', [ActivitiesController::class, 'index'])
             ->name('activity:list');
@@ -253,122 +253,122 @@ Route::prefix('v1')->group(function (): void {
         )
             ->scopeBindings()
             ->name('firewall:remove');
-        Route::get('projects', [AppsController::class, 'index'])->name('project:list');
-        Route::get('projects/{app}', [AppsController::class, 'show'])->name('project:show');
-        Route::post('projects', [AppsController::class, 'store'])->name('project:create');
-        Route::patch('projects/{app}', [AppsController::class, 'update'])->name('project:update');
-        Route::delete('projects/{app}', [AppsController::class, 'destroy'])->name('project:destroy');
-        Route::get('projects/{app}/excluded-nodes', [ProjectExcludedNodesController::class, 'index'])
-            ->whereNumber('app')
+        Route::get('projects', [ProjectsController::class, 'index'])->name('project:list');
+        Route::get('projects/{project}', [ProjectsController::class, 'show'])->name('project:show');
+        Route::post('projects', [ProjectsController::class, 'store'])->name('project:create');
+        Route::patch('projects/{project}', [ProjectsController::class, 'update'])->name('project:update');
+        Route::delete('projects/{project}', [ProjectsController::class, 'destroy'])->name('project:destroy');
+        Route::get('projects/{project}/excluded-nodes', [ProjectExcludedNodesController::class, 'index'])
+            ->whereNumber('project')
             ->name('project:excluded-node:list');
-        Route::post('projects/{app}/excluded-nodes/{node}', [ProjectExcludedNodesController::class, 'store'])
-            ->whereNumber('app')
+        Route::post('projects/{project}/excluded-nodes/{node}', [ProjectExcludedNodesController::class, 'store'])
+            ->whereNumber('project')
             ->whereNumber('node')
             ->name('project:excluded-node:add');
-        Route::delete('projects/{app}/excluded-nodes/{node}', [ProjectExcludedNodesController::class, 'destroy'])
-            ->whereNumber('app')
+        Route::delete('projects/{project}/excluded-nodes/{node}', [ProjectExcludedNodesController::class, 'destroy'])
+            ->whereNumber('project')
             ->whereNumber('node')
             ->name('project:excluded-node:remove');
-        Route::get('projects/{app}/setup-steps', [ProjectLifecycleStepsController::class, 'setupIndex'])->name('instance:setup-step:list');
-        Route::post('projects/{app}/setup-steps', [ProjectLifecycleStepsController::class, 'setupStore'])->name('instance:setup-step:create');
-        Route::patch('projects/{app}/setup-steps/{step}', [ProjectLifecycleStepsController::class, 'setupUpdate'])
+        Route::get('projects/{project}/setup-steps', [ProjectLifecycleStepsController::class, 'setupIndex'])->name('instance:setup-step:list');
+        Route::post('projects/{project}/setup-steps', [ProjectLifecycleStepsController::class, 'setupStore'])->name('instance:setup-step:create');
+        Route::patch('projects/{project}/setup-steps/{step}', [ProjectLifecycleStepsController::class, 'setupUpdate'])
             ->where('step', '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?')
             ->name('instance:setup-step:update');
-        Route::delete('projects/{app}/setup-steps/{step}', [ProjectLifecycleStepsController::class, 'setupDestroy'])
+        Route::delete('projects/{project}/setup-steps/{step}', [ProjectLifecycleStepsController::class, 'setupDestroy'])
             ->where('step', '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?')
             ->name('instance:setup-step:destroy');
-        Route::get('projects/{app}/teardown-steps', [ProjectLifecycleStepsController::class, 'teardownIndex'])->name('instance:teardown-step:list');
-        Route::post('projects/{app}/teardown-steps', [ProjectLifecycleStepsController::class, 'teardownStore'])->name('instance:teardown-step:create');
-        Route::patch('projects/{app}/teardown-steps/{step}', [ProjectLifecycleStepsController::class, 'teardownUpdate'])
+        Route::get('projects/{project}/teardown-steps', [ProjectLifecycleStepsController::class, 'teardownIndex'])->name('instance:teardown-step:list');
+        Route::post('projects/{project}/teardown-steps', [ProjectLifecycleStepsController::class, 'teardownStore'])->name('instance:teardown-step:create');
+        Route::patch('projects/{project}/teardown-steps/{step}', [ProjectLifecycleStepsController::class, 'teardownUpdate'])
             ->where('step', '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?')
             ->name('instance:teardown-step:update');
-        Route::delete('projects/{app}/teardown-steps/{step}', [ProjectLifecycleStepsController::class, 'teardownDestroy'])
+        Route::delete('projects/{project}/teardown-steps/{step}', [ProjectLifecycleStepsController::class, 'teardownDestroy'])
             ->where('step', '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?')
             ->name('instance:teardown-step:destroy');
-        Route::prefix('projects/{app}/process-definitions')->scopeBindings()->group(function (): void {
-            Route::get('/', [AppRuntimeDefinitionsController::class, 'processIndex'])
+        Route::prefix('projects/{project}/process-definitions')->scopeBindings()->group(function (): void {
+            Route::get('/', [ProjectRuntimeDefinitionsController::class, 'processIndex'])
                 ->name('project:process-definition:list');
-            Route::post('/', [AppRuntimeDefinitionsController::class, 'processStore'])
+            Route::post('/', [ProjectRuntimeDefinitionsController::class, 'processStore'])
                 ->name('project:process-definition:create');
-            Route::get('{processDefinition}', [AppRuntimeDefinitionsController::class, 'processShow'])
+            Route::get('{processDefinition}', [ProjectRuntimeDefinitionsController::class, 'processShow'])
                 ->name('project:process-definition:show');
-            Route::put('{processDefinition}', [AppRuntimeDefinitionsController::class, 'processUpdate'])
+            Route::put('{processDefinition}', [ProjectRuntimeDefinitionsController::class, 'processUpdate'])
                 ->name('project:process-definition:update');
-            Route::delete('{processDefinition}', [AppRuntimeDefinitionsController::class, 'processDestroy'])
+            Route::delete('{processDefinition}', [ProjectRuntimeDefinitionsController::class, 'processDestroy'])
                 ->name('project:process-definition:destroy');
         });
-        Route::prefix('projects/{app}/schedule-definitions')->scopeBindings()->group(function (): void {
-            Route::get('/', [AppRuntimeDefinitionsController::class, 'scheduleIndex'])
+        Route::prefix('projects/{project}/schedule-definitions')->scopeBindings()->group(function (): void {
+            Route::get('/', [ProjectRuntimeDefinitionsController::class, 'scheduleIndex'])
                 ->name('project:schedule-definition:list');
-            Route::post('/', [AppRuntimeDefinitionsController::class, 'scheduleStore'])
+            Route::post('/', [ProjectRuntimeDefinitionsController::class, 'scheduleStore'])
                 ->name('project:schedule-definition:create');
-            Route::get('{scheduleDefinition}', [AppRuntimeDefinitionsController::class, 'scheduleShow'])
+            Route::get('{scheduleDefinition}', [ProjectRuntimeDefinitionsController::class, 'scheduleShow'])
                 ->name('project:schedule-definition:show');
-            Route::put('{scheduleDefinition}', [AppRuntimeDefinitionsController::class, 'scheduleUpdate'])
+            Route::put('{scheduleDefinition}', [ProjectRuntimeDefinitionsController::class, 'scheduleUpdate'])
                 ->name('project:schedule-definition:update');
-            Route::delete('{scheduleDefinition}', [AppRuntimeDefinitionsController::class, 'scheduleDestroy'])
+            Route::delete('{scheduleDefinition}', [ProjectRuntimeDefinitionsController::class, 'scheduleDestroy'])
                 ->name('project:schedule-definition:destroy');
         });
         Route::get('instances/resolve-directory', [ResolveDirectoryInstanceController::class, '__invoke'])->name('instance:resolve-directory');
         Route::get('instances/resolve', [ResolveDependencyInstanceController::class, '__invoke'])->name('instance:resolve');
-        Route::get('instances/{instance}/dependencies', [AppInstanceDependenciesController::class, 'show'])->whereNumber('instance')->name('instance:dependencies:show');
-        Route::post('instances/{instance}/dependencies/scan', [AppInstanceDependenciesController::class, 'scan'])->whereNumber('instance')->name('instance:dependencies:scan');
-        Route::post('instances/{instance}/dependencies/update', [AppInstanceDependenciesController::class, 'update'])->whereNumber('instance')->name('instance:dependencies:update');
+        Route::get('instances/{instance}/dependencies', [InstanceDependenciesController::class, 'show'])->whereNumber('instance')->name('instance:dependencies:show');
+        Route::post('instances/{instance}/dependencies/scan', [InstanceDependenciesController::class, 'scan'])->whereNumber('instance')->name('instance:dependencies:scan');
+        Route::post('instances/{instance}/dependencies/update', [InstanceDependenciesController::class, 'update'])->whereNumber('instance')->name('instance:dependencies:update');
         Route::get('instances/{instance}/analytics/stats', [InstanceAnalyticsController::class, 'stats'])->whereNumber('instance')->name('instance:analytics:stats');
         Route::get('instances/{instance}/analytics', [InstanceAnalyticsController::class, 'show'])->whereNumber('instance')->name('instance:analytics:show');
         Route::post('instances/{instance}/analytics', [InstanceAnalyticsController::class, 'enable'])->whereNumber('instance')->name('instance:analytics:enable');
         Route::delete('instances/{instance}/analytics', [InstanceAnalyticsController::class, 'disable'])->whereNumber('instance')->name('instance:analytics:disable');
-        Route::get('instances', [AppInstancesController::class, 'index'])->name('instance:list');
-        Route::get('instances/{instance}', [AppInstancesController::class, 'show'])->name('instance:show');
-        Route::patch('instances/{instance}', [AppInstancesController::class, 'update'])->name('instance:update');
-        Route::post('instances', [AppInstancesController::class, 'store'])->name('instance:create');
-        Route::post('instances/register', [AppInstancesController::class, 'register'])->name('instance:register');
-        Route::post('instances/{candidate}/clone', [AppInstanceClonesController::class, 'store'])
+        Route::get('instances', [InstancesController::class, 'index'])->name('instance:list');
+        Route::get('instances/{instance}', [InstancesController::class, 'show'])->name('instance:show');
+        Route::patch('instances/{instance}', [InstancesController::class, 'update'])->name('instance:update');
+        Route::post('instances', [InstancesController::class, 'store'])->name('instance:create');
+        Route::post('instances/register', [InstancesController::class, 'register'])->name('instance:register');
+        Route::post('instances/{candidate}/clone', [InstanceClonesController::class, 'store'])
             ->whereNumber('candidate')
             ->name('instance:clone');
-        Route::post('instances/{instance}/transfer', [AppInstanceTransfersController::class, 'store'])
+        Route::post('instances/{instance}/transfer', [InstanceTransfersController::class, 'store'])
             ->whereNumber('instance')
             ->name('instance:transfer');
-        Route::delete('instances/{instance}', [AppInstancesController::class, 'destroy'])
+        Route::delete('instances/{instance}', [InstancesController::class, 'destroy'])
             ->name('instance:destroy');
-        Route::post('instances/{instance}/setup', [AppInstancesController::class, 'setup'])
+        Route::post('instances/{instance}/setup', [InstancesController::class, 'setup'])
             ->whereNumber('instance')
             ->name('instance:setup');
         Route::get(
             'instances/{instance}/deploy-steps',
-            [AppInstanceDeployStepsController::class, 'index'],
+            [InstanceDeployStepsController::class, 'index'],
         )->name('instance:deploy-step:list');
         Route::post(
             'instances/{instance}/deploy-steps',
-            [AppInstanceDeployStepsController::class, 'store'],
+            [InstanceDeployStepsController::class, 'store'],
         )->name('instance:deploy-step:create');
         Route::patch(
             'instances/{instance}/deploy-steps/{step}',
-            [AppInstanceDeployStepsController::class, 'update'],
+            [InstanceDeployStepsController::class, 'update'],
         )->where('step', '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?')->name('instance:deploy-step:update');
         Route::delete(
             'instances/{instance}/deploy-steps/{step}',
-            [AppInstanceDeployStepsController::class, 'destroy'],
+            [InstanceDeployStepsController::class, 'destroy'],
         )->where('step', '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?')->name('instance:deploy-step:destroy');
         Route::post(
             'instances/{instance}/deploy',
-            [AppInstanceDeploymentsController::class, 'store'],
+            [InstanceDeploymentsController::class, 'store'],
         )->name('instance:deploy');
         Route::post(
             'instances/{instance}/rollback',
-            [AppInstanceRollbacksController::class, 'store'],
+            [InstanceRollbacksController::class, 'store'],
         )->name('instance:rollback');
         Route::get(
             'instances/{instance}/releases',
-            [AppInstanceReleasesController::class, 'index'],
+            [InstanceReleasesController::class, 'index'],
         )->name('instance:release:list');
         Route::get(
             'instances/{instance}/queue',
-            [AppInstanceQueueController::class, 'show'],
+            [InstanceQueueController::class, 'show'],
         )->whereNumber('instance')->name('instance:queue');
         Route::get(
             'instances/{instance}/logs',
-            [AppInstanceLogsController::class, 'show'],
+            [InstanceLogsController::class, 'show'],
         )->whereNumber('instance')->name('instance:logs');
         Route::post(
             'instances/{instance}/log-streams',
@@ -385,23 +385,23 @@ Route::prefix('v1')->group(function (): void {
         )->whereNumber('instance')->where('stream', '[0-9a-f]{32}')->name('instance:log-stream:destroy');
         Route::get(
             'instances/{instance}/deployments',
-            [AppInstanceDeploymentsController::class, 'index'],
+            [InstanceDeploymentsController::class, 'index'],
         )->name('instance:deployment:list');
         Route::get(
             'deployments/{deployment}',
-            [AppInstanceDeploymentsController::class, 'show'],
+            [InstanceDeploymentsController::class, 'show'],
         )->name('instance:deployment:show');
         Route::post(
             'instances/{instance}/environment/import',
-            [AppInstanceEnvironmentImportsController::class, 'store'],
+            [InstanceEnvironmentImportsController::class, 'store'],
         )->name('env:import');
         Route::post(
             'instances/{instance}/environment/sync',
-            [AppInstanceEnvironmentSynchronizationsController::class, 'store'],
+            [InstanceEnvironmentSynchronizationsController::class, 'store'],
         )->name('env:sync');
         Route::put(
             'instances/{instance}/environment/{key}',
-            [AppInstanceEnvironmentValuesController::class, 'update'],
+            [InstanceEnvironmentValuesController::class, 'update'],
         )->name('env:update');
         Route::put(
             'instances/{instance}/database-connections/{database_connection}',

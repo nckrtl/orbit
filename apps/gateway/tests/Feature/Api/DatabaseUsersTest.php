@@ -8,12 +8,12 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Activity;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseUser;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeManagedMysqlUserProvisioner;
 
@@ -214,13 +214,13 @@ it('refuses a missing Process, a wrong Process, and a slug owned by another driv
         'password' => DATABASE_USER_SECRET,
     ])->assertStatus(422)->assertJsonPath('error.code', 'database.process_not_docker');
 
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
     ]);
-    $instance = AppInstance::query()->create([
-        'app_id' => $app->id,
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $this->dbNode->id,
         'name' => 'main',
         'environment' => 'development',
@@ -230,7 +230,7 @@ it('refuses a missing Process, a wrong Process, and a slug owned by another driv
         'status' => 'active',
     ]);
     $instanceProcess = Process::query()->create([
-        'owner_type' => AppInstance::MorphAlias,
+        'owner_type' => Instance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => 'mysql',
         'runtime' => ProcessRuntime::Docker,

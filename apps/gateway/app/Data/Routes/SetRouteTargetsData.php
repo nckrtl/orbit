@@ -17,7 +17,7 @@ final class SetRouteTargetsData extends Data
         public array $dispositions,
     ) {}
 
-    /** @return array{targets: list<int>, dispositions: list<array{app_instance_id: int, route_id?: int, remove?: true}>} */
+    /** @return array{targets: list<int>, dispositions: list<array{instance_id: int, route_id?: int, remove?: true}>} */
     public function toIntent(): array
     {
         $targets = $this->targetIds;
@@ -29,7 +29,7 @@ final class SetRouteTargetsData extends Data
         );
         usort(
             $dispositions,
-            static fn (array $left, array $right): int => $left['app_instance_id'] <=> $right['app_instance_id'],
+            static fn (array $left, array $right): int => $left['instance_id'] <=> $right['instance_id'],
         );
 
         return [

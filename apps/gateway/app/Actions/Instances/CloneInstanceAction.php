@@ -1,0 +1,683 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Actions\Instances;
+
+use App\Actions\Routes\PublishPublicRouteAction;
+use App\Data\Instances\CloneInstanceData;
+use App\Domain\AppDev\AppDevSourceOperationLock;
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
+use App\Domain\Instances\CloneCandidateSource;
+use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Instances\InstanceCloneCandidateInspector;
+use App\Domain\Instances\InstanceSourceLayout;
+use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\ProductionCloneRouteProjector;
+use App\Domain\Instances\ProductionInstanceSourceLifecycle;
+use App\Domain\Instances\ProductionPhpRuntimeIdentity;
+use App\Domain\Instances\ProductionRouteProjector;
+use App\Domain\Instances\Sqlite\InstanceSqliteSeeder;
+use App\Domain\Instances\Sqlite\SqliteSeedPlacement;
+use App\Domain\Metrics\MetricsFleetReconciler;
+use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\RouteDomain;
+use App\Domain\Routes\RoutePlacement;
+use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteStateResolver;
+use App\Domain\Routes\RouteStatus;
+use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
+use App\Models\Instance;
+use App\Models\Node;
+use App\Models\Route;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
+use Throwable;
+
+final readonly class CloneInstanceAction
+{
+    public function __construct(
+        private InstanceCloneCandidateInspector $candidates,
+        private InstanceEnvironmentOperationLock $environmentOperations,
+        private AppDevSourceOperationLock $sourceLock,
+        private ProductionInstanceSourceLifecycle $source,
+        private RouteStateResolver $routeState,
+        private CloneInstanceEnvironmentAction $environment,
+        private InstanceSqliteSeeder $sqlite,
+        private InstantiateProjectRuntimeDefinitionsAction $definitions,
+        private ProductionRouteProjector $projection,
+        private ProductionCloneRouteProjector $cloneProjection,
+        private DevelopmentProjectionOperationLock $projectionOwner,
+        private ?MetricsFleetReconciler $metrics = null,
+    ) {}
+
+    /** @return array{instance: Instance, created: bool} */
+    public function execute(Instance $candidate, CloneInstanceData $data): array
+    {
+        $candidate->loadMissing(['project', 'node']);
+        $existing = $this->existingTarget($candidate, $data);
+
+        if ($existing instanceof Instance && $existing->clone_completed_at !== null) {
+            $this->metrics?->reconcile();
+
+            return [
+                'instance' => $existing->load('routes.targets'),
+                'created' => false,
+            ];
+        }
+
+        $node = Node::query()->findOrFail($data->nodeId);
+        $branch = $data->branch ?? $this->candidateBranch($candidate);
+
+        if ($existing instanceof Instance) {
+            $source = $this->candidates->inspect($candidate, $branch);
+            $target = $existing;
+            $created = false;
+        } else {
+            [$target, $source] = $this->environmentOperations->run(
+                [$candidate->id],
+                function () use ($candidate, $data, $node, $branch): array {
+                    $source = $this->candidates->inspect($candidate, $branch);
+                    [$domain, $placement] = $this->preflight($candidate, $node, $data);
+
+                    return [$this->reserve($candidate, $node, $data, $source, $domain, $placement), $source];
+                },
+            );
+            $created = true;
+        }
+
+        try {
+            $result = $this->environmentOperations->run(
+                [$candidate->id, $target->id],
+                fn (): Instance => $this->sourceLock->synchronized(
+                    $target->node_id,
+                    fn (): Instance => $this->resume($candidate, $target, $data, $source, $created),
+                ),
+            );
+        } catch (Throwable $exception) {
+            $this->recordFailure($target, $exception);
+
+            throw $exception;
+        }
+
+        $this->metrics?->reconcile();
+
+        return ['instance' => $result, 'created' => $created];
+    }
+
+    private function existingTarget(Instance $candidate, CloneInstanceData $data): ?Instance
+    {
+        $existing = Instance::query()
+            ->where('project_id', $candidate->project_id)
+            ->where('name', $data->name)
+            ->first();
+
+        if (! $existing instanceof Instance) {
+            return null;
+        }
+
+        if (
+            $existing->clone_candidate_id !== $candidate->id
+            || $existing->node_id !== $data->nodeId
+            || ! $existing->placedOnAppProd()
+            || $existing->clone_preview_name !== $data->previewName
+            || $existing->clone_requested_branch !== $data->branch
+            || $existing->clone_sqlite_source_path !== $data->sqliteSourcePath
+        ) {
+            throw $this->conflict(
+                'instance.clone_retry_conflict',
+                'The target Instance already exists with different immutable clone input.',
+            );
+        }
+
+        if ($existing->status === InstanceState::Removing) {
+            throw $this->conflict('instance.removal_conflict', 'The target Instance is being removed.');
+        }
+
+        return $existing;
+    }
+
+    private function candidateBranch(Instance $candidate): string
+    {
+        $branch = $candidate->placedOnAppProd()
+            ? $candidate->deployment_branch ?? $candidate->branch
+            : $candidate->branch;
+
+        if (! is_string($branch) || $branch === '') {
+            throw $this->conflict(
+                'instance.clone_candidate_branch_invalid',
+                'The candidate has no configured branch to inherit.',
+            );
+        }
+
+        return $branch;
+    }
+
+    /** @return array{string, RoutePlacement} */
+    private function preflight(Instance $candidate, Node $node, CloneInstanceData $data): array
+    {
+        $candidate->refresh()->loadMissing(['project', 'node']);
+        $node->refresh();
+        $placement = $this->assertPlacement($candidate, $node);
+
+        if ($candidate->requiresRoute() && (! is_string($node->tld) || $node->tld === '')) {
+            throw $this->conflict('route.tld_required', 'A clone preview requires the destination Node TLD.');
+        }
+
+        $domain = $candidate->requiresRoute()
+            ? RouteDomain::validate("{$data->previewName}.{$node->tld}")
+            : '';
+
+        if ($domain !== '' && Route::query()->where('domain', $domain)->exists()) {
+            throw $this->conflict('route.domain_conflict', "Route domain [{$domain}] is already owned.");
+        }
+
+        if (Instance::query()->where('project_id', $candidate->project_id)->where('name', $data->name)->exists()) {
+            throw $this->conflict('instance.placement_conflict', 'The target Instance name is already owned.');
+        }
+
+        return [$domain, $placement];
+    }
+
+    private function assertPlacement(Instance $candidate, Node $node): RoutePlacement
+    {
+        if ($node->status !== LifecycleStatus::Active || $node->platform !== 'linux') {
+            throw $this->conflict('instance.node_inactive', 'The selected app-prod Node is not active.');
+        }
+
+        if (! $node->roles()->where('role', RoleName::AppProd)->where('status', LifecycleStatus::Active)->exists()) {
+            throw $this->conflict('instance.node_not_app_prod', 'The selected Node has no active app-prod role.');
+        }
+
+        $placement = $this->routeState->forNode($node);
+
+        if ($placement->clusterId !== null) {
+            $this->routeState->assertRouter($placement->clusterId);
+        }
+
+        if (Instance::query()
+            ->where('project_id', $candidate->project_id)
+            ->whereHas('node.roles', static fn ($query) => $query
+                ->where('role', RoleName::AppProd)
+                ->where('status', LifecycleStatus::Active))
+            ->where('node_id', $node->id)
+            ->exists()) {
+            throw $this->conflict(
+                'instance.production_placement_conflict',
+                'The Project already has a production Instance on the selected Node.',
+            );
+        }
+
+        return $placement;
+    }
+
+    private function reserve(
+        Instance $candidate,
+        Node $node,
+        CloneInstanceData $data,
+        CloneCandidateSource $source,
+        string $domain,
+        RoutePlacement $placement,
+    ): Instance {
+        $user = "orbit-app-{$candidate->project_id}";
+        $home = "/home/{$user}";
+
+        try {
+            $target = DB::transaction(function () use (
+                $candidate,
+                $node,
+                $data,
+                $source,
+                $domain,
+                $placement,
+                $user,
+                $home,
+            ): Instance {
+                if ($domain !== '' && Route::query()->where('domain', $domain)->lockForUpdate()->exists()) {
+                    throw $this->conflict(
+                        'route.domain_conflict',
+                        "Route domain [{$domain}] is already owned.",
+                    );
+                }
+
+                $target = Instance::query()->create([
+                    'project_id' => $candidate->project_id,
+                    'node_id' => $node->id,
+                    'name' => $data->name,
+                    'source_layout' => InstanceSourceLayout::Checkout,
+                    'checkout_path' => "{$home}/releases/initial",
+                    'production_user' => $user,
+                    'production_home' => $home,
+                    'root' => $candidate->root,
+                    'branch' => $data->branch ?? $source->branch,
+                    'branch_override' => $data->branch,
+                    'clone_candidate_id' => $candidate->id,
+                    'clone_candidate_commit' => $source->commit,
+                    'clone_requested_branch' => $data->branch,
+                    'clone_preview_name' => $data->previewName,
+                    'clone_preview_domain' => $domain,
+                    'clone_sqlite_source_path' => $data->sqliteSourcePath,
+                    'provisioning_step' => 'clone-reserved',
+                    'status' => InstanceState::Reserved,
+                ]);
+
+                if ($domain !== '') {
+                    $route = Route::query()->create([
+                        'project_id' => $candidate->project_id,
+                        'node_id' => $placement->nodeId,
+                        'cluster_id' => $placement->clusterId,
+                        'generation_basis_node_id' => null,
+                        'domain' => $domain,
+                        'provenance' => RouteProvenance::Explicit,
+                        'publication' => RoutePublication::Private,
+                        'status' => RouteStatus::Pending,
+                    ]);
+                    $route->targets()->create([
+                        'instance_id' => $target->id,
+                        'position' => 0,
+                    ]);
+                }
+
+                return $target;
+            });
+        } catch (QueryException $exception) {
+            throw new ResourceOperationException(
+                errorCode: 'instance.clone_reservation_conflict',
+                message: 'The target Instance or preview Route is already owned.',
+                status: 409,
+                previous: $exception,
+            );
+        }
+
+        return $target;
+    }
+
+    private function resume(
+        Instance $candidate,
+        Instance $target,
+        CloneInstanceData $data,
+        CloneCandidateSource $expectedSource,
+        bool $created,
+    ): Instance {
+        $target->refresh()->loadMissing(['project', 'node', 'routes.targets']);
+        $route = $target->requiresRoute() ? $this->cloneRoute($target) : null;
+
+        if ($route instanceof Route && $route->status === RouteStatus::Failed) {
+            $route->update([
+                'status' => RouteStatus::Pending,
+                'failed_step' => null,
+                'error_code' => null,
+            ]);
+        }
+
+        $currentSource = $this->candidates->inspect($candidate, (string) $target->branch);
+        $this->assertCandidateUnchanged($expectedSource, $currentSource);
+
+        if ($target->provisioning_step === 'clone-reserved') {
+            $this->source->prepareUser($target);
+            $this->checkpoint($target, 'clone-user-prepared');
+        }
+
+        if ($target->provisioning_step === 'clone-user-prepared') {
+            $this->source->prepareSource($target, ! $created);
+            $this->checkpoint($target, 'clone-source-prepared', InstanceState::CheckoutPrepared);
+        }
+
+        if ($target->provisioning_step === 'clone-source-prepared') {
+            $resolution = $this->source->resolve($target);
+
+            if (
+                $resolution->branch !== $target->branch
+                || preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $resolution->startingCommit) !== 1
+            ) {
+                throw $this->conflict('instance.source_identity_invalid', 'Resolved source identity is invalid.');
+            }
+
+            $this->checkpoint($target, 'clone-source-resolved', InstanceState::SourceResolved, [
+                'starting_commit' => $resolution->startingCommit,
+            ]);
+        }
+
+        if ($target->provisioning_step === 'clone-source-resolved') {
+            $profile = $this->source->inspectProfile($target);
+            $runtime = is_string($profile->phpVersion) && $target->refresh()->loadMissing('project')->servesPhp()
+                ? ProductionPhpRuntimeIdentity::forProvisioning($target, $profile->phpVersion)->attributes()
+                : [];
+            $this->checkpoint($target, 'clone-source-classified', attributes: [
+                'selected_php_version' => $profile->phpVersion,
+                'source_is_laravel' => $profile->laravel,
+                ...$runtime,
+            ]);
+        }
+
+        if ($target->provisioning_step === 'clone-source-classified') {
+            $this->source->prepareCaddyAccess($target);
+            $this->checkpoint($target, 'clone-caddy-access-prepared');
+        }
+
+        if ($target->provisioning_step === 'clone-caddy-access-prepared') {
+            $this->environment->execute($candidate, $target);
+            $this->checkpoint($target, 'clone-environment-synchronized');
+        }
+
+        if ($target->provisioning_step === 'clone-environment-synchronized') {
+            $this->prepareSqlite($currentSource, $target, $data);
+            $this->checkpoint($target, 'clone-sqlite-prepared');
+        }
+
+        if ($target->provisioning_step === 'clone-sqlite-prepared') {
+            $this->definitions->captureForClone($target);
+            $this->checkpoint($target, 'clone-definitions-instantiated');
+        }
+
+        if (! $route instanceof Route) {
+            if ($target->provisioning_step === 'clone-definitions-instantiated') {
+                $this->checkpoint($target, 'active', InstanceState::Active);
+                $target->update([
+                    'clone_completed_at' => now(),
+                    'provisioning_step' => 'active',
+                    'failed_step' => null,
+                    'error_code' => null,
+                ]);
+
+                return $target->refresh()->load('routes.targets');
+            }
+
+            if (in_array($target->provisioning_step, [
+                'clone-runtime-prepared',
+                'clone-certificate-prepared',
+                'clone-firewall-prepared',
+                'clone-workload-caddy-published',
+                'clone-router-certificate-prepared',
+                'clone-route-firewall-prepared',
+                'clone-workload-verified',
+                'clone-router-caddy-published',
+                'clone-dns-published',
+            ], true)) {
+                throw $this->conflict('instance.lifecycle_conflict', 'The clone preview Route changed.');
+            }
+
+            return $target->refresh()->load('routes.targets');
+        }
+
+        if ($target->provisioning_step === 'clone-definitions-instantiated') {
+            $this->prepareRuntime($target, $route);
+            $this->checkpoint($target, 'clone-runtime-prepared');
+        }
+
+        if ($target->provisioning_step === 'clone-runtime-prepared') {
+            $this->projection->prepareCertificate($target, $route);
+            $this->checkpoint($target, 'clone-certificate-prepared');
+        }
+
+        if ($target->provisioning_step === 'clone-certificate-prepared') {
+            $this->projection->prepareFirewall($target);
+            $this->checkpoint($target, 'clone-firewall-prepared');
+        }
+
+        if ($target->provisioning_step === 'clone-firewall-prepared') {
+            $this->cloneProjection->prepareWorkloadCaddy($target, $route);
+            $this->checkpoint($target, 'clone-workload-caddy-published');
+        }
+
+        if ($target->provisioning_step === 'clone-workload-caddy-published') {
+            $this->cloneProjection->prepareRouterCertificate($target, $route);
+            $this->checkpoint($target, 'clone-router-certificate-prepared');
+        }
+
+        if ($target->provisioning_step === 'clone-router-certificate-prepared') {
+            $this->cloneProjection->prepareRouteFirewall($target, $route);
+            $this->checkpoint($target, 'clone-route-firewall-prepared');
+        }
+
+        if ($target->provisioning_step === 'clone-route-firewall-prepared') {
+            $this->cloneProjection->verifyWorkload($target, $route);
+            $this->checkpoint($target, 'clone-workload-verified');
+        }
+
+        if ($target->provisioning_step === 'clone-workload-verified') {
+            $this->cloneProjection->prepareRouterCaddy($target, $route);
+            $this->checkpoint($target, 'clone-router-caddy-published');
+        }
+
+        if (in_array($target->provisioning_step, [
+            'clone-router-caddy-published',
+            'clone-dns-published',
+        ], strict: true)) {
+            $this->completePublication($target->id, $route->id);
+        }
+
+        return $target->refresh()->load('routes.targets');
+    }
+
+    private function cloneRoute(Instance $target): Route
+    {
+        $target->loadMissing('node');
+        $placement = $this->routeState->forNode($target->node);
+
+        if ($placement->clusterId !== null) {
+            $this->routeState->assertRouter($placement->clusterId);
+        }
+
+        $routes = Route::query()
+            ->whereHas('targets', static fn ($query) => $query->where('instance_id', $target->id))
+            ->orderBy('id')
+            ->limit(2)
+            ->get();
+
+        if ($routes->count() !== 1) {
+            throw $this->conflict('instance.lifecycle_conflict', 'The clone preview Route changed.');
+        }
+
+        $route = $routes->sole();
+
+        if (
+            $route->domain !== $target->clone_preview_domain
+            || $route->provenance !== RouteProvenance::Explicit
+            || $route->publication !== RoutePublication::Private
+            || $route->node_id !== $placement->nodeId
+            || $route->cluster_id !== $placement->clusterId
+        ) {
+            throw $this->conflict('instance.lifecycle_conflict', 'The clone preview Route changed.');
+        }
+
+        return $route;
+    }
+
+    private function assertCandidateUnchanged(
+        CloneCandidateSource $expected,
+        CloneCandidateSource $current,
+    ): void {
+        if (
+            $expected->instanceId !== $current->instanceId
+            || $expected->environment !== $current->environment
+            || $expected->basePath !== $current->basePath
+            || $expected->executionUser !== $current->executionUser
+            || $expected->branch !== $current->branch
+            || $expected->commit !== $current->commit
+            || $expected->node->id !== $current->node->id
+        ) {
+            throw $this->conflict(
+                'instance.clone_candidate_changed',
+                'The candidate source changed after target reservation.',
+            );
+        }
+    }
+
+    private function prepareSqlite(
+        CloneCandidateSource $source,
+        Instance $target,
+        CloneInstanceData $data,
+    ): void {
+        if ($data->sqliteSourcePath === null) {
+            return;
+        }
+
+        $target->loadMissing('node');
+        $home = $target->production_home;
+        $user = $target->production_user;
+
+        if (! is_string($home) || ! is_string($user)) {
+            throw $this->conflict('instance.clone_target_invalid', 'The clone target placement is invalid.');
+        }
+
+        $result = $this->sqlite->seed(
+            new SqliteSeedPlacement(
+                instanceId: $source->instanceId,
+                environment: $source->environment,
+                basePath: $source->basePath,
+                executionUser: $source->executionUser,
+                node: $source->node,
+            ),
+            new SqliteSeedPlacement(
+                instanceId: $target->id,
+                environment: 'production',
+                basePath: $home,
+                executionUser: $user,
+                node: $target->node,
+            ),
+            $data->sqliteSourcePath,
+        );
+
+        if (! $result->confirmed || ! is_bool($result->changed)) {
+            throw $this->conflict(
+                'instance.clone_sqlite_unconfirmed',
+                'The target SQLite seed result is unconfirmed. Retry the request.',
+            );
+        }
+    }
+
+    private function prepareRuntime(Instance $target, Route $route): void
+    {
+        if ($target->selected_php_version === null || ! $target->servesPhp()) {
+            return;
+        }
+
+        ProductionPhpRuntimeIdentity::from($target);
+        $this->projection->prepareRuntime($target, $route);
+    }
+
+    private function completePublication(int $targetId, int $routeId): void
+    {
+        $this->projectionOwner->run(function () use ($targetId, $routeId): void {
+            $target = Instance::query()->with('node')->findOrFail($targetId);
+            $route = Route::query()->with('targets')->findOrFail($routeId);
+            $validatedRoute = $this->cloneRoute($target);
+
+            if ($validatedRoute->id !== $route->id) {
+                throw $this->conflict('instance.lifecycle_conflict', 'The clone preview Route changed.');
+            }
+
+            if (! in_array($target->provisioning_step, [
+                'clone-router-caddy-published',
+                'clone-dns-published',
+            ], strict: true)) {
+                throw $this->conflict('instance.lifecycle_conflict', 'The clone publication lifecycle changed.');
+            }
+
+            $this->prepareRuntime($target, $route);
+            $this->projection->prepareCertificate($target, $route);
+            $this->projection->prepareFirewall($target);
+            $this->cloneProjection->prepareWorkloadCaddy($target, $route);
+            $this->cloneProjection->prepareRouterCertificate($target, $route);
+            $this->cloneProjection->prepareRouteFirewall($target, $route);
+            $this->cloneProjection->verifyWorkload($target, $route);
+            $this->cloneProjection->prepareRouterCaddy($target, $route);
+            $this->cloneProjection->prepareDns($route);
+            $this->checkpoint($target, 'clone-dns-published');
+
+            DB::transaction(function () use ($target, $route): void {
+                $lockedTarget = Instance::query()->with('node')->lockForUpdate()->findOrFail($target->id);
+                $lockedRoute = Route::query()->with('targets')->lockForUpdate()->findOrFail($route->id);
+                $placement = $this->routeState->forNode($lockedTarget->node);
+
+                if ($placement->clusterId !== null) {
+                    $this->routeState->assertRouter($placement->clusterId);
+                }
+
+                if (
+                    $lockedTarget->provisioning_step !== 'clone-dns-published'
+                    || $lockedTarget->status !== InstanceState::SourceResolved
+                    || $lockedTarget->clone_completed_at !== null
+                    || $lockedRoute->status !== RouteStatus::Pending
+                    || $lockedRoute->targets->count() !== 1
+                    || $lockedRoute->targets->sole()->instance_id !== $lockedTarget->id
+                    || $lockedRoute->domain !== $lockedTarget->clone_preview_domain
+                    || $lockedRoute->node_id !== $placement->nodeId
+                    || $lockedRoute->cluster_id !== $placement->clusterId
+                ) {
+                    throw $this->conflict('instance.lifecycle_conflict', 'The clone lifecycle changed before activation.');
+                }
+
+                $lockedRoute->update([
+                    'status' => RouteStatus::Active,
+                    'failed_step' => null,
+                    'error_code' => null,
+                ]);
+                $lockedTarget->update([
+                    'status' => InstanceState::Active,
+                    'provisioning_step' => 'active',
+                    'failed_step' => null,
+                    'error_code' => null,
+                    'clone_completed_at' => now(),
+                ]);
+            });
+
+            $activated = Route::query()->findOrFail($routeId);
+
+            if ($activated->publication === RoutePublication::Public) {
+                app(PublishPublicRouteAction::class)->execute($activated, RoutePublication::Public);
+            }
+        });
+    }
+
+    /** @param array<string, mixed> $attributes */
+    private function checkpoint(
+        Instance $target,
+        string $step,
+        ?InstanceState $status = null,
+        array $attributes = [],
+    ): void {
+        $target->update([
+            ...$attributes,
+            'provisioning_step' => $step,
+            'failed_step' => null,
+            'error_code' => null,
+            ...($status instanceof InstanceState ? ['status' => $status] : []),
+        ]);
+        $target->refresh();
+    }
+
+    private function recordFailure(Instance $target, Throwable $exception): void
+    {
+        $step = property_exists($exception, 'step') && is_string($exception->step)
+            ? $exception->step
+            : $target->refresh()->provisioning_step ?? 'clone-provisioning';
+        $errorCode = property_exists($exception, 'errorCode') && is_string($exception->errorCode)
+            ? $exception->errorCode
+            : 'instance.clone_failed';
+
+        DB::transaction(static function () use ($target, $step, $errorCode): void {
+            Instance::query()->whereKey($target->id)->update([
+                'failed_step' => $step,
+                'error_code' => $errorCode,
+            ]);
+            Route::query()
+                ->whereHas('targets', static fn ($query) => $query->where('instance_id', $target->id))
+                ->where('status', '<>', RouteStatus::Active->value)
+                ->update([
+                    'sites_published' => false,
+                    'status' => RouteStatus::Failed,
+                    'failed_step' => $step,
+                    'error_code' => $errorCode,
+                ]);
+        });
+    }
+
+    private function conflict(string $errorCode, string $message): ResourceOperationException
+    {
+        return new ResourceOperationException($errorCode, $message, 409);
+    }
+}

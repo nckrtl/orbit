@@ -6,8 +6,8 @@
         "data": [
             {
                 "id": 12,
-                "app_id": 3,
-                "app": "charlie-shop",
+                "project_id": 3,
+                "project": "charlie-shop",
                 "project_code": "CHS",
                 "taskable_type": null,
                 "taskable_id": null,

@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes\Storage;
 
-use App\Data\Nodes\AppsSettingsData;
 use App\Data\Nodes\NodeSettingsData;
+use App\Data\Nodes\NodeStorageAppsData;
 
 final readonly class NodeSettingsPatch
 {
     public function __construct(
         public bool $hasApps,
-        public ?AppsSettingsData $apps,
+        public ?NodeStorageAppsData $apps,
     ) {}
 
     public function merge(?NodeSettingsData $stored): NodeSettingsData

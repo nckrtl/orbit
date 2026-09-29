@@ -4,18 +4,18 @@ declare(strict_types=1);
 
 namespace App\Commands\Processes;
 
-use App\Commands\Concerns\RendersAppRuntimeDefinitions;
+use App\Commands\Concerns\RendersProjectRuntimeDefinitions;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use JsonException;
-use Orbit\Sdk\Requests\Apps\CreateProcessDefinitionRequest;
 use Orbit\Sdk\Requests\Processes\CreateProcessRequest;
-use Orbit\Sdk\Responses\Apps\AppRuntimeDefinitionResponse;
+use Orbit\Sdk\Requests\Projects\CreateProcessDefinitionRequest;
 use Orbit\Sdk\Responses\Processes\ProcessResponse;
+use Orbit\Sdk\Responses\Projects\ProjectRuntimeDefinitionResponse;
 
 final class CreateProcessCommand extends TargetedProcessCommand
 {
-    use RendersAppRuntimeDefinitions;
+    use RendersProjectRuntimeDefinitions;
 
     #[\Override]
     protected $signature = 'process:create
@@ -262,13 +262,13 @@ final class CreateProcessCommand extends TargetedProcessCommand
             );
         }
 
-        $appId = $this->projectIdOption();
+        $projectId = $this->projectIdOption();
 
-        if ($appId === false) {
+        if ($projectId === false) {
             return self::FAILURE;
         }
 
-        if ($appId === null) {
+        if ($projectId === null) {
             return $this->renderGatewayFailure(
                 'process.target_invalid',
                 'The --project option is required.',
@@ -332,12 +332,12 @@ final class CreateProcessCommand extends TargetedProcessCommand
 
         $response = $this->sendWithProgress(
             $connector,
-            new CreateProcessDefinitionRequest($appId, $definition),
-            AppRuntimeDefinitionResponse::class,
+            new CreateProcessDefinitionRequest($projectId, $definition),
+            ProjectRuntimeDefinitionResponse::class,
             ['Create Process definition', 'Creating Process definition', 'Created Process definition'],
         );
 
-        return $response instanceof AppRuntimeDefinitionResponse
+        return $response instanceof ProjectRuntimeDefinitionResponse
             ? $this->renderDefinition($response, 'Process')
             : self::FAILURE;
     }

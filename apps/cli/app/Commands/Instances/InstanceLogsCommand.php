@@ -9,9 +9,9 @@ use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Logs\LogRedaction;
-use Orbit\Sdk\Requests\AppInstances\InstanceLogsRequest;
+use Orbit\Sdk\Requests\Instances\InstanceLogsRequest;
 use Orbit\Sdk\Requests\Logs\InstanceLogStreamTarget;
-use Orbit\Sdk\Responses\AppInstances\InstanceLogsResponse;
+use Orbit\Sdk\Responses\Instances\InstanceLogsResponse;
 
 final class InstanceLogsCommand extends GatewayCommand
 {

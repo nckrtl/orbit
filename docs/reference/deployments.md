@@ -2,19 +2,19 @@
 title: "Production release layout"
 description: "How a production Instance stores deploy steps, separates releases from persistent files, deploys a branch, and rolls back retained code."
 covers:
-  - apps/gateway/app/Domain/AppInstances/Deployment/**
-  - apps/gateway/app/Actions/AppInstances/{Deploy,Rollback}AppInstanceAction.php
-  - apps/gateway/app/Actions/AppInstances/{AppInstanceDeploymentConfigResolver,UpdateAppInstanceAction,ListAppInstanceReleasesAction,ListAppInstanceDeploymentsAction}.php
-  - apps/gateway/app/Actions/AppInstances/*AppInstanceDeployStep*Action.php
-  - apps/gateway/app/Infrastructure/AppInstances/RemoteProductionDeployment.php
+  - apps/gateway/app/Domain/Instances/Deployment/**
+  - apps/gateway/app/Actions/Instances/{Deploy,Rollback}InstanceAction.php
+  - apps/gateway/app/Actions/Instances/{InstanceDeploymentConfigResolver,UpdateInstanceAction,ListInstanceReleasesAction,ListInstanceDeploymentsAction}.php
+  - apps/gateway/app/Actions/Instances/*InstanceDeployStep*Action.php
+  - apps/gateway/app/Infrastructure/Instances/RemoteProductionDeployment.php
   - apps/gateway/app/Http/Streaming/**
-  - apps/gateway/app/Http/Controllers/Api/{AppInstanceDeploymentsController,AppInstanceDeployStepsController,AppInstanceReleasesController,AppInstanceRollbacksController}.php
-  - apps/gateway/app/Models/{AppInstanceDeployment,AppInstanceDeployStep}.php
+  - apps/gateway/app/Http/Controllers/Api/{InstanceDeploymentsController,InstanceDeployStepsController,InstanceReleasesController,InstanceRollbacksController}.php
+  - apps/gateway/app/Models/{InstanceDeployment,InstanceDeployStep}.php
 ---
 
 # Production release layout
 
-An Instance on an `app-prod` Node serves code from a release. The Gateway deploys the Instance's branch into a fresh release, runs the Instance's deploy steps, and switches the `current` link atomically. Environment configuration and an optional SQLite database live outside the releases, so they survive each deployment. [Cloning](/reference/appinstance-cloning) creates every production Instance, and its first deployment selects the first release. [`instance`](/cli/instance#orbit-instancedeploy) lists the commands.
+An Instance on an `app-prod` Node serves code from a release. The Gateway deploys the Instance's branch into a fresh release, runs the Instance's deploy steps, and switches the `current` link atomically. Environment configuration and an optional SQLite database live outside the releases, so they survive each deployment. [Cloning](/reference/instance-cloning) creates every production Instance, and its first deployment selects the first release. [`instance`](/cli/instance#orbit-instancedeploy) lists the commands.
 
 The `app-prod` role decides this layout. `APP_ENV` does not; see [Laravel mode](/reference/environment-variables#laravel-mode).
 
@@ -29,7 +29,7 @@ Each production Instance has a home, `/home/<production-user>`, with these paths
 | `database.sqlite` | An optional SQLite database. Orbit keeps the path but does not create the file. |
 | `current` | A link to the selected release. It is absent until the first deployment. |
 
-A clone leaves the home prepared, with no `current` link. The application must point its SQLite configuration at `<home>/database.sqlite` itself. Orbit has no placeholder for that path. [Cloning](/reference/appinstance-cloning) describes how to seed the file.
+A clone leaves the home prepared, with no `current` link. The application must point its SQLite configuration at `<home>/database.sqlite` itself. Orbit has no placeholder for that path. [Cloning](/reference/instance-cloning) describes how to seed the file.
 
 The web root is the Instance root, or else the Project root, inside `current`. A root such as `public` serves `<home>/current/public`. Caddy resolves the `current` link before it passes a script path to PHP-FPM, so a request after a switch loads its PHP files from the new release.
 
@@ -131,7 +131,7 @@ Deployment, rollback, deploy-step changes, and branch changes share the Instance
 
 ## Retained content
 
-Orbit never deletes an old release by itself. [Instance removal](/reference/appinstance-removal) removes `current` and the serving setup, and keeps `releases/`, `.env`, `database.sqlite`, and the local PHP-FPM tuning for recovery.
+Orbit never deletes an old release by itself. [Instance removal](/reference/instance-removal) removes `current` and the serving setup, and keeps `releases/`, `.env`, `database.sqlite`, and the local PHP-FPM tuning for recovery.
 
 ## Why it works this way
 

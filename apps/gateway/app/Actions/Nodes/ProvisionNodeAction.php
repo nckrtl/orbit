@@ -224,7 +224,7 @@ final readonly class ProvisionNodeAction
         $tld = $this->tld($node, $data, $clusterId);
         $convergeChangedAppDevTld = $node->exists && $previousTld !== $tld && $this->hasActiveAppDevRole($node);
 
-        if ($node->exists && $node->appInstances()->exists()) {
+        if ($node->exists && $node->instances()->exists()) {
             if ($this->isTldOnlyChange($node, $data, $tld, $clusterId) && $this->hasActiveAppDevRole($node)) {
                 return $this->announceUpdated(
                     $this->changeNodeTld($node, $tld, $previousTld, $clusterId, $previousClusterId),
@@ -232,8 +232,8 @@ final readonly class ProvisionNodeAction
             }
 
             throw new ResourceOperationException(
-                errorCode: 'node.has_app_instances',
-                message: "Node [{$node->name}] cannot be reprovisioned while it owns AppInstances.",
+                errorCode: 'node.has_instances',
+                message: "Node [{$node->name}] cannot be reprovisioned while it owns Instances.",
                 status: 409,
             );
         }
@@ -698,7 +698,7 @@ final readonly class ProvisionNodeAction
                     ->where('generation_basis_node_id', $node->id)
                     ->orWhere('node_id', $node->id)
                     ->orWhereHas(
-                        'targets.appInstance',
+                        'targets.instance',
                         static fn ($target) => $target->where('node_id', $node->id),
                     );
             })

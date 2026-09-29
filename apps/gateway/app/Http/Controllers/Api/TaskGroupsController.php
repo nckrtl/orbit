@@ -137,7 +137,7 @@ final class TaskGroupsController extends Controller
     public function index(ListTaskGroupsRequest $request, ListTaskGroupsAction $action): JsonResponse
     {
         return response()->json([
-            'data' => $action->execute($request->appId(), $request->status())
+            'data' => $action->execute($request->projectId(), $request->status())
                 ->map(static fn (TaskGroup $group): array => TaskGroupData::fromModel($group)->toArray())
                 ->values()
                 ->all(),

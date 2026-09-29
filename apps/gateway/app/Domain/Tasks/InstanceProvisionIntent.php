@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Models\App;
+use App\Models\Project;
 use App\Models\TaskGroup;
 
 /**
- * Intent an App instance create path must honor.
+ * Intent a Project instance create path must honor.
  *
  * visitable=false: isolated Orbit monorepo checkout or worktree, no public URL.
  * visitable=true: a real App keeps its inspect subdomain.
@@ -22,14 +22,14 @@ final readonly class InstanceProvisionIntent
 
     public static function for(TaskGroup $group): self
     {
-        $group->loadMissing('app');
+        $group->loadMissing('project');
 
-        return new self($group, self::visitableFor($group->app));
+        return new self($group, self::visitableFor($group->project));
     }
 
     /** Orbit monorepo feature work (`orbit`) gets an isolated checkout; every other Project stays visitable. */
-    public static function visitableFor(App $app): bool
+    public static function visitableFor(Project $project): bool
     {
-        return $app->slug !== 'orbit';
+        return $project->slug !== 'orbit';
     }
 }

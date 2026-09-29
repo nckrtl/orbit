@@ -6,11 +6,11 @@ namespace App\Domain\Projects;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
@@ -18,18 +18,18 @@ final readonly class ProjectLifecycleRunner
 {
     public function __construct(
         private ProjectLifecycleStepStore $steps,
-        private AppDevSshExecutor $ssh,
+        private DevelopmentSshExecutor $ssh,
         private CommandDeadline $deadline,
     ) {}
 
-    public function run(AppInstance $instance, LifecyclePhase $phase): bool
+    public function run(Instance $instance, LifecyclePhase $phase): bool
     {
         if ($instance->placedOnAppProd()) {
             return false;
         }
 
-        $instance->loadMissing(['app', 'node']);
-        $steps = $this->steps->ordered($instance->app, $phase);
+        $instance->loadMissing(['project', 'node']);
+        $steps = $this->steps->ordered($instance->project, $phase);
 
         if ($steps === []) {
             return false;

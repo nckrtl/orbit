@@ -1,12 +1,12 @@
 {
     "schema": 1,
-    "request": "Orbit\\Sdk\\Requests\\Deployments\\ShowAppInstanceDeploymentRequest",
+    "request": "Orbit\\Sdk\\Requests\\Deployments\\ShowInstanceDeploymentRequest",
     "route": "GET /api/v1/deployments/{deployment}",
     "status": 200,
     "body": {
         "data": {
             "id": 1,
-            "app_instance_id": 1,
+            "instance_id": 1,
             "release": "20260101000000",
             "branch": "main",
             "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

@@ -20,7 +20,7 @@ final class CreateScheduleRequest extends GatewayRequest implements HasBody
     protected Method $method = Method::POST;
 
     public function __construct(
-        private readonly NodeScheduleTarget|AppInstanceScheduleTarget $target,
+        private readonly NodeScheduleTarget|InstanceScheduleTarget $target,
         private readonly string $name,
         private readonly string $calendar,
         #[SensitiveParameter]

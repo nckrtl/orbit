@@ -10,23 +10,23 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Infrastructure\Caddy\CaddyPublicationLock;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 
 final readonly class RemoteAppDevCertificateManager
 {
     public function __construct(
-        private AppDevSshExecutor $ssh,
+        private DevelopmentSshExecutor $ssh,
         private LeafCertificateSigner $signer,
         private ManagedUserAccountResolver $accounts,
-        private AppDevSiteRepository $sites = new AppDevSiteRepository,
+        private DevelopmentSiteRepository $sites = new DevelopmentSiteRepository,
     ) {}
 
-    public function convergeAppInstance(AppInstance $appInstance, Route $route): void
+    public function convergeInstance(Instance $instance, Route $route): void
     {
-        $appInstance->loadMissing('node');
-        $this->converge($appInstance->node, "app-instance-{$appInstance->id}", $route->domain);
+        $instance->loadMissing('node');
+        $this->converge($instance->node, "app-instance-{$instance->id}", $route->domain);
     }
 
     public function convergeRouteRouter(Route $route, Node $router): void
@@ -44,12 +44,12 @@ final readonly class RemoteAppDevCertificateManager
         $this->converge($node, "route-{$route->id}", $route->domain);
     }
 
-    public function convergeAppInstanceHostnameChange(AppInstance $appInstance, string $domain): void
+    public function convergeInstanceHostnameChange(Instance $instance, string $domain): void
     {
-        $appInstance->loadMissing('node');
+        $instance->loadMissing('node');
         $this->converge(
-            $appInstance->node,
-            "app-instance-{$appInstance->id}-hostname-change",
+            $instance->node,
+            "app-instance-{$instance->id}-hostname-change",
             $domain,
         );
     }
@@ -59,13 +59,13 @@ final readonly class RemoteAppDevCertificateManager
         $this->converge($router, "route-{$route->id}-router-hostname-change", $route->domain);
     }
 
-    public function appInstanceCertificateExists(AppInstance $appInstance): bool
+    public function instanceCertificateExists(Instance $instance): bool
     {
-        $appInstance->loadMissing('node');
-        $account = $this->accounts->resolve($appInstance->node);
-        $scope = "app-instance-{$appInstance->id}";
+        $instance->loadMissing('node');
+        $account = $this->accounts->resolve($instance->node);
+        $scope = "app-instance-{$instance->id}";
         $result = $this->ssh->execute(
-            $appInstance->node,
+            $instance->node,
             new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $scope, $account->home],
                 input: <<<'BASH'
@@ -89,15 +89,15 @@ final readonly class RemoteAppDevCertificateManager
             default => throw new RuntimeConvergenceException(
                 step: 'certificate-inspect',
                 errorCode: 'app-dev.certificate_inspection_failed',
-                message: 'AppInstance certificate inspection returned invalid evidence.',
+                message: 'Instance certificate inspection returned invalid evidence.',
             ),
         };
     }
 
-    public function removeAppInstance(AppInstance $appInstance): void
+    public function removeInstance(Instance $instance): void
     {
-        $appInstance->loadMissing('node');
-        $this->remove($appInstance->node, "app-instance-{$appInstance->id}");
+        $instance->loadMissing('node');
+        $this->remove($instance->node, "app-instance-{$instance->id}");
     }
 
     public function removeRouteRouter(Route $route, Node $router): void
@@ -120,13 +120,13 @@ final readonly class RemoteAppDevCertificateManager
         $this->remove($node, "route-{$route->id}");
     }
 
-    public function removeHostnameChange(AppInstance $appInstance, Route $route): void
+    public function removeHostnameChange(Instance $instance, Route $route): void
     {
-        $appInstance->loadMissing('node');
-        $this->remove($appInstance->node, "app-instance-{$appInstance->id}-hostname-change");
+        $instance->loadMissing('node');
+        $this->remove($instance->node, "app-instance-{$instance->id}-hostname-change");
         $router = $route->cluster?->routerAssignment?->node;
 
-        if ($router instanceof Node && ! $router->is($appInstance->node)) {
+        if ($router instanceof Node && ! $router->is($instance->node)) {
             $this->remove($router, "route-{$route->id}-router-hostname-change");
         }
     }
@@ -351,9 +351,9 @@ final readonly class RemoteAppDevCertificateManager
      */
     private function remove(Node $node, string $scope): void
     {
-        $site = $this->sites->forNode($node)->first(static fn (AppDevSite $site): bool => $site->loadsCertificate($scope));
+        $site = $this->sites->forNode($node)->first(static fn (DevelopmentSite $site): bool => $site->loadsCertificate($scope));
 
-        if ($site instanceof AppDevSite) {
+        if ($site instanceof DevelopmentSite) {
             throw new RuntimeConvergenceException(
                 step: 'certificate-remove',
                 errorCode: 'app-dev.certificate_in_use',

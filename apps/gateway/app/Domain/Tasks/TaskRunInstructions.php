@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Models\Project;
+
 /**
  * Tells an agent how to end its turn with the run script.
  */

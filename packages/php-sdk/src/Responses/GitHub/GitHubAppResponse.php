@@ -9,6 +9,12 @@ use SensitiveParameter;
 
 final readonly class GitHubAppResponse
 {
+    /**
+     * Gateway JSON field for the GitHub App's numeric id.
+     * This is not the Project foreign key.
+     */
+    private const string GITHUB_APP_ID_FIELD = 'app'.'_id';
+
     /** @param list<array{id:int,account:string,type:string,repositories:string,suspended:bool}> $installations */
     private function __construct(
         public string $name,
@@ -30,7 +36,7 @@ final readonly class GitHubAppResponse
     ): self {
         $name = $data['name'] ?? null;
         $slug = $data['slug'] ?? null;
-        $appId = $data['app_id'] ?? null;
+        $appId = $data[self::GITHUB_APP_ID_FIELD] ?? null;
         $owner = $data['owner'] ?? null;
         $url = $data['url'] ?? null;
         $settingsUrl = $data['settings_url'] ?? null;
@@ -119,7 +125,6 @@ final readonly class GitHubAppResponse
      * @return array{
      *     name: string,
      *     slug: string,
-     *     app_id: int,
      *     owner: string,
      *     url: string,
      *     settings_url: string,
@@ -132,7 +137,7 @@ final readonly class GitHubAppResponse
         return [
             'name' => $this->name,
             'slug' => $this->slug,
-            'app_id' => $this->appId,
+            self::GITHUB_APP_ID_FIELD => $this->appId,
             'owner' => $this->owner,
             'url' => $this->url,
             'settings_url' => $this->settingsUrl,

@@ -7,9 +7,9 @@ use App\Repositories\GatewayConfigRepository;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\Deployments\DeployAppInstanceRequest;
-use Orbit\Sdk\Requests\Deployments\ListAppInstanceReleasesRequest;
-use Orbit\Sdk\Requests\Deployments\RollbackAppInstanceRequest;
+use Orbit\Sdk\Requests\Deployments\DeployInstanceRequest;
+use Orbit\Sdk\Requests\Deployments\ListInstanceReleasesRequest;
+use Orbit\Sdk\Requests\Deployments\RollbackInstanceRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Process\Process;
@@ -39,7 +39,7 @@ afterEach(function (): void {
 describe('retained releases', function (): void {
     it('lists the current retained releases through one typed SDK request', function (): void {
         $mock = MockClient::global([
-            ListAppInstanceReleasesRequest::class => deployment_cli_releases_response(),
+            ListInstanceReleasesRequest::class => deployment_cli_releases_response(),
         ]);
 
         expect(Artisan::call('instance:release:list', ['instance' => '17']))->toBe(0);
@@ -49,14 +49,14 @@ describe('retained releases', function (): void {
         );
 
         expect($mock->getLastRequest())
-            ->toBeInstanceOf(ListAppInstanceReleasesRequest::class)
+            ->toBeInstanceOf(ListInstanceReleasesRequest::class)
             ->and($mock->getRecordedResponses())
             ->toHaveCount(1);
     });
 
     it('renders the exact retained-release JSON response', function (): void {
         MockClient::global([
-            ListAppInstanceReleasesRequest::class => deployment_cli_releases_response(),
+            ListInstanceReleasesRequest::class => deployment_cli_releases_response(),
         ]);
 
         $this
@@ -74,7 +74,7 @@ describe('deployment streams', function (): void {
     it('renders a progress tree with incremental application bytes safely for a human', function (): void {
         $bytes = "first\x1b[31m\xff\n";
         $mock = MockClient::global([
-            DeployAppInstanceRequest::class => deployment_cli_stream_response([
+            DeployInstanceRequest::class => deployment_cli_stream_response([
                 deployment_cli_phase(1, 'source_preparation'),
                 deployment_cli_phase(2, 'environment_sync'),
                 deployment_cli_phase(3, 'before_activation', 'migrate'),
@@ -118,7 +118,7 @@ describe('deployment streams', function (): void {
 
     it('does not repeat the tree frame while several output lines print during one step', function (): void {
         $mock = MockClient::global([
-            DeployAppInstanceRequest::class => deployment_cli_stream_response([
+            DeployInstanceRequest::class => deployment_cli_stream_response([
                 deployment_cli_phase(1, 'source_preparation'),
                 deployment_cli_phase(2, 'environment_sync'),
                 deployment_cli_phase(3, 'before_activation', 'slow'),
@@ -197,7 +197,7 @@ describe('deployment streams', function (): void {
             deployment_cli_result(3, 'succeeded', selectedRelease: 'release-b'),
         ];
         MockClient::global([
-            DeployAppInstanceRequest::class => deployment_cli_stream_response($events),
+            DeployInstanceRequest::class => deployment_cli_stream_response($events),
         ]);
 
         $exitCode = Artisan::call('instance:deploy', [
@@ -221,7 +221,7 @@ describe('deployment streams', function (): void {
 
     it('renders a rollback progress tree for a human', function (): void {
         $mock = MockClient::global([
-            RollbackAppInstanceRequest::class => deployment_cli_stream_response([
+            RollbackInstanceRequest::class => deployment_cli_stream_response([
                 deployment_cli_phase(1, 'rollback'),
                 deployment_cli_result(2, 'succeeded', selectedRelease: 'release-a'),
             ]),
@@ -252,7 +252,7 @@ describe('deployment streams', function (): void {
         // row of its own, so the reached row must take the failure instead of looking merely
         // skipped. Footer color is covered generically in ProgressDisplayTest.php.
         MockClient::global([
-            RollbackAppInstanceRequest::class => deployment_cli_stream_response([
+            RollbackInstanceRequest::class => deployment_cli_stream_response([
                 deployment_cli_phase(1, 'rollback'),
                 deployment_cli_result(2, 'failed', failedStep: 'activation', errorCode: 'deployment.activation_failed'),
             ]),
@@ -282,7 +282,7 @@ describe('deployment streams', function (): void {
 
     it('marks the current row failed for a rollback cache_refresh failure', function (): void {
         MockClient::global([
-            RollbackAppInstanceRequest::class => deployment_cli_stream_response([
+            RollbackInstanceRequest::class => deployment_cli_stream_response([
                 deployment_cli_phase(1, 'rollback'),
                 deployment_cli_result(2, 'failed', failedStep: 'cache_refresh', errorCode: 'deployment.cache_refresh_failed'),
             ]),
@@ -309,7 +309,7 @@ describe('deployment streams', function (): void {
 
     it('uses one typed rollback request with only the selected release', function (): void {
         $mock = MockClient::global([
-            RollbackAppInstanceRequest::class => deployment_cli_stream_response([
+            RollbackInstanceRequest::class => deployment_cli_stream_response([
                 deployment_cli_phase(1, 'rollback'),
                 deployment_cli_result(2, 'succeeded', selectedRelease: 'release-a'),
             ]),
@@ -324,7 +324,7 @@ describe('deployment streams', function (): void {
             ->assertExitCode(0);
 
         expect($mock->getLastRequest())
-            ->toBeInstanceOf(RollbackAppInstanceRequest::class)
+            ->toBeInstanceOf(RollbackInstanceRequest::class)
             ->and($mock->getLastRequest()?->body()->all())
             ->toBe(['release' => 'release-a'])
             ->and($mock->getRecordedResponses())
@@ -358,7 +358,7 @@ describe('deployment streams', function (): void {
             errorCode: 'deployment_config.unavailable',
         );
         MockClient::global([
-            DeployAppInstanceRequest::class => deployment_cli_stream_response([$event]),
+            DeployInstanceRequest::class => deployment_cli_stream_response([$event]),
         ]);
 
         $exitCode = Artisan::call('instance:deploy', [
@@ -375,7 +375,7 @@ describe('deployment streams', function (): void {
 
     it('shows a failed named deploy step with its name and error in the progress tree', function (): void {
         $mock = MockClient::global([
-            DeployAppInstanceRequest::class => deployment_cli_stream_response([
+            DeployInstanceRequest::class => deployment_cli_stream_response([
                 deployment_cli_phase(1, 'source_preparation'),
                 deployment_cli_phase(2, 'environment_sync'),
                 deployment_cli_phase(3, 'activation'),
@@ -413,7 +413,7 @@ describe('deployment streams', function (): void {
 
     it('reveals the php_refresh row between activation and after_activation (F7)', function (): void {
         $mock = MockClient::global([
-            DeployAppInstanceRequest::class => deployment_cli_stream_response([
+            DeployInstanceRequest::class => deployment_cli_stream_response([
                 deployment_cli_phase(1, 'source_preparation'),
                 deployment_cli_phase(2, 'environment_sync'),
                 deployment_cli_phase(3, 'activation'),
@@ -445,7 +445,7 @@ describe('deployment streams', function (): void {
 
     it('shows a before-activation step failure and skips the unreached activation row', function (): void {
         $mock = MockClient::global([
-            DeployAppInstanceRequest::class => deployment_cli_stream_response([
+            DeployInstanceRequest::class => deployment_cli_stream_response([
                 deployment_cli_phase(1, 'source_preparation'),
                 deployment_cli_phase(2, 'environment_sync'),
                 deployment_cli_phase(3, 'before_activation', 'migrate'),
@@ -476,7 +476,7 @@ describe('deployment streams', function (): void {
 
     it('marks the current row failed for an operation-level failure before any deploy phase starts', function (): void {
         $mock = MockClient::global([
-            DeployAppInstanceRequest::class => deployment_cli_stream_response([
+            DeployInstanceRequest::class => deployment_cli_stream_response([
                 deployment_cli_result(1, 'failed', failedStep: 'operation', errorCode: 'deployment_config.unavailable'),
             ]),
         ]);
@@ -514,7 +514,7 @@ describe('deployment streams', function (): void {
         // than JSON: neither mode rejects it. Human renders it best-effort (the opening row
         // still stands in for whatever phase actually arrived first).
         MockClient::global([
-            DeployAppInstanceRequest::class => deployment_cli_stream_response([
+            DeployInstanceRequest::class => deployment_cli_stream_response([
                 deployment_cli_phase(1, 'environment_sync'),
                 deployment_cli_result(2, 'succeeded', selectedRelease: 'release-a'),
             ]),
@@ -532,7 +532,7 @@ describe('deployment streams', function (): void {
 
     it('renders an out-of-order phase as a best-effort tree instead of rejecting it (F6)', function (): void {
         MockClient::global([
-            DeployAppInstanceRequest::class => deployment_cli_stream_response([
+            DeployInstanceRequest::class => deployment_cli_stream_response([
                 deployment_cli_phase(1, 'source_preparation'),
                 deployment_cli_phase(2, 'activation'),
                 deployment_cli_phase(3, 'environment_sync'),
@@ -563,10 +563,10 @@ describe('deployment streams', function (): void {
         // row. JSON never rejects this SDK-valid stream (main's contract) and the stream still
         // ends in a succeeded result, so human mode must not fail it either (F6): it degrades to
         // plain lines for the rest of the stream instead, and exits with JSON's status.
-        MockClient::global([DeployAppInstanceRequest::class => deployment_cli_stream_response($events)]);
+        MockClient::global([DeployInstanceRequest::class => deployment_cli_stream_response($events)]);
         $jsonExitCode = Artisan::call('instance:deploy', ['instance' => '17', '--json' => true, '--no-interaction' => true]);
 
-        MockClient::global([DeployAppInstanceRequest::class => deployment_cli_stream_response($events)]);
+        MockClient::global([DeployInstanceRequest::class => deployment_cli_stream_response($events)]);
         $humanExitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
         $output = Artisan::output();
 
@@ -589,10 +589,10 @@ describe('deployment streams', function (): void {
             deployment_cli_result(3, 'failed', failedStep: 'activation', errorCode: 'deployment.activation_failed'),
         ];
 
-        MockClient::global([DeployAppInstanceRequest::class => deployment_cli_stream_response($events)]);
+        MockClient::global([DeployInstanceRequest::class => deployment_cli_stream_response($events)]);
         $jsonExitCode = Artisan::call('instance:deploy', ['instance' => '17', '--json' => true, '--no-interaction' => true]);
 
-        MockClient::global([DeployAppInstanceRequest::class => deployment_cli_stream_response($events)]);
+        MockClient::global([DeployInstanceRequest::class => deployment_cli_stream_response($events)]);
         $humanExitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
         $output = Artisan::output();
 
@@ -617,10 +617,10 @@ describe('deployment streams', function (): void {
         // LogicException out of admitBefore(), which human mode reported as the generic
         // "Deployment stream failed." and exit 1, while JSON kept reading and exited 0 for
         // the same stream.
-        MockClient::global([DeployAppInstanceRequest::class => deployment_cli_stream_response($events)]);
+        MockClient::global([DeployInstanceRequest::class => deployment_cli_stream_response($events)]);
         $jsonExitCode = Artisan::call('instance:deploy', ['instance' => '17', '--json' => true, '--no-interaction' => true]);
 
-        MockClient::global([DeployAppInstanceRequest::class => deployment_cli_stream_response($events)]);
+        MockClient::global([DeployInstanceRequest::class => deployment_cli_stream_response($events)]);
         $humanExitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
         $output = Artisan::output();
 
@@ -640,10 +640,10 @@ describe('deployment streams', function (): void {
             deployment_cli_result(5, 'failed', failedStep: 'before_activation', errorCode: 'deployment.step_failed'),
         ];
 
-        MockClient::global([DeployAppInstanceRequest::class => deployment_cli_stream_response($events)]);
+        MockClient::global([DeployInstanceRequest::class => deployment_cli_stream_response($events)]);
         $jsonExitCode = Artisan::call('instance:deploy', ['instance' => '17', '--json' => true, '--no-interaction' => true]);
 
-        MockClient::global([DeployAppInstanceRequest::class => deployment_cli_stream_response($events)]);
+        MockClient::global([DeployInstanceRequest::class => deployment_cli_stream_response($events)]);
         $humanExitCode = Artisan::call('instance:deploy', ['instance' => '17', '--no-interaction' => true]);
         $output = Artisan::output();
 
@@ -656,7 +656,7 @@ describe('deployment streams', function (): void {
 
     it('does not lose the request ID for an output-first stream (F6)', function (): void {
         MockClient::global([
-            DeployAppInstanceRequest::class => deployment_cli_stream_response([
+            DeployInstanceRequest::class => deployment_cli_stream_response([
                 deployment_cli_output(1, 'stdout', 'too early'),
                 deployment_cli_phase(2, 'source_preparation'),
                 deployment_cli_result(3, 'succeeded', selectedRelease: 'release-a'),
@@ -673,7 +673,7 @@ describe('deployment streams', function (): void {
 
     it('guards finish() for a succeeded result that never reached activation (F6)', function (): void {
         MockClient::global([
-            DeployAppInstanceRequest::class => deployment_cli_stream_response([
+            DeployInstanceRequest::class => deployment_cli_stream_response([
                 deployment_cli_phase(1, 'source_preparation'),
                 deployment_cli_result(2, 'succeeded', selectedRelease: 'release-a'),
             ]),
@@ -693,7 +693,7 @@ describe('deployment streams', function (): void {
 
     it('rejects a truncated stream with a correlated safe error and no resubmission', function (): void {
         $mock = MockClient::global([
-            DeployAppInstanceRequest::class => deployment_cli_stream_response([
+            DeployInstanceRequest::class => deployment_cli_stream_response([
                 deployment_cli_phase(1, 'source_preparation'),
             ]),
         ]);
@@ -723,7 +723,7 @@ describe('deployment streams', function (): void {
 
     it('preserves shared safe pre-admission errors and request IDs', function (): void {
         $mock = MockClient::global([
-            DeployAppInstanceRequest::class => MockResponse::make([
+            DeployInstanceRequest::class => MockResponse::make([
                 'error' => [
                     'code' => 'deployment.busy',
                     'message' => "Deployment\0is busy.",
@@ -752,7 +752,7 @@ describe('deployment streams', function (): void {
 
     it('keeps the bounded step of a pre-admission error', function (): void {
         MockClient::global([
-            DeployAppInstanceRequest::class => MockResponse::make([
+            DeployInstanceRequest::class => MockResponse::make([
                 'error' => [
                     'code' => 'runtime.convergence_failed',
                     'message' => 'Runtime convergence failed.',

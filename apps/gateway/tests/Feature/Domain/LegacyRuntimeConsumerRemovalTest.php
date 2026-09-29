@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\AppInstances\AppInstanceState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\NodeRoleDependencyInspector;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
@@ -11,26 +11,26 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Infrastructure\AppDev\AppDevSiteRepository;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\Schema;
 
-it('lists AppInstance Route sites without leftover Instance or Workspace tables', function (): void {
-    [$node, $app] = leftover_runtime_models();
-    $appInstance = leftover_runtime_app_instance($node, $app);
-    leftover_runtime_route($appInstance, 'shop.app-dev.orbit');
+it('lists Instance Route sites without leftover Instance or Workspace tables', function (): void {
+    [$node, $project] = leftover_runtime_models();
+    $instance = leftover_runtime_app_instance($node, $project);
+    leftover_runtime_route($instance, 'shop.app-dev.orbit');
 
-    $sites = new AppDevSiteRepository()->forNode($node);
+    $sites = new DevelopmentSiteRepository()->forNode($node);
 
     expect($sites->pluck('scope')->all())
-        ->toBe(["app-instance-{$appInstance->id}"])
+        ->toBe(["app-instance-{$instance->id}"])
         ->and(Schema::hasTable('instances'))
-        ->toBeFalse()
+        ->toBeTrue()
         ->and(Schema::hasTable('workspaces'))
         ->toBeFalse();
 });
@@ -50,7 +50,7 @@ it('treats leftover Instance and Workspace checkouts as unmanaged for overlap an
     );
 
     expect(Schema::hasTable('instances'))
-        ->toBeFalse()
+        ->toBeTrue()
         ->and(Schema::hasTable('workspaces'))
         ->toBeFalse();
 });
@@ -73,15 +73,15 @@ it('retires Orbit-owned public app-prod 80/443 rules and ignores leftover runtim
         ->toBeEmpty();
 });
 
-it('keeps AppInstance-owned Processes independent of leftover Instance owners', function (): void {
-    [$node, $app] = leftover_runtime_models();
-    $appInstance = leftover_runtime_app_instance($node, $app);
+it('keeps Instance-owned Processes independent of leftover Instance owners', function (): void {
+    [$node, $project] = leftover_runtime_models();
+    $instance = leftover_runtime_app_instance($node, $project);
     $process = Process::query()->create([
-        'owner_type' => AppInstance::MorphAlias,
-        'owner_id' => $appInstance->id,
+        'owner_type' => Instance::MorphAlias,
+        'owner_id' => $instance->id,
         'name' => 'queue',
         'runtime' => 'systemd',
-        'working_directory' => $appInstance->checkout_path,
+        'working_directory' => $instance->checkout_path,
         'runtime_config' => ['command' => ['/usr/bin/true']],
         'restart_policy' => 'never',
         'desired_state' => 'stopped',
@@ -89,13 +89,13 @@ it('keeps AppInstance-owned Processes independent of leftover Instance owners', 
     ]);
 
     expect($process->refresh()->owner_type)
-        ->toBe(AppInstance::MorphAlias)
+        ->toBe(Instance::MorphAlias)
         ->and(app(NodeRoleDependencyInspector::class)->inspect($node, RoleName::AppDev)->processIds)
         ->toBeEmpty();
 });
 
 /**
- * @return array{Node, OrbitApp}
+ * @return array{Node, Project}
  */
 function leftover_runtime_models(): array
 {
@@ -111,7 +111,7 @@ function leftover_runtime_models(): array
         'role' => RoleName::AppDev,
         'status' => LifecycleStatus::Active,
     ]);
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'git@example.test:acme.git',
@@ -119,34 +119,34 @@ function leftover_runtime_models(): array
         'root' => 'public',
     ]);
 
-    return [$node, $app];
+    return [$node, $project];
 }
 
-function leftover_runtime_app_instance(Node $node, OrbitApp $app): AppInstance
+function leftover_runtime_app_instance(Node $node, Project $project): Instance
 {
-    return AppInstance::query()->create([
-        'app_id' => $app->id,
+    return Instance::query()->create([
+        'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'default',
         'checkout_path' => '/home/orbit/apps/acme/default',
         'selected_php_version' => '8.5',
         'root' => 'public',
-        'status' => AppInstanceState::Active,
+        'status' => InstanceState::Active,
     ]);
 }
 
-function leftover_runtime_route(AppInstance $appInstance, string $domain): Route
+function leftover_runtime_route(Instance $instance, string $domain): Route
 {
     $route = Route::query()->create([
-        'app_id' => $appInstance->app_id,
-        'node_id' => $appInstance->node_id,
+        'project_id' => $instance->project_id,
+        'node_id' => $instance->node_id,
         'domain' => $domain,
         'provenance' => RouteProvenance::Explicit,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
     ]);
     $route->targets()->create([
-        'app_instance_id' => $appInstance->id,
+        'instance_id' => $instance->id,
         'position' => 0,
     ]);
     $route->update(['status' => RouteStatus::Active]);

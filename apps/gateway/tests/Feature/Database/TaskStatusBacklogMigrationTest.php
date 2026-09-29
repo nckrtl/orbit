@@ -29,14 +29,14 @@ it('rewrites queued groups and pending subtasks to todo and keeps every row and 
     $default = DB::getDefaultConnection();
     try {
         $migration = task_status_backlog_migration();
-        $appId = DB::table('apps')->insertGetId(['name' => 'status', 'slug' => 'status', 'code' => 'STA', 'repository_url' => 'git@example.test:status.git', 'repository_identity' => 'example.test/status']);
-        $queued = DB::table('task_groups')->insertGetId(['app_id' => $appId, 'title' => 'Queued', 'brief' => 'Brief', 'status' => 'queued']);
-        $running = DB::table('task_groups')->insertGetId(['app_id' => $appId, 'title' => 'Running', 'brief' => 'Brief', 'status' => 'running']);
+        $projectId = DB::table('projects')->insertGetId(['name' => 'status', 'slug' => 'status', 'code' => 'STA', 'repository_url' => 'git@example.test:status.git', 'repository_identity' => 'example.test/status']);
+        $queued = DB::table('task_groups')->insertGetId(['project_id' => $projectId, 'title' => 'Queued', 'brief' => 'Brief', 'status' => 'queued']);
+        $running = DB::table('task_groups')->insertGetId(['project_id' => $projectId, 'title' => 'Running', 'brief' => 'Brief', 'status' => 'running']);
         $pending = DB::table('tasks')->insertGetId(['task_group_id' => $queued, 'position' => 1, 'title' => 'Pending', 'brief' => 'Brief', 'status' => 'pending']);
         $completed = DB::table('tasks')->insertGetId(['task_group_id' => $running, 'position' => 1, 'title' => 'Done', 'brief' => 'Brief', 'status' => 'completed']);
         $thread = DB::table('agent_threads')->insertGetId(['driver' => 't3', 'runtime_key' => 'node:1', 'external_id' => 'reviewer', 'task_group_id' => $running, 'role' => 'reviewer']);
 
-        $migration->up();
+        run_legacy_schema_migration($migration, 'up');
 
         expect(DB::table('task_groups')->where('id', $queued)->value('status'))->toBe('todo')
             ->and(DB::table('task_groups')->where('id', $running)->value('status'))->toBe('running')
@@ -55,5 +55,5 @@ it('rewrites queued groups and pending subtasks to todo and keeps every row and 
 it('refuses to roll back', function (): void {
     $migration = require glob(database_path('migrations/*rename_task_statuses_to_backlog_and_todo.php'))[0];
 
-    expect(fn () => $migration->down())->toThrow(RuntimeException::class);
+    expect(fn () => run_legacy_schema_migration($migration, 'down'))->toThrow(RuntimeException::class);
 });

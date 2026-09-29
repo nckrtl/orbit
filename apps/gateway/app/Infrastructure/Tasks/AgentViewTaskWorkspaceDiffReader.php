@@ -6,7 +6,7 @@ namespace App\Infrastructure\Tasks;
 
 use App\Domain\AgentView\AgentStateView;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 /**
  * Answers the task tick's commit check and the task diff from the Node agent's report of the checkout
@@ -24,7 +24,7 @@ final readonly class AgentViewTaskWorkspaceDiffReader implements TaskWorkspaceDi
     ) {}
 
     #[\Override]
-    public function lineChanges(AppInstance $instance, string $baseBranch): ?array
+    public function lineChanges(Instance $instance, string $baseBranch): ?array
     {
         $diff = $this->workspace($instance)['diff'] ?? null;
 
@@ -36,7 +36,7 @@ final readonly class AgentViewTaskWorkspaceDiffReader implements TaskWorkspaceDi
     }
 
     #[\Override]
-    public function lineDiff(AppInstance $instance, string $baseBranch): int
+    public function lineDiff(Instance $instance, string $baseBranch): int
     {
         $changes = $this->lineChanges($instance, $baseBranch);
 
@@ -44,7 +44,7 @@ final readonly class AgentViewTaskWorkspaceDiffReader implements TaskWorkspaceDi
     }
 
     #[\Override]
-    public function hasCommitsSince(AppInstance $instance, string $since): bool
+    public function hasCommitsSince(Instance $instance, string $since): bool
     {
         $workspace = $this->workspace($instance);
 
@@ -56,7 +56,7 @@ final readonly class AgentViewTaskWorkspaceDiffReader implements TaskWorkspaceDi
     }
 
     /** @return array{instance_id: int, base: string, start: ?string, branch: ?string, head: ?string, dirty: ?bool, commits: ?int, diff: array{files: int, added: int, removed: int, truncated: bool}|null}|null */
-    private function workspace(AppInstance $instance): ?array
+    private function workspace(Instance $instance): ?array
     {
         if ($instance->checkout_path === '') {
             return null;

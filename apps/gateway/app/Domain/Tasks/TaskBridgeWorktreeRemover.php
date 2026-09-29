@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 interface TaskBridgeWorktreeRemover
 {
@@ -13,5 +13,5 @@ interface TaskBridgeWorktreeRemover
      *
      * A missing bridge is success. A worktree that does not belong to this group stays.
      */
-    public function remove(AppInstance $instance): void;
+    public function remove(Instance $instance): void;
 }

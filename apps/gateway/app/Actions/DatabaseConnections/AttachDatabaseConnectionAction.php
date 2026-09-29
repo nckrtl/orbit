@@ -5,28 +5,28 @@ declare(strict_types=1);
 namespace App\Actions\DatabaseConnections;
 
 use App\Data\DatabaseConnections\DatabaseConnectionAttachmentData;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentContextResolver;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentStore;
 use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
 use App\Domain\DatabaseConnections\DatabaseConnectionPrefix;
-use App\Models\AppInstance;
+use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
+use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\Instance;
 use Illuminate\Support\Facades\DB;
 use SensitiveParameter;
 
 final readonly class AttachDatabaseConnectionAction
 {
     public function __construct(
-        private AppInstanceEnvironmentOperationLock $operations,
-        private AppInstanceEnvironmentContextResolver $contexts,
-        private AppInstanceEnvironmentStore $store,
+        private InstanceEnvironmentOperationLock $operations,
+        private InstanceEnvironmentContextResolver $contexts,
+        private InstanceEnvironmentStore $store,
         private DatabaseConnectionEnvProjection $projection,
     ) {}
 
     public function execute(
-        AppInstance $instance,
+        Instance $instance,
         DatabaseConnection $connection,
         #[SensitiveParameter]
         ?string $prefix,
@@ -50,7 +50,7 @@ final readonly class AttachDatabaseConnectionAction
             ): DatabaseConnectionAttachmentData {
                 DatabaseConnectionTarget::query()->updateOrCreate(
                     [
-                        'app_instance_id' => $instance->id,
+                        'instance_id' => $instance->id,
                         'prefix' => $normalizedPrefix,
                     ],
                     ['database_connection_id' => $connection->id],
@@ -60,7 +60,7 @@ final readonly class AttachDatabaseConnectionAction
                 $written = $this->store->putMany($context, $projected['values'], 'attach');
 
                 return new DatabaseConnectionAttachmentData(
-                    appInstanceId: $instance->id,
+                    instanceId: $instance->id,
                     slug: $connection->slug,
                     prefix: $normalizedPrefix,
                     keys: $projected['keys'],

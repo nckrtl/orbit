@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Models\AppInstance;
+use App\Models\Instance;
 
 /**
  * Assigns the one App instance a TaskGroup shares.
@@ -20,5 +20,5 @@ use App\Models\AppInstance;
 interface InstanceProvisioning
 {
     /** @throws TaskCapacityException when every Node that could host the group is at the task ceiling. */
-    public function provision(InstanceProvisionIntent $intent): ?AppInstance;
+    public function provision(InstanceProvisionIntent $intent): ?Instance;
 }

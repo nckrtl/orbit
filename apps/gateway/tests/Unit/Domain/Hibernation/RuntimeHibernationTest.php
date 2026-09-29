@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Hibernation\RuntimeHibernation;
 
-it('names per-AppInstance marker and access-log paths', function (): void {
+it('names per-Instance marker and access-log paths', function (): void {
     expect(RuntimeHibernation::key(12))
         ->toBe('app-instance-12')
         ->and(RuntimeHibernation::awakePath('app-instance-12'))
@@ -17,7 +17,7 @@ it('names per-AppInstance marker and access-log paths', function (): void {
         ->toBe(3_600)
         ->and(RuntimeHibernation::DefaultDependencyIdleSeconds)
         ->toBe(604_800)
-        ->and(RuntimeHibernation::parseAppInstanceId('app-instance-12'))
+        ->and(RuntimeHibernation::parseInstanceId('app-instance-12'))
         ->toBe(12);
 });
 

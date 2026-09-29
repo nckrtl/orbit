@@ -8,7 +8,7 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Routes\IngressSite;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\PublicRoutePrivateOverride;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
 
@@ -20,7 +20,7 @@ final readonly class IngressSiteRepository
 
     public function forRoute(Route $route): IngressSite
     {
-        $route->loadMissing(['cluster.routerAssignment.node', 'targets.appInstance.node']);
+        $route->loadMissing(['cluster.routerAssignment.node', 'targets.instance.node']);
         $cluster = $route->cluster;
         $ingress = $cluster !== null ? $this->eligibility->servingIngress($cluster) : null;
         $router = $cluster !== null ? $this->eligibility->activeRouter($cluster) : null;
@@ -44,10 +44,10 @@ final readonly class IngressSiteRepository
 
     public function privateOverride(Route $route): PublicRoutePrivateOverride
     {
-        $route->loadMissing(['cluster.routerAssignment.node', 'targets.appInstance.node']);
+        $route->loadMissing(['cluster.routerAssignment.node', 'targets.instance.node']);
         $cluster = $route->cluster;
         $router = $cluster !== null ? $this->eligibility->activeRouter($cluster) : null;
-        $target = $route->targets->first()?->appInstance;
+        $target = $route->targets->first()?->instance;
 
         // A tracking host has no workload: the Router itself answers, so the Router is the last hop to verify.
         if ($route->isAnalyticsTracking() && $router instanceof Node) {
@@ -58,7 +58,7 @@ final readonly class IngressSiteRepository
             );
         }
 
-        if (! $router instanceof Node || ! $target instanceof AppInstance) {
+        if (! $router instanceof Node || ! $target instanceof Instance) {
             throw new RuntimeConvergenceException(
                 step: 'route-address',
                 errorCode: 'route.private_override_unavailable',

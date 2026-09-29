@@ -7,16 +7,16 @@ use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskRunOutcome;
 use App\Domain\Tasks\TaskRunReceiptException;
 use App\Domain\Tasks\TaskThreadRole;
-use App\Infrastructure\AppDev\AppDevSshExecutor;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\RemoteTaskRunReceipts;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
@@ -31,17 +31,17 @@ function run_receipt_checkout(): string
     return $checkout;
 }
 
-function run_receipt_instance(string $checkout): AppInstance
+function run_receipt_instance(string $checkout): Instance
 {
-    $app = OrbitApp::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'git@github.com:nckrtl/orbit.git', 'default_branch' => 'main']);
+    $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'git@github.com:nckrtl/orbit.git', 'default_branch' => 'main']);
     $node = Node::query()->create(['name' => 'receipt-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.143', 'wireguard_ip' => '10.44.0.143', 'user' => 'orbit']);
 
-    return AppInstance::query()->create(['app_id' => $app->id, 'node_id' => $node->id, 'name' => 'task-13', 'checkout_path' => $checkout, 'branch' => 'task-13', 'status' => 'source_resolved']);
+    return Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-13', 'checkout_path' => $checkout, 'branch' => 'task-13', 'status' => 'source_resolved']);
 }
 
 function run_receipts(SshExecutor $transport): RemoteTaskRunReceipts
 {
-    return new RemoteTaskRunReceipts(new AppDevSshExecutor(
+    return new RemoteTaskRunReceipts(new DevelopmentSshExecutor(
         $transport,
         new class implements SshKeyProvider
         {

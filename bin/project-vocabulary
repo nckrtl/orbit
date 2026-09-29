@@ -1,0 +1,249 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/**
+ * Fail when an App-domain name returns in the living Project and Instance surface.
+ *
+ * Scans Gateway app and database code, the PHP SDK, the CLI, web sources, and
+ * maintained docs. Monorepo paths under apps/ are allowed. The GitHub App
+ * credential, the Reverb app id, config/app.php, and the node storage member
+ * apps are not this domain. Migrations up to and including the rename migration
+ * keep the old names because they are the ordered path that creates that schema
+ * and then renames it. A later migration is living database code.
+ *
+ * CamelCase appInstance and appId count, as do Laravel references to the apps
+ * table: constrained(), on(), exists and unique rules, and Rule::exists().
+ */
+
+const PROJECT_VOCABULARY_ROOTS = [
+    'apps/gateway/app',
+    'apps/gateway/bootstrap',
+    'apps/gateway/config',
+    'apps/gateway/database',
+    'apps/gateway/routes',
+    'apps/gateway/resources',
+    'apps/cli/app',
+    'apps/cli/config',
+    'packages/php-sdk/src',
+    'apps/web/src',
+    'docs',
+];
+
+const PROJECT_VOCABULARY_RENAME_MIGRATION = '2026_10_04_000000_rename_app_domain_to_project_and_instance.php';
+
+const PROJECT_VOCABULARY_EXTENSIONS = [
+    'php' => true,
+    'ts' => true,
+    'tsx' => true,
+    'vue' => true,
+    'js' => true,
+    'mjs' => true,
+    'cjs' => true,
+    'md' => true,
+    'mdx' => true,
+    'json' => true,
+    'yml' => true,
+    'yaml' => true,
+    'neon' => true,
+    'sql' => true,
+    'py' => true,
+    'sh' => true,
+    'css' => true,
+    'stub' => true,
+    'xml' => true,
+];
+
+/**
+ * @return list<array{0: string, 1: string}>
+ */
+function project_vocabulary_patterns(): array
+{
+    return [
+        ['AppInstance', '/\b[aA]ppInstance/'],
+        ['app_instance', '/\bapp_instances?_?/'],
+        ['app_id', '/\bapp_id\b/'],
+        ['appId', '/\bappId\b/'],
+        ['App model', '/App\\\\Models\\\\App(?![A-Za-z0-9_])/'],
+        ['App model', '/\bclass\s+App\b/'],
+        ['App model', '/Actions[\/\\\\]Apps\b/'],
+        ['App model', '/\bApp\s+model\b|`App`\s+model|model\s+`App`/'],
+        ['apps table', '/\b(?:DB::table|Schema::(?:create|table|drop|dropIfExists|hasTable)|->foreignId)\(\s*[\'"]apps[\'"]/'],
+        ['apps table', '/->constrained\(\s*(?:table:\s*)?[\'"]apps[\'"]/'],
+        ['apps table', '/->on\(\s*[\'"]apps[\'"]/'],
+        ['apps table', '/[\'"]exists:apps(?![A-Za-z0-9_])/'],
+        ['apps table', '/[\'"]unique:apps(?![A-Za-z0-9_])/'],
+        ['apps table', '/Rule::exists\(\s*(?:table:\s*)?[\'"]apps[\'"]/'],
+        ['apps table', '/Rule::unique\(\s*(?:table:\s*)?[\'"]apps[\'"]/'],
+        ['apps table', '/\b(?:from|join|into|update|table)\s+[\'"`]?apps(?![\w\/])/'],
+        ['apps table', '/\bprotected\s+\$table\s*=\s*[\'"]apps[\'"]/'],
+        ['apps table', '/`apps`\s+table|\btables\s+`apps`|\bapps\s+table\b|\btable\s+`apps`/'],
+    ];
+}
+
+function project_vocabulary_app_id_allowed(string $relative, string $line): bool
+{
+    if (str_contains($relative, '/GitHub/')
+        || str_contains($relative, '/Broadcasting/')
+        || str_contains($relative, '/WebSocket/')
+        || $relative === 'apps/gateway/config/broadcasting.php') {
+        return true;
+    }
+
+    // The agent view reads the Reverb credential, which lives outside those directories.
+    return str_contains($line, '$credentials->appId');
+}
+
+function project_vocabulary_skipped(string $relative): bool
+{
+    if (str_contains($relative, '/tests/') || str_starts_with($relative, 'docs/decisions/') || str_starts_with($relative, 'docs/generated/')) {
+        return true;
+    }
+
+    if ($relative === 'docs/openapi.json' || $relative === 'apps/gateway/config/app.php') {
+        return true;
+    }
+
+    if (preg_match('#^apps/gateway/database/migrations/([^/]+\.php)$#', $relative, $match) === 1) {
+        return $match[1] <= PROJECT_VOCABULARY_RENAME_MIGRATION;
+    }
+
+    return false;
+}
+
+/**
+ * @return list<array{path: string, line: int, name: string}>
+ */
+function project_vocabulary_scan(string $root): array
+{
+    $findings = [];
+    $root = rtrim($root, '/');
+    $patterns = project_vocabulary_patterns();
+
+    foreach (PROJECT_VOCABULARY_ROOTS as $relativeRoot) {
+        $directory = $root.'/'.$relativeRoot;
+        if (! is_dir($directory)) {
+            continue;
+        }
+
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS),
+        );
+
+        foreach ($iterator as $file) {
+            if (! $file instanceof SplFileInfo || ! $file->isFile()) {
+                continue;
+            }
+
+            $path = $file->getPathname();
+            $relative = ltrim(substr($path, strlen($root)), '/');
+            if (project_vocabulary_skipped($relative) || ! project_vocabulary_text_file($file)) {
+                continue;
+            }
+
+            $pathFindings = project_vocabulary_path_findings($relative);
+            if ($pathFindings !== []) {
+                array_push($findings, ...$pathFindings);
+            }
+
+            $contents = file_get_contents($path);
+            if ($contents === false || str_contains($contents, "\0")) {
+                continue;
+            }
+
+            $lines = preg_split('/\R/', $contents) ?: [];
+            foreach ($lines as $index => $line) {
+                foreach ($patterns as [$name, $pattern]) {
+                    if (($name === 'app_id' || $name === 'appId') && project_vocabulary_app_id_allowed($relative, $line)) {
+                        continue;
+                    }
+
+                    if (preg_match($pattern, $line) !== 1) {
+                        continue;
+                    }
+
+                    $findings[] = ['path' => $relative, 'line' => $index + 1, 'name' => $name];
+                }
+            }
+        }
+    }
+
+    usort($findings, static function (array $left, array $right): int {
+        return [$left['path'], $left['line'], $left['name']] <=> [$right['path'], $right['line'], $right['name']];
+    });
+
+    return $findings;
+}
+
+function project_vocabulary_text_file(SplFileInfo $file): bool
+{
+    $name = $file->getFilename();
+    $extension = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+
+    return isset(PROJECT_VOCABULARY_EXTENSIONS[$extension]);
+}
+
+/**
+ * @return list<array{path: string, line: int, name: string}>
+ */
+function project_vocabulary_path_findings(string $relative): array
+{
+    $findings = [];
+
+    if (preg_match('/\b[aA]ppInstance/', $relative) === 1) {
+        $findings[] = ['path' => $relative, 'line' => 1, 'name' => 'AppInstance'];
+    }
+
+    if (preg_match('/\bappId\b/', $relative) === 1 && ! project_vocabulary_app_id_allowed($relative, '')) {
+        $findings[] = ['path' => $relative, 'line' => 1, 'name' => 'appId'];
+    }
+
+    if (preg_match('#/(?:Models/App\.php$|Actions/Apps(?:/|$))#', $relative) === 1) {
+        $findings[] = ['path' => $relative, 'line' => 1, 'name' => 'App model'];
+    }
+
+    return $findings;
+}
+
+/**
+ * @param  list<string>  $argv
+ */
+function project_vocabulary_main(array $argv): int
+{
+    $root = dirname(__DIR__);
+
+    for ($index = 1, $count = count($argv); $index < $count; $index++) {
+        $argument = $argv[$index];
+        if ($argument === '--root') {
+            $root = $argv[++$index] ?? '';
+        } elseif (str_starts_with($argument, '--root=')) {
+            $root = substr($argument, strlen('--root='));
+        } else {
+            fwrite(STDERR, "Unknown argument {$argument}.\n");
+
+            return 2;
+        }
+    }
+
+    if ($root === '' || ! is_dir($root)) {
+        fwrite(STDERR, "Vocabulary root is not a directory.\n");
+
+        return 2;
+    }
+
+    $findings = project_vocabulary_scan($root);
+    if ($findings === []) {
+        return 0;
+    }
+
+    foreach ($findings as $finding) {
+        fwrite(STDOUT, "{$finding['path']}:{$finding['line']}: App-domain name {$finding['name']}\n");
+    }
+
+    return 1;
+}
+
+if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === realpath(__FILE__)) {
+    exit(project_vocabulary_main($argv));
+}

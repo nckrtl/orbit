@@ -11,8 +11,8 @@ use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskWorkspaceMcp;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskGroup;
@@ -35,7 +35,7 @@ function render_task_prompt(string $role, array $payload): array
 
 function production_task_prompt_models(): array
 {
-    $app = OrbitApp::query()->create([
+    $project = Project::query()->create([
         'name' => 'Gateway prompts',
         'slug' => 'gateway-prompts',
         'repository_url' => 'git@example.test:gateway-prompts.git',
@@ -43,7 +43,7 @@ function production_task_prompt_models(): array
         'task_check' => 'composer check',
     ]);
     $group = TaskGroup::query()->create([
-        'app_id' => $app->id,
+        'project_id' => $project->id,
         'title' => 'Offline prompts',
         'brief' => 'Render <info>prompts</info> without <error>a workspace</error>.',
         'status' => 'running',
@@ -65,18 +65,18 @@ function production_task_prompt_models(): array
         ])->toArray()],
         'subtask_start_commit' => 'abc1234',
     ]);
-    $instance = new AppInstance;
+    $instance = new Instance;
     $instance->starting_commit = str_repeat('b', 40);
-    $group->setRelation('app', $app);
+    $group->setRelation('project', $project);
     $group->setRelation('taskable', $instance);
     $task->setRelation('taskGroup', $group);
 
-    return [$app, $group, $task];
+    return [$project, $group, $task];
 }
 
 function production_spawner_prompt(string $method): array
 {
-    [$app, $group, $task] = production_task_prompt_models();
+    [$project, $group, $task] = production_task_prompt_models();
     $spawner = new TaskAgentSpawner(
         new AgentDriverRegistry([]),
         new TaskReviewPacketBuilder(new NullTaskReviewDiff),
@@ -92,10 +92,10 @@ function production_spawner_prompt(string $method): array
             'id' => $group->id,
             'title' => $group->title,
             'brief' => $group->brief,
-            'project_slug' => $app->slug,
-            'project_id' => $app->id,
-            'default_branch' => $app->default_branch,
-            'task_check' => $app->taskCheckCommand(),
+            'project_slug' => $project->slug,
+            'project_id' => $project->id,
+            'default_branch' => $project->default_branch,
+            'task_check' => $project->taskCheckCommand(),
             'start_commit' => str_repeat('b', 40),
         ],
         'subtask' => [
@@ -170,11 +170,11 @@ function render_task_prompt_review_packet(bool $continued = false): array
 
 function production_review_prompt(bool $continued): array
 {
-    [$app, $group, $task] = production_task_prompt_models();
+    [$project, $group, $task] = production_task_prompt_models();
     $group->update(['pr_url' => 'https://example.test/pull/1']);
-    $instance = new AppInstance;
+    $instance = new Instance;
     $instance->starting_commit = str_repeat('b', 40);
-    $group->setRelation('app', $app);
+    $group->setRelation('project', $project);
     $group->setRelation('taskable', $instance);
     $task->setRelation('taskGroup', $group);
     TaskCheck::query()->create([
@@ -196,7 +196,7 @@ function production_review_prompt(bool $continued): array
     {
         public function __construct(private bool $continued) {}
 
-        public function read(AppInstance $instance, string $startCommit): array
+        public function read(Instance $instance, string $startCommit): array
         {
             return [
                 'files' => $this->continued ? [] : [
@@ -221,10 +221,10 @@ function production_review_prompt(bool $continued): array
                 'id' => $group->id,
                 'title' => $group->title,
                 'brief' => $group->brief,
-                'project_slug' => $app->slug,
-                'project_id' => $app->id,
-                'default_branch' => $app->default_branch,
-                'task_check' => $app->taskCheckCommand(),
+                'project_slug' => $project->slug,
+                'project_id' => $project->id,
+                'default_branch' => $project->default_branch,
+                'task_check' => $project->taskCheckCommand(),
                 'start_commit' => str_repeat('b', 40),
             ],
             'subtask' => [

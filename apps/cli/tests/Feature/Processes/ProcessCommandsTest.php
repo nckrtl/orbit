@@ -8,11 +8,6 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\Apps\CreateProcessDefinitionRequest;
-use Orbit\Sdk\Requests\Apps\DestroyProcessDefinitionRequest;
-use Orbit\Sdk\Requests\Apps\ListProcessDefinitionsRequest;
-use Orbit\Sdk\Requests\Apps\ShowProcessDefinitionRequest;
-use Orbit\Sdk\Requests\Apps\UpdateProcessDefinitionRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
 use Orbit\Sdk\Requests\Processes\CreateProcessRequest;
 use Orbit\Sdk\Requests\Processes\DestroyProcessRequest;
@@ -21,6 +16,11 @@ use Orbit\Sdk\Requests\Processes\ProcessLogsRequest;
 use Orbit\Sdk\Requests\Processes\RestartProcessRequest;
 use Orbit\Sdk\Requests\Processes\StartProcessRequest;
 use Orbit\Sdk\Requests\Processes\StopProcessRequest;
+use Orbit\Sdk\Requests\Projects\CreateProcessDefinitionRequest;
+use Orbit\Sdk\Requests\Projects\DestroyProcessDefinitionRequest;
+use Orbit\Sdk\Requests\Projects\ListProcessDefinitionsRequest;
+use Orbit\Sdk\Requests\Projects\ShowProcessDefinitionRequest;
+use Orbit\Sdk\Requests\Projects\UpdateProcessDefinitionRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -994,7 +994,7 @@ it('rejects invalid local process input before making a gateway request', functi
 
     expect($mock->getLastPendingRequest())->toBeNull();
 })->with([
-    'missing AppInstance' => [
+    'missing Instance' => [
         'process:create',
         [
             'name' => 'queue',
@@ -1053,7 +1053,7 @@ it('rejects invalid local process input before making a gateway request', functi
         ],
         'The --start option requires --instance or --node.',
     ],
-    'invalid AppInstance' => [
+    'invalid Instance' => [
         'process:list',
         ['--instance' => '0'],
         'Instance ID must be a positive integer.',
@@ -1065,7 +1065,7 @@ it('rejects invalid local process input before making a gateway request', functi
     ],
 ]);
 
-it('renders one exact json envelope for App-target process refusals', function (
+it('renders one exact json envelope for Project-target process refusals', function (
     string $command,
     array $arguments,
     string $code,
@@ -1148,7 +1148,7 @@ it('renders one exact json envelope for App-target process refusals', function (
             '--project' => 'abc',
             '--command' => ['/usr/bin/php'],
         ],
-        'app.id_invalid',
+        'project.id_invalid',
         'Project ID must be a positive integer.',
     ],
     'update app without for' => [
@@ -1159,7 +1159,7 @@ it('renders one exact json envelope for App-target process refusals', function (
     ],
 ]);
 
-it('exposes AppInstance and Node selectors on targeted process commands', function (): void {
+it('exposes Instance and Node selectors on targeted process commands', function (): void {
     $commands = Artisan::all();
 
     expect($commands['process:create']->getDefinition()->hasOption('instance'))->toBeTrue()
@@ -1197,7 +1197,7 @@ it('forwards keep-alive independently of restart policy', function (): void {
         ]);
 });
 
-it('records one App process definition through structured flags', function (): void {
+it('records one Project process definition through structured flags', function (): void {
     $mock = MockClient::global([
         CreateProcessDefinitionRequest::class => MockResponse::make(process_definition_cli_envelope(), 201),
     ]);
@@ -1223,7 +1223,7 @@ it('records one App process definition through structured flags', function (): v
         ->toBe('{"name":"queue","environments":["development","production"],"spec":{"runtime":"systemd","command":["/usr/bin/php","artisan","queue:work"],"restart_policy":"on-failure","keep_alive":false}}');
 });
 
-it('records keep-alive on an App process definition', function (): void {
+it('records keep-alive on a Project process definition', function (): void {
     $mock = MockClient::global([
         CreateProcessDefinitionRequest::class => MockResponse::make(process_definition_cli_envelope(), 201),
     ]);
@@ -1244,7 +1244,7 @@ it('records keep-alive on an App process definition', function (): void {
         ->toContain('"keep_alive":true');
 });
 
-it('lists shows updates and destroys App process definitions by name', function (
+it('lists shows updates and destroys Project process definitions by name', function (
     string $command,
     array $arguments,
     string $requestClass,
@@ -1499,7 +1499,7 @@ function process_definition_cli_data(): array
 {
     return [
         'id' => '0199cc62-68f3-75b8-9f11-36fe92ac1f36',
-        'app_id' => 7,
+        'project_id' => 7,
         'name' => 'queue',
         'environments' => ['development', 'production'],
         'spec' => [

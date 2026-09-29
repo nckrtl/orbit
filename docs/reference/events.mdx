@@ -90,16 +90,16 @@ A `deleted` event carries a short snapshot, because the record is already gone. 
 
 | Type | Fires when | Data |
 | --- | --- | --- |
-| `app.created` | A Project is created. | `AppData` |
-| `app.updated` | A Project changes. | `AppData` |
-| `app.deleted` | A Project is removed. | `{ id, name, slug }` |
+| `project.created` | A Project is created. | `ProjectData` |
+| `project.updated` | A Project changes. | `ProjectData` |
+| `project.deleted` | A Project is removed. | `{ id, name, slug }` |
 
 ### Instance
 
 | Type | Fires when | Data |
 | --- | --- | --- |
-| `instance.created` | An Instance is created or registered. | `AppInstanceData` |
-| `instance.updated` | An Instance's deployment branch changes, or its removal returns while the record still exists. | `AppInstanceData` |
+| `instance.created` | An Instance is created or registered. | `InstanceData` |
+| `instance.updated` | An Instance's deployment branch changes, or its removal returns while the record still exists. | `InstanceData` |
 | `instance.deleted` | An Instance is removed. | `{ id, name }` |
 
 ### Process
@@ -171,8 +171,8 @@ A Route that Orbit creates or replaces as part of another action sends no `route
 
 | Type | Fires when | Data |
 | --- | --- | --- |
-| `deployment.created` | A deploy or rollback starts. | `AppInstanceDeploymentData` |
-| `deployment.updated` | That run ends, with success or failure. | `AppInstanceDeploymentData` |
+| `deployment.created` | A deploy or rollback starts. | `InstanceDeploymentData` |
+| `deployment.updated` | That run ends, with success or failure. | `InstanceDeploymentData` |
 
 `data` matches one row of `GET /api/v1/instances/{instance}/deployments`. It never carries the run's output. The Gateway keeps the 50 newest rows per Instance and removes older rows without an event.
 

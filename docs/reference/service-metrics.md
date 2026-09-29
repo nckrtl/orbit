@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/Infrastructure/Metrics/NativeServiceMetrics*.php
   - apps/gateway/app/Infrastructure/Metrics/PrometheusConfigRenderer.php
   - apps/gateway/app/Infrastructure/Caddy/Build/Sources/ServiceMetricsCaddySiteSource.php
-  - apps/gateway/app/Infrastructure/AppInstances/ProductionPhpRuntimeConfigRenderer.php
+  - apps/gateway/app/Infrastructure/Instances/ProductionPhpRuntimeConfigRenderer.php
   - apps/gateway/resources/scripts/service-metrics*.py
 ---
 

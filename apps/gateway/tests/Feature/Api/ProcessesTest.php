@@ -8,10 +8,10 @@ use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Activity;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
@@ -42,13 +42,13 @@ beforeEach(function (): void {
     $node = $this->markAsGateway($node);
     $this->node = $node;
     $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
-    $orbitApp = OrbitApp::query()->create([
+    $orbitApp = Project::query()->create([
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
     ]);
-    $this->instance = AppInstance::query()->create([
-        'app_id' => $orbitApp->id,
+    $this->instance = Instance::query()->create([
+        'project_id' => $orbitApp->id,
         'node_id' => $node->id,
         'name' => 'main',
         'environment' => 'development',
@@ -181,7 +181,7 @@ it('adds and lists a Node-targeted Docker process', function (): void {
         ->assertJsonCount(0, 'data');
 });
 
-it('adds a Node-targeted systemd process without an AppInstance environment file', function (): void {
+it('adds a Node-targeted systemd process without an Instance environment file', function (): void {
     $response = $this->postJson('/api/v1/processes', [
         'target_type' => 'node',
         'target_id' => $this->node->id,
@@ -766,10 +766,10 @@ it('keeps persisted Docker environment values out of lifecycle exception traces'
     $this->fail('Expected process start to fail.');
 });
 
-function processes_api_record(AppInstance $instance): Process
+function processes_api_record(Instance $instance): Process
 {
     return Process::query()->create([
-        'owner_type' => AppInstance::MorphAlias,
+        'owner_type' => Instance::MorphAlias,
         'owner_id' => $instance->id,
         'name' => 'queue',
         'runtime' => 'systemd',
@@ -803,8 +803,8 @@ it('rejects custom runtime fields on a preset even when explicitly empty', funct
 })->with(['runtime' => ['runtime', 'systemd'], 'command' => ['command', []], 'image' => ['image', null], 'working directory' => ['working_directory', '/tmp'], 'ports' => ['ports', []], 'environment' => ['environment', []], 'volumes' => ['volumes', []]]);
 
 it('resolves an exact development Route domain for process creation', function (): void {
-    $route = Route::query()->create(['app_id' => $this->instance->app_id, 'node_id' => $this->node->id, 'domain' => 'vite.orbit.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
-    $route->targets()->create(['app_instance_id' => $this->instance->id, 'position' => 0]);
+    $route = Route::query()->create(['project_id' => $this->instance->project_id, 'node_id' => $this->node->id, 'domain' => 'vite.orbit.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+    $route->targets()->create(['instance_id' => $this->instance->id, 'position' => 0]);
     $this->postJson('/api/v1/processes', ['target_type' => 'instance', 'target_id' => 'vite.orbit.test', 'name' => 'assets', 'preset' => 'vp-dev'])->assertCreated()->assertJsonPath('data.target_id', $this->instance->id)->assertJsonPath('data.desired_state', 'stopped');
 });
 
@@ -825,7 +825,7 @@ it('creates an Agentation HTTP preset, assigns a port, and projects AGENTATION_U
     expect($this->instance->refresh()->agentation_port)
         ->toBe(4747)
         ->and($this->instance->environmentValues()->where('env_key', 'AGENTATION_URL')->sole()->env_value)
-        ->toBe('https://{{app_instance.domain}}/__orbit/agentation');
+        ->toBe('https://{{instance.domain}}/__orbit/agentation');
 
     $sites = app(AgentationSiteProjection::class);
     expect($sites)->toBeInstanceOf(FakeAgentationSiteProjection::class);
@@ -834,8 +834,8 @@ it('creates an Agentation HTTP preset, assigns a port, and projects AGENTATION_U
 });
 
 it('assigns distinct Agentation ports on one Node and refuses a second HTTP preset', function (): void {
-    $other = AppInstance::query()->create([
-        'app_id' => $this->instance->app_id,
+    $other = Instance::query()->create([
+        'project_id' => $this->instance->project_id,
         'node_id' => $this->node->id,
         'name' => 'other',
         'environment' => 'development',

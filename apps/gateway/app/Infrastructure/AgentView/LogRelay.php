@@ -12,7 +12,7 @@ use App\Domain\Logs\LogStreamEndReason;
 use App\Domain\Logs\LogStreamRecordType;
 use App\Domain\Logs\LogStreamStore;
 use App\Domain\Nodes\NodeAccessAuthorizer;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use Psr\Log\LoggerInterface;
@@ -208,10 +208,10 @@ final readonly class LogRelay
         }
     }
 
-    private function record(LogStream $stream): AppInstance|Process|null
+    private function record(LogStream $stream): Instance|Process|null
     {
         return match ($stream->recordType) {
-            LogStreamRecordType::Instance => AppInstance::query()->with('environmentValues')->find($stream->recordId),
+            LogStreamRecordType::Instance => Instance::query()->with('environmentValues')->find($stream->recordId),
             LogStreamRecordType::Process => Process::query()->find($stream->recordId),
         };
     }

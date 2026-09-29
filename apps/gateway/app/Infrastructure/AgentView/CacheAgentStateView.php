@@ -8,6 +8,7 @@ use App\Domain\AgentView\AgentNodeView;
 use App\Domain\AgentView\AgentStateView;
 use App\Domain\AgentView\AgentViewFreshness;
 use App\Domain\AgentView\AgentViewSubscriberHealth;
+use App\Models\Instance;
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Support\Carbon;
 use Throwable;

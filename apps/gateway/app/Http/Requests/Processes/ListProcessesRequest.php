@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\Processes;
 
 use App\Domain\Processes\ProcessTargetType;
+use App\Models\Instance;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -15,7 +16,7 @@ final class ListProcessesRequest extends FormRequest
     {
         return [
             // Omit both to list every Process in the fleet. A screen that draws the whole fleet
-            // asks once rather than once per Node and AppInstance, which is dozens of requests
+            // asks once rather than once per Node and Instance, which is dozens of requests
             // for data the Gateway holds in one table.
             'target_type' => ['required_with:target_id', 'nullable', Rule::enum(ProcessTargetType::class)],
             'target_id' => ['required_with:target_type', 'nullable', 'integer', 'min:1'],

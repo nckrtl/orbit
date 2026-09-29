@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace App\Actions\Routes;
 
 use App\Data\Routes\RouteData;
-use App\Domain\AppInstances\AppInstanceState;
-use App\Domain\AppInstances\Environment\AppInstanceEnvironmentOperationLock;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Routes\RouteAssociationGuard;
 use App\Domain\Routes\RouteProvenance;
@@ -19,7 +19,7 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetWebRoot;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Route;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -27,14 +27,14 @@ use Illuminate\Support\Facades\DB;
 final readonly class SetRouteTargetAction
 {
     public function __construct(
-        private AppInstanceEnvironmentOperationLock $environmentOperations,
+        private InstanceEnvironmentOperationLock $environmentOperations,
         private RouteStateResolver $state,
         private RouteAssociationGuard $associations,
         private ?RecordEventBroadcaster $broadcaster = null,
         private ?MetricsFleetReconciler $metrics = null,
     ) {}
 
-    public function execute(Route $route, int $appInstanceId): Route
+    public function execute(Route $route, int $instanceId): Route
     {
         if (! $route->isApp()) {
             throw new ResourceOperationException(
@@ -46,15 +46,15 @@ final readonly class SetRouteTargetAction
 
         $expectedTargetIds = $route
             ->targets()
-            ->orderBy('app_instance_id')
-            ->pluck('app_instance_id')
+            ->orderBy('instance_id')
+            ->pluck('instance_id')
             ->map(static fn (mixed $id): int => StoredInteger::from($id))
             ->values()
             ->all();
         $expectedTargetIds = array_values($expectedTargetIds);
         $result = $this->environmentOperations->run(
-            [...$expectedTargetIds, $appInstanceId],
-            fn (): Route => $this->executeOwned($route, $appInstanceId, $expectedTargetIds),
+            [...$expectedTargetIds, $instanceId],
+            fn (): Route => $this->executeOwned($route, $instanceId, $expectedTargetIds),
         );
 
         ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
@@ -69,16 +69,16 @@ final readonly class SetRouteTargetAction
     }
 
     /** @param list<int> $expectedTargetIds */
-    private function executeOwned(Route $route, int $appInstanceId, array $expectedTargetIds): Route
+    private function executeOwned(Route $route, int $instanceId, array $expectedTargetIds): Route
     {
         try {
-            $updated = DB::transaction(function () use ($route, $appInstanceId, $expectedTargetIds): Route {
+            $updated = DB::transaction(function () use ($route, $instanceId, $expectedTargetIds): Route {
                 $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
-                $target = AppInstance::query()->with(['app', 'node'])->lockForUpdate()->findOrFail($appInstanceId);
+                $target = Instance::query()->with(['project', 'node'])->lockForUpdate()->findOrFail($instanceId);
                 $currentTargetIds = $locked
                     ->targets()
-                    ->orderBy('app_instance_id')
-                    ->pluck('app_instance_id')
+                    ->orderBy('instance_id')
+                    ->pluck('instance_id')
                     ->map(static fn (mixed $id): int => StoredInteger::from($id))
                     ->values()
                     ->all();
@@ -94,11 +94,11 @@ final readonly class SetRouteTargetAction
                 RouteTargetWebRoot::assertSupported($target);
                 $currentTarget = $locked->targets()->first();
 
-                if ($currentTarget?->app_instance_id === $target->id) {
+                if ($currentTarget?->instance_id === $target->id) {
                     return $locked->load('targets');
                 }
 
-                if ($target->app_id !== $locked->app_id) {
+                if ($target->project_id !== $locked->project_id) {
                     throw new ResourceOperationException(
                         errorCode: 'route.target_app_conflict',
                         message: 'The Route target must belong to the Route Project.',
@@ -106,7 +106,7 @@ final readonly class SetRouteTargetAction
                     );
                 }
 
-                if ($target->status !== AppInstanceState::Active) {
+                if ($target->status !== InstanceState::Active) {
                     throw new ResourceOperationException(
                         errorCode: 'route.target_inactive',
                         message: 'The Route target must be active.',
@@ -128,7 +128,7 @@ final readonly class SetRouteTargetAction
                 if ($locked->provenance === RouteProvenance::Generated) {
                     $attributes['generation_basis_node_id'] = $target->node_id;
                     $attributes['domain'] = $this->state->generatedDomain(
-                        $target->app->slug,
+                        $target->project->slug,
                         $target->name,
                         $placement->effectiveTld,
                     );
@@ -142,7 +142,7 @@ final readonly class SetRouteTargetAction
 
                 if ($nextDomain !== $locked->domain) {
                     $replacement = Route::query()->create([
-                        'app_id' => $locked->app_id,
+                        'project_id' => $locked->project_id,
                         'node_id' => $attributes['node_id'],
                         'cluster_id' => $attributes['cluster_id'],
                         'generation_basis_node_id' => $attributes['generation_basis_node_id'] ?? null,
@@ -153,7 +153,7 @@ final readonly class SetRouteTargetAction
                         'replaces_route_id' => $locked->id,
                         'replacement_step' => RouteReplacementStep::Reserved,
                     ]);
-                    $replacement->targets()->create(['app_instance_id' => $target->id, 'position' => 0]);
+                    $replacement->targets()->create(['instance_id' => $target->id, 'position' => 0]);
                     $locked->targets()->delete();
                     $locked->delete();
                     $replacement->update([
@@ -167,7 +167,7 @@ final readonly class SetRouteTargetAction
                 unset($attributes['domain']);
                 $locked->update($attributes);
                 $locked->targets()->delete();
-                $locked->targets()->create(['app_instance_id' => $target->id, 'position' => 0]);
+                $locked->targets()->create(['instance_id' => $target->id, 'position' => 0]);
 
                 return $locked->refresh()->load('targets');
             });

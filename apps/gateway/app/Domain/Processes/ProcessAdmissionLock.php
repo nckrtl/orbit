@@ -11,9 +11,9 @@ interface ProcessAdmissionLock
     /**
      * @template T
      *
-     * @param  list<int>  $appInstanceIds
+     * @param  list<int>  $instanceIds
      * @param  Closure(): T  $operation
      * @return T
      */
-    public function run(array $appInstanceIds, Closure $operation): mixed;
+    public function run(array $instanceIds, Closure $operation): mixed;
 }

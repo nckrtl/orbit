@@ -7,7 +7,7 @@ namespace App\Commands\Instances;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
-use Orbit\Sdk\Requests\Deployments\ListAppInstanceReleasesRequest;
+use Orbit\Sdk\Requests\Deployments\ListInstanceReleasesRequest;
 use Orbit\Sdk\Responses\Deployments\DeploymentReleasesResponse;
 
 final class ListReleasesCommand extends DeploymentCommand
@@ -36,7 +36,7 @@ final class ListReleasesCommand extends DeploymentCommand
 
         $response = $this->sendWithProgress(
             $connector,
-            new ListAppInstanceReleasesRequest($instanceId),
+            new ListInstanceReleasesRequest($instanceId),
             DeploymentReleasesResponse::class,
             ['List releases', 'Loading releases', 'Loaded releases'],
         );

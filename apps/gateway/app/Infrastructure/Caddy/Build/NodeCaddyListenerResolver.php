@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Caddy\Build;
 
-use App\Infrastructure\AppDev\AppDevSite;
-use App\Infrastructure\Caddy\Build\Sources\AppCaddySiteSource;
+use App\Infrastructure\AppDev\DevelopmentSite;
+use App\Infrastructure\Caddy\Build\Sources\RouteCaddySiteSource;
 use App\Models\Node;
 use Illuminate\Support\Collection;
 
@@ -16,15 +16,15 @@ use Illuminate\Support\Collection;
 final readonly class NodeCaddyListenerResolver
 {
     public function __construct(
-        private AppCaddySiteSource $apps,
+        private RouteCaddySiteSource $routes,
     ) {}
 
-    /** @param Collection<int, AppDevSite>|null $sites The Node's Route sites, when the caller already read them. */
+    /** @param Collection<int, DevelopmentSite>|null $sites The Node's Route sites, when the caller already read them. */
     public function forNode(Node $node, ?Collection $sites = null): NodeCaddyListeners
     {
         $routeSites = match (true) {
-            $sites instanceof Collection => $this->apps->fromSites($sites),
-            $node->exists => $this->apps->sites($node),
+            $sites instanceof Collection => $this->routes->fromSites($sites),
+            $node->exists => $this->routes->sites($node),
             default => [],
         };
 

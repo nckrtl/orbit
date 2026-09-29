@@ -8,11 +8,11 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
-use Orbit\Sdk\Requests\Apps\CreateScheduleDefinitionRequest;
-use Orbit\Sdk\Requests\Apps\DestroyScheduleDefinitionRequest;
-use Orbit\Sdk\Requests\Apps\ListScheduleDefinitionsRequest;
-use Orbit\Sdk\Requests\Apps\ShowScheduleDefinitionRequest;
-use Orbit\Sdk\Requests\Apps\UpdateScheduleDefinitionRequest;
+use Orbit\Sdk\Requests\Projects\CreateScheduleDefinitionRequest;
+use Orbit\Sdk\Requests\Projects\DestroyScheduleDefinitionRequest;
+use Orbit\Sdk\Requests\Projects\ListScheduleDefinitionsRequest;
+use Orbit\Sdk\Requests\Projects\ShowScheduleDefinitionRequest;
+use Orbit\Sdk\Requests\Projects\UpdateScheduleDefinitionRequest;
 use Orbit\Sdk\Requests\Schedules\CreateScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\DestroyScheduleRequest;
 use Orbit\Sdk\Requests\Schedules\EnableScheduleRequest;
@@ -79,7 +79,7 @@ it('adds one Node Schedule through exactly one typed request and renders human o
         ]);
 });
 
-it('adds one stopped AppInstance Schedule and renders exact json', function (): void {
+it('adds one stopped Instance Schedule and renders exact json', function (): void {
     $payload = schedule_cli_payload([
         'desired_timer_state' => 'disabled',
         'status' => 'active',
@@ -113,7 +113,7 @@ it('adds one stopped AppInstance Schedule and renders exact json', function (): 
         ]);
 });
 
-it('omits start when an AppInstance Schedule uses the default enabled state', function (): void {
+it('omits start when an Instance Schedule uses the default enabled state', function (): void {
     $mock = MockClient::global([
         CreateScheduleRequest::class => schedule_cli_response(status: 201),
     ]);
@@ -125,7 +125,7 @@ it('omits start when an AppInstance Schedule uses the default enabled state', fu
     expect($mock->getLastRequest()?->body()->all())->not->toHaveKey('start');
 });
 
-it('records one App Schedule definition through structured flags', function (): void {
+it('records one Project Schedule definition through structured flags', function (): void {
     $mock = MockClient::global([
         CreateScheduleDefinitionRequest::class => MockResponse::make(schedule_definition_cli_envelope(), 201),
     ]);
@@ -151,7 +151,7 @@ it('records one App Schedule definition through structured flags', function (): 
         ->toBe('{"name":"hourly-report","environments":["production"],"spec":{"command":"php artisan report:send","calendar":"hourly","timeout_seconds":3600}}');
 });
 
-it('lists shows updates and destroys App Schedule definitions by name', function (
+it('lists shows updates and destroys Project Schedule definitions by name', function (
     string $command,
     array $arguments,
     string $requestClass,
@@ -431,13 +431,13 @@ it('applies explicit selector validation before HTTP in every output and interac
         'zero Node ID' => [[
             '--node' => '0',
         ], 'schedule.node_id_invalid', 'Node ID must be a positive integer.'],
-        'negative AppInstance ID' => [[
+        'negative Instance ID' => [[
             '--instance' => '-7',
         ], 'schedule.instance_id_invalid', 'Instance ID must be a positive integer.'],
-        'malformed AppInstance ID' => [[
+        'malformed Instance ID' => [[
             '--instance' => '7.5',
         ], 'schedule.instance_id_invalid', 'Instance ID must be a positive integer.'],
-        'Node with AppInstance option' => [[
+        'Node with Instance option' => [[
             '--node' => '3',
             '--no-start' => true,
         ], 'schedule.option_invalid', 'The --no-start option requires --instance.'],
@@ -454,7 +454,7 @@ it('applies explicit selector validation before HTTP in every output and interac
     return $datasets;
 });
 
-it('renders one exact json envelope for App-target schedule refusals', function (
+it('renders one exact json envelope for Project-target schedule refusals', function (
     string $command,
     array $arguments,
     string $code,
@@ -531,7 +531,7 @@ it('renders one exact json envelope for App-target schedule refusals', function 
         schedule_cli_add_arguments([
             '--project' => 'abc',
         ]),
-        'app.id_invalid',
+        'project.id_invalid',
         'Project ID must be a positive integer.',
     ],
     'update app without for' => [
@@ -740,7 +740,7 @@ function schedule_definition_cli_data(): array
 {
     return [
         'id' => '0199cc62-68f3-75b8-9f11-36fe92ac1f36',
-        'app_id' => 7,
+        'project_id' => 7,
         'name' => 'hourly-report',
         'environments' => ['production'],
         'spec' => [

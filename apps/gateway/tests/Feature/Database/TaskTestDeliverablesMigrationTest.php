@@ -21,12 +21,12 @@ it('fails loudly when a legacy test deliverable does not name one exact test fil
         $paths = glob(database_path('migrations/*.php')) ?: [];
         Artisan::call('migrate', ['--database' => 'test_deliverables_migration', '--path' => $paths, '--realpath' => true, '--force' => true]);
 
-        $appId = DB::table('apps')->insertGetId([
+        $projectId = DB::table('projects')->insertGetId([
             'name' => 'Migration fixture', 'slug' => 'migration-fixture', 'code' => 'MIG',
             'repository_url' => 'git@example.test:migration.git', 'repository_identity' => 'example.test/migration',
             'task_check' => 'cd apps/gateway && composer test',
         ]);
-        $groupId = DB::table('task_groups')->insertGetId(['app_id' => $appId, 'title' => 'Open', 'brief' => 'Brief', 'status' => 'todo']);
+        $groupId = DB::table('task_groups')->insertGetId(['project_id' => $projectId, 'title' => 'Open', 'brief' => 'Brief', 'status' => 'todo']);
         DB::table('tasks')->insert([
             'task_group_id' => $groupId, 'position' => 1, 'title' => 'Glob test', 'brief' => 'Brief', 'status' => 'todo',
             'deliverables' => json_encode([[
@@ -36,7 +36,7 @@ it('fails loudly when a legacy test deliverable does not name one exact test fil
         ]);
 
         $migration = require database_path('migrations/2026_09_29_130000_convert_test_deliverables_to_commands.php');
-        expect(fn () => $migration->up())->toThrow(RuntimeException::class, 'unsafe project, file, or test name');
+        expect(fn () => run_legacy_schema_migration($migration, 'up'))->toThrow(RuntimeException::class, 'unsafe project, file, or test name');
     } finally {
         DB::setDefaultConnection($default);
         DB::purge('test_deliverables_migration');
@@ -53,13 +53,13 @@ it('converts stored test deliverables with the explicit legacy Pest mapping', fu
         $paths = glob(database_path('migrations/*.php')) ?: [];
         Artisan::call('migrate', ['--database' => 'test_deliverables_migration', '--path' => $paths, '--realpath' => true, '--force' => true]);
 
-        $appId = DB::table('apps')->insertGetId([
+        $projectId = DB::table('projects')->insertGetId([
             'name' => 'Migration fixture', 'slug' => 'migration-fixture', 'code' => 'MIG',
             'repository_url' => 'git@example.test:migration.git', 'repository_identity' => 'example.test/migration',
             'task_check' => 'cd apps/gateway && composer test',
         ]);
-        $open = DB::table('task_groups')->insertGetId(['app_id' => $appId, 'title' => 'Open', 'brief' => 'Brief', 'status' => 'todo']);
-        $closed = DB::table('task_groups')->insertGetId(['app_id' => $appId, 'title' => 'Closed', 'brief' => 'Brief', 'status' => 'completed']);
+        $open = DB::table('task_groups')->insertGetId(['project_id' => $projectId, 'title' => 'Open', 'brief' => 'Brief', 'status' => 'todo']);
+        $closed = DB::table('task_groups')->insertGetId(['project_id' => $projectId, 'title' => 'Closed', 'brief' => 'Brief', 'status' => 'completed']);
         $legacy = ['id' => 'repro', 'type' => 'test', 'description' => 'Reproduce it', 'project' => './apps//gateway/', 'file' => './tests//Feature/LayoutTest.php', 'name' => 'layout regression', 'fails_on_base' => true];
         $openTask = DB::table('tasks')->insertGetId([
             'task_group_id' => $open, 'position' => 1, 'title' => 'Repro', 'brief' => 'Brief', 'status' => 'todo',
@@ -95,12 +95,12 @@ it('converts stored test deliverables with the explicit legacy Pest mapping', fu
         ]);
         $migration = require database_path('migrations/2026_09_29_130000_convert_test_deliverables_to_commands.php');
         DB::statement("CREATE TRIGGER fail_continuation_insert BEFORE INSERT ON tasks WHEN NEW.title LIKE 'Many legacy tests (continued %' BEGIN SELECT RAISE(ABORT, 'Injected continuation insert failure'); END");
-        expect(fn () => $migration->up())->toThrow(QueryException::class, 'Injected continuation insert failure');
+        expect(fn () => run_legacy_schema_migration($migration, 'up'))->toThrow(QueryException::class, 'Injected continuation insert failure');
         expect(json_decode(DB::table('tasks')->where('id', $expandedTask)->value('deliverables'), true))->toBe($expandedDeliverables)
             ->and(DB::table('tasks')->where('task_group_id', $open)->where('title', 'like', 'Many legacy tests (continued %')->count())->toBe(0)
             ->and(DB::table('tasks')->where('id', $laterTask)->value('position'))->toBe(3);
         DB::statement('DROP TRIGGER fail_continuation_insert');
-        $migration->up();
+        run_legacy_schema_migration($migration, 'up');
 
         expect(json_decode(DB::table('tasks')->where('id', $openTask)->value('deliverables'), true))->toBe([[
             'id' => 'repro',
@@ -117,7 +117,7 @@ it('converts stored test deliverables with the explicit legacy Pest mapping', fu
             'path' => 'apps/gateway/tests/Feature/LayoutTest.php',
             'change' => 'any',
         ]])->and(json_decode(DB::table('tasks')->where('id', $closedTask)->value('deliverables'), true))->toBe([$legacy])
-            ->and(Schema::hasColumn('apps', 'test_command'))->toBeFalse();
+            ->and(Schema::hasColumn('projects', 'test_command'))->toBeFalse();
 
         DB::table('tasks')->where('id', $expandedTask)->update([
             'status' => 'completed',

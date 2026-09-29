@@ -22,9 +22,9 @@ use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskSessionObserver;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Models\AgentThread;
-use App\Models\App as OrbitApp;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskGroup;
 use Illuminate\Database\QueryException;
@@ -39,10 +39,10 @@ beforeEach(function (): void {
 /** @return array{TaskGroup, Task, FakeAgentDriver, AgentDriverRegistry} */
 function driver_group(): array
 {
-    $app = OrbitApp::query()->create(['name' => 'drivers', 'slug' => 'drivers', 'repository_url' => 'git@example.test:drivers.git', 'default_branch' => 'main', 'task_check' => 'composer check']);
+    $project = Project::query()->create(['name' => 'drivers', 'slug' => 'drivers', 'repository_url' => 'git@example.test:drivers.git', 'default_branch' => 'main', 'task_check' => 'composer check']);
     $node = Node::query()->create(['name' => 'agent-node', 'platform' => 'linux', 'status' => 'active', 'wireguard_ip' => '10.44.0.5', 'public_ssh_host' => '10.44.0.5']);
-    $instance = AppInstance::query()->create(['app_id' => $app->id, 'node_id' => $node->id, 'name' => 'task', 'checkout_path' => '/srv/task', 'status' => 'source_resolved']);
-    $group = TaskGroup::query()->create(['app_id' => $app->id, 'implementer_agent_driver' => 'example', 'reviewer_agent_driver' => 'example', 'title' => 'Feature', 'brief' => 'Brief', 'status' => 'running']);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task', 'checkout_path' => '/srv/task', 'status' => 'source_resolved']);
+    $group = TaskGroup::query()->create(['project_id' => $project->id, 'implementer_agent_driver' => 'example', 'reviewer_agent_driver' => 'example', 'title' => 'Feature', 'brief' => 'Brief', 'status' => 'running']);
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create(['task_group_id' => $group->id, 'position' => 1, 'title' => 'First', 'brief' => 'Do the work', 'status' => 'running']);
@@ -57,10 +57,10 @@ function driver_group(): array
 }
 
 it('creates the conversation for each role through the driver recorded for that role', function (): void {
-    $app = OrbitApp::query()->create(['name' => 'roles', 'slug' => 'roles', 'repository_url' => 'git@example.test:roles.git', 'default_branch' => 'main']);
+    $project = Project::query()->create(['name' => 'roles', 'slug' => 'roles', 'repository_url' => 'git@example.test:roles.git', 'default_branch' => 'main']);
     $node = Node::query()->create(['name' => 'role-node', 'platform' => 'linux', 'status' => 'active', 'wireguard_ip' => '10.44.0.6', 'public_ssh_host' => '10.44.0.6']);
-    $instance = AppInstance::query()->create(['app_id' => $app->id, 'node_id' => $node->id, 'name' => 'task', 'checkout_path' => '/srv/roles', 'status' => 'source_resolved']);
-    $group = TaskGroup::query()->create(['app_id' => $app->id, 'implementer_agent_driver' => 'implementer-runtime', 'reviewer_agent_driver' => 'reviewer-runtime', 'title' => 'Feature', 'brief' => 'Brief', 'status' => 'running']);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task', 'checkout_path' => '/srv/roles', 'status' => 'source_resolved']);
+    $group = TaskGroup::query()->create(['project_id' => $project->id, 'implementer_agent_driver' => 'implementer-runtime', 'reviewer_agent_driver' => 'reviewer-runtime', 'title' => 'Feature', 'brief' => 'Brief', 'status' => 'running']);
     $group->taskable()->associate($instance);
     $group->save();
     $task = Task::query()->create(['task_group_id' => $group->id, 'position' => 1, 'title' => 'First', 'brief' => 'Do the work', 'status' => 'running']);

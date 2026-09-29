@@ -13,32 +13,32 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Analytics\EnableInstanceAnalyticsRequest;
-use App\Models\AppInstance;
+use App\Models\Instance;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 #[RequiresNodeAccess(ServingNode::InstanceOwning)]
 final class InstanceAnalyticsController extends Controller
 {
-    public function show(Request $request, AppInstance $instance, ShowInstanceAnalyticsAction $action): JsonResponse
+    public function show(Request $request, Instance $instance, ShowInstanceAnalyticsAction $action): JsonResponse
     {
         return $this->respond($request, $action->execute($instance));
     }
 
     public function enable(
         EnableInstanceAnalyticsRequest $request,
-        AppInstance $instance,
+        Instance $instance,
         EnableInstanceAnalyticsAction $action,
     ): JsonResponse {
         return $this->respond($request, $action->execute($instance, $request->hosts()));
     }
 
-    public function disable(Request $request, AppInstance $instance, DisableInstanceAnalyticsAction $action): JsonResponse
+    public function disable(Request $request, Instance $instance, DisableInstanceAnalyticsAction $action): JsonResponse
     {
         return $this->respond($request, $action->execute($instance));
     }
 
-    public function stats(Request $request, AppInstance $instance, ShowInstanceAnalyticsStatsAction $action): JsonResponse
+    public function stats(Request $request, Instance $instance, ShowInstanceAnalyticsStatsAction $action): JsonResponse
     {
         return response()->json([
             'data' => $action->execute($instance),
