@@ -82,7 +82,7 @@ These reasons explain the design. Check them before you propose a change.
 
 ### Tools generated from the API description
 
-More than a hundred hand-written tool classes would repeat the form requests' rules and drift from them with every API change. Generating the catalogue from the OpenAPI document keeps one source. A weak tool description is fixed in the form request or data class.
+More than a hundred hand-written tool classes would repeat the form requests' rules and drift from them with every API change. Generating the catalogue from the OpenAPI document keeps one source. A weak tool description is fixed in the form request, the data class, or the CLI command text that [API reference generation](/reference/api-reference) copies into the operation.
 
 ### Tool calls go through the HTTP kernel
 

@@ -1012,10 +1012,9 @@
             ],
             "concepts": [
                 "Deployment",
-                "Extension",
                 "Gateway",
-                "Project",
-                "Route"
+                "Route",
+                "Task"
             ],
             "governing_adrs": []
         },

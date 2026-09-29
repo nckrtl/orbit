@@ -159,7 +159,7 @@
           "version": {
             "type": "string",
             "pattern": "^\\d+\\.\\d+\\.\\d+$",
-            "description": "Display this application version"
+            "description": "Plausible Community Edition version, for example 3.2.1"
           }
         },
         "additionalProperties": false,
@@ -4994,12 +4994,14 @@
           },
           "cache_connection": {
             "type": "string",
-            "maxLength": 64
+            "maxLength": 64,
+            "description": "Redis Database connection slug for shared Valkey"
           },
           "cliproxy_url": {
             "type": "string",
             "format": "uri",
-            "maxLength": 512
+            "maxLength": 512,
+            "description": "CLIProxyAPI Management API origin"
           },
           "cliproxy_management_key": {
             "type": "string",
@@ -5092,7 +5094,8 @@
             "type": "string"
           },
           "disabled": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Disable the account"
           }
         },
         "additionalProperties": false,
@@ -5644,7 +5647,7 @@
       "name": "tasks-agents",
       "extension": "tasks",
       "title": "List task agent sessions",
-      "description": "List task agent sessions",
+      "description": "List a task group's agent threads.",
       "method": "GET",
       "path": "/api/v1/task-groups/{group}/agents",
       "path_inputs": [
@@ -5730,7 +5733,7 @@
       "name": "tasks-comment-create",
       "extension": "tasks",
       "title": "tasks:comment:create",
-      "description": "tasks:comment:create",
+      "description": "Ask for assistance on a subtask or resolve a request.",
       "method": "POST",
       "path": "/api/v1/task-groups/{group}/tasks/{task}/comments",
       "path_inputs": [
@@ -5755,15 +5758,18 @@
             "enum": [
               "assistance_requested",
               "resolution"
-            ]
+            ],
+            "description": "assistance_requested or resolution"
           },
           "body": {
             "type": "string",
-            "maxLength": 100000
+            "maxLength": 100000,
+            "description": "Comment text"
           },
           "author": {
             "type": "string",
-            "maxLength": 255
+            "maxLength": 255,
+            "description": "Who wrote the comment"
           },
           "agent_thread_id": {
             "type": [
@@ -5786,7 +5792,7 @@
       "name": "tasks-comment-list",
       "extension": "tasks",
       "title": "tasks:comment:list",
-      "description": "tasks:comment:list",
+      "description": "List a subtask's comments, newest first.",
       "method": "GET",
       "path": "/api/v1/task-groups/{group}/tasks/{task}/comments",
       "path_inputs": [
@@ -5860,18 +5866,22 @@
           },
           "title": {
             "type": "string",
-            "maxLength": 160
+            "maxLength": 160,
+            "description": "Short name of the feature"
           },
           "brief": {
             "type": "string",
-            "maxLength": 8000
+            "maxLength": 8000,
+            "description": "Goal and acceptance"
           },
           "status": {
             "type": "string",
-            "enum": []
+            "enum": [],
+            "description": "backlog (default) or todo"
           },
           "notify_coder": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Post the Coder settle webhook when the group settles"
           },
           "notify_on_settle": {
             "type": "boolean"
@@ -6106,11 +6116,13 @@
           },
           "title": {
             "type": "string",
-            "maxLength": 160
+            "maxLength": 160,
+            "description": "Short name of the step"
           },
           "brief": {
             "type": "string",
-            "maxLength": 8000
+            "maxLength": 8000,
+            "description": "Goal and acceptance of the step"
           },
           "deliverables": {
             "type": "array",
@@ -6175,7 +6187,8 @@
                 "type",
                 "description"
               ]
-            }
+            },
+            "description": "JSON file with an array of typed deliverables for the step"
           }
         },
         "additionalProperties": false,
@@ -6244,15 +6257,18 @@
           },
           "title": {
             "type": "string",
-            "maxLength": 160
+            "maxLength": 160,
+            "description": "New title"
           },
           "brief": {
             "type": "string",
-            "maxLength": 8000
+            "maxLength": 8000,
+            "description": "New brief"
           },
           "position": {
             "type": "integer",
-            "minimum": 1
+            "minimum": 1,
+            "description": "New position, starting at 1"
           },
           "deliverables": {
             "type": "array",
@@ -6317,7 +6333,8 @@
                 "type",
                 "description"
               ]
-            }
+            },
+            "description": "JSON file with an array of typed deliverables that replaces the list"
           }
         },
         "additionalProperties": false,
@@ -6349,15 +6366,18 @@
           },
           "title": {
             "type": "string",
-            "maxLength": 160
+            "maxLength": 160,
+            "description": "New title"
           },
           "brief": {
             "type": "string",
-            "maxLength": 8000
+            "maxLength": 8000,
+            "description": "New brief"
           },
           "status": {
             "type": "string",
-            "enum": []
+            "enum": [],
+            "description": "backlog or todo"
           }
         },
         "additionalProperties": false,
