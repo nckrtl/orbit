@@ -58,3 +58,4 @@ docs/solutions/migrate-unmanaged-executor-hostname.md: mechanical App to Project
 docs/cli/doctor.mdx: Doctor findings are unchanged. Renaming the task relation is internal.
 docs/reference/environment-variables.md: Environment variables are unchanged. Renaming the Instance task relation is internal.
 docs/solutions/doctor-incus-proof.md: The Incus doctor proof is unchanged. Renaming the task relation is internal.
+docs/reference/web-verification.md: The quota-unavailable purpose in the feature map now follows proxycli-only Quota. Web verification commands, the map schema, and the demo routes on this page are unchanged.
