@@ -6374,9 +6374,9 @@
           },
           "name": {
             "type": "string",
+            "description": "Task definition name, unique within the Project.",
             "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
-            "maxLength": 63,
-            "description": "Task definition name, unique within the Project."
+            "maxLength": 63
           },
           "title": {
             "type": "string",

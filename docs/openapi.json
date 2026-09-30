@@ -16932,7 +16932,12 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/projects/4/task-definitions\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\": \"example\", \"title\": \"Absorb Commander\", \"brief\": \"Persist groups. Accept when create and list work.\", \"status\": \"success\", \"subtasks\": [{\"key\": \"example\", \"title\": \"Absorb Commander\", \"kind\": \"example\"}]}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/projects/4/task-definitions\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\": \"example\", \"title\": \"Build a feature\", \"brief\": \"Document and build it.\", \"parameters\": [], \"status\": \"backlog\", \"subtasks\": [{\"key\": \"docs\", \"title\": \"Write the docs\", \"kind\": \"agent\"}]}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\CreateTaskDefinitionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateTaskDefinitionRequest(\n    projectId: 4,\n    definition: '{\"name\": \"example\", \"title\": \"Build a feature\", \"brief\": \"Document and build it.\", \"parameters\": [], \"status\": \"backlog\", \"subtasks\": [{\"key\": \"docs\", \"title\": \"Write the docs\", \"kind\": \"agent\"}]}',\n))->dto();\n"
           }
         ]
       }
@@ -17049,6 +17054,11 @@
             "lang": "bash",
             "label": "curl",
             "source": "curl -sS -X DELETE \"https://gateway.orbit/api/v1/projects/4/task-definitions/build-feature\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\DestroyTaskDefinitionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DestroyTaskDefinitionRequest(projectId: 4, name: 'example'))->dto();\n"
           }
         ]
       },
@@ -17142,6 +17152,11 @@
             "lang": "bash",
             "label": "curl",
             "source": "curl -sS \"https://gateway.orbit/api/v1/projects/4/task-definitions/build-feature\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\ShowTaskDefinitionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowTaskDefinitionRequest(projectId: 4, name: 'example'))->dto();\n"
           }
         ]
       },
@@ -17184,7 +17199,8 @@
                 "type": "object",
                 "properties": {
                   "name": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "Definition name"
                   },
                   "title": {
                     "type": "string",
@@ -17491,7 +17507,12 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PUT \"https://gateway.orbit/api/v1/projects/4/task-definitions/build-feature\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\": \"example\", \"title\": \"Absorb Commander\", \"brief\": \"Persist groups. Accept when create and list work.\", \"status\": \"success\", \"subtasks\": [{\"key\": \"example\", \"title\": \"Absorb Commander\", \"kind\": \"example\"}]}'\n"
+            "source": "curl -sS -X PUT \"https://gateway.orbit/api/v1/projects/4/task-definitions/build-feature\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\": \"build-feature\", \"title\": \"Build a feature\", \"brief\": \"Document and build it.\", \"parameters\": [], \"status\": \"backlog\", \"subtasks\": [{\"key\": \"docs\", \"title\": \"Write the docs\", \"kind\": \"agent\"}]}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\UpdateTaskDefinitionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateTaskDefinitionRequest(\n    projectId: 4,\n    name: 'example',\n    definition: '{\"name\": \"example\", \"title\": \"Build a feature\", \"brief\": \"Document and build it.\", \"parameters\": [], \"status\": \"backlog\", \"subtasks\": [{\"key\": \"docs\", \"title\": \"Write the docs\", \"kind\": \"agent\"}]}',\n))->dto();\n"
           }
         ]
       }
@@ -20296,6 +20317,11 @@
             "lang": "bash",
             "label": "curl",
             "source": "curl -sS \"https://gateway.orbit/api/v1/task-definitions?project_id=4\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\ListTaskDefinitionsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListTaskDefinitionsRequest())->dto();\n"
           }
         ]
       }

@@ -12748,6 +12748,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** @description Definition name */
                     name: string;
                     title: string;
                     brief: string;

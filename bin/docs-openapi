@@ -1195,6 +1195,8 @@ def php_sample(sdkreq, stream, tag):
             continue
         if name == 'name':
             val = NAME_BY_TAG.get(tag, 'example')
+        elif name == 'definition' and tag == 'Tasks':
+            val = json.dumps(task_definition_document(NAME_BY_TAG.get(tag, 'example')))
         elif t == 'array' and name == 'command':
             val = ['/usr/bin/php', 'artisan', 'queue:work']
         elif name in PHP_EXAMPLES:
@@ -1295,6 +1297,18 @@ def example_path(route, name):
     return EXAMPLE_PATH.get(name, 1)
 
 
+def task_definition_document(name):
+    """A definition the Gateway accepts. `parameters` is present because the write requires it."""
+    return {
+        'name': name,
+        'title': 'Build a feature',
+        'brief': 'Document and build it.',
+        'parameters': [],
+        'status': 'backlog',
+        'subtasks': [{'key': 'docs', 'title': 'Write the docs', 'kind': 'agent'}],
+    }
+
+
 def bash_sample(route, path, body_schema, query, tag):
     url = 'https://gateway.orbit' + re.sub(r'\{(\w+)\}', lambda m: str(example_path(route, m.group(1))), path)
     if query:
@@ -1304,7 +1318,13 @@ def bash_sample(route, path, body_schema, query, tag):
     lines = [f'curl -sS {method}"{url}" \\', '  --cacert /path/to/orbit-root-ca.pem \\', "  -H 'Accept: application/json' \\", "  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'"]
     if body_schema is not None:
         lines[-1] += ' \\'
-        lines += ["  -H 'Content-Type: application/json' \\", "  -d '" + json.dumps(example_from_schema(body_schema, None, tag, update=route['method'] in ('PATCH', 'PUT')) or {}) + "'"]
+        if route['name'] == 'tasks:definition:update':
+            body = task_definition_document(example_path(route, 'name'))
+        elif route['name'] == 'tasks:definition:create':
+            body = task_definition_document('example')
+        else:
+            body = example_from_schema(body_schema, None, tag, update=route['method'] in ('PATCH', 'PUT')) or {}
+        lines += ["  -H 'Content-Type: application/json' \\", "  -d '" + json.dumps(body) + "'"]
     return '\n'.join(lines) + '\n'
 
 

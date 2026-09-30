@@ -320,7 +320,7 @@ orbit tasks:definition:show [--project=ID] [name] [--json]
 
 With `--json` or `-n`, an omitted Project fails with `tasks.project_required` and an omitted name fails with `tasks.definition_name_required`. A Project ID that is not a positive integer fails with `tasks.project_invalid`. A name outside the [definition name rules](/reference/tasks#fields) fails with `tasks.definition_name_invalid` before the request. An empty definition list stops with `No matching records were found.`
 
-Human output is a detail tree of the definition fields. JSON is the definition record. A missing definition fails with `resource.not_found`. While the extension is off, the command fails with `extension.disabled`.
+Human output is a detail tree of the definition fields. JSON is the definition record. A missing definition fails with `http.404`. While the extension is off, the command fails with `extension.disabled`.
 
 ## orbit tasks:definition:create
 
@@ -349,9 +349,9 @@ orbit tasks:definition:update [--project=ID] [name] [--definition=FILE] [--json]
 | --- | --- | --- |
 | `--project=ID` | prompt | Numeric Project ID. In a terminal, the CLI lists Projects to select from. |
 | `name` | prompt | Definition name, selected as in `tasks:definition:show`. |
-| `--definition=FILE` | prompt | JSON file that replaces the whole definition. Its `name` must equal the argument. |
+| `--definition=FILE` | prompt | JSON file that replaces the whole definition. If the file includes `name`, it must equal the argument. |
 
-A file `name` that differs from the argument fails with `tasks.definition_name_mismatch` before the request. With `--json` or `-n`, an omitted Project, name, or file fails with `tasks.project_required`, `tasks.definition_name_required`, or `tasks.definition_file_required`. An unreadable file, or a file that is not a JSON object, fails with `tasks.definition_file_invalid`. The Gateway returns `tasks.definition_invalid` when the replacement breaks a validation rule, and `resource.not_found` when that name is missing. Another caller receives `node_access.required`. While the extension is off, the command fails with `extension.disabled`. Human output and JSON match create.
+A file `name` that differs from the argument fails with `tasks.definition_name_mismatch` before the request. With `--json` or `-n`, an omitted Project, name, or file fails with `tasks.project_required`, `tasks.definition_name_required`, or `tasks.definition_file_required`. An unreadable file, or a file that is not a JSON object, fails with `tasks.definition_file_invalid`. The Gateway returns `tasks.definition_invalid` when the replacement breaks a validation rule, and `http.404` when that name is missing. Another caller receives `node_access.required`. While the extension is off, the command fails with `extension.disabled`. Human output and JSON match create.
 
 ## orbit tasks:definition:destroy
 
@@ -367,7 +367,7 @@ orbit tasks:definition:destroy [--project=ID] [name] [--yes] [--json]
 | `name` | prompt | Definition name, selected as in `tasks:definition:show`. |
 | `--yes` | prompt | Confirm without a prompt. Required for `--json` and `-n` calls. |
 
-In a terminal, the question names the definition and its Project and defaults to No. A `--json` or `-n` call without `--yes` fails with `input.confirmation_required`. Declining fails with `input.cancelled`. Neither sends a request. A missing definition fails with `resource.not_found`. Another caller receives `node_access.required`. While the extension is off, the command fails with `extension.disabled`. JSON returns the deleted definition.
+In a terminal, the question names the definition and its Project and defaults to No. A `--json` or `-n` call without `--yes` fails with `input.confirmation_required`. Declining fails with `input.cancelled`. Neither sends a request. A missing definition fails with `http.404`. Another caller receives `node_access.required`. While the extension is off, the command fails with `extension.disabled`. JSON returns the deleted definition.
 
 ## Related
 

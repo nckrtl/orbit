@@ -10,15 +10,20 @@ use Orbit\Sdk\Requests\Tasks\CancelTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CompleteTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CreateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskCommentRequest;
+use Orbit\Sdk\Requests\Tasks\CreateTaskDefinitionRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\DestroySubtaskRequest;
+use Orbit\Sdk\Requests\Tasks\DestroyTaskDefinitionRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskAgentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskCommentsRequest;
+use Orbit\Sdk\Requests\Tasks\ListTaskDefinitionsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
+use Orbit\Sdk\Requests\Tasks\ShowTaskDefinitionRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTasksStatusRequest;
 use Orbit\Sdk\Requests\Tasks\SubtaskInput;
 use Orbit\Sdk\Requests\Tasks\UpdateSubtaskRequest;
+use Orbit\Sdk\Requests\Tasks\UpdateTaskDefinitionRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateTaskGroupRequest;
 use Orbit\Sdk\Responses\Tasks\SubtaskResponse;
 use Orbit\Sdk\Responses\Tasks\TaskAgentsResponse;
@@ -52,6 +57,11 @@ describe('task transport', function (): void {
         'comment create' => [new CreateTaskCommentRequest(13, 57, 'resolution', 'Done.', 'nick'), Method::POST, '/api/v1/task-groups/13/tasks/57/comments'],
         'comment list' => [new ListTaskCommentsRequest(13, 57), Method::GET, '/api/v1/task-groups/13/tasks/57/comments'],
         'agents' => [new ListTaskAgentsRequest(13), Method::GET, '/api/v1/task-groups/13/agents'],
+        'definition list' => [new ListTaskDefinitionsRequest, Method::GET, '/api/v1/task-definitions'],
+        'definition show' => [new ShowTaskDefinitionRequest(4, 'build-feature'), Method::GET, '/api/v1/projects/4/task-definitions/build-feature'],
+        'definition create' => [new CreateTaskDefinitionRequest(4, '{}'), Method::POST, '/api/v1/projects/4/task-definitions'],
+        'definition update' => [new UpdateTaskDefinitionRequest(4, 'build-feature', '{}'), Method::PUT, '/api/v1/projects/4/task-definitions/build-feature'],
+        'definition destroy' => [new DestroyTaskDefinitionRequest(4, 'build-feature'), Method::DELETE, '/api/v1/projects/4/task-definitions/build-feature'],
     ]);
 
     it('sends create fields and omits only absent optional values', function (): void {
