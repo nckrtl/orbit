@@ -18,5 +18,13 @@ final readonly class TaskSchedule
             ->everyTenSeconds()
             ->withoutOverlapping()
             ->when($enabled);
+        $schedule->command('problems:collect')
+            ->everyTenMinutes()
+            ->withoutOverlapping(15)
+            ->when($enabled);
+        $schedule->command('problems:file')
+            ->hourly()
+            ->withoutOverlapping(30)
+            ->when($enabled);
     }
 }

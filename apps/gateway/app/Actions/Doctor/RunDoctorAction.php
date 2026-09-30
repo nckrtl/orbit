@@ -38,14 +38,43 @@ final readonly class RunDoctorAction
     /** @param list<DoctorFamily> $families */
     public function execute(Node $consumer, ?int $nodeId, array $families): DoctorReportData
     {
-        $nodeReports = [];
+        return $this->report($this->contexts($this->nodes($consumer, $nodeId)), $families);
+    }
+
+    /**
+     * Inspect every Node and, unless a subset is named, every family.
+     * Peer access grants do not drop Nodes from this fleet.
+     *
+     * @param  list<DoctorFamily>  $families
+     */
+    public function executeForFleet(array $families = []): DoctorReportData
+    {
+        return $this->report($this->contexts(Node::query()->orderBy('name')->orderBy('id')->get()), $families);
+    }
+
+    /**
+     * @param  Collection<int, Node>  $nodes
+     * @return array<int, DoctorNodeContext>
+     */
+    private function contexts(Collection $nodes): array
+    {
         $selected = [];
 
-        foreach ($this->nodes($consumer, $nodeId) as $node) {
+        foreach ($nodes as $node) {
             $selected[$node->id] = $this->context($node);
         }
 
+        return $selected;
+    }
+
+    /**
+     * @param  array<int, DoctorNodeContext>  $selected
+     * @param  list<DoctorFamily>  $families
+     */
+    private function report(array $selected, array $families): DoctorReportData
+    {
         $scope = new DoctorInspectionScope($selected);
+        $nodeReports = [];
 
         foreach ($selected as $context) {
             $context = $context->withScope($scope);
