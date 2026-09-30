@@ -52,6 +52,50 @@ describe(UpdateToolAction::class, function (): void {
         'raw versions differ' => ['2.4.1-1ubuntu1', '2.4.2-1ubuntu1', ToolOutcome::Applied],
     ]);
 
+    it('reports an absent or conflicting macOS scope as unavailable and retries the update', function (string $step): void {
+        [$action, $manager, , $tool] = update_action_fixture();
+        $manager->installedVersions = [new ToolManagerException($step, 'secret prefix')];
+
+        $failure = update_action_exception(fn (): mixed => $action->execute($tool));
+        $stored = $tool->refresh();
+
+        expect($failure->errorCode)->toBe('tool.manager_unavailable')
+            ->and($failure->status)->toBe(409)
+            ->and($failure->getMessage())->not->toContain('secret')
+            ->and($stored->status)->toBe(ToolStatus::Failed)
+            ->and($stored->failed_operation)->toBe(ToolOperation::Update)
+            ->and($stored->error_code)->toBe('tool.manager_unavailable')
+            ->and($stored->installed_version)->toBe('2.4.0');
+
+        $manager->installedVersions = ['2.4.0', '2.4.1'];
+        $result = $action->execute($stored);
+
+        expect($result->outcome)->toBe(ToolOutcome::Applied)
+            ->and($tool->refresh()->status)->toBe(ToolStatus::Installed)
+            ->and($tool->error_code)->toBeNull()
+            ->and($tool->failed_operation)->toBeNull();
+    })->with([
+        'absent scope' => ['manager-absent'],
+        'conflicting scope' => ['manager-conflict'],
+    ]);
+
+    it('reports a scope that disappears during update as unavailable', function (): void {
+        [$action, $manager, , $tool] = update_action_fixture();
+        $manager->installedVersions = ['2.4.0'];
+        $manager->failures['update'] = [new ToolManagerException('manager-absent', 'secret chown')];
+
+        $failure = update_action_exception(fn (): mixed => $action->execute($tool));
+        $stored = $tool->refresh();
+
+        expect($failure->errorCode)->toBe('tool.manager_unavailable')
+            ->and($failure->status)->toBe(409)
+            ->and($failure->getMessage())->not->toContain('secret')
+            ->and($stored->status)->toBe(ToolStatus::Failed)
+            ->and($stored->failed_operation)->toBe(ToolOperation::Update)
+            ->and($stored->error_code)->toBe('tool.manager_unavailable')
+            ->and($stored->installed_version)->toBe('2.4.0');
+    });
+
     it('retries a failed update after the first mutation failed', function (): void {
         [$action, $manager, $lock, $tool] = update_action_fixture(
             status: ToolStatus::Failed,

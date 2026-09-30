@@ -169,6 +169,23 @@ final readonly class InstallToolAction
         try {
             $this->materializer->converge($node, $managerName);
         } catch (NodeProvisioningException $exception) {
+            $cause = $exception->getPrevious();
+
+            if (
+                $cause instanceof ToolManagerException
+                && in_array($cause->step, ['manager-absent', 'manager-conflict'], true)
+            ) {
+                throw $this->failure(
+                    errorCode: 'tool.manager_unavailable',
+                    outcome: ToolOutcome::ManagerFailed,
+                    status: 409,
+                    data: $data,
+                    manager: $managerName,
+                    message: 'The tool manager is not available on this node.',
+                    previous: $cause,
+                );
+            }
+
             throw $this->failure(
                 errorCode: 'tool.manager_provision_failed',
                 outcome: ToolOutcome::ManagerFailed,

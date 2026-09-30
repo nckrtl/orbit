@@ -38,7 +38,11 @@ The Gateway has five managers, fixed in code. There is no plugin registry and no
 
 On Linux, `composer` uses `COMPOSER_HOME=/opt/orbit/composer`. `vp` uses the managed user's Orbit-owned Vite+ global store, which is that enrolled account's global scope. The Gateway may install a missing Linux manager on first use.
 
-On macOS, `vp` is the enrolled account's existing Vite+ global store. `brew` and `brew-cask` use the existing Homebrew prefix. The Gateway does not install, replace, or repin those scopes, and it does not check out a Homebrew revision. A missing scope is scan state `absent`. On either platform, a scope that exists but has the wrong owner, a non-official Homebrew origin, a dirty Linux Homebrew tree, or a conflicting Vite+ store is scan state `conflicting`. Adoption and install then return `tool.manager_unavailable` (HTTP 409). Orbit does not repair that scope.
+On macOS, `vp` is the enrolled account's existing Vite+ global store. `brew` and `brew-cask` use the existing Homebrew prefix. The Gateway resolves that account's home from the machine and does not assume `/home`, `getent`, or a Linux bottle tag. It does not install, replace, or repin those scopes, and it does not check out a Homebrew revision.
+
+A missing scope is scan state `absent`. On either platform, a scope that exists but has the wrong owner, a non-official Homebrew origin, a dirty Linux Homebrew tree, or a conflicting Vite+ store is scan state `conflicting`. Adoption, install, update, and removal then return `tool.manager_unavailable` (HTTP 409). Orbit does not repair that scope.
+
+An accepted macOS Homebrew prefix is owned by the enrolled account and has origin `https://github.com/Homebrew/brew`. Apple silicon and an untar-anywhere install are the git repository: `prefix/.git` exists and `prefix/bin/brew` is a regular executable. The Intel `/usr/local` layout keeps the nested repository `prefix/Homebrew/.git` and a `prefix/bin/brew` symlink to `../Homebrew/bin/brew`. Any other shape is conflicting.
 
 `orbit tool:manager:list --node=<id>` shows each manager the Node's platform supports, with one of these states. An unsupported manager is omitted, not listed as `uninstalled`.
 
@@ -49,13 +53,15 @@ On macOS, `vp` is the enrolled account's existing Vite+ global store. `brew` and
 | `active` | The manager is ready. |
 | `failed` | Installing or checking the manager failed. The record keeps the failed step and error code. The next install tries again. |
 
-Before each Linux install, the Gateway converges the manager: it installs the manager when it is missing and checks its version. A failure returns `tool.manager_provision_failed` (HTTP 502), keeps the manager `failed`, and creates no Tool. On macOS it only rechecks the existing scope and returns `tool.manager_unavailable` (HTTP 409) when that scope is absent or conflicting. A manager stays installed after its last Tool is removed. No command removes a manager.
+Before each Linux install, the Gateway converges the manager: it installs the manager when it is missing and checks its version. A failure returns `tool.manager_provision_failed` (HTTP 502), keeps the manager `failed`, and creates no Tool. On macOS, install rechecks the existing scope and returns `tool.manager_unavailable` (HTTP 409) when that scope is absent or conflicting. It creates no Tool. An absent macOS scope stays `failed` at step `manager-absent` with error code `node.tool_manager_absent`. A conflicting owner, origin, or Vite+ store stays `failed` at step `manager-conflict` with error code `node.tool_manager_conflict`. A failed macOS probe returns `tool.manager_provision_failed`.
+
+Update and removal use the same `tool.manager_unavailable` code when the macOS scope is absent or conflicting. The Tool stays `failed` for that operation, with its installed version kept, and the same command retries it. A probe that is not an absent or conflicting scope still returns `tool.version_probe_failed`, `tool.update_failed`, or `tool.remove_failed`. A manager stays installed after its last Tool is removed. No command removes a manager.
 
 ## Discover installed packages
 
 `GET /api/v1/tool-inventory?node_id=<id>` is `tool:scan`. The CLI command is `orbit tool:scan --node=<id>`. The only input is `node_id`, a strict integer of an existing Node. Any other query or body field fails with `validation.failed` (HTTP 422). This operation is not a script API.
 
-The scan reads `brew`, `brew-cask`, and `vp` for the enrolled account. It does not inventory `apt` or `composer`. It compares packages with Tool rows by Node, manager, and package. It stores nothing and creates no Tool row. It does not take a manager lock. A failed, malformed, or truncated read marks that manager `incomplete` and is never an empty `complete` inventory. The other managers still return their own state.
+The scan reads `brew`, `brew-cask`, and `vp` for the enrolled account. It does not inventory `apt` or `composer`. It compares packages with Tool rows by Node, manager, and package. It stores nothing and creates no Tool row. It does not take a manager lock and it does not materialize a manager. A failed, malformed, or truncated read marks that manager `incomplete` and is never an empty `complete` inventory. The other managers still return their own state.
 
 The Gateway resolves the host itself and uses the pinned SSH identity. The response has no raw output, paths, environment values, checksums, or URLs. Success is HTTP 200.
 
@@ -193,7 +199,7 @@ The optional constraint is a SemVer range, such as `^0.150`. It only stops an un
 
 ## Update a Tool
 
-`tool:update` asks the manager for its current candidate and installs it. The result is `applied` when the version changed and `unchanged` when it did not. When the candidate falls outside the stored constraint, the update changes nothing and reports `blocked_by_constraint`. The Tool stays installed. A Homebrew formula that is pinned stays pinned. Update reports `unchanged` and does not clear the pin.
+`tool:update` asks the manager for its current candidate and installs it. The result is `applied` when the version changed and `unchanged` when it did not. When the candidate falls outside the stored constraint, the update changes nothing and reports `blocked_by_constraint`. The Tool stays installed. A Homebrew formula that is pinned stays pinned. Update reports `unchanged` and does not clear the pin. If the macOS Homebrew prefix or Vite+ scope is absent or conflicting, update returns `tool.manager_unavailable` (HTTP 409), marks the Tool `failed`, and leaves the recorded version in place.
 
 ## Homebrew formulae
 
@@ -251,6 +257,7 @@ The Gateway first reads the installed version. For `apt`, it then plans the remo
 | The Tool failed with `tool.version_probe_failed` and never recorded a version | Success, with no probe | Deleted |
 | The removal succeeds and the package is gone | Success | Deleted |
 | The version probe fails on a Tool with a known package | `tool.version_probe_failed` | Kept as `failed` |
+| The macOS scope is absent or conflicting | `tool.manager_unavailable` | Kept as `failed` |
 | The removal fails or the package stays | `tool.remove_failed` | Kept as `failed` |
 
 Retry the same command with the Tool ID. The Gateway reads the live package state before it acts again.

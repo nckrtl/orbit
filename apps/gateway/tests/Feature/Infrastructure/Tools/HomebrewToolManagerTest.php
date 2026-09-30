@@ -38,6 +38,8 @@ describe(HomebrewToolManager::class, function (): void {
         'app-prod' => ['linux', RoleName::AppProd, true],
         'gateway' => ['linux', RoleName::Gateway, true],
         'roleless' => ['linux', null, true],
+        'macOS roleless' => ['macos', null, true],
+        'macOS with a role' => ['macos', RoleName::AppDev, true],
         'non-Linux' => ['darwin', RoleName::AppDev, false],
     ]);
 
@@ -387,6 +389,264 @@ describe(HomebrewToolManager::class, function (): void {
         'unknown failure' => [homebrew_result(exitCode: 1, stderr: 'unexpected')],
         'truncated' => [homebrew_result('secret', truncated: true)],
     ]);
+
+    it('accepts the Apple silicon repository layout and the Intel symlink layout', function (): void {
+        [$manager, $ssh] = homebrew_tool_manager([
+            homebrew_result("/opt/homebrew\n"),
+        ]);
+
+        $manager->materialize(homebrew_tool_node('macos', null, 'arm64', 'mini'));
+        $program = $ssh->commands[0]->input;
+        $repositoryLayout = strpos($program, '[ -d "$prefix/.git" ] && [ ! -L "$prefix/.git" ]');
+        $regularBrew = strpos($program, '[ -L "$brew_link" ] || [ ! -f "$brew_link" ] || [ ! -x "$brew_link" ]');
+        $nestedLayout = strpos($program, '[ -d "$nested/.git" ] && [ ! -L "$nested" ] && [ ! -L "$nested/.git" ]');
+        $symlinkBrew = strpos($program, '[ "$target" != "../Homebrew/bin/brew" ]');
+
+        expect($repositoryLayout)->toBeInt()
+            ->and($regularBrew)->toBeInt()->toBeGreaterThan($repositoryLayout)
+            ->and($nestedLayout)->toBeInt()
+            ->and($symlinkBrew)->toBeInt()->toBeGreaterThan($nestedLayout)
+            ->and($program)->toContain('https://github.com/Homebrew/brew');
+    });
+
+    it('verifies an existing macOS Homebrew prefix without installing or repinning it', function (): void {
+        [$manager, $ssh] = homebrew_tool_manager([
+            homebrew_result("/opt/homebrew\n"),
+        ]);
+
+        $manager->materialize(homebrew_tool_node('macos', null, 'arm64', 'mini'));
+
+        $program = $ssh->commands[0]->input;
+        expect($ssh->arguments())->toBe([['/bin/bash', '-su', '--', 'mini']])
+            ->and($ssh->connections[0]->user)->toBe('mini')
+            ->and($program)->toContain('/usr/bin/dscacheutil')
+            ->and($program)->toContain("/usr/bin/stat -f '%Su'")
+            ->and($program)->toContain('https://github.com/Homebrew/brew')
+            ->and($program)->not->toContain('getent')
+            ->and($program)->not->toContain('stat -c')
+            ->and($program)->not->toContain('/home/')
+            ->and($program)->not->toContain('systemd')
+            ->and($program)->not->toContain('apt-get')
+            ->and($program)->not->toContain('checkout')
+            ->and($program)->not->toContain('brew update');
+
+        $script = tempnam(sys_get_temp_dir(), 'orbit-mac-homebrew-');
+        file_put_contents($script, $program);
+
+        try {
+            exec('bash -n '.escapeshellarg($script).' 2>&1', $syntaxOutput, $syntaxStatus);
+            expect($syntaxStatus)->toBe(0);
+        } finally {
+            unlink($script);
+        }
+    });
+
+    it('reports a missing or conflicting macOS Homebrew prefix without raw output', function (int $exitCode, string $step): void {
+        [$manager] = homebrew_tool_manager([
+            homebrew_result('secret prefix', exitCode: $exitCode, stderr: 'secret stat'),
+        ]);
+
+        expect(fn () => $manager->materialize(homebrew_tool_node('macos', null, 'arm64', 'mini')))
+            ->toThrow(function (ToolManagerException $exception) use ($step): void {
+                expect($exception->step)->toBe($step)
+                    ->and($exception->result?->stdout)->toBeEmpty()
+                    ->and($exception->result?->stderr)->toBeEmpty()
+                    ->and($exception->getMessage())->not->toContain('secret');
+            });
+    })->with([
+        'absent' => [42, 'manager-absent'],
+        'conflicting owner or origin' => [43, 'manager-conflict'],
+        'unreadable probe' => [1, 'manager-probe'],
+    ]);
+
+    it('rejects a macOS prefix probe that is not one owned Homebrew location', function (): void {
+        [$manager, $ssh] = homebrew_tool_manager([
+            homebrew_result("/tmp/not-homebrew\n"),
+        ]);
+
+        expect(fn () => $manager->install(homebrew_tool_node('macos', null, 'arm64', 'mini'), 'ripgrep'))
+            ->toThrow(ToolManagerException::class, 'malformed output');
+        expect($ssh->arguments())->toBe([['/bin/bash', '-su', '--', 'mini']]);
+    });
+
+    it('selects the macOS bottle for the stored CPU and product version', function (
+        string $architecture,
+        string $productVersion,
+        string $tag,
+    ): void {
+        [$manager, $ssh] = homebrew_tool_manager([
+            homebrew_result("/opt/homebrew\n"),
+            homebrew_result($productVersion."\n"),
+            homebrew_result(homebrew_formula(architecture: $tag)),
+        ]);
+
+        expect($manager->candidateVersion(
+            homebrew_tool_node('macos', null, $architecture, 'mini'),
+            'ripgrep',
+            ToolOperation::Install,
+        ))->toBe('0.9.0');
+        expect($ssh->arguments())->toBe([
+            ['/bin/bash', '-su', '--', 'mini'],
+            ['/usr/bin/sw_vers', '-productVersion'],
+            [...homebrew_mac_arguments(refreshApi: true), 'info', '--json=v2', '--formula', 'homebrew/core/ripgrep'],
+        ]);
+    })->with([
+        'apple silicon macOS 27' => ['arm64', '27.1.2', 'arm64_golden_gate'],
+        'intel macOS 15' => ['x86_64', '15.6.1', 'sequoia'],
+    ]);
+
+    it('uses the all bottle only when the current macOS tag is absent', function (): void {
+        $sha = str_repeat('c', 64);
+        [$manager] = homebrew_tool_manager([
+            homebrew_result("/opt/homebrew\n"),
+            homebrew_result("26.0\n"),
+            homebrew_result(homebrew_formula([
+                'omit_tag' => true,
+                'all_sha256' => $sha,
+            ], 'arm64_tahoe')),
+        ]);
+
+        expect($manager->candidateVersion(
+            homebrew_tool_node('macos', null, 'arm64', 'mini'),
+            'ripgrep',
+            ToolOperation::Update,
+        ))->toBe('0.9.0');
+    });
+
+    it('does not accept an older macOS bottle or the all bottle when the current tag is present', function (array $changes): void {
+        [$manager, $ssh] = homebrew_tool_manager([
+            homebrew_result("/opt/homebrew\n"),
+            homebrew_result("27.0\n"),
+            homebrew_result(homebrew_formula($changes, 'arm64_golden_gate')),
+        ]);
+
+        expect(fn () => $manager->candidateVersion(
+            homebrew_tool_node('macos', null, 'arm64', 'mini'),
+            'ripgrep',
+            ToolOperation::Install,
+        ))->toThrow(ToolManagerException::class, 'compatible verified bottle');
+        expect($ssh->arguments())->not->toContain(
+            [...homebrew_mac_arguments(refreshApi: true), 'install', '--formula', '--force-bottle', 'homebrew/core/ripgrep'],
+        );
+    })->with([
+        'older OS tag' => [['architecture' => 'arm64_sequoia']],
+        'checksummed tag beats all' => [[
+            'sha256' => null,
+            'all_sha256' => str_repeat('d', 64),
+        ]],
+    ]);
+
+    it('refuses a macOS product version with no bottle symbol before formula metadata', function (): void {
+        [$manager, $ssh] = homebrew_tool_manager([
+            homebrew_result("/opt/homebrew\n"),
+            homebrew_result("10.16\n"),
+        ]);
+
+        expect(fn () => $manager->candidateVersion(
+            homebrew_tool_node('macos', null, 'arm64', 'mini'),
+            'ripgrep',
+            ToolOperation::Install,
+        ))->toThrow(ToolManagerException::class, 'no compatible Homebrew bottle');
+        expect($ssh->arguments())->toBe([
+            ['/bin/bash', '-su', '--', 'mini'],
+            ['/usr/bin/sw_vers', '-productVersion'],
+        ]);
+    });
+
+    it('rejects an unsupported macOS CPU before any SSH I/O', function (): void {
+        [$manager, $ssh] = homebrew_tool_manager([]);
+
+        expect(fn () => $manager->install(homebrew_tool_node('macos', null, 'i386', 'mini'), 'ripgrep'))
+            ->toThrow(ToolManagerException::class, 'no supported Homebrew bottle');
+        expect($ssh->arguments())->toBeEmpty();
+    });
+
+    it('installs, updates, and removes one macOS formula with fixed bottle argv', function (): void {
+        $node = homebrew_tool_node('macos', null, 'arm64', 'mini');
+        $prefix = homebrew_result("/Users/mini/homebrew\n");
+        $version = homebrew_result("27.0.1\n");
+        $metadata = homebrew_result(homebrew_formula(architecture: 'arm64_golden_gate'));
+        [$manager, $ssh] = homebrew_tool_manager([
+            $prefix,
+            homebrew_result("Homebrew 4.6.15\n"),
+            $prefix,
+            $version,
+            $metadata,
+            $prefix,
+            homebrew_result("ripgrep 0.8.2\n"),
+            $prefix,
+            $version,
+            $metadata,
+            $prefix,
+            homebrew_result(),
+            $prefix,
+            $version,
+            $metadata,
+            $prefix,
+            homebrew_result(),
+            $prefix,
+            homebrew_result(),
+        ]);
+
+        expect($manager->managerVersion($node))->toBe('Homebrew 4.6.15');
+        expect($manager->candidateVersion($node, 'ripgrep', ToolOperation::Install))->toBe('0.9.0');
+        expect($manager->installedVersion($node, 'ripgrep'))->toBe('0.8.2');
+        $manager->install($node, 'ripgrep');
+        $manager->update($node, 'ripgrep');
+        expect($manager->planRemoval($node, 'ripgrep')->packages)->toBe(['ripgrep']);
+        $manager->remove($node, 'ripgrep');
+
+        $brew = homebrew_mac_arguments('/Users/mini/homebrew');
+        $refresh = homebrew_mac_arguments('/Users/mini/homebrew', true);
+        $formula = ['info', '--json=v2', '--formula', 'homebrew/core/ripgrep'];
+        expect($ssh->arguments())->toBe([
+            ['/bin/bash', '-su', '--', 'mini'],
+            [...$brew, '--version'],
+            ['/bin/bash', '-su', '--', 'mini'],
+            ['/usr/bin/sw_vers', '-productVersion'],
+            [...$refresh, ...$formula],
+            ['/bin/bash', '-su', '--', 'mini'],
+            [...$brew, 'list', '--versions', '--formula', 'homebrew/core/ripgrep'],
+            ['/bin/bash', '-su', '--', 'mini'],
+            ['/usr/bin/sw_vers', '-productVersion'],
+            [...$refresh, ...$formula],
+            ['/bin/bash', '-su', '--', 'mini'],
+            [...$refresh, 'install', '--formula', '--force-bottle', 'homebrew/core/ripgrep'],
+            ['/bin/bash', '-su', '--', 'mini'],
+            ['/usr/bin/sw_vers', '-productVersion'],
+            [...$refresh, ...$formula],
+            ['/bin/bash', '-su', '--', 'mini'],
+            [...$refresh, 'upgrade', '--formula', '--force-bottle', 'homebrew/core/ripgrep'],
+            ['/bin/bash', '-su', '--', 'mini'],
+            [...$brew, 'uninstall', '--formula', 'homebrew/core/ripgrep'],
+        ]);
+        expect(json_encode($ssh->arguments()))
+            ->not->toContain('autoremove')
+            ->not->toContain('--zap')
+            ->not->toContain('services')
+            ->not->toContain('x86_64_linux')
+            ->not->toContain('uname');
+    });
+
+    it('accepts the installed macOS Homebrew version and rejects a malformed probe', function (string $version, bool $valid): void {
+        [$manager] = homebrew_tool_manager([
+            homebrew_result("/opt/homebrew\n"),
+            homebrew_result($version."\n"),
+        ]);
+        $read = fn () => $manager->managerVersion(homebrew_tool_node('macos', null, 'arm64', 'mini'));
+
+        if ($valid) {
+            expect($read())->toBe($version);
+
+            return;
+        }
+
+        expect($read)->toThrow(ToolManagerException::class, 'malformed output');
+    })->with([
+        'installed release' => ['Homebrew 4.6.15', true],
+        'pinned Linux release is not required' => ['Homebrew 7.0.0', true],
+        'developer describe line' => ['Homebrew 4.6.15-12-gabcdef', false],
+    ]);
 });
 
 /**
@@ -410,14 +670,19 @@ function homebrew_tool_manager(array $results): array
     ];
 }
 
-function homebrew_tool_node(string $platform = 'linux', ?RoleName $role = RoleName::AppDev): Node
-{
+function homebrew_tool_node(
+    string $platform = 'linux',
+    ?RoleName $role = RoleName::AppDev,
+    ?string $architecture = null,
+    string $user = 'orbit',
+): Node {
     $node = new Node([
         'name' => 'homebrew-tool-node',
         'status' => LifecycleStatus::Active,
         'platform' => $platform,
+        'architecture' => $architecture,
         'public_ssh_host' => '127.0.0.1',
-        'user' => 'orbit',
+        'user' => $user,
         'wireguard_ip' => '10.8.0.44',
     ]);
     $roles = $role === null
@@ -441,6 +706,19 @@ function homebrew_formula(array $changes = [], string $architecture = 'x86_64_li
         'url' => "https://ghcr.io/v2/homebrew/core/ripgrep/blobs/sha256:{$urlSha256}",
         'sha256' => $sha256,
     ];
+    $files = [$architecture => $file];
+
+    if (($changes['omit_tag'] ?? false) === true) {
+        unset($files[$architecture]);
+    }
+
+    if (is_string($changes['all_sha256'] ?? null)) {
+        $allSha = $changes['all_sha256'];
+        $files['all'] = [
+            'url' => "https://ghcr.io/v2/homebrew/core/ripgrep/blobs/sha256:{$allSha}",
+            'sha256' => $allSha,
+        ];
+    }
 
     return json_encode([
         'formulae' => [[
@@ -451,12 +729,36 @@ function homebrew_formula(array $changes = [], string $architecture = 'x86_64_li
                 'stable' => array_key_exists('stable', $changes) ? $changes['stable'] : '0.9.0',
                 'bottle' => $changes['has_bottle'] ?? true,
             ],
-            'bottle' => ['stable' => ['files' => [$architecture => $file]]],
+            'bottle' => ['stable' => ['files' => $files === [] ? new stdClass : $files]],
             'disabled' => $changes['disabled'] ?? false,
             'service' => ['run' => ['ripgrep', 'server']],
         ]],
         'casks' => $changes['casks'] ?? [],
     ], JSON_THROW_ON_ERROR);
+}
+
+/**
+ * @return non-empty-list<string>
+ */
+function homebrew_mac_arguments(string $prefix = '/opt/homebrew', bool $refreshApi = false): array
+{
+    $arguments = [
+        'env',
+        'HOMEBREW_NO_AUTO_UPDATE=1',
+        'HOMEBREW_NO_ANALYTICS=1',
+        'HOMEBREW_NO_ENV_HINTS=1',
+        'HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1',
+        'HOMEBREW_NO_INSTALL_CLEANUP=1',
+    ];
+
+    if ($refreshApi) {
+        $arguments[] = 'HOMEBREW_FORCE_API_AUTO_UPDATE=1';
+    }
+
+    $arguments[] = 'PATH='.$prefix.'/bin:/usr/bin:/bin';
+    $arguments[] = $prefix.'/bin/brew';
+
+    return $arguments;
 }
 
 /** @return non-empty-list<string> */
@@ -467,6 +769,8 @@ function homebrew_arguments(): array
         'HOMEBREW_NO_AUTO_UPDATE=1',
         'HOMEBREW_NO_ANALYTICS=1',
         'HOMEBREW_NO_ENV_HINTS=1',
+        'HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1',
+        'HOMEBREW_NO_INSTALL_CLEANUP=1',
         'PATH=/home/linuxbrew/.linuxbrew/bin:/usr/bin:/bin',
         '/home/linuxbrew/.linuxbrew/bin/brew',
     ];

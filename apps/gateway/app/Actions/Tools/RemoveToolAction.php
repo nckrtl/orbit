@@ -76,13 +76,7 @@ final readonly class RemoveToolAction
             try {
                 $plan = $manager->planRemoval($node, $tool->package);
             } catch (ToolManagerException $exception) {
-                throw $this->failure(
-                    tool: $tool,
-                    errorCode: 'tool.remove_failed',
-                    status: 502,
-                    message: 'The tool removal plan failed.',
-                    previous: $exception,
-                );
+                throw $this->removalFailure($tool, $exception, 'The tool removal plan failed.');
             } catch (Throwable $exception) {
                 throw $this->failure($tool, 'tool.remove_failed', 502, 'The tool removal plan failed.', previous: NodeLockLoss::keep($exception));
             }
@@ -105,13 +99,7 @@ final readonly class RemoveToolAction
             try {
                 $manager->remove($node, $tool->package);
             } catch (ToolManagerException $exception) {
-                throw $this->failure(
-                    tool: $tool,
-                    errorCode: 'tool.remove_failed',
-                    status: 502,
-                    message: 'The tool manager removal failed.',
-                    previous: $exception,
-                );
+                throw $this->removalFailure($tool, $exception, 'The tool manager removal failed.');
             } catch (Throwable $exception) {
                 throw $this->failure($tool, 'tool.remove_failed', 502, 'The tool manager removal failed.', previous: NodeLockLoss::keep($exception));
             }
@@ -149,12 +137,11 @@ final readonly class RemoveToolAction
         try {
             return $manager->installedVersion($node, $tool->package);
         } catch (ToolManagerException $exception) {
-            throw $this->failure(
-                tool: $tool,
-                errorCode: 'tool.version_probe_failed',
-                status: 502,
-                message: 'The installed tool version could not be verified.',
-                previous: $exception,
+            throw $this->removalFailure(
+                $tool,
+                $exception,
+                'The installed tool version could not be verified.',
+                'tool.version_probe_failed',
             );
         } catch (Throwable $exception) {
             throw $this->failure(
@@ -201,6 +188,31 @@ final readonly class RemoveToolAction
         }
 
         return [$node, $record, $manager];
+    }
+
+    private function removalFailure(
+        Tool $tool,
+        ToolManagerException $exception,
+        string $message,
+        string $errorCode = 'tool.remove_failed',
+    ): ToolOperationException {
+        if (in_array($exception->step, ['manager-absent', 'manager-conflict'], true)) {
+            return $this->failure(
+                tool: $tool,
+                errorCode: 'tool.manager_unavailable',
+                status: 409,
+                message: 'The tool manager is not available.',
+                previous: $exception,
+            );
+        }
+
+        return $this->failure(
+            tool: $tool,
+            errorCode: $errorCode,
+            status: 502,
+            message: $message,
+            previous: $exception,
+        );
     }
 
     private function failure(
