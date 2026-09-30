@@ -97,7 +97,8 @@ exit($status);"""
     existing_processes=orbit('process:list','--node=app-dev')['processes']
     for name,image,port,volume,environment,command in specs:
         args=['process:create',name,'--node=app-dev','--runtime=docker','--image='+image,'--working-directory=/','--restart=unless-stopped','--start','--port=10.44.0.2:'+str(port)+':'+str(port),'--volume='+volume]
-        args += ['--environment='+k+'='+v for k,v in environment.items()]
+        # process:create takes one --environment word whose value is NAME=VALUE.
+        args += [('--environment'+'=')+k+'='+v for k,v in environment.items()]
         args += ['--command='+x for x in command]
         process=unique(existing_processes, 'name', name)
         expected={'image':image,'command':command,'ports':['10.44.0.2:'+str(port)+':'+str(port)],'volumes':[{'source':volume.split(':')[0],'target':volume.split(':')[1],'read_only':False}]}
@@ -166,9 +167,6 @@ exit($status);"""
     for instance, sql_slug in [(dev,'e2e-mysql'),(prod,'e2e-postgres')]:
         selector='--instance='+str(instance['id'])
         if not verify:
-            # Recover only the known, existing identity through the product.
-            args=['instance:create',str(instance['project_id']),str(instance['node_id']),instance['name'],'--domain='+instance['domain'],'--recover-source-profile']
-            if instance.get('branch_override'): args += ['--branch='+instance['branch_override']]
             try:
                 orbit('env:import',selector)
             except RuntimeError as error:

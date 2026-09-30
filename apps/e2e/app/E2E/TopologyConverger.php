@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\E2E;
 
+use App\E2E\State\SecretRedactor;
 use App\E2E\Value\ApplicationEndpoint;
 use App\E2E\Value\ConvergenceReport;
 use App\E2E\Value\GuestCommand;
@@ -278,10 +279,7 @@ final readonly class TopologyConverger
                 $script = $commands[$label]['script'];
                 $instance = $commands[$label]['instance'];
 
-                throw new RuntimeException(
-                    "Guest convergence script {$script} failed on {$instance} "
-                    ."with exit code {$result->exitCode}{$this->failureDetails($script, $result)}.",
-                );
+                throw new RuntimeException($this->guestFailure($script, $instance, $result));
             }
         }
     }
@@ -315,10 +313,7 @@ final readonly class TopologyConverger
         );
 
         if (! $result->successful()) {
-            throw new RuntimeException(
-                "Guest convergence script {$script} failed on {$instance} "
-                ."with exit code {$result->exitCode}{$this->failureDetails($script, $result)}.",
-            );
+            throw new RuntimeException($this->guestFailure($script, $instance, $result));
         }
 
         return $result;
@@ -337,13 +332,16 @@ final readonly class TopologyConverger
             }
 
             if ($attempt === self::INSTANCE_API_READINESS_ATTEMPTS) {
-                throw new RuntimeException(
+                throw new RuntimeException($this->guestFailure(
+                    'converge-sample-app.sh',
+                    $instance,
+                    $result,
                     'Guest convergence readiness action converge-sample-app.sh instance-api-readiness failed '
                     ."on {$instance} after "
                     .self::INSTANCE_API_READINESS_ATTEMPTS
                     ." attempts; probe instance:list --json failed on attempt {$attempt} "
                     ."with exit code {$result->exitCode}.",
-                );
+                ));
             }
 
             if ($this->instanceApiReadinessRetryDelayMicroseconds > 0) {
@@ -495,7 +493,20 @@ final readonly class TopologyConverger
         ];
     }
 
-    private function failureDetails(string $script, GuestCommandResult $result): string
+    private function guestFailure(
+        string $script,
+        string $instance,
+        GuestCommandResult $result,
+        ?string $message = null,
+    ): string {
+        $message ??= "Guest convergence script {$script} failed on {$instance} "
+            ."with exit code {$result->exitCode}{$this->stepSuffix($script, $result)}.";
+        $tail = $this->stderrTail($result->stderr);
+
+        return $tail === '' ? $message : $message."\n".$tail;
+    }
+
+    private function stepSuffix(string $script, GuestCommandResult $result): string
     {
         $pattern = match (true) {
             $script === 'converge-gateway.sh' && $result->exitCode === 71 => '/(?:\A|\R)Gateway bootstrap failed at step \[([a-z0-9:-]+)\] with error \[([a-z0-9._-]+)\]\.(?:\R|\z)/D',
@@ -512,5 +523,23 @@ final readonly class TopologyConverger
         }
 
         return " at step {$failure[1]} ({$failure[2]})";
+    }
+
+    /**
+     * The evidence-log redactor, then the last 20 lines, then the last 2000 characters.
+     */
+    private function stderrTail(string $stderr): string
+    {
+        $redacted = rtrim((new SecretRedactor)->redact($stderr), "\r\n");
+        if ($redacted === '') {
+            return '';
+        }
+        $lines = preg_split('/\R/u', $redacted) ?: [];
+        $tail = implode("\n", array_slice($lines, -20));
+        if (mb_strlen($tail) <= 2000) {
+            return $tail;
+        }
+
+        return mb_substr($tail, -2000);
     }
 }

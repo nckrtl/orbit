@@ -373,7 +373,7 @@ function typed_sample_resource_fixture(): array
                     invalid-domain-with-hostname) production_endpoint='"domain":"","hostname":"e2e-prod.orbit.test"' ;;
                     *) exit 70 ;;
                   esac
-                  printf ',{"id":5,"project_id":1,"node_id":3,"name":"e2e-prod","environment":"production","source_layout":"release","status":"active","checkout_path":"%s/production/current","production_user":"orbit-laravel","production_home":"%s/production","selected_branch":"main","starting_commit":"%s","effective_root":"%s/production/current/public","current_target":"%s/production/releases/one",%s,"php_version":"8.5"}' "$state" "$state" "$(printf a%.0s {1..40})" "$state" "$state" "$production_endpoint"
+                  printf ',{"id":5,"project_id":1,"node_id":3,"name":"e2e-prod","status":"active","checkout_path":"%s/production/releases/one","production_user":"orbit-laravel","production_home":"%s/production","selected_branch":"main","starting_commit":"%s","effective_root":"%s/production/current/public",%s}' "$state" "$state" "$(printf a%.0s {1..40})" "$state" "$production_endpoint"
                 fi
                 printf ']}'
               fi
@@ -389,7 +389,8 @@ function typed_sample_resource_fixture(): array
             printf '{"id":4}'
             ;;
           instance:clone)
-            [[ "$*" == 'instance:clone 4 3 e2e-prod --preview-name=e2e-prod --branch=main --json' ]]
+            [[ "$1 $2 $3 $4 $5" == 'instance:clone 4 3 e2e-prod --preview-name=e2e-prod' ]]
+            [[ "$6" == --branch=* && "$6" != '--branch=' && "$7" == '--json' ]]
             [[ "${CLONE_FAILS:-0}" == 0 ]] || exit 19
             touch "$state/production"
             printf '{"id":5}'
@@ -543,7 +544,6 @@ function typed_cluster_creation_commands(): array
     return [
         'node:list --json',
         'instance:list --json',
-        'list --raw',
         'cluster:list --json',
         'cluster:create e2e-development --json',
         'cluster:node:add 3 2 --json',
@@ -2660,7 +2660,6 @@ describe('convergence guest scripts', function () {
                 'project:create laravel',
                 'instance:create',
                 'route:create',
-                'workspace:new',
                 'APP_KEY=base64:',
                 'composer install',
                 'runtime_user=orbit',
@@ -3058,99 +3057,6 @@ describe('convergence guest scripts', function () {
         'conflicting local edit is preserved' => ['conflict', false],
     ]);
 
-    it('does not create duplicate sample resources on a second run', function () {
-        $root = temporaryPath('orbit-task7-resources-', 6);
-        mkdir($root, 0o700, true);
-        $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/converge-sample-app.sh');
-        $script = str_replace(
-            ['orbit=/home/orbit/orbit/apps/cli/orbit', 'sample_state=/home/orbit/.orbit/e2e-sample-app-state.json'],
-            ["orbit={$root}/orbit", "sample_state={$root}/sample-app-state.json"],
-            $source,
-        );
-        file_put_contents("{$root}/converge.sh", $script);
-        file_put_contents("{$root}/orbit", <<<'BASH'
-            #!/usr/bin/env bash
-            set -euo pipefail
-            state=$(dirname "$0")
-            printf '%s\n' "$*" >>"$state/commands"
-            case "$1" in
-              list) printf 'workspace:new    Create a workspace.\n' ;;
-              node:list) printf '{"nodes":[{"id":2,"name":"app-dev"},{"id":3,"name":"app-prod"}]}' ;;
-              project:list)
-                if [[ -s "$state/app" ]]; then printf '{"projects":[{"id":1,"slug":"laravel","name":"Laravel","repository_url":"https://example.invalid/wrong.git"}]}'
-                elif [[ -e "$state/app" ]]; then printf '{"projects":[{"id":1,"slug":"laravel","name":"Laravel","repository_url":"https://github.com/laravel/laravel.git"}]}'
-                else printf '{"projects":[]}'
-                fi
-                ;;
-              project:create) touch "$state/app"; printf '{"id":1}' ;;
-              instance:list)
-                printf '{"instances":['
-                sep=
-                if [[ -e "$state/dev" ]]; then printf '%s{"id":4,"project_id":1,"node_id":2,"name":"e2e-dev","environment":"development","hostname":"laravel.beast"}' "$sep"; sep=,; fi
-                if [[ -e "$state/prod" ]]; then printf '%s{"id":5,"project_id":1,"node_id":3,"name":"e2e-prod","environment":"production","hostname":"laravel.internal"}' "$sep"; fi
-                printf ']}'
-                ;;
-              instance:create) [[ "$4" == e2e-dev ]] && touch "$state/dev" || touch "$state/prod"; printf '{"id":4}' ;;
-              workspace:list) [[ -e "$state/workspace" ]] && printf '{"workspaces":[{"id":6,"instance_id":4,"name":"e2e","branch":"e2e"}]}' || printf '{"workspaces":[]}' ;;
-              workspace:new) touch "$state/workspace"; printf '{"id":6}' ;;
-              *) exit 70 ;;
-            esac
-            BASH);
-        chmod("{$root}/orbit", 0o700);
-
-        $arguments = [
-            'bash',
-            "{$root}/converge.sh",
-            'create-resources',
-            'app-dev',
-            'app-prod',
-            str_repeat('a', 40),
-        ];
-        expect(new Process($arguments)->run())->toBe(0);
-        $firstRunCommands = file("{$root}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        expect(array_slice($firstRunCommands, 0, 6))->toBe([
-            'node:list --json',
-            'instance:list --json',
-            'list --raw',
-            'project:list --json',
-            'project:create laravel laravel-app https://github.com/laravel/laravel.git --name=Laravel --json',
-            'instance:list --json',
-        ]);
-        expect(new Process($arguments)->run())->toBe(0);
-        $commands = file("{$root}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-
-        expect(array_filter($commands, fn (string $command): bool => str_starts_with($command, 'project:create ')))
-            ->toHaveCount(1)
-            ->and(array_filter($commands, fn (string $command): bool => str_starts_with($command, 'instance:create ')))
-            ->toHaveCount(2)
-            ->and(array_filter($commands, fn (string $command): bool => str_starts_with($command, 'workspace:new ')))
-            ->toHaveCount(1);
-        expect($commands)->toBe([
-            'node:list --json',
-            'instance:list --json',
-            'list --raw',
-            'project:list --json',
-            'project:create laravel laravel-app https://github.com/laravel/laravel.git --name=Laravel --json',
-            'instance:list --json',
-            'instance:create 1 2 e2e-dev --environment=development --json',
-            'instance:create 1 3 e2e-prod --environment=production --hostname=laravel.internal --json',
-            'workspace:list --json',
-            'workspace:new 4 e2e --branch=e2e --json',
-            'node:list --json',
-            'instance:list --json',
-            'list --raw',
-            'project:list --json',
-            'instance:list --json',
-            'workspace:list --json',
-        ]);
-
-        file_put_contents("{$root}/app", 'wrong');
-        expect(new Process($arguments)->run())->not->toBe(0);
-        $commands = file("{$root}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        expect(array_filter($commands, fn (string $command): bool => str_starts_with($command, 'project:create ')))
-            ->toHaveCount(1);
-    });
-
     it('reuses the typed sample for each accepted Project collection and branch-field response', function (
         array $branchFields,
         string $collection,
@@ -3187,6 +3093,20 @@ describe('convergence guest scripts', function () {
                 'name' => 'e2e-dev',
                 'checkout_path' => "{$fixture['root']}/laravel-typed/e2e-dev",
                 'effective_root' => 'public',
+                'production' => [
+                    'layout' => 'release',
+                    'instance_id' => 5,
+                    'user' => 'orbit-laravel',
+                    'home' => "{$fixture['root']}/production",
+                    'checkout_path' => "{$fixture['root']}/production/current",
+                    'effective_root' => "{$fixture['root']}/production/current/public",
+                    'environment_path' => "{$fixture['root']}/production/.env",
+                    'database_path' => null,
+                    'service' => 'orbit-orbit-laravel-php8.5-fpm.service',
+                    'socket' => '/run/php/orbit-laravel.sock',
+                    'current_target' => "{$fixture['root']}/production/releases/one",
+                    'domain' => 'e2e-prod.orbit.test',
+                ],
             ]);
         } finally {
             new Filesystem()->deleteDirectory($fixture['root']);
@@ -3374,18 +3294,23 @@ describe('convergence guest scripts', function () {
                 'instance:create 1 2 e2e-dev --domain=e2e-dev.orbit --json',
                 'instance:list --json',
                 'route:list --json',
+                'project:list --json',
+                'instance:clone 4 3 e2e-prod --preview-name=e2e-prod --branch=main --json',
+                'instance:list --json',
+                'env:sync --instance=5 --json',
+                'instance:deploy-step:create 5 composer-install --command=composer install --no-dev --no-interaction --no-progress --timeout=900 --json',
+                'instance:deploy-step:create 5 migrate --command=php artisan migrate --force --no-interaction --json',
+                'instance:deploy 5 --json',
+                'instance:list --json',
             ]);
             expect(implode("\n", $firstCommands))
                 ->not
                 ->toContain(
-                    'e2e-prod',
                     'workspace:',
                     '--environment',
                     '--php',
                     '--repository',
                     '--main-branch',
-                    '--branch',
-                    '--command',
                     '--runtime',
                     'instance:php',
                 );
@@ -3398,6 +3323,20 @@ describe('convergence guest scripts', function () {
                 'name' => 'e2e-dev',
                 'checkout_path' => "{$fixture['root']}/laravel-typed/e2e-dev",
                 'effective_root' => 'public',
+                'production' => [
+                    'layout' => 'release',
+                    'instance_id' => 5,
+                    'user' => 'orbit-laravel',
+                    'home' => "{$fixture['root']}/production",
+                    'checkout_path' => "{$fixture['root']}/production/current",
+                    'effective_root' => "{$fixture['root']}/production/current/public",
+                    'environment_path' => "{$fixture['root']}/production/.env",
+                    'database_path' => null,
+                    'service' => 'orbit-orbit-laravel-php8.5-fpm.service',
+                    'socket' => '/run/php/orbit-laravel.sock',
+                    'current_target' => "{$fixture['root']}/production/releases/one",
+                    'domain' => 'e2e-prod.orbit.test',
+                ],
             ]);
 
             $second = typed_sample_create_resources_process($fixture);
@@ -3407,7 +3346,6 @@ describe('convergence guest scripts', function () {
                 ...$firstCommands,
                 'node:list --json',
                 'instance:list --json',
-                'list --raw',
                 'cluster:list --json',
                 'project:list --json',
                 'route:list --json',
@@ -3668,12 +3606,19 @@ describe('convergence guest scripts', function () {
                 ->toBe([
                     'node:list --json',
                     'instance:list --json',
-                    'list --raw',
                     'cluster:list --json',
                     'project:list --json',
                     'route:list --json',
                     'route:create 4 e2e-dev.orbit --publication=private --json',
                     'route:list --json',
+                    'project:list --json',
+                    'instance:clone 4 3 e2e-prod --preview-name=e2e-prod --branch=main --json',
+                    'instance:list --json',
+                    'env:sync --instance=5 --json',
+                    'instance:deploy-step:create 5 composer-install --command=composer install --no-dev --no-interaction --no-progress --timeout=900 --json',
+                    'instance:deploy-step:create 5 migrate --command=php artisan migrate --force --no-interaction --json',
+                    'instance:deploy 5 --json',
+                    'instance:list --json',
                 ])
                 ->and(file_exists("{$fixture['root']}/route"))
                 ->toBeTrue();
@@ -4244,7 +4189,6 @@ describe('convergence guest scripts', function () {
             expect(file("{$fixture['root']}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES))->toBe([
                 'node:list --json',
                 'instance:list --json',
-                'list --raw',
             ]);
         } finally {
             new Filesystem()->deleteDirectory($fixture['root']);
@@ -4359,52 +4303,6 @@ describe('convergence guest scripts', function () {
         ],
     ]);
 
-    it('re-projects app roles first and every instance with development last', function () {
-        $root = temporaryPath('orbit-task7-reproject-', 6);
-        mkdir($root, 0o700, true);
-        $source = file_get_contents(dirname(__DIR__, 3).'/resources/guest/converge-sample-app.sh');
-        file_put_contents(
-            "{$root}/converge.sh",
-            str_replace('orbit=/home/orbit/orbit/apps/cli/orbit', "orbit={$root}/orbit", $source),
-        );
-        file_put_contents("{$root}/orbit", <<<'BASH'
-            #!/usr/bin/env bash
-            set -euo pipefail
-            state=$(dirname "$0")
-            printf '%s\n' "$*" >>"$state/commands"
-            case "$1" in
-              node:list) printf '{"nodes":[{"id":1,"name":"gateway","roles":["gateway","vpn"]},{"id":2,"name":"app-dev","roles":["app-dev"]},{"id":3,"name":"app-prod","roles":["app-prod"]}]}' ;;
-              node:role:add) [[ "$4" == --converge && "$5" == --json ]]; printf '{"node_id":%s,"node_name":"n","role":"%s","assignment":{"id":9,"role":"%s","status":"active"}}' "$2" "$3" "$3" ;;
-              instance:list) printf '{"instances":[{"id":1,"name":"e2e-dev","node_id":2,"environment":"development","php_version":"8.5"},{"id":2,"name":"e2e-prod","node_id":3,"environment":"production","php_version":"8.4"}]}' ;;
-              list) printf 'workspace:new    Create a workspace.\n' ;;
-              instance:php) status=active; [[ -e "$state/fail-$2" ]] && status=failed; printf '{"id":%s,"name":"i","node_id":0,"status":"%s"}' "$2" "$status" ;;
-              *) exit 70 ;;
-            esac
-            BASH);
-        chmod("{$root}/orbit", 0o700);
-
-        expect(new Process(['bash', "{$root}/converge.sh", 'reproject'])->run())->toBe(0);
-        expect(file("{$root}/commands", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES))->toBe([
-            'node:list --json',
-            'node:role:add 2 app-dev --converge --json',
-            'node:role:add 3 app-prod --converge --json',
-            'instance:list --json',
-            'list --raw',
-            'instance:php 2 8.4 --json',
-            'instance:php 1 8.5 --json',
-        ]);
-
-        touch("{$root}/fail-2");
-        $failed = new Process(['bash', "{$root}/converge.sh", 'reproject']);
-        expect($failed->run())
-            ->not
-            ->toBe(0)
-            ->and($failed->getErrorOutput())
-            ->toContain('instance is not active after re-projection')
-            ->and(new Process(['bash', "{$root}/converge.sh", 'reproject', 'extra'])->run())
-            ->toBe(64);
-    });
-
     it('re-projects typed source state without a per-AppInstance runtime mutation', function (): void {
         $root = temporaryPath('orbit-typed-reproject-', 5);
         mkdir($root, 0o700, true);
@@ -4448,7 +4346,6 @@ describe('convergence guest scripts', function () {
                 'node:role:add 2 app-dev --converge --json',
                 'node:role:add 3 app-prod --converge --json',
                 'instance:list --json',
-                'list --raw',
             ]);
         } finally {
             new Filesystem()->deleteDirectory($root);
@@ -4934,7 +4831,18 @@ it('accepts current Gateway Project, Instance, and Route JSON', function (): voi
         $process = typed_sample_create_resources_process($fixture, [
             'TYPED_APP_RESPONSE' => json_encode($project, JSON_THROW_ON_ERROR),
             'TYPED_RESPONSE' => json_encode([
-                'instances' => [$instance],
+                'instances' => [$instance, [
+                    'id' => 5,
+                    'project_id' => 1,
+                    'node_id' => 3,
+                    'name' => 'e2e-prod',
+                    'status' => 'active',
+                    'checkout_path' => $fixture['root'].'/production/releases/one',
+                    'production_user' => 'orbit-laravel',
+                    'production_home' => $fixture['root'].'/production',
+                    'effective_root' => $fixture['root'].'/production/current/public',
+                    'domain' => 'e2e-prod.orbit.test',
+                ]],
                 'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
             ], JSON_THROW_ON_ERROR),
             'SCHEMA_ROUTE_JSON' => json_encode($route, JSON_THROW_ON_ERROR),

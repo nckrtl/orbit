@@ -304,19 +304,20 @@ final readonly class TopologyVerifier
             throw new RuntimeException('Failed to inspect the sample App convergence state.');
         }
 
-        try {
-            $state = json_decode(trim($result->stdout), true, 16, JSON_THROW_ON_ERROR);
-        } catch (JsonException $exception) {
-            throw new RuntimeException('Sample App convergence state is malformed.', 0, $exception);
-        }
-
-        if ($state === ['shape' => 'workspaces']) {
+        if (trim($result->stdout) === '') {
             if ($nativeSamplesOnly) {
                 throw new RuntimeException('Declared replacement verification requires native AppInstance samples.');
             }
 
             return ['checkout_path' => null, 'production' => null];
         }
+
+        try {
+            $state = json_decode(trim($result->stdout), true, 16, JSON_THROW_ON_ERROR);
+        } catch (JsonException $exception) {
+            throw new RuntimeException('Sample App convergence state is malformed.', 0, $exception);
+        }
+
         $keys = array_keys(is_array($state) ? $state : []);
         $baseKeys = ['shape', 'project_id', 'node_id', 'name', 'checkout_path', 'effective_root'];
         if (

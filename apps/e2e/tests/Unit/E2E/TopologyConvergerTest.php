@@ -824,6 +824,48 @@ describe('TopologyConverger', function () {
         'malformed instance envelope' => 65,
     ]);
 
+    it('reports a bounded redacted stderr tail for every failed guest script', function (): void {
+        $lines = [];
+        for ($line = 1; $line <= 25; $line++) {
+            $lines[] = str_pad("line-{$line}", 120, 'x');
+        }
+        $lines[] = 'Authorization: Bearer private-token';
+        $stderr = implode("\n", $lines)."\n";
+        $recorded = [];
+        Process::fake(function (PendingProcess $process) use (&$recorded, $stderr): ProcessResult {
+            $command = $process->command;
+            assert(is_array($command));
+            if (in_array('/usr/local/bin/converge-gateway.sh', $command, true)) {
+                return Process::result('stdout-secret', $stderr, 9);
+            }
+
+            return task7_process_result($process, $recorded);
+        });
+
+        try {
+            new TopologyConverger(task7_host())->converge(
+                featureTarget('TST-123'),
+                new SourceState(str_repeat('a', 40), str_repeat('a', 40), false),
+                new LaravelRelease('v13.10.1', str_repeat('b', 40)),
+            );
+            $this->fail('Expected guest convergence to fail.');
+        } catch (RuntimeException $exception) {
+            $message = $exception->getMessage();
+            $tail = substr($message, (int) strpos($message, "\n") + 1);
+
+            expect($message)
+                ->toStartWith(
+                    'Guest convergence script converge-gateway.sh failed on orbit-e2e-tst-123-aaaaaaaa-gateway '
+                    .'with exit code 9.',
+                )
+                ->toContain('Authorization: [REDACTED]')
+                ->toContain('line-25')
+                ->not->toContain('private-token', 'stdout-secret', 'line-1x')
+                ->and(mb_strlen($tail))->toBeLessThanOrEqual(2000)
+                ->and(str_ends_with($tail, 'Authorization: [REDACTED]'))->toBeTrue();
+        }
+    });
+
     it('does not retry the hydration invocation after readiness succeeds', function (int $exitCode): void {
         $recorded = [];
         Process::fake(function (PendingProcess $process) use (&$recorded, $exitCode): ProcessResult {
