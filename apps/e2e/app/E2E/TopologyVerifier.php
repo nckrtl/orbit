@@ -318,12 +318,12 @@ final readonly class TopologyVerifier
             return ['checkout_path' => null, 'production' => null];
         }
         $keys = array_keys(is_array($state) ? $state : []);
-        $baseKeys = ['shape', 'app_id', 'node_id', 'name', 'checkout_path', 'effective_root'];
+        $baseKeys = ['shape', 'project_id', 'node_id', 'name', 'checkout_path', 'effective_root'];
         if (
             ! is_array($state)
             || ! in_array($keys, [$baseKeys, [...$baseKeys, 'production']], true)
             || ($state['shape'] ?? null) !== 'instances'
-            || ! is_int($state['app_id'] ?? null)
+            || ! is_int($state['project_id'] ?? null)
             || ! is_int($state['node_id'] ?? null)
             || ($state['name'] ?? null) !== 'e2e-dev'
             || ! is_string($state['checkout_path'] ?? null)

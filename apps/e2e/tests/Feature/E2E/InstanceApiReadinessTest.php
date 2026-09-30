@@ -47,7 +47,7 @@ function instanceApiReadinessResponse(string $shape, array $items = []): string
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 }
 
-it('accepts validated read-only legacy and typed instance-list envelopes', function (
+it('accepts a current instance-list envelope', function (
     string $shape,
     array $items,
 ): void {
@@ -69,8 +69,7 @@ it('accepts validated read-only legacy and typed instance-list envelopes', funct
         new Filesystem()->deleteDirectory($fixture['root']);
     }
 })->with([
-    'legacy instances' => ['instances', [['name' => 'sample']]],
-    'previous typed envelope' => ['app_instances', [['name' => 'sample']]],
+    'instances' => ['instances', [['name' => 'sample']]],
     'empty object item' => ['instances', [(object) []]],
 ]);
 
@@ -122,6 +121,7 @@ it('fails closed when the instance-list probe is unavailable or invalid', functi
     ],
     'scalar collection item' => [instanceApiReadinessResponse('instances', ['invalid']), 0, 65],
     'list collection item' => [instanceApiReadinessResponse('instances', [[]]), 0, 65],
+    'previous collection name' => [instanceApiReadinessResponse('app_instances', [['name' => 'sample']]), 0, 65],
     'missing request identity' => [json_encode(['instances' => []], JSON_THROW_ON_ERROR), 0, 65],
     'invalid request identity' => [
         json_encode(['instances' => [], 'request_id' => 'invalid'], JSON_THROW_ON_ERROR),

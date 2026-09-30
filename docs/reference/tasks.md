@@ -1,15 +1,15 @@
 ---
 title: "Tasks"
-description: "How the optional Gateway Tasks extension runs tasks and stores each Project's task definitions: the model, definition fields, validation, the lifecycle, typed deliverables, the task check, agent threads, review, the pull request, fixups, metrics, and cleanup."
+description: "How the optional Gateway Tasks extension runs tasks and stores each Project's task definitions. It covers the model, definition fields, validation, the lifecycle, typed deliverables, the task check, agent threads, review, the pull request, fixups, metrics, cleanup, and the outer loop that files recurring problems."
 covers:
   - "apps/gateway/app/{Domain,Infrastructure}/Tasks/**"
   - "apps/gateway/app/Actions/Tasks/**"
   - "apps/gateway/app/Http/Requests/Tasks/**"
   - "apps/gateway/app/Http/Controllers/Api/{TasksController,TaskGroupsController,TaskDefinitionsController,AgentThreadsController}.php"
-  - "apps/gateway/app/Console/Commands/{TickTaskSessionsCommand,CollectT3MetricsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand}.php"
-  - "apps/gateway/app/Models/{Task,TaskDefinition,TaskComment,TaskCheck,AgentThread,JevDecision}.php"
+  - "apps/gateway/app/Console/Commands/{TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand}.php"
+  - "apps/gateway/app/Models/{Task,TaskDefinition,TaskComment,TaskCheck,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "apps/gateway/resources/tasks/**"
-  - "apps/gateway/database/migrations/*_{convert_test_deliverables_to_commands,add_continuation_source_to_tasks,create_task_definitions_table}.php"
+  - "apps/gateway/database/migrations/*_{convert_test_deliverables_to_commands,add_continuation_source_to_tasks,create_task_definitions_table,create_problem_fingerprints}.php"
 ---
 
 # Tasks
@@ -346,9 +346,144 @@ The Gateway does not check the branch contents. When `origin/task-{id}` exists, 
 
 When the workspace starting commit is 40 or 64 hexadecimal characters, both prompts add `The task started at <sha>.` and `git diff --stat <sha>..HEAD`. The review packet places those lines after its stat and diff commands. The lines name no Project, branch, or policy. Any other value is left out.
 
+## Outer loop
+
+The Gateway files a Backlog task when the same production problem keeps returning. An operator edits that task and moves it to Todo. The scheduler does not claim it before that move. [ADR 0176](/decisions/0176-file-repro-first-bug-groups) records this loop.
+
+The loop reads Doctor, Activity, the Gateway log, and assistance reasons. It does not read the `schedules` table. It does not wait for an external alert manager.
+
+### Fingerprints
+
+Each signal updates one row in `problem_fingerprints`. The fingerprint is unique.
+
+| Column | Meaning |
+| --- | --- |
+| `fingerprint` | Stable key, at most 255 characters |
+| `source` | `doctor`, `activity`, `log`, or `assist` |
+| `first_seen`, `last_seen` | Time of the first observation, and of the latest |
+| `occurrences` | How many observations were counted |
+| `evidence` | A small JSON sample |
+| `task_group_id` | Top-level task filed for this key, or null |
+| `muted_until` | Filing stays off until this time, or null |
+| `filed_at` | When this episode was filed, or null. The operator cannot edit it |
+
+A key longer than 255 characters keeps the source prefix, then `#`, then the first 12 hex characters of the SHA-256 of the full key.
+
+The sample holds at most five request ids, five Activity ids, and five Activity paths. It holds one log excerpt of at most 500 characters, the latest Doctor expected and observed values, the latest Doctor summary, the assistance reason before normalization, the newest 20 observation times, and up to 200 open assistance task ids. The summary and the assistance reason are cut at 1,000 characters. The excerpt and an Activity error message pass through the Gateway log redactor before they are stored. Expected and observed stay the bounded Doctor values. The sample does not store a raw Doctor report.
+
+| Source | Key |
+| --- | --- |
+| Doctor | `doctor\|code\|resource_type\|resource_id` |
+| Activity | `activity\|command\|error_code` |
+| Log | `log\|exception class\|first app frame` |
+| Assistance | `assist\|normalized reason` |
+
+A null Doctor resource id uses `none`. An Activity row with a nonzero exit code and no error code uses `exit` as the error code segment. The resource id stays out of the Activity key. It lives only in `properties.path`, and that path is evidence.
+
+An Activity row counts only when it is server-class. A row is server-class in any of these cases:
+
+| Test | Example |
+| --- | --- |
+| The error code is `gateway.unhandled` or `activity.interrupted` | An unhandled Gateway error |
+| The error code ends in `_failed` or `.unavailable` | `instance.clone_failed` |
+| The error code is `http.` plus a status of 500 or more | `http.500` |
+| `exit_code` is nonzero | A command that exited 1 |
+
+`validation.failed`, `http.404`, `http.409`, and `http.422` do not count unless they also match a test above. A code that ends in `_failed` still counts when the HTTP status is below 500.
+
+A log record counts when its level is ERROR or higher, it names an exception class, and the trace has a frame under the Gateway `app/` directory. The frame in the key is that path relative to the Gateway root, a colon, and the function, with no line number. An `HttpExceptionInterface` whose status is below 500 is left out. `ValidationException` is left out. A trace with no app frame is left out. The excerpt keeps the `request_id` from the log context.
+
+An assistance reason is trimmed and lowercased. Each UUID, and each run of digits, becomes `#`. Whitespace collapses to one space. One open request on a task counts once. The same task counts again only after `assistance_requested` has cleared and a new request is stored.
+
+### When a fingerprint is ready
+
+The tests below use only the current episode. That episode is the observation times stored on the row.
+
+Doctor is ready after two of those times at least 10 minutes apart. A miss does not delete the row, and it does not reset the episode.
+
+Activity, the log, and assistance are ready when either test below is true for those same times.
+
+| Test | Ready when |
+| --- | --- |
+| Burst | The count is 10 or more |
+| Spread | The count is 3 or more, and the times cover two UTC quarter hours or two UTC dates |
+
+A quarter hour is the UTC block of 15 minutes that contains the time. The block index is the Unix time divided by 900, rounded down.
+
+Filing a task clears those times after the brief is built. Hits while that task is still open start another episode. The filer clears that episode in the same write as `muted_until`, when the linked task ends. Only a hit after the task ended can make the key ready once the mute ends. A hit after the merge and before the deploy still counts, and the operator cancels that draft.
+
+### Suppression
+
+The filer does not open another task for a key while `muted_until` has not passed. It also waits while the linked task has any status in this list: `backlog`, `todo`, `reserved`, `running`, `reviewing`, `settling`.
+
+| Linked task | Deadline written once, from `updated_at` |
+| --- | --- |
+| `completed` or `failed` | 7 days, only when `muted_until` is empty |
+| `cancelled` | 14 days, only when `muted_until` is empty |
+
+A deadline that is already stored stays as it is. A missing linked task uses the 7-day deadline, measured from the run that notices the gap. `failed` uses the same wait as `completed`, because that task never ran and must not take another slot in the same hour.
+
+Filing a new task clears `muted_until` and sets `filed_at`. It sets `occurrences` to 0 and clears `first_seen`, `last_seen`, and the observation times. It also clears the request ids, Activity ids, paths, and the log excerpt. Open assistance task ids stay, so a request that is still open is not counted again. The brief is built from the episode before that clear.
+
+The first time the filer writes `muted_until` for a `completed`, `failed`, `cancelled`, or missing task, that same write clears the episode again. It sets `occurrences` to 0 and clears `first_seen`, `last_seen`, the observation times, the request ids, Activity ids, paths, and the log excerpt. Open assistance task ids stay. A crash stores neither the deadline nor the clear.
+
+### What gets filed
+
+`problems:file` runs every hour. It files at most three new tasks per day, using the Gateway application timezone. It takes the highest `occurrences` first. Equal counts use the earlier `first_seen`, then the fingerprint string. Each run loads at most 50 ready, unsuppressed rows.
+
+The cap counts fingerprint rows whose `filed_at` falls on today's date in that timezone. An operator edit to the brief does not change the count. A missing Orbit Project files nothing.
+
+The filer inserts the task and its subtasks, then updates the fingerprint, in one database transaction. The update sets `task_group_id` and `filed_at`, clears `muted_until`, and resets the episode as [Suppression](#suppression) describes. A crash rolls every one of those writes back, so the next run does not file a duplicate.
+
+Each task belongs to the Project whose slug is `orbit`, and the task starts in `backlog`. The first line of the brief is `Filed by the outer loop.`
+
+The rest of the brief is seven sections, in this order: Symptom, Fingerprint, First seen, Last seen, Count, Evidence, and Suspected entry point. Times use UTC. Symptom is the Doctor summary, the redacted Activity error message, the redacted log message, or the assistance reason before normalization.
+
+| Section | Bound |
+| --- | --- |
+| Symptom | 1,000 characters, then `...` |
+| Fingerprint | 255 characters |
+| First seen, Last seen, Count | One line each |
+| Evidence | The sample caps. Expected and observed are cut at 200 characters |
+| Suspected entry point | 500 characters, then `...` |
+
+The finished brief is at most 8,000 characters. The Evidence heading is always present. When that section has no lines, it says `none`. If the brief is still longer, the filer drops Evidence lines until it fits, and the heading stays. `tasks:create` refuses a longer brief with `validation.failed`. If create still fails, the filer skips that row and leaves `filed_at` unset. The row does not count toward the cap. The filer continues with the next row. Each subtask brief copies the cut symptom and stays under 8,000 characters.
+
+| Source | Title | Suspected entry point |
+| --- | --- | --- |
+| Doctor | `Doctor {code} on {type} {id}` | Resource type, id, and code |
+| Activity | `{command} failed with {error_code}` | The command name |
+| Log | `{exception class} at {frame}` | The app frame |
+| Assistance | The normalized reason | The open task ids in the sample |
+
+A title longer than 160 characters is cut to 157 characters plus `...`.
+
+The task has two subtasks. The docs subtask is first. Its deliverable id is `docs`, its type is `review`, and the description says the owning page matches the fix, or that no page changes. The operator can replace that deliverable while the task is in Backlog.
+
+The second subtask reproduces the failure and then fixes it. Its deliverable id is `test` and its type is `command`, with `fails_on_base` set to true. There is no `test` deliverable type. The filer uses the placeholder command `vendor/bin/pest`, the directory `apps/gateway`, and the path `apps/gateway/tests/Feature/OrbitProblemReproTest.php`. The operator replaces the command, the directory, and the paths with the real test before moving the task to Todo. [Prepare a task in Backlog](#prepare-a-task-in-backlog) is that edit.
+
+### Collection
+
+`problems:collect` runs every 10 minutes. Both commands run only while the Tasks extension is enabled. `TaskSchedule` registers both. Each uses an overlap lock. The collector lock expires after 15 minutes, and the filer lock expires after 30 minutes.
+
+| Source | Bound per run |
+| --- | --- |
+| Doctor | 200 issues, then the next run resumes in fingerprint order |
+| Activity | 500 rows with `id` above the stored cursor |
+| Log | 1 MiB, stopping at the end of a whole record |
+| Assistance | 200 open rows |
+
+Doctor runs through `RunDoctorAction` for every Node and every family. A peer access grant does not drop Nodes from that fleet. One `problem_collector_state` row stores the Activity cursor, the log path, the file inode, the byte offset, and the Doctor resume key. A Doctor pass that handles fewer than 200 issues clears the resume key.
+
+The first collector run sets the Activity cursor to the current maximum id, and the log offset to the end of the current file. It does not count those past rows. The log file is `storage/logs/laravel.log` when that path is a regular file. Otherwise it is the newest `storage/logs/laravel-*.log`. The collector finishes unread bytes in a rotated file before it switches.
+
+Each source commits its fingerprint updates and its cursor in one database transaction. For Activity that cursor is the last id. For the log it is the path, inode, and offset. For Doctor it is the resume key. For assistance it is the open task ids. A crash rolls that source back, so the same rows are not counted twice.
+
+A failure in one source does not skip the others. The same exception class for one command is reported at most once an hour. The command still exits nonzero when any source failed.
+
 ## Scheduler
 
-The scheduler command `tasks:tick` does all work of the extension. The Gateway's Laravel schedule runs it and `tasks:collect-t3-metrics` every 10 seconds while the extension is enabled. The Gateway host must run `php artisan schedule:work`, or no task advances. One cache lock, held for up to 300 seconds, protects scheduled and manual ticks. A tick that finds the lock held does nothing.
+The scheduler command `tasks:tick` does all work of the extension. The Gateway's Laravel schedule runs it and `tasks:collect-t3-metrics` every 10 seconds, `problems:collect` every 10 minutes, and `problems:file` every hour, while the extension is enabled. The Gateway host must run `php artisan schedule:work`, or no task advances. One cache lock, held for up to 300 seconds, protects scheduled and manual ticks. A tick that finds the lock held does nothing.
 
 Each tick runs these steps in order:
 
@@ -818,6 +953,14 @@ Shared prompts stay free of Project policy. They do not name a feature contract 
 ### Backlog before Todo
 
 A task needs an id before its branch `task-{id}` can hold the contract, and it must not run while that contract is written. So a task starts in Backlog and runs only when someone moves it to Todo. A draft flag on a Todo task would give one lifecycle fact two fields.
+
+### A person starts a filed problem
+
+Code can see that a failure came back. It cannot write the test that proves the bug. So the [outer loop](#outer-loop) files a Backlog draft, and a person replaces the placeholder command before the task can run.
+
+A Doctor blip from one run stays a fingerprint until a second run sees it again. Those two times are at least 10 minutes apart. Ten hits of one Activity or log key are enough to file. Those signals arrive in bursts, so the loop does not wait for a second quarter hour. Three isolated hits do not file.
+
+The cap of three tasks a day stops a burst from filling the board. `filed_at` holds that count, so an edit to the brief cannot change it. Cancel is the person's mute, and it lasts 14 days. A completed or failed task waits 7 days. That same write clears the hits collected while the task was open. When the wait ends, only a hit after the task ended can make the key ready. A hit after the merge and before the deploy can still file a draft, and the operator cancels it.
 
 ### The Gateway claims, not the Nodes
 
