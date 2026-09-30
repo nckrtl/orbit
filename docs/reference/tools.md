@@ -80,7 +80,7 @@ The Gateway resolves the host itself and uses the pinned SSH identity. The respo
 | `complete` | The read finished. The package array is the inventory and may be empty. |
 | `absent` | This platform supports the manager, but its scope is not installed. |
 | `unsupported` | This platform does not offer the manager. `brew-cask` is unsupported on Linux. |
-| `incomplete` | The read failed, the output was malformed, or the inventory was truncated. |
+| `incomplete` | The read failed, the output was malformed or truncated, or the Homebrew name list and metadata disagree. |
 | `conflicting` | The scope exists on Linux or macOS, but Orbit will not adopt it or replace it. |
 
 Packages inside a `complete` manager are ordered by package name, ascending. A formula and a cask that share a name stay on different managers.
@@ -98,6 +98,12 @@ Packages inside a `complete` manager are ordered by package name, ascending. A f
 | `adoption_block` | string or null | Null when adoption is supported. Otherwise a block token. |
 
 The block tokens are `protected`, `dependency`, `unsupported_artifact`, `unsupported_source`, `bottle_unavailable`, `version_unreadable`, and `authorization_required`. A dependency or a [protected package](#protected-packages) is never `supported`. An unsupported cask stays in the list with adoption unavailable and one of those tokens. Doctor and the Node's Tools page use this inspector. See [informational package discoveries](/cli/doctor#informational-package-discoveries).
+
+Homebrew inventory uses two reads for each of `brew` and `brew-cask`. `info --json=v2 --formula --installed` and `info --json=v2 --cask --installed` supply metadata. `list --formula -1` and `list --cask -1` supply installed names without loading formulae or casks. Both use the usual Homebrew environment and do not set `HOMEBREW_FORCE_API_AUTO_UPDATE`.
+
+Homebrew can omit an installed formula or cask from `info` and still exit 0, including when the tap is untrusted or Homebrew refuses to load it. The name stays in `list`. The scan keeps that name, with `installed_version` null and `dependency` false, because the name list does not say whether it is a dependency. Adoption is `unsupported`. The block is `unsupported_source`, or `protected` when the formula name is protected.
+
+A name present in `info` but absent from `list` makes that manager `incomplete`. A failed, malformed, or truncated name list also makes that manager `incomplete`. The scan does not report the `info` packages alone.
 
 Scan errors use the [Tool error envelope](#errors). `details.step` is `scan`, `details.outcome` is `manager_failed`, and there is no Tool `id`. A manager state of `incomplete`, `absent`, `unsupported`, or `conflicting` does not fail the HTTP request.
 
@@ -203,7 +209,7 @@ The optional constraint is a SemVer range, such as `^0.150`. It only stops an un
 
 ## Homebrew formulae
 
-The `brew` manager accepts one lowercase formula name from Homebrew Core, without a tap prefix. Before an install or update, the Gateway reads the formula's metadata. It requires the `homebrew/core` tap, a stable version, and a compatible bottle with a SHA-256 checksum. Homebrew installs that bottle with `--force-bottle`. Orbit never builds a formula from source.
+The `brew` manager accepts one lowercase formula name from Homebrew Core, without a tap prefix. The name may end in `+`, as in `libsigc++` or `gtk+`. Before an install or update, the Gateway reads the formula's metadata. It requires the `homebrew/core` tap, a stable version, and a compatible bottle with a SHA-256 checksum. Homebrew installs that bottle with `--force-bottle`. Orbit never builds a formula from source. Inventory uses `info --json=v2 --formula --installed` and `list --formula -1`.
 
 Orbit never runs a Homebrew developer command. That includes `brew ruby` and `brew irb`. A developer command writes `homebrew.devcmdrun` into the user's Homebrew git config and changes how a later `brew update` behaves. Orbit does not set `HOMEBREW_DEVELOPER` or `HOMEBREW_DEV_CMD_RUN`.
 
@@ -239,7 +245,7 @@ Every `brew` and `brew-cask` command sets `HOMEBREW_NO_AUTO_UPDATE`, `HOMEBREW_N
 
 ## Homebrew casks
 
-`brew-cask` supports official Homebrew casks on macOS. The caller sends one unqualified token. The Gateway turns that into the fixed coordinate `homebrew/cask/<token>` and refuses a tap, a URL, a local file, or a caller option before it runs anything. A formula and a cask with the same token stay different Tools, because the manager is part of the identity.
+`brew-cask` supports official Homebrew casks on macOS. The caller sends one unqualified token. A token may end in `+`, as in `logi-options+`. The Gateway turns that into the fixed coordinate `homebrew/cask/<token>` and refuses a tap, a URL, a local file, or a caller option before it runs anything. A formula and a cask with the same token stay different Tools, because the manager is part of the identity.
 
 Before install or update, the Gateway reads `brew info --json=v2 --cask` for that coordinate. The cask must come from the `homebrew/cask` tap, use an `https` URL, and name itself with the same unqualified token. The Gateway then applies one refusal, in this order: an unsupported artifact, interactive or administrator authorization, the checksum policy, then an unreadable version.
 
@@ -251,7 +257,7 @@ Removal does not repeat the disabled, checksum, version, or source gates. It sti
 
 When the official cask is gone, Homebrew says `homebrew/cask/<token>` is unavailable because the tap is not installed. Removal then reads that token from `info --json=v2 --cask --installed`. It uninstalls only when that entry's tap is `homebrew/cask`, and it passes the plain token to `uninstall --cask`. The same bottle-tag override applies.
 
-Install and update use `install --cask` and `upgrade --cask` for the coordinate. Removal of an available cask uses `uninstall --cask` for that coordinate. Inventory uses `info --json=v2 --cask --installed`.
+Install and update use `install --cask` and `upgrade --cask` for the coordinate. Removal of an available cask uses `uninstall --cask` for that coordinate. Inventory uses `info --json=v2 --cask --installed` and `list --cask -1`. A cask that `list` names and `info` omits stays in discovery with `unsupported_source`.
 
 The installed-version read uses `list --versions --cask` with the plain token. Homebrew prints the token and version when the cask is installed. When it is absent, that command exits 1 and prints nothing. A silent exit 1 is not absence by itself. The Gateway then reads `info --json=v2 --cask --installed`. It reports no installed version only when that token is missing, or when the entry's tap is not `homebrew/cask`.
 

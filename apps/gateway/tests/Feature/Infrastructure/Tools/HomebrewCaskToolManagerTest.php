@@ -44,6 +44,9 @@ describe(HomebrewCaskToolManager::class, function (): void {
     })->with([
         'token' => ['font-hack', true],
         'versioned token' => ['firefox@esr', true],
+        'trailing plus' => ['logi-options+', true],
+        'repeated trailing plus' => ['starnet++', true],
+        'trailing hyphen' => ['logi-options-', false],
         'empty' => ['', false],
         'uppercase' => ['Font-Hack', false],
         'tap' => ['homebrew/cask/font-hack', false],

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Tools;
 
+use App\Domain\Tools\HomebrewPackageName;
 use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
@@ -17,19 +18,17 @@ use stdClass;
 
 final readonly class HomebrewToolManager implements ToolManager
 {
-    private const string BREW = '/home/linuxbrew/.linuxbrew/bin/brew';
+    public const string LINUX_PREFIX_PATH = '/home/linuxbrew/.linuxbrew';
+
+    private const string BREW = self::LINUX_PREFIX_PATH.'/bin/brew';
 
     private const string EXPECTED_REVISION = 'd79ef822ab8136e393ed5f86e2b56afc68d04874';
 
     private const string EXPECTED_VERSION = 'Homebrew 7.0.0';
 
-    private const int MAX_PACKAGE_LENGTH = 255;
-
     private const int MAX_RESULT_LENGTH = 131_072;
 
     private const int MAX_VERSION_LENGTH = 255;
-
-    private const string PACKAGE_PATTERN = '/\A[a-z0-9](?:[a-z0-9@+._-]*[a-z0-9])?\z/D';
 
     /** @var non-empty-list<string> */
     private const array LINUX_PREFIX = [
@@ -65,10 +64,7 @@ final readonly class HomebrewToolManager implements ToolManager
 
     public function validatePackage(string $package): bool
     {
-        return
-            $package !== ''
-            && strlen($package) <= self::MAX_PACKAGE_LENGTH
-            && preg_match(self::PACKAGE_PATTERN, $package) === 1;
+        return HomebrewPackageName::valid($package);
     }
 
     public function materialize(Node $node): void
@@ -590,6 +586,23 @@ final readonly class HomebrewToolManager implements ToolManager
             step: $step,
             message: "The Homebrew {$step} operation failed.",
         );
+    }
+
+    /**
+     * Fixed brew argv for a prefix that has already been read. It does not probe or refresh metadata.
+     *
+     * @param  list<string>  $arguments
+     * @return non-empty-list<string>
+     */
+    public function commandForPrefix(Node $node, string $prefix, bool $refreshApi, array $arguments): array
+    {
+        $this->guardSupportedNode($node);
+
+        if ($node->platform === 'macos') {
+            return $this->mac->command($prefix, $refreshApi, $arguments);
+        }
+
+        return [...self::LINUX_PREFIX, ...$arguments];
     }
 
     /**

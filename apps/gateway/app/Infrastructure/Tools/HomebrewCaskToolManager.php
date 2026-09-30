@@ -6,6 +6,7 @@ namespace App\Infrastructure\Tools;
 
 use App\Domain\Tools\HomebrewCaskAssessment;
 use App\Domain\Tools\HomebrewCaskDiscovery;
+use App\Domain\Tools\HomebrewPackageName;
 use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
@@ -24,15 +25,11 @@ use stdClass;
  */
 final readonly class HomebrewCaskToolManager implements ToolManager
 {
-    private const int MAX_PACKAGE_LENGTH = 255;
-
     private const int MAX_RESULT_LENGTH = 131_072;
 
-    private const int MAX_INVENTORY_LENGTH = 1_048_576;
+    public const int MAX_INVENTORY_LENGTH = 1_048_576;
 
     private const int MAX_VERSION_LENGTH = 255;
-
-    private const string PACKAGE_PATTERN = '/\A[a-z0-9](?:[a-z0-9@+._-]*[a-z0-9])?\z/D';
 
     /** @var list<string> */
     private const array PREFIX_KINDS = [
@@ -112,10 +109,7 @@ final readonly class HomebrewCaskToolManager implements ToolManager
 
     public function validatePackage(string $package): bool
     {
-        return
-            $package !== ''
-            && strlen($package) <= self::MAX_PACKAGE_LENGTH
-            && preg_match(self::PACKAGE_PATTERN, $package) === 1;
+        return HomebrewPackageName::valid($package);
     }
 
     public function materialize(Node $node): void
@@ -255,14 +249,38 @@ final readonly class HomebrewCaskToolManager implements ToolManager
         $this->checksumArchitecture($node);
         $prefix = $this->mac->resolvePrefix($node);
         $bottleTag = $this->mac->bottleTag($node);
-        $result = $this->commands->execute($node, $this->mac->command($prefix, false, [
-            'info',
-            '--json=v2',
-            '--cask',
-            '--installed',
-        ]));
+        $result = $this->commands->execute(
+            $node,
+            $this->mac->command($prefix, false, [
+                'info',
+                '--json=v2',
+                '--cask',
+                '--installed',
+            ]),
+            maxOutputBytes: self::MAX_INVENTORY_LENGTH,
+        );
         $this->guardSuccessfulResult($result, 'inventory', 'The Homebrew cask inventory probe failed.');
-        $decoded = $this->decode($result, 'inventory', 'The Homebrew cask inventory was malformed.', self::MAX_INVENTORY_LENGTH);
+
+        return $this->interpretInstalledInventory($prefix, $bottleTag, $result);
+    }
+
+    /** @return list<HomebrewCaskDiscovery> */
+    public function interpretInstalledInventory(string $prefix, string $bottleTag, CommandResult $result): array
+    {
+        if ($result->truncated) {
+            throw $this->malformed($result, 'inventory', 'The Homebrew cask inventory was malformed.');
+        }
+
+        try {
+            $decoded = new BoundedJsonObject(self::MAX_INVENTORY_LENGTH, 64)->decode($result->stdout);
+        } catch (JsonException $exception) {
+            throw new ToolManagerException(
+                step: 'inventory',
+                message: 'The Homebrew cask inventory was malformed.',
+                result: $result,
+                previous: $exception,
+            );
+        }
 
         if (! is_array($decoded->casks ?? null) || ! is_array($decoded->formulae ?? null)) {
             throw $this->malformed($result, 'inventory', 'The Homebrew cask inventory was malformed.');
