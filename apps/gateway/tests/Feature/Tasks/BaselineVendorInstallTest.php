@@ -18,10 +18,9 @@ use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
 use App\Models\Task;
 use App\Models\TaskCheck;
-use Symfony\Component\Process\Process;
 use Tests\Support\FakeTaskCheckRunner;
 
-it('baseline installs vendor before check on a fresh workspace', function (): void {
+it('runs configured Project setup before the baseline check without an inferred install', function (): void {
     $project = Project::query()->create([
         'name' => 'baseline vendor install',
         'slug' => 'baseline-vendor-install',
@@ -79,15 +78,10 @@ it('baseline installs vendor before check on a fresh workspace', function (): vo
             'command' => 'echo project setup',
             'timeout_seconds' => 600,
         ],
-        [
-            'name' => '[Orbit internal] Install Composer dependencies',
-            'command' => 'while IFS= read -r -d "" manifest; do project="${manifest%/composer.json}"; [ "$project" = "$manifest" ] && project="."; if { [ "$project" = "." ] || [ -f "$project/composer.lock" ]; } && [ ! -f "$project/vendor/autoload.php" ]; then (cd "$project" && if [ -f composer.lock ]; then composer install --no-interaction --prefer-dist; else composer install --no-interaction --prefer-dist && rm -f composer.lock; fi) || exit $?; fi; done < <(git ls-files -z -- "composer.json" ":(glob)**/composer.json")',
-            'timeout_seconds' => 600,
-        ],
     ])->and(TaskCheck::query()->sole()->kind)->toBe(TaskCheckKind::Baseline);
 });
 
-it('reports missing dependencies instead of claiming the default branch is broken', function (?string $failedStep, string $output, string $reasonText): void {
+it('asks for assistance when baseline setup or the check fails without classifying dependency output', function (?string $failedStep, string $output, string $reasonText): void {
     $project = Project::query()->create([
         'name' => 'baseline install failure',
         'slug' => 'baseline-install-failure',
@@ -147,11 +141,14 @@ it('reports missing dependencies instead of claiming the default branch is broke
     expect($group->fresh()?->assistance_requested)->toBeTrue()
         ->and($reason)->toBeString()
         ->and($reason)->toContain($reasonText)
+        ->and($reason)->not->toContain('Project dependencies appear to be missing')
+        ->and($reason)->not->toContain('Composer dependency installation failed')
+        ->and($reason)->not->toContain('JavaScript dependency installation failed')
         ->and($reason)->not->toContain('default branch or the task branch is broken')
         ->and(TaskCheck::query()->sole()->output)->toBe($output);
 })->with([
-    'Composer install failure' => ['[Orbit internal] Install Composer dependencies', "Could not install dependencies.\n", 'Composer dependency installation failed'],
-    'nested project vendor tools missing' => [null, 'sh: 1: vendor/bin/pest: not found', 'Project dependencies appear to be missing'],
+    'setup step' => ['Install', "Could not install dependencies.\n", 'The Project setup step "Install" failed'],
+    'ordinary missing-looking output' => [null, "sh: 1: vendor/bin/pest: not found\n", 'The Project baseline check failed'],
     'unexpected check error' => ['check_error', "Traceback (most recent call last):\nFileNotFoundError: missing\n", 'The Project baseline check failed'],
 ]);
 
@@ -213,76 +210,4 @@ it('keeps a baseline check error failed when the tree changed during the run', f
         ->and($check->failed_step)->toBe('check_error')
         ->and($check->changed_paths)->toBe(['app'])
         ->and($check->output)->toBe($output);
-});
-
-it('installs the root Composer package without a lockfile, removes the lockfile it writes, and skips nested manifests without one', function (): void {
-    $directory = sys_get_temp_dir().'/orbit-baseline-install-'.bin2hex(random_bytes(6));
-    $checkout = $directory.'/checkout';
-    $bin = $directory.'/bin';
-    mkdir($bin, 0755, true);
-    (new Process(['git', 'init', '--quiet', $checkout]))->mustRun();
-    mkdir($checkout.'/packages/locked', 0755, true);
-    mkdir($checkout.'/tests/Fixtures/unlocked', 0755, true);
-    foreach (['composer.json', 'packages/locked/composer.json', 'packages/locked/composer.lock', 'tests/Fixtures/unlocked/composer.json'] as $file) {
-        file_put_contents($checkout.'/'.$file, '{}');
-    }
-    (new Process(['git', 'add', '.'], $checkout))->mustRun();
-    file_put_contents($bin.'/composer', "#!/usr/bin/env bash\nmkdir -p vendor && touch vendor/autoload.php && echo '{\"written\":true}' > composer.lock && pwd >> \"{$directory}/installs\"\n");
-    chmod($bin.'/composer', 0755);
-
-    try {
-        $project = Project::query()->create([
-            'name' => 'package without lockfile',
-            'slug' => 'package-without-lockfile',
-            'repository_url' => 'git@example.test:package-without-lockfile.git',
-            'task_check' => 'composer check',
-        ]);
-        $node = Node::query()->create([
-            'name' => 'baseline-lockless-node',
-            'status' => LifecycleStatus::Active,
-            'platform' => 'linux',
-            'public_ssh_host' => '10.44.0.193',
-            'wireguard_ip' => '10.44.0.193',
-        ]);
-        $instance = Instance::query()->create([
-            'project_id' => $project->id,
-            'node_id' => $node->id,
-            'name' => 'baseline-lockless',
-            'checkout_path' => $checkout,
-            'status' => 'reserved',
-        ]);
-        $group = Task::topLevel()->create([
-            'project_id' => $project->id,
-            'title' => 'Lockless package',
-            'brief' => 'Install the root package.',
-            'status' => TaskGroupStatus::Running,
-            'execution_mode' => TaskExecutionMode::Managed,
-        ]);
-        $group->taskable()->associate($instance);
-        $group->save();
-        Task::query()->create([
-            'parent_id' => $group->id,
-            'position' => 1,
-            'title' => 'First task',
-            'brief' => 'First task brief',
-            'status' => TaskStatus::Running,
-        ]);
-        $checks = new FakeTaskCheckRunner;
-        app()->instance(TaskCheckRunner::class, $checks);
-        app(TaskExtensionState::class)->enable();
-
-        app(TaskScheduler::class)->tick();
-
-        $install = collect($checks->setups[0])->firstWhere('name', '[Orbit internal] Install Composer dependencies');
-        (new Process(['bash', '-c', $install['command']], $checkout, ['PATH' => $bin.':'.getenv('PATH')]))->mustRun();
-
-        $installs = array_map(realpath(...), file($directory.'/installs', FILE_IGNORE_NEW_LINES) ?: []);
-        expect($installs)->toBe([realpath($checkout), realpath($checkout.'/packages/locked')])
-            ->and(file_exists($checkout.'/composer.lock'))->toBeFalse()
-            ->and(file_get_contents($checkout.'/packages/locked/composer.lock'))->toContain('written');
-        $status = (new Process(['git', 'status', '--porcelain', '--untracked-files=all', '--', '*.lock'], $checkout))->mustRun()->getOutput();
-        expect($status)->toBe('AM packages/locked/composer.lock'.PHP_EOL);
-    } finally {
-        (new Process(['rm', '-rf', $directory]))->run();
-    }
 });

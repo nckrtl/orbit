@@ -21,6 +21,7 @@ use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
+use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestDescription;
@@ -53,6 +54,7 @@ use App\Models\InstanceRemoval;
 use App\Models\JevDecision;
 use App\Models\Node;
 use App\Models\Project;
+use App\Models\ProjectLifecycleStep;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
@@ -4755,3 +4757,175 @@ describe('subtask deliverables at handoff', function (): void {
             ->and(TaskCheck::query()->sole()->changed_paths)->toBe(['app']);
     });
 });
+
+it('project baseline setup only', function (): void {
+    $spawner = new class implements AgentSpawner
+    {
+        /** @var list<string> */
+        public array $events = [];
+
+        public function spawnReviewer(Task $task): ?int
+        {
+            $this->events[] = 'reviewer';
+
+            return null;
+        }
+
+        public function spawnImplementer(Task $task): ?int
+        {
+            $this->events[] = 'implementer:'.$task->position;
+
+            return test_agent_thread($task->parent, 'implementer-'.$task->position, $task)->id;
+        }
+
+        public function requestReview(Task $task): void
+        {
+            $this->events[] = 'review:'.$task->position;
+        }
+    };
+    app()->instance(AgentSpawner::class, $spawner);
+    app(TaskExtensionState::class)->enable();
+
+    $composer = tick_baseline_group('baseline-composer', 'composer check', [
+        ['name' => 'Warm cache', 'command' => 'echo warm', 'timeout_seconds' => 30, 'position' => 2],
+        ['name' => 'Install', 'command' => 'composer install --no-interaction', 'timeout_seconds' => 900, 'position' => 1],
+    ], '10.51.0.1');
+    ProjectLifecycleStep::query()->create([
+        'project_id' => $composer->project_id,
+        'phase' => 'teardown',
+        'name' => 'Remove bridge',
+        'command' => 'echo teardown',
+        'timeout_seconds' => 60,
+        'position' => 1,
+    ]);
+    $javascript = tick_baseline_group('baseline-javascript', 'vp run check', [
+        ['name' => 'Install packages', 'command' => 'vp install --frozen-lockfile', 'timeout_seconds' => 120, 'position' => 1],
+    ], '10.51.0.2');
+    $unset = tick_baseline_group('baseline-unset-check', null, [
+        ['name' => 'Prepare', 'command' => 'echo prepare', 'timeout_seconds' => 45, 'position' => 1],
+    ], '10.51.0.3');
+    $checks = new FakeTaskCheckRunner;
+    app()->instance(TaskCheckRunner::class, $checks);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($checks->commands)->toBe(['composer check', 'vp run check', null])
+        ->and($checks->setups)->toBe([
+            [
+                ['name' => 'Install', 'command' => 'composer install --no-interaction', 'timeout_seconds' => 900],
+                ['name' => 'Warm cache', 'command' => 'echo warm', 'timeout_seconds' => 30],
+            ],
+            [
+                ['name' => 'Install packages', 'command' => 'vp install --frozen-lockfile', 'timeout_seconds' => 120],
+            ],
+            [
+                ['name' => 'Prepare', 'command' => 'echo prepare', 'timeout_seconds' => 45],
+            ],
+        ])
+        ->and($spawner->events)->toBe([]);
+
+    $composer->update(['status' => TaskGroupStatus::Completed]);
+    $javascript->update(['status' => TaskGroupStatus::Completed]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($unset->fresh()?->assistance_requested)->toBeFalse()
+        ->and($unset->tasks()->value('implementer_agent_thread_id'))->not->toBeNull()
+        ->and($spawner->events)->toBe(['implementer:1']);
+
+    $unset->update(['status' => TaskGroupStatus::Completed]);
+    $failedSetup = tick_baseline_group('baseline-setup-failed', 'composer check', [
+        ['name' => 'Install', 'command' => 'composer install --no-interaction', 'timeout_seconds' => 600, 'position' => 1],
+    ], '10.51.0.4');
+    $setupOutput = "setup blew up\n";
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner([
+        TaskCheckReading::finished(7, str_repeat('a', 40), str_repeat('b', 40), [], $setupOutput, null, str_repeat('b', 40), 'Install'),
+    ]));
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    $failedTaskId = $failedSetup->tasks()->value('id');
+    expect($failedSetup->fresh()?->assistance_requested)->toBeTrue()
+        ->and($failedSetup->fresh()?->assistance_reason)->toBe('The Project setup step "Install" failed with exit code 7 on a fresh checkout of task-'.$failedSetup->id.', before any agent started. Fix the setup or the branch, then cancel and create the group again. The task\'s check shows the output.')
+        ->and(TaskCheck::query()->where('task_id', $failedTaskId)->sole()->output)->toBe($setupOutput)
+        ->and($failedSetup->tasks()->value('implementer_agent_thread_id'))->toBeNull()
+        ->and($spawner->events)->toBe(['implementer:1']);
+
+    $failedSetup->update(['status' => TaskGroupStatus::Completed]);
+    $ordinary = tick_baseline_group('baseline-ordinary-failure', 'composer check', [], '10.51.0.5');
+    $ordinaryOutput = "sh: 1: vendor/bin/pest: not found\nsh: 1: node_modules/.bin/vite: not found\n";
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner([
+        TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], $ordinaryOutput, null, str_repeat('b', 40), null),
+    ]));
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    $reason = $ordinary->fresh()?->assistance_reason;
+    expect($ordinary->fresh()?->assistance_requested)->toBeTrue()
+        ->and($reason)->toBe('The Project baseline check failed with exit code 1 on a fresh checkout of task-'.$ordinary->id.', before any agent started. Fix the configured check or the branch, then cancel and create the group again. The task\'s check shows the output.')
+        ->and($reason)->not->toContain('Project dependencies appear to be missing')
+        ->and($reason)->not->toContain('Composer dependency installation failed')
+        ->and($reason)->not->toContain('JavaScript dependency installation failed')
+        ->and(TaskCheck::query()->where('task_id', $ordinary->tasks()->value('id'))->sole()->output)->toBe($ordinaryOutput)
+        ->and($spawner->events)->toBe(['implementer:1']);
+});
+
+/**
+ * A fresh running task whose baseline has not started.
+ *
+ * @param  list<array{name: string, command: string, timeout_seconds: int, position: int}>  $steps
+ */
+function tick_baseline_group(string $slug, ?string $taskCheck, array $steps, string $ip): Task
+{
+    $project = Project::query()->create([
+        'name' => $slug,
+        'slug' => $slug,
+        'repository_url' => "git@example.test:{$slug}.git",
+        'default_branch' => 'main',
+        'task_check' => $taskCheck,
+    ]);
+    $node = Node::query()->create([
+        'name' => $slug.'-node',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => $ip,
+        'wireguard_ip' => $ip,
+    ]);
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => $slug,
+        'checkout_path' => '/tmp/tasks-'.$slug,
+        'status' => 'source_resolved',
+    ]);
+    $group = Task::topLevel()->create([
+        'project_id' => $project->id,
+        'title' => $slug,
+        'brief' => 'Baseline setup only.',
+        'status' => TaskGroupStatus::Running,
+        'execution_mode' => TaskExecutionMode::Managed,
+    ]);
+    $group->taskable()->associate($instance);
+    $group->save();
+    Task::query()->create([
+        'parent_id' => $group->id,
+        'position' => 1,
+        'title' => 'First',
+        'brief' => 'First subtask',
+        'status' => TaskStatus::Running,
+    ]);
+    foreach ($steps as $step) {
+        ProjectLifecycleStep::query()->create([
+            'project_id' => $project->id,
+            'phase' => 'setup',
+            'name' => $step['name'],
+            'command' => $step['command'],
+            'timeout_seconds' => $step['timeout_seconds'],
+            'position' => $step['position'],
+        ]);
+    }
+
+    return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
+}
