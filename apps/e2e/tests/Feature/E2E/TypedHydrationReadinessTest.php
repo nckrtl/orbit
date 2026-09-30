@@ -55,7 +55,7 @@ function typedHydrationReadinessFixture(
     $state = "{$root}/sample-app-state.json";
     file_put_contents($state, json_encode([
         'shape' => 'instances',
-        'app_id' => 1,
+        'project_id' => 1,
         'node_id' => 2,
         'name' => 'e2e-dev',
         'checkout_path' => $checkout,
