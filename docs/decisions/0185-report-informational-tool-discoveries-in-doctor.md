@@ -20,7 +20,7 @@ Add the finding kind `informational`. The tool family uses read-only Homebrew an
 
 Informational findings appear in human and JSON output and have a separate summary count. They do not change family or Node health, drift or unverifiable counts, or exit status. A report containing only informational findings is healthy and exits 0. Drift or unverifiable findings still exit 1.
 
-`checked` keeps counting registered resources. Unregistered discoveries do not inflate it. Missing registered packages and rejected stored constraints keep their existing drift behavior. A failed or incomplete supported inventory scan is unverifiable even when the Node has no Tool records. A manager that is absent or unsupported has an explicit scan state and creates no false package finding.
+`checked` keeps counting registered resources. Unregistered discoveries do not inflate it. Missing registered packages and rejected stored constraints keep their existing drift behavior. A failed or incomplete supported inventory scan is unverifiable even when the Node has no Tool records. A conflicting scope is informational when no Tool uses that manager, and unverifiable only when a Tool does. An unreachable Node does not run the scan; with no Tool rows it reports no tool issue. A manager that is absent or unsupported has an explicit scan state and creates no false package finding.
 
 Doctor creates no Tool records, adopts nothing, and stores no inventory or report history. The web app uses a separate read-only inventory request and an explicit adoption request; it does not persist a Doctor report as its package database.
 

@@ -58,8 +58,14 @@ Each failure names the check or step that stopped the request.
 | Code | Meaning |
 | --- | --- |
 | `node.invalid_linux_user` | The bootstrap user or the managed user is not a valid Linux user name. Nothing changes. |
-| `node.user_change_unsupported` | The request names another managed user for a Node that has roles. Nothing changes. |
-| `node.platform_unsupported` | The platform or requested operation is unsupported on the machine. |
+| `node.user_change_unsupported` | Another managed user for a Node with roles, or another account for an already managed Mac. Nothing changes. |
+| `node.platform_unsupported` | The platform or operation is unsupported. A macOS role request returns it before SSH. HTTP 422. |
+| `node.platform_mismatch` | The observed platform is not the requested one. HTTP 409 at `machine-architecture`. |
+| `node.macos_account_required` | macOS enrollment omitted the existing account. HTTP 422. Nothing changes. |
+| `node.macos_account_mismatch` | `user` and `orbit_user` name different accounts. HTTP 422. Nothing changes. |
+| `node.account_unavailable` | SSH as the existing macOS account failed. HTTP 502 at `account`. |
+| `node.wireguard_required` | macOS enrollment has no WireGuard address to verify. HTTP 409 at `identity`. |
+| `node.agent_unsupported` | A Node agent install or repair targeted macOS. HTTP 422. |
 | `node.ssh_host_fingerprint_required` | A new Node has no approved host key fingerprint. |
 | `node.ssh_host_key_scan_failed` | The Gateway could not read the host key. |
 | `node.ssh_host_key_mismatch` | The host key differs from `--host-key-fingerprint`. |
@@ -67,29 +73,75 @@ Each failure names the check or step that stopped the request.
 | `node.bootstrap_failed` | The bootstrap failed as the bootstrap user. |
 | `node.orbit_ssh_failed` | The Gateway could not connect as the managed user after the bootstrap. |
 | `node.architecture_unavailable` | The Gateway could not read the architecture. |
-| `node.architecture_mismatch` | The requested architecture differs from the observed one. |
+| `node.architecture_mismatch` | The requested architecture differs from the observed one. HTTP 409 at `machine-architecture`. |
 | `node.role_convergence_failed` | A role failed to converge. The step is `role:<step>`. |
 | `node.agent_install_failed` | The Node agent failed to install. |
 
 ## macOS Nodes
 
-A macOS Node supports selected Homebrew formulae, casks, and Vite+ global packages. It needs no role. It uses an existing account, working WireGuard connection, and SSH access authorized for the Gateway. Enrollment pins the approved SSH host identity and verifies the actual platform, architecture, account, and tunnel address. The host name is resolved by the Gateway; an SSH alias on the caller's machine is not a fleet address.
+A macOS Node supports selected Homebrew formulae, casks, and Vite+ global packages. It needs no role. It uses an existing account, a working WireGuard connection, and SSH access authorized for the Gateway. Enrollment pins the approved SSH host identity and verifies the actual platform, architecture, account, and tunnel address before it succeeds. The Gateway resolves the host name. An SSH alias on the caller's machine is not a fleet address.
 
-Use `node:add` with `--platform=macos`, `--user` and `--orbit-user` naming the existing account, and the approved host fingerprint. A roleless peer with no pinned SSH identity can be enrolled in place. The Gateway corrects its platform and architecture from verified observations and retains its Node ID, access grants, and WireGuard identity. A requested value that differs from the machine fails. An already managed Node cannot silently change its machine identity.
+Use `node:add` with `--platform=macos`, the approved host fingerprint, and `--user` and `--orbit-user` set to the same existing account. The Gateway does not default those fields to `root` or `orbit`. A missing field returns `node.macos_account_required`. Different names return `node.macos_account_mismatch`. A name that fails the existing portable user check returns `node.invalid_linux_user`. All three are HTTP 422 and change nothing.
+
+The request must name a WireGuard address that is already on the machine, or the Node row must already have one. The Gateway does not allocate a new address, install a tunnel, or rewrite the host tunnel, DNS, or firewall. A missing address returns `node.wireguard_required`.
+
+An eligible existing peer can be enrolled in place. It already has a row, no roles, a WireGuard address, and no pinned SSH fingerprint. After the platform, architecture, account, and tunnel checks pass, the Gateway stores the observed platform and `uname -m` architecture and the named account. It keeps the Node ID, name, access grants, WireGuard keys, address, and endpoint. Apple silicon stays `arm64`. The Gateway does not rewrite `arm64` to `aarch64`.
+
+A requested platform or architecture that disagrees with the machine fails. `node.platform_mismatch` and `node.architecture_mismatch` are HTTP 409 at `machine-architecture`. An already managed Node has a pinned SSH fingerprint. Enrollment does not change its platform, architecture, or user. A disagreement fails and leaves the record as it was. A different account on that Node returns `node.user_change_unsupported` (HTTP 409).
 
 The macOS path creates no account and applies no Ubuntu bootstrap, apt packages, UFW rules, systemd units, or managed DNS. It keeps the existing account, tunnel, Homebrew prefix, and Vite+ global scope. Discovery and adoption report a missing or conflicting manager without installing, replacing, or repinning it. Tool mutations require an active Node with verified WireGuard and pinned SSH identity.
 
-### Supported operations
+### Enrollment steps
 
-Service roles, Linux Processes and Schedules, Metrics exporters, and the Linux Node agent are unsupported on macOS. These operations refuse the platform before remote mutation. Doctor checks platform, architecture, tunnel identity, and tools with macOS commands; it does not expect systemd, a Node agent, or an exporter. A missing agent on a Mac is not drift.
+The Gateway records a new Node as `provisioning` and runs these steps. It does not run Ubuntu steps 2 to 10.
 
-Removing a macOS Node preserves its existing user and package-manager installations and does not run Linux agent or firewall cleanup. Any retained packages and host tunnel configuration are reported. Registry removal must not uninstall unrelated software. macOS OS updates, firewall management, application hosting, and a macOS agent are separate features.
+| Step | Name | Work |
+| --- | --- | --- |
+| 1 | `ssh-host-key` | Resolve the host and compare its key with the approved fingerprint. Do not pin the key yet. |
+| 2 | `account` | SSH as the existing account. Create no user and change no sudoers file. |
+| 3 | `machine-architecture` | Read `uname -s` and `uname -m`. Refuse a platform or architecture disagreement. |
+| 4 | `identity` | Verify the recorded WireGuard address on the machine. An eligible peer then stores platform, architecture, and account. |
+| 5 | `ssh-pin` | Store the host key type, key, and fingerprint. |
+| 6 | `active` | Mark the Node `active`. Skip apt, roles, firewall, DNS, exporters, and the Node agent. |
+
+`uname -s` must be Darwin. A Linux host requested as macOS fails with `node.platform_mismatch` before any account, package, DNS, or firewall change.
+
+### Enrollment recovery
+
+A failed check changes nothing on the Mac. Retry with the same `node:add`. The retry does not run the Ubuntu bootstrap.
+
+| Failure | New Node | Peer that was `active` | Other existing peer |
+| --- | --- | --- | --- |
+| Before `identity` | `failed` at that step. No identity writes. | Stays `active`. The record is unchanged. | Previous status. The record is unchanged. |
+| `identity` or `ssh-pin` | `failed` at that step. A partial SSH pin is cleared. | Stays `active`. Platform, architecture, user, and SSH pin are restored. | Previous status, platform, architecture, user, and SSH pin are restored. |
+
+An already managed Node that fails a later converge stays `active`, with its previous platform, architecture, user, and SSH pin restored. Storage settings, Metrics reconcile, and the Node agent do not run, so a macOS failure never stops on steps 8 to 10.
+
+### Unsupported operations
+
+These operations refuse macOS before remote mutation and before they write a role or other new assignment.
+
+| Operation | Code | HTTP |
+| --- | --- | --- |
+| Any role on `node:add` or `node:role:add` | `node.platform_unsupported` | 422 |
+| Process mutation | `process.platform_unsupported` | 422 |
+| Schedule mutation | `schedule.platform_unsupported` | 422 |
+| Metrics exporter or Metrics role | `metrics.platform_unsupported` | 422 |
+| Node agent install or repair | `node.agent_unsupported` | 422 |
+| Firewall mutation | `firewall.platform_unsupported` | 422 |
+| DNS repair | `node.dns_repair_platform_unsupported` | 422 |
+
+Doctor checks lifecycle, SSH reachability, platform, architecture, tunnel identity, tools, and free space on the enrolled account's home volume. It does not expect systemd, a Node agent, an exporter, or a Linux disk path. A missing agent is not `node.agent_missing`. Realtime and the web page treat the Mac as a Node with no agent, not as a failed Linux service.
+
+### Removal
+
+Removing a macOS Node deletes the registry row and the hub peer. It does not delete the user, uninstall Homebrew or Vite+, or edit the host tunnel. It skips the Node agent step and `firewall-recovery`. `retained_on_node` lists `user`, `package-managers`, and `host-wireguard`. A failed hub or registry step uses the normal removal rollback: the Node returns to its previous status, and a removed peer is restored when that rollback succeeds. macOS OS updates, firewall management, application hosting, and a macOS agent are separate features.
 
 ## Nodes without roles
 
 `node:add` without `--role` adds a Node that hosts no Orbit service. Use it for an operator machine that runs the Orbit CLI over WireGuard.
 
-On Ubuntu, the Gateway uses this setup when the request names no role and the Node has no role assignment. macOS uses the [macOS enrollment](#macos-nodes) path. It runs the same steps as for any Node, with these differences.
+On Ubuntu, the Gateway uses this setup when the request names no role and the Node has no role assignment. macOS uses the [macOS enrollment](#macos-nodes) path instead of the steps below. Ubuntu runs the same steps as for any Linux Node, with these differences.
 
 | Area | Node without roles |
 | --- | --- |
@@ -106,7 +158,7 @@ The `DNS =` line is in `/etc/wireguard/orbit.conf`, and `wg-quick` applies it wh
 
 A later `node:add` without `--role` keeps this setup. To call the Gateway API from the Node, grant it access with [`node:access:add`](/cli/node#orbit-nodeaccessadd). The Gateway identifies the caller by its WireGuard address.
 
-`node:role:add` accepts the same roles as on any other Node. Adding the first role closes public SSH and moves the Node to managed DNS in the same operation.
+On Ubuntu, `node:role:add` accepts the same roles as on any other Linux Node. Adding the first role closes public SSH and moves the Node to managed DNS in the same operation. macOS refuses every role with `node.platform_unsupported` before SSH.
 
 [`orbit:node-dns-repair`](/reference/private-dns#repair-one-peer) still refuses a Node without roles with `node.dns_repair_operator_owned`.
 
@@ -118,7 +170,7 @@ Doctor checks a Node without roles like any other Node when the Gateway has a pi
 
 `node:add` for a recorded Node converges the machine again. It refuses a Node that owns Instances with `node.has_instances`. One exception: it changes only the TLD of a Node with an active `app-dev` role.
 
-What a failure leaves depends on the step.
+What a failure leaves depends on the step. A macOS Node uses [enrollment recovery](#enrollment-recovery) instead of this table.
 
 | Failed step | New Node | Node that was `active` |
 | --- | --- | --- |
@@ -219,7 +271,7 @@ Four locks guard work on one Node. They live in a file cache store under `ORBIT_
 | Role | Role operations | 10 minutes | Waits up to 2 minutes, then `node_role.node_busy` |
 | Node agent | The [agent converge](/reference/node-agent#install-and-upgrade) | 4 minutes | Waits up to 2 minutes, then `agent.converge_busy` |
 
-A Tool operation takes its Tool lock, then its manager lock. Several manager locks are taken in the order `apt`, `vp`, `composer`, `brew`. A role operation on `app-dev` or `app-prod` takes the `vp` and `composer` manager locks first, and then the role lock. The Node agent lock comes last. The locks cannot deadlock: the Tool and manager locks never wait, and no code takes the role lock while it holds the agent lock.
+A Tool operation takes its Tool lock, then its manager lock. Several manager locks are taken in the order `apt`, `vp`, `composer`, `brew`. `brew-cask` takes the `brew` lock rather than a fifth lock. A role operation on `app-dev` or `app-prod` takes the `vp` and `composer` manager locks first, and then the role lock. The Node agent lock comes last. The locks cannot deadlock: the Tool and manager locks never wait, and no code takes the role lock while it holds the agent lock.
 
 ### Lock renewal
 
@@ -259,7 +311,7 @@ When the `vpn` and `gateway` roles share a machine, or no `gateway` role is acti
 
 ## Remove a Node
 
-`orbit node:remove <node> [--offline] [--force]` removes the Node record and its Gateway configuration. It does not clean the machine.
+`orbit node:remove <node> [--offline] [--force]` removes the Node record and its Gateway configuration. It does not clean the machine. [macOS removal](#removal) also skips the Linux agent and firewall steps and reports the retained user, package managers, and host tunnel.
 
 The Gateway refuses the removal until the Node is empty. Remove its Instances, Routes, Schedules, roles, Processes, and Orbit firewall rules first. Orbit never removes the caller's Node, the `gateway` Node, or the `vpn` Node.
 

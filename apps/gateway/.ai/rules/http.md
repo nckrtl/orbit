@@ -14,8 +14,10 @@ Enforce binary directed node access at the HTTP boundary. One access edge permit
 
 ## Keep tool input narrow
 
-Tool install input is limited to node_id, manager, package, and version_constraint.
-Do not expose manager argv, scripts, repositories, environment variables, or options.
+Tool install and adopt input is limited to node_id, manager, package, and version_constraint.
+Tool scan input is the node_id query only.
+Do not expose manager argv, scripts, repositories, environment variables, options,
+or a generic script API. Do not add agent execution.
 Keep manager policy in the Gateway; the SDK and CLI only transport and render
 the typed contract.
 

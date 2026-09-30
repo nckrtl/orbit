@@ -183,7 +183,7 @@ WireGuard membership alone does not prove Gateway authority. A Grafana login alo
 
 ### Exporters only on managed Nodes
 
-A Node without Gateway SSH management has no service-management contract with the Gateway. An exporter preference must not turn such a Node into a managed Node. A roleless Linux Node that the Gateway manages can still host an exporter. A managed Mac cannot host the Linux exporter in this slice.
+A Node without Gateway SSH management has no service-management contract with the Gateway. An exporter preference must not turn such a Node into a managed Node. A roleless Linux Node that the Gateway manages can still host an exporter. A managed Mac cannot host the Linux exporter in this slice. Enabling an exporter or assigning the Metrics role on macOS returns `metrics.platform_unsupported` (HTTP 422) before SSH.
 
 ### The credential in Metrics settings
 

@@ -82,7 +82,7 @@ orbit node:add beast beast.example.com \
 orbit node:add beast --role=app-dev --role=database
 ```
 
-For macOS, use `node:add` with `--platform=macos` and name the existing account with `--user` and `--orbit-user`. The machine must already join WireGuard and accept the Gateway's SSH key. No role is required; role requests are refused. This path also enrolls an existing roleless peer whose SSH identity is not pinned. See [macOS Nodes](/reference/node-provisioning#macos-nodes).
+For macOS, use `node:add` with `--platform=macos` and set `--user` and `--orbit-user` to the same existing account. The machine must already join WireGuard and accept the Gateway's SSH key. No role is required. A role request fails with `node.platform_unsupported` before SSH. This path also enrolls an existing roleless peer whose SSH identity is not pinned, and it can correct that peer's platform and architecture from the machine. See [macOS Nodes](/reference/node-provisioning#macos-nodes).
 
 ## orbit node:list
 

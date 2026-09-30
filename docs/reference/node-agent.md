@@ -20,7 +20,7 @@ The agent only observes. It runs no command, changes nothing on the Node, and li
 
 ## Where it runs
 
-The Gateway installs the agent only on active managed Linux Nodes with a WireGuard address and a pinned SSH host key. macOS tool-only Nodes need no agent and hold no agent secret. Only a Node inside the Linux agent boundary runs the agent and holds an agent secret. [Exporter selection](/reference/metrics#exporter-selection) uses the same boundary. The agent needs no role. A Node that the Gateway does not manage over SSH runs no agent.
+The Gateway installs the agent only on active managed Linux Nodes with a WireGuard address and a pinned SSH host key. macOS tool-only Nodes need no agent and hold no agent secret. An install or repair aimed at macOS returns `node.agent_unsupported` (HTTP 422) before SSH. Only a Node inside the Linux agent boundary runs the agent and holds an agent secret. [Exporter selection](/reference/metrics#exporter-selection) uses the same boundary. The agent needs no role. A Node that the Gateway does not manage over SSH runs no agent.
 
 ## What it observes
 

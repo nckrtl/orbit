@@ -22,7 +22,7 @@ The existing `brew` manager owns Homebrew Core formulae. A separate adapter, fix
 
 Homebrew formula operations require compatible verified bottles. Cask operations use official metadata, a supported artifact and checksum, and fixed install, upgrade, and uninstall commands. Taps, URLs, local files, caller options, source builds, and cask zap are outside the input contract. An unsupported artifact or required interactive authorization is a reported failure, never a request for a coding agent to run an arbitrary installer.
 
-Adoption uses existing managers without repinning or replacing them. It rejects an unsupported package, absent package, unavailable or conflicting manager, version constraint mismatch, or busy operation. Repeating adoption with the same intent is unchanged; different intent is a conflict. Installation still refuses an existing unregistered package and directs the caller to adoption.
+Adoption uses existing managers without repinning or replacing them. It rejects an unsupported package, a protected package, an absent package, an unavailable or conflicting manager, a version constraint mismatch, or a busy operation. Protected apt names are every package `NodeBootstrapPackageCatalog` returns from `forNode` and `forRole`, plus `openssh-server` and `wireguard-tools`. That includes `docker.io` and `dnsmasq`. Protected Homebrew formulae are `wireguard-tools` and `wireguard-go`, and the Vite+ root is `pnpm`. Adopting one would let removal uninstall SSH, the tunnel, DNS, Docker, the firewall, sudo, Caddy, or a manager. Repeating adoption with the same intent is unchanged; different intent is a conflict. A `failed` row with the same constraint can be repaired to `installed` without changing the host package. A row left `installing`, `updating`, or `removing` is refused. Installation still refuses an existing unregistered package and directs the caller to adoption.
 
 Once adopted, a package uses the manager's normal update and removal behavior. Updates target one registered root package; Homebrew may manage its required dependencies. Orbit never runs a bulk upgrade, autoremove, or a Homebrew service operation. Dependencies are identified in discovery and are never adopted automatically.
 
@@ -35,6 +35,7 @@ Discovery is bounded, read-only, and scoped to the enrolled account. It returns 
 - Store every discovered package as a Tool: Tool rows would mix desired intent and observations.
 - Give formulae and casks the same identity: names can collide and operations differ.
 - Give formulae and casks independent scope locks: both mutate the same Homebrew installation.
+- Adopt every installed package, including tunnel and bootstrap packages: removal would then be able to break SSH, WireGuard, or a manager.
 
 ## Consequences
 

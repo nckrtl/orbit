@@ -34,7 +34,7 @@ orbit tool:manager:list --node=ID [--json]
 
 ## orbit tool:scan
 
-Read installed Homebrew formulae, casks, and Vite+ global packages for one Node. The result distinguishes registered ownership, dependencies, adoption support, and each manager's scan state. It changes no packages or Tool records. An unsuccessful scan is explicit, not an empty successful inventory.
+Read installed Homebrew formulae, casks, and Vite+ global packages for one Node. The result distinguishes registered ownership, dependencies, adoption support, and each manager's scan state. It changes no packages or Tool records. An unsuccessful scan is explicit, not an empty successful inventory. The HTTP shape, scan states, and error codes are in [Discover installed packages](/reference/tools#discover-installed-packages).
 
 ```bash
 orbit tool:scan --node=ID [--json]
@@ -48,7 +48,7 @@ Take ownership of one supported installed package. The Gateway checks its live s
 orbit tool:adopt <package> --node=ID --manager=MANAGER [--constraint=CONSTRAINT] [--yes] [--json]
 ```
 
-Use `brew` for a Core formula, `brew-cask` for a supported official macOS cask, or `vp` for a Vite+ global package. The optional SemVer constraint must accept the installed version. A repeated adoption with the same intent is unchanged. A missing or unsupported package or a conflicting constraint fails without creating a Tool. Without `--yes`, a terminal asks whether Orbit may take ownership of this exact package on this Node and manage later updates and removal. The default is No. Noninteractive and JSON calls require `--yes`. Cancelling changes nothing. See [Adopt a Tool](/reference/tools#adopt-a-tool).
+Use `brew` for a Core formula, `brew-cask` for a supported official macOS cask, `vp` for a package in the enrolled account's Vite+ global scope, or `apt` or `composer` on Linux. The optional SemVer constraint must accept the installed version. A repeated adoption with the same intent is unchanged. A missing or unsupported package or a conflicting constraint fails without creating a Tool. The HTTP body, outcomes, and error codes are in [Adopt a Tool](/reference/tools#adopt-a-tool). Without `--yes`, a terminal asks whether Orbit may take ownership of this exact package on this Node and manage later updates and removal. The default is No. Noninteractive and JSON calls require `--yes`. Cancelling changes nothing.
 
 ## orbit tool:install
 

@@ -1,6 +1,6 @@
 ---
 title: "Tools"
-description: "Where Tools run, the supported Tool Managers, how Orbit installs, updates, and removes one package, and why the contract stays closed."
+description: "Where Tools run, the supported Tool Managers, how Orbit discovers, adopts, installs, updates, and removes one package, and why the contract stays closed."
 covers:
   - apps/gateway/app/{Actions,Domain}/Tools/**
   - apps/gateway/app/Providers/ApplicationServiceProvider.php
@@ -20,21 +20,27 @@ A Tool is one package that Orbit manages on one Node through one Tool Manager. T
 
 The Gateway manages Tools only on an active Node that it manages over SSH. That Node runs a supported platform, has a verified WireGuard address, and has a stored SSH host fingerprint. Ubuntu supports the existing managers. [macOS Nodes](/reference/node-provisioning#macos-nodes) support Homebrew formulae, casks, and Vite+ global packages in the enrolled account's existing installations. Any other Node gets `tool.node_inactive` or `tool.node_unmanaged` (HTTP 409) before the Gateway changes anything.
 
-Tool Managers do not belong to roles. A Node with no role can use every manager its platform supports.
+Tool Managers do not belong to roles. A Node with no role can use every manager its platform supports. `apt` and `composer` stay Linux-only. `brew` and `vp` run on Linux and macOS. `brew-cask` runs on macOS only.
 
 ## Tool Managers
 
-The Gateway has five managers, fixed in code. Formulae and casks have separate manager identities, so the same package name cannot select the wrong package kind.
+The Gateway has five managers, fixed in code. There is no plugin registry and no generic script manager. Formulae and casks have separate manager identities, so the same package name cannot select the wrong package kind.
 
-| Manager | Package | Scope on the Node | Installed |
-| --- | --- | --- | --- |
-| `apt` | An Ubuntu package name | The Node's package database | When `node:add` converges the Node |
-| `vp` | An npm package name, such as `@openai/codex` | Orbit's shared Vite+ global scope | On first use, or when `app-dev` or `app-prod` converges |
-| `composer` | A `vendor/package` name | Orbit's shared Composer global scope | On first use, or when `app-dev` or `app-prod` converges |
-| `brew` | One Homebrew Core formula name | `/home/linuxbrew/.linuxbrew` on Linux; the existing Homebrew prefix on macOS | On first use on Linux; verified in place on macOS |
-| `brew-cask` | One official Homebrew cask name | The existing macOS Homebrew prefix and its cask installation | Verified in place on macOS |
+| Manager | Platforms | Package | Scope | Becomes ready |
+| --- | --- | --- | --- | --- |
+| `apt` | Linux only | An Ubuntu package name | The Node's package database | When `node:add` converges a Linux Node |
+| `composer` | Linux only | A `vendor/package` name | Orbit's shared Composer global scope | On first Linux use, or with `app-dev` or `app-prod` |
+| `vp` | Linux and macOS | An npm package name | The enrolled account's Vite+ global scope | Linux: first use or an application role. macOS: verified in place |
+| `brew` | Linux and macOS | A verified Homebrew Core bottle | `/home/linuxbrew/.linuxbrew` on Linux; the existing prefix on macOS | Linux: pinned revision on first use. macOS: verified in place |
+| `brew-cask` | macOS only | An official Homebrew cask | That macOS prefix and its casks; shares the `brew` lock | Verified in place. Orbit does not install it |
 
-`orbit tool:manager:list --node=<id>` shows each manager with one of these states.
+`apt` and `composer` are not offered on macOS, and `brew-cask` is not offered on Linux. Those requests return `tool.manager_unsupported` (HTTP 422) before SSH.
+
+On Linux, `composer` uses `COMPOSER_HOME=/opt/orbit/composer`. `vp` uses the managed user's Orbit-owned Vite+ global store, which is that enrolled account's global scope. The Gateway may install a missing Linux manager on first use.
+
+On macOS, `vp` is the enrolled account's existing Vite+ global store. `brew` and `brew-cask` use the existing Homebrew prefix. The Gateway does not install, replace, or repin those scopes, and it does not check out a Homebrew revision. A missing scope is scan state `absent`. On either platform, a scope that exists but has the wrong owner, a non-official Homebrew origin, a dirty Linux Homebrew tree, or a conflicting Vite+ store is scan state `conflicting`. Adoption and install then return `tool.manager_unavailable` (HTTP 409). Orbit does not repair that scope.
+
+`orbit tool:manager:list --node=<id>` shows each manager the Node's platform supports, with one of these states. An unsupported manager is omitted, not listed as `uninstalled`.
 
 | State | Meaning |
 | --- | --- |
@@ -43,23 +49,137 @@ The Gateway has five managers, fixed in code. Formulae and casks have separate m
 | `active` | The manager is ready. |
 | `failed` | Installing or checking the manager failed. The record keeps the failed step and error code. The next install tries again. |
 
-Before each install, the Gateway converges the manager: it installs the manager when it is missing and checks its version. A failure returns `tool.manager_provision_failed` (HTTP 502), keeps the manager `failed`, and creates no Tool. A manager stays installed after its last Tool is removed. No command removes a manager.
+Before each Linux install, the Gateway converges the manager: it installs the manager when it is missing and checks its version. A failure returns `tool.manager_provision_failed` (HTTP 502), keeps the manager `failed`, and creates no Tool. On macOS it only rechecks the existing scope and returns `tool.manager_unavailable` (HTTP 409) when that scope is absent or conflicting. A manager stays installed after its last Tool is removed. No command removes a manager.
 
 ## Discover installed packages
 
-`tool:scan` reads the Node's existing Homebrew formulae and casks and the enrolled user's Vite+ global root packages. It compares them with Tool records by Node, manager, and package. It returns package kind, normalized version when available, registered ownership, dependency status, and adoption support. Homebrew dependencies are labeled and never adopted automatically.
+`GET /api/v1/tool-inventory?node_id=<id>` is `tool:scan`. The CLI command is `orbit tool:scan --node=<id>`. The only input is `node_id`, a strict integer of an existing Node. Any other query or body field fails with `validation.failed` (HTTP 422). This operation is not a script API.
 
-Discovery uses fixed read-only commands. It runs no manager bootstrap or metadata update and stores no inventory. A missing or unsupported manager has an explicit scan state. Failure, malformed output, or a truncated inventory makes that manager's scan incomplete; it never becomes an empty successful result. Other manager results can still be shown with their own status. The response includes observation time and bounded package facts, without raw output, paths, or environment values.
+The scan reads `brew`, `brew-cask`, and `vp` for the enrolled account. It does not inventory `apt` or `composer`. It compares packages with Tool rows by Node, manager, and package. It stores nothing and creates no Tool row. It does not take a manager lock. A failed, malformed, or truncated read marks that manager `incomplete` and is never an empty `complete` inventory. The other managers still return their own state.
 
-Doctor and the Node's Tools page use the same inventory inspector. Unregistered discoveries are informational, including unsupported casks. They do not make the Node unhealthy. See [informational package discoveries](/cli/doctor#informational-package-discoveries).
+The Gateway resolves the host itself and uses the pinned SSH identity. The response has no raw output, paths, environment values, checksums, or URLs. Success is HTTP 200.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `data.node_id` | integer | The Node. |
+| `data.observed_at` | string | UTC time when the read finished, such as `2026-04-26T12:00:00+00:00`. |
+| `data.managers` | array | Exactly three objects, in the order `brew`, `brew-cask`, `vp`. |
+| `data.managers[].manager` | string | `brew`, `brew-cask`, or `vp`. |
+| `data.managers[].scan_state` | string | `complete`, `absent`, `unsupported`, `incomplete`, or `conflicting`. |
+| `data.managers[].packages` | array | Package facts when `scan_state` is `complete`. Otherwise empty, and not an inventory. |
+| `meta.request_id` | string | The request id. |
+
+| Scan state | Meaning |
+| --- | --- |
+| `complete` | The read finished. The package array is the inventory and may be empty. |
+| `absent` | This platform supports the manager, but its scope is not installed. |
+| `unsupported` | This platform does not offer the manager. `brew-cask` is unsupported on Linux. |
+| `incomplete` | The read failed, the output was malformed, or the inventory was truncated. |
+| `conflicting` | The scope exists on Linux or macOS, but Orbit will not adopt it or replace it. |
+
+Packages inside a `complete` manager are ordered by package name, ascending. A formula and a cask that share a name stay on different managers.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `manager` | string | The enclosing manager. |
+| `package` | string | Unqualified package name. |
+| `package_kind` | string | `formula`, `cask`, or `global`. |
+| `installed_version` | string or null | Normalized version, at most 255 characters, or null. |
+| `dependency` | boolean | True for a Homebrew dependency. False for a root formula, cask, or Vite+ package. |
+| `registered` | boolean | True when a Tool row exists for this Node, manager, and package. |
+| `tool_id` | integer or null | That Tool's id, or null. |
+| `adoption` | string | `supported` or `unsupported`. |
+| `adoption_block` | string or null | Null when adoption is supported. Otherwise a block token. |
+
+The block tokens are `protected`, `dependency`, `unsupported_artifact`, `unsupported_source`, `bottle_unavailable`, `version_unreadable`, and `authorization_required`. A dependency or a [protected package](#protected-packages) is never `supported`. An unsupported cask stays in the list with adoption unavailable and one of those tokens. Doctor and the Node's Tools page use this inspector. See [informational package discoveries](/cli/doctor#informational-package-discoveries).
+
+Scan errors use the [Tool error envelope](#errors). `details.step` is `scan`, `details.outcome` is `manager_failed`, and there is no Tool `id`. A manager state of `incomplete`, `absent`, `unsupported`, or `conflicting` does not fail the HTTP request.
+
+| Code | HTTP | When |
+| --- | --- | --- |
+| `tool.node_inactive` | 409 | The Node is not `active`. |
+| `tool.node_unmanaged` | 409 | The Node has no WireGuard address or no pinned SSH fingerprint. |
+| `validation.failed` | 422 | The query or body is not the one `node_id` field. |
+| `node_access.required` | 403 | The caller cannot address the Node. |
+
+Scan reads installed names and versions only. It does not run `brew update`, and it does not set `HOMEBREW_FORCE_API_AUTO_UPDATE`. A stale Homebrew API cache does not by itself make the scan `incomplete`.
+
+## Protected packages
+
+Some installed packages keep SSH, the WireGuard tunnel, DNS, Docker, the firewall, sudo, Caddy, or a manager working. Adopting one would let `tool:remove` uninstall it. These names are protected. The set is closed and depends on the manager.
+
+| Manager | Protected package names |
+| --- | --- |
+| `apt` | `acl`, `attr`, `ca-certificates`, `caddy`, `composer`, `curl`, `dnsmasq`, `docker.io`, `git`, `gnupg`, `libnss-resolve`, `openssh-client`, `openssh-server`, `openssl`, `php-curl`, `php-xml`, `sudo`, `ufw`, `unzip`, `wireguard`, `wireguard-tools` |
+| `brew` | `wireguard-tools`, `wireguard-go` |
+| `vp` | `pnpm` |
+
+The apt names are every package `NodeBootstrapPackageCatalog` returns from `forNode` and `forRole`, plus `openssh-server` and `wireguard-tools`. The Gateway reads that catalog at the check. It does not keep a second copied list. The table is that union.
+
+`composer` and `brew-cask` have no protected names. The apt package `composer` is protected. The `composer` manager is a different scope and has none. A protected package still appears in scan, with `adoption` `unsupported` and `adoption_block` `protected`. Install, update, and adopt refuse it with no new Tool row. Install and update return `tool.package_protected` (HTTP 409, outcome `manager_failed`). Adopt returns `tool.adoption_unsupported` with that block token. `tool:remove` of an existing row returns `tool.package_protected`, leaves the row, and does not run the uninstaller. `tool.removal_plan_unsafe` does not replace this list. A plan that removes only `docker.io` or only `dnsmasq` is still refused.
 
 ## Adopt a Tool
 
-`tool:adopt` takes one Node, manager, package, and optional SemVer constraint. It verifies an active managed Node, a supported package kind, the existing manager scope, and the live installed package under the Tool and manager locks. An invalid constraint or a constraint that rejects the installed version stops adoption. The package must be present; a discovery row alone is not evidence at adoption time.
+`POST /api/v1/tools/adopt` is `tool:adopt`. The CLI command is `orbit tool:adopt <package> --node=<id> --manager=<manager> [--constraint=<range>] --yes`. MCP and the Tools page call this operation. They do not get a second adoption API. Adoption installs, updates, removes, and repins nothing.
 
-Success creates the exact Tool intent and records the current installed version. It installs, updates, removes, or repins nothing on the host. The existing user and package-manager scope stay in place. Repeating adoption with the same intent returns unchanged; a different constraint conflicts. A missing package, unsupported artifact, conflicting manager, unreadable version, or busy lock creates no Tool. An unconstrained package may retain a non-SemVer version, as other managers do.
+The JSON object allows only these fields. Any other field fails with `validation.failed` (HTTP 422).
 
-An adopted Tool uses the same update, removal, and Doctor checks as a Tool Orbit installed. The Gateway API, CLI, MCP, and web app expose the same adoption operation. Selecting one package never adopts its dependencies or other installed packages. Installation still refuses an existing unregistered package and directs the caller to adoption.
+| Field | Required | Type | Meaning |
+| --- | --- | --- | --- |
+| `node_id` | yes | strict integer | An existing Node id, at least 1. |
+| `manager` | yes | string | `apt`, `composer`, `vp`, `brew`, or `brew-cask`, at most 32 characters. |
+| `package` | yes | string | That manager's package name, at most 255 characters. |
+| `version_constraint` | no | string or null | A SemVer range, such as `^14.0`, at most 255 characters. Omit or null for none. |
+
+The Gateway takes the Tool lock for that Node, manager, and package, then the manager scope lock. `brew-cask` uses the `brew` prefix lock. It then reads the live package again. A discovery row is not evidence.
+
+Success returns the same Tool object as install, update, and remove. `status` is `installed`. `failed_operation` and `error_code` are null. `outcome` is set. The object is wrapped in `data`, with `meta.request_id`.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `id` | integer | The Tool id. |
+| `node_id` | integer | The Node. |
+| `manager` | string | The manager name. |
+| `package` | string | The package name. |
+| `version_constraint` | string or null | The stored SemVer range, or null. |
+| `status` | string | `installing`, `installed`, `updating`, `removing`, or `failed`. Adoption success is `installed`. |
+| `installed_version` | string or null | The live version recorded at creation. It may be non-SemVer when unconstrained. |
+| `failed_operation` | string or null | `install`, `update`, or `remove` after a failed mutation. Null on adoption success. |
+| `error_code` | string or null | The last mutation error, or null. |
+| `outcome` | string or null | The operation outcome. |
+
+| Result | HTTP | `outcome` | Record |
+| --- | --- | --- | --- |
+| No Tool yet for this Node, manager, package, and constraint | 201 | `applied` | Created as `installed`. The host package is unchanged. |
+| The same constraint exists, status is `installed`, and the package is still accepted | 200 | `unchanged` | Not rewritten, including `installed_version`. |
+| The same constraint exists, status is `failed`, and the package is still accepted | 200 | `applied` | Repaired to `installed`, with the failure cleared and `installed_version` set. The host package is unchanged. |
+
+A different constraint on an existing Tool is `tool.constraint_conflict`. It does not create a second row. A row left in `installing`, `updating`, or `removing` is not repaired. Adopt returns `tool.state_invalid` and leaves that row. The caller retries the original operation or removes the Tool.
+
+Adoption errors use the Tool envelope. `details.step` is `adopt`. `details.id` is included only after the Gateway has found an existing Tool row. `tool.adoption_unsupported` also includes `details.adoption_block`.
+
+| Code | HTTP | `details.outcome` | When |
+| --- | --- | --- | --- |
+| `tool.manager_unsupported` | 422 | `manager_failed` | The manager is unknown, or the platform does not offer it. |
+| `tool.package_invalid` | 422 | `manager_failed` | The name fails that manager's grammar. |
+| `tool.constraint_invalid` | 422 | `constraint_invalid` | The constraint is not a SemVer range. |
+| `tool.node_inactive` | 409 | `manager_failed` | The Node is not `active`. |
+| `tool.node_unmanaged` | 409 | `manager_failed` | No WireGuard address or pinned SSH fingerprint. |
+| `tool.manager_unavailable` | 409 | `manager_failed` | The scope is absent or conflicting. |
+| `tool.package_absent` | 409 | `manager_failed` | The package is not installed. |
+| `tool.version_probe_failed` | 409 | `manager_failed` | The installed version cannot be read. |
+| `validation.failed` | 422 | none | The body has an unknown field or a field of the wrong type. No Tool lookup. |
+| `node_access.required` | 403 | none | The caller cannot address the Node. No Tool lookup. |
+| `tool.installed_version_unparseable` | 409 | `manager_failed` | A constraint is set and the version is not SemVer. |
+| `tool.installed_version_constraint_violated` | 409 | `manager_failed` | The installed version is outside the constraint. This is the same code install uses for that condition. |
+| `tool.constraint_conflict` | 409 | `manager_failed` | The existing Tool has another constraint. |
+| `tool.state_invalid` | 409 | `manager_failed` | The existing row is `installing`, `updating`, or `removing`. `details.id` is set. |
+| `tool.operation_locked` | 409 | `manager_failed` | The Tool lock or the scope lock is busy. |
+| `tool.adoption_unsupported` | 409 | `manager_failed` | The package is protected, a dependency, or otherwise has no adopt path. |
+
+`details.adoption_block` uses the scan block tokens. `brew` adoption requires an unqualified Core formula with a compatible verified bottle, so a later update has a supported path. `brew-cask` adoption requires official metadata, a supported artifact, and a checksum, and it refuses a cask that needs an interactive or administrator prompt to upgrade or remove. `vp` adoption requires a root package in the enrolled account's global scope. `apt` and `composer` can be adopted only on Linux, in the scopes above. No adoption takes dependencies or any other package.
+
+Install still refuses an unregistered installed package with `tool.already_installed_unmanaged` (HTTP 409). It does not adopt that package. The caller uses `tool:adopt`.
 
 ## Install a Tool
 
@@ -73,11 +193,31 @@ The optional constraint is a SemVer range, such as `^0.150`. It only stops an un
 
 ## Update a Tool
 
-`tool:update` asks the manager for its current candidate and installs it. The result is `applied` when the version changed and `unchanged` when it did not. When the candidate falls outside the stored constraint, the update changes nothing and reports `blocked_by_constraint`. The Tool stays installed.
+`tool:update` asks the manager for its current candidate and installs it. The result is `applied` when the version changed and `unchanged` when it did not. When the candidate falls outside the stored constraint, the update changes nothing and reports `blocked_by_constraint`. The Tool stays installed. A Homebrew formula that is pinned stays pinned. Update reports `unchanged` and does not clear the pin.
 
 ## Homebrew formulae
 
-The `brew` manager accepts one lowercase formula name from Homebrew Core, without a tap prefix. Before an install or update, the Gateway reads the formula's metadata. It requires the `homebrew/core` tap, a stable version, and a bottle for the Node's platform and architecture with a SHA-256 checksum. Homebrew verifies that bottle when it installs it with `--force-bottle`. Orbit never builds a formula from source.
+The `brew` manager accepts one lowercase formula name from Homebrew Core, without a tap prefix. Before an install or update, the Gateway reads the formula's metadata. It requires the `homebrew/core` tap, a stable version, and a compatible bottle with a SHA-256 checksum. Homebrew installs that bottle with `--force-bottle`. Orbit never builds a formula from source.
+
+Orbit never runs a Homebrew developer command. That includes `brew ruby` and `brew irb`. A developer command writes `homebrew.devcmdrun` into the user's Homebrew git config and changes how a later `brew update` behaves. Orbit does not set `HOMEBREW_DEVELOPER` or `HOMEBREW_DEV_CMD_RUN`.
+
+The compatible tag is computed in the Gateway. On macOS it reads the product version with the fixed command `sw_vers -productVersion` and uses the CPU stored from `uname -m`. A code-owned table maps that version to Homebrew's active bottle symbol. The Gateway does not store the OS version on the Node.
+
+| Product version major | Bottle symbol |
+| --- | --- |
+| `27` | `golden_gate` |
+| `26` | `tahoe` |
+| `15` | `sequoia` |
+| `14` | `sonoma` |
+| `13` | `ventura` |
+| `12` | `monterey` |
+| `11` | `big_sur` |
+
+When the major is 11 or higher, Orbit uses that major. It does not turn the display alias `10.16` into `big_sur`. A version with no row, including major `10`, has no compatible bottle. Apple silicon uses `arm64_` plus the symbol, so macOS 27 is `arm64_golden_gate`. Intel macOS, `x86_64`, uses the symbol alone. Any other macOS CPU has no compatible bottle. Update this table when Homebrew adds a symbol. Until then that OS has no compatible bottle.
+
+Linux does not use the table. `x86_64` maps to `x86_64_linux`. `aarch64` and `arm64` map to `arm64_linux`.
+
+A bottle file keyed by that tag is compatible. A file keyed `all` is compatible only when the current tag is absent. An older OS tag, such as `arm64_sequoia` on macOS 27, is not compatible. If neither the current tag nor `all` has a checksummed file, the formula is refused before any change. Adopt uses block `bottle_unavailable`.
 
 | Input | Result |
 | --- | --- |
@@ -87,17 +227,19 @@ The `brew` manager accepts one lowercase formula name from Homebrew Core, withou
 
 On Linux, the Gateway installs Homebrew at a pinned revision. When the prefix already exists, the Gateway accepts it only when the managed user owns it, its origin is the official Homebrew repository, and its working tree is clean. It then checks out the pinned revision. Otherwise it leaves the prefix unchanged and marks the manager `failed`. Tool operations never start or stop a Homebrew service.
 
-On macOS, Orbit verifies and reuses the existing Homebrew installation without checking out another revision. Formula operations still force compatible bottles. Updating a selected root formula can update dependencies through Homebrew; it never becomes a bulk upgrade of unrelated root packages.
+On macOS, Orbit verifies and reuses the existing Homebrew installation without checking out another revision and without running `brew update`. Formula operations still force compatible bottles. Updating one root formula may install or upgrade the dependencies that formula requires. It does not upgrade other root packages or dependents that merely depend on it.
+
+Every `brew` and `brew-cask` command sets `HOMEBREW_NO_AUTO_UPDATE`, `HOMEBREW_NO_ANALYTICS`, `HOMEBREW_NO_ENV_HINTS`, `HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK`, and `HOMEBREW_NO_INSTALL_CLEANUP`. Those last two stop install and upgrade from upgrading unrelated packages or running periodic cleanup. Scan does not set `HOMEBREW_FORCE_API_AUTO_UPDATE`. Install, update, and the adopt bottle check on macOS do set it, so Homebrew can refresh its API data while `HOMEBREW_NO_AUTO_UPDATE` still blocks a git update of the user's Homebrew revision. Linux keeps the pinned revision and does not force that API refresh. Its metadata freshness stays the behavior already shipped with the pinned prefix.
 
 ## Homebrew casks
 
-`brew-cask` supports official Homebrew casks on macOS. It validates the cask's metadata, version, checksum, and supported artifact before mutation. Names stay unqualified; taps, URLs, local files, and caller-supplied options are refused. Unsupported artifacts stay visible in discovery with adoption unavailable and a clear reason.
+`brew-cask` supports official Homebrew casks on macOS. It validates the cask's metadata, version, checksum, and supported artifact before mutation. Names stay unqualified; taps, URLs, local files, and caller-supplied options are refused. Unsupported artifacts stay visible in discovery with `adoption` `unsupported` and `adoption_block` `unsupported_artifact` or `unsupported_source`.
 
-Install, update, and removal target the exact cask through fixed Homebrew commands. An operation that needs unsupported interactive or administrator authorization fails with a clear outcome; it never waits for an agent to supply an arbitrary installer command. Removal never uses zap, autoremove, or a Homebrew service command. Formula and cask operations share the same Homebrew prefix lock.
+Install, update, and removal target the exact cask through fixed Homebrew commands. An operation that needs interactive or administrator authorization fails and does not ask an agent for an installer command. Adoption uses `tool.adoption_unsupported` with `adoption_block` `authorization_required`. Install, update, and removal use their own failure codes. Removal never uses zap, autoremove, or a Homebrew service command. Formula and cask operations share the same Homebrew prefix lock.
 
 ## Remove a Tool
 
-`tool:remove` removes an `installed` or `failed` Tool.
+`tool:remove` removes an `installed` or `failed` Tool. Success uses outcome `applied`.
 
 The Gateway first reads the installed version. For `apt`, it then plans the removal with `apt-get --simulate remove` and refuses a plan that removes any other package, with `tool.removal_plan_unsafe`. It removes only the recorded package and never runs an autoremove. After the removal, it reads the version again. A Tool whose package is gone is deleted.
 
@@ -113,17 +255,42 @@ The Gateway first reads the installed version. For `apt`, it then plans the remo
 
 Retry the same command with the Tool ID. The Gateway reads the live package state before it acts again.
 
+## Operation outcomes
+
+Every Tool success body and every Tool error `details.outcome` uses one of these tokens.
+
+| Outcome | Success operations | Meaning |
+| --- | --- | --- |
+| `applied` | install, update, remove, adopt | A mutation changed the package, or adopt created a Tool without changing the host. |
+| `unchanged` | install, update, adopt | The requested intent already held. |
+| `blocked_by_constraint` | update | The candidate is outside the stored constraint. The Tool stays installed. |
+| `constraint_invalid` | none | The constraint is not a SemVer range. |
+| `candidate_version_unavailable` | none | The manager returned no candidate. |
+| `candidate_version_unparseable` | none | A constraint is set and the candidate is not SemVer. |
+| `manager_failed` | none | The Node or manager rejected the operation. |
+
+Install returns `blocked_by_constraint` only inside `tool.version_constraint_blocked`, and only before it installs a candidate. Adopt does not use that code. An installed version that falls outside the constraint is `tool.installed_version_constraint_violated` for both install and adopt.
+
 ## Errors
 
-A Tool error carries a stable `code`, a message, and `details` with the `step`, the `outcome`, and the Tool `id` when a Tool exists. The Gateway never stores or returns the raw output of a package manager.
+A Tool error carries a stable `code`, a message, and `details`. The Gateway never stores or returns the raw output of a package manager.
+
+| `details` field | Present |
+| --- | --- |
+| `step` | Always. Examples are `scan`, `adopt`, `install`, `update`, and `remove`. |
+| `outcome` | Always. One token from [Operation outcomes](#operation-outcomes). |
+| `id` | When a Tool row exists. An adoption or scan that has not found a row omits it. |
+| `adoption_block` | Only on `tool.adoption_unsupported`. One scan block token. |
+
+No other `details` keys are returned.
 
 ## Locks
 
-Each operation locks its Tool and its manager's scope on the Node. A busy lock fails at once with `tool.operation_locked`. [Per-Node locks](/reference/node-provisioning#per-node-locks) lists every lock and its term.
+Each mutation locks its Tool and its manager's scope on the Node. A busy lock fails at once with `tool.operation_locked`. `brew` and `brew-cask` share the Homebrew prefix lock. Scan does not take either lock. [Per-Node locks](/reference/node-provisioning#per-node-locks) lists every lock and its term.
 
 ## Check removal with Doctor
 
-The `tool` family of [Doctor](/cli/doctor) compares each Tool record with the Node. A record whose package is absent reports `tool.not_installed`. A normalized version that violates the stored constraint reports `tool.version_mismatch`. An unconstrained Tool needs only to be installed; the recorded version is the last operation's result, not desired intent. The report never contains raw dpkg output.
+The `tool` family of [Doctor](/cli/doctor) compares each Tool record with the Node. A record whose package is absent reports `tool.not_installed`. A normalized version that violates the stored constraint reports `tool.version_mismatch`. An unconstrained Tool needs only to be installed; the recorded version is the last operation's result, not desired intent. The report never contains raw dpkg output. Unregistered discoveries are a separate informational kind. They do not replace these drift checks.
 
 ## Why it works this way
 
@@ -139,8 +306,8 @@ An installation alone does not prove Orbit ownership. Discovery shows what exist
 
 ### Managers on demand, independent of roles
 
-A manager serves any Node that the Gateway manages. Tying `vp` and `composer` to application roles would make Tools depend on where applications run, and role removal would have to handle unrelated Tools. Installing every manager on every Node is also rejected, because most Nodes need few of them and would carry needless software.
+A manager serves any Node that the Gateway manages. Tying `vp` and `composer` to application roles would make Tools depend on where applications run, and role removal would have to handle unrelated Tools. Installing every manager on every Node is also rejected, because most Nodes need few of them and would carry needless software. `apt` and `composer` stay Linux-only. `vp` uses the enrolled account's global scope on Linux and macOS. macOS reuses that scope and the existing Homebrew prefix instead of installing a second copy.
 
 ### Bottled Homebrew Core only
 
-The formula manager accepts only Homebrew Core bottles with verified checksums. Casks use a separate macOS adapter with official metadata and supported artifacts. Taps, source builds, caller options, and arbitrary installers remain outside both contracts. Separate package identities avoid formula and cask collisions; a shared prefix lock prevents concurrent mutations of their common installation.
+The formula manager accepts only Homebrew Core bottles with verified checksums, on Linux and macOS. The macOS tag comes from `sw_vers` and the code-owned symbol table, never from a Homebrew developer command. Casks use a separate macOS adapter with official metadata and supported artifacts. Taps, source builds, caller options, and arbitrary installers remain outside both contracts. Separate package identities avoid formula and cask collisions; a shared prefix lock prevents concurrent mutations of their common installation.
