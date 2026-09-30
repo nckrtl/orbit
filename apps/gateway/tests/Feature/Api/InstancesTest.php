@@ -9,6 +9,9 @@ use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
+use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\Instances\Copy\InstanceCopyReferenceRewriter;
 use App\Domain\Instances\DevelopmentInstanceCheckoutCopier;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
@@ -58,7 +61,10 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Activity;
 use App\Models\Cluster;
+use App\Models\DatabaseConnection;
+use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
+use App\Models\InstanceEnvironmentValue;
 use App\Models\InstanceRemoval;
 use App\Models\InstanceRemovalMember;
 use App\Models\InstanceTransfer;
@@ -3037,7 +3043,8 @@ describe('development instance copies', function (): void {
             ->assertJsonPath('data.checkout_path', '/srv/orbit/apps/acme/feature')
             ->assertJsonPath('data.vite_port', 5174)
             ->assertJsonPath('data.domain', 'feature.acme.test')
-            ->assertJsonPath('data.url', 'https://feature.acme.test');
+            ->assertJsonPath('data.url', 'https://feature.acme.test')
+            ->assertJsonPath('data.shared_databases', []);
 
         expect($copier->inspections)->toBe(1)
             ->and($copier->copies)->toBe(1)
@@ -3070,6 +3077,169 @@ describe('development instance copies', function (): void {
 
         expect($copier->copies)->toBe(1)
             ->and($transport->inputs)->toHaveCount(1);
+    });
+
+    it('rewrites source paths and domains, imports file-only keys, and keeps MySQL and PostgreSQL shared', function (): void {
+        $source = copy_development_source();
+        $copier = bind_development_copier();
+        $this->source->resolution = new DevelopmentSourceResolution('feature', $copier->head);
+        copy_laravel_configurator();
+        $route = Route::query()->create([
+            'project_id' => $this->orbitApp->id,
+            'node_id' => $this->node->id,
+            'domain' => 'default.acme.test',
+            'provenance' => RouteProvenance::Explicit,
+            'publication' => RoutePublication::Private,
+            'status' => RouteStatus::Pending,
+        ]);
+        $route->targets()->create(['instance_id' => $source->id, 'position' => 0]);
+        $route->update(['status' => RouteStatus::Active]);
+        $mysql = DatabaseConnection::query()->create([
+            'slug' => 'app',
+            'driver' => DatabaseDriver::Mysql,
+            'node_id' => $this->node->id,
+            'host' => 'db.internal',
+            'port' => 3306,
+            'database' => 'app',
+            'username' => 'app',
+            'password' => 'secret-value',
+        ]);
+        $postgres = DatabaseConnection::query()->create([
+            'slug' => 'pg',
+            'driver' => DatabaseDriver::Pgsql,
+            'node_id' => $this->node->id,
+            'host' => 'pg.internal',
+            'port' => 5432,
+            'database' => 'app',
+            'username' => 'app',
+            'password' => 'secret-value',
+        ]);
+        $sqlite = DatabaseConnection::query()->create([
+            'slug' => 'local',
+            'driver' => DatabaseDriver::Sqlite,
+            'node_id' => $this->node->id,
+            'path' => '/srv/orbit/apps/acme/default/database/database.sqlite',
+        ]);
+        $sibling = DatabaseConnection::query()->create([
+            'slug' => 'sibling',
+            'driver' => DatabaseDriver::Sqlite,
+            'node_id' => $this->node->id,
+            'path' => '/srv/orbit/apps/acme/default-two/database/database.sqlite',
+        ]);
+        $redis = DatabaseConnection::query()->create([
+            'slug' => 'cache',
+            'driver' => DatabaseDriver::Redis,
+            'node_id' => $this->node->id,
+            'host' => 'redis.internal',
+            'port' => 6379,
+        ]);
+        foreach ([[$mysql, 'DB'], [$postgres, 'PG'], [$sqlite, 'SQLITE'], [$sibling, 'SIBLING'], [$redis, 'REDIS']] as [$connection, $prefix]) {
+            DatabaseConnectionTarget::query()->create([
+                'database_connection_id' => $connection->id,
+                'instance_id' => $source->id,
+                'prefix' => $prefix,
+            ]);
+        }
+        $source->environmentValues()->create([
+            'env_key' => 'DB_DATABASE',
+            'env_value' => '/srv/orbit/apps/acme/default/database/database.sqlite',
+        ]);
+        $source->environmentValues()->create([
+            'env_key' => 'APP_URL',
+            'env_value' => 'https://default.acme.test',
+        ]);
+        $source->environmentValues()->create([
+            'env_key' => 'NESTED',
+            'env_value' => 'prefix /srv/orbit/apps/acme/default/storage',
+        ]);
+        $source->environmentValues()->create([
+            'env_key' => 'UNRELATED',
+            'env_value' => '/srv/orbit/apps/acme/default-two/file',
+        ]);
+        $source->environmentValues()->create([
+            'env_key' => 'NOT_HOST',
+            'env_value' => 'notdefault.acme.test',
+        ]);
+        $copier->environmentFile = implode("\n", [
+            'DB_DATABASE=/srv/orbit/apps/acme/default/database/database.sqlite',
+            'AGENTATION_URL=https://default.acme.test/__orbit/agentation',
+            'FILE_ONLY="prefix /srv/orbit/apps/acme/default/cache"',
+            'FILE_UNRELATED=/srv/orbit/apps/acme/default-two',
+        ]);
+
+        $response = $this->postJson('/api/v1/instances', [
+            'project_id' => $this->orbitApp->id,
+            'node_id' => $this->node->id,
+            'name' => 'feature',
+            'source_instance_id' => $source->id,
+        ])->assertCreated()
+            ->assertJsonPath('data.shared_databases', [
+                ['slug' => 'app', 'driver' => 'mysql'],
+                ['slug' => 'cache', 'driver' => 'redis'],
+                ['slug' => 'pg', 'driver' => 'pgsql'],
+            ]);
+        $created = Instance::query()->where('name', 'feature')->sole();
+        $stored = InstanceEnvironmentValue::query()
+            ->where('instance_id', $created->id)
+            ->orderBy('env_key')
+            ->get()
+            ->mapWithKeys(static fn (InstanceEnvironmentValue $row): array => [$row->env_key => $row->env_value])
+            ->all();
+
+        expect($stored)->toBe([
+            'AGENTATION_URL' => 'https://feature.acme.test/__orbit/agentation',
+            'APP_URL' => 'https://feature.acme.test',
+            'DB_DATABASE' => '/srv/orbit/apps/acme/feature/database/database.sqlite',
+            'FILE_ONLY' => 'prefix /srv/orbit/apps/acme/feature/cache',
+            'FILE_UNRELATED' => '/srv/orbit/apps/acme/default-two',
+            'NESTED' => 'prefix /srv/orbit/apps/acme/feature/storage',
+            'NOT_HOST' => 'notdefault.acme.test',
+            'UNRELATED' => '/srv/orbit/apps/acme/default-two/file',
+        ])
+            ->and($mysql->refresh()->host)->toBe('db.internal')
+            ->and($sqlite->refresh()->path)->toBe('/srv/orbit/apps/acme/default/database/database.sqlite')
+            ->and(DatabaseConnection::query()->count())->toBe(5)
+            ->and(DatabaseConnectionTarget::query()->where('instance_id', $created->id)->orderBy('prefix')->pluck('database_connection_id')->all())
+            ->toBe([$mysql->id, $postgres->id, $redis->id, $sibling->id])
+            ->and(DatabaseConnectionTarget::query()->where('instance_id', $source->id)->count())->toBe(5)
+            ->and($source->environmentValues()->where('env_key', 'DB_DATABASE')->first()?->env_value)
+            ->toBe('/srv/orbit/apps/acme/default/database/database.sqlite');
+
+        $rewriter = new InstanceCopyReferenceRewriter;
+        $projection = app(DatabaseConnectionEnvProjection::class);
+
+        foreach (DatabaseConnectionTarget::query()->where('instance_id', $created->id)->with('databaseConnection')->get() as $target) {
+            foreach ($projection->project($target->databaseConnection, $created, $target->prefix)['values'] as $value) {
+                expect($rewriter->isInsideCheckout($value, '/srv/orbit/apps/acme/default'))->toBeFalse();
+            }
+        }
+
+        $this->getJson('/api/v1/instances/'.$created->id)
+            ->assertOk()
+            ->assertJsonPath('data.shared_databases.0.slug', 'app')
+            ->assertJsonPath('data.shared_databases.1.driver', 'redis')
+            ->assertJsonPath('data.shared_databases.2.driver', 'pgsql');
+
+        expect($response->json('data.shared_databases'))->not->toContain(['slug' => 'local', 'driver' => 'sqlite'])
+            ->and($response->json('data.shared_databases'))->not->toContain(['slug' => 'sibling', 'driver' => 'sqlite']);
+    });
+
+    it('removes the copy when a file-only environment value cannot be stored', function (): void {
+        $source = copy_development_source();
+        $copier = bind_development_copier();
+        $this->source->resolution = new DevelopmentSourceResolution('feature', $copier->head);
+        $copier->environmentFile = "GOOD=1\nGOOD=2\n";
+
+        $this->postJson('/api/v1/instances', [
+            'project_id' => $this->orbitApp->id,
+            'node_id' => $this->node->id,
+            'name' => 'feature',
+            'source_instance_id' => $source->id,
+        ])->assertConflict()->assertJsonPath('error.code', 'instance.copy_failed');
+
+        expect(Instance::query()->where('name', 'feature')->exists())->toBeFalse()
+            ->and($copier->discards)->toBeGreaterThan(0)
+            ->and(Instance::query()->whereKey($source->id)->exists())->toBeTrue();
     });
 
     it('honours an explicit branch and reports a full copy', function (): void {

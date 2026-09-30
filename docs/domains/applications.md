@@ -69,7 +69,9 @@ The Gateway refuses these requests before it changes anything:
 
 ## Copy a development Instance
 
-`instance:create --from` copies an active warm development checkout on the same Node. The Gateway tries a reflink and falls back to a plain copy. The copy gets its own branch at the source `HEAD`, its own Route and Vite port, and SQLite snapshots. It keeps `.env`, rewrites values that name the source, and runs setup. `instance:clone` stays the production command. The [Instance copies](/reference/instance-copies) page is the contract.
+`instance:create --from` copies an active warm development checkout on the same Node. The Gateway tries a reflink and falls back to a plain copy. The copy gets its own branch at the source `HEAD`, its own Route and Vite port, and SQLite snapshots taken while the source keeps running. It keeps `.env`, rewrites values that name the source checkout or domain, deletes `public/hot` and the other runtime files, and runs setup.
+
+MySQL, PostgreSQL, and Redis attachments stay on the same servers and are listed in `shared_databases`. A SQLite attachment inside the source checkout is not copied. `instance:clone` stays the production command. The [Instance copies](/reference/instance-copies) page is the contract.
 
 ## Register an existing checkout
 

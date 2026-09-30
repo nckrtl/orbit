@@ -72,7 +72,8 @@
                 "vite_port": 5173,
                 "creation": "repository",
                 "copy_mode": null,
-                "source_instance": null
+                "source_instance": null,
+                "shared_databases": []
             }
         ],
         "meta": {

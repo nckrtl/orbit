@@ -3155,6 +3155,7 @@ export interface components {
             creation?: string;
             copy_mode?: string | null;
             source_instance?: components["schemas"]["InstanceSourceIdentity"] | null;
+            shared_databases?: components["schemas"]["InstanceSharedDatabase"][];
         };
         ProjectIdentity: {
             id?: number;
@@ -3236,6 +3237,10 @@ export interface components {
         InstanceSourceIdentity: {
             id?: number;
             name?: string;
+        };
+        InstanceSharedDatabase: {
+            slug?: string;
+            driver?: string;
         };
         InstanceRegistration: {
             project?: components["schemas"]["Project"];

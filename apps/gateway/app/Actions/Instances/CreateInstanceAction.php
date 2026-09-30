@@ -66,6 +66,7 @@ final readonly class CreateInstanceAction
         private AppDevSourceOperationLock $sourceLock,
         private DevelopmentInstanceSourceLifecycle $source,
         private DevelopmentInstanceProvisioner $provisioner,
+        private IsolateCopiedInstanceAction $isolation,
         private ProductionInstanceProvisioner $productionProvisioner,
         private ?RecordEventBroadcaster $broadcaster = null,
         private ?MetricsFleetReconciler $metrics = null,
@@ -650,6 +651,8 @@ final readonly class CreateInstanceAction
                 ) {
                     throw $this->conflict('instance.copy_failed', 'The copy returned invalid evidence.');
                 }
+
+                $this->isolation->execute($source, $instance);
 
                 $this->transition($instance, InstanceState::Reserved, [
                     'branch' => $branch,

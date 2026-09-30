@@ -39,6 +39,10 @@ final class DeadlineOnCopySshExecutor implements SshExecutor
             return new CommandResult(0, "ready\n", '', 1, false);
         }
 
+        if ($command->arguments[0] === 'python3') {
+            return new CommandResult(0, "ready\n", '', 1, false);
+        }
+
         return new CommandResult(0, '', '', 1, false);
     }
 }

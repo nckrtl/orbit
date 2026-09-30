@@ -7,7 +7,9 @@ namespace App\Data\Instances;
 use App\Data\Nodes\NodeIdentityData;
 use App\Data\Projects\ProjectIdentityData;
 use App\Data\Routes\RouteData;
+use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Instances\Deployment\InstanceDeployStepStore;
+use App\Domain\Instances\InstanceCreation;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\InstanceTransfer;
@@ -48,6 +50,8 @@ final class InstanceData extends Data
         public string $creation = 'repository',
         public ?string $copyMode = null,
         public ?InstanceSourceIdentityData $sourceInstance = null,
+        /** @var list<InstanceSharedDatabaseData> */
+        public array $sharedDatabases = [],
     ) {}
 
     public static function fromModel(Instance $instance): self
@@ -97,7 +101,33 @@ final class InstanceData extends Data
             sourceInstance: $instance->sourceInstance instanceof Instance
                 ? new InstanceSourceIdentityData($instance->sourceInstance->id, $instance->sourceInstance->name)
                 : null,
+            sharedDatabases: self::sharedDatabases($instance),
         );
+    }
+
+    /** @return list<InstanceSharedDatabaseData> */
+    private static function sharedDatabases(Instance $instance): array
+    {
+        if ($instance->creation !== InstanceCreation::Copy) {
+            return [];
+        }
+
+        $instance->loadMissing('databaseConnectionTargets.databaseConnection');
+        $shared = [];
+
+        foreach ($instance->databaseConnectionTargets as $target) {
+            $connection = $target->databaseConnection;
+
+            if (! in_array($connection->driver, [DatabaseDriver::Mysql, DatabaseDriver::Pgsql, DatabaseDriver::Redis], true)) {
+                continue;
+            }
+
+            $shared[$connection->slug] = new InstanceSharedDatabaseData($connection->slug, $connection->driver->value);
+        }
+
+        ksort($shared);
+
+        return array_values($shared);
     }
 
     private static function transfer(Instance $instance): ?InstanceTransferData

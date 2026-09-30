@@ -22468,6 +22468,12 @@
                 "type": "null"
               }
             ]
+          },
+          "shared_databases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InstanceSharedDatabase"
+            }
           }
         }
       },
@@ -22767,6 +22773,17 @@
             "type": "integer"
           },
           "name": {
+            "type": "string"
+          }
+        }
+      },
+      "InstanceSharedDatabase": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string"
+          },
+          "driver": {
             "type": "string"
           }
         }

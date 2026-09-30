@@ -11,6 +11,7 @@ use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Instances\DevelopmentInstanceCopyIsolationProgram;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceCheckoutCopier;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -20,20 +21,26 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
+use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\DeadlineOnCopySshExecutor;
 
 it('reads source eligibility without a copy command', function (): void {
     [$source] = copy_checkout_pair();
     $head = str_repeat('a', 40);
-    $ssh = new AppDevFakeSshExecutor([new CommandResult(0, "ready\n{$head}\n", '', 1, false)]);
+    $ssh = new AppDevFakeSshExecutor([
+        new CommandResult(0, "ready\n{$head}\n", '', 1, false),
+        new CommandResult(0, "ready\n", '', 1, false),
+    ]);
     $copier = copy_checkout_copier($ssh);
 
     $inspection = $copier->inspect($source, 'feature');
 
     expect($inspection->head)->toBe($head)
-        ->and($ssh->commands)->toHaveCount(1)
+        ->and($ssh->commands)->toHaveCount(2)
         ->and($ssh->commands[0]->arguments[0])->toBe('bash')
+        ->and($ssh->commands[1]->arguments[0])->toBe('python3')
+        ->and($ssh->commands[1]->arguments[3])->toBe('scan')
         ->and($ssh->commands[0]->input)->toContain('instance.copy_source_cold')
         ->and($ssh->commands[0]->input)->toContain('instance.copy_source_dirty')
         ->and($ssh->commands[0]->input)->toContain('instance.copy_source_layout_invalid')
@@ -64,6 +71,7 @@ it('reports a reflink when cp --reflink=always succeeds and creates the branch o
         new CommandResult(0, '', '', 1, false),
         new CommandResult(0, '', '', 1, false),
         new CommandResult(0, "ready\n{$head}\n", '', 1, false),
+        new CommandResult(0, "ready\n", '', 1, false),
     ]);
     $copier = copy_checkout_copier($ssh);
 
@@ -78,9 +86,11 @@ it('reports a reflink when cp --reflink=always succeeds and creates the branch o
             '/srv/orbit/apps/acme/feature',
         ])
         ->and(implode("\n", array_map(static fn ($command) => $command->shellCommand(), $ssh->commands)))->not->toContain('--reflink=auto')
-        ->and($ssh->commands[3]->arguments)->toContain('/srv/orbit/apps/acme/default', '/srv/orbit/apps/acme/feature')
         ->and($ssh->commands[3]->input)->toContain('git -C "$dest" checkout --quiet --force -B "$branch"')
-        ->and($ssh->commands[3]->input)->not->toContain('git fetch');
+        ->and($ssh->commands[3]->input)->not->toContain('git fetch')
+        ->and($ssh->commands[3]->arguments)->toContain('/srv/orbit/apps/acme/default', '/srv/orbit/apps/acme/feature')
+        ->and($ssh->commands[4]->arguments[0])->toBe('python3')
+        ->and($ssh->commands[4]->arguments[3])->toBe('prepare');
 });
 
 it('falls back to a plain copy only for a reflink errno and reports full', function (): void {
@@ -93,6 +103,7 @@ it('falls back to a plain copy only for a reflink errno and reports full', funct
         new CommandResult(0, '', '', 1, false),
         new CommandResult(0, '', '', 1, false),
         new CommandResult(0, "ready\n{$head}\n", '', 1, false),
+        new CommandResult(0, "ready\n", '', 1, false),
     ]);
     $copier = copy_checkout_copier($ssh);
 
@@ -115,6 +126,7 @@ it('continues the copy when sync fails', function (): void {
         new CommandResult(1, '', 'sync failed', 1, false),
         new CommandResult(0, '', '', 1, false),
         new CommandResult(0, "ready\n{$head}\n", '', 1, false),
+        new CommandResult(0, "ready\n", '', 1, false),
     ]);
 
     expect(copy_checkout_copier($ssh)->copy($source, $target, 'feature', $head, 'instance.path_taken')->mode)
@@ -135,6 +147,7 @@ it('retries one missing reset path and does not treat another missing path as a 
         $results[] = new CommandResult(0, '', '', 1, false);
         $results[] = new CommandResult(0, '', '', 1, false);
         $results[] = new CommandResult(0, "ready\n{$head}\n", '', 1, false);
+        $results[] = new CommandResult(0, "ready\n", '', 1, false);
     } else {
         $results[] = new CommandResult(0, '', '', 1, false);
     }
@@ -217,6 +230,139 @@ it('removes the partial target when the source HEAD moves', function (): void {
         ->toThrow(fn (ResourceOperationException $exception) => $exception->errorCode === 'instance.copy_source_changed');
 });
 
+it('refuses a SQLite symlink before it copies', function (): void {
+    [$source] = copy_checkout_pair();
+    $head = str_repeat('a', 40);
+    $ssh = new AppDevFakeSshExecutor([
+        new CommandResult(0, "ready\n{$head}\n", '', 1, false),
+        new CommandResult(0, "unsafe\n", '', 1, false),
+    ]);
+
+    expect(fn () => copy_checkout_copier($ssh)->inspect($source, 'feature'))
+        ->toThrow(fn (ResourceOperationException $exception) => $exception->errorCode === 'instance.copy_source_unsafe' && $exception->details === [])
+        ->and($ssh->commands)->toHaveCount(2)
+        ->and(implode(' ', $ssh->commands[1]->arguments))->not->toContain('cp');
+});
+
+it('snapshots SQLite from the live source, rewrites names, and resets runtime files', function (): void {
+    $root = sys_get_temp_dir().'/orbit-copy-'.bin2hex(random_bytes(4));
+    $source = $root.'/source';
+    $dest = $root.'/dest';
+    $outside = $root.'/outside';
+
+    try {
+        copy_isolation_fixture($source, $outside);
+        $copied = new Process(['cp', '-a', $source, $dest]);
+        $copied->mustRun();
+        copy_isolation_diverge($source, $dest, $outside);
+
+        $process = new Process([
+            'python3', '-c', DevelopmentInstanceCopyIsolationProgram::script(),
+            'prepare', $source, $dest, 'default.acme.test', 'feature.acme.test',
+        ]);
+        $process->mustRun();
+
+        expect(trim($process->getOutput()))->toBe('ready')
+            ->and(copy_isolation_names($dest.'/database/database.sqlite'))->toBe(['kept', 'live'])
+            ->and(copy_isolation_names($source.'/database/database.sqlite'))->toBe(['kept', 'live'])
+            ->and(is_file($dest.'/database/database.sqlite-wal'))->toBeFalse()
+            ->and(is_file($dest.'/database/database.sqlite-shm'))->toBeFalse()
+            ->and(copy_isolation_names($dest.'/vendor/package/cache.sqlite'))->toBe(['vendor-old'])
+            ->and(copy_isolation_names($source.'/vendor/package/cache.sqlite'))->toBe(['vendor-new', 'vendor-old'])
+            ->and(is_file($outside.'/hot-target'))->toBeTrue()
+            ->and(is_link($dest.'/public/hot') || is_file($dest.'/public/hot'))->toBeFalse()
+            ->and(is_file($outside.'/logs/laravel.log'))->toBeTrue()
+            ->and(is_link($dest.'/storage/framework/sessions'))->toBeFalse()
+            ->and(readlink($dest.'/public/storage'))->toBe($dest.'/storage/app/public')
+            ->and(readlink($dest.'/public/relative'))->toBe('../storage/app/public')
+            ->and(readlink($dest.'/public/neighbor'))->toBe($source.'-two/storage')
+            ->and(is_file($dest.'/storage/logs/laravel.log'))->toBeFalse()
+            ->and(is_file($dest.'/storage/logs/.gitignore'))->toBeTrue()
+            ->and(is_file($dest.'/storage/framework/cache/data.php'))->toBeFalse()
+            ->and(is_file($dest.'/storage/framework/cache/.gitignore'))->toBeTrue()
+            ->and(is_file($dest.'/storage/framework/views/home.php'))->toBeFalse()
+            ->and(is_dir($dest.'/node_modules/.vite'))->toBeFalse()
+            ->and(is_dir($dest.'/node_modules/.cache'))->toBeFalse()
+            ->and(is_file($dest.'/node_modules/left/index.js'))->toBeTrue()
+            ->and(file_get_contents($dest.'/.env'))->toBe(implode("\n", [
+                'DB_DATABASE='.$dest.'/database/database.sqlite',
+                'APP_URL=https://feature.acme.test',
+                'AGENTATION_URL=https://feature.acme.test/__orbit/agentation',
+                'NESTED=prefix '.$dest.'/storage',
+                'EXACT='.$dest,
+                'QUOTED="'.$dest.'"',
+                'UNRELATED='.$source.'-two/file',
+                'DOTFILE='.$source.'.sqlite',
+                'HOST_PORT=feature.acme.test:443',
+                'PATH_URL=https://feature.acme.test/path',
+                'NOT_HOST=notdefault.acme.test',
+                'SUB_HOST=api.default.acme.test',
+                'DOT_HOST=default.acme.test.other',
+                '',
+            ]))
+            ->and(file_get_contents($dest.'/bootstrap/cache/config.php'))->toContain("'database' => '{$dest}/database/database.sqlite'")
+            ->and(file_get_contents($dest.'/bootstrap/cache/config.php'))->toContain('https://feature.acme.test')
+            ->and(file_get_contents($dest.'/bootstrap/cache/config.php'))->not->toContain('https://default.acme.test')
+            ->and(file_get_contents($dest.'/bootstrap/cache/config.php'))->toContain($source.'-two')
+            ->and(file_get_contents($source.'/.env'))->toBe(copy_isolation_env($source, 'default.acme.test'));
+    } finally {
+        new Process(['rm', '-rf', $root])->run();
+    }
+});
+
+it('leaves the target untouched when a SQLite path is a symlink', function (): void {
+    $root = sys_get_temp_dir().'/orbit-copy-link-'.bin2hex(random_bytes(4));
+    $source = $root.'/source';
+    $dest = $root.'/dest';
+
+    try {
+        mkdir($source.'/database', 0777, true);
+        mkdir($dest.'/public', 0777, true);
+        $database = new PDO('sqlite:'.$source.'/database/database.sqlite');
+        $database->exec('create table rows (name text)');
+        $database->exec("insert into rows values ('kept')");
+        unset($database);
+        symlink($source.'/database/database.sqlite', $source.'/database/linked.sqlite');
+        file_put_contents($dest.'/public/hot', 'stay');
+
+        $process = new Process([
+            'python3', '-c', DevelopmentInstanceCopyIsolationProgram::script(),
+            'prepare', $source, $dest, '', '',
+        ]);
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0)
+            ->and(trim($process->getOutput()))->toBe('unsafe')
+            ->and(file_get_contents($dest.'/public/hot'))->toBe('stay');
+    } finally {
+        new Process(['rm', '-rf', $root])->run();
+    }
+});
+
+it('fails a torn SQLite header without treating it as a reflink fallback', function (): void {
+    $root = sys_get_temp_dir().'/orbit-copy-bad-'.bin2hex(random_bytes(4));
+    $source = $root.'/source';
+    $dest = $root.'/dest';
+
+    try {
+        mkdir($source.'/database', 0777, true);
+        mkdir($dest.'/database', 0777, true);
+        file_put_contents($source.'/database/database.sqlite', "SQLite format 3\0not-a-database");
+        file_put_contents($dest.'/database/database.sqlite', "SQLite format 3\0not-a-database");
+
+        $process = new Process([
+            'python3', '-c', DevelopmentInstanceCopyIsolationProgram::script(),
+            'prepare', $source, $dest, '', '',
+        ]);
+        $process->run();
+
+        expect($process->getExitCode())->not->toBe(0)
+            ->and($process->getErrorOutput())->toContain('failed');
+    } finally {
+        new Process(['rm', '-rf', $root])->run();
+    }
+});
+
 /** @return array{Instance, Instance} */
 function copy_checkout_pair(): array
 {
@@ -295,4 +441,104 @@ function copy_checkout_copier(SshExecutor $ssh): RemoteDevelopmentInstanceChecko
         storageRoots: app(StorageRootResolver::class),
         nodeSettings: app(NodeSettingsNormalizer::class),
     );
+}
+
+function copy_isolation_fixture(string $source, string $outside): void
+{
+    foreach ([
+        $source.'/database',
+        $source.'/public',
+        $source.'/storage/app/public',
+        $source.'/storage/logs',
+        $source.'/storage/framework/cache',
+        $source.'/storage/framework/views',
+        $source.'/bootstrap/cache',
+        $source.'/node_modules/left',
+        $source.'/node_modules/.vite',
+        $source.'/node_modules/.cache',
+        $source.'/vendor/package',
+        $outside.'/logs',
+    ] as $directory) {
+        mkdir($directory, 0777, true);
+    }
+
+    $database = new PDO('sqlite:'.$source.'/database/database.sqlite');
+    $database->exec('create table rows (name text)');
+    $database->exec("insert into rows (name) values ('kept')");
+    unset($database);
+    $vendor = new PDO('sqlite:'.$source.'/vendor/package/cache.sqlite');
+    $vendor->exec('create table rows (name text)');
+    $vendor->exec("insert into rows (name) values ('vendor-old')");
+    unset($vendor);
+    file_put_contents($source.'/.env', copy_isolation_env($source, 'default.acme.test'));
+    file_put_contents($source.'/bootstrap/cache/config.php', <<<PHP
+        <?php return ['database' => '{$source}/database/database.sqlite', 'url' => 'https://default.acme.test', 'other' => '{$source}-two/file'];
+        PHP);
+    file_put_contents($source.'/storage/logs/laravel.log', 'log');
+    file_put_contents($source.'/storage/logs/.gitignore', "*\n!.gitignore\n");
+    file_put_contents($source.'/storage/framework/cache/data.php', 'cache');
+    file_put_contents($source.'/storage/framework/cache/.gitignore', "*\n!.gitignore\n");
+    file_put_contents($source.'/storage/framework/views/home.php', 'view');
+    file_put_contents($source.'/node_modules/left/index.js', 'keep');
+    file_put_contents($source.'/node_modules/.vite/deps', 'vite');
+    file_put_contents($source.'/node_modules/.cache/data', 'cache');
+    file_put_contents($outside.'/hot-target', 'hot');
+    file_put_contents($outside.'/logs/laravel.log', 'outside');
+    symlink($outside.'/hot-target', $source.'/public/hot');
+    symlink($outside.'/logs', $source.'/storage/framework/sessions');
+    symlink($source.'/storage/app/public', $source.'/public/storage');
+    symlink('../storage/app/public', $source.'/public/relative');
+    symlink($source.'-two/storage', $source.'/public/neighbor');
+}
+
+function copy_isolation_diverge(string $source, string $dest, string $outside): void
+{
+    $database = new PDO('sqlite:'.$dest.'/database/database.sqlite');
+    $database->exec('delete from rows');
+    $database->exec("insert into rows (name) values ('stale')");
+    unset($database);
+    file_put_contents($dest.'/database/database.sqlite-wal', 'torn');
+    file_put_contents($dest.'/database/database.sqlite-shm', 'torn');
+    $live = new PDO('sqlite:'.$source.'/database/database.sqlite');
+    $live->exec("insert into rows (name) values ('live')");
+    unset($live);
+    $vendor = new PDO('sqlite:'.$source.'/vendor/package/cache.sqlite');
+    $vendor->exec("insert into rows (name) values ('vendor-new')");
+    unset($vendor);
+    expect(is_file($outside.'/hot-target'))->toBeTrue();
+}
+
+/** @return list<string> */
+function copy_isolation_names(string $path): array
+{
+    $database = new PDO('sqlite:'.$path);
+    $names = $database->query('select name from rows order by name');
+
+    if ($names === false) {
+        throw new RuntimeException('The SQLite rows could not be read.');
+    }
+
+    unset($database);
+
+    return array_values(array_map(strval(...), $names->fetchAll(PDO::FETCH_COLUMN)));
+}
+
+function copy_isolation_env(string $checkout, string $domain): string
+{
+    return implode("\n", [
+        'DB_DATABASE='.$checkout.'/database/database.sqlite',
+        'APP_URL=https://'.$domain,
+        'AGENTATION_URL=https://'.$domain.'/__orbit/agentation',
+        'NESTED=prefix '.$checkout.'/storage',
+        'EXACT='.$checkout,
+        'QUOTED="'.$checkout.'"',
+        'UNRELATED='.$checkout.'-two/file',
+        'DOTFILE='.$checkout.'.sqlite',
+        'HOST_PORT='.$domain.':443',
+        'PATH_URL=https://'.$domain.'/path',
+        'NOT_HOST=not'.$domain,
+        'SUB_HOST=api.'.$domain,
+        'DOT_HOST='.$domain.'.other',
+        '',
+    ]);
 }

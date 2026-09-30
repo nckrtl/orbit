@@ -30,6 +30,8 @@ final class FakeDevelopmentInstanceCheckoutCopier implements DevelopmentInstance
 
     public string $head;
 
+    public ?string $environmentFile = null;
+
     public ?string $branch = null;
 
     public ?string $expectedHead = null;
@@ -72,6 +74,11 @@ final class FakeDevelopmentInstanceCheckoutCopier implements DevelopmentInstance
         }
 
         return new DevelopmentInstanceCopyResult($this->mode, $this->head);
+    }
+
+    public function readEnvironment(Instance $target): ?string
+    {
+        return $this->environmentFile;
     }
 
     public function deleteMarker(Instance $target): void

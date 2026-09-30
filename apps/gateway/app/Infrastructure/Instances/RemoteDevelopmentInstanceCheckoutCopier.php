@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Instances;
 
 use App\Domain\Hibernation\RuntimeHibernation;
+use App\Domain\Instances\Copy\InstanceCopyNames;
 use App\Domain\Instances\DevelopmentInstanceCheckoutCopier;
 use App\Domain\Instances\DevelopmentInstanceCopyInspection;
 use App\Domain\Instances\DevelopmentInstanceCopyResult;
@@ -67,6 +68,8 @@ final readonly class RemoteDevelopmentInstanceCheckoutCopier implements Developm
             $this->fail('instance.copy_failed', "Instance [{$source->name}] returned invalid copy evidence.");
         }
 
+        $this->assertSqliteReadable($source, $paths['source']);
+
         return new DevelopmentInstanceCopyInspection($lines[1]);
     }
 
@@ -119,6 +122,7 @@ final readonly class RemoteDevelopmentInstanceCheckoutCopier implements Developm
 
             $mode = $this->copyTree($target->node, $paths);
             $head = $this->pointBranch($source, $target, $paths, $branch, $expectedHead);
+            $this->isolateTree($source, $target, $paths);
         } catch (Throwable $exception) {
             try {
                 $this->discardOwned($target->node, $paths);
@@ -130,6 +134,35 @@ final readonly class RemoteDevelopmentInstanceCheckoutCopier implements Developm
         }
 
         return new DevelopmentInstanceCopyResult($mode, $head);
+    }
+
+    public function readEnvironment(Instance $target): ?string
+    {
+        $target->loadMissing(['project', 'node']);
+        $paths = $this->targetPaths($target);
+        $result = $this->execute(
+            $target->node,
+            ['python3', '-c', DevelopmentInstanceCopyIsolationProgram::script(), 'environment', $paths['destination']],
+            maxOutputBytes: 2_000_000,
+        );
+
+        if (! $result->succeeded() || $result->truncated || trim($result->stderr) !== '') {
+            $this->fail('instance.copy_failed', "Instance [{$target->name}] environment file could not be read.", started: true);
+        }
+
+        $line = $this->lines($result->stdout)[0] ?? '';
+
+        if ($line === 'missing' || $line === 'unsafe') {
+            return null;
+        }
+
+        $contents = base64_decode($line, true);
+
+        if (! is_string($contents) || strlen($contents) > 1_048_576) {
+            $this->fail('instance.copy_failed', "Instance [{$target->name}] environment file could not be read.", started: true);
+        }
+
+        return $contents;
     }
 
     public function deleteMarker(Instance $target): void
@@ -329,7 +362,7 @@ final readonly class RemoteDevelopmentInstanceCheckoutCopier implements Developm
     }
 
     /** @param non-empty-list<string> $arguments */
-    private function execute(Node $node, array $arguments, ?string $input = null): CommandResult
+    private function execute(Node $node, array $arguments, ?string $input = null, ?int $maxOutputBytes = null): CommandResult
     {
         if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
             $this->fail('instance.copy_failed', "Node [{$node->name}] has no WireGuard address.");
@@ -344,8 +377,59 @@ final readonly class RemoteDevelopmentInstanceCheckoutCopier implements Developm
                 knownHostsFile: $this->knownHosts->path(),
                 commandTimeout: 900.0,
             ),
-            new RemoteCommand($arguments, $input),
+            new RemoteCommand($arguments, $input, null, $maxOutputBytes),
         );
+    }
+
+    private function assertSqliteReadable(Instance $source, string $checkout): void
+    {
+        $result = $this->execute($source->node, [
+            'python3', '-c', DevelopmentInstanceCopyIsolationProgram::script(), 'scan', $checkout,
+        ]);
+
+        if (! $result->succeeded()) {
+            $this->fail('instance.copy_failed', "Instance [{$source->name}] could not be read for a copy.");
+        }
+
+        $line = $this->lines($result->stdout)[0] ?? '';
+
+        if ($line === 'unsafe') {
+            $this->fail('instance.copy_source_unsafe', "Instance [{$source->name}] cannot be copied.");
+        }
+
+        if ($line !== 'ready') {
+            $this->fail('instance.copy_failed', "Instance [{$source->name}] returned invalid copy evidence.");
+        }
+    }
+
+    /** @param array{apps: string, source: string, destination: string, marker: string, origin: string} $paths */
+    private function isolateTree(Instance $source, Instance $target, array $paths): void
+    {
+        $names = InstanceCopyNames::between($source, $target);
+        $result = $this->execute($target->node, [
+            'python3',
+            '-c',
+            DevelopmentInstanceCopyIsolationProgram::script(),
+            'prepare',
+            $paths['source'],
+            $paths['destination'],
+            $names->sourceDomain,
+            $names->targetDomain,
+        ]);
+
+        if (! $result->succeeded()) {
+            $this->fail('instance.copy_failed', "Instance [{$target->name}] copy could not be isolated.", started: true);
+        }
+
+        $line = $this->lines($result->stdout)[0] ?? '';
+
+        if ($line === 'unsafe') {
+            $this->fail('instance.copy_source_unsafe', "Instance [{$source->name}] has an unsafe SQLite path.", started: true);
+        }
+
+        if ($line !== 'ready') {
+            $this->fail('instance.copy_failed', "Instance [{$target->name}] copy could not be isolated.", started: true);
+        }
     }
 
     /** @return list<string> */

@@ -44,7 +44,7 @@ Untracked files and ignored files are copied, including `vendor`, `node_modules`
 
 ### Runtime files and snapshots
 
-The copy deletes `public/hot`, log files, framework cache files, and the Vite caches under `node_modules`. It rewrites `bootstrap/cache` and every stored value whose source checkout path ends at `/` or at the end of the value, and whose source domain is a whole host. An absolute symlink uses that same path rule. Keys that exist only in the copied `.env` are imported into stored configuration so a sync keeps them. Each SQLite database is snapshotted from the source file at the same relative path, not from the copied bytes, using the transfer seeder's `mode=ro` backup. The scan skips `.git`, `vendor`, and `node_modules`. MySQL and PostgreSQL attachments stay shared. The Project setup steps then run.
+The copy deletes `public/hot`, log files, framework cache files, and the Vite caches under `node_modules`. It rewrites `bootstrap/cache` and every stored value whose source checkout path ends at `/` or at the end of the value, and whose source domain is a whole host. An absolute symlink uses that same path rule. Keys that exist only in the copied `.env` are imported into stored configuration so a sync keeps them. Each SQLite database is snapshotted from the source file at the same relative path, not from the copied bytes, using the transfer seeder's `mode=ro` backup. The scan skips `.git`, `vendor`, and `node_modules`. MySQL, PostgreSQL, and Redis attachments stay shared. A SQLite attachment whose path is inside the source checkout is not copied. The Project setup steps then run.
 
 ### Failure
 

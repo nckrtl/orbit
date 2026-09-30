@@ -117,9 +117,11 @@ Add and remove change stored configuration only. Run [`env:sync`](/reference/env
 
 ## Attachments on a development copy
 
-A development [copy](/reference/instance-copies) duplicates each database attachment of the source. It does not create a database server or a connection record. MySQL and PostgreSQL stay shared. The create result lists those attachments in `shared_databases`.
+A development [copy](/reference/instance-copies) duplicates MySQL, PostgreSQL, and Redis attachments. It does not create a database server or a connection record. Those attachments stay shared. The create result lists them in `shared_databases`.
 
-SQLite files inside the checkout are not left as copied bytes. Each one is replaced by a consistent snapshot taken without stopping the source. A stored path or domain that names the source checkout is rewritten to the target when it sits inside a longer value. The path must end at `/` or at the end of the value, and the domain must be a whole host. [Instance copies](/reference/instance-copies#values-that-name-the-source) states those boundaries.
+It does not duplicate a SQLite attachment whose path is the source checkout or a file inside it. That row would keep projecting the source file. Repairing the mismatch would point the copy at the source's live database. The rewritten environment key keeps the target path. A SQLite path outside the source checkout is still duplicated. It is not listed in `shared_databases`.
+
+SQLite files inside the checkout are not left as copied bytes. Each one is replaced by a consistent snapshot taken without stopping the source. A stored path or domain that names the source checkout is rewritten to the target when it sits inside a longer value. The path must end at `/` or at the end of the value. A letter, digit, `.`, `_`, or `-` continues it. The domain must be a whole host. [Instance copies](/reference/instance-copies#values-that-name-the-source) states those boundaries.
 
 ## Inspect attachments with Doctor
 

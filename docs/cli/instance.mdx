@@ -130,7 +130,7 @@ Human progress labels are `Copy Instance`, `Copying Instance`, and `Copied Insta
 | `Copied from` | The source Instance name, or an em dash when the source row is gone. |
 | `URL` | The new Instance URL. |
 
-JSON is the Instance response, including `checkout_path`, `creation`, `copy_mode`, and `source_instance`. `source_instance` is `{"id", "name"}`, or null when the source id is null. `shared_databases` lists copied MySQL and PostgreSQL attachments. Show and list JSON include `creation`, `copy_mode`, and `source_instance`. The human list table does not.
+JSON is the Instance response, including `checkout_path`, `creation`, `copy_mode`, and `source_instance`. `source_instance` is `{"id", "name"}`, or null when the source id is null. `shared_databases` lists copied MySQL, PostgreSQL, and Redis attachments. Show and list JSON include `creation`, `copy_mode`, and `source_instance`. The human list table does not.
 
 `--json` prints that object and no progress text.
 

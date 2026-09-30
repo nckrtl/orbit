@@ -26,6 +26,11 @@ interface DevelopmentInstanceCheckoutCopier
         string $occupiedCode,
     ): DevelopmentInstanceCopyResult;
 
+    /**
+     * Read the target `.env` after the checkout copy. Null means the file is missing or not a regular file.
+     */
+    public function readEnvironment(Instance $target): ?string;
+
     public function deleteMarker(Instance $target): void;
 
     public function discardPartial(Instance $target): void;

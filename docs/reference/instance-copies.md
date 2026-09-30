@@ -2,14 +2,14 @@
 title: "Instance copies"
 description: "How instance:create --from copies a warm development Instance on the same Node, with a reflink or a plain copy."
 covers:
-  - apps/gateway/app/Actions/Instances/{CreateInstanceAction,RemoveInstanceAction}.php
+  - apps/gateway/app/Actions/Instances/{CreateInstanceAction,IsolateCopiedInstanceAction,RemoveInstanceAction}.php
   - apps/gateway/app/Http/Requests/Instances/StoreInstanceRequest.php
-  - apps/gateway/app/Data/Instances/CreateInstanceData.php
+  - apps/gateway/app/Data/Instances/{CreateInstanceData,InstanceData,InstanceSharedDatabaseData}.php
   - apps/gateway/app/Models/Instance.php
   - apps/cli/app/Commands/Instances/CreateInstanceCommand.php
   - packages/php-sdk/src/Requests/Instances/CreateInstanceRequest.php
   - apps/gateway/app/Infrastructure/Tasks/TaskWorkspaceProvisioner.php
-  - apps/gateway/{app/Infrastructure/Instances/{RemoteInstanceSqliteSeeder,RemoteInstanceDestinationGuard,RemoteDevelopmentInstanceCheckoutCopier}.php,database/migrations/{2026_09_12_000000_add_clone_evidence_to_app_instances.php,2026_10_06_000000_add_instance_copy_evidence.php}}
+  - apps/gateway/{app/Domain/Instances/Copy/{InstanceCopyNames,InstanceCopyReferenceRewriter}.php,app/Infrastructure/Instances/{RemoteInstanceSqliteSeeder,RemoteInstanceDestinationGuard,RemoteDevelopmentInstanceCheckoutCopier,DevelopmentInstanceCopyIsolationProgram}.php,database/migrations/{2026_09_12_000000_add_clone_evidence_to_app_instances.php,2026_10_06_000000_add_instance_copy_evidence.php}}
 ---
 
 # Instance copies
@@ -109,9 +109,9 @@ Activation deletes the marker when the checkout is recorded on the active Instan
 
 The source repository is not modified. The copied `.git` directory is the new repository. Orbit does not rewrite a worktree path. `core.worktree` is unset, and `.git` is a directory, so there is no separate worktree file to retarget.
 
-6. Record the source `HEAD`, then replace each SQLite database with a [snapshot](#sqlite-snapshots).
-7. Delete the [reset paths](#what-the-copy-resets) in the new checkout.
-8. Create the [branch](#branch) on the copy.
+6. Create the [branch](#branch) at the source `HEAD`. This happens before the snapshot and the rewrite, because `git checkout --force` would replace those files with the commit.
+7. Replace each SQLite database with a [snapshot](#sqlite-snapshots).
+8. Delete the [reset paths](#what-the-copy-resets) in the new checkout.
 9. [Rewrite](#values-that-name-the-source) stored values, `.env`, `bootstrap/cache`, and absolute symlinks.
 10. Import file-only `.env` keys, then run completion and the Project setup steps.
 
@@ -145,9 +145,9 @@ The new checkout is the source tree after the reset, rewrite, and SQLite snapsho
 - Git objects, refs, remotes, and the origin URL.
 - Ignored dependency directories such as `vendor` and `node_modules`.
 - Untracked files, including built assets and `.env`.
-- The source's stored environment values and database attachment rows.
+- The source's stored environment values, and its MySQL, PostgreSQL, and Redis attachment rows.
 
-`APP_KEY` stays so a snapshotted SQLite file can still be decrypted. MySQL and PostgreSQL attachments are copied as rows and keep pointing at the same servers. Those servers are not copied. The create result lists them in `shared_databases` as `{slug, driver}`. SQLite attachments are not in that list. Their files are snapshotted instead.
+`APP_KEY` stays so a snapshotted SQLite file can still be decrypted. MySQL, PostgreSQL, and Redis attachments are copied as rows and keep pointing at the same servers. Those servers are not copied. The create result lists them in `shared_databases` as `{slug, driver}`. A SQLite attachment is not copied when its path is the source checkout or a file inside it. The snapshot and the rewritten environment key name the file in the new checkout. The source connection record is left unchanged. A SQLite path outside that checkout is still copied, including a longer name such as `default-two`. That attachment is not listed in `shared_databases`.
 
 [Transfer](/reference/instance-transfer) keeps `creation`, `source_instance_id`, and `copy_mode`. It does not take a new reflink and does not change those fields.
 
@@ -187,7 +187,7 @@ The copied `.env` stays. The Gateway also copies stored environment rows. It the
 - A matched source domain becomes the target domain.
 - A matched absolute symlink is retargeted to the same path under the target.
 
-A path matches when the next character is `/` or the end of the value. `/apps/p/feature` matches `/apps/p/feature/app`. It does not match `/apps/p/feature-two`.
+A path matches when the next character is `/` or the value ends. A letter, digit, `.`, `_`, or `-` continues that value, so the path does not match. `/apps/p/feature` matches `/apps/p/feature/app` and a quoted `/apps/p/feature`. It does not match `/apps/p/feature-two` or `/apps/p/feature.sqlite`.
 
 A domain matches as a whole host. The character before it is the start of the value, or it is outside `A-Z`, `a-z`, `0-9`, `-`, and `.`. The character after it is the end of the value, or it is outside that set. A following `.` does not match. `https://feature.example.test/path` matches. `feature.example.test.other` does not. `notfeature.example.test` does not. `api.feature.example.test` does not.
 
@@ -201,7 +201,7 @@ The Gateway reads each symlink in the new checkout and does not follow it. An ab
 
 A key that exists only in the copied `.env` is imported into stored configuration. A sync then keeps it. The key is not dropped.
 
-MySQL and PostgreSQL connection records stay shared. Their hosts are rewritten only when the stored value actually contains the source checkout path or the source domain.
+MySQL, PostgreSQL, and Redis connection records stay shared. Their hosts are rewritten only when the stored value actually contains the source checkout path or the source domain.
 
 ## Reporting
 
@@ -227,11 +227,11 @@ The Instance JSON used by create, show, and list includes:
   "creation": "copy",
   "copy_mode": "reflink",
   "source_instance": {"id": 12, "name": "default"},
-  "shared_databases": [{"slug": "app", "driver": "mysql"}]
+  "shared_databases": [{"slug": "app", "driver": "mysql"}, {"slug": "cache", "driver": "redis"}]
 }
 ```
 
-`source_instance` is null when the id is null. `shared_databases` is empty when the copy has no MySQL or PostgreSQL attachment. Human create and show trees add `Creation`, `Copy mode`, `Copied from`, and `URL`. `Copied from` is the source name, or an em dash when the source is null. The human list table does not add these columns.
+`source_instance` is null when the id is null. `shared_databases` is empty when the copy has no MySQL, PostgreSQL, or Redis attachment. Human create and show trees add `Creation`, `Copy mode`, `Copied from`, and `URL`. `Copied from` is the source name, or an em dash when the source is null. The human list table does not add these columns.
 
 Human progress for `--from` is `Copy Instance`, `Copying Instance`, and `Copied Instance`. JSON prints the object and no progress text.
 
@@ -288,7 +288,7 @@ A copy stays on one Node. The source checkout is not modified.
 - The Node source lock covers the copy. The dependency prune takes that same lock before it deletes `vendor` or `node_modules`.
 - Setup runs. A copied `vendor` or `node_modules` makes the matching step cheap.
 - The source is not stopped. SQLite consistency comes from snapshots.
-- MySQL and PostgreSQL servers are shared. Their attachment rows are copied.
+- MySQL, PostgreSQL, and Redis servers are shared. Their attachment rows are copied. A SQLite attachment inside the source checkout is not.
 - Processes and Schedules on the source are not copied.
 
 ## Why it works this way
