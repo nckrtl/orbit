@@ -3152,6 +3152,9 @@ export interface components {
             transfer?: components["schemas"]["InstanceTransfer"] | null;
             deploy_steps?: components["schemas"]["DeploymentStep"][];
             vite_port?: number | null;
+            creation?: string;
+            copy_mode?: string | null;
+            source_instance?: components["schemas"]["InstanceSourceIdentity"] | null;
         };
         ProjectIdentity: {
             id?: number;
@@ -3229,6 +3232,10 @@ export interface components {
             phase?: string;
             command?: string;
             timeout_seconds?: number;
+        };
+        InstanceSourceIdentity: {
+            id?: number;
+            name?: string;
         };
         InstanceRegistration: {
             project?: components["schemas"]["Project"];
@@ -5847,6 +5854,7 @@ export interface operations {
                     domain?: string;
                     /** @description Optional explicit source branch */
                     branch?: string;
+                    source_instance_id?: number;
                 };
             };
         };

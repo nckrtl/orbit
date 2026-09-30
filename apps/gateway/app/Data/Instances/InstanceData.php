@@ -45,11 +45,14 @@ final class InstanceData extends Data
         /** @var list<DeploymentStepData> */
         public array $deploySteps = [],
         public ?int $vitePort = null,
+        public string $creation = 'repository',
+        public ?string $copyMode = null,
+        public ?InstanceSourceIdentityData $sourceInstance = null,
     ) {}
 
     public static function fromModel(Instance $instance): self
     {
-        $instance->loadMissing(['project', 'node', 'routes.targets', 'deploySteps']);
+        $instance->loadMissing(['project', 'node', 'routes.targets', 'deploySteps', 'sourceInstance']);
         $route = $instance->authoritativeRoute() ?? $instance->routes->first();
         $removal = InstanceRemoval::query()
             ->with('members')
@@ -89,6 +92,11 @@ final class InstanceData extends Data
                 DeploymentStepData::fromDomain(...),
                 app(InstanceDeployStepStore::class)->ordered($instance),
             ),
+            creation: is_string($creation = $instance->getAttribute('creation')) && $creation !== '' ? $creation : 'repository',
+            copyMode: is_string($instance->copy_mode) ? $instance->copy_mode : null,
+            sourceInstance: $instance->sourceInstance instanceof Instance
+                ? new InstanceSourceIdentityData($instance->sourceInstance->id, $instance->sourceInstance->name)
+                : null,
         );
     }
 

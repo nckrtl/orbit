@@ -14,6 +14,7 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
+use App\Domain\Instances\InstanceCreation;
 use App\Domain\Instances\InstanceDestinationGuard;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
@@ -755,6 +756,7 @@ final readonly class RegisterInstanceAction
                     'root' => $rootOverride,
                     'branch' => $fact->branch,
                     'starting_commit' => $fact->commit,
+                    'creation' => InstanceCreation::Register,
                     ...$this->registrationEvidence(
                         $fact,
                         requestId: $requestId,

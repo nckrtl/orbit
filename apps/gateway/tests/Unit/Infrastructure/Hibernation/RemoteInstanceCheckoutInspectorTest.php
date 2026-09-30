@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\Hibernation\LocalRuntimeDependencies;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -45,7 +46,19 @@ it('classifies reconstructable vendor and node_modules from the remote checkout 
 
 it('prunes only reconstructable dependency directories and leaves lockfiles', function (): void {
     $ssh = new AppDevFakeSshExecutor([new CommandResult(0, '', '', 1, false)]);
-    $inspector = checkout_inspector($ssh);
+    $lock = new class implements AppDevSourceOperationLock
+    {
+        /** @var list<int> */
+        public array $nodes = [];
+
+        public function synchronized(int $nodeId, Closure $operation): mixed
+        {
+            $this->nodes[] = $nodeId;
+
+            return $operation();
+        }
+    };
+    $inspector = checkout_inspector($ssh, sourceLock: $lock);
     $state = LocalRuntimeDependencies::inspect(
         composerJsonFile: true,
         composerLockFile: true,
@@ -57,9 +70,13 @@ it('prunes only reconstructable dependency directories and leaves lockfiles', fu
         nodeModulesSymlink: false,
     );
 
-    $inspector->prune(checkout_instance(), $state);
+    $instance = checkout_instance();
+    $instance->node_id = 7;
+    $inspector->prune($instance, $state);
 
-    expect($ssh->commands[0]->arguments)
+    expect($lock->nodes)
+        ->toBe([7])
+        ->and($ssh->commands[0]->arguments)
         ->toBe(['sudo', 'bash', '-seu', '--', '/home/orbit/apps/docs', 'vendor', 'node_modules']);
 });
 
@@ -113,7 +130,7 @@ it('restores missing vendor with Composer and missing node_modules with frozen v
         ->toBe(1_800.0);
 });
 
-function checkout_inspector(AppDevFakeSshExecutor $ssh, int $timeout = 1_800): RemoteInstanceCheckoutInspector
+function checkout_inspector(AppDevFakeSshExecutor $ssh, int $timeout = 1_800, ?AppDevSourceOperationLock $sourceLock = null): RemoteInstanceCheckoutInspector
 {
     return new RemoteInstanceCheckoutInspector(
         ssh: $ssh,
@@ -121,6 +138,7 @@ function checkout_inspector(AppDevFakeSshExecutor $ssh, int $timeout = 1_800): R
         knownHosts: new CheckoutInspectorKnownHostsStore,
         accounts: new CheckoutInspectorAccounts,
         restoreTimeoutSeconds: $timeout,
+        sourceLock: $sourceLock,
     );
 }
 

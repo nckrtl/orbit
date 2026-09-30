@@ -69,7 +69,10 @@
                 "removal": null,
                 "transfer": null,
                 "deploy_steps": [],
-                "vite_port": 5173
+                "vite_port": 5173,
+                "creation": "repository",
+                "copy_mode": null,
+                "source_instance": null
             }
         ],
         "meta": {

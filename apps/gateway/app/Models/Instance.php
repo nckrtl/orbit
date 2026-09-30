@@ -70,6 +70,9 @@ use Illuminate\Support\Carbon;
  * @property string|null $provisioning_step
  * @property string|null $failed_step
  * @property string|null $error_code
+ * @property string $creation
+ * @property string|null $copy_mode
+ * @property int|null $source_instance_id
  * @property Carbon|null $runtime_definitions_captured_at
  * @property InstanceState $status
  * @property Carbon|null $created_at
@@ -155,6 +158,9 @@ final class Instance extends Model
         'runtime_definitions_captured_at',
         'status',
         'error_code',
+        'creation',
+        'copy_mode',
+        'source_instance_id',
     ];
 
     public const string MorphAlias = 'instance';
@@ -174,6 +180,19 @@ final class Instance extends Model
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class, 'project_id');
+    }
+
+    /** @return BelongsTo<Instance, $this> */
+    public function sourceInstance(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'source_instance_id');
+    }
+
+    protected static function booted(): void
+    {
+        self::deleting(static function (Instance $instance): void {
+            static::query()->where('source_instance_id', $instance->id)->update(['source_instance_id' => null]);
+        });
     }
 
     /** @return BelongsTo<Node, $this> */
@@ -376,6 +395,7 @@ final class Instance extends Model
             'vite_port' => 'integer',
             'agentation_port' => 'integer',
             'clone_candidate_id' => 'integer',
+            'source_instance_id' => 'integer',
             'clone_completed_at' => 'immutable_datetime',
             'registration_detached' => 'boolean',
             'registration_primary' => 'boolean',

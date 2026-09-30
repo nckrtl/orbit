@@ -69,6 +69,7 @@ use App\Domain\Hibernation\InstanceCheckoutInspector;
 use App\Domain\Hibernation\InstanceRuntimeReadiness;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Instances\Deployment\ProductionDeployment;
+use App\Domain\Instances\DevelopmentInstanceCheckoutCopier;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
@@ -249,6 +250,7 @@ use App\Infrastructure\Instances\NativeProductionInstanceProvisioner;
 use App\Infrastructure\Instances\NativeProductionRouteProjector;
 use App\Infrastructure\Instances\ProtectedSqliteSnapshotTransfer;
 use App\Infrastructure\Instances\RecordedProductionInstanceContentRetention;
+use App\Infrastructure\Instances\RemoteDevelopmentInstanceCheckoutCopier;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceConfigurator;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceLifecycle;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceRemoval;
@@ -386,6 +388,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         AppDevTldConverger::class => NativeAppDevTldConverger::class,
         AppDevTldRouteManager::class => RemoteAppDevTldRouteManager::class,
         DevelopmentInstanceSourceLifecycle::class => RemoteDevelopmentInstanceSourceLifecycle::class,
+        DevelopmentInstanceCheckoutCopier::class => RemoteDevelopmentInstanceCheckoutCopier::class,
         RegistrationSourceManager::class => RemoteRegistrationSourceManager::class,
         DevelopmentInstanceSourceRemoval::class => RemoteDevelopmentInstanceSourceRemoval::class,
         ProductionInstanceContentRetention::class => RecordedProductionInstanceContentRetention::class,
@@ -616,6 +619,7 @@ final class ApplicationServiceProvider extends ServiceProvider
                 knownHosts: $app->make(KnownHostsStore::class),
                 accounts: $app->make(ManagedUserAccountResolver::class),
                 restoreTimeoutSeconds: Config::integer('orbit.hibernation.cold_wake_timeout_seconds'),
+                sourceLock: $app->make(AppDevSourceOperationLock::class),
             ),
         );
         $this->app->singleton(ManagedUserAccountResolver::class, SshManagedUserAccountResolver::class);

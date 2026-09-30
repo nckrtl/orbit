@@ -36,6 +36,7 @@ final class StoreInstanceRequest extends FormRequest
             'root' => ['sometimes', 'string', 'max:255'],
             'domain' => ['sometimes', 'string', 'max:253'],
             'branch' => ['sometimes', 'string', 'max:255'],
+            'source_instance_id' => ['sometimes', 'integer', 'min:1'],
         ];
     }
 
@@ -45,7 +46,7 @@ final class StoreInstanceRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['project_id', 'node_id', 'name', 'root', 'domain', 'branch'],
+                ['project_id', 'node_id', 'name', 'root', 'domain', 'branch', 'source_instance_id'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -94,6 +95,7 @@ final class StoreInstanceRequest extends FormRequest
                 ? RouteDomain::normalize($validated['domain'])
                 : null,
             branch: is_string($validated['branch'] ?? null) ? $validated['branch'] : null,
+            sourceInstanceId: self::integerId($validated['source_instance_id'] ?? null),
         );
     }
 

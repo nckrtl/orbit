@@ -60,3 +60,6 @@ docs/reference/environment-variables.md: Environment variables are unchanged. Re
 docs/solutions/doctor-incus-proof.md: The Incus doctor proof is unchanged. Renaming the task relation is internal.
 docs/reference/web-verification.md: The quota-unavailable purpose in the feature map now follows proxycli-only Quota. Web verification commands, the map schema, and the demo routes on this page are unchanged.
 docs/reference/cli-ux.md: Task contract snapshots follow the new subtask and group ids. Input, consent, and presentation rules on this page are unchanged.
+docs/reference/gateway-response-fixtures.md: Instance fixtures now record creation, copy_mode, and source_instance. The record, validate, and replay steps on this page are unchanged.
+docs/reference/mcp.mdx: The instance-create tool now accepts source_instance_id. Catalogue generation on this page is unchanged.
+docs/reference/web-app.md: The generated API schema now includes Instance creation, copy_mode, and source_instance. Navigation and layout on this page are unchanged.

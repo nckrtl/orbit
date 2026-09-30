@@ -1801,6 +1801,10 @@
             "type": "string",
             "maxLength": 255,
             "description": "Optional explicit source branch"
+          },
+          "source_instance_id": {
+            "type": "integer",
+            "minimum": 1
           }
         },
         "additionalProperties": false,

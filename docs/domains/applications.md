@@ -3,7 +3,7 @@ title: "Applications"
 description: "How a Project becomes an Instance on a Node: create or adopt a development checkout, provision its endpoint, clone to production, move, and remove."
 covers:
   - apps/gateway/app/Actions/Instances/{CreateInstanceAction,RegisterInstanceAction,ListInstancesAction,ShowInstanceAction}.php
-  - apps/gateway/app/Domain/Instances/{InstanceState,InstanceSourceLayout,InstanceDestinationGuard,ComposerSourceClassifier,Development*}.php
+  - apps/gateway/app/Domain/Instances/{InstanceState,InstanceSourceLayout,InstanceDestinationGuard,ComposerSourceClassifier,InstanceCreation,InstanceCopyMode,Development*}.php
   - apps/gateway/app/Domain/Instances/Registration/**
   - apps/gateway/app/Infrastructure/Instances/{NativeDevelopmentInstanceProvisioner,RemoteDevelopmentInstanceSourceLifecycle,RemoteDevelopmentInstanceConfigurator,RemoteRegistrationSourceManager,RemoteInstanceDestinationGuard}.php
   - apps/gateway/app/{Http/Controllers/Api/InstancesController.php,Http/Requests/Instances/**,Data/Instances/**,Models/Instance.php}

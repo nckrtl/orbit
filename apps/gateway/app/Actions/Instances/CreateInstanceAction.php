@@ -9,10 +9,13 @@ use App\Data\Instances\InstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Instances\DevelopmentInstanceCheckoutCopier;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
 use App\Domain\Instances\DevelopmentSourceResolution;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Instances\InstanceCopyMode;
+use App\Domain\Instances\InstanceCreation;
 use App\Domain\Instances\InstanceDestinationGuard;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
@@ -27,6 +30,7 @@ use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Projects\DevelopmentNodeExclusion;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectLifecycleRunner;
+use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -38,6 +42,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\RouteTarget;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -57,6 +62,7 @@ final readonly class CreateInstanceAction
         private NodeSettingsNormalizer $nodeSettings,
         private ManagedCheckoutOverlap $checkoutOverlap,
         private InstanceDestinationGuard $destinationGuard,
+        private DevelopmentInstanceCheckoutCopier $copies,
         private AppDevSourceOperationLock $sourceLock,
         private DevelopmentInstanceSourceLifecycle $source,
         private DevelopmentInstanceProvisioner $provisioner,
@@ -76,6 +82,24 @@ final readonly class CreateInstanceAction
         $this->assertCompleteSourceDefaults($project);
         $requestedNode = Node::query()->findOrFail($data->nodeId);
         $root = $data->root === null ? null : ProjectRoot::validate($data->root, $project->type);
+
+        if ($data->sourceInstanceId !== null) {
+            if (
+                $requestedNode
+                    ->roles()
+                    ->where('role', RoleName::AppProd)
+                    ->where('status', LifecycleStatus::Active)
+                    ->exists()
+            ) {
+                throw new ResourceOperationException(
+                    errorCode: 'instance.candidate_required',
+                    message: 'New production Instances require a candidate. Use instance:clone.',
+                    status: 409,
+                );
+            }
+
+            return $this->announceCreated($this->executeCopy($data, $project, $requestedNode, $root));
+        }
 
         if (
             $requestedNode
@@ -122,6 +146,7 @@ final readonly class CreateInstanceAction
                 'checkout_path' => $checkout->value,
                 'root' => $root,
                 'branch_override' => $data->branch,
+                'creation' => InstanceCreation::Repository,
                 'status' => InstanceState::Reserved,
             ]);
             $created = true;
@@ -501,6 +526,327 @@ final readonly class CreateInstanceAction
                     'failed_step' => $step,
                     'error_code' => $errorCode,
                 ]);
+        });
+    }
+
+    /** @return array{instance: Instance, created: bool} */
+    private function executeCopy(CreateInstanceData $data, Project $project, Node $node, ?string $requestedRoot): array
+    {
+        $source = $this->copySource($data->sourceInstanceId);
+        $branch = $data->branch ?? $data->name;
+
+        if (! GitBranchName::isValid($branch)) {
+            throw $this->conflict('instance.copy_failed', 'The copy branch is invalid.');
+        }
+
+        $this->assertCopySourceLocal($source, $project, $node);
+        $this->copyRoot($source, $requestedRoot);
+        $existing = Instance::query()
+            ->where('project_id', $project->id)
+            ->where('name', $data->name)
+            ->first();
+
+        return $this->sourceLock->synchronized(
+            $node->id,
+            function () use ($data, $project, $node, $branch, $requestedRoot, $existing): array {
+                $source = $this->copySource($data->sourceInstanceId);
+                $this->assertCopySourceLocal($source, $project, $node);
+                $root = $this->copyRoot($source, $requestedRoot);
+                $existing = $existing instanceof Instance ? $existing->fresh() : null;
+
+                if ($existing instanceof Instance) {
+                    $this->assertRetryIdentity($existing, $node, $root, $branch);
+                    $this->assertCopyIdentity($existing, $source, $data->domain);
+
+                    if ($existing->status === InstanceState::Active && $existing->failed_step === 'setup') {
+                        throw new ResourceOperationException(
+                            'instance.setup_step_failed',
+                            'Setup is incomplete. Run instance:setup before using this Instance.',
+                            409,
+                        );
+                    }
+
+                    if ($existing->status === InstanceState::Active) {
+                        return ['instance' => $existing, 'created' => false];
+                    }
+                }
+
+                $inspection = $existing === null || $existing->status === InstanceState::Reserved
+                    ? $this->copies->inspect($source, $branch)
+                    : null;
+
+                if ($existing instanceof Instance) {
+                    $instance = $existing;
+                    $created = false;
+                } else {
+                    $this->assertPlacement($node);
+                    app(DevelopmentNodeExclusion::class)->assertAvailable($project, $node);
+                    $instance = $this->reserveCopyInstance($project, $node, $data->name, $root, $branch, $source->id);
+                    $created = true;
+                }
+
+                $owned = false;
+                $completed = ($this->environmentOperations ?? app(InstanceEnvironmentOperationLock::class))->run(
+                    $this->copyLockIds($instance),
+                    function () use ($instance, $data, $source, $branch, $inspection, &$owned): Instance {
+                        try {
+                            $this->provisioner->reserve($instance, $data->domain);
+                            $resolved = $this->resumeCopy($instance, $source, $branch, $inspection?->head, $owned);
+                            $result = $this->provisioner->complete($resolved, $data->domain, setupPending: true);
+
+                            try {
+                                $this->copies->deleteMarker($result);
+                            } catch (Throwable) {
+                                // A leftover marker names this Instance and is outside the checkout.
+                            }
+                        } catch (Throwable $exception) {
+                            $this->recordFailure($instance, $exception);
+                            $current = $instance->fresh();
+                            $started = $owned
+                                || ($current instanceof Instance && $current->status !== InstanceState::Reserved)
+                                || ($exception instanceof ResourceOperationException && ($exception->details['copy_started'] ?? '') === '1');
+
+                            if ($started && (! $current instanceof Instance || $current->status !== InstanceState::Active)) {
+                                $this->removeFailedCopy($current ?? $instance);
+                            }
+
+                            throw $exception;
+                        }
+
+                        $this->finishSetup($result);
+
+                        return $result->refresh();
+                    },
+                );
+
+                return ['instance' => $completed, 'created' => $created];
+            },
+        );
+    }
+
+    private function resumeCopy(Instance $instance, Instance $source, string $branch, ?string $expectedHead, bool &$owned): Instance
+    {
+        while (true) {
+            $instance->refresh()->loadMissing(['project', 'node']);
+            $this->assertPersistedOwnership($instance);
+
+            if ($instance->status === InstanceState::Reserved) {
+                if (! is_string($expectedHead)) {
+                    throw $this->conflict('instance.copy_failed', 'The source commit was not recorded.');
+                }
+
+                $copied = $this->copies->copy(
+                    $source,
+                    $instance,
+                    $branch,
+                    $expectedHead,
+                    $instance->name === 'default' ? 'instance.default_path_occupied' : 'instance.path_taken',
+                );
+                $owned = true;
+
+                if (
+                    $copied->head !== $expectedHead
+                    || ! in_array($copied->mode, [InstanceCopyMode::Reflink, InstanceCopyMode::Full], true)
+                ) {
+                    throw $this->conflict('instance.copy_failed', 'The copy returned invalid evidence.');
+                }
+
+                $this->transition($instance, InstanceState::Reserved, [
+                    'branch' => $branch,
+                    'starting_commit' => $copied->head,
+                    'copy_mode' => $copied->mode,
+                    'status' => InstanceState::CheckoutPrepared,
+                ]);
+
+                continue;
+            }
+
+            if ($instance->status === InstanceState::CheckoutPrepared) {
+                $this->source->inspectPrepared($instance);
+                $resolution = $this->source->inspectResolved($instance);
+                $this->assertResolution($instance, $resolution);
+
+                if ($resolution->startingCommit !== $instance->starting_commit) {
+                    throw $this->conflict('instance.copy_source_changed', 'The copied HEAD does not match the source.');
+                }
+
+                $this->transition($instance, InstanceState::CheckoutPrepared, [
+                    'status' => InstanceState::SourceResolved,
+                ]);
+
+                continue;
+            }
+
+            if ($instance->status === InstanceState::SourceResolved) {
+                $this->source->inspectPrepared($instance);
+                $this->assertStoredResolution($instance, $this->source->inspectResolved($instance));
+
+                return $instance->refresh();
+            }
+
+            throw $this->conflict('instance.lifecycle_conflict', 'Instance lifecycle evidence changed.');
+        }
+    }
+
+    private function reserveCopyInstance(
+        Project $project,
+        Node $node,
+        string $name,
+        ?string $root,
+        string $branch,
+        int $sourceId,
+    ): Instance {
+        $account = $this->accounts->resolve($node);
+        $checkout = $this->storageRoots->resolveApps(
+            $this->nodeSettings->fromStored($node->settings),
+            $account,
+        )->append($project->slug, $name);
+        $this->checkoutOverlap->assertAvailable(
+            $node->id,
+            $checkout,
+            $name === 'default' ? 'instance.default_path_occupied' : 'instance.path_taken',
+        );
+
+        return Instance::query()->create([
+            'project_id' => $project->id,
+            'node_id' => $node->id,
+            'name' => $name,
+            'source_layout' => InstanceSourceLayout::Checkout,
+            'checkout_path' => $checkout->value,
+            'root' => $root,
+            'branch_override' => $branch,
+            'creation' => InstanceCreation::Copy,
+            'source_instance_id' => $sourceId,
+            'status' => InstanceState::Reserved,
+        ]);
+    }
+
+    private function copySource(?int $id): Instance
+    {
+        $source = Instance::query()->find($id);
+
+        if (! $source instanceof Instance) {
+            throw new ResourceOperationException(
+                'instance.copy_source_missing',
+                'The source Instance does not exist.',
+                404,
+            );
+        }
+
+        return $source->loadMissing(['project', 'node.roles']);
+    }
+
+    private function assertCopySourceLocal(Instance $source, Project $project, Node $node): void
+    {
+        if ($source->project_id !== $project->id) {
+            throw $this->conflict('instance.copy_project_mismatch', 'The source Instance belongs to another Project.');
+        }
+
+        if (! $source->placedOnAppDev()) {
+            throw $this->conflict('instance.copy_source_not_development', 'The source Instance is not a development Instance.');
+        }
+
+        if ($source->node_id !== $node->id) {
+            throw $this->conflict('instance.copy_node_mismatch', 'The source Instance is on another Node.');
+        }
+
+        if ($source->status !== InstanceState::Active) {
+            throw $this->conflict('instance.copy_source_inactive', 'The source Instance is not active.');
+        }
+
+        if ($source->source_layout !== InstanceSourceLayout::Checkout->value) {
+            throw $this->conflict('instance.copy_source_layout_invalid', 'The source Instance is not an independent checkout.');
+        }
+
+        if (! is_string($source->branch) || ! GitBranchName::isValid($source->branch)) {
+            throw $this->conflict('instance.copy_source_branch_invalid', 'The source Instance is not on a recorded branch.');
+        }
+    }
+
+    private function copyRoot(Instance $source, ?string $requestedRoot): ?string
+    {
+        if ($requestedRoot !== null && $requestedRoot !== $source->root) {
+            throw $this->conflict('instance.copy_root_mismatch', 'The copy root must match the source Instance.');
+        }
+
+        return $source->root;
+    }
+
+    private function assertCopyIdentity(Instance $instance, Instance $source, ?string $domain): void
+    {
+        if ($instance->creation !== InstanceCreation::Copy || $instance->source_instance_id !== $source->id) {
+            throw $this->conflict('instance.placement_conflict', 'Instance placement is immutable.');
+        }
+
+        $route = $instance->routes()->first();
+
+        if (! $route instanceof Route) {
+            return;
+        }
+
+        if ($domain === null) {
+            if ($route->provenance !== RouteProvenance::Generated) {
+                throw $this->conflict('instance.placement_conflict', 'Instance placement is immutable.');
+            }
+
+            return;
+        }
+
+        if ($route->domain !== $domain) {
+            throw $this->conflict('instance.placement_conflict', 'Instance placement is immutable.');
+        }
+    }
+
+    /** @return list<int> */
+    private function copyLockIds(Instance $instance): array
+    {
+        $ids = [];
+
+        foreach (Instance::query()
+            ->where('project_id', $instance->project_id)
+            ->where('node_id', $instance->node_id)
+            ->orderBy('id')
+            ->pluck('id') as $id) {
+            if (is_int($id)) {
+                $ids[] = $id;
+            } elseif (is_string($id) && ctype_digit($id)) {
+                $ids[] = (int) $id;
+            }
+        }
+
+        return $ids === [] ? [$instance->id] : $ids;
+    }
+
+    private function removeFailedCopy(Instance $instance): void
+    {
+        $current = $instance->fresh() ?? $instance;
+
+        try {
+            $this->copies->discardPartial($current);
+        } catch (Throwable) {
+            // Removal below still releases the Route and the Instance row.
+        }
+
+        try {
+            ($this->remover ?? app(RemoveInstanceAction::class))->execute(
+                $current->fresh() ?? $current,
+                force: true,
+                runTeardown: false,
+                allowCascade: false,
+            );
+        } catch (Throwable) {
+            $this->releaseCopyReservations($current);
+        }
+    }
+
+    private function releaseCopyReservations(Instance $instance): void
+    {
+        DB::transaction(static function () use ($instance): void {
+            $routeIds = RouteTarget::query()->where('instance_id', $instance->id)->pluck('route_id');
+            RouteTarget::query()->where('instance_id', $instance->id)->delete();
+            Route::query()->whereIn('id', $routeIds)->whereDoesntHave('targets')->delete();
+            DB::table('vite_port_assignments')->where('instance_id', $instance->id)->delete();
+            Instance::query()->whereKey($instance->id)->delete();
         });
     }
 }

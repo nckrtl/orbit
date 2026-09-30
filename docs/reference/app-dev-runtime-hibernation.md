@@ -64,7 +64,7 @@ The same sweep deletes `vendor` and `node_modules` when all of these are true:
 
 Orbit deletes `vendor` only next to `composer.json` and `composer.lock`. It deletes `node_modules` only next to `package.json` and exactly one JavaScript lockfile. It never follows a symlink and keeps every lockfile. Then it writes the cold marker. The [dependency inventory](/reference/instance-dependencies) stays, because it reads lockfiles.
 
-The copy change adds a Node source lock to this sweep. The prune takes that lock before those deletes. It does not take the lock today. A [development copy](/reference/instance-copies) holds the same lock, so the prune cannot remove `vendor` or `node_modules` while the copy runs.
+The prune takes the Node source lock before those deletes. A [development copy](/reference/instance-copies) holds the same lock, so the prune cannot remove `vendor` or `node_modules` while the copy runs.
 
 ## Wake
 

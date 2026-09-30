@@ -4141,6 +4141,10 @@
                     "type": "string",
                     "maxLength": 255,
                     "description": "Optional explicit source branch"
+                  },
+                  "source_instance_id": {
+                    "type": "integer",
+                    "minimum": 1
                   }
                 },
                 "required": [
@@ -22445,6 +22449,25 @@
               "integer",
               "null"
             ]
+          },
+          "creation": {
+            "type": "string"
+          },
+          "copy_mode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_instance": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/InstanceSourceIdentity"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -22734,6 +22757,17 @@
           },
           "timeout_seconds": {
             "type": "integer"
+          }
+        }
+      },
+      "InstanceSourceIdentity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
           }
         }
       },

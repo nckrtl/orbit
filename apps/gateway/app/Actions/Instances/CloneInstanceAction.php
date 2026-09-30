@@ -11,6 +11,7 @@ use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\Instances\CloneCandidateSource;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\InstanceCloneCandidateInspector;
+use App\Domain\Instances\InstanceCreation;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionCloneRouteProjector;
@@ -259,6 +260,7 @@ final readonly class CloneInstanceAction
                     'clone_preview_name' => $data->previewName,
                     'clone_preview_domain' => $domain,
                     'clone_sqlite_source_path' => $data->sqliteSourcePath,
+                    'creation' => InstanceCreation::Clone,
                     'provisioning_step' => 'clone-reserved',
                     'status' => InstanceState::Reserved,
                 ]);

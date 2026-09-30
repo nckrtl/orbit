@@ -9,6 +9,7 @@ use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Instances\DevelopmentInstanceCheckoutCopier;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
@@ -38,7 +39,9 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StoragePath;
+use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\RouteDomainProjector;
@@ -47,7 +50,12 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Instances\RemoteDevelopmentInstanceCheckoutCopier;
 use App\Infrastructure\Processes\CommandDeadline;
+use App\Infrastructure\Ssh\HostKey;
+use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Activity;
 use App\Models\Cluster;
 use App\Models\Instance;
@@ -67,6 +75,8 @@ use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
 use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
+use Tests\Support\DeadlineOnCopySshExecutor;
+use Tests\Support\FakeDevelopmentInstanceCheckoutCopier;
 use Tests\Support\LifecycleSshExecutor;
 use Tests\TestCase;
 
@@ -2993,3 +3003,351 @@ it('retains the checkout when setup execution cannot be confirmed', function ():
     expect($instance->refresh()->failed_step)->toBeNull();
 
 });
+
+describe('development instance copies', function (): void {
+    it('copies an active checkout onto a new branch with its own route, port, url, and setup', function (): void {
+        $source = copy_development_source();
+        $copier = bind_development_copier();
+        $this->source->resolution = new DevelopmentSourceResolution('feature', $copier->head);
+        $configuration = copy_laravel_configurator();
+        ProjectLifecycleStep::query()->create([
+            'project_id' => $this->orbitApp->id,
+            'phase' => 'setup',
+            'name' => 'install',
+            'command' => 'composer install',
+            'timeout_seconds' => 30,
+            'position' => 0,
+        ]);
+        $transport = new LifecycleSshExecutor;
+        app()->instance(ProjectLifecycleRunner::class, $transport->runner());
+
+        $response = $this->postJson('/api/v1/instances', [
+            'project_id' => $this->orbitApp->id,
+            'node_id' => $this->node->id,
+            'name' => 'feature',
+            'source_instance_id' => $source->id,
+        ])->assertCreated()
+            ->assertJsonPath('data.creation', 'copy')
+            ->assertJsonPath('data.copy_mode', 'reflink')
+            ->assertJsonPath('data.source_instance.id', $source->id)
+            ->assertJsonPath('data.source_instance.name', 'default')
+            ->assertJsonPath('data.branch_override', 'feature')
+            ->assertJsonPath('data.selected_branch', 'feature')
+            ->assertJsonPath('data.starting_commit', $copier->head)
+            ->assertJsonPath('data.checkout_path', '/srv/orbit/apps/acme/feature')
+            ->assertJsonPath('data.vite_port', 5174)
+            ->assertJsonPath('data.domain', 'feature.acme.test')
+            ->assertJsonPath('data.url', 'https://feature.acme.test');
+
+        expect($copier->inspections)->toBe(1)
+            ->and($copier->copies)->toBe(1)
+            ->and($copier->branch)->toBe('feature')
+            ->and($copier->expectedHead)->toBe($copier->head)
+            ->and($copier->markerDeletes)->toBe(1)
+            ->and($configuration->url)->toBe('https://feature.acme.test')
+            ->and($transport->inputs)->toBe([[
+                'checkout' => '/srv/orbit/apps/acme/feature',
+                'command' => 'composer install',
+                'timeout' => 30,
+            ]])
+            ->and(array_values(array_filter(
+                $this->source->calls,
+                static fn (string $call): bool => str_starts_with($call, 'prepare:') || str_starts_with($call, 'resolve:'),
+            )))->toBe([])
+            ->and($source->refresh()->only(['branch', 'status', 'checkout_path', 'vite_port']))->toBe([
+                'branch' => 'main',
+                'status' => InstanceState::Active,
+                'checkout_path' => '/srv/orbit/apps/acme/default',
+                'vite_port' => 5173,
+            ]);
+
+        $this->postJson('/api/v1/instances', [
+            'project_id' => $this->orbitApp->id,
+            'node_id' => $this->node->id,
+            'name' => 'feature',
+            'source_instance_id' => $source->id,
+        ])->assertOk()->assertJsonPath('data.id', $response->json('data.id'));
+
+        expect($copier->copies)->toBe(1)
+            ->and($transport->inputs)->toHaveCount(1);
+    });
+
+    it('honours an explicit branch and reports a full copy', function (): void {
+        $source = copy_development_source();
+        $copier = bind_development_copier();
+        $copier->mode = 'full';
+        $this->source->resolution = new DevelopmentSourceResolution('release', $copier->head);
+
+        $this->postJson('/api/v1/instances', [
+            'project_id' => $this->orbitApp->id,
+            'node_id' => $this->node->id,
+            'name' => 'feature',
+            'branch' => 'release',
+            'source_instance_id' => $source->id,
+        ])->assertCreated()
+            ->assertJsonPath('data.copy_mode', 'full')
+            ->assertJsonPath('data.branch_override', 'release')
+            ->assertJsonPath('data.selected_branch', 'release')
+            ->assertJsonPath('data.starting_commit', $copier->head);
+
+        expect($copier->branch)->toBe('release');
+    });
+
+    it('removes a partial copy and releases its route when the copy fails', function (): void {
+        $source = copy_development_source();
+        $copier = bind_development_copier();
+        $copier->failCopy = 'instance.copy_failed';
+        $copier->copyStarts = true;
+
+        $this->postJson('/api/v1/instances', [
+            'project_id' => $this->orbitApp->id,
+            'node_id' => $this->node->id,
+            'name' => 'feature',
+            'source_instance_id' => $source->id,
+        ])->assertConflict()->assertJsonPath('error.code', 'instance.copy_failed');
+
+        expect($copier->copies)->toBe(1)
+            ->and($copier->discards)->toBeGreaterThan(0)
+            ->and(Instance::query()->where('name', 'feature')->exists())->toBeFalse()
+            ->and(Route::query()->where('domain', 'feature.acme.test')->exists())->toBeFalse()
+            ->and(Instance::query()->whereKey($source->id)->exists())->toBeTrue()
+            ->and($source->refresh()->checkout_path)->toBe('/srv/orbit/apps/acme/default');
+    });
+
+    it('removes the checkout, route, and port when preparation fails after the copy', function (): void {
+        $source = copy_development_source();
+        $copier = bind_development_copier();
+        $this->source->fail = 'inspect-prepared';
+        $this->source->failureCode = 'instance.source_interrupted';
+
+        $this->postJson('/api/v1/instances', [
+            'project_id' => $this->orbitApp->id,
+            'node_id' => $this->node->id,
+            'name' => 'feature',
+            'source_instance_id' => $source->id,
+        ])->assertStatus(422)->assertJsonPath('error.code', 'instance.source_interrupted');
+
+        expect($copier->copies)->toBe(1)
+            ->and($copier->discards)->toBeGreaterThan(0)
+            ->and(Instance::query()->where('name', 'feature')->exists())->toBeFalse()
+            ->and(Route::query()->where('domain', 'feature.acme.test')->exists())->toBeFalse()
+            ->and(DB::table('vite_port_assignments')->where('instance_id', '!=', $source->id)->exists())->toBeFalse()
+            ->and(Instance::query()->whereKey($source->id)->exists())->toBeTrue();
+    });
+
+    it('discards a partial copy and returns the deadline when cp is interrupted', function (): void {
+        $source = copy_development_source();
+        $head = str_repeat('c', 40);
+        $ssh = new DeadlineOnCopySshExecutor($head);
+        app()->instance(DevelopmentInstanceCheckoutCopier::class, deadline_copy_copier($ssh));
+
+        $this->postJson('/api/v1/instances', [
+            'project_id' => $this->orbitApp->id,
+            'node_id' => $this->node->id,
+            'name' => 'feature',
+            'source_instance_id' => $source->id,
+        ])->assertStatus(504)->assertJsonPath('error.code', 'command.deadline_exceeded');
+
+        $discards = array_values(array_filter(
+            $ssh->commands,
+            static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'keep_marker'),
+        ));
+
+        expect($discards)->not->toBeEmpty()
+            ->and($discards[0]->arguments)->toContain('0')
+            ->and(Instance::query()->where('name', 'feature')->exists())->toBeFalse()
+            ->and(Route::query()->where('domain', 'feature.acme.test')->exists())->toBeFalse()
+            ->and(DB::table('vite_port_assignments')->where('instance_id', '!=', $source->id)->exists())->toBeFalse()
+            ->and(Instance::query()->whereKey($source->id)->exists())->toBeTrue();
+    });
+
+    it('refuses an ineligible source before copying', function (string $case): void {
+        $source = copy_development_source();
+        $copier = bind_development_copier();
+        $code = match ($case) {
+            'another node' => 'instance.copy_node_mismatch',
+            'production source' => 'instance.copy_source_not_development',
+            'worktree layout', 'git file worktree' => 'instance.copy_source_layout_invalid',
+            'cold source' => 'instance.copy_source_cold',
+            'inactive source' => 'instance.copy_source_inactive',
+            'dirty source' => 'instance.copy_source_dirty',
+            default => throw new InvalidArgumentException($case),
+        };
+
+        if ($case === 'another node') {
+            $other = Node::query()->create([
+                'name' => 'other-dev',
+                'status' => LifecycleStatus::Active,
+                'platform' => 'linux',
+                'tld' => 'other',
+                'public_ssh_host' => '192.0.2.70',
+                'wireguard_ip' => '10.44.0.70',
+                'user' => 'orbit',
+                'settings' => ['apps' => ['path' => '/srv/orbit/apps']],
+            ]);
+            $other->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+            $source->update(['node_id' => $other->id]);
+        } elseif ($case === 'production source') {
+            $source->update(['node_id' => create_app_prod_node('prod-copy-'.$source->id)->id]);
+        } elseif ($case === 'worktree layout') {
+            $source->update(['source_layout' => InstanceSourceLayout::Worktree->value]);
+        } elseif ($case === 'inactive source') {
+            $source->update(['status' => InstanceState::SourceResolved]);
+        } elseif ($case === 'cold source') {
+            $copier->failInspect = 'instance.copy_source_cold';
+        } elseif ($case === 'dirty source') {
+            $copier->failInspect = 'instance.copy_source_dirty';
+        } else {
+            $copier->failInspect = 'instance.copy_source_layout_invalid';
+        }
+
+        $this->postJson('/api/v1/instances', [
+            'project_id' => $this->orbitApp->id,
+            'node_id' => $this->node->id,
+            'name' => 'feature',
+            'source_instance_id' => $source->id,
+        ])->assertConflict()->assertJsonPath('error.code', $code);
+
+        expect($copier->copies)->toBe(0)
+            ->and($copier->inspections)->toBe($copier->failInspect === null ? 0 : 1)
+            ->and(Instance::query()->where('name', 'feature')->exists())->toBeFalse();
+    })->with([
+        'another node',
+        'production source',
+        'worktree layout',
+        'cold source',
+        'inactive source',
+        'dirty source',
+        'git file worktree',
+    ]);
+
+    it('sends no remote copy inspection for a local refusal', function (): void {
+        $source = copy_development_source();
+        $copier = bind_development_copier();
+        $source->update(['source_layout' => InstanceSourceLayout::Worktree->value]);
+
+        $this->postJson('/api/v1/instances', [
+            'project_id' => $this->orbitApp->id,
+            'node_id' => $this->node->id,
+            'name' => 'feature',
+            'root' => 'public',
+            'source_instance_id' => $source->id,
+        ])->assertConflict()->assertJsonPath('error.code', 'instance.copy_source_layout_invalid');
+
+        expect($copier->inspections)->toBe(0)->and($copier->copies)->toBe(0);
+    });
+
+    it('refuses a root that differs from the source before copying', function (): void {
+        $source = copy_development_source();
+        $copier = bind_development_copier();
+
+        $this->postJson('/api/v1/instances', [
+            'project_id' => $this->orbitApp->id,
+            'node_id' => $this->node->id,
+            'name' => 'feature',
+            'root' => 'public',
+            'source_instance_id' => $source->id,
+        ])->assertConflict()->assertJsonPath('error.code', 'instance.copy_root_mismatch');
+
+        expect($copier->inspections)->toBe(0)->and($copier->copies)->toBe(0);
+    });
+
+    it('returns not found when the source does not exist and leaves create without a source unchanged', function (): void {
+        $copier = bind_development_copier();
+
+        $this->postJson('/api/v1/instances', [
+            'project_id' => $this->orbitApp->id,
+            'node_id' => $this->node->id,
+            'name' => 'feature',
+            'source_instance_id' => 999_999,
+        ])->assertNotFound()->assertJsonPath('error.code', 'instance.copy_source_missing');
+
+        expect($copier->inspections)->toBe(0)
+            ->and($copier->copies)->toBe(0)
+            ->and(Instance::query()->count())->toBe(0);
+    });
+});
+
+function copy_development_source(): Instance
+{
+    $source = Instance::query()->create([
+        'project_id' => test()->orbitApp->id,
+        'node_id' => test()->node->id,
+        'name' => 'default',
+        'source_layout' => InstanceSourceLayout::Checkout->value,
+        'checkout_path' => '/srv/orbit/apps/acme/default',
+        'branch' => 'main',
+        'starting_commit' => str_repeat('b', 40),
+        'vite_port' => 5173,
+        'status' => InstanceState::Active,
+    ]);
+    DB::table('vite_port_assignments')->insert([
+        'instance_id' => $source->id,
+        'node_id' => $source->node_id,
+        'port' => 5173,
+    ]);
+
+    return $source->refresh();
+}
+
+function bind_development_copier(): FakeDevelopmentInstanceCheckoutCopier
+{
+    $copier = new FakeDevelopmentInstanceCheckoutCopier;
+    app()->instance(DevelopmentInstanceCheckoutCopier::class, $copier);
+
+    return $copier;
+}
+
+function deadline_copy_copier(DeadlineOnCopySshExecutor $ssh): RemoteDevelopmentInstanceCheckoutCopier
+{
+    return new RemoteDevelopmentInstanceCheckoutCopier(
+        ssh: $ssh,
+        keys: new class implements SshKeyProvider
+        {
+            public function privateKeyPath(): string
+            {
+                return '/orbit/ssh/id_ed25519';
+            }
+
+            public function publicKey(): string
+            {
+                return 'ssh-ed25519 AAAA orbit';
+            }
+        },
+        knownHosts: new class implements KnownHostsStore
+        {
+            public function path(): string
+            {
+                return '/orbit/ssh/known_hosts';
+            }
+
+            public function put(string $host, int $port, HostKey $key): void {}
+        },
+        accounts: app(ManagedUserAccountResolver::class),
+        storageRoots: app(StorageRootResolver::class),
+        nodeSettings: app(NodeSettingsNormalizer::class),
+    );
+}
+
+function copy_laravel_configurator(): CopyLaravelConfigurator
+{
+    $configuration = new CopyLaravelConfigurator;
+    app()->instance(DevelopmentInstanceConfigurator::class, $configuration);
+
+    return $configuration;
+}
+
+final class CopyLaravelConfigurator implements DevelopmentInstanceConfigurator
+{
+    public ?string $url = null;
+
+    public function inspect(Instance $instance): DevelopmentSourceProfile
+    {
+        return new DevelopmentSourceProfile('8.5', true);
+    }
+
+    public function configureLaravelUrl(Instance $instance, string $url): void
+    {
+        $this->url = $url;
+    }
+}

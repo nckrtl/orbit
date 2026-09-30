@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Hibernation;
 
+use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\Hibernation\HibernationException;
 use App\Domain\Hibernation\InstanceCheckoutInspector;
 use App\Domain\Hibernation\LocalRuntimeDependencies;
@@ -27,6 +28,7 @@ final readonly class RemoteInstanceCheckoutInspector implements InstanceCheckout
         private KnownHostsStore $knownHosts,
         private ManagedUserAccountResolver $accounts,
         private int $restoreTimeoutSeconds = RuntimeHibernation::DefaultColdWakeTimeoutSeconds,
+        private ?AppDevSourceOperationLock $sourceLock = null,
     ) {}
 
     public function inspect(Instance $instance): RuntimeDependencyState
@@ -67,21 +69,26 @@ final readonly class RemoteInstanceCheckoutInspector implements InstanceCheckout
             return;
         }
 
-        $result = $this->ssh->execute(
-            $this->connection($instance->node),
-            new RemoteCommand(
-                ['sudo', 'bash', '-seu', '--', $checkout, ...$targets],
-                self::pruneScript(),
-            ),
-        );
+        ($this->sourceLock ?? app(AppDevSourceOperationLock::class))->synchronized(
+            (int) $instance->node_id,
+            function () use ($instance, $checkout, $targets): void {
+                $result = $this->ssh->execute(
+                    $this->connection($instance->node),
+                    new RemoteCommand(
+                        ['sudo', 'bash', '-seu', '--', $checkout, ...$targets],
+                        self::pruneScript(),
+                    ),
+                );
 
-        if ($result->succeeded()) {
-            return;
-        }
+                if ($result->succeeded()) {
+                    return;
+                }
 
-        throw new HibernationException(
-            errorCode: 'hibernation.checkout_prune_failed',
-            message: "Checkout dependency prune failed on Instance [{$instance->name}].",
+                throw new HibernationException(
+                    errorCode: 'hibernation.checkout_prune_failed',
+                    message: "Checkout dependency prune failed on Instance [{$instance->name}].",
+                );
+            },
         );
     }
 

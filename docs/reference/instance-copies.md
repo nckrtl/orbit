@@ -9,7 +9,7 @@ covers:
   - apps/cli/app/Commands/Instances/CreateInstanceCommand.php
   - packages/php-sdk/src/Requests/Instances/CreateInstanceRequest.php
   - apps/gateway/app/Infrastructure/Tasks/TaskWorkspaceProvisioner.php
-  - apps/gateway/app/Infrastructure/Instances/{RemoteInstanceSqliteSeeder,RemoteInstanceDestinationGuard}.php
+  - apps/gateway/{app/Infrastructure/Instances/{RemoteInstanceSqliteSeeder,RemoteInstanceDestinationGuard,RemoteDevelopmentInstanceCheckoutCopier}.php,database/migrations/{2026_09_12_000000_add_clone_evidence_to_app_instances.php,2026_10_06_000000_add_instance_copy_evidence.php}}
 ---
 
 # Instance copies
@@ -285,7 +285,7 @@ A failure after the copy starts does not leave the row reserved, unless the life
 A copy stays on one Node. The source checkout is not modified.
 
 - Reflink is attempted first. A plain copy runs only after `EOPNOTSUPP`, `EXDEV`, `EAGAIN`, or `EINVAL`.
-- The Node source lock covers the copy. The dependency prune takes that same lock before it deletes `vendor` or `node_modules`. It does not take the lock today. The copy change adds it.
+- The Node source lock covers the copy. The dependency prune takes that same lock before it deletes `vendor` or `node_modules`.
 - Setup runs. A copied `vendor` or `node_modules` makes the matching step cheap.
 - The source is not stopped. SQLite consistency comes from snapshots.
 - MySQL and PostgreSQL servers are shared. Their attachment rows are copied.
