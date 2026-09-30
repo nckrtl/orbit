@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 168 concrete public Gateway API operations:
+The SDK models exactly 169 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -21,7 +21,7 @@ The SDK models exactly 168 concrete public Gateway API operations:
 - Metrics: enable, disable, status, credentials, credential reset, exporter enable, and exporter disable.
 - Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.
 - GitHub App: install, show, and destroy.
-- proxycli: enable, disable, status, provider list, provider show, and account update.
+- proxycli: enable, disable, status, provider list, provider show, account update, and model list.
 - Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, and agent thread list.
 
 The four abstract request bases are implementation details, not extra Gateway
@@ -103,7 +103,7 @@ operations. Keep the public API typed and small.
   inspection execution.
 - Keep proxycli transport limited to Node ID, Redis connection slug, CLIProxyAPI
   URL, and management key on enable; a provider slug on show; and an account
-  identity plus disabled flag on update. Status, disable, and provider list are
+  identity plus disabled flag on update. Status, disable, provider list, and model list are
   bodyless. Item and collection responses omit tokens and the management key.
   The Gateway owns Valkey placement, collection, publication, and pooling.
 - Keep Tasks transport limited to numeric task group and subtask IDs, the

@@ -60,6 +60,7 @@ use Orbit\Sdk\Requests\Projects\AddProjectExcludedNodeRequest;
 use Orbit\Sdk\Requests\Projects\ListProjectExcludedNodesRequest;
 use Orbit\Sdk\Requests\Projects\RemoveProjectExcludedNodeRequest;
 use Orbit\Sdk\Requests\Projects\UpdateProjectRequest;
+use Orbit\Sdk\Requests\ProxyCli\ListProxyCliModelsRequest;
 use Orbit\Sdk\Requests\ProxyCli\ListProxyCliProvidersRequest;
 use Orbit\Sdk\Requests\ProxyCli\SetupProxyCliRequest;
 use Orbit\Sdk\Requests\ProxyCli\ShowProxyCliProviderRequest;
@@ -226,6 +227,7 @@ describe('repository guidance bootstrap', function (): void {
             ListProxyCliProvidersRequest::class,
             ShowProxyCliProviderRequest::class,
             UpdateProxyCliAccountRequest::class,
+            ListProxyCliModelsRequest::class,
         ];
         $taskRequests = [
             ShowTasksStatusRequest::class,
@@ -430,15 +432,15 @@ describe('repository guidance bootstrap', function (): void {
             ->toEqualCanonicalizing($taskRequests);
     });
 
-    it('documents the 168-operation SDK surface including proxycli transport', function (): void {
+    it('documents the 169-operation SDK surface including proxycli transport', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 168 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 169 concrete public Gateway API operations:')
             ->toContain('- Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.')
             ->toContain('- Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.')
-            ->toContain('- proxycli: enable, disable, status, provider list, provider show, and account update.')
+            ->toContain('- proxycli: enable, disable, status, provider list, provider show, account update, and model list.')
             ->toContain('- Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, and agent thread list.')
             ->toContain(
                 '- Node: list, show, add, rename, settings update, remove, access add, access remove, role list, role add, role relocate, role remove, and metrics.',
@@ -498,7 +500,7 @@ describe('repository guidance bootstrap', function (): void {
                 'Attach and detach send an Instance ID-or-domain selector, the connection slug, and an optional prefix.',
             )
             ->toContain(
-                'Keep proxycli transport limited to Node ID, Redis connection slug, CLIProxyAPI URL, and management key on enable; a provider slug on show; and an account identity plus disabled flag on update.',
+                'Keep proxycli transport limited to Node ID, Redis connection slug, CLIProxyAPI URL, and management key on enable; a provider slug on show; and an account identity plus disabled flag on update. Status, disable, provider list, and model list are bodyless.',
             );
 
         expect(repository_guidance_normalized_contents('.ai/rules/redaction-security.md'))
@@ -508,8 +510,8 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(repository_guidance_normalized_contents('README.md'))
             ->toContain(
-                'The SDK exposes exactly 168 public Gateway operations.',
-                'The SDK exposes typed enable, disable, status, provider list, provider show, and account update requests for the optional CLIProxyAPI quota collector.',
+                'The SDK exposes exactly 169 public Gateway operations.',
+                'The SDK exposes typed enable, disable, status, provider list, provider show, account update, and model list requests for the optional CLIProxyAPI quota collector.',
                 'The SDK exposes typed list, show, add, update, remove, attach, detach, query, tables, schema, describe, and user create requests for Gateway-owned database connection records.',
                 'The SDK exposes typed list, create, show, update, and destroy requests for Project process and Schedule definitions.',
                 'The SDK exposes typed list, add, show, run, logs, complete, remove, and activate requests for Node and Instance Schedules.',

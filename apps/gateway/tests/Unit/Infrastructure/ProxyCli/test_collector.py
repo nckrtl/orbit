@@ -43,7 +43,11 @@ class CollectorTests(unittest.TestCase):
         self.c.cache.set(m.SNAPSHOT_KEY, json.dumps({'accounts': [a]}))
         other = m.Collector(self.c.cache)
         other._auth_files = lambda: [{**self.file, 'provider': 'claude'}]
-        other._request = lambda *a: self.fail('cached quota must be reused')
+        def request(method, path, body=None):
+            if str(path).startswith('/auth-files/models'):
+                return {'models': []}
+            self.fail('cached quota must be reused')
+        other._request = request
         other.collect()
         self.assertEqual(other.snapshot()['accounts'][0]['checked_at'], a['checked_at'])
     def test_all_provider_parsers(self):
@@ -118,5 +122,187 @@ class GrokFallbackTests(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertEqual(calls[1][2]['header']['Content-Type'], 'application/grpc-web-text')
         self.assertEqual(a['next_check_at'] - a['checked_at'], 300)
+
+class CollectorModelTests(unittest.TestCase):
+    def test_maps_auth_file_models_without_calling_v1_models(self):
+        import io
+        import os
+        import urllib.error
+        import urllib.request
+        from urllib.parse import parse_qs, urlsplit
+
+        class Body:
+            def __init__(self, payload):
+                self.payload = payload
+            def read(self):
+                return self.payload
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+
+        files = [
+            {"name": "codex.json", "auth_index": "c1", "provider": "codex", "type": "codex"},
+            {"name": "claude.json", "auth_index": "a1", "provider": "anthropic", "type": "anthropic"},
+            {"name": "plain.json", "auth_index": "p1", "provider": "antigravity", "type": "antigravity"},
+            {"name": "xai.json", "auth_index": "x1", "provider": "xai", "type": "xai"},
+            {"name": "moonshot.json", "auth_index": "m1", "provider": "moonshot", "type": "moonshot"},
+            {"name": "openai.json", "auth_index": "oai", "provider": "openai", "type": "openai"},
+            {"name": "orphan.json", "auth_index": "o1"},
+            {"name": "broken.json", "auth_index": "b1", "provider": "codex", "type": "codex"},
+            {"name": "a b.json", "auth_index": "s1", "provider": "codex", "type": "codex"},
+        ]
+        catalog = {
+            "codex.json": {"models": [
+                {"id": "gpt-5.6-luna", "owned_by": "openai", "display_name": "Luna", "type": "chat"},
+                {"id": "grok-4", "owned_by": "xai"},
+                {"id": "kimi-k2", "owned_by": "moonshot"},
+                {"id": "gemini-2.5", "owned_by": "google"},
+                {"id": "llama-4", "owned_by": "meta"},
+                {"id": "custom-vendor", "owned_by": "acme"},
+                {"id": "gpt-5.6-luna", "owned_by": "anthropic"},
+                {"owned_by": "openai"},
+                {"id": 5, "owned_by": "openai"},
+            ]},
+            "claude.json": {"models": [
+                {"id": "gpt-5.6-luna", "owned_by": "anthropic"},
+                {"id": "claude-opus", "owned_by": "Anthropic", "display_name": "Opus", "type": "chat"},
+                {"id": "no-owner"},
+                {"id": "typed-only", "type": "openai"},
+            ]},
+            "plain.json": {"models": [{"id": "gemini-from-file"}]},
+            "xai.json": {"models": [{"id": "grok-from-file"}]},
+            "moonshot.json": {"models": [{"id": "kimi-from-file"}]},
+            "openai.json": {"models": [{"id": "gpt-from-file"}]},
+            "orphan.json": {"models": [{"id": "dropped"}, {"id": "kept", "owned_by": "openai"}]},
+            "a b.json": {"models": [{"id": "spaced-model", "owned_by": "openai"}]},
+        }
+        seen = []
+
+        def urlopen(request, timeout=10):
+            seen.append(request)
+            url = request.full_url
+            if request.get_method() == "PATCH":
+                return Body(b"{}")
+            if url.endswith("/v0/management/auth-files"):
+                return Body(json.dumps({"files": files}).encode())
+            if "/v0/management/auth-files/models?" in url:
+                name = parse_qs(urlsplit(url).query)["name"][0]
+                if name == "broken.json":
+                    raise urllib.error.HTTPError(url, 500, "error", None, io.BytesIO(b""))
+                return Body(json.dumps(catalog[name]).encode())
+            return Body(b'{"status_code":200,"body":{}}')
+
+        previous_url = os.environ.get("PROXYCLI_CLIPROXY_URL")
+        previous_key = os.environ.get("PROXYCLI_MANAGEMENT_KEY")
+        os.environ["PROXYCLI_CLIPROXY_URL"] = "http://127.0.0.1:8317"
+        os.environ["PROXYCLI_MANAGEMENT_KEY"] = "management-key"
+        original = urllib.request.urlopen
+        urllib.request.urlopen = urlopen
+        try:
+            collector = m.Collector(Cache())
+            collector.collect()
+            snapshot = json.loads(collector.cache.values[m.SNAPSHOT_KEY])
+            collector.toggle("c1", True)
+            toggled = json.loads(collector.cache.values[m.SNAPSHOT_KEY])
+        finally:
+            urllib.request.urlopen = original
+            if previous_url is None:
+                os.environ.pop("PROXYCLI_CLIPROXY_URL", None)
+            else:
+                os.environ["PROXYCLI_CLIPROXY_URL"] = previous_url
+            if previous_key is None:
+                os.environ.pop("PROXYCLI_MANAGEMENT_KEY", None)
+            else:
+                os.environ["PROXYCLI_MANAGEMENT_KEY"] = previous_key
+
+        expected = [
+            {"id": "gpt-5.6-luna", "provider": "codex"},
+            {"id": "grok-4", "provider": "grok"},
+            {"id": "kimi-k2", "provider": "kimi"},
+            {"id": "gemini-2.5", "provider": "google"},
+            {"id": "llama-4", "provider": "meta"},
+            {"id": "custom-vendor", "provider": "acme"},
+            {"id": "claude-opus", "provider": "claude"},
+            {"id": "no-owner", "provider": "claude"},
+            {"id": "typed-only", "provider": "claude"},
+            {"id": "gemini-from-file", "provider": "antigravity"},
+            {"id": "grok-from-file", "provider": "grok"},
+            {"id": "kimi-from-file", "provider": "kimi"},
+            {"id": "gpt-from-file", "provider": "codex"},
+            {"id": "kept", "provider": "codex"},
+            {"id": "spaced-model", "provider": "codex"},
+        ]
+        self.assertEqual(snapshot["models"], expected)
+        self.assertEqual(toggled["models"], expected)
+        self.assertTrue(all(set(item) == {"id", "provider"} for item in snapshot["models"]))
+        model_calls = [request for request in seen if "/auth-files/models?" in request.full_url]
+        self.assertEqual(len(model_calls), len(files))
+        self.assertTrue(all(request.get_header("Authorization") == "Bearer management-key" for request in model_calls))
+        self.assertTrue(all("/v0/management/auth-files/models?" in request.full_url for request in model_calls))
+        self.assertFalse(any("/v1/models" in request.full_url for request in seen))
+
+    def test_models_read_failure_still_writes_quota_snapshot(self):
+        import os
+        import urllib.request
+        from urllib.parse import parse_qs, urlsplit
+
+        class Body:
+            def __init__(self, payload):
+                self.payload = payload
+            def read(self):
+                return self.payload
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+
+        files = [
+            {"name": "codex.json", "auth_index": "c1", "provider": "codex", "type": "codex"},
+            {"name": "slow.json", "auth_index": "a1", "provider": "claude", "type": "claude"},
+            {"name": "junk.json", "auth_index": "x1", "provider": "xai", "type": "xai"},
+        ]
+
+        def urlopen(request, timeout=10):
+            url = request.full_url
+            if url.endswith("/v0/management/auth-files"):
+                return Body(json.dumps({"files": files}).encode())
+            if "/v0/management/auth-files/models?" in url:
+                name = parse_qs(urlsplit(url).query)["name"][0]
+                if name == "slow.json":
+                    raise TimeoutError("timed out")
+                if name == "junk.json":
+                    return Body(b"not-json")
+                return Body(json.dumps({"models": [{"id": "gpt-5.6-luna", "owned_by": "openai"}]}).encode())
+            return Body(b'{"status_code":200,"body":{"rate_limit":{"primary_window":{"used_percent":1,"limit_window_seconds":18000}}}}')
+
+        previous_url = os.environ.get("PROXYCLI_CLIPROXY_URL")
+        previous_key = os.environ.get("PROXYCLI_MANAGEMENT_KEY")
+        os.environ["PROXYCLI_CLIPROXY_URL"] = "http://127.0.0.1:8317"
+        os.environ["PROXYCLI_MANAGEMENT_KEY"] = "management-key"
+        original = urllib.request.urlopen
+        urllib.request.urlopen = urlopen
+        try:
+            collector = m.Collector(Cache())
+            collector.collect()
+        finally:
+            urllib.request.urlopen = original
+            if previous_url is None:
+                os.environ.pop("PROXYCLI_CLIPROXY_URL", None)
+            else:
+                os.environ["PROXYCLI_CLIPROXY_URL"] = previous_url
+            if previous_key is None:
+                os.environ.pop("PROXYCLI_MANAGEMENT_KEY", None)
+            else:
+                os.environ["PROXYCLI_MANAGEMENT_KEY"] = previous_key
+
+        self.assertIn(m.SNAPSHOT_KEY, collector.cache.values)
+        self.assertIn(m.RAW_KEY, collector.cache.values)
+        snapshot = json.loads(collector.cache.values[m.SNAPSHOT_KEY])
+        raw = json.loads(collector.cache.values[m.RAW_KEY])
+        self.assertEqual(sorted(account["id"] for account in snapshot["accounts"]), ["a1", "c1", "x1"])
+        self.assertEqual(sorted(account["id"] for account in raw["accounts"]), ["a1", "c1", "x1"])
+        self.assertEqual(snapshot["models"], [{"id": "gpt-5.6-luna", "provider": "codex"}])
+
 
 if __name__ == '__main__': unittest.main()

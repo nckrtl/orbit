@@ -204,6 +204,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'project:show' => ServingNode::ProjectOwning,
         'project:update' => ServingNode::ProjectOwning,
         'proxycli:list' => ServingNode::Gateway,
+        'proxycli:models' => ServingNode::Gateway,
         'proxycli:setup' => ServingNode::Gateway,
         'proxycli:show' => ServingNode::Gateway,
         'proxycli:status' => ServingNode::Gateway,

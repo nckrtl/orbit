@@ -2408,6 +2408,26 @@ export interface paths {
         patch: operations["proxycli-update"];
         trace?: never;
     };
+    "/api/v1/proxycli/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List proxycli models
+         * @description Returns the models CLIProxyAPI offers, each as `id` and `provider`, from the collector snapshot. The request never calls CLIProxyAPI. A snapshot with no models returns an empty list. Returns `proxycli.disabled` while the collector is not set up.
+         */
+        get: operations["proxycli-models"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/proxycli/providers": {
         parameters: {
             query?: never;
@@ -3539,6 +3559,10 @@ export interface components {
             } | null;
             phases?: Record<string, never>[];
             subtasks?: Record<string, never>[];
+        };
+        ProxyCliModel: {
+            id?: string;
+            provider?: string;
         };
         Schedule: {
             id?: string;
@@ -13376,6 +13400,47 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "proxycli-models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ProxyCliModel"][];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The collector is not set up (`proxycli.disabled`). A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

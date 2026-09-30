@@ -525,6 +525,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('proxycli/providers/{provider}', [ProxyCliController::class, 'show'])
             ->where('provider', '[a-z][a-z0-9-]*')
             ->name('proxycli:show');
+        Route::get('proxycli/models', [ProxyCliController::class, 'models'])->name('proxycli:models');
         Route::patch('proxycli/accounts/{account}', [ProxyCliController::class, 'update'])
             ->where('account', '[A-Za-z0-9._-]+')
             ->name('proxycli:update');

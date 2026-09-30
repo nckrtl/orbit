@@ -4978,6 +4978,22 @@
       }
     },
     {
+      "name": "proxycli-models",
+      "extension": "proxycli",
+      "title": "List proxycli models",
+      "description": "Returns the models CLIProxyAPI offers, each as `id` and `provider`, from the collector snapshot. The request never calls CLIProxyAPI. A snapshot with no models returns an empty list. Returns `proxycli.disabled` while the collector is not set up.",
+      "method": "GET",
+      "path": "/api/v1/proxycli/models",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "proxycli-setup",
       "extension": "proxycli",
       "title": "Set up proxycli",

@@ -521,6 +521,7 @@
               "GET /api/v1/proxycli",
               "POST /api/v1/proxycli",
               "PATCH /api/v1/proxycli/accounts/{account}",
+              "GET /api/v1/proxycli/models",
               "GET /api/v1/proxycli/providers",
               "GET /api/v1/proxycli/providers/{provider}"
             ]

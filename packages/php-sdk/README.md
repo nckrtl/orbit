@@ -9,7 +9,7 @@ gateway application.
 During monorepo development, `apps/cli` consumes this package through a
 Composer path repository with symlinking enabled.
 
-The SDK exposes exactly 168 public Gateway operations. It preserves typed
+The SDK exposes exactly 169 public Gateway operations. It preserves typed
 payloads, bounded responses, structured errors, and request IDs without
 applying Gateway policy. It does not define command-line presentation or
 remote execution behavior.
@@ -65,7 +65,7 @@ The SDK exposes typed list, show, add, update, remove, attach, detach, query, ta
 
 ## proxycli
 
-The SDK exposes typed enable, disable, status, provider list, provider show, and account update requests for the optional CLIProxyAPI quota collector. Enable sends a Node ID, Redis connection slug, CLIProxyAPI URL, and management key. Status, disable, and provider list are bodyless. Item and collection responses omit tokens and the management key. The Gateway owns Valkey placement, collection, publication, and pooling.
+The SDK exposes typed enable, disable, status, provider list, provider show, account update, and model list requests for the optional CLIProxyAPI quota collector. Enable sends a Node ID, Redis connection slug, CLIProxyAPI URL, and management key. Status, disable, provider list, and model list are bodyless. Item and collection responses omit tokens and the management key. The Gateway owns Valkey placement, collection, publication, and pooling.
 
 ## Tasks
 

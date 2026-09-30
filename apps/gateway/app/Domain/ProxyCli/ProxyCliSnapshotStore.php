@@ -71,10 +71,16 @@ final readonly class ProxyCliSnapshotStore
 
     /**
      * @param  list<ProxyCliAccount>  $accounts
+     * @param  list<ProxyCliModel>|null  $models  Null keeps the models already stored in the snapshot.
      */
-    public function write(array $accounts, string $collectedAt): ProxyCliSnapshot
+    public function write(array $accounts, string $collectedAt, ?array $models = null): ProxyCliSnapshot
     {
-        $snapshot = $this->compiler->compile($accounts, $collectedAt);
+        if ($models === null) {
+            $stored = $this->snapshot();
+            $models = $stored === null ? [] : $stored->models;
+        }
+
+        $snapshot = $this->compiler->compile($accounts, $collectedAt, $models);
         $this->cache->put(ProxyCliKeys::Raw, json_encode([
             'accounts' => array_map(static fn (ProxyCliAccount $account): array => $account->toArray(), $accounts),
             'collected_at' => $collectedAt,
@@ -122,7 +128,26 @@ final readonly class ProxyCliSnapshotStore
 
         $collectedAt = is_string($data['collected_at'] ?? null) ? $data['collected_at'] : null;
 
-        return $this->compiler->compile($accounts, $collectedAt);
+        return $this->compiler->compile($accounts, $collectedAt, $this->hydrateModels($data));
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $data
+     * @return list<ProxyCliModel>
+     */
+    private function hydrateModels(array $data): array
+    {
+        $models = [];
+
+        foreach (is_array($data['models'] ?? null) ? $data['models'] : [] as $row) {
+            if (! is_array($row) || ! is_string($row['id'] ?? null) || $row['id'] === '' || ! is_string($row['provider'] ?? null) || $row['provider'] === '') {
+                continue;
+            }
+
+            $models[] = new ProxyCliModel($row['id'], $row['provider']);
+        }
+
+        return $models;
     }
 
     /**

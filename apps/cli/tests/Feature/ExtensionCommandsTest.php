@@ -61,7 +61,7 @@ it('follows the gateway switch through the public command kernel', function (): 
 
     expect($listExit)->toBe(0)
         ->and($taskCommands)->toBe(['tasks:status'])
-        ->and($names)->not->toContain('proxycli:status', 'proxycli:setup', 'proxycli:teardown');
+        ->and($names)->not->toContain('proxycli:models', 'proxycli:status', 'proxycli:setup', 'proxycli:teardown');
 
     [$defaultExit, $defaultOutput] = extension_commands_run([]);
     expect($defaultExit)->toBe(0)

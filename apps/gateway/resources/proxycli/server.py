@@ -15,7 +15,7 @@ import datetime as dt
 import email.utils
 import math
 import uuid
-from urllib.parse import unquote
+from urllib.parse import unquote, urlencode
 import os
 import socket
 import threading
@@ -400,8 +400,9 @@ class Collector:
             self.previous = {a["id"]: a for a in self.snapshot().get("accounts", [])}
             files = self._auth_files()
             accounts = [account for item in files if (account := self._account(item))]
+            models = self._models(files)
             collected_at = time.strftime("%Y-%m-%dT%H:%M:%S%z")
-            snapshot = {"accounts": accounts, "providers": self._pools(accounts), "collected_at": collected_at}
+            snapshot = {"accounts": accounts, "providers": self._pools(accounts), "models": models, "collected_at": collected_at}
             self.cache.set(RAW_KEY, json.dumps({"accounts": accounts, "collected_at": collected_at}))
             self.cache.set(SNAPSHOT_KEY, json.dumps(snapshot))
         finally:
@@ -409,7 +410,7 @@ class Collector:
 
     def snapshot(self) -> dict[str, object]:
         if self.cache is None:
-            return {"accounts": [], "providers": [], "collected_at": None}
+            return {"accounts": [], "providers": [], "models": [], "collected_at": None}
         raw = self.cache.get(SNAPSHOT_KEY)
         snapshot = json.loads(raw) if raw else {"accounts": [], "providers": [], "collected_at": None}
         for account in snapshot.get("accounts", []):
@@ -431,7 +432,13 @@ class Collector:
                 item = {**item, "disabled": disabled, "status": "disabled" if disabled else "enabled"}
             accounts.append(item)
         collected_at = snapshot.get("collected_at")
-        compiled = {"accounts": accounts, "providers": self._pools(accounts), "collected_at": collected_at}
+        models = snapshot.get("models")
+        compiled = {
+            "accounts": accounts,
+            "providers": self._pools(accounts),
+            "models": models if isinstance(models, list) else [],
+            "collected_at": collected_at,
+        }
         if self.cache is not None:
             self.cache.set(RAW_KEY, json.dumps({"accounts": accounts, "collected_at": collected_at}))
             self.cache.set(SNAPSHOT_KEY, json.dumps(compiled))
@@ -442,6 +449,48 @@ class Collector:
         payload = self._request("GET", "/auth-files")
         files = payload.get("files", payload)
         return [item for item in files if isinstance(item, dict)] if isinstance(files, list) else []
+
+    def _models(self, files: list[dict[str, object]]) -> list[dict[str, str]]:
+        """Union of {id, provider} from each auth file. The first file to name an id wins."""
+        found: dict[str, str] = {}
+        ordered: list[dict[str, str]] = []
+        for file in files:
+            name = file.get("name")
+            if not isinstance(name, str) or name == "":
+                continue
+            try:
+                payload = self._request("GET", "/auth-files/models?" + urlencode({"name": name}))
+            except (CollectorHttpError, OSError, ValueError):
+                continue
+            entries = payload.get("models")
+            if not isinstance(entries, list):
+                continue
+            fallback = file.get("provider")
+            fallback_provider = self._model_provider(fallback) if isinstance(fallback, str) and fallback != "" else None
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                model_id = entry.get("id")
+                if not isinstance(model_id, str) or model_id == "" or model_id in found:
+                    continue
+                owned_by = entry.get("owned_by")
+                if isinstance(owned_by, str) and owned_by != "":
+                    provider = self._model_provider(owned_by)
+                elif fallback_provider is not None:
+                    provider = fallback_provider
+                else:
+                    continue
+                found[model_id] = provider
+                ordered.append({"id": model_id, "provider": provider})
+        return ordered
+
+    def _model_provider(self, value: str) -> str:
+        return {
+            "openai": "codex",
+            "anthropic": "claude",
+            "xai": "grok",
+            "moonshot": "kimi",
+        }.get(value.lower(), value)
 
     def _account(self, file: dict[str, object]) -> dict[str, object] | None:
         account_id = file.get("auth_index") or file.get("name")
@@ -614,6 +663,7 @@ class Collector:
         except urllib.error.HTTPError as error:
             retry_after = error.headers.get("Retry-After") if error.headers else None
             seconds = retry_delay({"Retry-After": retry_after}, time.time())
+            error.close()
             raise CollectorHttpError(error.code, seconds) from error
         return payload if isinstance(payload, dict) else {}
 
