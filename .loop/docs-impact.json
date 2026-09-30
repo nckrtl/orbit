@@ -4,6 +4,8 @@
  ".agents/skills/merging-pull-requests/SKILL.md",
  ".agents/skills/reviewing-pull-requests/SKILL.md",
  ".loop/docs-impact.json",
+ ".loop/formal-review-decision.md",
+ ".loop/merge-workflow-proof.md",
  ".loop/planned-paths.json",
  ".loop/task-breakdown.json",
  ".loop/task-breakdown.md",
@@ -12,9 +14,26 @@
  "docs/reference/implementation-loop.md",
  "docs/reference/tasks.md"
  ],
- "impacted_pages": [],
- "surfaces": [],
+ "impacted_pages": [
+ {
+ "page": "unowned",
+ "reasons": [
+ "Unresolved planned surface .loop/merge-workflow-proof.md"
+ ]
+ }
+ ],
+ "surfaces": [
+ {
+ "path": ".loop/merge-workflow-proof.md",
+ "kind": "planned_surface",
+ "owner": "unowned",
+ "reason": "Unresolved planned surface .loop/merge-workflow-proof.md",
+ "generator_status": null
+ }
+ ],
  "surfaces_handled_by_generator": [],
- "errors": [],
- "verdict": "no_docs_change"
+ "errors": [
+ "Unable to resolve planned surface [.loop/merge-workflow-proof.md]; provide an existing path or a covers: owner."
+ ],
+ "verdict": "docs_required"
 }
