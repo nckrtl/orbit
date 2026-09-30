@@ -14,7 +14,7 @@ covers:
 
 This page tells a contributor how a Gateway response change reaches the CLI tests. A fixture is one recorded Gateway response under `packages/php-sdk/fixtures/<family>/<command>/<case>.json`. The Gateway test suite records it and the [API reference](/api/overview) validates it. The CLI test suite replays it through a Saloon mock and compares the complete command output with a stored expectation.
 
-Tool scan and adoption fixtures distinguish formula, cask, and Vite+ global identities, registered and informational packages, dependencies, unsupported artifacts, per-manager scan states, inspection time, and failed scans. Doctor fixtures include informational-only healthy reports and mixed reports with drift or unverifiable findings. Node fixtures include an enrolled Mac with empty roles. Web fixtures preserve registered Tools while a live inventory request fails.
+Tool scan and adoption fixtures distinguish formula, cask, and Vite+ global identities, registered and informational packages, dependencies, unsupported artifacts, per-manager scan states, inspection time, and failed scans. Scan fixtures also record authorization and unmanaged-node refusals. Doctor fixtures include informational-only healthy reports and mixed reports with drift or unverifiable findings. Node fixtures include an enrolled Mac with empty roles. Web fixtures preserve registered Tools while a live inventory request fails.
 
 ## Record a fixture
 

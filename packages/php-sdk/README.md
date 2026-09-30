@@ -9,7 +9,7 @@ gateway application.
 During monorepo development, `apps/cli` consumes this package through a
 Composer path repository with symlinking enabled.
 
-The SDK exposes exactly 168 public Gateway operations. It preserves typed
+The SDK exposes exactly 169 public Gateway operations. It preserves typed
 payloads, bounded responses, structured errors, and request IDs without
 applying Gateway policy. It does not define command-line presentation or
 remote execution behavior.
@@ -39,6 +39,11 @@ $response = $connector
 
 assert($response instanceof ToolResponse);
 ```
+
+`ScanToolInventoryRequest` reads `GET /api/v1/tool-inventory` for one Node.
+The response preserves each manager's scan state and package facts, including
+kind, dependency, registration, and adoption block. It does not adopt a
+package or decide manager policy.
 
 ## Instance deployment and environment
 

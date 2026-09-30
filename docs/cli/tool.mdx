@@ -36,6 +36,8 @@ orbit tool:manager:list --node=ID [--json]
 
 Read installed Homebrew formulae, casks, and Vite+ global packages for one Node. The result distinguishes registered ownership, dependencies, adoption support, and each manager's scan state. It changes no packages or Tool records. An unsuccessful scan is explicit, not an empty successful inventory. The HTTP shape, scan states, and error codes are in [Discover installed packages](/reference/tools#discover-installed-packages).
 
+Human output shows the Node, the inspection time, and one row for each manager's scan state. It then shows one row for each package from a `complete` manager: manager, package, kind, version, dependency, Tool ID when the package is registered, and adoption. An unsupported package includes its block token. A manager that is `absent`, `unsupported`, `incomplete`, or `conflicting` is named separately, because its empty package list is not an inventory. JSON output is that inventory plus `request_id`.
+
 ```bash
 orbit tool:scan --node=ID [--json]
 ```

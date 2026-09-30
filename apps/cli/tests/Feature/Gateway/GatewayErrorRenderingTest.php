@@ -15,6 +15,7 @@ use Orbit\Sdk\Requests\Tools\InstallToolRequest;
 use Orbit\Sdk\Requests\Tools\ListToolManagersRequest;
 use Orbit\Sdk\Requests\Tools\ListToolsRequest;
 use Orbit\Sdk\Requests\Tools\RemoveToolRequest;
+use Orbit\Sdk\Requests\Tools\ScanToolInventoryRequest;
 use Orbit\Sdk\Requests\Tools\ShowToolRequest;
 use Orbit\Sdk\Requests\Tools\UpdateToolRequest;
 use Saloon\Exceptions\Request\FatalRequestException;
@@ -334,6 +335,7 @@ it('renders shared gateway errors safely for every tool command', function (
     ],
     'tool update' => ['tool:update', ['tool' => '41'], UpdateToolRequest::class],
     'tool remove' => ['tool:remove', ['tool' => '41', '--yes' => true], RemoveToolRequest::class],
+    'tool scan' => ['tool:scan', ['--node' => '12'], ScanToolInventoryRequest::class],
 ]);
 
 it('renders malformed successful tool responses through the shared json boundary', function (): void {

@@ -66,12 +66,13 @@ describe('tool inventory authorization and input', function (): void {
         $ssh = new ToolManagerFakeSshExecutor([]);
         app()->instance(SshExecutor::class, $ssh);
 
-        $this->withServerVariables(['REMOTE_ADDR' => $consumer->wireguard_ip])
+        $response = $this->withServerVariables(['REMOTE_ADDR' => $consumer->wireguard_ip])
             ->getJson('/api/v1/tool-inventory?node_id='.$node->id)
             ->assertForbidden()
             ->assertJsonPath('error.code', 'node_access.required');
 
         expect($ssh->commands)->toBe([])->and(Tool::query()->count())->toBe(0);
+        record_fixture($response, 'tools/tool-scan/access-required', 'Orbit\Sdk\Requests\Tools\ScanToolInventoryRequest', 'GET /api/v1/tool-inventory');
     });
 
     it('rejects an empty body field other than the strict node id', function (string $uri, ?string $body = null): void {
@@ -131,6 +132,15 @@ describe('tool inventory authorization and input', function (): void {
         expect(array_keys($response->json('error.details')))->toBe(['step', 'outcome'])
             ->and($ssh->commands)->toBe([])
             ->and($tool->refresh()->installed_version)->toBe('0.150.0');
+
+        $fixture = match ($field) {
+            'status' => 'tools/tool-scan/node-inactive',
+            'ssh_host_fingerprint' => 'tools/tool-scan/node-unmanaged',
+            default => null,
+        };
+        if ($fixture !== null) {
+            record_fixture($response, $fixture, 'Orbit\Sdk\Requests\Tools\ScanToolInventoryRequest', 'GET /api/v1/tool-inventory');
+        }
     })->with([
         'inactive' => ['status', LifecycleStatus::Failed],
         'no fingerprint' => ['ssh_host_fingerprint', null],

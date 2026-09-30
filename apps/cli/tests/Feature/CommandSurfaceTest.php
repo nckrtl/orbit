@@ -189,6 +189,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'tool:list',
         'tool:manager:list',
         'tool:remove',
+        'tool:scan',
         'tool:show',
         'tool:update',
     ]);
@@ -857,6 +858,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'tool:manager:list' => [[], ['node' => null, 'json' => false]],
         'tasks:status' => [[], ['json' => false]],
         'tool:remove' => [['tool'], ['yes' => false, 'json' => false]],
+        'tool:scan' => [[], ['node' => null, 'json' => false]],
         'tool:show' => [['tool'], ['json' => false]],
         'tool:update' => [['tool'], ['json' => false]],
     ];
@@ -1191,6 +1193,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'tool:list' => [['--node' => '1'], ...$profileMissing],
         'tool:manager:list' => [['--node' => '1'], ...$profileMissing],
         'tool:remove' => [['tool' => '1'], ...$profileMissing],
+        'tool:scan' => [['--node' => '1'], ...$profileMissing],
         'tool:show' => [['tool' => '1'], ...$profileMissing],
         'tool:update' => [['tool' => '1'], ...$profileMissing],
     ];

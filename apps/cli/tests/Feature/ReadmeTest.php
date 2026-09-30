@@ -84,6 +84,7 @@ it('documents JavaScript processes through the managed Vite+ entry point', funct
 it('documents tool management through the gateway boundary', function (): void {
     $readme = file_get_contents(base_path('README.md'));
     $toolFlow = <<<'MARKDOWN'
+        ./orbit tool:scan --node=12
         ./orbit tool:manager:list --node=12
         ./orbit tool:install @openai/codex --node=12 --manager=vp --constraint='^0.150'
         ./orbit tool:list --node=12

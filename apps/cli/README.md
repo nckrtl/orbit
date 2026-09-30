@@ -114,6 +114,7 @@ dependencies continue to use Composer.
 ## Tool Management
 
 ```bash
+./orbit tool:scan --node=12
 ./orbit tool:manager:list --node=12
 ./orbit tool:install @openai/codex --node=12 --manager=vp --constraint='^0.150'
 ./orbit tool:list --node=12
@@ -121,6 +122,9 @@ dependencies continue to use Composer.
 ./orbit tool:show 41
 ./orbit tool:remove 41
 ```
+
+`tool:scan` reads installed Homebrew and Vite+ packages for one Node. It does
+not install, adopt, or change a package.
 
 Use `vp` for npm-compatible global tools such as Codex and Claude Code. Use
 Composer for `vendor/package` tools and APT for Ubuntu packages. A constraint
