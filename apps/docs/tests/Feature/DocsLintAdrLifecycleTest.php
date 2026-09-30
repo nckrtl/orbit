@@ -109,10 +109,36 @@ it('adr lifecycle rejects new ADRs missing status or principle', function (): vo
 
 it('adr lifecycle rejects an older unlisted ADR and an addition to the committed allowlist', function (): void {
     $root = adrLifecycleFixture();
-    file_put_contents($root.'/docs/decisions/0179-unlisted.md', "# Legacy\n");
-    expectAdrLifecycleLintFailure($root, 'Unretired legacy ADR 0179 is not in the allowlist.');
+    file_put_contents($root.'/docs/decisions/0175-unlisted.md', "# Legacy\n");
+    expectAdrLifecycleLintFailure($root, 'Unretired legacy ADR 0175 is not in the allowlist.');
     file_put_contents($root.'/apps/docs/config/adr-legacy-allowlist.php', "<?php return ['0114', '0179'];\n");
     expectAdrLifecycleLintFailure($root, 'Legacy ADR allowlist cannot add 0179.');
+});
+
+it('adr lifecycle accepts a gap number that follows the in-progress rules', function (): void {
+    $root = adrLifecycleFixture();
+    $path = $root.'/docs/decisions/0176-outer-loop.md';
+    file_put_contents($path, "# Decision\n\n## Status\n\nProposed.\n");
+    expectAdrLifecycleLintFailure($root, 'ADR 0180+ must say In progress. in its Status section.');
+    file_put_contents($path, "# Decision\n\n## Status\n\nIn progress.\n");
+    expectAdrLifecycleLintFailure($root, 'ADR 0180+ must include a Principle: line in its Status section.');
+    file_put_contents($path, "# Decision\n\n## Status\n\nIn progress.\n\nPrinciple: lean.\n");
+    foreach (['0007', '0020'] as $gap) {
+        file_put_contents($root."/docs/decisions/{$gap}-gap.md", "# Decision\n\n## Status\n\nIn progress.\n\nPrinciple: lean.\n");
+    }
+    expect(new AdrLifecycle($root)->findings())->toBe([]);
+});
+
+it('adr lifecycle refuses to reuse a retired number', function (): void {
+    $root = adrLifecycleFixture();
+    file_put_contents($root.'/docs/decisions/overview.mdx', "## Records\n\n## Retired decisions\n\n| Record | Decision | Now in |\n| --- | --- | --- |\n| 0114 | Expand the three-node Incus Cluster | [Topology](/reference/incus-topologies) |\n| 0010 | Record decisions before implementation issues | [Guide](/contributor-guide) |\n");
+    file_put_contents($root.'/apps/docs/config/adr-retired-slugs.php', "<?php return ['0114' => ['0114-expand-the-three-node-incus-cluster'], '0010' => ['0010-record-decisions-before-implementation-issues']];\n");
+    file_put_contents($root.'/docs/docs.json', json_encode(['redirects' => [
+        ['source' => '/decisions/0114-expand-the-three-node-incus-cluster', 'destination' => '/reference/incus-topologies'],
+        ['source' => '/decisions/0010-record-decisions-before-implementation-issues', 'destination' => '/contributor-guide'],
+    ]], JSON_THROW_ON_ERROR));
+    file_put_contents($root.'/docs/decisions/0010-new-slug.md', "# Decision\n\n## Status\n\nIn progress.\n\nPrinciple: lean.\n");
+    expectAdrLifecycleLintFailure($root, 'Retired ADR number 0010 cannot be reused.');
 });
 
 it('adr lifecycle accepts independent allowlist removals merged from sibling branches', function (): void {

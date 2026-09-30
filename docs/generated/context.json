@@ -666,6 +666,30 @@
             ]
         },
         {
+            "path": "docs/decisions/0176-file-repro-first-bug-groups.md",
+            "title": "ADR 0176: File recurring production problems as repro-first bug groups",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Access grant",
+                "Activity",
+                "Deliverable",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Node",
+                "Project",
+                "Schedule",
+                "Subtask",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0176"
+            ]
+        },
+        {
             "path": "docs/decisions/0177-remove-the-app-compatibility-surface.md",
             "title": "ADR 0177: Remove the app compatibility surface",
             "kind": "decision",
@@ -789,6 +813,7 @@
             "governing_adrs": [
                 "0097",
                 "0175",
+                "0176",
                 "0178",
                 "0182"
             ]
@@ -1869,6 +1894,7 @@
                 "apps/web"
             ],
             "concepts": [
+                "Access grant",
                 "Activity",
                 "Deliverable",
                 "Doctor",
@@ -1890,6 +1916,7 @@
                 "Turn receipt"
             ],
             "governing_adrs": [
+                "0176",
                 "0182"
             ]
         },
