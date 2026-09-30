@@ -68,7 +68,7 @@ orbit project:show <project> [--json]
 
 ## orbit project:update
 
-Change a Project's type, source defaults, or task check. Omitted fields stay unchanged. The Gateway reconciles affected development sources, checkouts, Routes, inherited web roots, and runtimes before publishing the change. It does not start a production deployment. See [Update a Project](/reference/projects#update-a-project) for validation, rollback, and retry behavior.
+Change a Project's type, source defaults, task check, or task workspace routing. Omitted fields stay unchanged. The Gateway reconciles affected development sources, checkouts, Routes, inherited web roots, and runtimes before publishing the change. It does not start a production deployment. See [Update a Project](/reference/projects#update-a-project) for validation, rollback, and retry behavior.
 
 ```bash
 orbit project:update <project> [--type=TYPE] [--slug=SLUG] [--repository=URL] [--default-branch=BRANCH] [--root=PATH] [--task-check=COMMAND] [--clear-task-check] [--task-workspace-routed=true|false]

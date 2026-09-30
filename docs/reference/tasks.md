@@ -201,7 +201,9 @@ A `command` deliverable with `fails_on_base: true` proves that the command fails
 | Base | The start commit, or its fallback base, plus the files in `paths` from the working tree | The command exits nonzero |
 | Working tree | The implementer's tree | The command exits 0 |
 
-The base run extracts an archive of the start commit into a directory under the workspace's `.git/orbit/bases/`. It copies installed `vendor` and `node_modules` directories from the workspace, then copies each file in `paths`, including an uncommitted or untracked file. It runs the command there with `bash -lc`. It does not change the workspace and registers no Git worktree. The check removes the directory when the run ends, and the next check removes a directory that a killed run left behind.
+The base run extracts an archive of the start commit into a directory under the workspace's `.git/orbit/bases/`. It copies installed `vendor` and `node_modules` directories from the workspace, and no other dependency directory, then copies each file in `paths`, including an uncommitted or untracked file. It runs the command there with `bash -lc`. It does not change the workspace and registers no Git worktree. The check removes the directory when the run ends, and the next check removes a directory that a killed run left behind.
+
+A command that needs another installed tree, such as a Python virtualenv or a Rust `target` directory, can fail on that base tree only because the tree is missing. That nonzero exit satisfies `fails_on_base` and is not evidence that the command reproduced a bug. This copy is retained. A follow-up has to widen it or stop counting a missing dependency as reproduction evidence.
 
 The base run stops after 600 seconds, and a timed-out run counts as failing on the start commit. Exit 126 or 127 means the command did not run, so the deliverable fails. When the base command exits 0, the deliverable fails because the command does not reproduce the failure. The check stores the exit code and the tail of the output, at most 4,096 characters. It records `base_started`, `base_exit_code`, and `base_output`. A timed-out run also records `base_timed_out` and `base_timeout_seconds`. The engine does not read test names or runner output. The Project's command does that. Show and the turn file include `fails_on_base`. An omitted input is stored as `false`.
 
@@ -267,7 +269,7 @@ When the workspace is ready, the task becomes `running`, and its first subtask s
 | Cause | Result |
 | --- | --- |
 | Every fitting Node is full | The task waits without a reason. When no `app-dev` Node has capacity, claims stop until the next tick. |
-| No Node fits, the Project lacks a valid default branch or repository, a visitable Project lacks a valid root, or provisioning throws | Reason `Workspace provisioning did not return an instance.` The error goes to the Gateway log. |
+| No Node fits, the Project lacks a valid default branch or repository, a routed workspace lacks a valid root, or provisioning throws | Reason `Workspace provisioning did not return an instance.` The error goes to the Gateway log. |
 | The move to `running` fails after provisioning | Reason `The task could not start after its workspace was provisioned.` The task keeps its workspace. |
 | The task stays `reserved` longer than `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` | Reason `The task stayed reserved too long and returned to todo.` |
 
@@ -370,7 +372,6 @@ When the acting thread is `idle`, `done`, or `asking_for_input`, the tick checks
 | --- | --- |
 | `turn_receipt` | A turn receipt for this turn and role exists. A `blocked` receipt needs a question |
 | `waiting_for_input` | The thread has no pending question or approval |
-| `check_script` | The task check does not run `composer check`, or `composer.json` at the workspace root defines a non-empty `check` script |
 | `deliverables` | The receipt confirms the required deliverables, and every deliverable passes |
 | `check_passed` | The [task check](#project-check) passed |
 | `workspace_unchanged` | The reviewer left the workspace as it was. See [Review a subtask](#review-a-subtask) |
@@ -415,7 +416,7 @@ A Pi thread whose turn id is the key has accepted the reservation. On T3, a mess
 
 ## Project check
 
-Each Project stores one task check command in `task_check`. Orbit runs it on the fresh workspace before the first implementer starts, and after each `ready_for_review` receipt whose other items pass. Change it with `orbit project:update <project> --task-check=COMMAND`, or clear it with `--clear-task-check`. A new Project gets the default of its type: `composer check` for `laravel-app` and `laravel-package`, and none for `monorepo` and `node-package`.
+Each Project stores one task check command in `task_check`. Orbit runs it on the fresh workspace before the first implementer starts, and after each `ready_for_review` receipt whose other items pass. Change it with `orbit project:update <project> --task-check=COMMAND`, or clear it with `--clear-task-check`. A new Project stores no task check until one is configured, for every type. Existing stored checks remain unchanged.
 
 The Gateway installs `.git/orbit/check` and starts it over SSH as a detached process group. The check records HEAD and a hash of the whole working tree, uncommitted and untracked files included, without touching the Git index. It runs the command in a login shell at the workspace root, writes the output to `.git/orbit/check.log`, and writes `.git/orbit/check.json` when the command ends. The subtask stays `running` while the check runs. There is no time limit.
 
@@ -686,7 +687,9 @@ These Gateway environment keys configure the extension.
 
 ## Project-owned task policy
 
-The engine knows the configured check, lifecycle steps, workspace routing, and typed deliverables. It does not select policy by slug, package manager, manifest, or CI job name. A command may use any toolchain installed on the task Node. The rubric does not require a Composer script or inspect a manifest to judge the Project's check.
+The engine knows the configured check, lifecycle steps, workspace routing, and typed deliverables. It does not select a task check, a fixup, or workspace routing by slug, package manager, manifest, or CI job name. A command may use any toolchain installed on the task Node. The rubric does not require a Composer script or inspect a manifest to judge the Project's check.
+
+The base run is the exception that remains. It copies only installed `vendor` and `node_modules` directories into the start-commit archive, as [Prove a command fails on the start commit](#prove-a-command-fails-on-the-start-commit) describes. A Project whose command needs other installed dependencies cannot treat that base failure as a reproduction.
 
 New Projects have no task check until one is configured, regardless of type. Existing stored checks remain unchanged. Shared instructions, reminders, the check runner, and pull request descriptions name only an explicit Project check; none supplies a fallback. Without a check, Orbit still verifies the tree and deliverables and requires review.
 
@@ -730,7 +733,9 @@ Orbit cannot check prose, so a subtask names typed items. The check script runs 
 
 ### A command must fail on the start commit
 
-A command that only passes on the fixed code does not prove it covers the bug. So a base run uses the start commit and adds only the files named in `paths`. The base tree is an extracted archive inside `.git/orbit/bases/`, not a registered worktree, because a killed run would leave a registered worktree that blocks removal of the clone. Exit 126 or 127 is not that proof: the command did not run.
+A command that only passes on the fixed code does not prove it covers the bug. So a base run uses the start commit and adds only the files named in `paths`. It also copies installed `vendor` and `node_modules` directories so a Composer or JavaScript command can run, and it copies nothing else. A missing Python or Rust dependency tree is not proof that the bug existed on the start commit.
+
+The base tree is an extracted archive inside `.git/orbit/bases/`, not a registered worktree, because a killed run would leave a registered worktree that blocks removal of the clone. Exit 126 or 127 is not that proof: the command did not run.
 
 ### One reminder, then a person
 

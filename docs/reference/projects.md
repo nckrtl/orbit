@@ -79,7 +79,7 @@ When [`instance:register`](/domains/applications#register-an-existing-checkout) 
 | `task_check` and `--task-check` | Optional command that task baselines and handoffs run ([Project check](/reference/tasks#project-check)). Omitted or null runs no check command for any type. Existing stored commands remain unchanged. |
 Registration never picks `node-package` and has no type option. Change the type afterwards with `project:update --type`.
 
-SDK Project responses and the `project:list` and `project:show` commands expose the stored type, repository, default branch, root, and task check. The task check is an ordinary setting, like setup steps, so activity records it as sent. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` compatibility name.
+SDK Project responses and the `project:list` and `project:show` commands expose the stored type, repository, default branch, root, task check, and `task_workspace_routed`. The task check is an ordinary setting, like setup steps, so activity records it as sent. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` compatibility name.
 
 A value you pass fills an unresolved value only. It must match what the Gateway verifies:
 
@@ -95,7 +95,7 @@ Valid explicit values fill only unresolved or optional values. They do not overr
 
 ## Retry creation safely
 
-Repeating `project:create` with the same name, slug, type, repository access URL, default branch, root, and any sent task check returns the existing Project. A retry does not look up an omitted branch again.
+Repeating `project:create` with the same name, slug, type, repository access URL, default branch, root, any sent task check, and any sent `task_workspace_routed` value returns the existing Project. Omitting `task_workspace_routed` keeps the stored value. A retry does not look up an omitted branch again.
 
 A retry that changes any creation value fails with `project.identity_conflict` and does not mutate the Project. A different repository access URL is a changed value even when it has the same canonical repository identity, so creation never switches the stored URL.
 
@@ -107,7 +107,7 @@ Change the code in the web app, or send `PATCH /api/v1/projects/{project}` with 
 
 ## Update a Project
 
-Use `project:update` when an existing Project must change its type, slug, repository access URL, default branch, relative web root, or task check. The Gateway API accepts `PATCH /api/v1/projects/{project}` with those same fields. The PHP SDK sends `UpdateAppRequest` to that path. Omitted fields stay unchanged; send `task_check: null` to clear the task check. The MCP `project-update` tool accepts the same fields, including `task_workspace_routed`. The [Update lifecycle](#update-lifecycle) defines source reconciliation. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
+Use `project:update` when an existing Project must change its type, slug, repository access URL, default branch, relative web root, task check, or task workspace routing. The Gateway API accepts `PATCH /api/v1/projects/{project}` with those same fields, including `task_workspace_routed`. The PHP SDK sends `UpdateProjectRequest` to that path. Omitted fields stay unchanged; send `task_check: null` to clear the task check. The CLI and the MCP `project-update` tool accept the same fields. The [Update lifecycle](#update-lifecycle) defines source reconciliation. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
 
 ```bash
 orbit project:update 3 --repository=https://github.com/acme/site.git --default-branch=stable
@@ -122,7 +122,7 @@ orbit project:update 3 --repository=https://github.com/acme/site.git --default-b
 | `repository_url` and `--repository` | Runs `git remote set-url origin` in each development checkout. Equivalent HTTPS and SSH URLs share an identity. See [Repository changes](#repository-changes). |
 | `default_branch` and `--default-branch` | Must exist on the remote. Switches every development `default` Instance without a `branch_override`. Explicit overrides stay unchanged. |
 | `root` and `--root` | Changes the effective root of every Instance without its own root. Orbit reprojects the runtime of each such Instance that has a Route. |
-| `task_check` and `--task-check` | Sets the command task baseline and handoffs run. Send null or `--clear-task-check` to run no check. |
+| `task_check` and `--task-check` | Sets the command that task baselines and handoffs run. Send null or `--clear-task-check` to run no check. |
 | `task_workspace_routed` and `--task-workspace-routed=true\|false` | Sets routing for future task workspaces. Existing workspaces keep their recorded mode and Routes. |
 
 A type change must keep a valid root. When the stored root is `.` and the new type does not allow it, validation fails on `root`. Send a web root with the type change. A type or root change that leaves a Route target with root `.` returns `route.target_web_root_unsupported`.
