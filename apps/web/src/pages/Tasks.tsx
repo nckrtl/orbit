@@ -1,3 +1,4 @@
+import { DefinitionPane } from "../definitions/definition-pane";
 import { AgentSessions } from "../tasks/AgentSessions";
 import { TaskComments } from "../tasks/TaskComments";
 import { useQuery } from "@tanstack/react-query";
@@ -293,6 +294,12 @@ export function TasksBoard({ instanceId }: { instanceId?: number } = {}) {
     return (
         <div className="flex min-w-0 flex-col gap-[var(--panel-gap)] md:h-full">
             {instanceId === undefined && <PageHeader trail={[{ label: "Tasks" }]} />}
+            {instanceId === undefined && (
+                <DefinitionPane
+                    order={1}
+                    className="w-full max-h-[220px] min-h-[120px] shrink-0 md:max-h-[30%]"
+                />
+            )}
             {groups.isPending && <p role="status">Loading tasks…</p>}
             {groups.error && <TaskError error={groups.error} retry={() => void groups.refetch()} />}
             {groups.data && !groups.error && (

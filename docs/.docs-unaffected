@@ -63,3 +63,4 @@ docs/reference/cli-ux.md: Task contract snapshots follow the new subtask and gro
 
 docs/reference/cli-ux.md: Task definition command snapshots follow the existing input, consent, and presentation rules. This page is unchanged.
 docs/reference/gateway-response-fixtures.md: Task definition fixtures follow the existing recording process. Fixture maintenance on this page is unchanged.
+docs/reference/web-verification.md: The feature map adds the task definition route and its controls. Web verification commands, the map schema, and the demo server are unchanged.
