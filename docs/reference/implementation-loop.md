@@ -38,15 +38,17 @@ A merge needs a complete feature, passing CI, a successful independent code and 
 
 ### Final review of an Orbit task pull request
 
-When the maintainer delegates final review and merge of an Orbit task pull request, the DevOps reviewer uses the maintainer's GitHub CLI profile. The reviewer checks the complete pull request, confirms the independent review evidence, and posts a final review comment. The comment names the full head commit SHA, the checks and results, any remaining limitations, the review evidence, and an explicit verdict such as `Ready to merge`. A limitation that leaves required behavior unverified prevents that verdict. Subtask approvals alone do not replace this final review.
+When the maintainer delegates final review and merge of a named Orbit task pull request, that delegation is the consent for that work only. The DevOps reviewer uses the maintainer's GitHub CLI profile. The reviewer checks the whole pull request, confirms the independent review evidence, and posts a final review comment for the exact head.
 
-The comment is the review gate for this workflow. A formal GitHub approving review is optional. The delegation supplies maintainer authorization for the named work; it does not authorize unrelated merges.
+The comment names the full head commit SHA, the checks and their results, any remaining limitations, links to the review evidence, and an explicit verdict such as `Ready to merge`. A limitation that leaves required behavior unverified prevents that verdict. A Tasks engine subtask approval does not replace this final review of the whole pull request.
 
-Before merging, the reviewer confirms that `Required checks` succeeded on the reviewed head commit and that all blocking findings are resolved. Re-read the pull request head and use `gh pr merge <pr-url> --merge --match-head-commit <reviewed-sha>` from the maintainer's profile. If the head changes, stop, review the new commit, repeat the affected checks, and post an updated verdict before trying again. A failed, pending, missing, or unreadable required check prevents the merge.
+The comment is the review gate. A formal GitHub approving review is optional. The delegation does not authorize an unrelated merge.
 
-This workflow uses an immediate merge after the checks pass. It does not enable GitHub auto-merge. After merging, verify the merged state and record the merge commit. The Tasks scheduler observes the merged pull request and completes the task on its next tick.
+Before the immediate merge, the reviewer confirms that `Required checks` succeeded on that same head, that blocking findings are resolved, that required verification is complete, and that the pull request head still matches the reviewed SHA. The reviewer then runs `gh pr merge <pr-url> --merge --match-head-commit <reviewed-sha>` from the maintainer profile. If the head changes, stop. Review the new commit, repeat the affected checks, and post an updated verdict before trying again. A failed, pending, missing, or unreadable required check prevents the merge.
 
-The maintainer's admin bypass remains in place. GitHub does not enforce the comment or prevent that account from bypassing CI, so the reviewer must check both before invoking the merge. This workflow adds no Gateway merge operation and changes no GitHub ruleset or App permission.
+This workflow merges immediately after those checks pass. It does not enable GitHub auto-merge. After the merge, verify the merged state and record the merge commit. The Tasks scheduler observes the merged pull request and completes the task on its next tick.
+
+The maintainer profile is an admin profile. It bypasses GitHub enforcement of the `Required checks` status rule, including on `gh pr merge`. GitHub does not enforce the final comment. The reviewer checks the comment and the successful `Required checks` result before invoking the merge. This workflow keeps that bypass and does not change the ruleset. It adds no `tasks:merge` command, Gateway merge endpoint, SDK contract, MCP contract, or API contract, and it changes no App permission.
 
 After the merge, keep the review evidence and release the resources allocated to the feature. For a local worktree, run `bin/worktree-remove ISSUE`.
 
@@ -263,9 +265,9 @@ While a test-impact failure is open, the next refresh runs `composer test:affect
 
 ### The maintainer approves every merge
 
-The maintainer decides whether a feature belongs in Orbit and may delegate final review and merge for named work. The final review comment records the reviewed commit and the merge verdict. This keeps the review visible while avoiding a separate GitHub approval step. An agent's review alone does not authorize unrelated work.
+The maintainer decides whether a feature belongs in Orbit. For named Orbit task work, the maintainer can delegate final review and merge. That delegation is the consent to post the final review comment and to merge the reviewed commit. The comment records the reviewed head and the merge verdict, so a formal GitHub approving review is optional. A Tasks engine subtask approval, or any other agent review, does not replace the final review of the whole pull request and does not authorize unrelated work.
 
-For task pull requests, merging with the maintainer's GitHub CLI profile keeps the existing workflow. A Gateway App merge endpoint and a required GitHub approval rule are deferred. They would make GitHub enforce the gate for an identity without bypass, but add credentials, API behavior, and deployment work. The current workflow relies on the DevOps reviewer checking the final comment and green CI before merging the reviewed commit.
+The merge uses the maintainer's GitHub CLI profile. That admin profile bypasses GitHub enforcement of `Required checks`, so the DevOps reviewer checks the final comment and green CI before merging the reviewed commit. A Gateway App merge endpoint and a ruleset change that requires an approving review are deferred. Either change would enforce the gate for an identity without the admin bypass, and either change needs new credentials, API behavior, and deployment work.
 
 ### Every project passes the gate at each handoff
 
