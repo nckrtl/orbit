@@ -3,6 +3,10 @@
  "paths": [
  ".agents/skills/merging-pull-requests/SKILL.md",
  ".agents/skills/reviewing-pull-requests/SKILL.md",
+ ".loop/docs-impact.json",
+ ".loop/planned-paths.json",
+ ".loop/task-breakdown.json",
+ ".loop/task-breakdown.md",
  "docs/contributor-guide.md",
  "docs/generated/context.json",
  "docs/reference/implementation-loop.md",

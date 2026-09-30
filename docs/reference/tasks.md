@@ -518,7 +518,7 @@ Before Orbit commits the approval that opens the pull request, Jev checks the ch
 
 ### Settling
 
-For Orbit's own task pull requests, the [final DevOps review](/reference/implementation-loop#final-review-of-an-orbit-task-pull-request) records a merge verdict in a GitHub comment for the exact head commit. When the maintainer has delegated review and merge, the reviewer verifies green CI and merges that commit through the maintainer's GitHub CLI profile. A formal GitHub approving review is optional. This repository workflow runs outside the generic Tasks engine; the Gateway does not merge the pull request.
+For Orbit's own task pull requests, the [final DevOps review](/reference/implementation-loop#final-review-of-an-orbit-task-pull-request) submits a formal GitHub approval for the exact head commit. When the maintainer has delegated review and merge, the reviewer verifies the approval and green CI, then merges that commit through the maintainer's GitHub CLI profile. A plain comment alone does not satisfy the gate. This repository workflow runs outside the generic Tasks engine; the Gateway does not merge the pull request or read GitHub review feedback.
 
 Each tick reads the pull request of every `settling` task through the GitHub App.
 

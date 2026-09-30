@@ -117,7 +117,7 @@ Orbit's independent reviewer checks the code, the documentation, and the ADRs, a
 
 Address the review findings. Reviewers check the fixes and repeat the affected checks on the updated pull request. A merge needs passing CI, a successful independent code and Incus review, resolved findings, and the maintainer's approval.
 
-For Orbit task pull requests whose final review and merge the maintainer delegates, the DevOps reviewer posts a final review comment and merges the reviewed commit through the maintainer's GitHub CLI profile. The comment records the commit, verification results, limitations, and explicit merge verdict. A formal GitHub approving review is optional. Follow the [final review workflow](/reference/implementation-loop#final-review-of-an-orbit-task-pull-request), including its CI and head-commit checks.
+For Orbit task pull requests whose final review and merge the maintainer delegates, the DevOps reviewer submits a formal GitHub approval for the reviewed commit and merges that commit through the maintainer's GitHub CLI profile. The review body records the commit, verification results, limitations, and verdict. A plain comment alone does not satisfy the gate. Follow the [final review workflow](/reference/implementation-loop#final-review-of-an-orbit-task-pull-request), including its review-state, CI, and head-commit checks.
 
 ## Use an agent
 
