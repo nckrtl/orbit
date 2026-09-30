@@ -29,14 +29,23 @@ const GAP_Y = 56;
 const END_WIDTH = 120;
 const END_HEIGHT = 28;
 const MARGIN = 24;
-/** Low enough that a side column still fits a phone, high enough that a card stays readable. */
-const MIN_START_ZOOM = 0.4;
+const FRAME_PAD = 16;
+/** Tall enough that the phase title is a 44px tap target at the opening zoom. */
+const FRAME_TITLE = 44;
+/** The frame's top edge stays this far below the card above it. */
+const FRAME_CLEARANCE = 8;
+const CONTROL_SIZE = 44;
+const CONTROL_MARGIN = 8;
+/** Empty band at the top of the opening view, so the controls do not cover a card. */
+const CONTROL_BAND = CONTROL_MARGIN + CONTROL_SIZE + FRAME_CLEARANCE;
+/**
+ * Card text is 13px. The drawing opens at full size, so that text stays at least 12px.
+ * A side path that does not fit is reached by panning.
+ */
+const MIN_START_ZOOM = 1;
 /** How far a skipping route sits to the right of the card it leaves, and the step to the next lane. */
 const LANE_OFFSET = 36;
 const LANE_STEP = 20;
-
-const FRAME_PAD = 16;
-const FRAME_TITLE = 22;
 
 type SubtaskData = { subtask: Subtask; selected: boolean; onActivate: () => void };
 type StageData = {
@@ -65,7 +74,8 @@ const laneOffset = (lane: number) => LANE_OFFSET + lane * LANE_STEP;
 
 /**
  * One definition on a canvas. The main path runs down the middle. Detours and failure paths sit to
- * the side. Pan by dragging. Pinch or the controls zoom, and the page still scrolls.
+ * the side. The drawing opens at full size. Pan by dragging to reach a side path. Pinch or the
+ * controls zoom, and the page still scrolls.
  */
 export function DefinitionCanvas({
     definition,
@@ -87,9 +97,10 @@ export function DefinitionCanvas({
     onToggleRef.current = onTogglePhase;
     const graph = useMemo(() => {
         const result = layout(definition, open);
+        const yAt = rankTop(result);
         const columns = Math.max(1, ...result.nodes.map((node) => node.column + 1));
         const nodes: Node[] = result.nodes.map((node) =>
-            toFlowNode(node, selected, onSelectRef, onToggleRef),
+            toFlowNode(node, yAt, selected, onSelectRef, onToggleRef),
         );
         for (const frame of result.frames) {
             const cells = result.nodes.filter(
@@ -101,9 +112,9 @@ export function DefinitionCanvas({
             const minRank = Math.min(...cells.map((cell) => cell.rank));
             const maxRank = Math.max(...cells.map((cell) => cell.rank));
             const x = minColumn * (WIDTH + GAP_X) - FRAME_PAD;
-            const y = minRank * (HEIGHT + GAP_Y) - FRAME_PAD - FRAME_TITLE;
+            const y = yAt(minRank) - FRAME_PAD - FRAME_TITLE;
             const right = (maxColumn + 1) * (WIDTH + GAP_X) - GAP_X + FRAME_PAD;
-            const bottom = (maxRank + 1) * (HEIGHT + GAP_Y) - GAP_Y + FRAME_PAD;
+            const bottom = yAt(maxRank) + HEIGHT + FRAME_PAD;
             nodes.unshift({
                 id: phaseKey(frame.phase.key),
                 type: "frame",
@@ -171,7 +182,7 @@ export function DefinitionCanvas({
                     const available = (wrapper.current?.clientWidth ?? graph.width) - 2 * MARGIN;
                     const zoom = Math.min(1, Math.max(MIN_START_ZOOM, available / graph.width));
                     const x = Math.max(MARGIN, (available + 2 * MARGIN - graph.width * zoom) / 2);
-                    void instance.setViewport({ x, y: MARGIN, zoom });
+                    void instance.setViewport({ x, y: CONTROL_BAND, zoom });
                 }}
                 minZoom={0.25}
                 maxZoom={1.5}
@@ -179,20 +190,56 @@ export function DefinitionCanvas({
                 colorMode="dark"
             >
                 <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
-                <Controls showInteractive={false} position="bottom-right" />
+                <Controls
+                    showInteractive={false}
+                    position="top-right"
+                    orientation="horizontal"
+                    style={{ margin: CONTROL_MARGIN }}
+                />
             </ReactFlow>
         </div>
     );
 }
 
+/**
+ * Top of a rank, in canvas pixels. A phase frame needs room for its title, so the rank where a
+ * frame starts, and every rank below it, moves down until the frame clears the card above.
+ */
+function rankTop(result: {
+    nodes: LayoutNode[];
+    frames: { keys: string[] }[];
+}): (rank: number) => number {
+    const stride = HEIGHT + GAP_Y;
+    const lead = Math.max(0, FRAME_PAD + FRAME_TITLE + FRAME_CLEARANCE - GAP_Y);
+    const leads = new Map<number, number>();
+    for (const frame of result.frames) {
+        const ranks = result.nodes.flatMap((node) =>
+            node.type === "subtask" && frame.keys.includes(node.id) ? [node.rank] : [],
+        );
+        if (ranks.length === 0) continue;
+        const minRank = Math.min(...ranks);
+        if (minRank <= 0) continue;
+        leads.set(minRank, Math.max(leads.get(minRank) ?? 0, lead));
+    }
+    const starts = [...leads.keys()].sort((left, right) => left - right);
+    return (rank: number) => {
+        let extra = 0;
+        for (const start of starts) {
+            if (start <= rank) extra += leads.get(start) ?? 0;
+        }
+        return rank * stride + extra;
+    };
+}
+
 function toFlowNode(
     node: LayoutNode,
+    yAt: (rank: number) => number,
     selected: string | undefined,
     onSelect: RefObject<(key: string) => void>,
     onToggle: RefObject<(phase: string) => void>,
 ): Node {
     const x = node.column * (WIDTH + GAP_X);
-    const y = node.rank * (HEIGHT + GAP_Y);
+    const y = yAt(node.rank);
     if (node.type === "end") {
         return {
             id: node.id,

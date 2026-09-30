@@ -121,7 +121,7 @@ The kind adds fields and declares the outcomes a route may name.
 
 An `action` `operation` is an OpenAPI operation marked `x-orbit-task-action: true`. Orbit marks `instance:deploy` and `instance:rollback`. The Gateway reads those names from the list `bin/mcp-tools` generates, and `bin/mcp-tools --check` keeps that list current. Marking another operation needs its own decision. A `decide` subtask's `evidence` names earlier subtasks by `key`. `min_probability` is from 0 to 1 and defaults to 0.8.
 
-A write does not refuse `implementer_model` or `reviewer_model`. The [ProxyCli model list](/reference/proxycli#models) changes over time. The definition view reports a model that no driver can run. A model is known when ProxyCli offers it, or when it is a Claude model. T3 runs a Claude model on its own Claude subscription. A listed model whose provider no driver runs, such as `google`, is that finding.
+A write does not refuse `implementer_model` or `reviewer_model`. The [ProxyCli model list](/reference/proxycli#models) changes over time. When that list is available, the definition view reports a model that no driver can run. A model is known when ProxyCli offers it, or when it is a Claude model. T3 runs a Claude model on its own Claude subscription. A listed model whose provider no driver runs, such as `google`, is that finding. When the model list is missing, empty, or refused, the view says that the model list is unavailable and reports no driver findings.
 
 ### Routes
 

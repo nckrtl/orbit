@@ -77,9 +77,12 @@ function DefinitionView() {
         ...proxyModelsQuery,
         enabled: proxycliOn,
     });
-    // While ProxyCli's list is still loading, models are not checked. Once the extension state is
-    // known, a list that is off or refused is empty, so each non-Claude model is a finding.
-    const offered = proxycliOn && !models.isFetched ? undefined : (models.data ?? []);
+    // Only a successful, non-empty list is evidence. Off, refused, missing, or empty is not a
+    // reason to say that a model cannot run.
+    const catalog = proxycliOn && models.isSuccess ? (models.data ?? []) : undefined;
+    const offered = catalog !== undefined && catalog.length > 0 ? catalog : undefined;
+    const modelListUnavailable =
+        !proxycliOn || models.isError || (catalog !== undefined && catalog.length === 0);
     const project = projects.data?.find((candidate) => String(candidate.id) === projectId);
     const flow = definition.data ?? undefined;
 
@@ -195,11 +198,16 @@ function DefinitionView() {
                         )}
                         <Frame
                             title="Findings"
-                            topRight={offered === undefined ? undefined : notes.length}
+                            topRight={
+                                offered !== undefined || notes.length > 0 ? notes.length : undefined
+                            }
                             testId="definition-findings"
                         >
-                            {offered === undefined && notes.length === 0 && (
-                                <p role="status">Loading models…</p>
+                            {!modelListUnavailable &&
+                                offered === undefined &&
+                                notes.length === 0 && <p role="status">Loading models…</p>}
+                            {modelListUnavailable && (
+                                <p role="status">The model list is unavailable.</p>
                             )}
                             {offered !== undefined && notes.length === 0 && (
                                 <p className="text-dim">None.</p>
@@ -208,7 +216,7 @@ function DefinitionView() {
                                 <button
                                     key={`${note.key}:${note.message}`}
                                     type="button"
-                                    className="block w-full text-left"
+                                    className="definition-finding block w-full text-left"
                                     onClick={() => select(note.key)}
                                 >
                                     <span className="text-yellow">{note.key}</span> {note.message}

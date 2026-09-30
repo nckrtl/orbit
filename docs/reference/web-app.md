@@ -75,7 +75,7 @@ The lists and the view load when the page opens. They have no realtime event and
 
 The definition view draws that task definition on a canvas from the live `tasks:definition:show` response.
 
-The main path runs down the middle. A detour or a failure path sits in a side column, and each of those paths ends in its own `complete` or `fail` node.
+The main path runs down the middle. A detour or a failure path sits in a side column, and each of those paths ends in its own `complete` or `fail` node. The drawing opens at full size, so the card text stays readable. On a narrow screen, pan to reach a side path.
 
 Each subtask shows its kind, its models, and its routes with their outcome labels. A default route to an end stays hidden. [Routes](/reference/tasks#routes) defines the defaults.
 
@@ -85,7 +85,7 @@ The drawing also shows the stages the engine always runs around the definition. 
 
 A schedule is shown in words, such as "Weekly on Monday at 03:00 UTC".
 
-The view reports a finding in three cases. It reports a subtask that no path reaches. It reports a `decide` subtask whose options all lead to one subtask. It reports a model that no driver can run. A model is known when [ProxyCli](/reference/proxycli#models) offers it, or when it is a Claude model.
+The view reports a finding in three cases. It reports a subtask that no path reaches. It reports a `decide` subtask whose options all lead to one subtask. It reports a model that no driver can run when the [ProxyCli model list](/reference/proxycli#models) is available. A model is known when ProxyCli offers it, or when it is a Claude model. When that list is missing, empty, or refused, the view says that the model list is unavailable and reports no driver findings.
 
 ## Live Activity
 

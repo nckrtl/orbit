@@ -27,6 +27,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 LOCK_KEY = "orbit:proxycli:lock"
 RAW_KEY = "orbit:proxycli:raw"
 SNAPSHOT_KEY = "orbit:proxycli:snapshot"
+MODEL_FILES_KEY = "orbit:proxycli:model-files"
 BACKOFF_PREFIX = "orbit:proxycli:backoff:"
 ACCOUNT_PREFIX = "orbit:proxycli:account:"
 USAGE_URLS = {
@@ -451,38 +452,98 @@ class Collector:
         return [item for item in files if isinstance(item, dict)] if isinstance(files, list) else []
 
     def _models(self, files: list[dict[str, object]]) -> list[dict[str, str]]:
-        """Union of {id, provider} from each auth file. The first file to name an id wins."""
+        """Union of {id, provider} from each auth file. The first file to name an id wins.
+
+        A failed request keeps that auth file's models from the previous poll. A file that
+        answers replaces its own models. A file that is no longer listed drops out.
+        """
+        previous = self._remembered_model_files()
+        by_file: dict[str, list[dict[str, str]]] = {}
         found: dict[str, str] = {}
         ordered: list[dict[str, str]] = []
         for file in files:
             name = file.get("name")
             if not isinstance(name, str) or name == "":
                 continue
-            try:
-                payload = self._request("GET", "/auth-files/models?" + urlencode({"name": name}))
-            except (CollectorHttpError, OSError, ValueError):
+            current = self._models_from_file(file)
+            if current is None:
+                current = previous.get(name)
+            if current is None:
                 continue
-            entries = payload.get("models")
-            if not isinstance(entries, list):
-                continue
-            fallback = file.get("provider")
-            fallback_provider = self._model_provider(fallback) if isinstance(fallback, str) and fallback != "" else None
-            for entry in entries:
-                if not isinstance(entry, dict):
+            by_file[name] = current
+            for item in current:
+                if item["id"] in found:
                     continue
-                model_id = entry.get("id")
-                if not isinstance(model_id, str) or model_id == "" or model_id in found:
-                    continue
-                owned_by = entry.get("owned_by")
-                if isinstance(owned_by, str) and owned_by != "":
-                    provider = self._model_provider(owned_by)
-                elif fallback_provider is not None:
-                    provider = fallback_provider
-                else:
-                    continue
-                found[model_id] = provider
-                ordered.append({"id": model_id, "provider": provider})
+                found[item["id"]] = item["provider"]
+                ordered.append({"id": item["id"], "provider": item["provider"]})
+        self._remember_model_files(by_file)
         return ordered
+
+    def _models_from_file(self, file: dict[str, object]) -> list[dict[str, str]] | None:
+        """Models from one auth file, or None when that request fails."""
+        name = file.get("name")
+        if not isinstance(name, str) or name == "":
+            return []
+        try:
+            payload = self._request("GET", "/auth-files/models?" + urlencode({"name": name}))
+        except (CollectorHttpError, OSError, ValueError):
+            return None
+        entries = payload.get("models") if isinstance(payload, dict) else None
+        if not isinstance(entries, list):
+            return []
+        fallback = file.get("provider")
+        fallback_provider = self._model_provider(fallback) if isinstance(fallback, str) and fallback != "" else None
+        found: dict[str, str] = {}
+        ordered: list[dict[str, str]] = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            model_id = entry.get("id")
+            if not isinstance(model_id, str) or model_id == "" or model_id in found:
+                continue
+            owned_by = entry.get("owned_by")
+            if isinstance(owned_by, str) and owned_by != "":
+                provider = self._model_provider(owned_by)
+            elif fallback_provider is not None:
+                provider = fallback_provider
+            else:
+                continue
+            found[model_id] = provider
+            ordered.append({"id": model_id, "provider": provider})
+        return ordered
+
+    def _remembered_model_files(self) -> dict[str, list[dict[str, str]]]:
+        if self.cache is None:
+            return {}
+        raw = self.cache.get(MODEL_FILES_KEY)
+        if not isinstance(raw, str) or raw == "":
+            return {}
+        try:
+            parsed = json.loads(raw)
+        except ValueError:
+            return {}
+        if not isinstance(parsed, dict):
+            return {}
+        remembered: dict[str, list[dict[str, str]]] = {}
+        for name, models in parsed.items():
+            if not isinstance(name, str) or not isinstance(models, list):
+                continue
+            clean = [
+                {"id": item["id"], "provider": item["provider"]}
+                for item in models
+                if isinstance(item, dict)
+                and isinstance(item.get("id"), str)
+                and item["id"] != ""
+                and isinstance(item.get("provider"), str)
+                and item["provider"] != ""
+            ]
+            remembered[name] = clean
+        return remembered
+
+    def _remember_model_files(self, by_file: dict[str, list[dict[str, str]]]) -> None:
+        if self.cache is None:
+            return
+        self.cache.set(MODEL_FILES_KEY, json.dumps(by_file))
 
     def _model_provider(self, value: str) -> str:
         return {

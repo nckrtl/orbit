@@ -81,7 +81,7 @@ Setup publishes the Caddy site before it recreates the collector Process. The si
 
 ## Collection
 
-The collector is the only process that calls CLIProxyAPI for quota. Every minute it takes the Valkey lock `orbit:proxycli:lock` for up to 120 seconds. When another holder has the lock, it skips the round. It lists the CLIProxyAPI auth files, fetches quota for each account that is due through `POST /v0/management/api-call`, and writes `orbit:proxycli:raw` and `orbit:proxycli:snapshot`.
+The collector is the only process that calls CLIProxyAPI for quota. Every minute it takes the Valkey lock `orbit:proxycli:lock` for up to 120 seconds. When another holder has the lock, it skips the round. It lists the CLIProxyAPI auth files, fetches quota for each account that is due through `POST /v0/management/api-call`, and writes `orbit:proxycli:raw` and `orbit:proxycli:snapshot`. It remembers each auth file's models in `orbit:proxycli:model-files`.
 
 | Rule | Value |
 | --- | --- |
@@ -126,7 +126,7 @@ The web app shows the Quota section while the `proxycli` extension is enabled, a
 
 `GET /api/v1/proxycli/models` (`proxycli:models`) lists the models CLIProxyAPI offers. Each item is `{id, provider}`. The route reads that list from the collector snapshot and does not call CLIProxyAPI.
 
-On each poll, for every auth file from `GET /v0/management/auth-files`, the collector reads `GET /v0/management/auth-files/models?name=` that file's name. It sends the management key as `Authorization: Bearer`. It does not call `GET /v1/models`. That route checks a client API key, and the management key is valid only for `/v0/management`.
+On each poll, for every auth file from `GET /v0/management/auth-files`, the collector reads `GET /v0/management/auth-files/models?name=` that file's name. It sends the management key as `Authorization: Bearer`. It does not call `GET /v1/models`. That route checks a client API key, and the management key is valid only for `/v0/management`. When that request fails, the collector keeps the models it stored for that auth file on the previous poll. A file that answers replaces only its own models. A file the auth list does not include drops out of the union.
 
 A `models` entry always has `id`. It includes `owned_by`, `display_name`, and `type` only when the registry set them. The collector stores one `{id, provider}` per id. It does not store `display_name` or `type`. A repeated id keeps the provider from the first auth file.
 

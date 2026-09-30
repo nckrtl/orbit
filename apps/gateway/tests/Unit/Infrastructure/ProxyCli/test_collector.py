@@ -304,5 +304,77 @@ class CollectorModelTests(unittest.TestCase):
         self.assertEqual(sorted(account["id"] for account in raw["accounts"]), ["a1", "c1", "x1"])
         self.assertEqual(snapshot["models"], [{"id": "gpt-5.6-luna", "provider": "codex"}])
 
+    def test_failed_model_request_keeps_that_auth_files_previous_models(self):
+        import os
+        import urllib.request
+        from urllib.parse import parse_qs, urlsplit
+
+        class Body:
+            def __init__(self, payload):
+                self.payload = payload
+            def read(self):
+                return self.payload
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+
+        files = [
+            {"name": "codex.json", "auth_index": "c1", "provider": "codex", "type": "codex"},
+            {"name": "claude.json", "auth_index": "a1", "provider": "claude", "type": "claude"},
+        ]
+        catalog = {
+            "codex.json": {"models": [{"id": "gpt-5.6-luna", "owned_by": "openai"}]},
+            "claude.json": {"models": [{"id": "claude-opus", "owned_by": "anthropic"}]},
+        }
+        fail = set()
+
+        def urlopen(request, timeout=10):
+            url = request.full_url
+            if url.endswith("/v0/management/auth-files"):
+                return Body(json.dumps({"files": files}).encode())
+            if "/v0/management/auth-files/models?" in url:
+                name = parse_qs(urlsplit(url).query)["name"][0]
+                if name in fail:
+                    raise TimeoutError("timed out")
+                return Body(json.dumps(catalog[name]).encode())
+            return Body(b'{"status_code":200,"body":{}}')
+
+        previous_url = os.environ.get("PROXYCLI_CLIPROXY_URL")
+        previous_key = os.environ.get("PROXYCLI_MANAGEMENT_KEY")
+        os.environ["PROXYCLI_CLIPROXY_URL"] = "http://127.0.0.1:8317"
+        os.environ["PROXYCLI_MANAGEMENT_KEY"] = "management-key"
+        original = urllib.request.urlopen
+        urllib.request.urlopen = urlopen
+        try:
+            collector = m.Collector(Cache())
+            collector.collect()
+            fail.add("codex.json")
+            catalog["claude.json"] = {"models": [{"id": "claude-sonnet", "owned_by": "anthropic"}]}
+            collector.collect()
+            kept = json.loads(collector.cache.values[m.SNAPSHOT_KEY])
+            remembered = json.loads(collector.cache.values[m.MODEL_FILES_KEY])
+            files.remove(files[0])
+            collector.collect()
+            dropped = json.loads(collector.cache.values[m.SNAPSHOT_KEY])
+        finally:
+            urllib.request.urlopen = original
+            if previous_url is None:
+                os.environ.pop("PROXYCLI_CLIPROXY_URL", None)
+            else:
+                os.environ["PROXYCLI_CLIPROXY_URL"] = previous_url
+            if previous_key is None:
+                os.environ.pop("PROXYCLI_MANAGEMENT_KEY", None)
+            else:
+                os.environ["PROXYCLI_MANAGEMENT_KEY"] = previous_key
+
+        self.assertEqual(kept["models"], [
+            {"id": "gpt-5.6-luna", "provider": "codex"},
+            {"id": "claude-sonnet", "provider": "claude"},
+        ])
+        self.assertEqual(remembered["codex.json"], [{"id": "gpt-5.6-luna", "provider": "codex"}])
+        self.assertEqual(remembered["claude.json"], [{"id": "claude-sonnet", "provider": "claude"}])
+        self.assertEqual(dropped["models"], [{"id": "claude-sonnet", "provider": "claude"}])
+
 
 if __name__ == '__main__': unittest.main()
