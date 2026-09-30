@@ -1,0 +1,1 @@
+{"error":{"code":"node.wireguard_required","message":"macOS enrollment requires a WireGuard address that is already on the machine.","details":{"step":"identity"},"request_id":null}}

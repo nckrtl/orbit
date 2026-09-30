@@ -138,6 +138,8 @@ Doctor checks lifecycle, SSH reachability, platform, architecture, tunnel identi
 
 Removing a macOS Node deletes the registry row and the hub peer. It does not delete the user, uninstall Homebrew or Vite+, or edit the host tunnel. It skips the Node agent step and `firewall-recovery`. `retained_on_node` lists `user`, `package-managers`, and `host-wireguard`. A failed hub or registry step uses the normal removal rollback: the Node returns to its previous status, and a removed peer is restored when that rollback succeeds. macOS OS updates, firewall management, application hosting, and a macOS agent are separate features.
 
+JSON and the human `node:remove` output both report that list, so the operator can see the account, package managers, and host tunnel that remain.
+
 ## Nodes without roles
 
 `node:add` without `--role` adds a Node that hosts no Orbit service. Use it for an operator machine that runs the Orbit CLI over WireGuard.

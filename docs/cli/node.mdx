@@ -292,6 +292,8 @@ The Gateway refuses while the Node owns Instances, Routes, Schedules, roles, Pro
 `--offline --force` changes nothing on the machine. Caddy sites, checkouts, containers, units, UFW rules, and the Node agent stay in place, and public SSH stays closed. The response lists them under `retained_on_node`.
 </Warning>
 
+Removing a macOS Node also reports what stays on the machine. JSON includes `retained_on_node`, and the human output lists the same values: `user`, `package-managers`, and `host-wireguard`. Those are the account, the package managers, and the host WireGuard configuration. Declining the confirmation, or omitting `--force` without a terminal, cancels before the Gateway removes anything.
+
 [Remove a Node](/reference/node-provisioning#remove-a-node) lists each step and failure code.
 
 ## Why it works this way
