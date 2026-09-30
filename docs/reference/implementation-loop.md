@@ -271,7 +271,7 @@ While a test-impact failure is open, the next refresh runs `composer test:affect
 
 The maintainer decides whether a feature belongs in Orbit. For named Orbit task work, the maintainer can delegate final review and merge. That delegation is the consent to submit the formal GitHub approval and to merge the reviewed commit. The review records the reviewed head, the evidence, and the verdict in GitHub's review state. A plain comment is not that approval, because its prose does not distinguish approval from requested changes. A Tasks engine subtask approval, or any other agent review, does not replace the final review of the whole pull request and does not authorize unrelated work.
 
-The merge uses the maintainer's GitHub CLI profile. That admin profile bypasses GitHub enforcement of `Required checks` and of a required approving review, so the DevOps reviewer checks the formal approval and green CI before merging the reviewed commit. A Gateway App merge endpoint and a ruleset change that requires an approving review are deferred. Either change would enforce the gate for an identity without the admin bypass, and either change needs new credentials, API behavior, and deployment work.
+The merge uses the maintainer's GitHub CLI profile. That admin profile bypasses GitHub enforcement of `Required checks`, and GitHub does not require an approving review, so the DevOps reviewer checks the formal approval and green CI before merging the reviewed commit. A Gateway App merge endpoint and a ruleset change that requires an approving review are deferred. Either change would enforce the gate for an identity without the admin bypass, and either change needs new credentials, API behavior, and deployment work.
 
 ### Every project passes the gate at each handoff
 
