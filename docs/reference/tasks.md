@@ -4,11 +4,11 @@ description: "How the optional Gateway Tasks extension runs tasks: the model, th
 covers:
   - "apps/gateway/app/{Domain,Infrastructure}/Tasks/**"
   - "apps/gateway/app/Actions/Tasks/**"
-  - "apps/gateway/app/Http/Requests/Tasks/**"
-  - "apps/gateway/app/Http/Controllers/Api/{TasksController,TaskGroupsController,AgentThreadsController}.php"
+  - "apps/gateway/app/Http/{Requests/Tasks/**,Controllers/Api/{TasksController,TaskGroupsController,AgentThreadsController}.php}"
   - "apps/gateway/app/Console/Commands/{TickTaskSessionsCommand,CollectT3MetricsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,AgentThread,JevDecision}.php"
   - "apps/gateway/resources/tasks/**"
+  - "apps/e2e/resources/proofs/*"
   - "apps/gateway/database/migrations/*_{convert_test_deliverables_to_commands,add_continuation_source_to_tasks}.php"
 ---
 
@@ -291,10 +291,12 @@ When the implementer cannot start, the subtask and the task become `failed`, and
 
 The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives in the Node's apps root like any development Instance.
 
-| Project | Workspace |
+| Project setting | New workspace |
 | --- | --- |
-| Slug `orbit` | Not visitable. The checkout has no Route and stays in the lifecycle state `source_resolved`. |
-| Any other slug | Visitable. The usual development provisioner gives it an inspect subdomain, and it becomes `active`. |
+| `task_workspace_routed: false` | Not visitable. The checkout has no Route and stays in the lifecycle state `source_resolved`. |
+| `task_workspace_routed: true` | Visitable. The usual development provisioner gives it an inspect subdomain, and it becomes `active`. |
+
+The setting defaults to true and does not depend on the Project slug. Provisioning records the selected mode on the workspace. Changing the Project setting affects future workspaces; it neither creates nor removes Routes on an existing workspace. Doctor uses the recorded mode when it checks that workspace. See [Task workspace routing](/reference/projects#task-workspace-routing).
 
 [Doctor](/cli/doctor) treats `source_resolved` as the healthy state of a workspace that is not visitable, and `active` for a visitable one.
 
@@ -438,16 +440,11 @@ A subtask runs at most one baseline check at a time. Moving a task to Todo and t
 
 The start records that claim before the process exists. The tick waits while the claim has no process. If the claim is still unstarted after the SSH command timeout of 900 seconds, the start was interrupted. Orbit asks for assistance and does not start another check, because one may still be running in the workspace. Cancelling during that start stops the process once the start returns.
 
-The check first runs the Project's [setup steps](/reference/instance-setup) with their own timeouts. Then it prepares dependencies:
-
-- When the task check runs `composer` or names `vendor/`, it runs `composer install --no-interaction --prefer-dist` where a tracked `composer.json` has no `vendor/autoload.php`.
-- When the task check names Bun, npm, pnpm, Yarn, Node, Vite+, or `node_modules`, it runs `vp install --frozen-lockfile` for each tracked `package.json` with a lockfile and without `node_modules`.
-
-The Composer step skips a nested `composer.json` without a lockfile. After a root install without a lockfile, it removes the new `composer.lock`. Each install step times out after 600 seconds. Handoff checks install nothing.
+The check runs only the Project's ordered [setup steps](/reference/instance-setup), with their configured timeouts, and then its configured task check. It runs setup even when no task check is configured. Without a task check, it runs no check command. The engine neither inspects manifests nor infers install commands from the check text. The Project must record any dependency installation it needs as setup steps. Handoff checks run no setup.
 
 The Orbit repository's own check seeds its caches from a registered main cache store, as [Feature delivery](/reference/implementation-loop#seed-a-checkout) describes.
 
-A failed setup step, install, or check asks for assistance at once, without a reminder. The reason names the step and the exit code, and the subtask's `check` shows the output. When the output shows missing `vendor/` or `node_modules` files, the reason says that Project dependencies appear to be missing. A cancelled baseline, a second `changed` run, a second `lost` run, and an interrupted start also ask for assistance. The interrupted-start reason says that the baseline start was interrupted and a check may still run in the workspace. Fix the cause, then cancel and create the task again.
+A failed setup step or check asks for assistance at once, without a reminder. The reason names the step and the exit code, and the subtask's `check` shows the output. The engine keeps the command output as evidence and does not classify missing dependencies from its text. A cancelled baseline, a second `changed` run, a second `lost` run, and an interrupted start also ask for assistance. The interrupted-start reason says that the baseline start was interrupted and a check may still run in the workspace. Fix the cause, then cancel and create the task again.
 
 ## Review a subtask
 
@@ -547,14 +544,14 @@ A pull request **conflicts** when GitHub reports it as not mergeable, or its mer
 
 A run's age starts at its `started_at`, or at the first tick that saw it pending. The rollup check `Required checks` is ignored while another failed check explains the failure. When only infrastructure problems remain, the task waits and looks again after 1, 2, 5, 10, and 30 minutes. Then it asks for assistance and adds `Those checks were cancelled or could not start, and did not recover. Re-run them.`
 
-Each problem has an identity: `conflict:` plus the base branch, or `check:` plus the check name. One tick appends at most one fixup, for the first problem that still has one left. A conflict comes first. For the Project with slug `orbit`, failed checks with a reproduction command come next. Other failed checks follow in GitHub's order. A task gets at most two fixups for one identity and at most three in total. These caps count every fixup appended after the last completed operator subtask. An operator subtask is one with no `fixup_problem`. So each new window needs a human step.
+Each problem has an identity: `conflict:` plus the base branch, or `check:` plus the check name. One tick appends at most one fixup, for the first problem that still has one left. A conflict comes first. Failed checks follow in GitHub's order. Project slugs and CI job names do not change that order. A task gets at most two fixups for one identity and at most three in total. These caps count every fixup appended after the last completed operator subtask. An operator subtask is one with no `fixup_problem`. So each new window needs a human step.
 
 | Fixup | Title | Brief |
 | --- | --- | --- |
 | Conflict | `Merge origin/{base}` | `Merge origin/{base} into the task branch and resolve the conflicts. Do not rebase and do not force-push.` |
 | Failed check | `Fix {name}` | `Check {name} failed: {url}. Do not rebase and do not force-push.` |
 
-Every fixup has the `command` deliverable `composer-check`, which runs `composer check` in `.`. For the Project with slug `orbit`, a fixup for a known CI check name also has a `reproduce-check` deliverable that runs that job's check steps.
+Every fixup uses the Project's task check as configured when Orbit creates the fixup. When it exists, the fixup has one `command` deliverable, `project-check`, which runs that exact command in `.`. Without a configured check, the fixup has one `review` deliverable, `fixup-review`, that asks the reviewer to confirm the conflict or failed check is resolved from the available evidence. The Gateway adds no CI reproduction command. Changing the Project check later does not rewrite an existing fixup's deliverables; subsequent handoffs use the current Project check as usual.
 
 A fixup records the head it was created for. No new fixup starts while the head is still that commit.
 
@@ -656,7 +653,9 @@ After a successful removal, cancel clears the assistance flags on the task and i
 
 A merged pull request completes its task on the next tick. `tasks:complete` completes a `settling` task by hand. Any other status returns HTTP 409 `tasks.not_settling`. Completing a `completed` task retries the removal when the workspace is still attached, and changes nothing otherwise.
 
-Cancel, complete, and the sweep remove a workspace the same way. The forced Instance remover deletes the recorded checkout and the workspace's Routes. It writes a removal record, and it deletes the Instance row only after the checkout is gone. First, the removal deletes the task's Incus bridge worktree: the linked worktree `task-{id}-e2e` of the primary checkout, only when its path and branch both match the task. It deletes the branch `task-{id}-e2e` when no worktree has it checked out, and the ref `refs/orbit/e2e-bridge/task-{id}`. See [Incus topologies](/reference/incus-topologies#task-workspace-clones). Release the Incus topology the bridge holds before the task ends.
+Cancel, complete, and the sweep remove a workspace the same way. The forced Instance remover deletes the recorded checkout and the workspace's Routes. It writes a removal record, and it deletes the Instance row only after the checkout is gone.
+
+The Instance remover runs the Project's teardown steps before deleting the checkout. A failed teardown keeps the checkout and Instance for retry and asks for assistance through the normal task cleanup path. The engine has no Orbit bridge cleanup hook. The Orbit Project records its bridge cleanup as a [teardown step](/reference/instance-setup#configure-orbits-task-policy); [Incus topologies](/reference/incus-topologies#task-workspace-clones) defines its ownership checks. Release the Incus topology the bridge holds before the task ends.
 
 When a manual complete cannot remove the workspace, the task still becomes `completed` and keeps its Instance. It asks for assistance with `Workspace removal failed: `.
 
@@ -685,16 +684,11 @@ These Gateway environment keys configure the extension.
 | `TYPESAFE_API_KEY` | The key for Jev calls |
 | `TYPESAFE_URL`, `TYPESAFE_MODEL` | The TypeSafe endpoint, default `https://api.typesafe.ai/v1`, and the classification model, default `jev-latest` |
 
-## Project-specific behavior in the engine
+## Project-owned task policy
 
-The engine still holds these Project-specific rules. They are current engine behavior, and open work removes them.
+The engine knows the configured check, lifecycle steps, workspace routing, and typed deliverables. It does not select policy by slug, package manager, manifest, or CI job name. A command may use any toolchain installed on the task Node. The rubric does not require a Composer script or inspect a manifest to judge the Project's check.
 
-- A workspace for the Project with slug `orbit` is not visitable. Every other Project gets a visitable workspace.
-- The `check_script` rubric item applies to a task check that runs `composer check`. It needs a `check` script in the root `composer.json`.
-- The baseline check installs Composer and JavaScript dependencies for a task check command that names them.
-- Every fixup gets a `composer check` command deliverable, whatever the Project's task check.
-- For the Project with slug `orbit`, a fixup gets a `reproduce-check` deliverable from a table of Orbit CI check names. Those checks get fixups first.
-- Workspace removal also deletes the Orbit Incus bridge worktree.
+New Projects have no task check until one is configured, regardless of type. Existing stored checks remain unchanged. Shared instructions, reminders, the check runner, and pull request descriptions name only an explicit Project check; none supplies a fallback. Without a check, Orbit still verifies the tree and deliverables and requires review.
 
 ## Why it works this way
 
@@ -702,7 +696,7 @@ These reasons explain the design. Check them before you propose a change.
 
 ### An optional, generic extension
 
-Tasks is an extension, so an operator can switch it off without a Gateway downgrade. The engine knows tasks, subtasks, deliverables, one task check, and a lifecycle. The goal is that each Project's own policy and task check decide how it plans and verifies work. The engine still holds some [Project-specific behavior](#project-specific-behavior-in-the-engine), such as a `composer check` deliverable on every fixup, so a Project without Composer does not yet fit without changes. The ADE plans, because planning needs the conversation with you. A web form to create tasks would be a second path beside MCP and the API.
+Tasks is an extension, so an operator can switch it off without a Gateway downgrade. The engine knows tasks, subtasks, deliverables, one task check, and a lifecycle. Each Project's own policy and task check decide how it plans and verifies work. Inferring policy from a slug, manifest, or CI job name would create a second hidden contract in the Gateway, so those choices belong to the Project. The ADE plans, because planning needs the conversation with you. A web form to create tasks would be a second path beside MCP and the API.
 
 Shared prompts stay free of Project policy. They do not name a feature contract or an Orbit lease rule. The repository's instructions and `orbit-tasks` skill carry that policy.
 

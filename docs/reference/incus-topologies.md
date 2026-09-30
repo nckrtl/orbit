@@ -2,7 +2,7 @@
 title: "Incus topology registry"
 description: "How the harness leases, prepares, and releases disposable Incus topologies, and how it runs on-demand scenarios."
 covers:
-  - bin/{e2e-topology,e2e-clone-bridge,e2e-scenarios}
+  - bin/{e2e-topology,e2e-clone-bridge,e2e-task-cleanup,e2e-scenarios}
   - apps/e2e/config/e2e.php
   - apps/e2e/app/Console/Commands/{Topology,Scenario}/**
   - apps/e2e/app/E2E/{TopologyAcquirer,TopologyReleaser,IssueTopologyConstructor,AcquisitionRollback,DiscoveryGuestPreparer,WorktreeSynchronizer,WorktreeLocator,HostCapacity,OrphanNetworkSweep,IncusNetworkLifecycle,EvidenceLog}.php
@@ -174,7 +174,11 @@ The origin key is the SHA-256 of the origin URL's lowercase host and its path, s
 
 The mirror leaves the bridge's other ignored files, such as `.e2e/`, `.env`, and Gateway storage, because the harness and the guests write them. So a file that a guest writes into the mount appears in the bridge, not in the clone. The evidence log is in the bridge too. Every command mirrors the clone first, so any command, such as `status`, pushes an edit. Set `ORBIT_E2E_BRIDGE=0` to run in the clone itself. `bin/e2e-topology-snapshot` never bridges, because snapshot operations belong to the primary checkout.
 
-In a task workspace on branch `task-58`, run `bin/e2e-topology acquire TASK-58 .`, then the other commands with `TASK-58`. The topology snapshot [registers](/reference/topology-snapshot#commands) the primary checkout. When the Gateway ends a task, it removes the task's bridge. [Tasks](/reference/tasks#complete-and-cleanup) describes that cleanup. Release the topology before the task ends, because bridge removal does not release it.
+In a task workspace on branch `task-58`, run `bin/e2e-topology acquire TASK-58 .`, then the other commands with `TASK-58`. The topology snapshot [registers](/reference/topology-snapshot#commands) the primary checkout. When the Gateway ends a task, the Orbit Project's configured teardown step runs the installed copy of `bin/e2e-task-cleanup` to remove the task's bridge. [Tasks](/reference/tasks#complete-and-cleanup) describes that cleanup. Release the topology before the task ends, because bridge removal does not release it.
+
+The helper checks the checkout identity and origin, the current user's registered primary checkout, its promoted snapshot marker, and its repository identity. It targets `task-{id}-e2e` under that primary's worktree root. It removes a registered worktree only when both its path and branch match. A bridge checked out on another branch stays. It deletes the task bridge branch only when no worktree has it checked out, and deletes only `refs/orbit/e2e-bridge/task-{id}`. It never removes another task's bridge or releases a topology.
+
+An absent bridge or registration is success. A cleanup command failure exits nonzero and makes teardown retain the task checkout and Instance for retry. Removal of a matching bridge, its unused branch, and its staging ref is idempotent. The helper does not alter the checkout that runs it or that checkout's worktrees.
 
 ## Release
 

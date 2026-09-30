@@ -103,13 +103,23 @@ The first teardown command that exits non-zero or times out stops the removal. T
 
 ## Bootstrap the Orbit repository
 
-The Orbit Project records `bin/bootstrap` as a setup step. It installs the locked dependencies, seeds caches, and runs the checks in all five Composer projects. A cold bootstrap can exceed the request deadline.
+The Orbit Project can record `bin/bootstrap` as a setup step, or record its locked dependency installs as separate steps. It installs the locked dependencies, seeds caches, and runs the checks in all five Composer projects. A cold bootstrap can exceed the request deadline.
 
 ```bash
 orbit instance:setup-step:create bootstrap --project=PROJECT_ID --command='bin/bootstrap' --timeout=540
 ```
 
 Task workspaces are not created with `instance:create`, so this create-time run does not happen for them. The task baseline check runs the Project setup steps before the task check instead. See [Project check](/reference/tasks#project-check) and [Implementation loop](/reference/implementation-loop).
+
+## Configure Orbit's task policy
+
+Orbit's task check is explicitly `composer check`; new Project defaults do not supply it. Record setup steps for each dependency tree that this repository check needs. The baseline runs only those steps. Inspect the installed lists before deployment, including their commands and timeout limits, rather than assuming an example is the live configuration.
+
+Install the reviewed `bin/e2e-task-cleanup` as `$HOME/.local/lib/orbit/e2e-task-cleanup` for the managed user on every Node that hosts an Orbit task workspace. Record a teardown step named `task-e2e-bridge`, with command `"$HOME/.local/lib/orbit/e2e-task-cleanup"`. This repository-owned helper runs from the checkout as the Node's managed user. It returns success without changing anything for an ordinary checkout. For a task checkout it removes only that task's matching bridge, unused bridge branch, and staging ref. It preserves the checkout and its own Git identity. See [Task workspace clones](/reference/incus-topologies#task-workspace-clones) for ownership and retry rules.
+
+The deployer installs the reviewed helper outside the checkouts and records the teardown step before deploying the Gateway that removes the built-in cleanup hook. Task clones created before deployment use that installed helper too. The helper and old hook may coexist during this handoff because both are idempotent. If the helper or lifecycle configuration cannot be verified, keep the old Gateway until the handoff is ready. A command that names a missing file is not a completed handoff.
+
+Before deploying, verify the Orbit Project's explicit check and install steps on a cold fixture, verify teardown on a task fixture, and record the configured steps and results. Do not change live Project configuration as part of task planning. After deployment, retry a retained failed-removal fixture and verify its bridge and checkout are removed in order. Release its topology before removal. Keep CI, merge approval, and this deployment handoff as separate gates.
 
 ## Failure codes
 

@@ -443,7 +443,8 @@
                 "Route",
                 "Schedule",
                 "Task",
-                "Task check"
+                "Task check",
+                "Task workspace"
             ],
             "governing_adrs": []
         },
@@ -702,6 +703,7 @@
             ],
             "concepts": [
                 "Deliverable",
+                "Deployment",
                 "Extension",
                 "Gateway",
                 "Instance",
@@ -709,6 +711,7 @@
                 "Process",
                 "Project",
                 "Role",
+                "Route",
                 "Task",
                 "Task check"
             ],
@@ -1170,6 +1173,7 @@
                 "Role",
                 "Route",
                 "Task",
+                "Task workspace",
                 "Tool"
             ],
             "governing_adrs": []
@@ -1194,7 +1198,9 @@
                 "Process",
                 "Project",
                 "Role",
-                "Route"
+                "Route",
+                "Task",
+                "Task workspace"
             ],
             "governing_adrs": []
         },
@@ -1491,6 +1497,7 @@
             ],
             "concepts": [
                 "Activity",
+                "Deployment",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -1498,7 +1505,8 @@
                 "Project",
                 "Route",
                 "Task",
-                "Task check"
+                "Task check",
+                "Task workspace"
             ],
             "governing_adrs": []
         },
@@ -1775,6 +1783,7 @@
                 "Schedule",
                 "Task",
                 "Task check",
+                "Task workspace",
                 "Tool"
             ],
             "governing_adrs": []
@@ -1865,6 +1874,7 @@
             "title": "Tasks",
             "kind": "reference",
             "components": [
+                "apps/e2e",
                 "apps/gateway",
                 "apps/web"
             ],

@@ -4,7 +4,9 @@ The Gateway Tasks engine owns generic task coordination and validation; each Pro
 
 ## Status
 
-Proposed.
+In progress.
+
+Principle: this decision serves [deterministic first](/mission#principles). The Gateway enforces generic task mechanics; each Project supplies explicit policy, checks, setup, and cleanup.
 
 ## Context
 
@@ -31,6 +33,16 @@ Typed deliverables are `file`, `command`, and `review`; `test` is removed with n
 The follow-up implementation removes the `test` deliverable type entirely and converts stored `test` deliverables in open tasks. The Project's `task_check` remains the workspace-root quality check; it is not a test-file runner and the migration never changes or appends arguments to it. Because the removed `test` type explicitly represented named Pest tests, conversion uses an explicit legacy mapping that changes to the former Project directory before running its local `vendor/bin/pest`, file, and filter. This preserves that Project's PHPUnit configuration and bootstrap. The legacy name is matched as a case-sensitive, regex-escaped substring. The migration normalizes former project/file paths, carries over `fails_on_base`, overlays the resulting workspace-relative file for a base run, and adds a `file` deliverable with `change: any` for each converted test file so the diff is checked. It converts each source task and all its continuation rows in one database transaction. It keeps each converted command/file pair together, allocates distinct IDs of at most 64 characters, and moves overflow deliverables into continuation subtasks immediately after their source task so each stored list stays within the five-deliverable limit. Continuations retain a reference to the source and use its start commit for diff and base-run verification, even when the source has already committed its fixes. Custom test-name matching remains in the Project's command, not the generic engine.
 
 Bridge-worktree removal is owned by the Orbit Project's teardown steps, not the Gateway's generic task cleanup.
+
+### ORB-155: complete the engine boundary
+
+The maintained [Tasks reference](/reference/tasks#project-owned-task-policy), [Project settings](/reference/projects#task-workspace-routing), and [lifecycle handoff](/reference/instance-setup#configure-orbits-task-policy) define this slice. The baseline runs only configured setup and check commands, fixups use the configured check or review, and no new Project gets an implicit check. Existing checks remain unchanged.
+
+`task_workspace_routed` defaults to true. Its one-time migration preserves the old creation policy, while each existing workspace retains its provisioned mode. Updates apply only when Orbit creates a workspace and do not reroute an existing Instance. A workspace without a Route stays healthy in `source_resolved`.
+
+Orbit's repository owns `bin/e2e-task-cleanup`, installed outside task checkouts and configured as teardown before the Gateway drops its old hook. It preserves the existing ownership checks and retry safeguards. The installed helper also serves task clones created before deployment.
+
+ORB-155 completes the remaining slug and toolchain couplings, then absorbs this decision into the Tasks reference and the owning Project and lifecycle pages. ADR 0182 remains in progress: its task-definition policy is a separate decision and its inbound link moves to the absorbed Tasks section.
 
 ### Policy leaked into the Gateway
 
