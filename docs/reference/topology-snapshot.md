@@ -79,6 +79,20 @@ Convergence runs every Orbit step that a fresh topology needs, in this order. Th
 | `converge.sample-fixtures` | Router: creates or checks the [sample resources](/reference/incus-topologies#sample-resources), then records the sample placement again, because a deployment can move the current release |
 | `normalize.permissions` | Normalizes file permissions on every Node |
 
+#### Guest script inputs
+
+Guest convergence reads Projects and Instances through the Orbit CLI. [Project and Instance](/reference/projects#project-and-instance) names those records. The scripts do not read a second name for either record.
+
+| Command | Project and Instance links |
+| --- | --- |
+| `project:list --json` | `projects`. Each Project has `id`. |
+| `instance:list --json` | `instances`. Each Instance has `id` and `project_id`. |
+| `route:list --json` and `route:create --json` | `project_id` on an app Route. `target` is `id`, `instance_id`, and `position`, so the scripts read `target.instance_id`. |
+
+The table lists the Project and Instance links only. The scripts also read other fields on the same records, including `slug`, `name`, `node_id`, and `status`.
+
+`create.sample-resources` creates the explicit sample Route with `route:create <instance> e2e-dev.orbit --publication=private`. The first argument is the Instance `id`. The app Route form does not take a Project id, `--target`, `--node`, or `--cluster`. [Create and change targets](/reference/routes#create-and-change-targets) defines that form. The custom proxy form is separate and can take `--node`. The sample Route stays private, as [Sample resources](/reference/incus-topologies#sample-resources) describes.
+
 The harness writes no Caddy file on any Node. Every Caddyfile comes from a [Node Caddy build](/reference/caddy-configuration#node-caddy-build), so Doctor reports no `role.caddy_build_drift`. The sample production site answers over TLS with the Orbit CA leaf that the Gateway publishes. Hydration and verification trust the Orbit root CA.
 
 Guest preparation points `/etc/resolv.conf` at the systemd-resolved stub. It also writes the public upstream servers `1.1.1.1` and `8.8.8.8` into a systemd-resolved drop-in, because runtime resolver settings do not survive a snapshot reboot. Orbit's private DNS routes still apply to private names.
@@ -133,3 +147,7 @@ A partial generation is never promoted. A failed refresh keeps the old generatio
 ### Recovery by exact inventory
 
 Recovery deletes only resources whose identity and metadata it has proved and journaled. A name alone never authorizes deletion, so recovery cannot remove a resource that it does not own.
+
+### Guest scripts read Project and Instance JSON
+
+Guest scripts read `project_id` and `target.instance_id`, and they create the sample Route with `route:create <instance> <domain>`. Keeping another JSON name for those fields was rejected. The CLI returns one name for each field, and a refresh stops when a script requires a field the response does not have.
