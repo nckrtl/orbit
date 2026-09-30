@@ -6,10 +6,10 @@ covers:
   - "apps/gateway/app/Actions/Tasks/**"
   - "apps/gateway/app/Http/Requests/Tasks/**"
   - "apps/gateway/app/Http/Controllers/Api/{TasksController,TaskGroupsController,AgentThreadsController}.php"
-  - "apps/gateway/app/Console/Commands/{TickTaskSessionsCommand,CollectT3MetricsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand}.php"
-  - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,AgentThread,JevDecision}.php"
+  - "apps/gateway/app/Console/Commands/{TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand}.php"
+  - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "apps/gateway/resources/tasks/**"
-  - "apps/gateway/database/migrations/*_{convert_test_deliverables_to_commands,add_continuation_source_to_tasks}.php"
+  - "apps/gateway/database/migrations/*_{convert_test_deliverables_to_commands,add_continuation_source_to_tasks,create_problem_fingerprints}.php"
 ---
 
 # Tasks
@@ -376,7 +376,7 @@ A failure in one source does not skip the others. The same exception class for o
 
 ## Scheduler
 
-The scheduler command `tasks:tick` does all work of the extension. The Gateway's Laravel schedule runs it and `tasks:collect-t3-metrics` every 10 seconds while the extension is enabled. The Gateway host must run `php artisan schedule:work`, or no task advances. One cache lock, held for up to 300 seconds, protects scheduled and manual ticks. A tick that finds the lock held does nothing.
+The scheduler command `tasks:tick` does all work of the extension. The Gateway's Laravel schedule runs it and `tasks:collect-t3-metrics` every 10 seconds, and `problems:collect` every 10 minutes, while the extension is enabled. The Gateway host must run `php artisan schedule:work`, or no task advances. One cache lock, held for up to 300 seconds, protects scheduled and manual ticks. A tick that finds the lock held does nothing.
 
 Each tick runs these steps in order:
 

@@ -36,6 +36,7 @@ final readonly class DocsImpact
         'orbit:node-dns-repair' => 'docs/reference/node-agent.md',
         'orbit:node-provision' => 'docs/reference/node-agent.md',
         'tasks:collect-t3-metrics' => 'docs/reference/tasks.md',
+        'problems:collect' => 'docs/reference/tasks.md',
         'tasks:archive-threads' => 'docs/reference/tasks.md',
         'orbit:node-retarget' => 'docs/reference/node-agent.md',
     ];
