@@ -337,6 +337,7 @@ use App\Infrastructure\Ssh\SshHostKeyScanner;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tools\AptToolManager;
 use App\Infrastructure\Tools\ComposerToolManager;
+use App\Infrastructure\Tools\HomebrewCaskToolManager;
 use App\Infrastructure\Tools\HomebrewToolManager;
 use App\Infrastructure\Tools\NativeToolInspector;
 use App\Infrastructure\Tools\NativeToolManagerMaterializer;
@@ -719,6 +720,7 @@ final class ApplicationServiceProvider extends ServiceProvider
                 app(VpToolManager::class),
                 app(ComposerToolManager::class),
                 app(HomebrewToolManager::class),
+                app(HomebrewCaskToolManager::class),
             ]),
         );
         $this->app->singleton(

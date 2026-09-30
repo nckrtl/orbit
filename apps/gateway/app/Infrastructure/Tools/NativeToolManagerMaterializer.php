@@ -48,7 +48,7 @@ final readonly class NativeToolManagerMaterializer implements ToolManagerMateria
         $managers = array_values($managers);
         $managers = $this->uniqueManagers($managers);
         $scopeNames = array_map(
-            static fn (ToolManager $manager): ToolManagerName => $manager->name(),
+            static fn (ToolManager $manager): ToolManagerName => $manager->name()->scope(),
             $managers,
         );
 
@@ -59,7 +59,7 @@ final readonly class NativeToolManagerMaterializer implements ToolManagerMateria
         }
 
         $scopeNames = array_values($uniqueScopeNames);
-        $canonicalOrder = ['apt' => 0, 'vp' => 1, 'composer' => 2, 'brew' => 3];
+        $canonicalOrder = ['apt' => 0, 'vp' => 1, 'composer' => 2, 'brew' => 3, 'brew-cask' => 3];
         usort(
             $scopeNames,
             static fn (ToolManagerName $left, ToolManagerName $right): int => (

@@ -8,7 +8,7 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Node;
 use Tests\Support\ToolManagerFakeSshExecutor;
 
-it('offers brew and vp on macOS without materializing them and keeps the Linux set', function (): void {
+it('offers brew, brew-cask, and vp on macOS without materializing them and keeps the Linux set', function (): void {
     $ssh = new ToolManagerFakeSshExecutor([]);
     app()->instance(SshExecutor::class, $ssh);
     $registry = app(ToolManagerRegistry::class);
@@ -20,7 +20,7 @@ it('offers brew and vp on macOS without materializing them and keeps the Linux s
     expect($names(tool_platform_node('linux')))
         ->toBe(['apt', 'vp', 'composer', 'brew'])
         ->and($names(tool_platform_node('macos')))
-        ->toBe(['vp', 'brew'])
+        ->toBe(['vp', 'brew', 'brew-cask'])
         ->and($ssh->arguments())
         ->toBeEmpty();
 });

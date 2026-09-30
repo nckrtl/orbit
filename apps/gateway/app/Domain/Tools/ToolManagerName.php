@@ -10,4 +10,10 @@ enum ToolManagerName: string
     case Vp = 'vp';
     case Composer = 'composer';
     case Brew = 'brew';
+    case BrewCask = 'brew-cask';
+
+    public function scope(): self
+    {
+        return $this === self::BrewCask ? self::Brew : $this;
+    }
 }

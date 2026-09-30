@@ -31,129 +31,6 @@ final readonly class HomebrewToolManager implements ToolManager
 
     private const string PACKAGE_PATTERN = '/\A[a-z0-9](?:[a-z0-9@+._-]*[a-z0-9])?\z/D';
 
-    private const int MAC_PREFIX_ABSENT = 42;
-
-    private const int MAC_PREFIX_CONFLICT = 43;
-
-    /** @var array<int, string> */
-    private const array MACOS_BOTTLE_SYMBOLS = [
-        27 => 'golden_gate',
-        26 => 'tahoe',
-        15 => 'sequoia',
-        14 => 'sonoma',
-        13 => 'ventura',
-        12 => 'monterey',
-        11 => 'big_sur',
-    ];
-
-    /**
-     * Verifies one existing macOS prefix owned by the enrolled account.
-     * It does not install, fetch, check out, or repin Homebrew.
-     */
-    private const string MAC_PREFIX_SCRIPT = <<<'BASH'
-        account=$1
-        if [ -z "${account:-}" ]; then
-            printf 'Orbit Homebrew account is missing\n' >&2
-            exit 1
-        fi
-        current=$(/usr/bin/id -un)
-        if [ "$current" != "$account" ]; then
-            printf 'Orbit Homebrew account mismatch\n' >&2
-            exit 1
-        fi
-        home=$(/usr/bin/dscacheutil -q user -a name "$account" | /usr/bin/awk '/^dir: / { print substr($0, 6); exit }')
-        if [ -z "${home:-}" ] || [ ! -d "$home" ]; then
-            printf 'Orbit Homebrew account home is unreadable\n' >&2
-            exit 1
-        fi
-        case "$home" in
-            *..*|*[!/A-Za-z0-9._-]*)
-                printf 'Orbit Homebrew account home is unreadable\n' >&2
-                exit 1
-                ;;
-        esac
-
-        valid=
-        saw_conflict=0
-        consider() {
-            prefix=$1
-            brew_link="$prefix/bin/brew"
-            nested="$prefix/Homebrew"
-            if [ ! -e "$brew_link" ] && [ ! -L "$brew_link" ] \
-                && [ ! -e "$prefix/.git" ] && [ ! -L "$prefix/.git" ] \
-                && [ ! -e "$nested" ] && [ ! -L "$nested" ]; then
-                return 0
-            fi
-            if [ -L "$prefix" ] || [ ! -d "$prefix" ]; then
-                saw_conflict=1
-                return 0
-            fi
-            owner=$(/usr/bin/stat -f '%Su' "$prefix" 2>/dev/null || true)
-            if [ "$owner" != "$account" ]; then
-                saw_conflict=1
-                return 0
-            fi
-            prefix_repo=0
-            nested_repo=0
-            if [ -d "$prefix/.git" ] && [ ! -L "$prefix/.git" ]; then
-                prefix_repo=1
-            fi
-            if [ -d "$nested/.git" ] && [ ! -L "$nested" ] && [ ! -L "$nested/.git" ]; then
-                nested_repo=1
-            fi
-            if [ "$prefix_repo" -eq "$nested_repo" ]; then
-                saw_conflict=1
-                return 0
-            fi
-            if [ "$prefix_repo" -eq 1 ]; then
-                repo_owner=$(/usr/bin/stat -f '%Su' "$prefix/.git" 2>/dev/null || true)
-                origin=$(/usr/bin/git -C "$prefix" config --get remote.origin.url 2>/dev/null || true)
-                brew_owner=$(/usr/bin/stat -f '%Su' "$brew_link" 2>/dev/null || true)
-                if [ "$repo_owner" != "$account" ] \
-                    || [ "$origin" != "https://github.com/Homebrew/brew" ] \
-                    || [ -L "$brew_link" ] || [ ! -f "$brew_link" ] || [ ! -x "$brew_link" ] \
-                    || [ "$brew_owner" != "$account" ]; then
-                    saw_conflict=1
-                    return 0
-                fi
-            else
-                repo_owner=$(/usr/bin/stat -f '%Su' "$nested" 2>/dev/null || true)
-                origin=$(/usr/bin/git -C "$nested" config --get remote.origin.url 2>/dev/null || true)
-                link_owner=$(/usr/bin/stat -f '%Su' "$brew_link" 2>/dev/null || true)
-                target=$(/usr/bin/readlink "$brew_link" 2>/dev/null || true)
-                if [ "$repo_owner" != "$account" ] \
-                    || [ "$origin" != "https://github.com/Homebrew/brew" ] \
-                    || [ ! -L "$brew_link" ] || [ "$link_owner" != "$account" ] \
-                    || [ "$target" != "../Homebrew/bin/brew" ]; then
-                    saw_conflict=1
-                    return 0
-                fi
-            fi
-            if [ -n "$valid" ]; then
-                saw_conflict=1
-                valid=
-                return 0
-            fi
-            valid=$prefix
-        }
-
-        consider /opt/homebrew
-        consider /usr/local
-        consider "$home/homebrew"
-        consider "$home/.homebrew"
-
-        if [ -n "$valid" ] && [ "$saw_conflict" -eq 0 ]; then
-            printf '%s\n' "$valid"
-            exit 0
-        fi
-        if [ "$saw_conflict" -eq 1 ]; then
-            printf 'Orbit Homebrew prefix conflict\n' >&2
-            exit 43
-        fi
-        printf 'Orbit Homebrew prefix is absent\n' >&2
-        exit 42
-        BASH;
-
     /** @var non-empty-list<string> */
     private const array LINUX_PREFIX = [
         'env',
@@ -166,10 +43,15 @@ final readonly class HomebrewToolManager implements ToolManager
         self::BREW,
     ];
 
+    private HomebrewMacCommand $mac;
+
     public function __construct(
         private RemoteToolCommandRunner $commands,
         private SemverVersionNormalizer $versions,
-    ) {}
+        ?HomebrewMacCommand $mac = null,
+    ) {
+        $this->mac = $mac ?? new HomebrewMacCommand($commands);
+    }
 
     public function name(): ToolManagerName
     {
@@ -194,7 +76,7 @@ final readonly class HomebrewToolManager implements ToolManager
         $this->guardSupportedNode($node);
 
         if ($node->platform === 'macos') {
-            $this->resolveMacPrefix($node);
+            $this->mac->resolvePrefix($node);
 
             return;
         }
@@ -354,15 +236,14 @@ final readonly class HomebrewToolManager implements ToolManager
 
         if ($node->platform === 'macos') {
             $this->guardMacCpu($node);
-            $prefix = $this->resolveMacPrefix($node);
-            $bottleTag = $this->macOsBottleTag($node);
-            $command = [
-                ...$this->macCommandPrefix($prefix, true),
+            $prefix = $this->mac->resolvePrefix($node);
+            $bottleTag = $this->mac->bottleTag($node);
+            $command = $this->mac->command($prefix, true, [
                 'info',
                 '--json=v2',
                 '--formula',
                 $this->coordinate($package),
-            ];
+            ]);
         } else {
             $bottleTag = $this->linuxBottleTag($node);
             $command = [
@@ -499,38 +380,6 @@ final readonly class HomebrewToolManager implements ToolManager
                 result: $result,
             ),
         };
-    }
-
-    private function macOsBottleTag(Node $node): string
-    {
-        $this->guardMacCpu($node);
-        $result = $this->commands->execute($node, ['/usr/bin/sw_vers', '-productVersion']);
-        $this->guardSuccessfulResult(
-            result: $result,
-            step: 'candidate-version',
-            message: 'The macOS product version probe failed.',
-        );
-        $version = $this->firstLine($result->stdout);
-
-        if (preg_match('/\A(\d+)(?:\.\d+){0,2}\z/D', $version, $matches) !== 1) {
-            throw new ToolManagerException(
-                step: 'candidate-version',
-                message: 'The macOS product version probe returned malformed output.',
-                result: $result,
-            );
-        }
-
-        $symbol = self::MACOS_BOTTLE_SYMBOLS[(int) $matches[1]] ?? null;
-
-        if (! is_string($symbol)) {
-            throw new ToolManagerException(
-                step: 'candidate-version',
-                message: 'The macOS product version has no compatible Homebrew bottle.',
-                result: $result,
-            );
-        }
-
-        return $node->architecture === 'arm64' ? 'arm64_'.$symbol : $symbol;
     }
 
     private function guardMacCpu(Node $node): void
@@ -753,85 +602,6 @@ final readonly class HomebrewToolManager implements ToolManager
             return [...self::LINUX_PREFIX, ...$arguments];
         }
 
-        return [
-            ...$this->macCommandPrefix($this->resolveMacPrefix($node), $refreshApi),
-            ...$arguments,
-        ];
-    }
-
-    /**
-     * @return non-empty-list<string>
-     */
-    private function macCommandPrefix(string $prefix, bool $refreshApi): array
-    {
-        $arguments = [
-            'env',
-            'HOMEBREW_NO_AUTO_UPDATE=1',
-            'HOMEBREW_NO_ANALYTICS=1',
-            'HOMEBREW_NO_ENV_HINTS=1',
-            'HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1',
-            'HOMEBREW_NO_INSTALL_CLEANUP=1',
-        ];
-
-        if ($refreshApi) {
-            $arguments[] = 'HOMEBREW_FORCE_API_AUTO_UPDATE=1';
-        }
-
-        $arguments[] = 'PATH='.$prefix.'/bin:/usr/bin:/bin';
-        $arguments[] = $prefix.'/bin/brew';
-
-        return $arguments;
-    }
-
-    private function resolveMacPrefix(Node $node): string
-    {
-        $result = $this->commands->execute(
-            $node,
-            ['/bin/bash', '-su', '--', $node->user],
-            self::MAC_PREFIX_SCRIPT,
-        );
-
-        if ($result->exitCode === self::MAC_PREFIX_ABSENT) {
-            throw new ToolManagerException(
-                step: 'manager-absent',
-                message: 'The Homebrew prefix is absent for the enrolled account.',
-                result: $result,
-            );
-        }
-
-        if ($result->exitCode === self::MAC_PREFIX_CONFLICT) {
-            throw new ToolManagerException(
-                step: 'manager-conflict',
-                message: 'The Homebrew prefix ownership or origin conflicts with the enrolled account.',
-                result: $result,
-            );
-        }
-
-        $this->guardSuccessfulResult(
-            result: $result,
-            step: 'manager-probe',
-            message: 'The Homebrew prefix probe failed.',
-        );
-
-        $lines = preg_split('/\R/', rtrim($result->stdout, "\r\n"));
-        $prefix = is_array($lines) ? ($lines[0] ?? '') : '';
-
-        if (! is_array($lines) || count($lines) !== 1 || ! $this->isSafeMacPrefix($prefix)) {
-            throw new ToolManagerException(
-                step: 'manager-probe',
-                message: 'The Homebrew prefix probe returned malformed output.',
-                result: $result,
-            );
-        }
-
-        return $prefix;
-    }
-
-    private function isSafeMacPrefix(string $prefix): bool
-    {
-        return preg_match(
-            '/\A(?:\/opt\/homebrew|\/usr\/local|\/(?:[A-Za-z0-9._-]+\/)+homebrew|\/(?:[A-Za-z0-9._-]+\/)+\.homebrew)\z/D',
-            $prefix,
-        ) === 1 && ! str_contains($prefix, '..');
+        return $this->mac->brew($node, $refreshApi, $arguments);
     }
 }

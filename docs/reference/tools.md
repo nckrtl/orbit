@@ -239,9 +239,25 @@ Every `brew` and `brew-cask` command sets `HOMEBREW_NO_AUTO_UPDATE`, `HOMEBREW_N
 
 ## Homebrew casks
 
-`brew-cask` supports official Homebrew casks on macOS. It validates the cask's metadata, version, checksum, and supported artifact before mutation. Names stay unqualified; taps, URLs, local files, and caller-supplied options are refused. Unsupported artifacts stay visible in discovery with `adoption` `unsupported` and `adoption_block` `unsupported_artifact` or `unsupported_source`.
+`brew-cask` supports official Homebrew casks on macOS. The caller sends one unqualified token. The Gateway turns that into the fixed coordinate `homebrew/cask/<token>` and refuses a tap, a URL, a local file, or a caller option before it runs anything. A formula and a cask with the same token stay different Tools, because the manager is part of the identity.
 
-Install, update, and removal target the exact cask through fixed Homebrew commands. An operation that needs interactive or administrator authorization fails and does not ask an agent for an installer command. Adoption uses `tool.adoption_unsupported` with `adoption_block` `authorization_required`. Install, update, and removal use their own failure codes. Removal never uses zap, autoremove, or a Homebrew service command. Formula and cask operations share the same Homebrew prefix lock.
+Before install or update, the Gateway reads `brew info --json=v2 --cask` for that coordinate. The cask must come from the `homebrew/cask` tap, use an `https` URL, and name itself with the same unqualified token. The Gateway then applies one refusal, in this order: an unsupported artifact, interactive or administrator authorization, the checksum policy, then an unreadable version.
+
+`brew info --json=v2` returns the current arm64 definition as the base fields. Other Mac definitions are shallow overrides under `variations`, keyed by the same bottle tag formulae use (`sw_vers` plus the code-owned symbol table; arm64 prefixes the symbol, Intel uses the symbol alone). The Gateway applies `variations[<tag>]` before it checks the URL, version, checksum, and artifacts. `sha256` must be one lowercase SHA-256 on that definition. `no_check` fails the checksum policy. Discovery reports that checksum failure as `unsupported_artifact`.
+
+Supported artifacts install into the enrolled user's home or the Homebrew prefix. That includes fonts, binaries, man pages, completions, and user plugins whose target is `/$HOME`, `~/`, or `$HOMEBREW_PREFIX`. An app or suite that targets `/Applications`, a package installer, a privileged plugin, or an uninstall that uses `pkgutil`, `kext`, `launchctl`, or a system path is `authorization_required`. Preflight, postflight, stage-only, and arbitrary uninstall scripts are `unsupported_artifact`. A disabled cask is too. Zap stanzas are ignored and never run.
+
+Removal does not repeat the disabled, checksum, version, or source gates. It still refuses an arbitrary uninstall script, a package installer, an app in `/Applications`, or any other uninstall that needs interactive or administrator authorization. A disabled, unchecksummed, or `latest` cask can still be removed when that uninstall is safe.
+
+When the official cask is gone, Homebrew says `homebrew/cask/<token>` is unavailable because the tap is not installed. Removal then reads that token from `info --json=v2 --cask --installed`. It uninstalls only when that entry's tap is `homebrew/cask`, and it passes the plain token to `uninstall --cask`. The same bottle-tag override applies.
+
+Install and update use `install --cask` and `upgrade --cask` for the coordinate. Removal of an available cask uses `uninstall --cask` for that coordinate. Inventory uses `info --json=v2 --cask --installed`.
+
+The installed-version read uses `list --versions --cask` with the plain token. Homebrew prints the token and version when the cask is installed. When it is absent, that command exits 1 and prints nothing. A silent exit 1 is not absence by itself. The Gateway then reads `info --json=v2 --cask --installed`. It reports no installed version only when that token is missing, or when the entry's tap is not `homebrew/cask`.
+
+The Gateway runs brew over a non-TTY SSH session with `BatchMode=yes`, so sudo cannot prompt. Install, update, and the metadata read that guards them also set `HOMEBREW_FORCE_API_AUTO_UPDATE`. Inventory, removal, and installed-version reads do not. The Gateway never runs `brew uninstall --zap`, `brew autoremove`, `brew upgrade` without the cask, `brew services`, or a Homebrew developer command.
+
+An unsupported installed cask stays in discovery with `adoption` `unsupported` and one block token. Discovery does not create a Tool and does not mean the cask can be adopted. A supported cask can be installed, updated, and removed as a normal Tool. A policy refusal or a failed command returns that operation's own error: `tool.install_failed`, `tool.update_failed`, or `tool.remove_failed` (HTTP 502). The Tool stays `failed` and can be retried. The error never includes raw Homebrew output. Adoption of a cask that needs an interactive or administrator prompt uses `tool.adoption_unsupported` with `adoption_block` `authorization_required`. Formula and cask operations share the Homebrew prefix lock, including when their manager records have different ids.
 
 ## Remove a Tool
 
