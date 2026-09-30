@@ -65,6 +65,14 @@ final readonly class ProblemEvidence
             $evidence['error_message'] = $message;
         }
 
+        foreach (['summary', 'assistance_reason'] as $key) {
+            $value = $observation[$key] ?? null;
+
+            if (is_string($value) && $value !== '') {
+                $evidence[$key] = mb_substr($value, 0, 1000);
+            }
+        }
+
         foreach (['expected', 'observed'] as $key) {
             if (! array_key_exists($key, $observation)) {
                 continue;

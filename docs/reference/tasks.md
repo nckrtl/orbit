@@ -6,7 +6,7 @@ covers:
   - "apps/gateway/app/Actions/Tasks/**"
   - "apps/gateway/app/Http/Requests/Tasks/**"
   - "apps/gateway/app/Http/Controllers/Api/{TasksController,TaskGroupsController,AgentThreadsController}.php"
-  - "apps/gateway/app/Console/Commands/{TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand}.php"
+  - "apps/gateway/app/Console/Commands/{TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "apps/gateway/resources/tasks/**"
   - "apps/gateway/database/migrations/*_{convert_test_deliverables_to_commands,add_continuation_source_to_tasks,create_problem_fingerprints}.php"
@@ -262,7 +262,7 @@ Each signal updates one row in `problem_fingerprints`. The fingerprint is unique
 
 A key longer than 255 characters keeps the source prefix, then `#`, then the first 12 hex characters of the SHA-256 of the full key.
 
-The sample holds at most five request ids, five Activity ids, and five Activity paths. It holds one log excerpt of at most 500 characters, the latest Doctor expected and observed values, the newest 20 observation times, and up to 200 open assistance task ids. The excerpt and an Activity error message pass through the Gateway log redactor before they are stored. Expected and observed stay the bounded Doctor values. The sample does not store a raw Doctor report.
+The sample holds at most five request ids, five Activity ids, and five Activity paths. It holds one log excerpt of at most 500 characters, the latest Doctor expected and observed values, the latest Doctor summary, the assistance reason before normalization, the newest 20 observation times, and up to 200 open assistance task ids. The summary and the assistance reason are cut at 1,000 characters. The excerpt and an Activity error message pass through the Gateway log redactor before they are stored. Expected and observed stay the bounded Doctor values. The sample does not store a raw Doctor report.
 
 | Source | Key |
 | --- | --- |
@@ -340,7 +340,7 @@ The rest of the brief is seven sections, in this order: Symptom, Fingerprint, Fi
 | Evidence | The sample caps. Expected and observed are cut at 200 characters |
 | Suspected entry point | 500 characters, then `...` |
 
-The finished brief is at most 8,000 characters. If it is still longer, the filer drops Evidence lines until it fits. `tasks:create` refuses a longer brief with `validation.failed`. If create still fails, the filer skips that row and leaves `filed_at` unset. The row does not count toward the cap. The filer continues with the next row. Each subtask brief copies the cut symptom and stays under 8,000 characters.
+The finished brief is at most 8,000 characters. The Evidence heading is always present. When that section has no lines, it says `none`. If the brief is still longer, the filer drops Evidence lines until it fits, and the heading stays. `tasks:create` refuses a longer brief with `validation.failed`. If create still fails, the filer skips that row and leaves `filed_at` unset. The row does not count toward the cap. The filer continues with the next row. Each subtask brief copies the cut symptom and stays under 8,000 characters.
 
 | Source | Title | Suspected entry point |
 | --- | --- | --- |
@@ -376,7 +376,7 @@ A failure in one source does not skip the others. The same exception class for o
 
 ## Scheduler
 
-The scheduler command `tasks:tick` does all work of the extension. The Gateway's Laravel schedule runs it and `tasks:collect-t3-metrics` every 10 seconds, and `problems:collect` every 10 minutes, while the extension is enabled. The Gateway host must run `php artisan schedule:work`, or no task advances. One cache lock, held for up to 300 seconds, protects scheduled and manual ticks. A tick that finds the lock held does nothing.
+The scheduler command `tasks:tick` does all work of the extension. The Gateway's Laravel schedule runs it and `tasks:collect-t3-metrics` every 10 seconds, `problems:collect` every 10 minutes, and `problems:file` every hour, while the extension is enabled. The Gateway host must run `php artisan schedule:work`, or no task advances. One cache lock, held for up to 300 seconds, protects scheduled and manual ticks. A tick that finds the lock held does nothing.
 
 Each tick runs these steps in order:
 

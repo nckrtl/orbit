@@ -15,7 +15,7 @@ covers:
 
 A Schedule runs one command on a timer for one Node or one Instance. The Gateway stores the Schedule. The host Node runs it with a native systemd timer, so the timer keeps firing while the Gateway is down. [`schedule`](/cli/schedule) lists the commands. [Processes and schedules](/reference/processes-and-schedules) describes Project Schedule definitions and their Instance copies.
 
-An Orbit Schedule is not a command on the Gateway's own Laravel schedule. The Tasks extension registers `tasks:tick`, `tasks:collect-t3-metrics`, and `problems:collect` there. [Tasks](/reference/tasks#scheduler) describes those timers.
+An Orbit Schedule is not a command on the Gateway's own Laravel schedule. The Tasks extension registers `tasks:tick`, `tasks:collect-t3-metrics`, `problems:collect`, and `problems:file` there. [Tasks](/reference/tasks#scheduler) describes those timers.
 
 ## Fields
 

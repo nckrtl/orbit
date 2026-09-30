@@ -100,6 +100,7 @@ final readonly class ProblemCollector
                 $this->record($issue['fingerprint'], ProblemSource::Doctor, [
                     'expected' => $issue['expected'],
                     'observed' => $issue['observed'],
+                    'summary' => $issue['summary'],
                 ]);
             }
 
@@ -276,12 +277,13 @@ final readonly class ProblemCollector
 
                 $this->record($fingerprint, ProblemSource::Assist, [
                     'assistance_task_ids' => [$task->id],
+                    'assistance_reason' => $reason,
                 ]);
             }
         });
     }
 
-    /** @return list<array{fingerprint: string, expected: bool|string|null, observed: bool|string|null}> */
+    /** @return list<array{fingerprint: string, expected: bool|string|null, observed: bool|string|null, summary: string}> */
     private function doctorIssues(DoctorReportData $report): array
     {
         $issues = [];
@@ -298,6 +300,7 @@ final readonly class ProblemCollector
                         ),
                         'expected' => $issue->expected,
                         'observed' => $issue->observed,
+                        'summary' => $issue->summary,
                     ];
                 }
             }

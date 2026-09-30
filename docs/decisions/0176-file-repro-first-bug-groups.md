@@ -30,7 +30,7 @@ The Tasks extension owns an outer loop, specified in the [Tasks reference](/refe
 
 `problem_fingerprints` stores one row per problem. The columns are `fingerprint`, `source`, `first_seen`, `last_seen`, `occurrences`, `evidence`, `task_group_id`, `muted_until`, and `filed_at`. `task_group_id` points at the top-level task, or is null. `filed_at` is when the current episode was filed, or null, and the operator cannot edit it. The fingerprint is unique and at most 255 characters. A longer key keeps its source prefix and a short hash of the full key.
 
-The evidence sample is small: at most five request ids, five Activity ids, five Activity paths, one redacted log excerpt of at most 500 characters, the latest Doctor expected and observed values, the newest 20 observation times, and up to 200 open assistance task ids. Expected and observed stay the bounded values Doctor already returns. The sample does not store raw Doctor output. This narrows [No stored reports](/cli/doctor#no-stored-reports) for that sample only.
+The evidence sample is small: at most five request ids, five Activity ids, five Activity paths, one redacted log excerpt of at most 500 characters, the latest Doctor expected and observed values, the latest Doctor summary, the assistance reason before normalization, the newest 20 observation times, and up to 200 open assistance task ids. The summary and the assistance reason are cut at 1,000 characters. Expected and observed stay the bounded values Doctor already returns. The sample does not store raw Doctor output. This narrows [No stored reports](/cli/doctor#no-stored-reports) for that sample only.
 
 | Source | Fingerprint |
 | --- | --- |
@@ -73,7 +73,7 @@ The filer inserts the task and its subtasks and updates the fingerprint in one d
 
 Each task is for the Project with slug `orbit` and starts in `backlog`. The brief starts with `Filed by the outer loop.` and then has Symptom, Fingerprint, First seen, Last seen, Count, Evidence, and Suspected entry point. A missing Orbit Project files nothing.
 
-Symptom is cut at 1,000 characters. The suspected entry point is cut at 500. Expected and observed are cut at 200. The fingerprint stays at most 255. If the brief is still over 8,000 characters, Evidence lines are dropped until it fits. `tasks:create` refuses a longer brief with `validation.failed`. If create still fails, the filer skips that row, leaves `filed_at` unset, does not count it toward the cap, and continues. Each subtask brief copies the cut symptom and stays under 8,000 characters.
+Symptom is cut at 1,000 characters. The suspected entry point is cut at 500. Expected and observed are cut at 200. The fingerprint stays at most 255. The Evidence heading is always present. When that section has no lines, it says `none`. If the brief is still over 8,000 characters, Evidence lines are dropped until it fits, and the heading stays. `tasks:create` refuses a longer brief with `validation.failed`. If create still fails, the filer skips that row, leaves `filed_at` unset, does not count it toward the cap, and continues. Each subtask brief copies the cut symptom and stays under 8,000 characters.
 
 The first subtask is the docs subtask. Its deliverable id is `docs` and its type is `review`. The second subtask reproduces the failure and then fixes it. Its deliverable id is `test`, its type is `command`, and `fails_on_base` is true. The filer fills a placeholder command, directory, and path. The operator replaces those fields with the real test, edits the brief, and moves the task to Todo.
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\NodeStateInspector;
+use App\Domain\Problems\ProblemEvidence;
 use App\Domain\Problems\ProblemSource;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskExtensionState;
@@ -168,6 +169,21 @@ it('collects fingerprints for a closure frame without line numbers', function ()
 
     expect($fingerprint)->toBe('log|RuntimeException|app/Http/Middleware/RequireNodeAccess.php:Illuminate\\Pipeline\\Pipeline->{closure:{closure:Illuminate\\Pipeline\\Pipeline::carry()}}')
         ->and($fingerprint)->not->toMatch('/\\d/');
+});
+
+it('cuts a doctor summary and an assistance reason to 1000 characters', function (): void {
+    $long = str_repeat('é', 1001);
+    $stored = app(ProblemEvidence::class)->apply([], [
+        'summary' => $long,
+        'assistance_reason' => $long,
+        'error_message' => $long,
+    ]);
+
+    expect(mb_strlen($stored['summary']))->toBe(1000)
+        ->and($stored['summary'])->toBe(str_repeat('é', 1000))
+        ->and(mb_strlen($stored['assistance_reason']))->toBe(1000)
+        ->and($stored['assistance_reason'])->toBe(str_repeat('é', 1000))
+        ->and($stored['error_message'])->toBe($long);
 });
 
 it('collects fingerprints for one open assistance reason until that request clears', function (): void {
