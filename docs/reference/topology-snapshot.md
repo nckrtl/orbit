@@ -97,6 +97,18 @@ The harness writes no Caddy file on any Node. Every Caddyfile comes from a [Node
 
 Guest preparation points `/etc/resolv.conf` at the systemd-resolved stub. It also writes the public upstream servers `1.1.1.1` and `8.8.8.8` into a systemd-resolved drop-in, because runtime resolver settings do not survive a snapshot reboot. Orbit's private DNS routes still apply to private names.
 
+#### Failed guest scripts
+
+A guest convergence script that exits nonzero stops that step. The harness error names the script, the VM, and the exit code. It also includes the tail of that script's stderr.
+
+The harness redacts stderr the same way it redacts output in the [evidence log](/reference/incus-topologies#evidence-log). The tail is the end of that redacted text. It keeps at most the last 20 lines and 2000 characters. When those lines are longer, it keeps the last 2000 characters. A shorter stream is included whole. When stderr is empty, the error still names the script, the VM, and the exit code.
+
+A probe that retries reports the last attempt. That error names the same script, VM, exit code, and stderr tail.
+
+#### Guest script drift
+
+CI checks every `orbit` call in `apps/e2e/resources/guest` against the current CLI signatures. The command name, its arguments, and its options must match a signature. CI also checks every API field a script reads from that command's JSON, including a nested field. The field must be present on the OpenAPI schema for that object. A call or a field that does not match fails CI. [API reference generation](/reference/api-reference) writes that schema.
+
 ### Readiness
 
 Verification runs a fixed set of probes on the Nodes. The Caddy probes read only the live Caddyfile and fail when no Node Caddy build wrote it. The production probe requires exactly one copy of each production site. The `metrics.orbit` probe requires the client guard that the build writes after the `bind` line. The guard allows the stored fleet VPN subnet, or `10.44.0.0/24` when none is stored. Each active Instance of a `laravel-app` Project must have exactly one Route, and every other active Instance none.
@@ -151,3 +163,11 @@ Recovery deletes only resources whose identity and metadata it has proved and jo
 ### Guest scripts read Project and Instance JSON
 
 Guest scripts read `project_id` and `target.instance_id`, and they create the sample Route with `route:create <instance> <domain>`. Keeping another JSON name for those fields was rejected. The CLI returns one name for each field, and a refresh stops when a script requires a field the response does not have.
+
+### A failed script shows a short redacted tail
+
+The harness error includes the script's stderr, so an operator can see why the step stopped without opening the VM. The tail stops at 20 lines and 2000 characters, so a long log does not replace the error. Keeping the whole stderr was rejected for that reason. The tail uses the same redaction as other harness evidence, so a secret on stderr is not copied into the command result.
+
+### CI compares guest scripts with the CLI and the API
+
+A guest script that calls a removed `orbit` command, or reads a removed JSON field, fails during convergence, after the VMs are already up. CI rejects that script first. The check reads the scripts and compares each call and field with the current signatures and schemas. A separate list of allowed commands was rejected, because that list drifts from the scripts.

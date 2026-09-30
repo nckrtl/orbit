@@ -49,6 +49,8 @@ Credentials stay in the guest's protected configuration and in the Gateway. Repe
 
 Guest convergence reads only the current CLI names: `projects`, `instances`, `project_id`, and `target.instance_id`. It creates the `e2e-dev.orbit` Route with `route:create <instance> e2e-dev.orbit --publication=private`. The first argument is the Instance id. Sample `APP_URL` values store `https://{{instance.domain}}`. [Project and Instance](/reference/projects#project-and-instance) defines those names, and [Guest script inputs](/reference/topology-snapshot#guest-script-inputs) lists the commands.
 
+CI checks those calls and the JSON fields the scripts read against the current CLI signatures and the OpenAPI schemas. A failed script reports the script, the VM, the exit code, and the redacted stderr tail. [Failed guest scripts](/reference/topology-snapshot#failed-guest-scripts) states that error.
+
 ## Discovery topology
 
 An issue holds one discovery topology at a time. `acquire` creates it and `release` removes it. Its state lives under `<worktree>/.e2e/`, in `attempt.json` and `topology.json`, and it dies with the worktree.
