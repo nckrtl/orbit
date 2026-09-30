@@ -115,6 +115,12 @@ The result names the Instance, slug, prefix, written keys, host, port, whether s
 
 Add and remove change stored configuration only. Run [`env:sync`](/reference/environment-variables#synchronize) to write the Instance's `.env`.
 
+## Attachments on a development copy
+
+A development [copy](/reference/instance-copies) duplicates each database attachment of the source. It does not create a database server or a connection record. MySQL and PostgreSQL stay shared. The create result lists those attachments in `shared_databases`.
+
+SQLite files inside the checkout are not left as copied bytes. Each one is replaced by a consistent snapshot taken without stopping the source. A stored path or domain that names the source checkout is rewritten to the target when it sits inside a longer value. The path must end at `/` or at the end of the value, and the domain must be a whole host. [Instance copies](/reference/instance-copies#values-that-name-the-source) states those boundaries.
+
 ## Inspect attachments with Doctor
 
 [Doctor](/cli/doctor) checks database connections in its `database_connection` family. It compares each record and mapping with the Instance's stored keys, and changes nothing.

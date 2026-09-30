@@ -21,6 +21,7 @@ This page follows an Instance from creation to removal. Each step links to the p
 | --- | --- | --- |
 | Record the repository | `project:create` | [Projects](/reference/projects) |
 | Create a development checkout | `instance:create` | [Create a development Instance](#create-a-development-instance) |
+| Copy a development checkout | `instance:create --from` | [Instance copies](/reference/instance-copies) |
 | Adopt an existing checkout | `instance:register` | [Register an existing checkout](#register-an-existing-checkout) |
 | Run application commands | `instance:setup` | [Instance setup and teardown](/reference/instance-setup) |
 | Create a production copy | `instance:clone` | [Instance cloning](/reference/instance-cloning) |
@@ -65,6 +66,10 @@ The Gateway refuses these requests before it changes anything:
 | `instance.default_path_occupied` | The name is `default`, and its path is used by a managed Instance or holds an unmanaged directory. |
 | `instance.candidate_required` | The Node has the active `app-prod` role. A repeat for an existing production Instance is refused the same way. Use [`instance:clone`](/reference/instance-cloning). |
 | `instance.placement_unavailable` | The owning Node does not have exactly one active `app-dev` or `app-prod` role. |
+
+## Copy a development Instance
+
+`instance:create --from` copies an active warm development checkout on the same Node. The Gateway tries a reflink and falls back to a plain copy. The copy gets its own branch at the source `HEAD`, its own Route and Vite port, and SQLite snapshots. It keeps `.env`, rewrites values that name the source, and runs setup. `instance:clone` stays the production command. The [Instance copies](/reference/instance-copies) page is the contract.
 
 ## Register an existing checkout
 

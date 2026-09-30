@@ -16,7 +16,7 @@ covers:
 
 Every production Instance starts as a clone. The Gateway copies a candidate Instance's committed source, stored environment, and optionally one SQLite database to a new Instance on an `app-prod` Node. The candidate keeps running. The clone ends with a prepared production home and no release. Its first [deployment](/reference/deployments) selects code. Provisioning creates the production PHP runtime through the native provisioner and projects its Route through the shared native Route projector.
 
-`instance:create` on an `app-prod` Node returns `instance.candidate_required`. The `app-prod` role decides this, not `APP_ENV`.
+`instance:create` on an `app-prod` Node returns `instance.candidate_required`, including a request with `--from`. The `app-prod` role decides this, not `APP_ENV`. A development reflink copy is [`instance:create --from`](/reference/instance-copies), and it is not a clone.
 
 ## Prepare the Node
 
@@ -134,7 +134,7 @@ A repository does not hold an Instance's environment or data. A candidate does. 
 
 ### Rebuild source from the repository
 
-Copying the candidate directory would carry dependencies, logs, caches, and Node-specific configuration. So the clone checks out committed source from the repository, and a dirty candidate is refused.
+Copying the candidate directory would carry dependencies, logs, caches, and Node-specific configuration. So the clone checks out committed source from the repository, and a dirty candidate is refused. A development Instance that must keep those dependencies uses a [copy](/reference/instance-copies) instead of this command.
 
 ### Keep the candidate running
 

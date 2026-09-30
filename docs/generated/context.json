@@ -746,6 +746,32 @@
             ]
         },
         {
+            "path": "docs/decisions/0186-create-development-instances-as-copy-on-write-copies.md",
+            "title": "ADR 0186: Create development Instances as copy-on-write copies",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Route",
+                "Subtask",
+                "Task",
+                "Task workspace"
+            ],
+            "governing_adrs": [
+                "0186"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -790,7 +816,8 @@
                 "0097",
                 "0175",
                 "0178",
-                "0182"
+                "0182",
+                "0186"
             ]
         },
         {
@@ -1386,6 +1413,29 @@
                 "Project",
                 "Role",
                 "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/instance-copies.md",
+            "title": "Instance copies",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Schedule",
+                "Task",
+                "Task workspace"
             ],
             "governing_adrs": []
         },

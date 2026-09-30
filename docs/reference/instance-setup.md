@@ -83,7 +83,7 @@ Inspect the Instance before you retry.
 orbit instance:setup <instance>
 ```
 
-`instance:clone` runs neither list.
+`instance:clone` runs neither list. `instance:create --from` runs the setup list after the [copy](/reference/instance-copies) is in place, on the same path as a repository create. Installed dependencies make the matching commands cheap. A failed step still rolls the new Instance back.
 
 ## Deadlines
 

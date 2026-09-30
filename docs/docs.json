@@ -80,6 +80,7 @@
               "reference/agentation",
               "reference/agent-annotation",
               "reference/php-runtime",
+              "reference/instance-copies",
               "reference/instance-cloning",
               "reference/deployments",
               "reference/instance-setup",
@@ -560,7 +561,8 @@
               "decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
               "decisions/0175-docs-impact-check-in-orbit-repo",
               "decisions/0178-run-project-agnostic-tasks-without-a-planner",
-              "decisions/0182-start-tasks-from-project-task-definitions"
+              "decisions/0182-start-tasks-from-project-task-definitions",
+              "decisions/0186-create-development-instances-as-copy-on-write-copies"
             ]
           }
         ]

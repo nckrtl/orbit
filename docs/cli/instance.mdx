@@ -10,7 +10,7 @@ covers:
 
 An Instance is one copy of a Project on one Node. On an `app-dev` Node it owns a checkout or worktree. On an `app-prod` Node it owns a Unix user and a production home with releases. The [Project type](/reference/projects#project-types) decides whether it gets a Route.
 
-[Applications](/domains/applications) walks through the lifecycle. [Production release layout](/reference/deployments), [Instance setup and teardown](/reference/instance-setup), [Instance cloning](/reference/instance-cloning), [Instance transfer](/reference/instance-transfer), [Instance removal](/reference/instance-removal), and [Database connections](/reference/database-connections) own the contracts behind these commands.
+[Applications](/domains/applications) walks through the lifecycle. [Production release layout](/reference/deployments), [Instance setup and teardown](/reference/instance-setup), [Instance copies](/reference/instance-copies), [Instance cloning](/reference/instance-cloning), [Instance transfer](/reference/instance-transfer), [Instance removal](/reference/instance-removal), and [Database connections](/reference/database-connections) own the contracts behind these commands.
 
 ## Commands
 
@@ -20,7 +20,7 @@ Placement commands create, adopt, inspect, and remove an Instance on one Node.
 
 | Command | Result |
 | --- | --- |
-| [`instance:create`](#orbit-instancecreate) | Create a development Instance on an app-dev Node and run its Project setup steps. |
+| [`instance:create`](#orbit-instancecreate) | Create a development Instance on an app-dev Node and run its Project setup steps. `--from` copies another development checkout first. |
 | [`instance:register`](#orbit-instanceregister) | Adopt the current Git checkout or worktree as a managed Instance. |
 | [`instance:setup`](#orbit-instancesetup) | Run the Project setup steps for one development Instance. |
 | [`instance:setup-step:create`](#orbit-instancesetup-stepcreate) | Record one named setup step on a Project. |
@@ -84,11 +84,12 @@ orbit instance:create <project> <node> <name> [options]
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--root=PATH` | the Project root | Relative web-root override for this Instance. |
+| `--root=PATH` | the Project root | Relative web-root override for this Instance. With `--from`, omit it to keep the source root. |
 | `--domain=HOST` | generated | Explicit Route domain for the development source. Without it, Orbit generates a domain from the active Cluster TLD, then the Node TLD. |
-| `--branch=BRANCH` | see [branch selection](/domains/applications#create-a-development-instance) | Explicit source branch. |
+| `--branch=BRANCH` | see below | Explicit source branch. With `--from`, the default is the new Instance name. |
+| `--from=INSTANCE` | none | Numeric source Instance id. [Copy](/reference/instance-copies) that development checkout instead of cloning the repository. |
 
-Development placement and branch selection follow the requested name.
+Without `--from`, development placement and branch selection follow the requested name.
 
 | Creation input | Managed placement | Selected branch |
 | --- | --- | --- |
@@ -101,13 +102,61 @@ orbit instance:create 4 7 default
 orbit instance:create 4 7 feature-one --branch=release --domain=feature.example.test
 ```
 
-An identical retry resumes an incomplete creation. A retry that changes the root or `--branch` returns `instance.placement_conflict`.
+An identical retry resumes an incomplete creation. A retry that changes the root or `--branch` returns `instance.placement_conflict`. A copy retry must also repeat `--from`.
 
 <Note>
-The Instance becomes active once Orbit has prepared the source, PHP runtime, Laravel URL, and Route. Setup runs after that. A successful create response also means every setup step succeeded; an empty list counts as success. The application can still fail for other reasons.
+The Instance becomes active once Orbit has prepared the source, PHP runtime, Laravel URL, and Route. Setup runs after that. A successful response means every setup step succeeded. An empty setup list counts as success. The application can still fail for other reasons.
 </Note>
 
-A failed setup step removes the new Instance after the teardown steps run. See [Instance setup and teardown](/reference/instance-setup#run-setup).
+A failed setup step removes the new Instance after the teardown steps run. See [Instance setup and teardown](/reference/instance-setup#run-setup). A failed copy uses that same removal for an owned checkout, including the PHP-FPM pool and Route projection. See [Instance copies](/reference/instance-copies#copy-steps).
+
+### Copy with --from
+
+`--from` names the source Instance. The Node argument must be that Instance's Node. The Project argument must be its Project. An interactive call does not prompt for `--from`.
+
+```bash
+orbit instance:create 4 7 feature-one --from=12
+orbit instance:create 4 7 feature-one --from=12 --branch=release --domain=feature.example.test
+```
+
+Omitted `--branch` creates a branch named `feature-one` at the source `HEAD`. A passed `--branch` uses that name at the same commit. The source repository is not changed. The copy keeps untracked files and `.env`, replaces SQLite files with snapshots, and runs setup.
+
+Human progress labels are `Copy Instance`, `Copying Instance`, and `Copied Instance`. The detail tree adds:
+
+| Label | Value |
+| --- | --- |
+| `Creation` | `copy` |
+| `Copy mode` | `reflink` or `full` |
+| `Copied from` | The source Instance name, or an em dash when the source row is gone. |
+| `URL` | The new Instance URL. |
+
+JSON is the Instance response, including `checkout_path`, `creation`, `copy_mode`, and `source_instance`. `source_instance` is `{"id", "name"}`, or null when the source id is null. `shared_databases` lists copied MySQL and PostgreSQL attachments. Show and list JSON include `creation`, `copy_mode`, and `source_instance`. The human list table does not.
+
+`--json` prints that object and no progress text.
+
+A value of `--from` that is not a positive integer returns `instance.id_invalid` and sends no request. The Gateway refusals for a copy are:
+
+| Code | Cause |
+| --- | --- |
+| `instance.copy_source_missing` | The source id does not exist. |
+| `instance.copy_project_mismatch` | The source belongs to another Project. |
+| `instance.copy_node_mismatch` | The Node is not the source Node. |
+| `instance.copy_source_not_development` | The source is not a development Instance. |
+| `instance.copy_source_inactive` | The source is not `active`. |
+| `instance.copy_source_cold` | The source has a cold marker. |
+| `instance.copy_source_layout_invalid` | The source is a worktree or has linked worktrees. |
+| `instance.copy_source_unsafe` | Git metadata or a SQLite path is unsafe. |
+| `instance.copy_source_branch_invalid` | `HEAD` is detached or is not the recorded branch. |
+| `instance.copy_source_dirty` | A tracked file has an uncommitted change. |
+| `instance.copy_root_mismatch` | `--root` does not match the source root. |
+| `instance.copy_branch_diverged` | The branch name points at another commit. |
+| `instance.copy_source_changed` | The source `HEAD` moved during the copy. |
+| `instance.copy_failed` | The copy, snapshot, rewrite, or completion step failed. |
+| `instance.lifecycle_busy` | Another request holds this Instance's lifecycle lock. |
+| `instance.placement_conflict` | The retry changes the source, Node, name, root, domain, or branch. |
+| `instance.candidate_required` | The Node has the active `app-prod` role. |
+
+The other `instance:create` refusals also apply. [Instance copies](/reference/instance-copies#errors) records HTTP status and cleanup for each code.
 
 ## orbit instance:register
 
@@ -143,7 +192,7 @@ orbit instance:register --path=/srv/orbit/apps/acme/main --include-worktrees --y
 
 ## orbit instance:list
 
-List Instances with their Project, Node, status, Route domain, `vite_port`, and `removal` progress.
+List Instances with their Project, Node, status, Route domain, `vite_port`, and `removal` progress. JSON includes `creation`, `copy_mode`, and `source_instance`. The table does not.
 
 ```bash
 orbit instance:list [--json]
@@ -151,7 +200,7 @@ orbit instance:list [--json]
 
 ## orbit instance:show
 
-Show one Instance. Production output includes the recorded user, home, selected branch, and deploy steps in phase and placement order.
+Show one Instance. Production output includes the recorded user, home, selected branch, and deploy steps in phase and placement order. The detail tree includes `Creation`, `Copy mode`, and `Copied from`. JSON includes `creation`, `copy_mode`, and `source_instance`.
 
 ```bash
 orbit instance:show <instance> [--json]
@@ -675,6 +724,7 @@ Without `--force`, an interactive call asks for default-No consent naming the so
 ## Related
 
 - [`project`](/cli/project) owns the repository and source defaults that an Instance inherits.
+- [Instance copies](/reference/instance-copies) is the contract for `instance:create --from`.
 - [`route`](/cli/route) shows and changes the domain of an Instance.
 - [`env`](/cli/env) imports, updates, and synchronizes the stored environment that deployments render.
 - [`process`](/cli/process) and [`schedule`](/cli/schedule) run services and timers on an Instance.

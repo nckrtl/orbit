@@ -260,7 +260,7 @@ A claim takes the oldest `todo` task that fits and moves it to `reserved`. The p
 - allowed by both of the task's agent drivers: T3 needs an active `t3-code` Process, and Pi an active `pi-server` Process, each with desired state `running`;
 - with fewer than 10 active tasks. Active tasks are `reserved`, `running`, `reviewing`, and `settling`.
 
-Among the Nodes that fit, the one with the fewest active tasks wins. There is no per-Project limit, and the scheduler never polls Nodes for capacity.
+Among the Nodes that fit, the one with the fewest active tasks wins. There is no per-Project limit, and the scheduler never polls Nodes for capacity. The claim does not move to another Node to find a copy source. After the Node is chosen, provisioning may copy that Node's `default` Instance. See [Task workspaces](/reference/instance-copies#task-workspaces).
 
 When the workspace is ready, the task becomes `running`, and its first subtask starts. When a claim fails, the task returns to `todo`, and the claim continues with the next task. A tick tries each failing task once.
 
@@ -297,6 +297,8 @@ The task workspace is one fresh Instance that every subtask of the task shares. 
 | Any other slug | Visitable. The usual development provisioner gives it an inspect subdomain, and it becomes `active`. |
 
 [Doctor](/cli/doctor) treats `source_resolved` as the healthy state of a workspace that is not visitable, and `active` for a visitable one.
+
+When the Instance named `default` is on the selected Node and is an eligible [copy source](/reference/instance-copies#source-eligibility), the workspace is a copy of that checkout. The copy fetches `origin` and points `task-{id}` at the Project's default branch tip. It does not use the source's local `HEAD`. When that source is missing, ineligible, or the copy fails before the workspace exists, provisioning uses a fresh clone. The task stores `workspace_creation`, `workspace_copy_mode`, and `workspace_fallback_reason`. `tasks:show` returns them. A fallback reason is `tasks.workspace_source_unavailable` or `tasks.workspace_copy_failed`.
 
 Orbit writes an untracked `.mcp.json` into the workspace before a reviewer starts, unless the workspace already has one, tracked or not. It points at `{gateway origin}/mcp/search`, which lists only `search_tools` and `execute_tools`. The file is excluded from Git. The [MCP server](/reference/mcp) describes both endpoints.
 
@@ -438,7 +440,7 @@ A subtask runs at most one baseline check at a time. Moving a task to Todo and t
 
 The start records that claim before the process exists. The tick waits while the claim has no process. If the claim is still unstarted after the SSH command timeout of 900 seconds, the start was interrupted. Orbit asks for assistance and does not start another check, because one may still be running in the workspace. Cancelling during that start stops the process once the start returns.
 
-The check first runs the Project's [setup steps](/reference/instance-setup) with their own timeouts. Then it prepares dependencies:
+The check first runs the Project's [setup steps](/reference/instance-setup) with their own timeouts. A workspace that started from a [copy](/reference/instance-copies#task-workspaces) still runs this check. Then it prepares dependencies:
 
 - When the task check runs `composer` or names `vendor/`, it runs `composer install --no-interaction --prefer-dist` where a tracked `composer.json` has no `vendor/autoload.php`.
 - When the task check names Bun, npm, pnpm, Yarn, Node, Vite+, or `node_modules`, it runs `vp install --frozen-lockfile` for each tracked `package.json` with a lockfile and without `node_modules`.

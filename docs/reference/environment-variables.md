@@ -93,6 +93,12 @@ Import, update, synchronize, deploy, removal, and Route changes on one Instance 
 
 A [clone](/reference/instance-cloning) onto `app-prod` copies the candidate's stored configuration and then sets `APP_ENV=production` and `APP_DEBUG=false`. You can change both afterwards. A transfer keeps every stored key.
 
+## Development copy
+
+A development [copy](/reference/instance-copies) keeps the source `.env` and duplicates stored keys. It rewrites every stored value, every value in that file, and every file under `bootstrap/cache` when the source checkout path or the source domain appears inside it. A path matches only when the next character is `/` or the end of the value. A domain matches only as a whole host. `APP_URL`, `AGENTATION_URL`, and `DB_DATABASE` follow that rule.
+
+A key that exists only in the copied `.env` is imported into stored configuration. Synchronization then keeps it. The Laravel URL step still sets `APP_URL` and the cached `url`.
+
 ## Other writers
 
 Other operations also change stored keys, and never the file itself:

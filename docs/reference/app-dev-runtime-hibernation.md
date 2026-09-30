@@ -5,6 +5,7 @@ covers:
   - apps/gateway/app/{Actions,Domain,Infrastructure}/Hibernation/**
   - apps/gateway/app/Http/Responses/RuntimeActivationPage.php
   - apps/gateway/config/orbit.php
+  - apps/gateway/app/Console/Commands/RuntimeHibernatorCommand.php
 ---
 
 # App-dev runtime hibernation
@@ -63,6 +64,8 @@ The same sweep deletes `vendor` and `node_modules` when all of these are true:
 
 Orbit deletes `vendor` only next to `composer.json` and `composer.lock`. It deletes `node_modules` only next to `package.json` and exactly one JavaScript lockfile. It never follows a symlink and keeps every lockfile. Then it writes the cold marker. The [dependency inventory](/reference/instance-dependencies) stays, because it reads lockfiles.
 
+The copy change adds a Node source lock to this sweep. The prune takes that lock before those deletes. It does not take the lock today. A [development copy](/reference/instance-copies) holds the same lock, so the prune cannot remove `vendor` or `node_modules` while the copy runs.
+
 ## Wake
 
 Caddy on the Instance's Node checks for the awake marker on every request. When the marker is missing, Caddy calls `GET /api/v1/runtime-activations/app-instance/{id}` on the Gateway over WireGuard, trusting the Orbit root certificate. The caller must be the Instance's Node, or a Node with an [access grant](/cli/node) to it.
@@ -104,6 +107,10 @@ Orbit sets each parent directory to `0755` so the `caddy` user can reach them. T
 ## Docker Processes
 
 A Docker Process of a development Instance maps restart policy `always` to Docker `unless-stopped`. An idle stop then survives a Docker daemon restart.
+
+## Development copies
+
+A [copy](/reference/instance-copies) does not copy awake markers, cold markers, or access logs. Those files are named by Instance id. The copy starts with no cold marker and no awake marker. A source whose cold marker exists is refused. An awake source is accepted, and Orbit does not clear the source marker.
 
 ## Inspect
 

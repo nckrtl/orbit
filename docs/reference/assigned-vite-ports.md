@@ -26,6 +26,8 @@ Two Nodes can use the same port. The database keeps each port unique per Node. T
 
 `instance:list`, `instance:show`, the API, and the SDK return `vite_port`. The assignment is a stored preference, not an open socket. It survives hibernation, dependency pruning, Process replacement, and reboots. Removal releases it after runtime cleanup. A [transfer](/reference/instance-transfer) assigns a port on the destination and releases the source port after cleanup.
 
+A development [copy](/reference/instance-copies) receives a new port. It does not reuse the source port. The copy deletes `public/hot` and does not copy `/etc/orbit/vite/app-instance-<id>.env`.
+
 ## The vp-dev preset
 
 Create the preset Process on a development Instance. `--instance` accepts an Instance ID or its exact Route domain.

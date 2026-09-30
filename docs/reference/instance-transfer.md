@@ -53,6 +53,8 @@ Orbit imports the source `.env` into the [stored environment](/reference/environ
 
 Process records keep their IDs, definitions, and desired states. Orbit stops their source units, creates them on the destination, and leaves no duplicate. The destination gets its own [Vite port](/reference/assigned-vite-ports), and Orbit releases the source port after cleanup.
 
+A development [copy](/reference/instance-copies) keeps `creation`, `source_instance_id`, and `copy_mode` across a transfer. Transfer does not take a new reflink and does not change those fields.
+
 ## Route
 
 An explicit domain keeps its Route. The Route moves to the destination Node and Cluster.
