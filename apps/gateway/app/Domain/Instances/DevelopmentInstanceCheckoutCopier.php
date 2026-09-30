@@ -27,6 +27,21 @@ interface DevelopmentInstanceCheckoutCopier
     ): DevelopmentInstanceCopyResult;
 
     /**
+     * Copy the source checkout, fetch `origin` in the target only, and point `$branch` at
+     * `origin/$defaultBranch` before isolation. The returned head is that fetched tip, never the
+     * source HEAD. A missing ref or a failed fetch fails the copy. The source repository is not
+     * modified. A failure after the copy starts removes the owned partial tree.
+     */
+    public function copyOntoFetchedTip(
+        Instance $source,
+        Instance $target,
+        string $branch,
+        string $defaultBranch,
+        string $expectedHead,
+        string $occupiedCode,
+    ): DevelopmentInstanceCopyResult;
+
+    /**
      * Read the target `.env` after the checkout copy. Null means the file is missing or not a regular file.
      */
     public function readEnvironment(Instance $target): ?string;

@@ -239,9 +239,9 @@ Human progress for `--from` is `Copy Instance`, `Copying Instance`, and `Copied 
 
 A [task workspace](/reference/tasks#shared-instance) uses a copy only after the claim has selected a Node. That selection does not change. The source is the Instance named `default` for the Project when it is on that Node and passes [eligibility](#source-eligibility).
 
-The copy fetches `origin` inside the new checkout. It does not fetch in the source. It then points `task-{id}` at `origin/{default_branch}`, the Project's default branch tip. It does not use the source's local `HEAD`. The recorded starting commit is that fetched tip. A missing ref or a failed fetch fails the copy.
+The copy fetches `origin` inside the new checkout. It does not fetch in the source. When `refs/remotes/origin/task-{id}` exists after that fetch, the workspace checks it out. Otherwise it points `task-{id}` at `origin/{default_branch}`. It never uses the source's local `HEAD`. The recorded starting commit is that chosen tip. A missing default ref, when the task ref is also absent, or a failed fetch fails the copy. After the checkout, the copy removes untracked files that are not ignored. Ignored files, including `vendor`, `node_modules`, and `.env`, stay. The checkout must then have an empty `git status --porcelain --untracked-files=all` before the copy is accepted.
 
-When `default` is missing or ineligible, or the copy fails before the workspace exists, the provisioner removes an owned partial target and creates the workspace with the current fresh clone. It does not delete a directory the marker does not name. The task stores:
+When `default` is missing or ineligible, or the copy fails before the workspace exists, the provisioner removes an owned partial target and creates the workspace with the current fresh clone. It does not delete a directory the marker does not name. A second removal is a no-op when the marker and the tree are already gone. If the tree is still there and the marker does not name it, removal fails. The task stores:
 
 | Field | Meaning |
 | --- | --- |
@@ -249,9 +249,15 @@ When `default` is missing or ineligible, or the copy fails before the workspace 
 | `workspace_copy_mode` | `reflink`, `full`, or null. |
 | `workspace_fallback_reason` | Null after a copy. Otherwise a stable code. |
 
-The fallback codes are `tasks.workspace_source_unavailable` and `tasks.workspace_copy_failed`. The second includes the copy error code. `tasks:show` returns all three fields.
+The fallback codes are `tasks.workspace_source_unavailable` and `tasks.workspace_copy_failed`. The second is `tasks.workspace_copy_failed: ` followed by the copy error code, for example `tasks.workspace_copy_failed: instance.copy_failed`. `tasks:show` returns all three fields.
 
-A visitable Project still gets its Route. The `orbit` slug still stays `source_resolved` and has no Route. Resuming a leftover `task-{id}` workspace does not copy again. The [baseline check](/reference/tasks#baseline-check) still runs setup and installs only dependencies that are missing. Cancellation and cleanup are unchanged.
+A visitable Project still gets its Route. The `orbit` slug still stays `source_resolved` and has no Route. A workspace that already has a checkout is resumed in place and is not copied again.
+
+A reserved copy that stopped before the checkout existed is removed with the marker guard and then copied again, or replaced by a fresh clone on that same row. The clone returns the row to `reserved`, clears its branch and starting commit, drops copied environment values and database attachments, and resets `creation` and `source_instance_id`. When the owned tree cannot be removed, the claim records `tasks.workspace_copy_failed: ` and the error code, leaves the reserved row, and does not create another Instance on top of it.
+
+A copied row already in `checkout_prepared` or `source_resolved` whose checkout is gone takes that same fresh clone. A checkout that is still present is resumed in place, and the resume fills `workspace_creation` and `workspace_copy_mode` when the task does not have them yet. A transient inspection failure while that checkout is still present does not replace those recorded fields.
+
+The [baseline check](/reference/tasks#baseline-check) still runs setup and installs only dependencies that are missing. Cancellation and cleanup are unchanged.
 
 ## Errors
 

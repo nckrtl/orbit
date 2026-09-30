@@ -3507,6 +3507,9 @@ export interface components {
             notify_coder?: boolean;
             assistance_requested?: boolean;
             assistance_reason?: string | null;
+            workspace_creation?: string | null;
+            workspace_copy_mode?: string | null;
+            workspace_fallback_reason?: string | null;
             implementer_model?: string;
             reviewer_model?: string;
             tokens?: number | null;

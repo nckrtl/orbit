@@ -65,6 +65,9 @@ use LogicException;
  * @property int $project_id
  * @property string|null $taskable_type
  * @property int|null $taskable_id
+ * @property string|null $workspace_creation
+ * @property string|null $workspace_copy_mode
+ * @property string|null $workspace_fallback_reason
  * @property string|null $pr_url
  * @property bool $notify_coder
  * @property string $implementer_model
@@ -103,6 +106,9 @@ final class Task extends Model
         'project_id',
         'taskable_type',
         'taskable_id',
+        'workspace_creation',
+        'workspace_copy_mode',
+        'workspace_fallback_reason',
         'pr_url',
         'notify_coder',
         'implementer_model',
@@ -193,6 +199,9 @@ final class Task extends Model
         'project_id',
         'taskable_type',
         'taskable_id',
+        'workspace_creation',
+        'workspace_copy_mode',
+        'workspace_fallback_reason',
         'pr_url',
         'notify_coder',
         'implementer_model',

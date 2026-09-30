@@ -9,7 +9,7 @@ covers:
   - "apps/gateway/app/Console/Commands/{TickTaskSessionsCommand,CollectT3MetricsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,AgentThread,JevDecision}.php"
   - "apps/gateway/resources/tasks/**"
-  - "apps/gateway/database/migrations/*_{convert_test_deliverables_to_commands,add_continuation_source_to_tasks}.php"
+  - "apps/gateway/database/migrations/*_{convert_test_deliverables_to_commands,add_continuation_source_to_tasks,add_task_workspace_copy_evidence}.php"
 ---
 
 # Tasks
@@ -298,7 +298,15 @@ The task workspace is one fresh Instance that every subtask of the task shares. 
 
 [Doctor](/cli/doctor) treats `source_resolved` as the healthy state of a workspace that is not visitable, and `active` for a visitable one.
 
-When the Instance named `default` is on the selected Node and is an eligible [copy source](/reference/instance-copies#source-eligibility), the workspace is a copy of that checkout. The copy fetches `origin` and points `task-{id}` at the Project's default branch tip. It does not use the source's local `HEAD`. When that source is missing, ineligible, or the copy fails before the workspace exists, provisioning uses a fresh clone. The task stores `workspace_creation`, `workspace_copy_mode`, and `workspace_fallback_reason`. `tasks:show` returns them. A fallback reason is `tasks.workspace_source_unavailable` or `tasks.workspace_copy_failed`.
+When the Instance named `default` is on the selected Node and is an eligible [copy source](/reference/instance-copies#source-eligibility), the workspace is a copy of that checkout. The copy fetches `origin` inside the new checkout, not in the source. When `origin/task-{id}` exists after that fetch, the workspace checks it out. Otherwise it points `task-{id}` at the Project's default branch tip. It never uses the source's local `HEAD`. The recorded starting commit is that chosen tip. It then removes untracked files that are not ignored, so a scratch file in `default` does not enter the task. Ignored files, including `vendor`, `node_modules`, and `.env`, stay.
+
+When `default` is missing or ineligible, or the copy fails before the workspace exists, provisioning removes an owned partial checkout and uses a fresh clone. It does not delete a directory the marker does not name. A workspace that already has a checkout is resumed in place and is not copied again.
+
+A reserved copy that never finished is different. The next claim removes the marker-owned partial tree and retries the copy, or falls back to a fresh clone on that same row. The fallback returns the row to `reserved`, clears its branch and starting commit, drops copied environment values and database attachments, resets `creation` and `source_instance_id`, and records the reason. When that owned tree cannot be removed, the claim records the failure, leaves the reserved row, and does not create another Instance. A later claim tries the removal again.
+
+A copied checkout that is already `checkout_prepared` or `source_resolved`, but whose tree is gone, takes that same fallback. A checkout that is still present is resumed in place. A transient inspection failure while that checkout is still present does not replace its recorded copy fields. When a crash lands after that checkout exists and before the task stores its workspace fields, the resume fills `workspace_creation` and `workspace_copy_mode` from the Instance.
+
+The task stores `workspace_creation`, `workspace_copy_mode`, and `workspace_fallback_reason`, and `tasks:show` returns them. `workspace_creation` is `copy` or `repository`, and null before provisioning. `workspace_copy_mode` is `reflink`, `full`, or null. `workspace_fallback_reason` is null after a copy. A missing or ineligible source stores `tasks.workspace_source_unavailable`. A copy that fails first stores `tasks.workspace_copy_failed: ` and the copy error code, for example `tasks.workspace_copy_failed: instance.copy_failed`.
 
 Orbit writes an untracked `.mcp.json` into the workspace before a reviewer starts, unless the workspace already has one, tracked or not. It points at `{gateway origin}/mcp/search`, which lists only `search_tools` and `execute_tools`. The file is excluded from Git. The [MCP server](/reference/mcp) describes both endpoints.
 

@@ -5,9 +5,14 @@ declare(strict_types=1);
 use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
+use App\Data\Tasks\TaskGroupData;
+use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\Instances\DevelopmentInstanceCheckoutCopier;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
 use App\Domain\Instances\DevelopmentSourceResolution;
+use App\Domain\Instances\InstanceCreation;
 use App\Domain\Instances\InstanceDestinationGuard;
 use App\Domain\Instances\InstanceRemover;
 use App\Domain\Instances\InstanceState;
@@ -29,12 +34,16 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
+use App\Models\DatabaseConnection;
+use App\Models\DatabaseConnectionTarget;
 use App\Models\Instance;
+use App\Models\InstanceEnvironmentValue;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\ProjectNodeExclusion;
 use App\Models\Task;
+use Tests\Support\FakeDevelopmentInstanceCheckoutCopier;
 
 function provisioner_app(
     string $slug,
@@ -119,6 +128,10 @@ function bind_task_workspace_fakes(): object
         /** @var list<string> */
         public array $calls = [];
 
+        public int $failInspectPreparedTimes = 0;
+
+        public int $failInspectResolvedTimes = 0;
+
         public function prepare(Instance $instance, bool $allowExisting): void
         {
             $this->calls[] = 'prepare';
@@ -127,6 +140,16 @@ function bind_task_workspace_fakes(): object
         public function inspectPrepared(Instance $instance): void
         {
             $this->calls[] = 'inspect-prepared';
+
+            if ($this->failInspectPreparedTimes > 0) {
+                $this->failInspectPreparedTimes--;
+
+                throw new RuntimeConvergenceException(
+                    step: 'app-instance-source-inspect',
+                    errorCode: 'instance.source_identity_invalid',
+                    message: 'The checkout is missing.',
+                );
+            }
         }
 
         public function resolve(Instance $instance): DevelopmentSourceResolution
@@ -139,6 +162,16 @@ function bind_task_workspace_fakes(): object
         public function inspectResolved(Instance $instance): DevelopmentSourceResolution
         {
             $this->calls[] = 'inspect-resolved';
+
+            if ($this->failInspectResolvedTimes > 0) {
+                $this->failInspectResolvedTimes--;
+
+                throw new RuntimeConvergenceException(
+                    step: 'app-instance-source-inspect-resolved',
+                    errorCode: 'instance.source_identity_invalid',
+                    message: 'The checkout is missing.',
+                );
+            }
 
             return new DevelopmentSourceResolution((string) $instance->branch, (string) $instance->starting_commit);
         }
@@ -165,12 +198,31 @@ function bind_task_workspace_fakes(): object
         }
     };
 
+    $copies = new FakeDevelopmentInstanceCheckoutCopier;
+
     app()->instance(ManagedUserAccountResolver::class, $accounts);
     app()->instance(InstanceDestinationGuard::class, $destination);
     app()->instance(DevelopmentInstanceSourceLifecycle::class, $source);
     app()->instance(DevelopmentInstanceProvisioner::class, $development);
+    app()->instance(DevelopmentInstanceCheckoutCopier::class, $copies);
 
-    return (object) ['source' => $source, 'development' => $development];
+    return (object) ['source' => $source, 'development' => $development, 'copies' => $copies];
+}
+
+function provisioner_default(Project $project, Node $node, InstanceState $status = InstanceState::Active): Instance
+{
+    return Instance::query()->create([
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => 'default',
+        'source_layout' => 'checkout',
+        'checkout_path' => '/srv/orbit/apps/'.$project->slug.'/default',
+        'branch' => 'main',
+        'branch_override' => 'main',
+        'starting_commit' => str_repeat('b', 40),
+        'root' => 'public',
+        'status' => $status,
+    ]);
 }
 
 it('leaves a group reserved when no app-dev Node can take the workspace', function (): void {
@@ -475,6 +527,492 @@ describe('a workspace an interrupted claim left unattached', function (): void {
         $this->assertDatabaseCount('instances', 1);
     });
 });
+
+describe('a task workspace copied from the default Instance', function (): void {
+    it('copies the selected Node default and sits on the fetched default branch tip', function (bool $visitable): void {
+        $project = provisioner_app($visitable ? 'shop' : 'orbit');
+        $node = provisioner_node('copy-dev', '10.44.0.210');
+        $source = provisioner_default($project, $node);
+        $group = provisioner_group($project, 'Copied');
+        $fakes = bind_task_workspace_fakes();
+
+        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, $visitable));
+        $shown = TaskGroupData::fromModel($group->fresh() ?? $group)->toArray();
+
+        expect($instance)->toBeInstanceOf(Instance::class)
+            ->and($instance?->node_id)->toBe($node->id)
+            ->and($instance?->name)->toBe(TaskWorkspaceName::for($group))
+            ->and($instance?->branch)->toBe(TaskWorkspaceName::for($group))
+            ->and($instance?->branch_override)->toBe(TaskWorkspaceName::for($group))
+            ->and($instance?->starting_commit)->toBe($fakes->copies->fetchedTip)
+            ->and($instance?->starting_commit)->not->toBe($fakes->copies->head)
+            ->and($instance?->creation)->toBe(InstanceCreation::Copy)
+            ->and($instance?->copy_mode)->toBe('reflink')
+            ->and($instance?->source_instance_id)->toBe($source->id)
+            ->and($instance?->status)->toBe(InstanceState::SourceResolved)
+            ->and($instance?->routes()->count())->toBe(0)
+            ->and($fakes->copies->fetchedCopies)->toBe(1)
+            ->and($fakes->copies->branch)->toBe(TaskWorkspaceName::for($group))
+            ->and($fakes->copies->defaultBranch)->toBe('main')
+            ->and($fakes->copies->expectedHead)->toBe($fakes->copies->head)
+            ->and($fakes->source->calls)->toBe(['inspect-prepared', 'inspect-resolved', 'inspect-prepared', 'inspect-resolved'])
+            ->and($fakes->development->reserves)->toBe($visitable ? 1 : 0)
+            ->and($fakes->development->completes)->toBe($visitable ? 1 : 0)
+            ->and($source->fresh()?->status)->toBe(InstanceState::Active)
+            ->and($source->fresh()?->branch)->toBe('main')
+            ->and($shown['workspace_creation'])->toBe(InstanceCreation::Copy)
+            ->and($shown['workspace_copy_mode'])->toBe('reflink')
+            ->and($shown['workspace_fallback_reason'])->toBeNull();
+    })->with([
+        'orbit stays source resolved' => false,
+        'a visitable Project still gets its Route' => true,
+    ]);
+
+    it('records a plain copy when reflink is unavailable', function (): void {
+        $project = provisioner_app('shop');
+        $node = provisioner_node('full-dev', '10.44.0.211');
+        provisioner_default($project, $node);
+        $group = provisioner_group($project);
+        $fakes = bind_task_workspace_fakes();
+        $fakes->copies->mode = 'full';
+
+        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, true));
+
+        expect($instance?->copy_mode)->toBe('full')
+            ->and($group->fresh()?->workspace_copy_mode)->toBe('full')
+            ->and($group->fresh()?->workspace_creation)->toBe(InstanceCreation::Copy);
+    });
+
+    it('keeps the selected Node when only another Node has an eligible default', function (): void {
+        $project = provisioner_app('shop');
+        $selected = provisioner_node('selected', '10.44.0.212');
+        $sourceNode = provisioner_node('source', '10.44.0.213');
+        provisioner_default($project, $sourceNode);
+        $group = provisioner_group($project);
+        $fakes = bind_task_workspace_fakes();
+
+        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, true));
+
+        expect($instance?->node_id)->toBe($selected->id)
+            ->and($instance?->creation)->toBe(InstanceCreation::Repository)
+            ->and($fakes->copies->fetchedCopies)->toBe(0)
+            ->and($fakes->copies->inspections)->toBe(0)
+            ->and($group->fresh()?->workspace_creation)->toBe(InstanceCreation::Repository)
+            ->and($group->fresh()?->workspace_copy_mode)->toBeNull()
+            ->and($group->fresh()?->workspace_fallback_reason)->toBe(TaskWorkspaceProvisioner::SourceUnavailableReason);
+    });
+
+    it('falls back to a fresh clone when the default Instance is missing or ineligible', function (string $cause): void {
+        $project = provisioner_app('shop');
+        $node = provisioner_node('plain', '10.44.0.214');
+        $group = provisioner_group($project);
+
+        if ($cause === 'other project') {
+            provisioner_default(provisioner_app('other'), $node);
+        } elseif ($cause === 'inactive') {
+            provisioner_default($project, $node, InstanceState::SourceResolved);
+        }
+
+        $fakes = bind_task_workspace_fakes();
+
+        if ($cause === 'cold') {
+            provisioner_default($project, $node);
+            $fakes->copies->failInspect = 'instance.copy_source_cold';
+        }
+
+        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, true));
+
+        expect($instance?->node_id)->toBe($node->id)
+            ->and($instance?->creation)->toBe(InstanceCreation::Repository)
+            ->and($instance?->source_instance_id)->toBeNull()
+            ->and($instance?->starting_commit)->toBe(str_repeat('a', 40))
+            ->and($fakes->copies->fetchedCopies)->toBe(0)
+            ->and($fakes->source->calls)->toContain('prepare', 'resolve')
+            ->and($group->fresh()?->workspace_creation)->toBe(InstanceCreation::Repository)
+            ->and($group->fresh()?->workspace_copy_mode)->toBeNull()
+            ->and($group->fresh()?->workspace_fallback_reason)->toBe(TaskWorkspaceProvisioner::SourceUnavailableReason);
+    })->with(['missing', 'other project', 'inactive', 'cold']);
+
+    it('falls back to a fresh clone when the copy fails before the workspace exists', function (): void {
+        $project = provisioner_app('shop');
+        $node = provisioner_node('failed', '10.44.0.215');
+        $source = provisioner_default($project, $node);
+        $group = provisioner_group($project);
+        $fakes = bind_task_workspace_fakes();
+        $fakes->copies->failCopy = 'instance.copy_source_changed';
+        $fakes->copies->copyStarts = true;
+
+        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, true));
+
+        expect($instance?->creation)->toBe(InstanceCreation::Repository)
+            ->and($instance?->name)->toBe(TaskWorkspaceName::for($group))
+            ->and($instance?->starting_commit)->toBe(str_repeat('a', 40))
+            ->and($instance?->source_instance_id)->toBeNull()
+            ->and($fakes->copies->fetchedCopies)->toBe(1)
+            ->and($fakes->copies->discards)->toBeGreaterThan(0)
+            ->and($fakes->source->calls)->toContain('prepare')
+            ->and($source->fresh()?->status)->toBe(InstanceState::Active)
+            ->and($group->fresh()?->workspace_creation)->toBe(InstanceCreation::Repository)
+            ->and($group->fresh()?->workspace_fallback_reason)->toBe(TaskWorkspaceProvisioner::copyFailedReason('instance.copy_source_changed'));
+        $this->assertDatabaseCount('instances', 2);
+    });
+
+    it('resumes a leftover workspace without copying again', function (): void {
+        $project = provisioner_app('orbit');
+        $node = provisioner_node('resume', '10.44.0.216');
+        provisioner_default($project, $node);
+        $group = provisioner_group($project);
+        $left = Instance::query()->create([
+            'project_id' => $project->id,
+            'node_id' => $node->id,
+            'name' => TaskWorkspaceName::for($group),
+            'checkout_path' => '/srv/orbit/apps/orbit/'.TaskWorkspaceName::for($group),
+            'branch_override' => TaskWorkspaceName::for($group),
+            'branch' => TaskWorkspaceName::for($group),
+            'starting_commit' => str_repeat('e', 40),
+            'status' => InstanceState::CheckoutPrepared,
+        ]);
+        $fakes = bind_task_workspace_fakes();
+
+        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
+
+        expect($instance?->id)->toBe($left->id)
+            ->and($instance?->status)->toBe(InstanceState::SourceResolved)
+            ->and($fakes->copies->fetchedCopies)->toBe(0)
+            ->and($fakes->copies->inspections)->toBe(0)
+            ->and($fakes->copies->discards)->toBe(0)
+            ->and($group->fresh()?->workspace_creation)->toBe(InstanceCreation::Repository)
+            ->and($group->fresh()?->workspace_copy_mode)->toBeNull()
+            ->and($group->fresh()?->workspace_fallback_reason)->toBeNull();
+    });
+
+    it('records the contract tip the copy selected instead of the source head', function (): void {
+        $project = provisioner_app('shop');
+        $node = provisioner_node('contract', '10.44.0.217');
+        provisioner_default($project, $node);
+        $group = provisioner_group($project);
+        $fakes = bind_task_workspace_fakes();
+        $fakes->copies->contractTip = str_repeat('f', 40);
+
+        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, true));
+
+        expect($instance?->starting_commit)->toBe(str_repeat('f', 40))
+            ->and($instance?->starting_commit)->not->toBe($fakes->copies->head)
+            ->and($instance?->starting_commit)->not->toBe($fakes->copies->fetchedTip)
+            ->and($instance?->branch)->toBe(TaskWorkspaceName::for($group))
+            ->and($fakes->copies->branch)->toBe(TaskWorkspaceName::for($group))
+            ->and($fakes->copies->defaultBranch)->toBe('main');
+    });
+
+    it('fills workspace evidence when a finished copy stopped before the task stored it', function (): void {
+        $project = provisioner_app('orbit');
+        $node = provisioner_node('remember', '10.44.0.218');
+        $source = provisioner_default($project, $node);
+        $group = provisioner_group($project);
+        $name = TaskWorkspaceName::for($group);
+        $left = Instance::query()->create([
+            'project_id' => $project->id,
+            'node_id' => $node->id,
+            'name' => $name,
+            'checkout_path' => '/srv/orbit/apps/orbit/'.$name,
+            'branch_override' => $name,
+            'branch' => $name,
+            'starting_commit' => str_repeat('e', 40),
+            'creation' => InstanceCreation::Copy,
+            'copy_mode' => 'reflink',
+            'source_instance_id' => $source->id,
+            'status' => InstanceState::CheckoutPrepared,
+        ]);
+        $fakes = bind_task_workspace_fakes();
+
+        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
+
+        expect($instance?->id)->toBe($left->id)
+            ->and($instance?->status)->toBe(InstanceState::SourceResolved)
+            ->and($fakes->copies->fetchedCopies)->toBe(0)
+            ->and($fakes->copies->discards)->toBe(0)
+            ->and($group->fresh()?->workspace_creation)->toBe(InstanceCreation::Copy)
+            ->and($group->fresh()?->workspace_copy_mode)->toBe('reflink')
+            ->and($group->fresh()?->workspace_fallback_reason)->toBeNull();
+    });
+
+    it('retries a reserved copy after removing its partial tree', function (): void {
+        $project = provisioner_app('shop');
+        $node = provisioner_node('retry-copy', '10.44.0.219');
+        $source = provisioner_default($project, $node);
+        $group = provisioner_group($project);
+        $left = reserved_copy_workspace($project, $node, $group, $source);
+        $fakes = bind_task_workspace_fakes();
+        $fakes->copies->contractTip = str_repeat('f', 40);
+
+        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, true));
+
+        expect($instance?->id)->toBe($left->id)
+            ->and($instance?->creation)->toBe(InstanceCreation::Copy)
+            ->and($instance?->source_instance_id)->toBe($source->id)
+            ->and($instance?->starting_commit)->toBe(str_repeat('f', 40))
+            ->and($fakes->copies->fetchedCopies)->toBe(1)
+            ->and($fakes->copies->discards)->toBe(1)
+            ->and($fakes->copies->branch)->toBe($left->name)
+            ->and($group->fresh()?->workspace_creation)->toBe(InstanceCreation::Copy)
+            ->and($group->fresh()?->workspace_copy_mode)->toBe('reflink')
+            ->and($group->fresh()?->workspace_fallback_reason)->toBeNull();
+        $this->assertDatabaseCount('instances', 2);
+    });
+
+    it('falls back on the reserved row when the source is no longer eligible', function (): void {
+        $project = provisioner_app('shop');
+        $node = provisioner_node('retry-plain', '10.44.0.220');
+        $source = provisioner_default($project, $node);
+        $group = provisioner_group($project);
+        $left = reserved_copy_workspace($project, $node, $group, $source);
+        $source->update(['status' => InstanceState::SourceResolved]);
+        $fakes = bind_task_workspace_fakes();
+
+        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, true));
+
+        expect($instance?->id)->toBe($left->id)
+            ->and($instance?->creation)->toBe(InstanceCreation::Repository)
+            ->and($instance?->source_instance_id)->toBeNull()
+            ->and($instance?->starting_commit)->toBe(str_repeat('a', 40))
+            ->and($fakes->copies->fetchedCopies)->toBe(0)
+            ->and($fakes->copies->discards)->toBe(1)
+            ->and($fakes->source->calls)->toContain('prepare')
+            ->and($group->fresh()?->workspace_creation)->toBe(InstanceCreation::Repository)
+            ->and($group->fresh()?->workspace_fallback_reason)->toBe(TaskWorkspaceProvisioner::SourceUnavailableReason);
+        $this->assertDatabaseCount('instances', 2);
+    });
+
+    it('falls back on the reserved row when the retried copy fails', function (): void {
+        $project = provisioner_app('shop');
+        $node = provisioner_node('retry-fail', '10.44.0.221');
+        $source = provisioner_default($project, $node);
+        $group = provisioner_group($project);
+        $left = reserved_copy_workspace($project, $node, $group, $source);
+        $fakes = bind_task_workspace_fakes();
+        $fakes->copies->failCopy = 'instance.copy_source_changed';
+        $fakes->copies->copyStarts = true;
+
+        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, true));
+
+        expect($instance?->id)->toBe($left->id)
+            ->and($instance?->creation)->toBe(InstanceCreation::Repository)
+            ->and($instance?->source_instance_id)->toBeNull()
+            ->and($fakes->copies->fetchedCopies)->toBe(1)
+            ->and($fakes->copies->discards)->toBe(2)
+            ->and($fakes->source->calls)->toContain('prepare')
+            ->and($group->fresh()?->workspace_fallback_reason)->toBe(TaskWorkspaceProvisioner::copyFailedReason('instance.copy_source_changed'));
+        $this->assertDatabaseCount('instances', 2);
+    });
+
+    it('leaves a reserved copy in place when its partial tree cannot be removed', function (): void {
+        $project = provisioner_app('shop');
+        $node = provisioner_node('stuck', '10.44.0.222');
+        $source = provisioner_default($project, $node);
+        $group = provisioner_group($project);
+        $left = reserved_copy_workspace($project, $node, $group, $source);
+        $fakes = bind_task_workspace_fakes();
+        $fakes->copies->failDiscard = true;
+
+        expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, true)))->toBeNull()
+            ->and($left->fresh()?->status)->toBe(InstanceState::Reserved)
+            ->and($left->fresh()?->creation)->toBe(InstanceCreation::Copy)
+            ->and($left->fresh()?->source_instance_id)->toBe($source->id)
+            ->and($fakes->copies->fetchedCopies)->toBe(0)
+            ->and($fakes->source->calls)->not->toContain('prepare')
+            ->and($group->fresh()?->workspace_creation)->toBe(InstanceCreation::Copy)
+            ->and($group->fresh()?->workspace_fallback_reason)->toBe(TaskWorkspaceProvisioner::copyFailedReason('instance.copy_failed'));
+        $this->assertDatabaseCount('instances', 2);
+
+        $fakes->copies->failDiscard = false;
+        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, true));
+
+        expect($instance?->id)->toBe($left->id)
+            ->and($instance?->creation)->toBe(InstanceCreation::Copy)
+            ->and($group->fresh()?->workspace_creation)->toBe(InstanceCreation::Copy)
+            ->and($group->fresh()?->workspace_copy_mode)->toBe('reflink')
+            ->and($group->fresh()?->workspace_fallback_reason)->toBeNull();
+    });
+
+    it('does not reserve a fresh clone when the failed copy cannot be removed', function (): void {
+        $project = provisioner_app('shop');
+        $node = provisioner_node('keep-row', '10.44.0.223');
+        $source = provisioner_default($project, $node);
+        $group = provisioner_group($project);
+        $fakes = bind_task_workspace_fakes();
+        $fakes->copies->failCopy = 'instance.copy_failed';
+        $fakes->copies->copyStarts = true;
+        $fakes->copies->failDiscard = true;
+
+        expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, true)))->toBeNull();
+
+        $left = Instance::query()->where('name', TaskWorkspaceName::for($group))->first();
+
+        expect($left)->toBeInstanceOf(Instance::class)
+            ->and($left?->status)->toBe(InstanceState::Reserved)
+            ->and($left?->creation)->toBe(InstanceCreation::Copy)
+            ->and($left?->source_instance_id)->toBe($source->id)
+            ->and($fakes->copies->fetchedCopies)->toBe(1)
+            ->and($fakes->source->calls)->not->toContain('prepare')
+            ->and($group->fresh()?->workspace_creation)->toBe(InstanceCreation::Copy)
+            ->and($group->fresh()?->workspace_fallback_reason)->toBe(TaskWorkspaceProvisioner::copyFailedReason('instance.copy_failed'));
+        $this->assertDatabaseCount('instances', 2);
+    });
+
+    it('fresh-clones a retried copy that fails after the row is checkout prepared', function (): void {
+        $project = provisioner_app('shop');
+        $node = provisioner_node('inspect-fail', '10.44.0.224');
+        $source = provisioner_default($project, $node);
+        $group = provisioner_group($project);
+        $left = reserved_copy_workspace($project, $node, $group, $source);
+        copied_workspace_attachments($source);
+        $fakes = bind_task_workspace_fakes();
+        $fakes->source->failInspectResolvedTimes = 1;
+
+        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, true));
+
+        expect($instance?->id)->toBe($left->id)
+            ->and($instance?->status)->toBe(InstanceState::SourceResolved)
+            ->and($instance?->creation)->toBe(InstanceCreation::Repository)
+            ->and($instance?->source_instance_id)->toBeNull()
+            ->and($instance?->copy_mode)->toBeNull()
+            ->and($instance?->branch)->toBe($left->name)
+            ->and($instance?->starting_commit)->toBe(str_repeat('a', 40))
+            ->and($fakes->source->calls)->toContain('prepare')
+            ->and(InstanceEnvironmentValue::query()->where('instance_id', $left->id)->exists())->toBeFalse()
+            ->and(DatabaseConnectionTarget::query()->where('instance_id', $left->id)->exists())->toBeFalse()
+            ->and(InstanceEnvironmentValue::query()->where('instance_id', $source->id)->exists())->toBeTrue()
+            ->and(DatabaseConnectionTarget::query()->where('instance_id', $source->id)->exists())->toBeTrue()
+            ->and($group->fresh()?->workspace_creation)->toBe(InstanceCreation::Repository)
+            ->and($group->fresh()?->workspace_fallback_reason)->toBe(TaskWorkspaceProvisioner::copyFailedReason('instance.source_identity_invalid'));
+    });
+
+    it('fresh-clones a copied checkout that is already gone', function (): void {
+        $project = provisioner_app('shop');
+        $node = provisioner_node('gone-copy', '10.44.0.225');
+        $source = provisioner_default($project, $node);
+        $group = provisioner_group($project);
+        $name = TaskWorkspaceName::for($group);
+        $left = Instance::query()->create([
+            'project_id' => $project->id,
+            'node_id' => $node->id,
+            'name' => $name,
+            'source_layout' => 'checkout',
+            'checkout_path' => '/srv/orbit/apps/shop/'.$name,
+            'branch_override' => $name,
+            'branch' => $name,
+            'starting_commit' => str_repeat('e', 40),
+            'creation' => InstanceCreation::Copy,
+            'copy_mode' => 'reflink',
+            'source_instance_id' => $source->id,
+            'status' => InstanceState::CheckoutPrepared,
+        ]);
+        copied_workspace_attachments($left);
+        $fakes = bind_task_workspace_fakes();
+        $fakes->source->failInspectPreparedTimes = 1;
+
+        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, true));
+
+        expect($instance?->id)->toBe($left->id)
+            ->and($instance?->creation)->toBe(InstanceCreation::Repository)
+            ->and($instance?->status)->toBe(InstanceState::SourceResolved)
+            ->and($instance?->source_instance_id)->toBeNull()
+            ->and($fakes->source->calls)->toContain('prepare')
+            ->and($fakes->copies->fetchedCopies)->toBe(0)
+            ->and(InstanceEnvironmentValue::query()->where('instance_id', $left->id)->exists())->toBeFalse()
+            ->and(DatabaseConnectionTarget::query()->where('instance_id', $left->id)->exists())->toBeFalse()
+            ->and($group->fresh()?->workspace_fallback_reason)->toBe(TaskWorkspaceProvisioner::copyFailedReason('instance.source_identity_invalid'));
+    });
+
+    it('keeps a present copy when inspection fails and the tree is still there', function (): void {
+        $project = provisioner_app('orbit');
+        $node = provisioner_node('present-copy', '10.44.0.226');
+        $source = provisioner_default($project, $node);
+        $group = provisioner_group($project);
+        $name = TaskWorkspaceName::for($group);
+        $left = Instance::query()->create([
+            'project_id' => $project->id,
+            'node_id' => $node->id,
+            'name' => $name,
+            'source_layout' => 'checkout',
+            'checkout_path' => '/srv/orbit/apps/orbit/'.$name,
+            'branch_override' => $name,
+            'branch' => $name,
+            'starting_commit' => str_repeat('e', 40),
+            'creation' => InstanceCreation::Copy,
+            'copy_mode' => 'reflink',
+            'source_instance_id' => $source->id,
+            'status' => InstanceState::SourceResolved,
+        ]);
+        $group->update([
+            'workspace_creation' => InstanceCreation::Copy,
+            'workspace_copy_mode' => 'reflink',
+            'workspace_fallback_reason' => null,
+        ]);
+        $fakes = bind_task_workspace_fakes();
+        $fakes->source->failInspectPreparedTimes = 1;
+        $fakes->copies->failDiscard = true;
+
+        expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false)))->toBeNull()
+            ->and($left->fresh()?->status)->toBe(InstanceState::SourceResolved)
+            ->and($left->fresh()?->creation)->toBe(InstanceCreation::Copy)
+            ->and($left->fresh()?->copy_mode)->toBe('reflink')
+            ->and($fakes->source->calls)->not->toContain('prepare')
+            ->and($group->fresh()?->workspace_creation)->toBe(InstanceCreation::Copy)
+            ->and($group->fresh()?->workspace_copy_mode)->toBe('reflink')
+            ->and($group->fresh()?->workspace_fallback_reason)->toBeNull();
+
+        $fakes->copies->failDiscard = false;
+        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
+
+        expect($instance?->id)->toBe($left->id)
+            ->and($instance?->creation)->toBe(InstanceCreation::Copy)
+            ->and($instance?->copy_mode)->toBe('reflink')
+            ->and($group->fresh()?->workspace_creation)->toBe(InstanceCreation::Copy)
+            ->and($group->fresh()?->workspace_copy_mode)->toBe('reflink')
+            ->and($group->fresh()?->workspace_fallback_reason)->toBeNull();
+    });
+});
+
+function copied_workspace_attachments(Instance $instance): void
+{
+    $instance->environmentValues()->create([
+        'env_key' => 'APP_NAME',
+        'env_value' => 'Copied',
+    ]);
+    $connection = DatabaseConnection::query()->create([
+        'slug' => 'app-'.$instance->id,
+        'driver' => DatabaseDriver::Mysql,
+        'node_id' => $instance->node_id,
+        'host' => 'db.internal',
+        'port' => 3306,
+        'database' => 'app',
+        'username' => 'app',
+        'password' => 'secret-value',
+    ]);
+    DatabaseConnectionTarget::query()->create([
+        'database_connection_id' => $connection->id,
+        'instance_id' => $instance->id,
+        'prefix' => 'DB',
+    ]);
+}
+
+function reserved_copy_workspace(Project $project, Node $node, Task $group, Instance $source): Instance
+{
+    $name = TaskWorkspaceName::for($group);
+
+    return Instance::query()->create([
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => $name,
+        'source_layout' => 'checkout',
+        'checkout_path' => '/srv/orbit/apps/'.$project->slug.'/'.$name,
+        'branch_override' => $name,
+        'creation' => InstanceCreation::Copy,
+        'source_instance_id' => $source->id,
+        'status' => InstanceState::Reserved,
+    ]);
+}
 
 /**
  * @return array{0: Task, 1: Instance, 2: string}

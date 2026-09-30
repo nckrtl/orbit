@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Instances;
 
+use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Instances\Copy\InstanceCopyNames;
 use App\Domain\Instances\DevelopmentInstanceCheckoutCopier;
@@ -18,7 +19,9 @@ use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
+use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -37,6 +40,7 @@ final readonly class RemoteDevelopmentInstanceCheckoutCopier implements Developm
         private ManagedUserAccountResolver $accounts,
         private StorageRootResolver $storageRoots,
         private NodeSettingsNormalizer $nodeSettings,
+        private RepositoryReadAccess $access,
     ) {}
 
     public function inspect(Instance $source, string $branch): DevelopmentInstanceCopyInspection
@@ -80,6 +84,30 @@ final readonly class RemoteDevelopmentInstanceCheckoutCopier implements Developm
         string $expectedHead,
         string $occupiedCode,
     ): DevelopmentInstanceCopyResult {
+        return $this->performCopy($source, $target, $branch, $expectedHead, $occupiedCode, null);
+    }
+
+    public function copyOntoFetchedTip(
+        Instance $source,
+        Instance $target,
+        string $branch,
+        string $defaultBranch,
+        string $expectedHead,
+        string $occupiedCode,
+    ): DevelopmentInstanceCopyResult {
+        GitBranchName::validate($defaultBranch);
+
+        return $this->performCopy($source, $target, $branch, $expectedHead, $occupiedCode, $defaultBranch);
+    }
+
+    private function performCopy(
+        Instance $source,
+        Instance $target,
+        string $branch,
+        string $expectedHead,
+        string $occupiedCode,
+        ?string $fetchedDefaultBranch,
+    ): DevelopmentInstanceCopyResult {
         $source->loadMissing(['project', 'node']);
         $target->loadMissing(['project', 'node']);
         $paths = $this->copyPaths($source, $target);
@@ -121,7 +149,9 @@ final readonly class RemoteDevelopmentInstanceCheckoutCopier implements Developm
             }
 
             $mode = $this->copyTree($target->node, $paths);
-            $head = $this->pointBranch($source, $target, $paths, $branch, $expectedHead);
+            $head = $fetchedDefaultBranch === null
+                ? $this->pointBranch($source, $target, $paths, $branch, $expectedHead)
+                : $this->pointFetchedBranch($source, $target, $paths, $branch, $expectedHead, $fetchedDefaultBranch);
             $this->isolateTree($source, $target, $paths);
         } catch (Throwable $exception) {
             try {
@@ -273,6 +303,48 @@ final readonly class RemoteDevelopmentInstanceCheckoutCopier implements Developm
         return $lines[1];
     }
 
+    /**
+     * Fetch in the target checkout only. Point the branch at origin/{branch} when that
+     * ref exists, otherwise at the fetched default tip. Never use the source HEAD.
+     *
+     * @param  array{apps: string, source: string, destination: string, marker: string, origin: string}  $paths
+     */
+    private function pointFetchedBranch(
+        Instance $source,
+        Instance $target,
+        array $paths,
+        string $branch,
+        string $expectedHead,
+        string $defaultBranch,
+    ): string {
+        $script = GitReadScript::for($this->access->for($paths['origin']), self::fetchedBranchScript());
+        $result = $this->execute(
+            $target->node,
+            ['bash', '-seu', '--', $paths['source'], $paths['destination'], $branch, $expectedHead, $paths['origin'], $defaultBranch],
+            $script->input,
+            protectedInput: $script->protectedInput,
+        );
+
+        if (! $result->succeeded()) {
+            $this->discardOwned($target->node, $paths);
+            $this->fail('instance.copy_failed', "Instance [{$target->name}] could not fetch its default branch.", started: true);
+        }
+
+        $lines = $this->lines($result->stdout);
+
+        if (($lines[0] ?? '') === 'changed') {
+            $this->discardOwned($target->node, $paths);
+            $this->fail('instance.copy_source_changed', "Instance [{$source->name}] HEAD moved during the copy.", started: true);
+        }
+
+        if (($lines[0] ?? '') !== 'ready' || ! $this->commit($lines[1] ?? '')) {
+            $this->discardOwned($target->node, $paths);
+            $this->fail('instance.copy_failed', "Instance [{$target->name}] branch evidence is invalid.", started: true);
+        }
+
+        return $lines[1];
+    }
+
     /** @param array{apps: string, source: string, destination: string, marker: string, origin: string} $paths */
     private function clearOwned(Node $node, array $paths, bool $keepMarker): void
     {
@@ -362,8 +434,13 @@ final readonly class RemoteDevelopmentInstanceCheckoutCopier implements Developm
     }
 
     /** @param non-empty-list<string> $arguments */
-    private function execute(Node $node, array $arguments, ?string $input = null, ?int $maxOutputBytes = null): CommandResult
-    {
+    private function execute(
+        Node $node,
+        array $arguments,
+        ?string $input = null,
+        ?int $maxOutputBytes = null,
+        ?ProtectedInput $protectedInput = null,
+    ): CommandResult {
         if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
             $this->fail('instance.copy_failed', "Node [{$node->name}] has no WireGuard address.");
         }
@@ -377,7 +454,7 @@ final readonly class RemoteDevelopmentInstanceCheckoutCopier implements Developm
                 knownHostsFile: $this->knownHosts->path(),
                 commandTimeout: 900.0,
             ),
-            new RemoteCommand($arguments, $input, null, $maxOutputBytes),
+            new RemoteCommand($arguments, $input, $protectedInput, $maxOutputBytes),
         );
     }
 
@@ -714,19 +791,24 @@ final readonly class RemoteDevelopmentInstanceCheckoutCopier implements Developm
             apps=$3
             keep_marker=$4
 
-            [ -f "$marker" ] && [ ! -L "$marker" ]
-            IFS= read -r recorded < "$marker"
-            [ "$recorded" = "$dest" ]
             case "$dest" in
                 "$apps"/*) ;;
                 *) exit 1 ;;
             esac
             [ "$dest" != "$apps" ]
-            if [ -e "$dest" ] || [ -L "$dest" ]; then
-                rm -rf -- "$dest"
+            if [ -f "$marker" ] && [ ! -L "$marker" ]; then
+                IFS= read -r recorded < "$marker"
+                [ "$recorded" = "$dest" ]
+                if [ -e "$dest" ] || [ -L "$dest" ]; then
+                    rm -rf -- "$dest"
+                fi
+                if [ "$keep_marker" != 1 ]; then
+                    rm -f -- "$marker"
+                fi
+                exit 0
             fi
-            if [ "$keep_marker" != 1 ]; then
-                rm -f -- "$marker"
+            if [ -e "$dest" ] || [ -L "$dest" ] || [ -e "$marker" ] || [ -L "$marker" ]; then
+                exit 1
             fi
             BASH;
     }
@@ -770,6 +852,42 @@ final readonly class RemoteDevelopmentInstanceCheckoutCopier implements Developm
             test "$(git -C "$dest" config --get remote.origin.url)" = "$origin"
             test "$(git -C "$source" rev-parse --verify HEAD^{commit})" = "$expected"
             printf 'ready\n%s\n' "$copy_head"
+            BASH;
+    }
+
+    private static function fetchedBranchScript(): string
+    {
+        return <<<'BASH'
+            source=$1
+            dest=$2
+            branch=$3
+            expected=$4
+            origin=$5
+            default_branch=$6
+
+            [ -d "$dest" ] && [ ! -L "$dest" ]
+            [ -d "$dest/.git" ] && [ ! -L "$dest/.git" ]
+            source_head=$(git -C "$source" rev-parse --verify HEAD^{commit})
+            copy_head=$(git -C "$dest" rev-parse --verify HEAD^{commit})
+            if [ "$source_head" != "$expected" ] || [ "$copy_head" != "$expected" ]; then
+                printf 'changed\n'
+                exit 0
+            fi
+            git_read git -C "$dest" fetch --prune -- origin
+            if git -C "$dest" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+                tip=$(git -C "$dest" rev-parse --verify "refs/remotes/origin/$branch^{commit}")
+            else
+                git -C "$dest" show-ref --verify --quiet "refs/remotes/origin/$default_branch"
+                tip=$(git -C "$dest" rev-parse --verify "refs/remotes/origin/$default_branch^{commit}")
+            fi
+            git -C "$dest" checkout --quiet --force --no-track -B "$branch" "$tip"
+            git -C "$dest" clean -fd >/dev/null
+            test -z "$(git -C "$dest" status --porcelain --untracked-files=all)"
+            test "$(git -C "$dest" symbolic-ref --short HEAD)" = "$branch"
+            test "$(git -C "$dest" rev-parse --verify HEAD^{commit})" = "$tip"
+            test "$(git -C "$dest" config --get remote.origin.url)" = "$origin"
+            test "$(git -C "$source" rev-parse --verify HEAD^{commit})" = "$expected"
+            printf 'ready\n%s\n' "$tip"
             BASH;
     }
 }

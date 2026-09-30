@@ -11,6 +11,7 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
 use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\Copy\InstanceCopyReferenceRewriter;
 use App\Domain\Instances\DevelopmentInstanceCheckoutCopier;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
@@ -3497,6 +3498,7 @@ function deadline_copy_copier(DeadlineOnCopySshExecutor $ssh): RemoteDevelopment
         accounts: app(ManagedUserAccountResolver::class),
         storageRoots: app(StorageRootResolver::class),
         nodeSettings: app(NodeSettingsNormalizer::class),
+        access: app(RepositoryReadAccess::class),
     );
 }
 

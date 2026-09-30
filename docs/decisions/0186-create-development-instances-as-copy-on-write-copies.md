@@ -36,7 +36,7 @@ The Gateway runs `sync -f` on the apps root, then `cp -a --reflink=always` with 
 
 ### Branch default
 
-The copy's own branch is the new Instance name, created at the source `HEAD`. `--branch` selects another name and still points it at that `HEAD`. A local or remote-tracking ref of the chosen name at another commit is refused. The source repository is not modified. The branch is stored as `branch_override`. A task workspace is the exception: after the copy it fetches `origin` and points `task-{id}` at the Project's default branch tip.
+The copy's own branch is the new Instance name, created at the source `HEAD`. `--branch` selects another name and still points it at that `HEAD`. A local or remote-tracking ref of the chosen name at another commit is refused. The source repository is not modified. The branch is stored as `branch_override`. A task workspace is the exception: after the copy it fetches `origin` in the new checkout. When `origin/task-{id}` exists, it checks that ref out. Otherwise it points `task-{id}` at the Project's default branch tip. It never uses the source `HEAD`. It then removes untracked files that are not ignored, and leaves ignored files in place.
 
 ### Dirty source and warmth
 
@@ -52,7 +52,7 @@ The Gateway reserves the Instance row, then refuses an existing destination, and
 
 ### Task workspace source
 
-The copy source is the Project's Instance named `default` on the Node the claim already selected. Claim ordering does not change. The workspace fetches `origin` and sits on `task-{id}` at the default branch tip, not at the source's local `HEAD`. When that source is missing, ineligible, or the copy fails before the workspace exists, provisioning uses a fresh clone and stores `workspace_fallback_reason` on the task. `tasks:show` returns `workspace_creation`, `workspace_copy_mode`, and that reason.
+The copy source is the Project's Instance named `default` on the Node the claim already selected. Claim ordering does not change. The workspace fetches `origin` and sits on `task-{id}` at `origin/task-{id}` when that ref exists, otherwise at the default branch tip, never at the source's local `HEAD`. Untracked files that are not ignored are removed after that checkout. When that source is missing, ineligible, or the copy fails before the workspace exists, provisioning uses a fresh clone and stores `workspace_fallback_reason` on the task. A reserved copy that stopped early is discarded with the ownership marker and retried, or cloned fresh on the same row. That clone returns the row to `reserved`, clears its branch and starting commit, and drops copied environment values and database attachments. A copied checkout that is already `checkout_prepared` or `source_resolved` but whose tree is gone takes the same path. A discard that cannot remove the owned tree leaves that row for the next claim and does not reserve another Instance. It also leaves a successful copy's recorded workspace fields unchanged. `tasks:show` returns `workspace_creation`, `workspace_copy_mode`, and that reason.
 
 ## Rejected alternatives
 
@@ -67,7 +67,9 @@ The copy source is the Project's Instance named `default` on the Node the claim 
 - Skip setup: the create path runs the Project setup list, and a copied tree makes that list cheap.
 - Delete any directory found at the destination on retry: a repository create never deletes an unmanaged checkout. The copy deletes a tree only when its ownership marker names that Instance id.
 - Move a claim onto the Node that hosts `default`: node selection stays as it is. The copy runs only when the selected Node already holds that Instance.
-- Point `task-{id}` at the source's local `HEAD`: the task base commit would follow unpublished commits on `default`. The workspace uses the fetched default branch tip.
+- Point `task-{id}` at the source's local `HEAD`: the task base commit would follow unpublished commits on `default`. The workspace uses `origin/task-{id}` when it exists, and otherwise the fetched default branch tip.
+- Ignore a pre-pushed `origin/task-{id}`: the implementer would miss the contract, and the first approval push would not fast-forward. The workspace checks out that ref when the fetch contains it.
+- Keep untracked files from `default`: the signer runs `git add -A`, so a scratch file would enter the first subtask commit. The copy removes untracked files that are not ignored.
 - Store a development source in `clone_candidate_id`: that column is the production clone candidate. A development copy stores `source_instance_id`.
 
 ## Consequences

@@ -23775,6 +23775,24 @@
               "null"
             ]
           },
+          "workspace_creation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workspace_copy_mode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workspace_fallback_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "implementer_model": {
             "type": "string"
           },

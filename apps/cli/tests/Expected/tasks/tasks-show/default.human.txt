@@ -9,33 +9,39 @@ Loading task group...
 
 ┌  Task group: ORB-1
 │
-├  ID                  1
+├  ID                    1
 │
-├  Title               Add the tasks CLI
+├  Title                 Add the tasks CLI
 │
-├  Project             orbit
+├  Project               orbit
 │
-├  Status              backlog
+├  Status                backlog
 │
-├  Assistance          no
+├  Assistance            no
 │
-├  Reason              —
+├  Reason                —
 │
-├  Instance            —
+├  Instance              —
 │
-├  Pull request        —
+├  Workspace creation    —
 │
-├  Notify Coder        no
+├  Workspace copy mode   —
 │
-├  Implementer model   gpt-5.6-luna
+├  Workspace fallback    —
 │
-├  Reviewer model      claude-opus-5
+├  Pull request          —
 │
-├  Tokens              —
+├  Notify Coder          no
 │
-├  Line diff           —
+├  Implementer model     gpt-5.6-luna
 │
-└  Duration            —
+├  Reviewer model        claude-opus-5
+│
+├  Tokens                —
+│
+├  Line diff             —
+│
+└  Duration              —
 
 Brief
   Add tasks:* commands.

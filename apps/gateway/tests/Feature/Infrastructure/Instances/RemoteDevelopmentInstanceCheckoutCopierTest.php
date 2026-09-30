@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
@@ -91,6 +92,162 @@ it('reports a reflink when cp --reflink=always succeeds and creates the branch o
         ->and($ssh->commands[3]->arguments)->toContain('/srv/orbit/apps/acme/default', '/srv/orbit/apps/acme/feature')
         ->and($ssh->commands[4]->arguments[0])->toBe('python3')
         ->and($ssh->commands[4]->arguments[3])->toBe('prepare');
+});
+
+it('fetches origin in the new checkout and points the task branch at the default tip', function (): void {
+    [$source, $target] = copy_checkout_pair();
+    $sourceHead = str_repeat('b', 40);
+    $tip = str_repeat('e', 40);
+    $ssh = new AppDevFakeSshExecutor([
+        new CommandResult(0, "ready\n", '', 1, false),
+        new CommandResult(0, '', '', 1, false),
+        new CommandResult(0, '', '', 1, false),
+        new CommandResult(0, "ready\n{$tip}\n", '', 1, false),
+        new CommandResult(0, "ready\n", '', 1, false),
+    ]);
+    $copier = copy_checkout_copier($ssh);
+
+    $result = $copier->copyOntoFetchedTip($source, $target, 'task-9', 'main', $sourceHead, 'instance.path_taken');
+
+    expect($result->mode)->toBe('reflink')
+        ->and($result->head)->toBe($tip)
+        ->and($result->head)->not->toBe($sourceHead)
+        ->and($ssh->commands[3]->arguments)->toContain('task-9', 'main', $sourceHead)
+        ->and($ssh->commands[3]->input)->toContain('git_read git -C "$dest" fetch --prune -- origin')
+        ->and($ssh->commands[3]->input)->toContain('git -C "$dest" checkout --quiet --force --no-track -B "$branch" "$tip"')
+        ->and($ssh->commands[3]->input)->toContain('refs/remotes/origin/$branch')
+        ->and($ssh->commands[3]->input)->toContain('git -C "$dest" clean -fd')
+        ->and($ssh->commands[3]->input)->toContain('git -C "$dest" status --porcelain --untracked-files=all')
+        ->and($ssh->commands[3]->input)->not->toContain('git clean -x')
+        ->and($ssh->commands[3]->input)->not->toContain('git -C "$source" fetch')
+        ->and($ssh->commands[4]->arguments[3])->toBe('prepare');
+});
+
+it('fails the copy when the fetched default branch cannot be read', function (): void {
+    [$source, $target] = copy_checkout_pair();
+    $ssh = new AppDevFakeSshExecutor([
+        new CommandResult(0, "ready\n", '', 1, false),
+        new CommandResult(0, '', '', 1, false),
+        new CommandResult(0, '', '', 1, false),
+        new CommandResult(1, '', '', 1, false),
+        new CommandResult(0, '', '', 1, false),
+    ]);
+
+    expect(fn () => copy_checkout_copier($ssh)->copyOntoFetchedTip($source, $target, 'task-9', 'main', str_repeat('b', 40), 'instance.path_taken'))
+        ->toThrow(fn (ResourceOperationException $exception) => $exception->errorCode === 'instance.copy_failed' && ($exception->details['copy_started'] ?? '') === '1')
+        ->and($ssh->commands[4]->arguments)->toContain('0');
+});
+
+it('checks out a pushed task branch and removes untracked files from the copy', function (): void {
+    $root = sys_get_temp_dir().'/orbit-fetched-branch-'.bin2hex(random_bytes(4));
+
+    try {
+        [$source, $origin] = copy_branch_fixture($root);
+        $base = copy_git($source, ['rev-parse', 'HEAD']);
+        file_put_contents($source.'/CONTRACT.md', "contract\n");
+        copy_git($source, ['add', 'CONTRACT.md']);
+        copy_git($source, ['commit', '-m', 'contract']);
+        $contract = copy_git($source, ['rev-parse', 'HEAD']);
+        copy_git($source, ['push', 'origin', 'HEAD:task-9']);
+        copy_git($source, ['reset', '--hard', $base]);
+        file_put_contents($source.'/notes.md', "scratch\n");
+        mkdir($source.'/scratch');
+        file_put_contents($source.'/scratch/note.txt', "scratch\n");
+        $dest = $root.'/dest';
+        (new Process(['cp', '-a', '--', $source, $dest]))->mustRun();
+        $originUrl = copy_git($dest, ['config', '--get', 'remote.origin.url']);
+
+        $result = run_fetched_branch_script($source, $dest, 'task-9', $base, $originUrl, 'main');
+
+        expect($result->isSuccessful() ? trim($result->getOutput()) : $result->getErrorOutput())->toBe("ready\n{$contract}")
+            ->and(copy_git($dest, ['rev-parse', 'HEAD']))->toBe($contract)
+            ->and(copy_git($dest, ['symbolic-ref', '--short', 'HEAD']))->toBe('task-9')
+            ->and(copy_git($source, ['rev-parse', 'HEAD']))->toBe($base)
+            ->and(is_file($dest.'/CONTRACT.md'))->toBeTrue()
+            ->and(is_file($dest.'/notes.md'))->toBeFalse()
+            ->and(is_dir($dest.'/scratch'))->toBeFalse()
+            ->and(is_file($dest.'/vendor/keep'))->toBeTrue()
+            ->and(is_file($source.'/notes.md'))->toBeTrue()
+            ->and(copy_git($dest, ['status', '--porcelain', '--untracked-files=all']))->toBe('');
+        $upstream = new Process(['git', '-C', $dest, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}']);
+        $upstream->run();
+        expect($upstream->isSuccessful())->toBeFalse()
+            ->and($origin)->not->toBe('');
+    } finally {
+        if (is_dir($root)) {
+            (new Process(['rm', '-rf', '--', $root]))->mustRun();
+        }
+    }
+});
+
+it('points the task branch at the fetched default tip when the contract ref is absent', function (): void {
+    $root = sys_get_temp_dir().'/orbit-fetched-default-'.bin2hex(random_bytes(4));
+
+    try {
+        [$source] = copy_branch_fixture($root);
+        $base = copy_git($source, ['rev-parse', 'HEAD']);
+        file_put_contents($source.'/NEWER.md', "newer\n");
+        copy_git($source, ['add', 'NEWER.md']);
+        copy_git($source, ['commit', '-m', 'newer']);
+        $tip = copy_git($source, ['rev-parse', 'HEAD']);
+        copy_git($source, ['push', 'origin', 'main']);
+        copy_git($source, ['reset', '--hard', $base]);
+        file_put_contents($source.'/notes.md', "scratch\n");
+        $dest = $root.'/dest';
+        (new Process(['cp', '-a', '--', $source, $dest]))->mustRun();
+        $originUrl = copy_git($dest, ['config', '--get', 'remote.origin.url']);
+
+        $result = run_fetched_branch_script($source, $dest, 'task-9', $base, $originUrl, 'main');
+
+        expect($result->isSuccessful() ? trim($result->getOutput()) : $result->getErrorOutput())->toBe("ready\n{$tip}")
+            ->and(copy_git($dest, ['rev-parse', 'HEAD']))->toBe($tip)
+            ->and($tip)->not->toBe($base)
+            ->and(copy_git($source, ['rev-parse', 'HEAD']))->toBe($base)
+            ->and(is_file($dest.'/notes.md'))->toBeFalse()
+            ->and(is_file($dest.'/vendor/keep'))->toBeTrue();
+    } finally {
+        if (is_dir($root)) {
+            (new Process(['rm', '-rf', '--', $root]))->mustRun();
+        }
+    }
+});
+
+it('treats a second discard as done only when the owned tree is already gone', function (): void {
+    $root = sys_get_temp_dir().'/orbit-discard-'.bin2hex(random_bytes(4));
+    $apps = $root.'/apps';
+    $dest = $apps.'/acme/task-9';
+    $marker = $apps.'/.orbit/copies/instance-9';
+
+    try {
+        mkdir($apps.'/.orbit/copies', 0777, true);
+        mkdir($dest, 0777, true);
+        file_put_contents($dest.'/notes.md', "partial\n");
+        file_put_contents($marker, $dest."\n");
+        $script = (new ReflectionMethod(RemoteDevelopmentInstanceCheckoutCopier::class, 'discardScript'))->invoke(null);
+
+        $first = new Process(['bash', '-seu', '--', $marker, $dest, $apps, '0']);
+        $first->setInput($script);
+        $first->mustRun();
+
+        expect(is_dir($dest))->toBeFalse()
+            ->and(is_file($marker))->toBeFalse();
+
+        $second = new Process(['bash', '-seu', '--', $marker, $dest, $apps, '0']);
+        $second->setInput($script);
+        $second->mustRun();
+
+        mkdir($dest, 0777, true);
+        $blocked = new Process(['bash', '-seu', '--', $marker, $dest, $apps, '0']);
+        $blocked->setInput($script);
+        $blocked->run();
+
+        expect($blocked->isSuccessful())->toBeFalse()
+            ->and(is_dir($dest))->toBeTrue();
+    } finally {
+        if (is_dir($root)) {
+            (new Process(['rm', '-rf', '--', $root]))->mustRun();
+        }
+    }
 });
 
 it('falls back to a plain copy only for a reflink errno and reports full', function (): void {
@@ -440,6 +597,7 @@ function copy_checkout_copier(SshExecutor $ssh): RemoteDevelopmentInstanceChecko
         },
         storageRoots: app(StorageRootResolver::class),
         nodeSettings: app(NodeSettingsNormalizer::class),
+        access: app(RepositoryReadAccess::class),
     );
 }
 
@@ -541,4 +699,65 @@ function copy_isolation_env(string $checkout, string $domain): string
         'DOT_HOST='.$domain.'.other',
         '',
     ]);
+}
+
+/** @return array{0: string, 1: string} */
+function copy_branch_fixture(string $root): array
+{
+    $origin = $root.'/origin.git';
+    $source = $root.'/source';
+    mkdir($origin, 0777, true);
+    mkdir($source, 0777, true);
+    copy_git($origin, ['init', '--bare', '-b', 'main']);
+    copy_git($source, ['init', '-b', 'main']);
+    file_put_contents($source.'/README.md', "readme\n");
+    file_put_contents($source.'/.gitignore', "vendor\n");
+    mkdir($source.'/vendor');
+    file_put_contents($source.'/vendor/keep', "kept\n");
+    copy_git($source, ['add', 'README.md', '.gitignore']);
+    copy_git($source, ['commit', '-m', 'base']);
+    copy_git($source, ['remote', 'add', 'origin', $origin]);
+    copy_git($source, ['push', 'origin', 'main']);
+
+    return [$source, $origin];
+}
+
+/** @param  list<string>  $arguments */
+function copy_git(string $cwd, array $arguments): string
+{
+    $process = new Process(['git', ...$arguments], $cwd, copy_git_env());
+    $process->mustRun();
+
+    return trim($process->getOutput());
+}
+
+function run_fetched_branch_script(
+    string $source,
+    string $dest,
+    string $branch,
+    string $expected,
+    string $origin,
+    string $defaultBranch,
+): Process {
+    $script = "git_read() ( exec \"\$@\" )\n".(new ReflectionMethod(RemoteDevelopmentInstanceCheckoutCopier::class, 'fetchedBranchScript'))->invoke(null);
+    $process = new Process(
+        ['bash', '-seu', '--', $source, $dest, $branch, $expected, $origin, $defaultBranch],
+        null,
+        copy_git_env(),
+    );
+    $process->setInput($script);
+    $process->run();
+
+    return $process;
+}
+
+/** @return array<string, string> */
+function copy_git_env(): array
+{
+    return [
+        'GIT_AUTHOR_NAME' => 'Orbit',
+        'GIT_AUTHOR_EMAIL' => 'orbit@example.test',
+        'GIT_COMMITTER_NAME' => 'Orbit',
+        'GIT_COMMITTER_EMAIL' => 'orbit@example.test',
+    ];
 }

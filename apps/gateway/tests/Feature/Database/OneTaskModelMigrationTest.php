@@ -16,7 +16,8 @@ it('moves groups, subtasks, and every reference into one tasks table without los
     try {
         $paths = array_values(array_filter(
             glob(database_path('migrations/*.php')) ?: [],
-            static fn (string $path): bool => ! str_contains($path, 'merge_task_groups_into_tasks'),
+            static fn (string $path): bool => ! str_contains($path, 'merge_task_groups_into_tasks')
+                && ! str_contains($path, 'add_task_workspace_copy_evidence'),
         ));
         Artisan::call('migrate', ['--database' => 'one_task_model', '--path' => $paths, '--realpath' => true, '--force' => true]);
 
@@ -161,7 +162,8 @@ it('rolls the merge back when a reference cannot move', function (): void {
     try {
         $paths = array_values(array_filter(
             glob(database_path('migrations/*.php')) ?: [],
-            static fn (string $path): bool => ! str_contains($path, 'merge_task_groups_into_tasks'),
+            static fn (string $path): bool => ! str_contains($path, 'merge_task_groups_into_tasks')
+                && ! str_contains($path, 'add_task_workspace_copy_evidence'),
         ));
         Artisan::call('migrate', ['--database' => 'one_task_model_rollback', '--path' => $paths, '--realpath' => true, '--force' => true]);
 
