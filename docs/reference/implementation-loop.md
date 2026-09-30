@@ -38,17 +38,21 @@ A merge needs a complete feature, passing CI, a successful independent code and 
 
 ### Final review of an Orbit task pull request
 
-When the maintainer delegates final review and merge of a named Orbit task pull request, that delegation is the consent for that work only. The DevOps reviewer uses the maintainer's GitHub CLI profile. The reviewer checks the whole pull request, confirms the independent review evidence, and posts a final review comment for the exact head.
+When the maintainer delegates final review and merge of a named Orbit task pull request, that delegation is the consent for that work only. The DevOps reviewer uses the maintainer's GitHub CLI profile. The reviewer checks the whole pull request, confirms the independent code and Incus review evidence, and submits a formal GitHub review for the exact head.
 
-The comment names the full head commit SHA, the checks and their results, any remaining limitations, links to the review evidence, and an explicit verdict such as `Ready to merge`. A limitation that leaves required behavior unverified prevents that verdict. A Tasks engine subtask approval does not replace this final review of the whole pull request.
+The review body names the full head commit SHA, the checks and their results, any remaining limitations, links to the review evidence, and the verdict. A limitation that leaves required behavior unverified prevents approval. A Tasks engine subtask approval does not replace this final review of the whole pull request.
 
-The comment is the review gate. A formal GitHub approving review is optional. The delegation does not authorize an unrelated merge.
+The merge gate requires a formal GitHub `APPROVED` review from the designated final reviewer for the current head. Submit `APPROVE` through the GitHub reviews API from the maintainer profile, with `commit_id` set to the reviewed SHA. A plain comment, including a ready-to-merge verdict, does not satisfy the gate. The pull request author cannot approve their own pull request. The delegation does not authorize an unrelated merge.
 
-Before the immediate merge, the reviewer confirms that `Required checks` succeeded on that same head, that blocking findings are resolved, that required verification is complete, and that the pull request head still matches the reviewed SHA. The reviewer then runs `gh pr merge <pr-url> --merge --match-head-commit <reviewed-sha>` from the maintainer profile. If the head changes, stop. Review the new commit, repeat the affected checks, and post an updated verdict before trying again. A failed, pending, missing, or unreadable required check prevents the merge.
+Before the immediate merge, read GitHub's review records and verify the final reviewer's identity, the `APPROVED` state, and that `commit_id` matches the reviewed SHA. A dismissed or stale approval, an approval for another head, outstanding requested changes from the final reviewer, the wrong identity, or unreadable review data prevents the merge.
+
+The reviewer also confirms that `Required checks` succeeded on that same head, that blocking findings are resolved, that required verification is complete, and that the pull request head still matches the reviewed SHA. The reviewer then runs `gh pr merge <pr-url> --merge --match-head-commit <reviewed-sha>` from the maintainer profile. If the head changes, stop. Review the new commit, repeat the affected checks, and submit a new formal approval before trying again. A failed, pending, missing, or unreadable required check prevents the merge.
 
 This workflow merges immediately after those checks pass. It does not enable GitHub auto-merge. After the merge, verify the merged state and record the merge commit. The Tasks scheduler observes the merged pull request and completes the task on its next tick.
 
-The maintainer profile is an admin profile. It bypasses GitHub enforcement of the `Required checks` status rule, including on `gh pr merge`. GitHub does not enforce the final comment. The reviewer checks the comment and the successful `Required checks` result before invoking the merge. This workflow keeps that bypass and does not change the ruleset. It adds no `tasks:merge` command, Gateway merge endpoint, SDK contract, MCP contract, or API contract, and it changes no App permission.
+The maintainer profile is an admin profile. It bypasses GitHub enforcement of the `Required checks` status rule, including on `gh pr merge`. GitHub does not require this approval and does not enforce it for that account, so the reviewer checks the formal approval and the successful `Required checks` result before invoking the merge. This workflow keeps that bypass and does not change the ruleset. It adds no `tasks:merge` command, Gateway merge endpoint, SDK contract, MCP contract, or API contract, and it changes no App permission.
+
+Final DevOps review and its configuration stay outside Orbit. This workflow does not read GitHub review feedback or create fixups. The Tasks scheduler still only watches pull request state, conflicts, and CI, then completes the task after the merge.
 
 After the merge, keep the review evidence and release the resources allocated to the feature. For a local worktree, run `bin/worktree-remove ISSUE`.
 
@@ -265,9 +269,9 @@ While a test-impact failure is open, the next refresh runs `composer test:affect
 
 ### The maintainer approves every merge
 
-The maintainer decides whether a feature belongs in Orbit. For named Orbit task work, the maintainer can delegate final review and merge. That delegation is the consent to post the final review comment and to merge the reviewed commit. The comment records the reviewed head and the merge verdict, so a formal GitHub approving review is optional. A Tasks engine subtask approval, or any other agent review, does not replace the final review of the whole pull request and does not authorize unrelated work.
+The maintainer decides whether a feature belongs in Orbit. For named Orbit task work, the maintainer can delegate final review and merge. That delegation is the consent to submit the formal GitHub approval and to merge the reviewed commit. The review records the reviewed head, the evidence, and the verdict in GitHub's review state. A plain comment is not that approval, because its prose does not distinguish approval from requested changes. A Tasks engine subtask approval, or any other agent review, does not replace the final review of the whole pull request and does not authorize unrelated work.
 
-The merge uses the maintainer's GitHub CLI profile. That admin profile bypasses GitHub enforcement of `Required checks`, so the DevOps reviewer checks the final comment and green CI before merging the reviewed commit. A Gateway App merge endpoint and a ruleset change that requires an approving review are deferred. Either change would enforce the gate for an identity without the admin bypass, and either change needs new credentials, API behavior, and deployment work.
+The merge uses the maintainer's GitHub CLI profile. That admin profile bypasses GitHub enforcement of `Required checks` and of a required approving review, so the DevOps reviewer checks the formal approval and green CI before merging the reviewed commit. A Gateway App merge endpoint and a ruleset change that requires an approving review are deferred. Either change would enforce the gate for an identity without the admin bypass, and either change needs new credentials, API behavior, and deployment work.
 
 ### Every project passes the gate at each handoff
 
