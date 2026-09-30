@@ -2159,6 +2159,7 @@
             "concepts": [
                 "Gateway",
                 "Node",
+                "Node agent",
                 "Role"
             ],
             "governing_adrs": []

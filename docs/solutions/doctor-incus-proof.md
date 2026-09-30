@@ -13,7 +13,7 @@ covers:
 
 A proof of the verify-only Doctor runs on a leased `gateway_app-dev_app-prod` topology. It needs a healthy baseline on all three Nodes, exactly one declared drift, exactly one declared unverifiable condition, and evidence that Doctor writes nothing. Each fixture must produce one finding and leave every other inspection untouched.
 
-Informational tool discoveries may appear in a healthy baseline. They do not change health or exit status. Drift and unverifiable findings still fail the report. Incus proves Linux behavior; [macOS enrollment](/reference/node-provisioning#macos-nodes) and tool operations need a separate task-owned fixture on a real Mac.
+Informational tool discoveries may appear in a healthy baseline. They do not change health or exit status. Drift and unverifiable findings still fail the report. Incus proves Linux behavior. [macOS enrollment](/reference/node-provisioning#macos-nodes), native platform and home-volume observation, and tool operations need a separate task-owned fixture on a real Mac.
 
 ## Cause
 

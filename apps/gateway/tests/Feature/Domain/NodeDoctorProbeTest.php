@@ -328,3 +328,99 @@ it('redacts an unsupported stored architecture for an eligible node', function (
         ->and(json_encode($report, JSON_THROW_ON_ERROR))
         ->not->toContain($sentinel);
 });
+
+it('observes a verified mac without treating a missing agent as drift', function (): void {
+    $node = new Node([
+        'name' => 'mini',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'macos',
+        'architecture' => 'arm64',
+        'wireguard_ip' => '10.44.0.8',
+        'ssh_host_fingerprint' => 'SHA256:managed',
+    ]);
+    $report = new NodeDoctorProbe()->inspect(new DoctorNodeContext(
+        $node,
+        new NodeInspectionData(
+            true,
+            'darwin',
+            'aarch64',
+            true,
+            false,
+            false,
+            false,
+            false,
+            diskFilesystems: [
+                new NodeDiskFilesystemData('home', 16 * 1024 * 1024, 25 * 1024 * 1024, null, null),
+            ],
+        ),
+    ));
+
+    expect($report->status->value)->toBe('healthy')
+        ->and($report->issues)->toBeEmpty();
+});
+
+it('reports mac platform, architecture, tunnel, and home-volume drift', function (string $code, NodeInspectionData $inspection): void {
+    $node = new Node([
+        'name' => 'mini',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'macos',
+        'architecture' => 'arm64',
+        'wireguard_ip' => '10.44.0.8',
+        'ssh_host_fingerprint' => 'SHA256:managed',
+    ]);
+    $report = new NodeDoctorProbe()->inspect(new DoctorNodeContext($node, $inspection));
+    $issue = collect($report->issues)->firstWhere('code', $code);
+
+    expect($report->status->value)->toBe('drift')
+        ->and($issue)->not->toBeNull()
+        ->and(array_map(static fn (DoctorIssueData $row): string => $row->code, $report->issues))
+        ->not->toContain('node.agent_missing');
+})->with([
+    'platform mismatch' => [
+        'node.platform_mismatch',
+        new NodeInspectionData(true, 'linux', 'aarch64', true, diskFilesystems: [
+            new NodeDiskFilesystemData('home', 16 * 1024 * 1024, 25 * 1024 * 1024, null, null),
+        ]),
+    ],
+    'architecture mismatch' => [
+        'node.architecture_mismatch',
+        new NodeInspectionData(true, 'darwin', 'x86_64', true, diskFilesystems: [
+            new NodeDiskFilesystemData('home', 16 * 1024 * 1024, 25 * 1024 * 1024, null, null),
+        ]),
+    ],
+    'tunnel mismatch' => [
+        'node.wireguard_ip_mismatch',
+        new NodeInspectionData(true, 'darwin', 'aarch64', false, diskFilesystems: [
+            new NodeDiskFilesystemData('home', 16 * 1024 * 1024, 25 * 1024 * 1024, null, null),
+        ]),
+    ],
+    'low home volume' => [
+        'node.disk_low',
+        new NodeInspectionData(true, 'darwin', 'aarch64', true, diskFilesystems: [
+            new NodeDiskFilesystemData('home', 16384, 25 * 1024 * 1024, null, null),
+        ]),
+    ],
+]);
+
+it('reports a mac that cannot be reached or read without an agent finding', function (bool $failed): void {
+    $node = new Node([
+        'name' => 'mini',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'macos',
+        'architecture' => 'arm64',
+        'wireguard_ip' => '10.44.0.8',
+        'ssh_host_fingerprint' => 'SHA256:managed',
+    ]);
+    $report = new NodeDoctorProbe()->inspect(new DoctorNodeContext(
+        $node,
+        new NodeInspectionData(false, null, null, null),
+        inspectionFailed: $failed,
+    ));
+
+    expect(array_map(static fn (DoctorIssueData $issue): string => $issue->code, $report->issues))
+        ->toBe([$failed ? 'node.inspection_failed' : 'node.ssh_unreachable'])
+        ->not->toContain('node.agent_missing');
+})->with([
+    'unreachable' => [false],
+    'malformed observation' => [true],
+]);

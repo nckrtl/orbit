@@ -21,6 +21,17 @@ final readonly class RemoveFirewallRuleAction
 
     public function execute(FirewallRule $rule): FirewallBackendStatus
     {
+        $rule->loadMissing('node');
+
+        if ($rule->node->platform !== 'linux') {
+            throw new FirewallOperationException(
+                step: 'platform',
+                errorCode: 'firewall.platform_unsupported',
+                message: 'Firewall rules require a Linux node.',
+                status: 422,
+            );
+        }
+
         $rule->update([
             'status' => LifecycleStatus::Removing,
             'failed_step' => null,
