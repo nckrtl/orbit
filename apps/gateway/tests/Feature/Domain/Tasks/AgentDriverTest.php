@@ -12,6 +12,7 @@ use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\NullCoderSettleNotifier;
 use App\Domain\Tasks\NullTaskWorkspaceDiffReader;
+use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
@@ -20,6 +21,7 @@ use App\Domain\Tasks\TaskSessionDecision;
 use App\Domain\Tasks\TaskSessionNextAction;
 use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskSessionObserver;
+use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -187,8 +189,10 @@ it('routes an attached conversation without a legacy pointer', function (): void
     $decisions = app(TaskScheduler::class)->tick();
 
     expect($decisions)->toBe([])
-        ->and($driver->calls)->toHaveCount(3)
-        ->and($driver->calls[2]['operation'])->toBe('send')
+        ->and(array_column($driver->calls, 'operation'))->toBe(['create', 'create'])
+        ->and(app(TaskCheckRunner::class)->commands)->toBe(['composer check'])
+        ->and($task->fresh()->implementer_agent_thread_id)->toBeNull()
+        ->and($task->fresh()->status)->toBe(TaskStatus::Running)
         ->and($group->fresh()->status)->toBe(TaskGroupStatus::Running);
 });
 

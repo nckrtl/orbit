@@ -60,3 +60,7 @@ docs/reference/environment-variables.md: Environment variables are unchanged. Re
 docs/solutions/doctor-incus-proof.md: The Incus doctor proof is unchanged. Renaming the task relation is internal.
 docs/reference/web-verification.md: The quota-unavailable purpose in the feature map now follows proxycli-only Quota. Web verification commands, the map schema, and the demo routes on this page are unchanged.
 docs/reference/cli-ux.md: Task contract snapshots follow the new subtask and group ids. Input, consent, and presentation rules on this page are unchanged.
+docs/reference/cli-ux.md: The project create expectation stores a null task check. Input, consent, and presentation rules on this page are unchanged.
+docs/reference/development-node-exclusions.md: A null task check default does not change Node exclusions or placement.
+docs/reference/gateway-response-fixtures.md: The recorded project create response stores a null task check. Fixture recording and replay on this page are unchanged.
+docs/reference/web-app.md: The task check field comment follows the regenerated OpenAPI document. Navigation and layout are unchanged.

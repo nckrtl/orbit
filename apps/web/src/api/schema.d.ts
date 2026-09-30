@@ -11134,7 +11134,7 @@ export interface operations {
                     default_branch?: string;
                     /** @description Repository-relative root; defaults to . for package types and public otherwise */
                     root: string;
-                    /** @description Task check command; defaults to composer check for Laravel types and none otherwise */
+                    /** @description Task check command. Omitted stores none for every type */
                     task_check?: string | null;
                 };
             };

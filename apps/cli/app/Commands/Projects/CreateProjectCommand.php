@@ -20,7 +20,7 @@ final class CreateProjectCommand extends GatewayCommand
         {--name= : Optional display name}
         {--default-branch= : Stored default branch; resolve the remote default when omitted}
         {--root= : Repository-relative root; defaults to . for package types and public otherwise}
-        {--task-check= : Task check command; defaults to composer check for Laravel types and none otherwise}
+        {--task-check= : Task check command. Omitted stores none for every type}
         {--json : Return machine-readable JSON}';
 
     #[\Override]

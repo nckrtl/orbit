@@ -21,10 +21,10 @@ final readonly class CreateProjectData
     ) {}
 
     /**
-     * The task check to store: the sent value, or the type's default when none was sent.
+     * The task check to store. An omitted command is null for every Project type.
      */
     public function resolvedTaskCheck(): ?string
     {
-        return $this->taskCheckProvided ? $this->taskCheck : $this->type->defaultTaskCheck();
+        return $this->taskCheckProvided ? $this->taskCheck : null;
     }
 }

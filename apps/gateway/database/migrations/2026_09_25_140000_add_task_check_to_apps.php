@@ -15,7 +15,7 @@ return new class extends Migration
             $table->text('task_check')->nullable();
         });
 
-        // ADR 0125: every existing Project keeps the `composer check` gate it had; type defaults apply to new Projects only.
+        // Projects that already existed kept the composer check they ran. New Projects store no command unless one is sent.
         DB::table('apps')->update(['task_check' => 'composer check']);
     }
 

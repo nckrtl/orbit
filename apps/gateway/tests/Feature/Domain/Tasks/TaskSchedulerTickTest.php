@@ -135,11 +135,11 @@ function tick_checked_thread(string $status): array
     ]];
 }
 
-function tick_workspace(bool $definesCheckScript = true, ?string $branch = null): void
+function tick_workspace(?string $branch = null): void
 {
-    app()->instance(TaskWorkspaceStateReader::class, new readonly class($definesCheckScript, $branch) implements TaskWorkspaceStateReader
+    app()->instance(TaskWorkspaceStateReader::class, new readonly class($branch) implements TaskWorkspaceStateReader
     {
-        public function __construct(private bool $definesCheckScript, private ?string $branch) {}
+        public function __construct(private ?string $branch) {}
 
         public function headCommit(Instance $instance): ?string
         {
@@ -149,11 +149,6 @@ function tick_workspace(bool $definesCheckScript = true, ?string $branch = null)
         public function currentBranch(Instance $instance): ?string
         {
             return $this->branch;
-        }
-
-        public function definesComposerCheckScript(Instance $instance): bool
-        {
-            return $this->definesCheckScript;
         }
     });
 }
@@ -497,7 +492,7 @@ it('resumes a settling group without a pull request and opens the pull request w
 
     expect($signer->messages)->toBe(["Models\n\nChecked the feature."])
         ->and($publishing->publisher->pushes)->toBe([$group->id])
-        ->and($publishing->publisher->bodies)->toBe([TaskPullRequestDescription::render(new TaskTurnPullRequest('Adds tick routing.', ['Tasks store their records.'], []), 1)])
+        ->and($publishing->publisher->bodies)->toBe([TaskPullRequestDescription::render(new TaskTurnPullRequest('Adds tick routing.', ['Tasks store their records.'], []), 1, $group->project->taskCheckCommand())])
         ->and($group->fresh()?->pr_url)->toBe('https://github.com/acme/orbit/pull/42')
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
         ->and($task->fresh()?->status)->toBe(TaskStatus::Completed);
@@ -1931,43 +1926,12 @@ it('advances the current subtask when Jev marks it done', function (): void {
         ->and($spawner->spawned)->toBe(1);
 });
 
-it('hands off only when Orbit can run the workspace check script', function (bool $definesCheckScript, TaskStatus $status, string $taskCheck = 'composer check'): void {
-    $group = tick_group();
-    $group->project->update(['task_check' => $taskCheck]);
-    $task = $group->tasks->sole();
-    app(TaskExtensionState::class)->enable();
-    tick_workspace($definesCheckScript);
-    app()->instance(T3Dispatcher::class, tick_dispatcher());
-    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
-    {
-        public function snapshot(Node $node, string $threadId): ?array
-        {
-            return tick_checked_thread('done');
-        }
-    });
-
-    app(TaskScheduler::class)->tick();
-    app(TaskScheduler::class)->tick();
-
-    expect($task->fresh()?->status)->toBe($status);
-    $commands = app(T3Dispatcher::class)->commands;
-    if ($status === TaskStatus::Running) {
-        expect($commands[0]['message']['text'])->toContain('does not define a check script, so Orbit cannot run composer check')
-            ->and(app(TaskCheckRunner::class)->starts)->toBe(0);
-    }
-})->with([
-    'project check script' => [true, TaskStatus::Reviewing],
-    'missing check script' => [false, TaskStatus::Running],
-    'composer check with arguments after cd' => [false, TaskStatus::Running, 'cd app && composer check --no-ansi'],
-    'longer composer command' => [false, TaskStatus::Reviewing, 'composer check-platform-reqs'],
-]);
-
 it('hands off with the Project task check, and runs no command when the Project has none', function (?string $taskCheck): void {
     $group = tick_group();
     $group->project->update(['task_check' => $taskCheck]);
     $task = $group->tasks->sole();
     app(TaskExtensionState::class)->enable();
-    tick_workspace(false);
+    tick_workspace();
     app()->instance(T3Dispatcher::class, tick_dispatcher());
     app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
     {
@@ -4020,7 +3984,7 @@ it('commits the last approved subtask, opens the pull request with the reviewer 
     $approval = $task->comments()->sole();
     expect($signer->messages)->toBe(["Models\n\nChecked the feature."])
         ->and($publishing->publisher->pushes)->toBe([$group->id])
-        ->and($publishing->publisher->bodies)->toBe([TaskPullRequestDescription::render(new TaskTurnPullRequest('Adds tick routing.', ['Tasks store their records.'], []), 1)])
+        ->and($publishing->publisher->bodies)->toBe([TaskPullRequestDescription::render(new TaskTurnPullRequest('Adds tick routing.', ['Tasks store their records.'], []), 1, $group->project->taskCheckCommand())])
         ->and($approval->pull_request)->toBe(['summary' => 'Adds tick routing.', 'changes' => ['Tasks store their records.'], 'breaking' => []])
         ->and($publishing->coverage->approvalCommentId)->toBe($approval->id)
         ->and($publishing->coverage->approvalChanges)->toBe(['Tasks store their records.'])
@@ -4040,7 +4004,7 @@ it('counts only the delivered subtasks in the pull request description', functio
     app(TaskScheduler::class)->tick();
 
     expect($signer->messages)->toHaveCount(1)
-        ->and($publishing->publisher->bodies)->toBe([TaskPullRequestDescription::render(new TaskTurnPullRequest('Adds tick routing.', ['Tasks store their records.'], []), 2)]);
+        ->and($publishing->publisher->bodies)->toBe([TaskPullRequestDescription::render(new TaskTurnPullRequest('Adds tick routing.', ['Tasks store their records.'], []), 2, $group->project->taskCheckCommand())]);
 });
 
 it('reminds the reviewer when the approval of the last subtask has no pull request fields', function (): void {

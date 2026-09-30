@@ -315,7 +315,7 @@ final readonly class TaskScheduler
             return true;
         }
 
-        $items = $this->implementerItems($group, $task, $implementer, $read, $receipt);
+        $items = $this->implementerItems($task, $implementer, $read, $receipt);
         if ($this->failedItems($items) === [] && $receipt instanceof TaskComment) {
             $this->checkHandoff($group, $task, $implementer, $receipt, $observation);
 
@@ -845,11 +845,9 @@ final readonly class TaskScheduler
     }
 
     /** @return list<TaskRubricItem> */
-    private function implementerItems(Task $group, Task $task, TaskThreadObservation $thread, ?TaskTurnReceipt $read, ?TaskComment $receipt): array
+    private function implementerItems(Task $task, TaskThreadObservation $thread, ?TaskTurnReceipt $read, ?TaskComment $receipt): array
     {
-        $instance = $group->taskable;
         $items = [
-            new TaskRubricItem('check_script', ! self::runsComposerCheck($group->project->taskCheckCommand()) || $instance instanceof Instance && $this->workspace->definesComposerCheckScript($instance), 'composer.json in the workspace does not define a check script, so Orbit cannot run composer check. Restore the check script.'),
             $this->receiptItem($read, $receipt),
         ];
         $confirmation = $this->confirmationItem($task, $receipt, TaskThreadRole::Implementer);
@@ -2929,14 +2927,6 @@ final readonly class TaskScheduler
         }
 
         $this->startBaseline($group, $task);
-    }
-
-    /**
-     * Only a task check that runs `composer check` needs the workspace's Composer `check` script.
-     */
-    private static function runsComposerCheck(?string $command): bool
-    {
-        return $command !== null && preg_match('/(?:^|[\s;&|(])composer\s+check(?=$|[\s;&|)])/', $command) === 1;
     }
 
     private function startBaseline(Task $group, Task $task): void

@@ -8,8 +8,7 @@ check start CHECKOUT [SETUP|-] [DELIVERABLES|-] [COMMAND]
                                 (ADR 0133): {"start", "commands": [{"id", "command", "directory", "fails_on_base", "paths"}]}
                                 A command with fails_on_base runs on the start commit with its paths overlaid, then on the working tree (ADR 0163).
                                 The base tree is a temporary archive under .git/orbit/bases/, not a registered worktree. The base run stops after 600 seconds.
-                                COMMAND is a file with the Project's task check command; an empty file runs no command.
-                                Without COMMAND, the check runs `composer check`.
+                                COMMAND is a file with the Project's task check command. An empty file, or no COMMAND, runs no command.
 check run CHECKOUT HEAD TREE [SETUP|-] [DELIVERABLES|-] [COMMAND]
                                 run the setup steps and the command, then write check.json (started by `start`).
                                 Invalid command deliverables fail before that command. An unexpected error still writes check.json.
@@ -82,7 +81,7 @@ def start(checkout, setup=None, deliverables=None, command=None):
         with open(command) as source:
             command = source.read()
     else:
-        command = 'composer check'
+        command = ''
     head = git(checkout, 'rev-parse', 'HEAD')
     tree = working_tree(checkout)
     for path in (RESULT, LOG):
@@ -404,7 +403,7 @@ def perform(checkout, head, tree, setup, deliverables, command, started_at):
     ))
 
 
-def run(checkout, head, tree, setup=None, deliverables=None, command='composer check'):
+def run(checkout, head, tree, setup=None, deliverables=None, command=''):
     signal.signal(signal.SIGTERM, cancelled)
     setup, deliverables = optional(setup), optional(deliverables)
     started_at = time.time()

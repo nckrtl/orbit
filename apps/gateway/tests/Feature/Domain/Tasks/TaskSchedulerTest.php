@@ -971,11 +971,6 @@ it('records a missing start commit on a later tick', function (): void {
         {
             return 'task-retry';
         }
-
-        public function definesComposerCheckScript(Instance $instance): bool
-        {
-            return true;
-        }
     });
     app(TaskExtensionState::class)->enable();
 
@@ -1029,11 +1024,6 @@ it('keeps a migrated continuation on its source subtask start after the source c
         {
             return 'task-continuation';
         }
-
-        public function definesComposerCheckScript(Instance $instance): bool
-        {
-            return true;
-        }
     });
     app(TaskExtensionState::class)->enable();
 
@@ -1079,11 +1069,6 @@ it('does not record a later head after the implementer starts and commits', func
         public function currentBranch(Instance $instance): ?string
         {
             return 'task-late';
-        }
-
-        public function definesComposerCheckScript(Instance $instance): bool
-        {
-            return true;
         }
     });
     app(TaskExtensionState::class)->enable();
@@ -1137,11 +1122,6 @@ it('records a start commit on a later tick while the implementer is only reserve
         public function currentBranch(Instance $instance): ?string
         {
             return 'task-reserved';
-        }
-
-        public function definesComposerCheckScript(Instance $instance): bool
-        {
-            return true;
         }
     });
     app(TaskExtensionState::class)->enable();
@@ -1691,11 +1671,6 @@ function scheduler_approved_subtask(string $slug, bool $last = false, ?string $r
         {
             return $this->branch;
         }
-
-        public function definesComposerCheckScript(Instance $instance): bool
-        {
-            return true;
-        }
     });
     app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([
         $receipt ?? FakeTaskTurnReceipts::contents('approved', 'Checked the models.'),
@@ -2188,11 +2163,6 @@ function scheduler_review(array $receipts, bool $notified = true): array
         public function currentBranch(Instance $instance): ?string
         {
             return 'task-'.$this->groupId;
-        }
-
-        public function definesComposerCheckScript(Instance $instance): bool
-        {
-            return true;
         }
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
