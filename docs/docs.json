@@ -560,7 +560,10 @@
               "decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
               "decisions/0175-docs-impact-check-in-orbit-repo",
               "decisions/0178-run-project-agnostic-tasks-without-a-planner",
-              "decisions/0182-start-tasks-from-project-task-definitions"
+              "decisions/0182-start-tasks-from-project-task-definitions",
+              "decisions/0183-manage-macos-tools-without-service-roles",
+              "decisions/0184-adopt-selected-tools-from-existing-managers",
+              "decisions/0185-report-informational-tool-discoveries-in-doctor"
             ]
           }
         ]

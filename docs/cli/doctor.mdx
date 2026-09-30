@@ -11,7 +11,7 @@ covers:
   - packages/php-sdk/src/Responses/Doctor/**
 ---
 
-Doctor is one command. The Gateway compares its stored intent with a bounded, read-only observation of each Node and returns one report. Doctor never converges, installs, removes, starts, stops, restarts, adopts, or otherwise changes managed state.
+Doctor is one command. The Gateway compares its stored intent with a bounded, read-only observation of each Node and returns one report. Doctor never converges, installs, removes, starts, stops, restarts, adopts, or otherwise changes managed state. The tool family also reports [informational package discoveries](#informational-package-discoveries).
 
 ## Commands
 
@@ -40,13 +40,13 @@ orbit doctor --node=7 --family=instance --family=process
 orbit doctor --family=firewall --json
 ```
 
-Human output shows a progress indicator while the request runs. Then it shows a table with the columns Node, Family, Status, Checked, Resource, and Finding. A family without findings has one row, with "—" in the last two columns. A family with findings has one row for each finding. The Resource column names the resource type and name, so findings with the same code stay distinct. The Finding column shows the code, the summary, and the expected and observed values. The last lines give the report's summary counts (Nodes, families, checks, drift, and unverifiable), whether the fleet is healthy, and the request ID. JSON output returns the same report, including the same `summary` counts, as one document.
+Human output shows a progress indicator while the request runs. Then it shows a table with the columns Node, Family, Status, Checked, Resource, and Finding. A family without findings has one row, with "—" in the last two columns. A family with findings has one row for each finding. The Resource column names the resource type and name, so findings with the same code stay distinct. The Finding column shows the code, the summary, and the expected and observed values. The last lines give the report's summary counts (Nodes, families, checks, drift, and unverifiable), the informational finding count, whether the fleet is healthy, and the request ID. JSON output returns the same report, including the same `summary` counts, as one document.
 
 The exit status follows the report.
 
 | Exit status | Meaning |
 | --- | --- |
-| `0` | Every selected Node and family is healthy. |
+| `0` | Every selected Node and family is healthy, including a report with only informational findings. |
 | `1` | At least one finding is drift or unverifiable, or the Gateway could not be reached. |
 
 The Gateway answers a completed report with HTTP 200, also when it holds drift or unverifiable findings. Transport and authorization failures use the normal error envelope.
@@ -57,7 +57,7 @@ Doctor selects only Nodes that the caller may address through an access grant. T
 
 ### How the Gateway inspects
 
-The Gateway observes each Node once over SSH before it runs the family probes. The observation holds reachability, platform, architecture, and whether the WireGuard address is present. It also holds the [Node agent](/reference/node-agent#doctor) binary, unit, state, and checksums.
+The Gateway observes each Node once over SSH before it runs the family probes. The observation holds reachability, platform, architecture, and whether the WireGuard address is present. For managed Linux Nodes, it also holds the [Node agent](/reference/node-agent#doctor) binary, unit, state, and checksums. macOS inspection uses native platform and tunnel checks and expects no Linux agent or systemd unit.
 
 A failed SSH command makes the Node unreachable, and the `node` family reports `node.ssh_unreachable`. A malformed or truncated observation makes the `node` family report `node.inspection_failed` instead. In both cases the other families treat the Node as unreachable. Database-only checks still run: Node and role lifecycle, role conflicts, Route status, and database connections. Each other family with resources on that Node reports one `*.node_unreachable` issue instead of its checks. The `role` family does this only when the Node has an active role. The `route` family does this only when the Node serves a custom proxy Route.
 
@@ -65,15 +65,23 @@ Checks that read root-owned files run through passwordless `sudo` on the Node. E
 
 Families run in this order, whatever filter you pass: `node`, `role`, `project`, `instance`, `schedule`, `tool`, `process`, `firewall`, `database_connection`, `route`. Nodes sort by name and then ID. Resources sort by ID. So two runs against the same state produce the same report.
 
-Each issue carries a stable code, a kind of `drift` or `unverifiable`, the resource type, ID, and name, a summary, and bounded `expected` and `observed` values. A family is `healthy` with no issues, `drift` with drift only, and `unverifiable` when any issue is unverifiable. `checked` counts the family's persisted resources on that Node, not commands. A family without resources on the Node is `healthy` with `checked` 0.
+Each issue carries a stable code, a kind of `informational`, `drift`, or `unverifiable`, the resource type, ID, and name, a summary, and bounded `expected` and `observed` values. A family is `healthy` with no issues or informational issues only, `drift` when it has drift and no unverifiable issue, and `unverifiable` when any issue is unverifiable. `checked` counts the family's persisted resources on that Node, not commands. Package discoveries have no persisted resource ID and do not increase `checked`. A tool family with no registered Tools can still report informational discoveries or an unverifiable inventory scan.
 
 The report never contains raw output, commands, paths, URLs, branch names, repository origins, credentials, setting values, private keys, environment values, configuration contents, or exception text. A Route issue names the Route's domain as its resource name.
+
+### Informational package discoveries
+
+The tool family reads installed Homebrew formulae and casks and Vite+ global root packages through the shared [package inspector](/reference/tools#discover-installed-packages). A package without a matching Tool record is `informational`. The finding names the manager and package, reports a normalized version when available, labels dependencies, and says whether adoption is supported. An unsupported cask is still information, not drift.
+
+Informational findings appear in both human and JSON reports and have their own summary count. They do not change Node or family health, drift or unverifiable counts, or the exit code. A report with only informational findings stays healthy and exits 0. Missing managed packages, rejected constraints, or unverifiable checks still make the report exit 1.
+
+Discovery is read-only, even when the Node has no Tool records. A missing or unsupported manager has an explicit scan state; a failed or incomplete scan of an existing supported manager is unverifiable. Doctor creates no Tool rows and offers no automatic adoption. Adopt one selected package through [tool:adopt](/cli/tool#orbit-tooladopt) or the Node's [Tools page](/reference/web-app#node-detail-pages).
 
 ### What each family checks
 
 | Family | Checks | Issue codes |
 | --- | --- | --- |
-| `node` | Lifecycle for every Node. For a Node that the Gateway manages over SSH, also SSH reachability, platform, architecture, and WireGuard address against the Node record. For an active managed Node, also the [Node agent](/reference/node-agent#doctor) binary and its pinned checksum, unit, secret, and the Gateway's view of its reports. Checks free space and free inodes on the filesystem holding the Orbit home or root. | `node.lifecycle_not_active`, `node.disk_low`, `node.ssh_unreachable`, `node.platform_mismatch`, `node.architecture_mismatch`, `node.wireguard_ip_mismatch`, `node.agent_missing`, `node.agent_binary_mismatch`, `node.agent_inactive`, `node.agent_view_stale`, `node.agent_secret_mismatch`, `node.inspection_failed` |
+| `node` | Lifecycle for every Node. For a Node that the Gateway manages over SSH, also SSH reachability, platform, architecture, and WireGuard address against the Node record. For an active managed Linux Node, also the [Node agent](/reference/node-agent#doctor) binary and its pinned checksum, unit, secret, and the Gateway's view of its reports. Checks free space and free inodes on the filesystem holding the Orbit home or root. | `node.lifecycle_not_active`, `node.disk_low`, `node.ssh_unreachable`, `node.platform_mismatch`, `node.architecture_mismatch`, `node.wireguard_ip_mismatch`, `node.agent_missing`, `node.agent_binary_mismatch`, `node.agent_inactive`, `node.agent_view_stale`, `node.agent_secret_mismatch`, `node.inspection_failed` |
 | `role` | Each role assignment's packages, installed Caddy release, services, firewall, DNS, VPN, and Cluster projections, the Gateway machine's private DNS route, plus singleton and assignment conflicts. Once per Node, the live Caddyfile against a fresh Node Caddy build. | `role.lifecycle_not_active`, `role.claim_stale`, `role.packages_missing`, `role.caddy_version_unsupported`, `role.caddy_build_drift`, `role.services_inactive`, `role.firewall_projection_mismatch`, `role.dns_projection_mismatch`, `role.private_dns_route_mismatch`, `role.vpn_inactive`, `role.vpn_projection_mismatch`, `role.singleton_conflict`, `role.assignment_conflict`, `role.cluster_ownership_mismatch`, `role.cluster_cardinality_conflict`, `role.node_unreachable`, `role.inspection_failed` |
 | `project` | The repository origin that Instances on the Node project for the Project. | `project.repository_origin_mismatch`, `project.node_unreachable`, `project.inspection_failed` |
 | `instance` | Checkout or production home, and source identity and layout. On `app-prod`, also PHP-FPM association, environment projection, and release selection. The private and public Route projection on every Node that serves the Instance, and stuck provisioning or removals. | `instance.lifecycle_not_active`, `instance.provisioning_stuck`, `instance.removal_stuck`, `instance.checkout_missing`, `instance.source_identity_mismatch`, `instance.source_layout_mismatch`, `instance.repository_layout_mismatch`, `instance.origin_mismatch`, `instance.caddy_projection_mismatch`, `instance.php_fpm_association_missing`, `instance.php_fpm_association_shared`, `instance.php_fpm_projection_mismatch`, `instance.environment_projection_mismatch`, `instance.production_home_mismatch`, `instance.release_selection_mismatch`, `instance.selected_release_root_mismatch`, `instance.public_ingress_mismatch`, `instance.public_tls_mismatch`, `instance.public_firewall_mismatch`, `instance.private_forwarding_mismatch`, `instance.private_routing_scope_mismatch`, `instance.private_certificate_mismatch`, `instance.private_dns_mismatch`, `instance.private_firewall_mismatch`, `instance.router_caddy_mismatch`, `instance.workload_caddy_mismatch`, `instance.laravel_url_mismatch`, `instance.target_set_mismatch`, `instance.route_association_mismatch`, `instance.related_node_unverifiable`, `instance.node_unreachable`, `instance.inspection_failed` |
@@ -116,7 +124,7 @@ These reasons explain the design. Check them before you propose a change.
 
 ### Verify only
 
-Doctor reports drift and never repairs it. A second convergence engine would compete with the commands that own each change. So Doctor uses only database reads and read-only commands. Its inspectors stay separate from the managers that change Nodes, and Doctor never calls a mutating manager or action. Code that both sides need, such as a catalog, a parser, or a renderer, moves to a shared place. Repair stays with those commands, such as `node:role:add --converge`. Restore, adoption, interactive repair, and scans for unmanaged host state are outside Doctor.
+Doctor reports drift and never repairs it. A second convergence engine would compete with the commands that own each change. So Doctor uses only database reads and read-only commands. Its inspectors stay separate from the managers that change Nodes, and Doctor never calls a mutating manager or action. Code that both sides need, such as a catalog, a parser, or a renderer, moves to a shared place. Repair stays with those commands, such as `node:role:add --converge`. Restore, adoption, and interactive repair stay outside Doctor. Read-only Homebrew and Vite+ package discovery is the explicit exception to checking registered resources only. Other unmanaged host-state scans remain outside its contract.
 
 ### No stored reports
 

@@ -38,6 +38,20 @@ A path without a file returns the release's `index.html`, and the app's router s
 
 The app connects to Reverb at the URL that `GET /api/v1/realtime` returns.
 
+## Node detail pages
+
+A Node detail page has the same section menu pattern as an Instance: Overview, Tools, and Firewall where supported. Overview holds identity, roles, metrics when supported, Instances, and Node Processes. Firewall has its own page section on Linux, with the existing operator rules, Orbit rules, live rules, and missing-state comparisons. macOS tool support does not enable firewall management.
+
+### Tools
+
+Tools always shows every registered Tool for that Node, including failed tools and records on an unreachable machine. Managed rows show manager, package, recorded version, version constraint, status, and failures. Update and remove use the Gateway's Tool operations and show their outcomes. The recorded version is the last operation's result; a live scan supplies a separate observed version.
+
+A separate detected-unmanaged group shows installed Homebrew formulae, casks, and Vite+ globals from the shared read-only inventory endpoint. It labels dependencies and unsupported packages. Discoveries are informational and do not affect Node health. The page shows inspection time and status and has an explicit refresh action. A failed refresh preserves registered Tools and identifies stale or unavailable observations; it never displays a failed scan as an empty healthy result.
+
+Each supported unregistered package has an Adopt action. It sends the Node, exact manager, package, and optional constraint to the same Gateway operation the CLI and MCP use. The Gateway rechecks the live installation before creating intent. Success moves the package into the managed group without installing or updating it. Unsupported packages show a reason instead of an enabled action. Discovery never adopts packages automatically.
+
+Phone navigation and actions remain reachable without compressing the package list beside a full desktop sidebar. The [web verification](/reference/web-verification#node-tools-review) covers phone and desktop layouts, successful adoption, and offline or failed scan states.
+
 ## Live Node and Process state
 
 The app subscribes to `presence-node.{id}` for every active Node, next to the `orbit` channel. The [Node agent](/reference/node-agent) publishes there.
@@ -48,7 +62,7 @@ The app subscribes to `presence-node.{id}` for every active Node, next to the `o
 | Lost: the agent left, or sent nothing for 15 seconds | offline | The value from the Process list |
 | Not seen since the page subscribed | Prometheus `up` | The value from the Process list |
 
-A Node without an [agent](/reference/node-agent#where-it-runs) always uses the last row. An example is a [Node without roles](/reference/node-provisioning#nodes-without-roles) that has no pinned SSH host key.
+A Node without an [agent](/reference/node-agent#where-it-runs) always uses the last row. A macOS tool-only Node has no agent or Metrics exporter in this slice; the page shows unavailable live telemetry rather than treating that absence as a failed Linux service. An example is a [Node without roles](/reference/node-provisioning#nodes-without-roles) that has no pinned SSH host key.
 
 CPU and memory come from [`process.usage`](/reference/events#process-usage) events. The app writes each sample into its cached Process list. While realtime is live, it reloads the Process list only when no sample arrived for 60 seconds.
 

@@ -4,7 +4,7 @@ description: "How node:add bootstraps or converges a Node, which roles share a N
 covers:
   - apps/gateway/app/Actions/Nodes/{ProvisionNodeAction,RemoveNodeAction,AddNodeRoleAction,RemoveNodeRoleAction,AssignRoleAction}.php
   - apps/gateway/app/Domain/Nodes/RoleRegistry.php
-  - apps/gateway/app/Infrastructure/Nodes/{NativeNodeConverger,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackageSourceProgram,RemotePhpPackageManager,NodeLocks,NodeLock}.php
+  - apps/gateway/app/Infrastructure/Nodes/{NativeNodeConverger,MacOsNodeConverger,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackageSourceProgram,RemotePhpPackageManager,NodeLocks,NodeLock}.php
   - apps/gateway/app/Infrastructure/Firewall/NodeFirewallRuleCatalog.php
   - apps/gateway/app/Infrastructure/WireGuard/NativeGatewayPeerProjectionManager.php
   - apps/gateway/app/Console/Commands/ProvisionNodeCommand.php
@@ -17,9 +17,9 @@ covers:
 
 ## Add a Node
 
-A new Node needs a public SSH host and an approved SSH host key fingerprint, `--host-key-fingerprint`. Without the fingerprint, the Gateway refuses with `node.ssh_host_fingerprint_required`. A Node with `app-dev` needs a TLD, unless it joins an active Cluster that has one. Otherwise the Gateway refuses with `node.tld_required`. The only platform is `linux`.
+A new Node needs a public SSH host and an approved SSH host key fingerprint, `--host-key-fingerprint`. Without the fingerprint, the Gateway refuses with `node.ssh_host_fingerprint_required`. A Node with `app-dev` needs a TLD, unless it joins an active Cluster that has one. Otherwise the Gateway refuses with `node.tld_required`. Platforms are `linux` for Ubuntu 26.04 service Nodes and `macos` for selected tools. [macOS Nodes](#macos-nodes) use a separate enrollment path.
 
-The Gateway records the Node as `provisioning` and runs these steps in order:
+For Ubuntu, the Gateway records the Node as `provisioning` and runs these steps in order:
 
 | Step | Work |
 | --- | --- |
@@ -59,7 +59,7 @@ Each failure names the check or step that stopped the request.
 | --- | --- |
 | `node.invalid_linux_user` | The bootstrap user or the managed user is not a valid Linux user name. Nothing changes. |
 | `node.user_change_unsupported` | The request names another managed user for a Node that has roles. Nothing changes. |
-| `node.platform_unsupported` | The platform is not `linux`. |
+| `node.platform_unsupported` | The platform or requested operation is unsupported on the machine. |
 | `node.ssh_host_fingerprint_required` | A new Node has no approved host key fingerprint. |
 | `node.ssh_host_key_scan_failed` | The Gateway could not read the host key. |
 | `node.ssh_host_key_mismatch` | The host key differs from `--host-key-fingerprint`. |
@@ -71,11 +71,25 @@ Each failure names the check or step that stopped the request.
 | `node.role_convergence_failed` | A role failed to converge. The step is `role:<step>`. |
 | `node.agent_install_failed` | The Node agent failed to install. |
 
+## macOS Nodes
+
+A macOS Node supports selected Homebrew formulae, casks, and Vite+ global packages. It needs no role. It uses an existing account, working WireGuard connection, and SSH access authorized for the Gateway. Enrollment pins the approved SSH host identity and verifies the actual platform, architecture, account, and tunnel address. The host name is resolved by the Gateway; an SSH alias on the caller's machine is not a fleet address.
+
+Use `node:add` with `--platform=macos`, `--user` and `--orbit-user` naming the existing account, and the approved host fingerprint. A roleless peer with no pinned SSH identity can be enrolled in place. The Gateway corrects its platform and architecture from verified observations and retains its Node ID, access grants, and WireGuard identity. A requested value that differs from the machine fails. An already managed Node cannot silently change its machine identity.
+
+The macOS path creates no account and applies no Ubuntu bootstrap, apt packages, UFW rules, systemd units, or managed DNS. It keeps the existing account, tunnel, Homebrew prefix, and Vite+ global scope. Discovery and adoption report a missing or conflicting manager without installing, replacing, or repinning it. Tool mutations require an active Node with verified WireGuard and pinned SSH identity.
+
+### Supported operations
+
+Service roles, Linux Processes and Schedules, Metrics exporters, and the Linux Node agent are unsupported on macOS. These operations refuse the platform before remote mutation. Doctor checks platform, architecture, tunnel identity, and tools with macOS commands; it does not expect systemd, a Node agent, or an exporter. A missing agent on a Mac is not drift.
+
+Removing a macOS Node preserves its existing user and package-manager installations and does not run Linux agent or firewall cleanup. Any retained packages and host tunnel configuration are reported. Registry removal must not uninstall unrelated software. macOS OS updates, firewall management, application hosting, and a macOS agent are separate features.
+
 ## Nodes without roles
 
 `node:add` without `--role` adds a Node that hosts no Orbit service. Use it for an operator machine that runs the Orbit CLI over WireGuard.
 
-The Gateway uses this setup when the request names no role and the Node has no role assignment. It runs the same steps as for any Node, with these differences.
+On Ubuntu, the Gateway uses this setup when the request names no role and the Node has no role assignment. macOS uses the [macOS enrollment](#macos-nodes) path. It runs the same steps as for any Node, with these differences.
 
 | Area | Node without roles |
 | --- | --- |
@@ -201,7 +215,7 @@ Four locks guard work on one Node. They live in a file cache store under `ORBIT_
 | Lock | Guards | Term | When it is busy |
 | --- | --- | --- | --- |
 | Tool | One package of one Tool Manager | 10 minutes | Fails at once with `tool.operation_locked` |
-| Tool Manager | The shared scope of `apt`, `vp`, `composer`, or `brew` | 10 minutes | Fails at once with `tool.operation_locked`, `node.tool_manager_locked` during `node:add`, or `node_role.tool_manager_locked` in a role operation |
+| Tool Manager | The shared scope of `apt`, `vp`, `composer`, or Homebrew; `brew` and `brew-cask` share the prefix lock | 10 minutes | Fails at once with `tool.operation_locked`, `node.tool_manager_locked` during `node:add`, or `node_role.tool_manager_locked` in a role operation |
 | Role | Role operations | 10 minutes | Waits up to 2 minutes, then `node_role.node_busy` |
 | Node agent | The [agent converge](/reference/node-agent#install-and-upgrade) | 4 minutes | Waits up to 2 minutes, then `agent.converge_busy` |
 

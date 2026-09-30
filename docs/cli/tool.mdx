@@ -7,13 +7,15 @@ covers:
   - packages/php-sdk/src/Responses/Tools/**
 ---
 
-The `tool` family manages packages on a Node. A Tool is one package that Orbit manages through one Tool Manager. The [Tools reference](/reference/tools) explains where Tools run, the four managers, and the install, update, and removal rules.
+The `tool` family manages packages on a Node. A Tool is one package that Orbit manages through one Tool Manager. The [Tools reference](/reference/tools) explains where Tools run, the supported managers, and the install, update, and removal rules.
 
 ## Commands
 
 | Command | Result |
 | --- | --- |
 | [`tool:manager:list`](#orbit-toolmanagerlist) | List the managers a Node supports and their state. |
+| [`tool:scan`](#orbit-toolscan) | Discover installed Homebrew and Vite+ packages without taking ownership. |
+| [`tool:adopt`](#orbit-tooladopt) | Register one supported installed package without changing it. |
 | [`tool:install`](#orbit-toolinstall) | Install one package, and install its manager first when needed. |
 | [`tool:list`](#orbit-toollist) | List the Tools on a Node. |
 | [`tool:show`](#orbit-toolshow) | Show one Tool. |
@@ -30,6 +32,24 @@ List every manager the Node supports, with its ID and state. An `uninstalled` ma
 orbit tool:manager:list --node=ID [--json]
 ```
 
+## orbit tool:scan
+
+Read installed Homebrew formulae, casks, and Vite+ global packages for one Node. The result distinguishes registered ownership, dependencies, adoption support, and each manager's scan state. It changes no packages or Tool records. An unsuccessful scan is explicit, not an empty successful inventory.
+
+```bash
+orbit tool:scan --node=ID [--json]
+```
+
+## orbit tool:adopt
+
+Take ownership of one supported installed package. The Gateway checks its live state again and records intent without reinstalling or updating it.
+
+```bash
+orbit tool:adopt <package> --node=ID --manager=MANAGER [--constraint=CONSTRAINT] [--yes] [--json]
+```
+
+Use `brew` for a Core formula, `brew-cask` for a supported official macOS cask, or `vp` for a Vite+ global package. The optional SemVer constraint must accept the installed version. A repeated adoption with the same intent is unchanged. A missing or unsupported package or a conflicting constraint fails without creating a Tool. Without `--yes`, a terminal asks whether Orbit may take ownership of this exact package on this Node and manage later updates and removal. The default is No. Noninteractive and JSON calls require `--yes`. Cancelling changes nothing. See [Adopt a Tool](/reference/tools#adopt-a-tool).
+
 ## orbit tool:install
 
 Install one package on a Node.
@@ -45,7 +65,7 @@ orbit tool:install [package] --node=ID [--manager=MANAGER] [--constraint=CONSTRA
 | Option | Meaning |
 | --- | --- |
 | `--node=ID` | Numeric Node ID. |
-| `--manager=MANAGER` | `apt`, `vp`, `composer`, or `brew`. In a terminal, the command offers the Node's `active` and `uninstalled` managers. Otherwise it fails with `tool.manager_required`. |
+| `--manager=MANAGER` | `apt`, `vp`, `composer`, `brew`, or `brew-cask`, limited to those the Node supports. In a terminal, the command offers the Node's `active` and `uninstalled` managers. Otherwise it fails with `tool.manager_required`. |
 | `--constraint=CONSTRAINT` | Optional SemVer range. It only stops an unsafe version. |
 
 ```bash
@@ -54,7 +74,7 @@ orbit tool:install laravel/installer --node=12 --manager=composer
 orbit tool:install ripgrep --node=12 --manager=brew
 ```
 
-Use `vp` for npm packages such as Codex and Claude Code, `composer` for `vendor/package` tools, `apt` for Ubuntu packages, and `brew` for a Homebrew Core formula with a Linux bottle.
+Use `vp` for npm packages such as Codex and Claude Code, `composer` for `vendor/package` tools, `apt` for Ubuntu packages, and `brew` for a Homebrew Core formula with a compatible verified bottle. `brew-cask` manages supported official Homebrew casks on macOS.
 
 The result is `applied` for a new install. It is `unchanged` when the Tool already exists and its package is installed, such as on a retry or a repeated install. When an install fails after the Gateway created the Tool, the error names the Tool ID, so you can retry or remove it.
 

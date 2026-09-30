@@ -59,7 +59,7 @@ orbit node:add <name> [host] [options]
 | `--ssh-port=PORT` | `22` | Public SSH port. |
 | `--user=USER` | `root` for a new Node, the managed user for an existing Node | Bootstrap SSH user. |
 | `--orbit-user=USER` | `orbit` for a new Node | Managed user that every later Gateway command uses. |
-| `--platform=PLATFORM` | `linux` | Only `linux` is accepted. |
+| `--platform=PLATFORM` | `linux` | `linux` for Ubuntu service Nodes, or `macos` for tools on an existing account and tunnel. |
 | `--architecture=ARCH` | the observed value | Machine architecture, such as `x86_64`. A given value must equal the observed one. |
 | `--tld=TLD` | none | Node TLD. Required for `app-dev`, unless the Node joins an active Cluster with a TLD. A production Node needs it for [clone](/cli/instance#orbit-instanceclone) preview domains. |
 | `--role=ROLE` | none | Role to assign. Repeat for more roles. Without it, see [Nodes without roles](/reference/node-provisioning#nodes-without-roles). |
@@ -81,6 +81,8 @@ orbit node:add beast beast.example.com \
 
 orbit node:add beast --role=app-dev --role=database
 ```
+
+For macOS, use `node:add` with `--platform=macos` and name the existing account with `--user` and `--orbit-user`. The machine must already join WireGuard and accept the Gateway's SSH key. No role is required; role requests are refused. This path also enrolls an existing roleless peer whose SSH identity is not pinned. See [macOS Nodes](/reference/node-provisioning#macos-nodes).
 
 ## orbit node:list
 

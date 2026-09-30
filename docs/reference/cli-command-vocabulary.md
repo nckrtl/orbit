@@ -58,7 +58,7 @@ Use `create` and `destroy` when the Gateway owns the resource lifecycle. Use `ad
 | `tasks` | `create` | A [task](/reference/tasks). `tasks:cancel` and `tasks:complete` end it. |
 | `tasks:comment` | `create` | A typed comment on a subtask |
 | `tasks:subtask` | `create` and `destroy` | A subtask of a task |
-| `tool` | `install` and `remove` | A Tool on a Node |
+| `tool` | `install` and `remove`; `adopt` establishes ownership of an existing package | A Tool on a Node |
 
 `route:create` takes an Instance ID and domain for an app Route. It does not take a Project ID or an explicit Node or Cluster scope. A custom proxy Route instead takes a domain, serving Node, and upstream or Process. See [Route creation](/reference/routes#create-and-change-targets).
 
@@ -87,6 +87,8 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `tasks` | `cancel`, `complete`, `status` | The CLI cancels or completes a task, cancels a running subtask with `tasks:subtask:cancel`, or reports task assistance and state. |
 
 `doctor` and `profile` are one-segment commands. Each family name is the command. Project source defaults and task settings use `project:update`; create and destroy remain the lifecycle commands.
+
+`tool:scan` reads supported package-manager inventory without creating Tool intent. `tool:adopt` establishes intent for one existing package without installing it. Both use the [Tool contract](/reference/tools).
 
 ## Noun-ending commands
 

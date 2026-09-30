@@ -15,6 +15,12 @@ This page is for an agent that changes the Orbit web app, and for the reviewer w
 
 Run every command from the repository root. Stdout is one JSON object and nothing else. Logs stay on stderr, and the demo server log is `.orbit-artifacts/web/server.log`.
 
+## Node tools review
+
+A Node Tools change includes phone and desktop screenshots from `bin/web-verify`. Open the Node's Overview, Tools, and supported Firewall sections through their menu. Review registered, discovered-unmanaged, dependency, unsupported-cask, scan-failure, and unreachable-Node states. Adopt one supported fixture through its visible action, then verify it appears as managed and the request names the exact Node, manager, and package.
+
+On the phone, navigation and Adopt remain reachable, content starts near the top, and long package lists do not force a narrow desktop sidebar beside the content. Screenshots supplement browser tests that assert requests and states. Demo fixtures prove UI behavior only; real macOS tool operations need a task-owned Mac fixture.
+
 ## Commands
 
 `routes` reads the feature map and does not start the app. `stop` stops the daemon for this checkout and does not start the app. The other commands share one daemon and one demo server for the checkout. A dead server is started again. [Active page](#active-page) states which page `click` uses. [Daemon](#daemon) states what keeps running and how to stop it.

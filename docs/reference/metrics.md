@@ -14,7 +14,7 @@ covers:
 
 # Metrics role
 
-The `metrics` role runs Prometheus and Grafana on one Node. It collects metrics from the selected managed Nodes. The Gateway's managed-Node eligibility boundary is shared with Node-agent installation. Open the dashboards at `https://metrics.orbit`. [`metrics`](/cli/metrics) lists the commands. [Service metrics](/reference/service-metrics) adds Caddy and PHP-FPM metrics to the same role.
+The `metrics` role runs Prometheus and Grafana on one Node. It collects metrics from the selected managed Nodes. Exporters and Node-agent installation require managed Linux Nodes. SSH management on a macOS Node enables tools, not these Linux services. Open the dashboards at `https://metrics.orbit`. [`metrics`](/cli/metrics) lists the commands. [Service metrics](/reference/service-metrics) adds Caddy and PHP-FPM metrics to the same role.
 
 ## What runs where
 
@@ -183,7 +183,7 @@ WireGuard membership alone does not prove Gateway authority. A Grafana login alo
 
 ### Exporters only on managed Nodes
 
-A Node without Gateway SSH management has no service-management contract with the Gateway. An exporter preference must not turn such a Node into a managed Node. A roleless Node that the Gateway manages can still host an exporter.
+A Node without Gateway SSH management has no service-management contract with the Gateway. An exporter preference must not turn such a Node into a managed Node. A roleless Linux Node that the Gateway manages can still host an exporter. A managed Mac cannot host the Linux exporter in this slice.
 
 ### The credential in Metrics settings
 

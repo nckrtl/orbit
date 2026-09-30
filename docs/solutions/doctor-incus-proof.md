@@ -13,6 +13,8 @@ covers:
 
 A proof of the verify-only Doctor runs on a leased `gateway_app-dev_app-prod` topology. It needs a healthy baseline on all three Nodes, exactly one declared drift, exactly one declared unverifiable condition, and evidence that Doctor writes nothing. Each fixture must produce one finding and leave every other inspection untouched.
 
+Informational tool discoveries may appear in a healthy baseline. They do not change health or exit status. Drift and unverifiable findings still fail the report. Incus proves Linux behavior; [macOS enrollment](/reference/node-provisioning#macos-nodes) and tool operations need a separate task-owned fixture on a real Mac.
+
 ## Cause
 
 Doctor reports one finding per inspector that fails, so a fixture must break exactly one inspector. The Node inspector also reads the free space and free inodes for root and the managed user's home filesystem, including on the Gateway. Low disk space can therefore spoil a baseline even when the intended fixture affects another family.
