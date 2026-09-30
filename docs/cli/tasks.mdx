@@ -1,6 +1,6 @@
 ---
 title: "tasks"
-description: "Create, prepare, inspect, cancel, and complete tasks, their subtasks, and their comments through the Gateway tasks extension."
+description: "Create, prepare, inspect, cancel, and complete tasks, and read or replace a Project's task definitions, through the Gateway tasks extension."
 covers:
   - "apps/cli/app/Commands/Tasks/**"
 ---
@@ -27,10 +27,15 @@ A task is one feature. A subtask is one ordered child of that task, and a subtas
 | [`tasks:comment:create`](#orbit-taskscommentcreate) | Ask for assistance on a subtask or resolve a request. |
 | [`tasks:comment:list`](#orbit-taskscommentlist) | List a subtask's comments. |
 | [`tasks:agents`](#orbit-tasksagents) | List a task's agent threads. |
+| [`tasks:definition:list`](#orbit-tasksdefinitionlist) | List task definitions. This command does not start a task. |
+| [`tasks:definition:show`](#orbit-tasksdefinitionshow) | Show one task definition. This command does not start a task. |
+| [`tasks:definition:create`](#orbit-tasksdefinitioncreate) | Create a task definition from a JSON file. This command does not start a task. |
+| [`tasks:definition:update`](#orbit-tasksdefinitionupdate) | Replace a task definition from a JSON file. This command does not start a task. |
+| [`tasks:definition:destroy`](#orbit-tasksdefinitiondestroy) | Delete a task definition. This command does not delete tasks. |
 
-Every command accepts `--json`. JSON output is the Gateway record with `request_id` beside its fields. A list holds its records under `task_groups`, `comments`, or `agents`.
+Every command accepts `--json`. JSON output is the Gateway record with `request_id` beside its fields. A list holds its records under `task_groups`, `comments`, `agents`, or `task_definitions`.
 
-`tasks:list` and `tasks:show` accept any authorized peer. `tasks:update` and the `tasks:subtask:*` commands need access to the Node that holds the task's Instance, or to the Gateway for a task without one. The other commands need Gateway access: run them on the Gateway, or on a Node with an access grant to the Gateway. Other callers receive `node_access.required`. While the extension is off, every command except enable, disable, and status fails with `extension.disabled`.
+`tasks:list`, `tasks:show`, `tasks:definition:list`, and `tasks:definition:show` accept any authorized peer. `tasks:update` and the `tasks:subtask:*` commands need access to the Node that holds the task's Instance, or to the Gateway for a task without one. `tasks:definition:create`, `tasks:definition:update`, and `tasks:definition:destroy` need Gateway access. The remaining commands need Gateway access too: run them on the Gateway, or on a Node with an access grant to the Gateway. Other callers receive `node_access.required`. While the extension is off, every command except enable, disable, and status fails with `extension.disabled`.
 
 ## Select a task or subtask
 
@@ -286,8 +291,86 @@ orbit tasks:agents [group] [--json]
 
 The table shows the thread ID, role, subtask ID, driver, model, state, tokens, uncached input, cached input, output, model calls, peak context, line diff, and observation time. An unknown token field is a blank cell. JSON output includes `input_tokens`, `cached_input_tokens`, `output_tokens`, `model_calls`, and `peak_context_tokens`, each null when the driver did not report it. The [thread token metrics](/reference/tasks#thread-token-metrics) define the fields. The latest error of each thread follows the table. The Gateway's conversation stream for a thread has no CLI command; the web task board shows the cumulative total.
 
+## orbit tasks:definition:list
+
+List task definitions. The command does not start a task. Any authorized peer can run it.
+
+```bash
+orbit tasks:definition:list [--project=ID] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--project=ID` | Only definitions of this numeric Project ID. |
+
+The CLI does not prompt for the filter. An invalid Project ID fails with `tasks.project_invalid` before the request. Human output is a table of Project, name, title, and status. An empty table says `No task definitions were found.` JSON returns the records under `task_definitions`. While the extension is off, the command fails with `extension.disabled`.
+
+## orbit tasks:definition:show
+
+Show one task definition. The command does not start a task. Any authorized peer can run it.
+
+```bash
+orbit tasks:definition:show [--project=ID] [name] [--json]
+```
+
+| Input | Default | Meaning |
+| --- | --- | --- |
+| `--project=ID` | prompt | Numeric Project ID. In a terminal, the CLI lists Projects to select from. |
+| `name` | prompt | Definition name. In a terminal, the CLI lists that Project's definitions to select from. |
+
+With `--json` or `-n`, an omitted Project fails with `tasks.project_required` and an omitted name fails with `tasks.definition_name_required`. A Project ID that is not a positive integer fails with `tasks.project_invalid`. A name outside the [definition name rules](/reference/tasks#fields) fails with `tasks.definition_name_invalid` before the request. An empty definition list stops with `No matching records were found.`
+
+Human output is a detail tree of the definition fields. JSON is the definition record. A missing definition fails with `resource.not_found`. While the extension is off, the command fails with `extension.disabled`.
+
+## orbit tasks:definition:create
+
+Create a task definition from a JSON file. The command does not start a task. It needs Gateway access.
+
+```bash
+orbit tasks:definition:create [--project=ID] [--definition=FILE] [--json]
+```
+
+| Input | Default | Meaning |
+| --- | --- | --- |
+| `--project=ID` | prompt | Numeric Project ID. In a terminal, the CLI lists Projects to select from. |
+| `--definition=FILE` | prompt | JSON file of the whole definition. The file's `name` is the definition name. |
+
+With `--json` or `-n`, an omitted Project fails with `tasks.project_required` and an omitted file fails with `tasks.definition_file_required`. An unreadable file, or a file that is not a JSON object, fails with `tasks.definition_file_invalid`. The Gateway returns `tasks.definition_invalid` when the definition breaks a validation rule, and `tasks.definition_exists` when the Project already uses the name. Another caller receives `node_access.required`. While the extension is off, the command fails with `extension.disabled`. After success, human output matches `tasks:definition:show`. JSON is the stored definition.
+
+## orbit tasks:definition:update
+
+Replace one task definition from a JSON file. The command does not start a task. It needs Gateway access. Update replaces the whole definition.
+
+```bash
+orbit tasks:definition:update [--project=ID] [name] [--definition=FILE] [--json]
+```
+
+| Input | Default | Meaning |
+| --- | --- | --- |
+| `--project=ID` | prompt | Numeric Project ID. In a terminal, the CLI lists Projects to select from. |
+| `name` | prompt | Definition name, selected as in `tasks:definition:show`. |
+| `--definition=FILE` | prompt | JSON file that replaces the whole definition. Its `name` must equal the argument. |
+
+A file `name` that differs from the argument fails with `tasks.definition_name_mismatch` before the request. With `--json` or `-n`, an omitted Project, name, or file fails with `tasks.project_required`, `tasks.definition_name_required`, or `tasks.definition_file_required`. An unreadable file, or a file that is not a JSON object, fails with `tasks.definition_file_invalid`. The Gateway returns `tasks.definition_invalid` when the replacement breaks a validation rule, and `resource.not_found` when that name is missing. Another caller receives `node_access.required`. While the extension is off, the command fails with `extension.disabled`. Human output and JSON match create.
+
+## orbit tasks:definition:destroy
+
+Delete one task definition. The command does not start a task, and it does not delete a task. It needs Gateway access.
+
+```bash
+orbit tasks:definition:destroy [--project=ID] [name] [--yes] [--json]
+```
+
+| Input | Default | Meaning |
+| --- | --- | --- |
+| `--project=ID` | prompt | Numeric Project ID. In a terminal, the CLI lists Projects to select from. |
+| `name` | prompt | Definition name, selected as in `tasks:definition:show`. |
+| `--yes` | prompt | Confirm without a prompt. Required for `--json` and `-n` calls. |
+
+In a terminal, the question names the definition and its Project and defaults to No. A `--json` or `-n` call without `--yes` fails with `input.confirmation_required`. Declining fails with `input.cancelled`. Neither sends a request. A missing definition fails with `resource.not_found`. Another caller receives `node_access.required`. While the extension is off, the command fails with `extension.disabled`. JSON returns the deleted definition.
+
 ## Related
 
 - [`project`](/cli/project) lists the Projects that a task can belong to.
 - [`instance`](/cli/instance) shows the shared Instance of a running task.
-- The [tasks reference](/reference/tasks) explains Backlog preparation, the scheduler, turn receipts, review, and pull requests.
+- The [tasks reference](/reference/tasks) explains task definitions, Backlog preparation, the scheduler, turn receipts, review, and pull requests.
