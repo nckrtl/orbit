@@ -2264,6 +2264,54 @@ export interface paths {
         patch: operations["instance-setup-step-update"];
         trace?: never;
     };
+    "/api/v1/projects/{project}/task-definitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * tasks:definition:create
+         * @description Stores a task definition for a Project. The body is the whole definition. Gateway access is required. The call does not start a task. An invalid definition returns `tasks.definition_invalid` (422), and `details.rules` names each failing rule and the subtask key. A name the Project already uses returns `tasks.definition_exists` (409). Returns `extension.disabled` while the tasks extension is off.
+         */
+        post: operations["tasks-definition-create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project}/task-definitions/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * tasks:definition:show
+         * @description Shows one task definition. Any authorized peer can show it. The call does not start a task. Returns `extension.disabled` while the tasks extension is off.
+         */
+        get: operations["tasks-definition-show"];
+        /**
+         * tasks:definition:update
+         * @description Replaces a task definition. The body is the whole definition. It may omit `name`; the path then supplies it. A body `name` that differs from the path is refused. Gateway access is required. The call does not start a task. An invalid definition returns `tasks.definition_invalid` (422). Returns `extension.disabled` while the tasks extension is off.
+         */
+        put: operations["tasks-definition-update"];
+        post?: never;
+        /**
+         * tasks:definition:destroy
+         * @description Deletes a task definition and returns it. The call does not delete a task and does not start one. Gateway access is required. Returns `extension.disabled` while the tasks extension is off.
+         */
+        delete: operations["tasks-definition-destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/teardown-steps": {
         parameters: {
             query?: never;
@@ -2638,6 +2686,26 @@ export interface paths {
          * @description Run one Schedule without changing its timer state.
          */
         post: operations["schedule-run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/task-definitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * tasks:definition:list
+         * @description Lists task definitions, optionally filtered by numeric `project_id`. Any authorized peer can list them. The call does not start a task. Returns `extension.disabled` while the tasks extension is off.
+         */
+        get: operations["tasks-definition-list"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3457,6 +3525,20 @@ export interface components {
             spec?: {
                 [key: string]: unknown;
             };
+        };
+        TaskDefinition: {
+            project_id?: number;
+            name?: string;
+            title?: string;
+            brief?: string;
+            parameters?: Record<string, never>[];
+            /** @enum {string} */
+            status?: "backlog" | "todo";
+            schedule?: {
+                [key: string]: unknown;
+            } | null;
+            phases?: Record<string, never>[];
+            subtasks?: Record<string, never>[];
         };
         Schedule: {
             id?: string;
@@ -12431,6 +12513,401 @@ export interface operations {
             };
         };
     };
+    "tasks-definition-create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Project ID. */
+                project: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    title: string;
+                    brief: string;
+                    parameters?: {
+                        name: string;
+                        /** @enum {string} */
+                        type: "text" | "app" | "subtasks";
+                        required: boolean;
+                        default?: unknown;
+                    }[];
+                    /** @enum {string} */
+                    status: "backlog" | "todo";
+                    schedule?: {
+                        cron?: string;
+                        values?: {
+                            [key: string]: unknown;
+                        };
+                    } | null;
+                    phases?: {
+                        key: string;
+                        title: string;
+                        brief: string;
+                        repeat: boolean;
+                    }[];
+                    subtasks: {
+                        key: string;
+                        title: string;
+                        kind: string;
+                        brief?: string;
+                        phase?: string;
+                        deliverables?: {
+                            id: string;
+                            /** @enum {string} */
+                            type: "file" | "command" | "review";
+                            description: string;
+                            /** @description Conditionally required. */
+                            path?: string;
+                            /**
+                             * @description Conditionally required.
+                             * @enum {string}
+                             */
+                            change?: "created" | "modified" | "any";
+                            fails_on_base?: boolean;
+                            /** @description Conditionally required. */
+                            command?: string;
+                            directory?: string;
+                            paths?: string[];
+                        }[];
+                        routes?: {
+                            [key: string]: string;
+                        };
+                        implementer_model?: string;
+                        reviewer_model?: string;
+                        operation?: string;
+                        arguments?: {
+                            [key: string]: unknown;
+                        };
+                        question?: string;
+                        options?: string[];
+                        evidence?: string[];
+                        min_probability?: number;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded; an exact retry returned the existing record. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskDefinition"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskDefinition"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The Project already uses the name (`tasks.definition_exists`). A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The definition breaks a validation rule (`tasks.definition_invalid`). `details.rules` names each failing rule and the subtask key it concerns. A malformed body returns `validation.failed`. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-definition-show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Project ID. */
+                project: number;
+                /** @description Task definition name, unique within the Project. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskDefinition"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-definition-update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Project ID. */
+                project: number;
+                /** @description Task definition name, unique within the Project. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    title: string;
+                    brief: string;
+                    parameters?: {
+                        name: string;
+                        /** @enum {string} */
+                        type: "text" | "app" | "subtasks";
+                        required: boolean;
+                        default?: unknown;
+                    }[];
+                    /** @enum {string} */
+                    status: "backlog" | "todo";
+                    schedule?: {
+                        cron?: string;
+                        values?: {
+                            [key: string]: unknown;
+                        };
+                    } | null;
+                    phases?: {
+                        key: string;
+                        title: string;
+                        brief: string;
+                        repeat: boolean;
+                    }[];
+                    subtasks: {
+                        key: string;
+                        title: string;
+                        kind: string;
+                        brief?: string;
+                        phase?: string;
+                        deliverables?: {
+                            id: string;
+                            /** @enum {string} */
+                            type: "file" | "command" | "review";
+                            description: string;
+                            /** @description Conditionally required. */
+                            path?: string;
+                            /**
+                             * @description Conditionally required.
+                             * @enum {string}
+                             */
+                            change?: "created" | "modified" | "any";
+                            fails_on_base?: boolean;
+                            /** @description Conditionally required. */
+                            command?: string;
+                            directory?: string;
+                            paths?: string[];
+                        }[];
+                        routes?: {
+                            [key: string]: string;
+                        };
+                        implementer_model?: string;
+                        reviewer_model?: string;
+                        operation?: string;
+                        arguments?: {
+                            [key: string]: unknown;
+                        };
+                        question?: string;
+                        options?: string[];
+                        evidence?: string[];
+                        min_probability?: number;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskDefinition"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The definition breaks a validation rule (`tasks.definition_invalid`). `details.rules` names each failing rule and the subtask key it concerns. A malformed body returns `validation.failed`. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-definition-destroy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Project ID. */
+                project: number;
+                /** @description Task definition name, unique within the Project. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskDefinition"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "instance-teardown-step-list": {
         parameters: {
             query?: never;
@@ -13952,6 +14429,49 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-definition-list": {
+        parameters: {
+            query?: {
+                project_id?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskDefinition"][];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

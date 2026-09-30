@@ -5,11 +5,11 @@ covers:
   - "apps/gateway/app/{Domain,Infrastructure}/Tasks/**"
   - "apps/gateway/app/Actions/Tasks/**"
   - "apps/gateway/app/Http/Requests/Tasks/**"
-  - "apps/gateway/app/Http/Controllers/Api/{TasksController,TaskGroupsController,AgentThreadsController}.php"
+  - "apps/gateway/app/Http/Controllers/Api/{TasksController,TaskGroupsController,TaskDefinitionsController,AgentThreadsController}.php"
   - "apps/gateway/app/Console/Commands/{TickTaskSessionsCommand,CollectT3MetricsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand}.php"
-  - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,AgentThread,JevDecision}.php"
+  - "apps/gateway/app/Models/{Task,TaskDefinition,TaskComment,TaskCheck,AgentThread,JevDecision}.php"
   - "apps/gateway/resources/tasks/**"
-  - "apps/gateway/database/migrations/*_{convert_test_deliverables_to_commands,add_continuation_source_to_tasks}.php"
+  - "apps/gateway/database/migrations/*_{convert_test_deliverables_to_commands,add_continuation_source_to_tasks,create_task_definitions_table}.php"
 ---
 
 # Tasks
@@ -157,8 +157,10 @@ The Gateway validates a definition on every write. An invalid definition is not 
 
 | Error | HTTP | When |
 | --- | --- | --- |
-| `tasks.definition_invalid` | 422 | The definition breaks a rule above. `details` names each failing rule and the subtask key it concerns |
+| `tasks.definition_invalid` | 422 | The definition breaks a rule above. `details.rules` lists one `{rule, subtask}` for each failure |
 | `tasks.definition_exists` | 409 | The Project already uses the name |
+
+`rule` is `keys`, `kind`, `fields`, `route_outcome`, `route_target`, `decide_routes`, `reachability`, `phases`, `action`, `parameters`, `schedule_names`, `cron`, or `schedule_values`. `subtask` is the subtask key, or null when the rule concerns the whole definition.
 
 ### Definition operations
 
@@ -172,7 +174,7 @@ Five operations read and write definitions. None of them starts a task.
 | `tasks:definition:update` | `PUT /api/v1/projects/{project}/task-definitions/{name}` | Gateway |
 | `tasks:definition:destroy` | `DELETE /api/v1/projects/{project}/task-definitions/{name}` | Gateway |
 
-List accepts an optional `project_id` filter. Update replaces the whole definition, so an agent reads it, changes it, and writes it back. Only Gateway access can write a definition, so a definition cannot grant a caller more authority than that caller already has.
+List accepts an optional `project_id` filter. Update replaces the whole definition, so an agent reads it, changes it, and writes it back. The update body may omit `name`. The Gateway uses the name in the path. MCP does this, because the path argument is not repeated in the body. A body `name` that is present and different from the path is refused. Only Gateway access can write a definition, so a definition cannot grant a caller more authority than that caller already has.
 
 The [CLI commands](/cli/tasks#orbit-tasksdefinitionlist) for create and update take the definition as a JSON file. The [MCP tools](/reference/mcp) are generated from these operations. While the tasks extension is off, each operation refuses with HTTP 409 `extension.disabled` and changes nothing.
 

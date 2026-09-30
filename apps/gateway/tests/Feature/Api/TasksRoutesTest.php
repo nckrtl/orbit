@@ -85,6 +85,11 @@ it('exposes the tasks routes with stable methods', function (): void {
         'tasks:comment:list' => ['api/v1/task-groups/{group}/tasks/{task}/comments', ['GET', 'HEAD']],
         'tasks:cancel' => ['api/v1/task-groups/{group}/cancel', ['POST']],
         'tasks:complete' => ['api/v1/task-groups/{group}/complete', ['POST']],
+        'tasks:definition:list' => ['api/v1/task-definitions', ['GET', 'HEAD']],
+        'tasks:definition:show' => ['api/v1/projects/{project}/task-definitions/{name}', ['GET', 'HEAD']],
+        'tasks:definition:create' => ['api/v1/projects/{project}/task-definitions', ['POST']],
+        'tasks:definition:update' => ['api/v1/projects/{project}/task-definitions/{name}', ['PUT']],
+        'tasks:definition:destroy' => ['api/v1/projects/{project}/task-definitions/{name}', ['DELETE']],
     ]);
 });
 

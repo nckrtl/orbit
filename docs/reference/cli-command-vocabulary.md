@@ -106,6 +106,8 @@ The Gateway lives in `apps/gateway`, and it records each route name as the Activ
 
 Some routes have no CLI command. `instance:dependencies:show` reads the stored dependency inventory for the API and SDK. The CLI has `instance:dependencies:scan` and `instance:dependencies:update`, as [Instance dependencies](/reference/instance-dependencies) describes. `tasks:agent-stream` is a server-sent event stream for the web task board.
 
+`tasks:definition:list`, `tasks:definition:show`, `tasks:definition:create`, `tasks:definition:update`, and `tasks:definition:destroy` read and write [task definitions](/reference/tasks#definition-operations) on the API and MCP. Their CLI commands arrive in their own subtask.
+
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.

@@ -466,6 +466,11 @@
             "group": "Tasks",
             "openapi": "/openapi.json",
             "pages": [
+              "POST /api/v1/projects/{project}/task-definitions",
+              "DELETE /api/v1/projects/{project}/task-definitions/{name}",
+              "GET /api/v1/projects/{project}/task-definitions/{name}",
+              "PUT /api/v1/projects/{project}/task-definitions/{name}",
+              "GET /api/v1/task-definitions",
               "GET /api/v1/task-groups",
               "POST /api/v1/task-groups",
               "GET /api/v1/task-groups/{group}",

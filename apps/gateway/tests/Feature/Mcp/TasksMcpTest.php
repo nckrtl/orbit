@@ -11,6 +11,7 @@ use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskDefinition;
 use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -91,6 +92,98 @@ it('creates and lists a task group through MCP after the extension is enabled', 
     expect($shown['result']['isError'] ?? true)->toBeFalse()
         ->and($showDocument['data']['id'])->toBe($document['data']['id'])
         ->and($showDocument['data']['brief'])->toBe('Create through the generated tool.');
+});
+
+it('creates, shows, updates, and destroys a task definition through MCP', function (): void {
+    app(TaskExtensionState::class)->enable();
+    $definition = [
+        'name' => 'build-feature',
+        'title' => 'Maintain {app}',
+        'brief' => 'Update {app}.',
+        'parameters' => [
+            ['name' => 'app', 'type' => 'text', 'required' => true],
+        ],
+        'status' => 'backlog',
+        'schedule' => ['cron' => '0 3 * * 1', 'values' => ['app' => 'orbit']],
+        'subtasks' => [
+            [
+                'key' => 'docs',
+                'title' => 'Write the docs',
+                'kind' => 'agent',
+                'routes' => ['skipped' => 'complete'],
+            ],
+            [
+                'key' => 'ship',
+                'title' => 'Deploy',
+                'kind' => 'action',
+                'operation' => 'instance:deploy',
+                'arguments' => ['instance' => 1],
+            ],
+        ],
+    ];
+
+    $created = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [
+        'name' => 'tasks-definition-create',
+        'arguments' => ['project' => $this->appRecord->id, ...$definition],
+    ]));
+    $createdDocument = json_decode($created['result']['content'][0]['text'], true);
+
+    expect($created['result']['isError'] ?? true)->toBeFalse()
+        ->and($createdDocument['data']['name'])->toBe('build-feature')
+        ->and($createdDocument['data']['schedule']['values']['app'])->toBe('orbit')
+        ->and($createdDocument['data']['subtasks'][0]['routes']['skipped'])->toBe('complete')
+        ->and($createdDocument['data']['subtasks'][1]['arguments']['instance'])->toBe(1);
+
+    $shown = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [
+        'name' => 'tasks-definition-show',
+        'arguments' => ['project' => $this->appRecord->id, 'name' => 'build-feature'],
+    ]));
+    $shownDocument = json_decode($shown['result']['content'][0]['text'], true);
+
+    expect($shown['result']['isError'] ?? true)->toBeFalse()
+        ->and($shownDocument['data']['title'])->toBe('Maintain {app}');
+
+    $updated = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [
+        'name' => 'tasks-definition-update',
+        'arguments' => [
+            'project' => $this->appRecord->id,
+            'name' => 'build-feature',
+            'title' => 'Build it faster',
+            'schedule' => $definition['schedule'],
+            'brief' => $definition['brief'],
+            'parameters' => $definition['parameters'],
+            'status' => 'backlog',
+            'subtasks' => $definition['subtasks'],
+        ],
+    ]));
+    $updatedDocument = json_decode($updated['result']['content'][0]['text'], true);
+
+    expect($updated['result']['isError'] ?? true)->toBeFalse()
+        ->and($updatedDocument['data']['title'])->toBe('Build it faster')
+        ->and(TaskDefinition::query()->where('project_id', $this->appRecord->id)->value('title'))->toBe('Build it faster');
+
+    $destroyed = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [
+        'name' => 'tasks-definition-destroy',
+        'arguments' => ['project' => $this->appRecord->id, 'name' => 'build-feature'],
+    ]));
+
+    expect($destroyed['result']['isError'] ?? true)->toBeFalse()
+        ->and(TaskDefinition::query()->where('project_id', $this->appRecord->id)->count())->toBe(0);
+});
+
+it('describes definition routes, arguments, and schedule values as objects', function (): void {
+    app(TaskExtensionState::class)->enable();
+    $tools = collect(tasks_mcp_message(tasks_mcp_call($this, 'tools/list'))['result']['tools']);
+
+    foreach (['tasks-definition-create', 'tasks-definition-update'] as $name) {
+        $schema = $tools->firstWhere('name', $name)['inputSchema'];
+        $subtasks = $schema['properties']['subtasks']['items']['properties'];
+
+        expect($subtasks['routes'])->toBe(['type' => 'object', 'additionalProperties' => ['type' => 'string']])
+            ->and($subtasks['arguments']['type'])->toBe('object')
+            ->and($schema['properties']['schedule']['properties']['values']['type'])->toBe('object')
+            ->and($schema['properties']['schedule']['type'])->toBe(['object', 'null']);
+    }
 });
 
 it('hides the tasks MCP tools before the extension is enabled', function (): void {

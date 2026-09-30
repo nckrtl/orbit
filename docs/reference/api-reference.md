@@ -41,7 +41,7 @@ One input still reads outside the checkout. `php artisan route:list` loads the G
 
 The generator reads every command class, including commands the CLI hides at runtime. It does not run `orbit list`, and it does not load `apps/cli/vendor`.
 
-`bin/docs-openapi` also contains fixed schema text that it does not parse from the rows above, such as the annotation record and the deployment event stream. That text is part of the checkout. Editing the script changes the document in the same way on every machine.
+`bin/docs-openapi` also contains fixed schema text that it does not parse from the rows above, such as the annotation record and the deployment event stream. That text is part of the checkout. Editing the script changes the document in the same way on every machine. The script marks `instance:deploy` and `instance:rollback` with `x-orbit-task-action: true`. A [task definition](/reference/tasks#subtask-definitions) action may name only a marked operation.
 
 ## Pinned environment
 

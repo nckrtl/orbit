@@ -956,8 +956,11 @@
             "concepts": [
                 "Deployment",
                 "Gateway",
+                "Instance",
                 "Route",
-                "Task"
+                "Subtask",
+                "Task",
+                "Task definition"
             ],
             "governing_adrs": []
         },
@@ -1243,7 +1246,9 @@
                 "Gateway",
                 "Node",
                 "Process",
-                "Schedule"
+                "Schedule",
+                "Task",
+                "Task definition"
             ],
             "governing_adrs": []
         },
