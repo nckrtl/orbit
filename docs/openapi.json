@@ -9978,9 +9978,10 @@
                   "platform": {
                     "type": "string",
                     "enum": [
-                      "linux"
+                      "linux",
+                      "macos"
                     ],
-                    "description": "Node platform (linux only)"
+                    "description": "linux for Ubuntu service Nodes, or macos for tools on an existing account; no default account or address"
                   },
                   "architecture": {
                     "type": [
@@ -10005,11 +10006,11 @@
                   },
                   "user": {
                     "type": "string",
-                    "description": "Bootstrap SSH user; defaults to root for a new node and to the managed user for an existing node"
+                    "description": "Bootstrap SSH user; root for a new Linux node, the managed user for an existing one; macOS requires the account"
                   },
                   "orbit_user": {
                     "type": "string",
-                    "description": "Orbit-managed system user; defaults to orbit for a new node"
+                    "description": "Managed user; Linux defaults to orbit, and macOS requires the same existing account as user"
                   },
                   "roles": {
                     "type": "array",
@@ -10041,7 +10042,7 @@
                       "string",
                       "null"
                     ],
-                    "description": "Stable WireGuard IP address"
+                    "description": "Stable WireGuard address; Linux allocates when omitted. macOS requires the existing one and does not replace it"
                   },
                   "lan_ip": {
                     "type": [

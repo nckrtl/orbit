@@ -17,15 +17,15 @@ final class AddNodeCommand extends NodeCommand
         {name : Node name}
         {host? : Optional public SSH host}
         {--ssh-port=22 : Public SSH port}
-        {--user= : Bootstrap SSH user; defaults to root for a new node and to the managed user for an existing node}
-        {--orbit-user= : Orbit-managed system user; defaults to orbit for a new node}
-        {--platform=linux : Node platform (linux only)}
+        {--user= : Bootstrap SSH user; root for a new Linux node, the managed user for an existing one; macOS requires the account}
+        {--orbit-user= : Managed user; Linux defaults to orbit, and macOS requires the same existing account as user}
+        {--platform=linux : linux for Ubuntu service Nodes, or macos for tools on an existing account; no default account or address}
         {--architecture= : Node machine architecture; defaults to the architecture observed on the machine and must match it when given}
         {--tld= : Node TLD; required for production clone preview domains}
         {--role=* : Initial role assignment}
         {--host-key-fingerprint= : Approved SSH SHA256 host key fingerprint}
         {--cluster= : Optional numeric Cluster ID}
-        {--wireguard-ip= : Stable WireGuard IP address}
+        {--wireguard-ip= : Stable WireGuard address; Linux allocates when omitted. macOS requires the existing one and does not replace it}
         {--lan-ip= : Optional Cluster-local LAN IPv4 address}
         {--wireguard-endpoint= : Per-node WireGuard endpoint override}
         {--dns-server= : Per-node DNS server override}
@@ -71,10 +71,10 @@ final class AddNodeCommand extends NodeCommand
         $platform = $this->stringOption('platform');
         $hostKeyFingerprint = $this->stringOption('host-key-fingerprint');
 
-        if ($platform !== 'linux') {
+        if (! in_array($platform, ['linux', 'macos'], true)) {
             return $this->renderGatewayFailure(
                 'node.platform_invalid',
-                'Platform must be linux.',
+                'Platform must be linux or macos.',
             );
         }
 

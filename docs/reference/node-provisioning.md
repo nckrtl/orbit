@@ -2,7 +2,7 @@
 title: "Node provisioning"
 description: "How node:add bootstraps or converges a Node, which roles share a Node, how role operations lock a Node, and how node:remove hands the machine back."
 covers:
-  - apps/gateway/app/Actions/Nodes/{ProvisionNodeAction,RemoveNodeAction,AddNodeRoleAction,RemoveNodeRoleAction,AssignRoleAction}.php
+  - apps/gateway/app/Actions/Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,RemoveNodeRoleAction,AssignRoleAction}.php
   - apps/gateway/app/Domain/Nodes/RoleRegistry.php
   - apps/gateway/app/Infrastructure/Nodes/{NativeNodeConverger,MacOsNodeConverger,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackageSourceProgram,RemotePhpPackageManager,NodeLocks,NodeLock}.php
   - apps/gateway/app/Infrastructure/Firewall/NodeFirewallRuleCatalog.php
@@ -64,7 +64,7 @@ Each failure names the check or step that stopped the request.
 | `node.macos_account_required` | macOS enrollment omitted the existing account. HTTP 422. Nothing changes. |
 | `node.macos_account_mismatch` | `user` and `orbit_user` name different accounts. HTTP 422. Nothing changes. |
 | `node.account_unavailable` | SSH as the existing macOS account failed. HTTP 502 at `account`. |
-| `node.wireguard_required` | macOS enrollment has no WireGuard address to verify. HTTP 409 at `identity`. |
+| `node.wireguard_required` | macOS enrollment has no WireGuard address to verify, or the requested address differs from the Node row. HTTP 409 at `identity`. Nothing changes. |
 | `node.agent_unsupported` | A Node agent install or repair targeted macOS. HTTP 422. |
 | `node.ssh_host_fingerprint_required` | A new Node has no approved host key fingerprint. |
 | `node.ssh_host_key_scan_failed` | The Gateway could not read the host key. |
@@ -83,7 +83,7 @@ A macOS Node supports selected Homebrew formulae, casks, and Vite+ global packag
 
 Use `node:add` with `--platform=macos`, the approved host fingerprint, and `--user` and `--orbit-user` set to the same existing account. The Gateway does not default those fields to `root` or `orbit`. A missing field returns `node.macos_account_required`. Different names return `node.macos_account_mismatch`. A name that fails the existing portable user check returns `node.invalid_linux_user`. All three are HTTP 422 and change nothing.
 
-The request must name a WireGuard address that is already on the machine, or the Node row must already have one. The Gateway does not allocate a new address, install a tunnel, or rewrite the host tunnel, DNS, or firewall. A missing address returns `node.wireguard_required`.
+The request must name a WireGuard address that is already on the machine, or the Node row must already have one. The Gateway does not allocate a new address, install a tunnel, or rewrite the host tunnel, DNS, or firewall. A missing address returns `node.wireguard_required`. A requested address that differs from the address stored on the Node returns `node.wireguard_required` and changes nothing. A role, DNS server override, WireGuard endpoint override, storage settings change, Cluster change, TLD change, or LAN change returns `node.platform_unsupported` and changes nothing.
 
 An eligible existing peer can be enrolled in place. It already has a row, no roles, a WireGuard address, and no pinned SSH fingerprint. After the platform, architecture, account, and tunnel checks pass, the Gateway stores the observed platform and `uname -m` architecture and the named account. It keeps the Node ID, name, access grants, WireGuard keys, address, and endpoint. Apple silicon stays `arm64`. The Gateway does not rewrite `arm64` to `aarch64`.
 
@@ -93,29 +93,30 @@ The macOS path creates no account and applies no Ubuntu bootstrap, apt packages,
 
 ### Enrollment steps
 
-The Gateway records a new Node as `provisioning` and runs these steps. It does not run Ubuntu steps 2 to 10.
+The Gateway does not record a new Node until enrollment succeeds or a remote check fails. A refusal before SSH creates no row. It runs these steps and does not run Ubuntu steps 2 to 10.
 
 | Step | Name | Work |
 | --- | --- | --- |
 | 1 | `ssh-host-key` | Resolve the host and compare its key with the approved fingerprint. Do not pin the key yet. |
 | 2 | `account` | SSH as the existing account. Create no user and change no sudoers file. |
 | 3 | `machine-architecture` | Read `uname -s` and `uname -m`. Refuse a platform or architecture disagreement. |
-| 4 | `identity` | Verify the recorded WireGuard address on the machine. An eligible peer then stores platform, architecture, and account. |
-| 5 | `ssh-pin` | Store the host key type, key, and fingerprint. |
-| 6 | `active` | Mark the Node `active`. Skip apt, roles, firewall, DNS, exporters, and the Node agent. |
+| 4 | `identity` | Verify the WireGuard address on the machine. Do not write the registry yet. |
+| 5 | `ssh-pin` | Write the approved host key to the Gateway known_hosts file for the public host and the WireGuard address. |
+| 6 | `active` | Store the host key, fingerprint, observed identity, and `active` status. Skip apt, roles, firewall, DNS, exporters, and the Node agent. |
 
 `uname -s` must be Darwin. A Linux host requested as macOS fails with `node.platform_mismatch` before any account, package, DNS, or firewall change.
 
 ### Enrollment recovery
 
-A failed check changes nothing on the Mac. Retry with the same `node:add`. The retry does not run the Ubuntu bootstrap.
+A failed check changes nothing on the Mac. Retry with the same `node:add`. The retry does not run the Ubuntu bootstrap. The Gateway writes known_hosts before the registry pin. A known_hosts entry with no registry pin is harmless, and the retry completes it. The registry never stores an active pin without those entries.
 
-| Failure | New Node | Peer that was `active` | Other existing peer |
-| --- | --- | --- | --- |
-| Before `identity` | `failed` at that step. No identity writes. | Stays `active`. The record is unchanged. | Previous status. The record is unchanged. |
-| `identity` or `ssh-pin` | `failed` at that step. A partial SSH pin is cleared. | Stays `active`. Platform, architecture, user, and SSH pin are restored. | Previous status, platform, architecture, user, and SSH pin are restored. |
+| Failure | New Node | Existing peer |
+| --- | --- | --- |
+| Before SSH | No row. | Unchanged. |
+| Remote check before `ssh-pin` | `failed` at that step. No host key is stored. | Unchanged. |
+| `ssh-pin` | `failed` at `ssh-pin`. No host key is stored in the registry. | Unchanged. |
 
-An already managed Node that fails a later converge stays `active`, with its previous platform, architecture, user, and SSH pin restored. Storage settings, Metrics reconcile, and the Node agent do not run, so a macOS failure never stops on steps 8 to 10.
+An already managed Node that fails stays as it was. Storage settings, Metrics reconcile, and the Node agent do not run, so a macOS failure never stops on steps 8 to 10.
 
 ### Unsupported operations
 

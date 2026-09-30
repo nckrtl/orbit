@@ -8936,22 +8936,22 @@ export interface operations {
                     /** @description Conditionally required. */
                     public_ssh_host?: string;
                     /**
-                     * @description Node platform (linux only)
+                     * @description linux for Ubuntu service Nodes, or macos for tools on an existing account; no default account or address
                      * @enum {string}
                      */
-                    platform?: "linux";
+                    platform?: "linux" | "macos";
                     /** @description Node machine architecture; defaults to the architecture observed on the machine and must match it when given */
                     architecture?: string | null;
                     /** @description Node TLD; required for production clone preview domains */
                     tld?: string | null;
                     public_ssh_port?: number;
-                    /** @description Bootstrap SSH user; defaults to root for a new node and to the managed user for an existing node */
+                    /** @description Bootstrap SSH user; root for a new Linux node, the managed user for an existing one; macOS requires the account */
                     user?: string;
-                    /** @description Orbit-managed system user; defaults to orbit for a new node */
+                    /** @description Managed user; Linux defaults to orbit, and macOS requires the same existing account as user */
                     orbit_user?: string;
                     roles?: ("gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket" | "analytics")[];
                     cluster_id?: number | null;
-                    /** @description Stable WireGuard IP address */
+                    /** @description Stable WireGuard address; Linux allocates when omitted. macOS requires the existing one and does not replace it */
                     wireguard_ip?: string | null;
                     /**
                      * Format: ipv4

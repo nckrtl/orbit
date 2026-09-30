@@ -636,7 +636,7 @@ it('renders local validation failures through the exact json boundary', function
         'node:add',
         ['name' => 'node', 'host' => 'node.test', '--platform' => 'validation-secret'],
         'node.platform_invalid',
-        'Platform must be linux.',
+        'Platform must be linux or macos.',
     ],
     'node host key fingerprint' => [
         'node:add',

@@ -181,6 +181,8 @@ The agreed rendering of a command is its expected output under `apps/cli/tests/E
 | JSON result | `node:list` | [default.json](https://github.com/nckrtl/orbit/blob/main/apps/cli/tests/Expected/nodes/node-list/default.json) |
 | JSON failure envelope | `node:add` | [tld-required.json](https://github.com/nckrtl/orbit/blob/main/apps/cli/tests/Expected/nodes/node-add/tld-required.json) |
 
+macOS enrollment and removal reuse that progress tree and JSON result. Their recordings are [macos-enrolled.human.txt](https://github.com/nckrtl/orbit/blob/main/apps/cli/tests/Expected/nodes/node-add/macos-enrolled.human.txt) and [macos-removed.human.txt](https://github.com/nckrtl/orbit/blob/main/apps/cli/tests/Expected/nodes/node-remove/macos-removed.human.txt).
+
 Streams and prompt flows have no recorded canonical rendering yet. The `design:node-add` sketch under `apps/cli/design` is the reference for a prompt flow until its real command lands. [Gateway response fixtures](/reference/gateway-response-fixtures) describes how a family gains recorded renderings.
 
 ## Verification and adoption

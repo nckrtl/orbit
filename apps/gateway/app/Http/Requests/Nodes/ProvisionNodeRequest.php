@@ -67,7 +67,7 @@ final class ProvisionNodeRequest extends FormRequest
                 'string',
                 'max:255',
             ],
-            'platform' => ['sometimes', 'string', Rule::in(['linux'])],
+            'platform' => ['sometimes', 'string', Rule::in(['linux', 'macos'])],
             'architecture' => [
                 'nullable',
                 'string',
@@ -167,6 +167,7 @@ final class ProvisionNodeRequest extends FormRequest
                 ? $validated['host_key_fingerprint']
                 : null,
             platform: is_string($validated['platform'] ?? null) ? $validated['platform'] : 'linux',
+            platformProvided: property_exists($this->decodedPayloadObject(), 'platform'),
             architecture: is_string($validated['architecture'] ?? null) ? $validated['architecture'] : null,
             tldProvided: property_exists($this->decodedPayloadObject(), 'tld'),
             tld: is_string($validated['tld'] ?? null) ? $validated['tld'] : null,
