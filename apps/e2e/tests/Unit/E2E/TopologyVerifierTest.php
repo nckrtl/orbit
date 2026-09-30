@@ -438,7 +438,7 @@ describe('TopologyVerifier typed application state', function () {
                         'label' => 'sample-app-state',
                         'stdout' => json_encode([
                             'shape' => 'instances',
-                            'app_id' => 1,
+                            'project_id' => 1,
                             'node_id' => 2,
                             'name' => 'e2e-dev',
                             'checkout_path' => $checkout,
@@ -502,7 +502,7 @@ describe('TopologyVerifier typed application state', function () {
                         'label' => 'sample-app-state',
                         'stdout' => json_encode([
                             'shape' => 'instances',
-                            'app_id' => 1,
+                            'project_id' => 1,
                             'node_id' => 2,
                             'name' => 'e2e-dev',
                             'checkout_path' => '/srv/orbit/apps/laravel-typed/e2e-dev',
@@ -611,7 +611,7 @@ describe('TopologyVerifier typed application state', function () {
                         'label' => 'sample-app-state',
                         'stdout' => json_encode([
                             'shape' => 'instances',
-                            'app_id' => 1,
+                            'project_id' => 1,
                             'node_id' => 2,
                             'name' => 'e2e-dev',
                             'checkout_path' => '/srv/orbit/apps/laravel-typed/e2e-dev',
@@ -689,7 +689,7 @@ describe('TopologyVerifier typed application state', function () {
                         'label' => 'sample-app-state',
                         'stdout' => json_encode([
                             'shape' => 'instances',
-                            'app_id' => 1,
+                            'project_id' => 1,
                             'node_id' => 2,
                             'name' => 'e2e-dev',
                             'checkout_path' => '/srv/orbit/apps/laravel-typed/e2e-dev',
@@ -750,7 +750,7 @@ describe('TopologyVerifier typed application state', function () {
                         'label' => 'sample-app-state',
                         'stdout' => json_encode([
                             'shape' => 'instances',
-                            'app_id' => 1,
+                            'project_id' => 1,
                             'node_id' => 2,
                             'name' => 'e2e-dev',
                             'checkout_path' => '/srv/orbit/apps/laravel-typed/e2e-dev',

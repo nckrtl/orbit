@@ -188,7 +188,7 @@ function task7_process_result(
     if ($typed && in_array('create-resources', $command, true)) {
         $state = [
             'shape' => 'instances',
-            'app_id' => 1,
+            'project_id' => 1,
             'node_id' => 2,
             'name' => 'e2e-dev',
             'checkout_path' => '/srv/orbit/apps/laravel-typed/e2e-dev',

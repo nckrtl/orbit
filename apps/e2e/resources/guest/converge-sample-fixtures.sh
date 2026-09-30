@@ -176,7 +176,7 @@ exit($status);"""
                 # Preserve stored intent when a previous run already imported it.
             orbit('instance:database:add',sql_slug,selector)
             orbit('instance:database:add','e2e-valkey',selector,'--prefix=REDIS')
-            for key,value in {'APP_URL':'https://{{app_instance.domain}}','QUEUE_CONNECTION':'redis','REDIS_DB':'1','REDIS_CACHE_DB':'1','CACHE_STORE':'redis','SESSION_DRIVER':'database'}.items():
+            for key,value in {'APP_URL':'https://{{instance.domain}}','QUEUE_CONNECTION':'redis','REDIS_DB':'1','REDIS_CACHE_DB':'1','CACHE_STORE':'redis','SESSION_DRIVER':'database'}.items():
                 orbit('env:update',selector,'--key='+key,'--value='+value)
             orbit('env:sync',selector)
             if instance_placement(instance, nodes)=='development':

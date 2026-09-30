@@ -374,13 +374,13 @@ final readonly class TopologyConverger
             || ! in_array(
                 array_keys($state),
                 [
-                    ['shape', 'app_id', 'node_id', 'name', 'checkout_path', 'effective_root'],
-                    ['shape', 'app_id', 'node_id', 'name', 'checkout_path', 'effective_root', 'production'],
+                    ['shape', 'project_id', 'node_id', 'name', 'checkout_path', 'effective_root'],
+                    ['shape', 'project_id', 'node_id', 'name', 'checkout_path', 'effective_root', 'production'],
                 ],
                 true,
             )
             || ($state['shape'] ?? null) !== 'instances'
-            || ! is_int($state['app_id'] ?? null)
+            || ! is_int($state['project_id'] ?? null)
             || ! is_int($state['node_id'] ?? null)
             || ($state['name'] ?? null) !== 'e2e-dev'
             || ! is_string($state['checkout_path'] ?? null)
