@@ -6512,6 +6512,32 @@
       }
     },
     {
+      "name": "tool-scan",
+      "extension": null,
+      "title": "Scan installed packages",
+      "description": "Reads installed Homebrew formulae, casks, and Vite+ global packages for the enrolled account. The response reports each manager scan state, safe package facts, dependency and adoption support, and the UTC inspection time. It stores nothing, creates no Tool row, takes no manager lock, and does not install or refresh a manager. A failed read is `incomplete`, never an empty `complete` inventory. `absent` means the scope is not installed. `unsupported` means this platform does not offer the manager.",
+      "method": "GET",
+      "path": "/api/v1/tool-inventory",
+      "path_inputs": [],
+      "query_inputs": [
+        "node_id"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node_id"
+        ]
+      }
+    },
+    {
       "name": "tool-show",
       "extension": null,
       "title": "Show a Tool",

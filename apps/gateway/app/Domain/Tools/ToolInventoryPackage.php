@@ -8,7 +8,7 @@ use InvalidArgumentException;
 
 /**
  * One package fact from a completed inventory read.
- * A formula and a cask keep separate manager identities.
+ * A formula, a cask, and a Vite+ global keep separate manager identities.
  */
 final readonly class ToolInventoryPackage
 {
@@ -73,15 +73,29 @@ final readonly class ToolInventoryPackage
                 self::BLOCK_AUTHORIZATION,
             ], true)
         ) {
-            throw new InvalidArgumentException('A Homebrew inventory adoption block is invalid.');
+            throw new InvalidArgumentException('An inventory adoption block is invalid.');
         }
 
         if ($registered !== ($toolId !== null)) {
-            throw new InvalidArgumentException('A Homebrew inventory registration must match its Tool id.');
+            throw new InvalidArgumentException('An inventory registration must match its Tool id.');
         }
 
-        if ($packageKind === ToolInventoryPackageKind::Cask && $dependency) {
-            throw new InvalidArgumentException('A Homebrew cask inventory package is not a dependency.');
+        if (
+            ($packageKind === ToolInventoryPackageKind::Cask || $packageKind === ToolInventoryPackageKind::Global)
+            && $dependency
+        ) {
+            throw new InvalidArgumentException('An inventory package of this kind is not a dependency.');
+        }
+
+        $kindMatches = match ($manager) {
+            ToolManagerName::Brew => $packageKind === ToolInventoryPackageKind::Formula,
+            ToolManagerName::BrewCask => $packageKind === ToolInventoryPackageKind::Cask,
+            ToolManagerName::Vp => $packageKind === ToolInventoryPackageKind::Global,
+            default => false,
+        };
+
+        if (! $kindMatches) {
+            throw new InvalidArgumentException('An inventory package kind must match its manager.');
         }
     }
 }

@@ -39,6 +39,30 @@ final readonly class BoundedJsonObject
         return $decoded;
     }
 
+    /**
+     * @return list<mixed>
+     */
+    public function decodeList(string $json): array
+    {
+        if ($this->maxBytes < 1 || $this->maxDepth < 1 || strlen($json) > $this->maxBytes) {
+            throw new JsonException('The JSON document exceeds its bound.');
+        }
+
+        $this->assertSingleValue($json);
+
+        try {
+            $decoded = json_decode($json, flags: JSON_THROW_ON_ERROR, depth: $this->maxDepth);
+        } catch (JsonException $exception) {
+            throw new JsonException('The JSON document was malformed.', previous: $exception);
+        }
+
+        if (! is_array($decoded) || ! array_is_list($decoded)) {
+            throw new JsonException('The JSON document was not an array.');
+        }
+
+        return $decoded;
+    }
+
     private function assertSingleValue(string $json): void
     {
         $length = strlen($json);

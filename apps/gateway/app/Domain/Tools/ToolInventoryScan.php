@@ -21,12 +21,12 @@ final readonly class ToolInventoryScan
         public array $packages,
     ) {
         if ($scanState !== ToolInventoryScanState::Complete && $packages !== []) {
-            throw new InvalidArgumentException('An unfinished Homebrew inventory has no packages.');
+            throw new InvalidArgumentException('An unfinished inventory has no packages.');
         }
 
         foreach ($packages as $package) {
             if ($package->manager !== $manager) {
-                throw new InvalidArgumentException('A Homebrew inventory package must belong to its manager.');
+                throw new InvalidArgumentException('An inventory package must belong to its manager.');
             }
         }
     }

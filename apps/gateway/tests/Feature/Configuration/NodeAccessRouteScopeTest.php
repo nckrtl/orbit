@@ -247,6 +247,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'tool:list' => ServingNode::ToolOwning,
         'tool:manager:list' => ServingNode::ToolOwning,
         'tool:remove' => ServingNode::ToolOwning,
+        'tool:scan' => ServingNode::ToolOwning,
         'tool:show' => ServingNode::ToolOwning,
         'tool:update' => ServingNode::ToolOwning,
     ];
@@ -291,6 +292,7 @@ it('registers every Tool route with its exact HTTP contract', function (): void 
         'tool:list' => ['GET', 'api/v1/tools'],
         'tool:manager:list' => ['GET', 'api/v1/tool-managers'],
         'tool:remove' => ['DELETE', 'api/v1/tools/{tool}'],
+        'tool:scan' => ['GET', 'api/v1/tool-inventory'],
         'tool:show' => ['GET', 'api/v1/tools/{tool}'],
         'tool:update' => ['POST', 'api/v1/tools/{tool}/update'],
     ]);

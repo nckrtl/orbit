@@ -57,6 +57,7 @@ use App\Http\Controllers\Api\ScheduleCompletionsController;
 use App\Http\Controllers\Api\SchedulesController;
 use App\Http\Controllers\Api\TaskGroupsController;
 use App\Http\Controllers\Api\TasksController;
+use App\Http\Controllers\Api\ToolInventoryController;
 use App\Http\Controllers\Api\ToolManagersController;
 use App\Http\Controllers\Api\ToolsController;
 use App\Http\Middleware\RecordCommandActivity;
@@ -503,6 +504,8 @@ Route::prefix('v1')->group(function (): void {
             ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
             ->where('table', '[A-Za-z_][A-Za-z0-9_]*')
             ->name('database:describe');
+        Route::get('tool-inventory', [ToolInventoryController::class, 'scan'])
+            ->name('tool:scan');
         Route::get('tool-managers', [ToolManagersController::class, 'index'])
             ->name('tool:manager:list');
         Route::get('tools', [ToolsController::class, 'index'])->name('tool:list');

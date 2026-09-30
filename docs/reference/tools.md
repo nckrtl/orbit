@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Infrastructure/Tools/**
   - apps/gateway/app/Models/{Tool,ToolManagerRecord}.php
   - apps/gateway/app/Data/Tools/**
-  - apps/gateway/app/Http/Controllers/Api/{ToolsController,ToolManagersController}.php
+  - apps/gateway/app/Http/Controllers/Api/{ToolsController,ToolManagersController,ToolInventoryController}.php
   - apps/gateway/app/Http/Requests/Tools/**
   - apps/gateway/app/Actions/Doctor/ToolDoctorProbe.php
 ---
@@ -36,11 +36,11 @@ The Gateway has five managers, fixed in code. There is no plugin registry and no
 
 `apt` and `composer` are not offered on macOS, and `brew-cask` is not offered on Linux. Those requests return `tool.manager_unsupported` (HTTP 422) before SSH.
 
-On Linux, `composer` uses `COMPOSER_HOME=/opt/orbit/composer`. `vp` uses the managed user's Orbit-owned Vite+ global store, which is that enrolled account's global scope. The Gateway may install a missing Linux manager on first use.
+On Linux, `composer` uses `COMPOSER_HOME=/opt/orbit/composer`. `vp` uses the first existing Vite+ store for the enrolled account, in this order: `/opt/orbit/vite-plus`, `~/.vite-plus`, then `~/.local/share/vite-plus`. Install, update, removal, and scan all use that store. A later store does not change the choice. The Gateway may install a missing Linux manager on first use.
 
 On macOS, `vp` is the enrolled account's existing Vite+ global store. `brew` and `brew-cask` use the existing Homebrew prefix. The Gateway resolves that account's home from the machine and does not assume `/home`, `getent`, or a Linux bottle tag. It does not install, replace, or repin those scopes, and it does not check out a Homebrew revision.
 
-A missing scope is scan state `absent`. On either platform, a scope that exists but has the wrong owner, a non-official Homebrew origin, a dirty Linux Homebrew tree, or a conflicting Vite+ store is scan state `conflicting`. Adoption, install, update, and removal then return `tool.manager_unavailable` (HTTP 409). Orbit does not repair that scope.
+A missing scope is scan state `absent`. A scope with the wrong owner, a non-official Homebrew origin, or a dirty Linux Homebrew tree is scan state `conflicting`. On macOS, two Vite+ stores, or one store with the wrong owner or shape, is `conflicting`. On Linux, the chosen Vite+ store is `conflicting` when it is a symlink, not a directory, owned by someone else, or its `bin/vp` is missing or not executable. A second Linux store is not a conflict. Adoption, install, update, and removal then return `tool.manager_unavailable` (HTTP 409). Orbit does not repair that scope.
 
 An accepted macOS Homebrew prefix is owned by the enrolled account and has origin `https://github.com/Homebrew/brew`. Apple silicon and an untar-anywhere install are the git repository: `prefix/.git` exists and `prefix/bin/brew` is a regular executable. The Intel `/usr/local` layout keeps the nested repository `prefix/Homebrew/.git` and a `prefix/bin/brew` symlink to `../Homebrew/bin/brew`. Any other shape is conflicting.
 
@@ -104,6 +104,8 @@ Homebrew inventory uses two reads for each of `brew` and `brew-cask`. `info --js
 Homebrew can omit an installed formula or cask from `info` and still exit 0, including when the tap is untrusted or Homebrew refuses to load it. The name stays in `list`. The scan keeps that name, with `installed_version` null and `dependency` false, because the name list does not say whether it is a dependency. Adoption is `unsupported`. The block is `unsupported_source`, or `protected` when the formula name is protected.
 
 A name present in `info` but absent from `list` makes that manager `incomplete`. A failed, malformed, or truncated name list also makes that manager `incomplete`. The scan does not report the `info` packages alone.
+
+Vite+ reports each global root under the name it stored. A stored name that Orbit cannot manage, including a legacy npm name with capitals such as `JSONStream`, stays in that list. Its adoption is `unsupported`, its block is `unsupported_source`, and it is not registered. The `vp` scan is `incomplete` when a name is not a string, is empty, is longer than 255 characters, contains a control character, or appears twice. Those cases are not an inventory.
 
 Scan errors use the [Tool error envelope](#errors). `details.step` is `scan`, `details.outcome` is `manager_failed`, and there is no Tool `id`. A manager state of `incomplete`, `absent`, `unsupported`, or `conflicting` does not fail the HTTP request.
 

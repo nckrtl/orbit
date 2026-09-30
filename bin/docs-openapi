@@ -594,7 +594,7 @@ SUMMARIES = {
     'cluster:list': 'List Clusters', 'cluster:show': 'Show a Cluster', 'cluster:create': 'Create a Cluster', 'cluster:update': 'Update a Cluster', 'cluster:destroy': 'Remove a Cluster',
     'cluster:node:add': 'Attach a Node to a Cluster', 'cluster:node:remove': 'Detach a Node from a Cluster', 'cluster:router:set': 'Set the Cluster Router', 'cluster:router:unset': 'Clear the Cluster Router',
     'firewall:list': 'List firewall rules', 'firewall:fleet:list': 'List firewall rules on every Node', 'firewall:managed:list': "List Orbit's own firewall rules", 'firewall:live:list': 'List live UFW rules', 'firewall:allow': 'Allow a firewall rule', 'firewall:deny': 'Deny a firewall rule', 'firewall:remove': 'Remove a firewall rule',
-    'tool:manager:list': 'List Tool Managers', 'tool:list': 'List Tools', 'tool:show': 'Show a Tool', 'tool:install': 'Install a Tool', 'tool:update': 'Update a Tool', 'tool:remove': 'Remove a Tool',
+    'tool:manager:list': 'List Tool Managers', 'tool:scan': 'Scan installed packages', 'tool:list': 'List Tools', 'tool:show': 'Show a Tool', 'tool:install': 'Install a Tool', 'tool:update': 'Update a Tool', 'tool:remove': 'Remove a Tool',
     'github:app:install': 'Start a GitHub App registration or installation', 'github:app:show': 'Show the GitHub App', 'github:app:destroy': 'Remove the stored GitHub App',
     'github:app:register': 'Serve the GitHub App manifest page', 'github:app:callback': 'Complete a GitHub App registration',
     'metrics:enable': 'Enable Metrics', 'metrics:disable': 'Disable Metrics', 'metrics:status': 'Show Metrics status', 'metrics:credentials': 'Show Metrics credentials', 'metrics:credentials:reset': 'Reset Metrics credentials',
@@ -657,6 +657,7 @@ DESCRIPTIONS = {
     'database:tables': 'Lists tables on a registered Database connection. SQLite inspection runs on the associated Node.',
     'database:schema': 'Shows columns for every table on a registered Database connection. SQLite inspection runs on the associated Node.',
     'database:describe': 'Shows columns for one table on a registered Database connection. An unknown table returns database.table_missing.',
+    'tool:scan': 'Reads installed Homebrew formulae, casks, and Vite+ global packages for the enrolled account. The response reports each manager scan state, safe package facts, dependency and adoption support, and the UTC inspection time. It stores nothing, creates no Tool row, takes no manager lock, and does not install or refresh a manager. A failed read is `incomplete`, never an empty `complete` inventory. `absent` means the scope is not installed. `unsupported` means this platform does not offer the manager.',
     'firewall:fleet:list': 'Returns the operator firewall rules of every Node the caller can reach, in one response, ordered by Node and name. The web app uses it for the fleet list instead of one request per Node. The per-Node list stays for the CLI. The list does not SSH.',
     'firewall:managed:list': 'Returns the `orbit:` rules Orbit intends on the Node: WireGuard member trust, public SSH recovery only while no active role has closed it, then each active role and Metrics. The list does not SSH. No request adds, changes, or removes one of these rules.',
     'firewall:live:list': 'Reads `ufw status numbered` over WireGuard and classifies each IPv4 rule against the desired managed set and operator firewall records. Live rules that do not match are drift. Desired or operator rules absent from live are missing. An inactive, absent, or unreachable backend returns empty live and missing lists.',
@@ -1560,6 +1561,10 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`), its agent secret does not match (`agent.secret_invalid`), its Node is not eligible for an agent (`agent.node_ineligible`), or it asked for another Node\'s channel (`agent.channel_forbidden`).')
     elif route['name'] not in ('gateway:status', 'gateway:trust'):
         responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).')
+    if route['name'] == 'tool:scan':
+        responses['404'] = error_response('No Node matches `node_id` (`http.404`).')
+        responses['409'] = error_response('The Node is not active (`tool.node_inactive`) or is not Gateway-managed (`tool.node_unmanaged`). `error.details.step` is `scan`, `error.details.outcome` is `manager_failed`, and there is no Tool id. A manager that is absent, unsupported, conflicting, or incomplete does not fail the request.')
+        responses['422'] = error_response('The query is not the one strict integer `node_id`, or the body is not empty (`validation.failed`).')
     if params and not stream and route['name'] not in INTERNAL and route['name'] not in ('extension:enable', 'extension:disable'):
         responses['404'] = error_response('No record matches the path parameters.')
     if route['method'] in ('POST', 'PUT', 'PATCH', 'DELETE') and route['name'] not in INTERNAL:

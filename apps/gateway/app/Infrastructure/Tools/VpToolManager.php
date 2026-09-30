@@ -103,6 +103,101 @@ final readonly class VpToolManager implements ToolManager
         exit 42
         BASH;
 
+    /**
+     * Verifies the enrolled account's existing Linux Vite+ global scope.
+     * The first existing store wins, in materialize order. A later store is not a conflict.
+     * It does not install Vite+, publish launchers, or change the scope.
+     */
+    private const string LINUX_SCOPE_SCRIPT = <<<'BASH'
+        account=$1
+        if [ -z "${account:-}" ]; then
+            printf 'Orbit Vite Plus account is missing\n' >&2
+            exit 1
+        fi
+        current=$(/usr/bin/id -un)
+        if [ "$current" != "$account" ]; then
+            printf 'Orbit Vite Plus account mismatch\n' >&2
+            exit 1
+        fi
+        passwd_entry=$(/usr/bin/getent passwd -- "$account" || true)
+        if [ -z "$passwd_entry" ]; then
+            printf 'Orbit Vite Plus account home is unreadable\n' >&2
+            exit 1
+        fi
+        line_count=$(printf '%s\n' "$passwd_entry" | /usr/bin/wc -l | /usr/bin/tr -d '[:space:]')
+        if [ "$line_count" != "1" ]; then
+            printf 'Orbit Vite Plus account home is unreadable\n' >&2
+            exit 1
+        fi
+        home=$(printf '%s\n' "$passwd_entry" | /usr/bin/cut -d: -f6)
+        group=$(/usr/bin/id -gn -- "$account" || true)
+        if [ -z "$home" ] || [ -z "$group" ] || [ ! -d "$home" ]; then
+            printf 'Orbit Vite Plus account home is unreadable\n' >&2
+            exit 1
+        fi
+        case "$home" in
+            /*) ;;
+            *)
+                printf 'Orbit Vite Plus account home is unreadable\n' >&2
+                exit 1
+                ;;
+        esac
+        case "$home" in
+            *..*|*[!/A-Za-z0-9._-]*)
+                printf 'Orbit Vite Plus account home is unreadable\n' >&2
+                exit 1
+                ;;
+        esac
+        if [ -e /opt/orbit ] || [ -L /opt/orbit ]; then
+            if [ -L /opt/orbit ] || [ ! -d /opt/orbit ]; then
+                printf 'Orbit Vite Plus scope conflict\n' >&2
+                exit 43
+            fi
+            orbit_owner=$(/usr/bin/stat -c '%U:%G' /opt/orbit 2>/dev/null || true)
+            if [ "$orbit_owner" != "root:root" ]; then
+                printf 'Orbit Vite Plus scope conflict\n' >&2
+                exit 43
+            fi
+        fi
+
+        consider() {
+            scope=$1
+            binary="$scope/bin/vp"
+            if [ ! -e "$scope" ] && [ ! -L "$scope" ]; then
+                return 0
+            fi
+            if [ -L "$scope" ] || [ ! -d "$scope" ]; then
+                printf 'Orbit Vite Plus scope conflict\n' >&2
+                exit 43
+            fi
+            owner=$(/usr/bin/stat -c '%U:%G' "$scope" 2>/dev/null || true)
+            if [ "$owner" != "$account:$group" ]; then
+                printf 'Orbit Vite Plus scope conflict\n' >&2
+                exit 43
+            fi
+            if [ ! -e "$binary" ] && [ ! -L "$binary" ]; then
+                printf 'Orbit Vite Plus scope conflict\n' >&2
+                exit 43
+            fi
+            binary_owner=$(/usr/bin/stat -c '%U:%G' "$binary" 2>/dev/null || true)
+            if [ "$binary_owner" != "$account:$group" ] || [ ! -x "$binary" ]; then
+                printf 'Orbit Vite Plus scope conflict\n' >&2
+                exit 43
+            fi
+            printf '%s\n' "$binary"
+            exit 0
+        }
+
+        consider /opt/orbit/vite-plus
+        consider "$home/.vite-plus"
+        consider "$home/.local/share/vite-plus"
+
+        printf 'Orbit Vite Plus scope is absent\n' >&2
+        exit 42
+        BASH;
+
+    private const int MAX_SCOPE_PROBE_BYTES = 4_096;
+
     public function __construct(
         private RemoteToolCommandRunner $commands,
         private SemverVersionNormalizer $versions,
@@ -118,6 +213,21 @@ final readonly class VpToolManager implements ToolManager
         return $node->platform === 'linux' || $node->platform === 'macos';
     }
 
+    /**
+     * The enrolled account's existing Vite+ binary.
+     * The probe does not install Vite+, publish launchers, or change the scope.
+     *
+     * @throws ToolManagerException
+     */
+    public function existingBinary(Node $node): string
+    {
+        $this->guardNode($node);
+
+        return $node->platform === 'macos'
+            ? $this->resolveMacBinary($node)
+            : $this->resolveLinuxBinary($node);
+    }
+
     public function validatePackage(string $package): bool
     {
         $length = strlen($package);
@@ -130,7 +240,7 @@ final readonly class VpToolManager implements ToolManager
         $this->guardNode($node);
 
         if ($node->platform === 'macos') {
-            $this->resolveMacBinary($node);
+            $this->existingBinary($node);
 
             return;
         }
@@ -512,6 +622,7 @@ final readonly class VpToolManager implements ToolManager
             $node,
             ['/bin/bash', '-su', '--', $node->user],
             self::MAC_SCOPE_SCRIPT,
+            maxOutputBytes: self::MAX_SCOPE_PROBE_BYTES,
         );
 
         if ($result->exitCode === self::MAC_SCOPE_ABSENT) {
@@ -554,6 +665,59 @@ final readonly class VpToolManager implements ToolManager
     {
         return preg_match(
             '/\A\/(?:[A-Za-z0-9._-]+\/)+(?:\.vite-plus|\.local\/share\/vite-plus)\/bin\/vp\z/D',
+            $binary,
+        ) === 1 && ! str_contains($binary, '..');
+    }
+
+    private function resolveLinuxBinary(Node $node): string
+    {
+        $result = $this->commands->execute(
+            $node,
+            ['/bin/bash', '-seu', '--', $node->user],
+            self::LINUX_SCOPE_SCRIPT,
+            maxOutputBytes: self::MAX_SCOPE_PROBE_BYTES,
+        );
+
+        if ($result->exitCode === self::MAC_SCOPE_ABSENT) {
+            throw new ToolManagerException(
+                step: 'manager-absent',
+                message: 'The Vite+ global scope is absent for the enrolled account.',
+                result: $result,
+            );
+        }
+
+        if ($result->exitCode === self::MAC_SCOPE_CONFLICT) {
+            throw new ToolManagerException(
+                step: 'manager-conflict',
+                message: 'The Vite+ global scope conflicts with the enrolled account.',
+                result: $result,
+            );
+        }
+
+        $this->guardSuccessfulResult(
+            result: $result,
+            step: 'manager-probe',
+            message: 'The Vite+ global scope probe failed.',
+        );
+
+        $lines = preg_split('/\R/', rtrim($result->stdout, "\r\n"));
+        $binary = is_array($lines) ? ($lines[0] ?? '') : '';
+
+        if (! is_array($lines) || count($lines) !== 1 || ! $this->isSafeLinuxBinary($binary)) {
+            throw new ToolManagerException(
+                step: 'manager-probe',
+                message: 'The Vite+ global scope probe returned malformed output.',
+                result: $result,
+            );
+        }
+
+        return $binary;
+    }
+
+    private function isSafeLinuxBinary(string $binary): bool
+    {
+        return preg_match(
+            '/\A(?:\/opt\/orbit\/vite-plus\/bin\/vp|\/(?:[A-Za-z0-9._-]+\/)+(?:\.vite-plus|\.local\/share\/vite-plus)\/bin\/vp)\z/D',
             $binary,
         ) === 1 && ! str_contains($binary, '..');
     }

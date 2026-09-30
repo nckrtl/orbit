@@ -88,7 +88,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 
 `doctor` and `profile` are one-segment commands. Each family name is the command. Project source defaults and task settings use `project:update`; create and destroy remain the lifecycle commands.
 
-`tool:scan` reads supported package-manager inventory without creating Tool intent. `tool:adopt` establishes intent for one existing package without installing it. Both use the [Tool contract](/reference/tools).
+`tool:scan` reads supported package-manager inventory without creating Tool intent. Its Gateway route is `GET /api/v1/tool-inventory`. `tool:adopt` establishes intent for one existing package without installing it. Both use the [Tool contract](/reference/tools).
 
 ## Noun-ending commands
 

@@ -8,4 +8,5 @@ enum ToolInventoryPackageKind: string
 {
     case Formula = 'formula';
     case Cask = 'cask';
+    case Global = 'global';
 }

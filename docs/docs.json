@@ -271,6 +271,7 @@
             "group": "Tools",
             "openapi": "/openapi.json",
             "pages": [
+              "GET /api/v1/tool-inventory",
               "GET /api/v1/tool-managers",
               "GET /api/v1/tools",
               "POST /api/v1/tools",

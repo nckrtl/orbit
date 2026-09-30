@@ -2894,6 +2894,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tool-inventory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Scan installed packages
+         * @description Reads installed Homebrew formulae, casks, and Vite+ global packages for the enrolled account. The response reports each manager scan state, safe package facts, dependency and adoption support, and the UTC inspection time. It stores nothing, creates no Tool row, takes no manager lock, and does not install or refresh a manager. A failed read is `incomplete`, never an empty `complete` inventory. `absent` means the scope is not installed. `unsupported` means this platform does not offer the manager.
+         */
+        get: operations["tool-scan"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tool-managers": {
         parameters: {
             query?: never;
@@ -3596,6 +3616,29 @@ export interface components {
             /** @enum {string} */
             status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "completed" | "failed" | "cancelled";
             assistance_reason?: string | null;
+        };
+        ToolInventory: {
+            node_id?: number;
+            observed_at?: string;
+            managers?: components["schemas"]["ToolInventoryManager"][];
+        };
+        ToolInventoryManager: {
+            manager?: string;
+            /** @enum {string} */
+            scan_state?: "complete" | "absent" | "unsupported" | "incomplete" | "conflicting";
+            packages?: components["schemas"]["ToolInventoryPackage"][];
+        };
+        ToolInventoryPackage: {
+            manager?: string;
+            package?: string;
+            /** @enum {string} */
+            package_kind?: "formula" | "cask" | "global";
+            installed_version?: string | null;
+            dependency?: boolean;
+            registered?: boolean;
+            tool_id?: number | null;
+            adoption?: string;
+            adoption_block?: string | null;
         };
         ToolManager: {
             id?: number | null;
@@ -15038,6 +15081,67 @@ export interface operations {
             };
             /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tool-scan": {
+        parameters: {
+            query: {
+                node_id: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ToolInventory"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No Node matches `node_id` (`http.404`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The Node is not active (`tool.node_inactive`) or is not Gateway-managed (`tool.node_unmanaged`). `error.details.step` is `scan`, `error.details.outcome` is `manager_failed`, and there is no Tool id. A manager that is absent, unsupported, conflicting, or incomplete does not fail the request. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The query is not the one strict integer `node_id`, or the body is not empty (`validation.failed`). */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
