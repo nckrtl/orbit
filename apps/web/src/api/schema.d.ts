@@ -3547,18 +3547,66 @@ export interface components {
             };
         };
         TaskDefinition: {
-            project_id?: number;
-            name?: string;
-            title?: string;
-            brief?: string;
-            parameters?: Record<string, never>[];
+            project_id: number;
+            name: string;
+            title: string;
+            brief: string;
+            parameters: {
+                name: string;
+                /** @enum {string} */
+                type: "text" | "app" | "subtasks";
+                required: boolean;
+                default?: unknown;
+            }[];
             /** @enum {string} */
-            status?: "backlog" | "todo";
-            schedule?: {
+            status: "backlog" | "todo";
+            schedule: {
                 [key: string]: unknown;
             } | null;
-            phases?: Record<string, never>[];
-            subtasks?: Record<string, never>[];
+            phases: {
+                key: string;
+                title: string;
+                brief: string;
+                repeat: boolean;
+            }[];
+            subtasks: {
+                key: string;
+                title: string;
+                kind: string;
+                brief?: string;
+                phase?: string;
+                deliverables?: {
+                    id: string;
+                    /** @enum {string} */
+                    type: "file" | "command" | "review";
+                    description: string;
+                    /** @description Conditionally required. */
+                    path?: string;
+                    /**
+                     * @description Conditionally required.
+                     * @enum {string}
+                     */
+                    change?: "created" | "modified" | "any";
+                    fails_on_base?: boolean;
+                    /** @description Conditionally required. */
+                    command?: string;
+                    directory?: string;
+                    paths?: string[];
+                }[];
+                routes?: {
+                    [key: string]: string;
+                };
+                implementer_model?: string;
+                reviewer_model?: string;
+                operation?: string;
+                arguments?: {
+                    [key: string]: unknown;
+                };
+                question?: string;
+                options?: string[];
+                evidence?: string[];
+                min_probability?: number;
+            }[];
         };
         ProxyCliModel: {
             id?: string;
@@ -7929,11 +7977,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
                 "application/json": {
                     /** @description Exact string value; quote empty, multiline, or placeholder values for the shell */
-                    value?: string;
+                    value: string;
                 };
             };
         };
@@ -12553,7 +12601,7 @@ export interface operations {
                     name: string;
                     title: string;
                     brief: string;
-                    parameters?: {
+                    parameters: {
                         name: string;
                         /** @enum {string} */
                         type: "text" | "app" | "subtasks";
@@ -12752,7 +12800,7 @@ export interface operations {
                     name: string;
                     title: string;
                     brief: string;
-                    parameters?: {
+                    parameters: {
                         name: string;
                         /** @enum {string} */
                         type: "text" | "app" | "subtasks";

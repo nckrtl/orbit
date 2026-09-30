@@ -89,19 +89,19 @@ A definition has these fields.
 | --- | --- |
 | `name` | Unique in the Project. 1 to 63 lowercase ASCII letters or digits, with hyphens only between them |
 | `title`, `brief` | The title and brief of a task from this definition. Either can include a declared parameter as `{parameter}` |
-| `parameters` | Ordered list of parameters |
+| `parameters` | Required ordered list of parameters. At most 50. An empty list is valid |
 | `status` | `backlog` or `todo`: the status a task from this definition begins in |
-| `schedule` | Optional. A five-field cron expression in UTC, and the parameter values for that schedule |
-| `phases` | Optional ordered phases. A phase groups subtasks for the drawing only |
-| `subtasks` | Ordered subtask definitions. At least one |
+| `schedule` | Optional. A five-field cron expression in UTC, and at most 100 parameter values for that schedule |
+| `phases` | Optional ordered phases. At most 50. A phase groups subtasks for the drawing only |
+| `subtasks` | Ordered subtask definitions. At least one and at most 100 |
 
 A phase is `{key, title, brief, repeat}`. A stored schedule does not create a task.
 
 ### Parameters
 
-Each parameter is `{name, type, required, default}`. `type` is `text`, `app`, or `subtasks`.
+Each parameter is `{name, type, required, default}`. `type` is `text`, `app`, or `subtasks`. The field is required, and an empty list is valid. Omitting it returns HTTP 422 `validation.failed`.
 
-A `{parameter}` in the title or brief names a parameter in `parameters`. The definition declares at most one parameter whose type is `subtasks`. That parameter marks one place in the subtask list. Every subtask supplied at that place is an `agent` subtask.
+A `{parameter}` in the title or brief names a parameter in `parameters`. The definition declares at most one parameter whose type is `subtasks`.
 
 A schedule value names a parameter the definition declares. The schedule includes a value for each required parameter.
 
@@ -116,10 +116,10 @@ The kind adds fields and declares the outcomes a route may name.
 | `agent` | Optional `implementer_model` and `reviewer_model` | `passed`, `skipped`, `failed` |
 | `check` | At least one `command` deliverable | `passed`, `skipped`, `failed` |
 | `merge` | None | `passed`, `skipped`, `failed` |
-| `action` | `operation` and `arguments` | `passed`, `failed` |
+| `action` | `operation` and `arguments`, with at most 50 arguments | `passed`, `failed` |
 | `decide` | `question`, `options`, `evidence`, and optional `min_probability` | One outcome for each option |
 
-An `action` `operation` is an OpenAPI operation marked `x-orbit-task-action: true`. Orbit marks `instance:deploy` and `instance:rollback`. Marking another operation needs its own decision. A `decide` subtask's `evidence` names earlier subtasks by `key`. `min_probability` is from 0 to 1 and defaults to 0.8.
+An `action` `operation` is an OpenAPI operation marked `x-orbit-task-action: true`. Orbit marks `instance:deploy` and `instance:rollback`. The Gateway reads those names from the list `bin/mcp-tools` generates, and `bin/mcp-tools --check` keeps that list current. Marking another operation needs its own decision. A `decide` subtask's `evidence` names earlier subtasks by `key`. `min_probability` is from 0 to 1 and defaults to 0.8.
 
 A write does not refuse `implementer_model` or `reviewer_model`. The [ProxyCli model list](/reference/proxycli#models) changes over time. The definition view reports a model that no driver can run. A model is known when ProxyCli offers it, or when it is a Claude model. T3 runs a Claude model on its own Claude subscription. A listed model whose provider no driver runs, such as `google`, is that finding.
 
@@ -149,18 +149,20 @@ The Gateway validates a definition on every write. An invalid definition is not 
 | Decide routes | A `decide` subtask has no route for an option |
 | Reachability | No path from the first subtask reaches a subtask |
 | Phases | A subtask `phase` is not in `phases`, or one phase's subtasks are not adjacent |
+| Phase keys | A phase key is duplicated |
 | Action | The `operation` is not marked as a task action |
 | Parameters | A `{parameter}` is not declared, or more than one parameter has type `subtasks` |
 | Schedule names | A schedule value names an undeclared parameter |
 | Cron | The cron expression is not five valid fields |
 | Schedule values | The schedule omits a value for a required parameter |
+| Bounds | More than 100 subtasks, 50 parameters, 50 phases, 50 arguments on one subtask, or 100 schedule values |
 
 | Error | HTTP | When |
 | --- | --- | --- |
 | `tasks.definition_invalid` | 422 | The definition breaks a rule above. `details.rules` lists one `{rule, subtask}` for each failure |
 | `tasks.definition_exists` | 409 | The Project already uses the name |
 
-`rule` is `keys`, `kind`, `fields`, `route_outcome`, `route_target`, `decide_routes`, `reachability`, `phases`, `action`, `parameters`, `schedule_names`, `cron`, or `schedule_values`. `subtask` is the subtask key, or null when the rule concerns the whole definition.
+`rule` is `keys`, `kind`, `fields`, `route_outcome`, `route_target`, `decide_routes`, `reachability`, `phases`, `phase_keys`, `action`, `parameters`, `bounds`, `schedule_names`, `cron`, or `schedule_values`. `subtask` is the subtask key, or null when the rule concerns the whole definition. A `bounds` failure for one subtask's arguments names that subtask.
 
 ### Definition operations
 

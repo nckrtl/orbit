@@ -136,7 +136,9 @@ The Gateway validates a definition on every write and refuses an invalid one wit
 - a `decide` subtask without a route for each option;
 - a subtask that no path from the first subtask reaches;
 - a subtask whose `phase` is not in `phases`, or a phase whose subtasks are not next to each other;
+- a duplicate phase key;
 - an `action` operation that is not marked as a task action;
+- more than 100 subtasks, 50 parameters, 50 phases, 50 arguments on one subtask, or 100 schedule values;
 - a `{parameter}` that `parameters` does not declare, more than one `subtasks` parameter, or a schedule value for a parameter that the definition does not declare;
 - a cron expression that is not five valid fields, or a schedule without a value for each required parameter.
 

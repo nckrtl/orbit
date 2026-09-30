@@ -19,6 +19,7 @@ constructor names when it does not. AnnotationData is the exception that sends c
 the controller returns the array fromModel() builds, and that schema is written below.
 """
 
+import copy
 import json
 import pathlib
 import re
@@ -911,7 +912,8 @@ def schema_from_tokens(toks):
                 sch['format'] = base
             elif base == 'url':
                 sch['format'] = 'uri'
-            elif base == 'required':
+            elif base in ('required', 'present'):
+                # `present` means the key is in the body, which is `required` in OpenAPI.
                 required = True
             elif base == 'sometimes':
                 sometimes = True
@@ -1673,6 +1675,20 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     nav_pages[tag].append(f'{route["method"]} {path}')
 
 spec['components']['schemas'].update({k: v for k, v in components.items() if v is not None})
+
+
+def tighten_task_definition_response(document):
+    """The response always includes every field. Its lists use the write item schemas, not bare objects."""
+    body = document['paths']['/api/v1/projects/{project}/task-definitions']['post']['requestBody']['content']['application/json']['schema']
+    schema = document['components']['schemas']['TaskDefinition']
+    for name in ('parameters', 'phases', 'subtasks'):
+        schema['properties'][name]['items'] = copy.deepcopy(body['properties'][name]['items'])
+    schema['required'] = [
+        'project_id', 'name', 'title', 'brief', 'parameters', 'status', 'schedule', 'phases', 'subtasks',
+    ]
+
+
+tighten_task_definition_response(spec)
 annotation_create = spec['paths']['/api/v1/instances/{instance}/annotations']['post']['requestBody']['content']['application/json']['schema']
 annotation_create['properties']['boundingBox'] = {'type': 'object', 'properties': {key: {'type': 'number'} for key in ('x', 'y', 'width', 'height')}, 'additionalProperties': False}
 # AnnotationData::fromModel() builds camelCase (`instanceId`, `syncError`, and the browser context).

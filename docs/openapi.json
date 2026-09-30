@@ -7899,7 +7899,7 @@
         ],
         "description": "Update one stored Instance environment value without changing the workload file.",
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -7910,6 +7910,9 @@
                     "description": "Exact string value; quote empty, multiline, or placeholder values for the shell"
                   }
                 },
+                "required": [
+                  "value"
+                ],
                 "additionalProperties": false
               }
             }
@@ -16834,6 +16837,7 @@
                   "name",
                   "title",
                   "brief",
+                  "parameters",
                   "status",
                   "subtasks"
                 ],
@@ -17431,6 +17435,7 @@
                   "name",
                   "title",
                   "brief",
+                  "parameters",
                   "status",
                   "subtasks"
                 ],
@@ -24699,7 +24704,29 @@
           "parameters": {
             "type": "array",
             "items": {
-              "type": "object"
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "app",
+                    "subtasks"
+                  ]
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "default": {}
+              },
+              "required": [
+                "name",
+                "type",
+                "required"
+              ]
             }
           },
           "status": {
@@ -24719,16 +24746,179 @@
           "phases": {
             "type": "array",
             "items": {
-              "type": "object"
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string",
+                  "maxLength": 160
+                },
+                "brief": {
+                  "type": "string",
+                  "maxLength": 8000
+                },
+                "repeat": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "key",
+                "title",
+                "brief",
+                "repeat"
+              ]
             }
           },
           "subtasks": {
             "type": "array",
             "items": {
-              "type": "object"
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string",
+                  "maxLength": 160
+                },
+                "kind": {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                "brief": {
+                  "type": "string",
+                  "maxLength": 8000
+                },
+                "phase": {
+                  "type": "string"
+                },
+                "deliverables": {
+                  "type": "array",
+                  "maxItems": 5,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "file",
+                          "command",
+                          "review"
+                        ]
+                      },
+                      "description": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "path": {
+                        "type": "string",
+                        "maxLength": 500,
+                        "description": "Conditionally required."
+                      },
+                      "change": {
+                        "type": "string",
+                        "enum": [
+                          "created",
+                          "modified",
+                          "any"
+                        ],
+                        "description": "Conditionally required."
+                      },
+                      "fails_on_base": {
+                        "type": "boolean"
+                      },
+                      "command": {
+                        "type": "string",
+                        "maxLength": 1000,
+                        "description": "Conditionally required."
+                      },
+                      "directory": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "paths": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {
+                          "type": "string",
+                          "maxLength": 500
+                        }
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "type",
+                      "description"
+                    ]
+                  }
+                },
+                "routes": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "implementer_model": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "reviewer_model": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "operation": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "arguments": {
+                  "type": "object",
+                  "additionalProperties": true
+                },
+                "question": {
+                  "type": "string",
+                  "maxLength": 8000
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "evidence": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "min_probability": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "key",
+                "title",
+                "kind"
+              ]
             }
           }
-        }
+        },
+        "required": [
+          "project_id",
+          "name",
+          "title",
+          "brief",
+          "parameters",
+          "status",
+          "schedule",
+          "phases",
+          "subtasks"
+        ]
       },
       "ProxyCliModel": {
         "type": "object",

@@ -4,14 +4,19 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use RuntimeException;
+
 /**
- * Operations the OpenAPI document marks with x-orbit-task-action.
+ * Operations the generated task-action list allows.
+ * bin/mcp-tools writes resources/tasks/actions.json from the OpenAPI marks.
  * An action subtask may call only one of these.
  */
 final class OpenApiTaskActions
 {
     /** @var list<string>|null */
     private ?array $names = null;
+
+    public function __construct(private readonly ?string $path = null) {}
 
     public function allows(string $operation): bool
     {
@@ -29,45 +34,28 @@ final class OpenApiTaskActions
             return $this->names;
         }
 
-        $path = dirname(base_path(), 2).'/docs/openapi.json';
+        $path = $this->path ?? resource_path('tasks/actions.json');
         $contents = is_file($path) ? file_get_contents($path) : false;
 
         if (! is_string($contents)) {
-            return $this->names = [];
+            throw new RuntimeException("The task action list is missing at {$path}.");
         }
 
         $decoded = json_decode($contents, true);
+        $actions = is_array($decoded) ? ($decoded['actions'] ?? null) : null;
 
-        if (! is_array($decoded)) {
-            return $this->names = [];
-        }
-
-        $paths = $decoded['paths'] ?? null;
-
-        if (! is_array($paths)) {
-            return $this->names = [];
+        if (! is_array($actions)) {
+            throw new RuntimeException("The task action list at {$path} is not valid.");
         }
 
         $names = [];
 
-        foreach ($paths as $pathItem) {
-            if (! is_array($pathItem)) {
-                continue;
+        foreach ($actions as $name) {
+            if (! is_string($name) || $name === '') {
+                throw new RuntimeException("The task action list at {$path} is not valid.");
             }
 
-            foreach (['get', 'post', 'put', 'patch', 'delete', 'head'] as $method) {
-                $operation = $pathItem[$method] ?? null;
-
-                if (! is_array($operation) || ($operation['x-orbit-task-action'] ?? false) !== true) {
-                    continue;
-                }
-
-                $operationId = $operation['operationId'] ?? null;
-
-                if (is_string($operationId) && $operationId !== '') {
-                    $names[] = $operationId;
-                }
-            }
+            $names[] = $name;
         }
 
         return $this->names = array_values(array_unique($names));

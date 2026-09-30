@@ -13,6 +13,16 @@ final readonly class TaskDefinitionValidator
     /** @var list<string> */
     private const array CommonFields = ['key', 'title', 'kind', 'brief', 'phase', 'deliverables', 'routes'];
 
+    private const int MaxSubtasks = 100;
+
+    private const int MaxParameters = 50;
+
+    private const int MaxPhases = 50;
+
+    private const int MaxArguments = 50;
+
+    private const int MaxScheduleValues = 100;
+
     public function __construct(private OpenApiTaskActions $actions) {}
 
     /**
@@ -39,6 +49,8 @@ final readonly class TaskDefinitionValidator
             ...$this->scheduleNames($definition, $parameters),
             ...$this->cron($definition),
             ...$this->scheduleValues($definition, $parameters),
+            ...$this->duplicatePhaseKeys($phases),
+            ...$this->bounds($definition, $subtasks, $parameters, $phases),
         ]);
     }
 
@@ -469,6 +481,82 @@ final readonly class TaskDefinitionValidator
         }
 
         return $violations;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $phases
+     * @return list<TaskDefinitionViolation>
+     */
+    private function duplicatePhaseKeys(array $phases): array
+    {
+        $counts = [];
+
+        foreach ($phases as $phase) {
+            $key = $this->text($phase, 'key');
+
+            if ($key === '') {
+                continue;
+            }
+
+            $counts[$key] = ($counts[$key] ?? 0) + 1;
+        }
+
+        foreach ($counts as $count) {
+            if ($count > 1) {
+                return [new TaskDefinitionViolation('phase_keys', null)];
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $definition
+     * @param  list<array<string, mixed>>  $subtasks
+     * @param  list<array<string, mixed>>  $parameters
+     * @param  list<array<string, mixed>>  $phases
+     * @return list<TaskDefinitionViolation>
+     */
+    private function bounds(array $definition, array $subtasks, array $parameters, array $phases): array
+    {
+        $violations = [];
+
+        if (
+            count($subtasks) > self::MaxSubtasks
+            || count($parameters) > self::MaxParameters
+            || count($phases) > self::MaxPhases
+            || $this->scheduleValueCount($definition) > self::MaxScheduleValues
+        ) {
+            $violations[] = new TaskDefinitionViolation('bounds', null);
+        }
+
+        foreach ($subtasks as $subtask) {
+            if ($this->argumentCount($subtask) > self::MaxArguments) {
+                $violations[] = new TaskDefinitionViolation('bounds', $this->text($subtask, 'key'));
+            }
+        }
+
+        return $violations;
+    }
+
+    /** @param array<string, mixed> $subtask */
+    private function argumentCount(array $subtask): int
+    {
+        $arguments = $subtask['arguments'] ?? null;
+
+        return is_array($arguments) ? count($arguments) : 0;
+    }
+
+    /** @param array<string, mixed> $definition */
+    private function scheduleValueCount(array $definition): int
+    {
+        if (! array_key_exists('schedule', $definition) || ! is_array($definition['schedule'])) {
+            return 0;
+        }
+
+        $values = $definition['schedule']['values'] ?? null;
+
+        return is_array($values) ? count($values) : 0;
     }
 
     /**

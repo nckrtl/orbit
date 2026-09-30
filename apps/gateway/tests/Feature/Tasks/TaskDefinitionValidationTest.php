@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Tasks\OpenApiTaskActions;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskDefinition;
@@ -25,6 +26,66 @@ function reject_task_definition(Project $project, array $definition, array $rule
         ->and(Task::query()->count())->toBe(0);
 
     return $response;
+}
+
+/** @return list<array<string, mixed>> */
+function task_definition_subtasks(int $count): array
+{
+    $subtasks = [];
+
+    for ($index = 0; $index < $count; $index++) {
+        $subtasks[] = ['key' => 'step-'.$index, 'title' => 'Step', 'kind' => 'agent'];
+    }
+
+    return $subtasks;
+}
+
+/** @return list<array<string, mixed>> */
+function task_definition_parameters(int $count): array
+{
+    $parameters = [];
+
+    for ($index = 0; $index < $count; $index++) {
+        $parameters[] = ['name' => 'param-'.$index, 'type' => 'text', 'required' => false];
+    }
+
+    return $parameters;
+}
+
+/** @return list<array<string, mixed>> */
+function task_definition_phases(int $count): array
+{
+    $phases = [];
+
+    for ($index = 0; $index < $count; $index++) {
+        $phases[] = ['key' => 'phase-'.$index, 'title' => 'Phase', 'brief' => 'Group the work.', 'repeat' => false];
+    }
+
+    return $phases;
+}
+
+/** @return array<string, int> */
+function task_definition_arguments(int $count): array
+{
+    $arguments = [];
+
+    for ($index = 0; $index < $count; $index++) {
+        $arguments['arg-'.$index] = 1;
+    }
+
+    return $arguments;
+}
+
+/** @return array<string, string> */
+function task_definition_values(int $count): array
+{
+    $values = [];
+
+    for ($index = 0; $index < $count; $index++) {
+        $values['value-'.$index] = 'set';
+    }
+
+    return $values;
 }
 
 describe('task definition validation', function (): void {
@@ -330,7 +391,7 @@ describe('task definition validation', function (): void {
         expect(Task::query()->count())->toBe(0);
     })->with(['instance:deploy', 'instance:rollback']);
 
-    it('reads task action marks from the OpenAPI document', function (): void {
+    it('reads task action marks from the generated list, matching the OpenAPI document', function (): void {
         $path = dirname(base_path(), 2).'/docs/openapi.json';
         $decoded = json_decode((string) file_get_contents($path), true);
         $marked = [];
@@ -340,7 +401,7 @@ describe('task definition validation', function (): void {
                 continue;
             }
 
-            foreach (['get', 'post', 'put', 'patch', 'delete'] as $method) {
+            foreach (['get', 'post', 'put', 'patch', 'delete', 'head'] as $method) {
                 $operation = $pathItem[$method] ?? null;
 
                 if (is_array($operation) && ($operation['x-orbit-task-action'] ?? false) === true) {
@@ -349,7 +410,170 @@ describe('task definition validation', function (): void {
             }
         }
 
-        expect($marked)->toEqualCanonicalizing(['instance-deploy', 'instance-rollback']);
+        $listed = json_decode((string) file_get_contents(resource_path('tasks/actions.json')), true);
+
+        expect($marked)->toEqualCanonicalizing(['instance-deploy', 'instance-rollback'])
+            ->and($listed['actions'] ?? null)->toEqualCanonicalizing($marked)
+            ->and(app(OpenApiTaskActions::class)->names())->toBe($listed['actions']);
+    });
+
+    it('reads task actions from the list file it is given', function (): void {
+        $path = tempnam(sys_get_temp_dir(), 'task-actions-');
+        expect($path)->toBeString();
+
+        try {
+            file_put_contents($path, json_encode(['actions' => ['instance-deploy', 'widget-rebuild']], JSON_THROW_ON_ERROR));
+            $actions = new OpenApiTaskActions($path);
+
+            expect($actions->names())->toBe(['instance-deploy', 'widget-rebuild'])
+                ->and($actions->allows('widget:rebuild'))->toBeTrue()
+                ->and($actions->allows('instance:rollback'))->toBeFalse();
+        } finally {
+            if (is_string($path)) {
+                unlink($path);
+            }
+        }
+    });
+
+    it('marks parameters required on definition create, update, and the task definition schema', function (): void {
+        $root = dirname(base_path(), 2);
+        $document = json_decode((string) file_get_contents($root.'/docs/openapi.json'), true);
+        $tools = json_decode((string) file_get_contents(resource_path('mcp/tools.json')), true);
+        $create = $document['paths']['/api/v1/projects/{project}/task-definitions']['post']['requestBody']['content']['application/json']['schema'];
+        $update = $document['paths']['/api/v1/projects/{project}/task-definitions/{name}']['put']['requestBody']['content']['application/json']['schema'];
+        $definition = $document['components']['schemas']['TaskDefinition'];
+        $requiredByTool = [];
+
+        foreach ($tools['tools'] as $tool) {
+            $requiredByTool[$tool['name']] = $tool['input_schema']['required'] ?? [];
+        }
+
+        expect($create['required'])->toContain('parameters')
+            ->and($update['required'])->toContain('parameters')
+            ->and($definition['required'])->toContain('project_id', 'name', 'title', 'brief', 'parameters', 'status', 'schedule', 'phases', 'subtasks')
+            ->and($definition['properties']['parameters']['items'])->toHaveKey('properties')
+            ->and($definition['properties']['phases']['items'])->toHaveKey('properties')
+            ->and($definition['properties']['subtasks']['items'])->toHaveKey('properties')
+            ->and($definition['properties']['parameters']['items']['properties'])->toHaveKeys(['name', 'type', 'required'])
+            ->and($definition['properties']['phases']['items']['properties'])->toHaveKeys(['key', 'title', 'brief', 'repeat'])
+            ->and($definition['properties']['subtasks']['items']['properties'])->toHaveKeys(['key', 'title', 'kind'])
+            ->and($requiredByTool['tasks-definition-create'])->toContain('parameters')
+            ->and($requiredByTool['tasks-definition-update'])->toContain('parameters');
+    });
+
+    it('returns 422 validation.failed when parameters is omitted', function (string $method): void {
+        task_definition_gateway();
+        $project = task_definition_project();
+        $payload = task_definition_payload();
+        unset($payload['parameters']);
+
+        if ($method === 'put') {
+            test()->postJson("/api/v1/projects/{$project->id}/task-definitions", task_definition_payload())->assertCreated();
+            $response = test()->putJson("/api/v1/projects/{$project->id}/task-definitions/build-feature", $payload);
+        } else {
+            $response = test()->postJson("/api/v1/projects/{$project->id}/task-definitions", $payload);
+        }
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation.failed')
+            ->assertJsonPath('error.details.parameters.0', 'The parameters field must be present.');
+
+        expect(TaskDefinition::query()->count())->toBe($method === 'put' ? 1 : 0)
+            ->and(Task::query()->count())->toBe(0);
+    })->with(['post', 'put']);
+
+    it('returns 422 tasks.definition_invalid when a list exceeds its cap', function (string $field, int $count): void {
+        task_definition_gateway();
+        $project = task_definition_project();
+        $items = match ($field) {
+            'subtasks' => task_definition_subtasks($count),
+            'parameters' => task_definition_parameters($count),
+            'phases' => task_definition_phases($count),
+        };
+
+        reject_task_definition($project, task_definition_payload([$field => $items]), [
+            ['rule' => 'bounds', 'subtask' => null],
+        ]);
+    })->with([
+        'subtasks' => ['subtasks', 101],
+        'parameters' => ['parameters', 51],
+        'phases' => ['phases', 51],
+    ]);
+
+    it('returns 422 tasks.definition_invalid when a subtask has more than 50 arguments', function (): void {
+        task_definition_gateway();
+        $project = task_definition_project();
+
+        reject_task_definition($project, task_definition_payload([
+            'subtasks' => [[
+                'key' => 'deploy',
+                'title' => 'Deploy',
+                'kind' => 'action',
+                'operation' => 'instance:deploy',
+                'arguments' => task_definition_arguments(51),
+            ]],
+        ]), [
+            ['rule' => 'bounds', 'subtask' => 'deploy'],
+        ]);
+    });
+
+    it('returns 422 tasks.definition_invalid when a schedule has more than 100 values', function (): void {
+        task_definition_gateway();
+        $project = task_definition_project();
+
+        reject_task_definition($project, task_definition_payload([
+            'schedule' => ['cron' => '0 3 * * 1', 'values' => task_definition_values(101)],
+        ]), [
+            ['rule' => 'schedule_names', 'subtask' => null],
+            ['rule' => 'bounds', 'subtask' => null],
+        ]);
+    });
+
+    it('returns 422 tasks.definition_invalid when a phase key is duplicated', function (): void {
+        task_definition_gateway();
+        $project = task_definition_project();
+
+        reject_task_definition($project, task_definition_payload([
+            'phases' => [
+                ['key' => 'prepare', 'title' => 'Prepare', 'brief' => 'Prepare the work.', 'repeat' => false],
+                ['key' => 'prepare', 'title' => 'Prepare again', 'brief' => 'Prepare it again.', 'repeat' => true],
+            ],
+        ]), [
+            ['rule' => 'phase_keys', 'subtask' => null],
+        ]);
+    });
+
+    it('stores a definition at each size cap', function (): void {
+        task_definition_gateway();
+        $project = task_definition_project();
+        $subtasks = task_definition_subtasks(99);
+        $subtasks[] = [
+            'key' => 'deploy',
+            'title' => 'Deploy',
+            'kind' => 'action',
+            'operation' => 'instance:deploy',
+            'arguments' => task_definition_arguments(50),
+        ];
+        $values = [];
+
+        foreach (task_definition_parameters(50) as $parameter) {
+            $values[$parameter['name']] = 'set';
+        }
+
+        test()->postJson("/api/v1/projects/{$project->id}/task-definitions", task_definition_payload([
+            'parameters' => task_definition_parameters(50),
+            'phases' => task_definition_phases(50),
+            'schedule' => ['cron' => '0 3 * * 1', 'values' => $values],
+            'subtasks' => $subtasks,
+        ]))
+            ->assertCreated()
+            ->assertJsonCount(50, 'data.parameters')
+            ->assertJsonCount(50, 'data.phases')
+            ->assertJsonCount(100, 'data.subtasks')
+            ->assertJsonCount(50, 'data.schedule.values')
+            ->assertJsonCount(50, 'data.subtasks.99.arguments');
+
+        expect(Task::query()->count())->toBe(0);
     });
 
     it('returns 422 tasks.definition_invalid when an action operation is the OpenAPI summary instead of the route name', function (): void {
