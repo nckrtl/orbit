@@ -29,6 +29,7 @@ final class CreateInstanceRequest extends GatewayRequest implements HasBody
         private readonly ?string $root = null,
         private readonly ?string $domain = null,
         private readonly ?string $branch = null,
+        private readonly ?int $sourceInstanceId = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -63,6 +64,10 @@ final class CreateInstanceRequest extends GatewayRequest implements HasBody
 
         if ($this->branch !== null) {
             $body['branch'] = $this->branch;
+        }
+
+        if ($this->sourceInstanceId !== null) {
+            $body['source_instance_id'] = $this->sourceInstanceId;
         }
 
         return $body;

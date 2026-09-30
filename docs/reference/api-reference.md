@@ -59,4 +59,6 @@ The generator reads every command class, including commands the CLI hides at run
 
 Command text does not. `orbit list` hides `tasks` and `proxycli` commands unless the active Gateway profile reports those extensions as enabled, and the command fails when `apps/cli/vendor` is absent. A machine with the extensions on would add request-field descriptions such as the task title and the proxycli cache connection, and continuous integration would leave them out. Reading the command classes keeps those descriptions in the document on every machine. Framework options such as `--version` are not part of the signature, so they are not copied onto a request field.
 
+A request field takes the description of the CLI argument or option with the same name, after `-` becomes `_`. `instance:create --from` is the exception. Its description is stored on `source_instance_id`.
+
 The web app builds its TypeScript API types from `docs/openapi.json`. A stable document keeps those types stable until an input changes. [Web app](/reference/web-app) describes that generation.

@@ -317,12 +317,16 @@ afterEach(function (): void {
 
 describe('instance:create', function (): void {
     it('documents the development contract and directs production to instance:clone', function (): void {
-        $this
-            ->artisan('help', ['command_name' => 'instance:create'])
-            ->expectsOutputToContain('Create a development Instance on an app-dev Node.')
-            ->expectsOutputToContain('default is reserved for the default development source')
-            ->expectsOutputToContain('New production Instances require a candidate. Use instance:clone.')
-            ->assertExitCode(0);
+        expect(Artisan::call('help', ['command_name' => 'instance:create']))->toBe(0);
+        $text = preg_replace('/\s+/', ' ', Artisan::output()) ?? '';
+
+        expect($text)->toContain(
+            'Create a development Instance on an app-dev Node.',
+            'default is reserved for the default development source',
+            'New production Instances require a candidate. Use instance:clone.',
+            'A source Instance id copies another development Instance on the same Node instead of cloning the repository.',
+            'Numeric source Instance id. Copy that development checkout instead of cloning the repository.',
+        );
     });
 
     it('creates an Instance with inherited root as JSON', function (): void {
@@ -448,6 +452,9 @@ describe('instance:create', function (): void {
             'Selected branch dev',
             'Branch override —',
             'Domain dev.orbit.test',
+            'Creation repository',
+            'Copy mode —',
+            'Copied from —',
             'URL https://dev.orbit.test',
         );
     });
@@ -468,6 +475,140 @@ describe('instance:create', function (): void {
             'Production home /home/orbit-app-3',
             'Effective root /home/orbit-app-3/current/public',
         );
+    });
+
+    it('copies a development Instance from another and reports the mode, source, and URL', function (): void {
+        $payload = [
+            ...instance_payload(),
+            'name' => 'feature-one',
+            'checkout_path' => '/srv/orbit/apps/acme/feature-one',
+            'selected_branch' => 'feature-one',
+            'domain' => 'feature.example.test',
+            'url' => 'https://feature.example.test',
+            'creation' => 'copy',
+            'copy_mode' => 'reflink',
+            'source_instance' => ['id' => 12, 'name' => 'default'],
+            'shared_databases' => [
+                ['slug' => 'app', 'driver' => 'mysql'],
+                ['slug' => 'cache', 'driver' => 'redis'],
+            ],
+        ];
+        $mock = MockClient::global([
+            CreateInstanceRequest::class => instance_mock_response(201, $payload),
+        ]);
+
+        expect(Artisan::call('instance:create', [
+            'project' => '4',
+            'node' => '7',
+            'name' => 'feature-one',
+            '--from' => '12',
+            '--branch' => 'release',
+            '--domain' => 'feature.example.test',
+        ]))->toBe(0);
+        expect(instance_source_text(Artisan::output()))->toContain(
+            'Copying Instance',
+            'Copy Instance',
+            'Copied Instance',
+            'Checkout /srv/orbit/apps/acme/feature-one',
+            'Creation copy',
+            'Copy mode reflink',
+            'Copied from default',
+            'URL https://feature.example.test',
+        )->not->toContain('Creating Instance');
+        expect($mock->getLastRequest()?->body()->all())->toBe([
+            'project_id' => 4,
+            'node_id' => 7,
+            'name' => 'feature-one',
+            'domain' => 'feature.example.test',
+            'branch' => 'release',
+            'source_instance_id' => 12,
+        ]);
+    });
+
+    it('returns the copied Instance as JSON with no progress text', function (): void {
+        $payload = [
+            ...instance_payload(),
+            'checkout_path' => '/srv/orbit/apps/acme/feature-one',
+            'creation' => 'copy',
+            'copy_mode' => 'full',
+            'source_instance' => null,
+            'shared_databases' => [['slug' => 'app', 'driver' => 'pgsql']],
+        ];
+        MockClient::global([
+            CreateInstanceRequest::class => instance_mock_response(201, $payload),
+        ]);
+
+        $exitCode = Artisan::call('instance:create', [
+            'project' => '4',
+            'node' => '7',
+            'name' => 'feature-one',
+            '--from' => '12',
+            '--json' => true,
+        ]);
+        $output = trim(Artisan::output());
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->not->toContain('Copying Instance')
+            ->and($decoded['checkout_path'])->toBe('/srv/orbit/apps/acme/feature-one')
+            ->and($decoded['creation'])->toBe('copy')
+            ->and($decoded['copy_mode'])->toBe('full')
+            ->and($decoded['source_instance'])->toBeNull()
+            ->and($decoded['shared_databases'])->toBe([['slug' => 'app', 'driver' => 'pgsql']]);
+    });
+
+    it('refuses a source id that is not a positive integer before sending a request', function (string $from): void {
+        $mock = MockClient::global();
+
+        $exitCode = Artisan::call('instance:create', [
+            'project' => '4',
+            'node' => '7',
+            'name' => 'feature-one',
+            '--from' => $from,
+            '--json' => true,
+            '--no-interaction' => true,
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and(trim(Artisan::output()))
+            ->toBe(json_encode([
+                'error' => [
+                    'code' => 'instance.id_invalid',
+                    'message' => 'Instance ID must be a positive integer.',
+                    'request_id' => null,
+                ],
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+        $mock->assertNothingSent();
+    })->with(['0', '-1', 'abc', '1.5', '']);
+
+    it('renders a missing copy source from the Gateway without progress text', function (): void {
+        MockClient::global([
+            CreateInstanceRequest::class => MockResponse::make([
+                'error' => [
+                    'code' => 'instance.copy_source_missing',
+                    'message' => 'The source Instance does not exist.',
+                ],
+            ], 404, ['X-Orbit-Request-Id' => instance_request_id()]),
+        ]);
+
+        $exitCode = Artisan::call('instance:create', [
+            'project' => '4',
+            'node' => '7',
+            'name' => 'feature-one',
+            '--from' => '12',
+            '--json' => true,
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and(trim(Artisan::output()))
+            ->toBe(json_encode([
+                'error' => [
+                    'code' => 'instance.copy_source_missing',
+                    'message' => 'The source Instance does not exist.',
+                    'request_id' => instance_request_id(),
+                ],
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+            ->and(Artisan::output())->not->toContain('Copying Instance');
     });
 });
 
@@ -590,6 +731,9 @@ describe('instance:show', function (): void {
             'Selected branch dev',
             'Branch override —',
             'Domain dev.orbit.test',
+            'Creation repository',
+            'Copy mode —',
+            'Copied from —',
             'URL https://dev.orbit.test',
             'No Processes.',
         );

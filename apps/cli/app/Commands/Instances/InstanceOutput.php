@@ -25,6 +25,9 @@ trait InstanceOutput
             'Selected branch' => $instance->selectedBranch,
             'Branch override' => $instance->branchOverride,
             'Domain' => $instance->domain,
+            'Creation' => $instance->creation,
+            'Copy mode' => $instance->copyMode,
+            'Copied from' => $instance->sourceInstance?->name,
             'URL' => $instance->url,
         ];
 

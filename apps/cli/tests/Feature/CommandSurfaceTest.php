@@ -595,6 +595,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'root' => null,
                 'domain' => null,
                 'branch' => null,
+                'from' => null,
                 'json' => false,
             ],
         ],

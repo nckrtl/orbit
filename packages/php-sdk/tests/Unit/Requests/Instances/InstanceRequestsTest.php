@@ -179,6 +179,81 @@ describe('Instance requests', function (): void {
             ->not->toHaveKey('branch');
     });
 
+    it('transports an optional source Instance id and preserves omission', function (): void {
+        $copy = new CreateInstanceRequest(
+            projectId: 4,
+            nodeId: 7,
+            name: 'feature-one',
+            root: 'public',
+            domain: 'feature.example.test',
+            branch: 'release',
+            sourceInstanceId: 12,
+        );
+        $created = new CreateInstanceRequest(projectId: 4, nodeId: 7, name: 'feature-one');
+
+        expect($copy->body()->all())
+            ->toBe([
+                'project_id' => 4,
+                'node_id' => 7,
+                'name' => 'feature-one',
+                'root' => 'public',
+                'domain' => 'feature.example.test',
+                'branch' => 'release',
+                'source_instance_id' => 12,
+            ])
+            ->and($created->body()->all())
+            ->not->toHaveKey('source_instance_id');
+    });
+
+    it('maps copy evidence, the checkout path, and shared database attachments', function (): void {
+        $payload = instance_gateway_data();
+        $payload['checkout_path'] = '/srv/orbit/apps/acme/feature-one';
+        $payload['creation'] = 'copy';
+        $payload['copy_mode'] = 'reflink';
+        $payload['source_instance'] = ['id' => 12, 'name' => 'default'];
+        $payload['shared_databases'] = [
+            ['slug' => 'app', 'driver' => 'mysql'],
+            ['slug' => 'cache', 'driver' => 'redis'],
+            ['slug' => '', 'driver' => 'mysql'],
+            ['driver' => 'pgsql'],
+        ];
+
+        $response = InstanceResponse::fromGatewayData($payload, instance_request_id());
+
+        expect($response->checkoutPath)
+            ->toBe('/srv/orbit/apps/acme/feature-one')
+            ->and($response->creation)
+            ->toBe('copy')
+            ->and($response->copyMode)
+            ->toBe('reflink')
+            ->and($response->sourceInstance?->toArray())
+            ->toBe(['id' => 12, 'name' => 'default'])
+            ->and($response->toArray()['shared_databases'])
+            ->toBe([
+                ['slug' => 'app', 'driver' => 'mysql'],
+                ['slug' => 'cache', 'driver' => 'redis'],
+            ]);
+    });
+
+    it('keeps a missing source as null and ignores an unsafe copy payload', function (): void {
+        $payload = instance_gateway_data();
+        $payload['creation'] = 'copy';
+        $payload['copy_mode'] = 'full';
+        $payload['source_instance'] = null;
+        $payload['shared_databases'] = ['app'];
+
+        $response = InstanceResponse::fromGatewayData($payload, instance_request_id());
+
+        expect($response->copyMode)
+            ->toBe('full')
+            ->and($response->sourceInstance)
+            ->toBeNull()
+            ->and($response->toArray()['source_instance'])
+            ->toBeNull()
+            ->and($response->sharedDatabases)
+            ->toBe([]);
+    });
+
     it('registers a caller-local source with typed confirmed values', function (): void {
         $registration = [
             'project' => [
@@ -396,6 +471,10 @@ function instance_gateway_data(): array
         'removal' => null,
         'transfer' => null,
         'deploy_steps' => [],
+        'creation' => 'repository',
+        'copy_mode' => null,
+        'source_instance' => null,
+        'shared_databases' => [],
     ];
 }
 

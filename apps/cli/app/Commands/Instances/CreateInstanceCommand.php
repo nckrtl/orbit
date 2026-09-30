@@ -22,6 +22,7 @@ final class CreateInstanceCommand extends GatewayCommand
         {--root= : Optional relative web-root override}
         {--domain= : Optional explicit Route domain}
         {--branch= : Optional explicit source branch}
+        {--from= : Numeric source Instance id. Copy that development checkout instead of cloning the repository.}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -30,6 +31,8 @@ final class CreateInstanceCommand extends GatewayCommand
     #[\Override]
     protected $help = <<<'HELP'
 Creates a development Instance. New production Instances require a candidate. Use instance:clone.
+
+A source Instance id copies another development Instance on the same Node instead of cloning the repository.
 HELP;
 
     public function handle(
@@ -54,6 +57,12 @@ HELP;
             return self::FAILURE;
         }
 
+        $sourceInstanceId = $this->sourceInstanceId();
+
+        if ($sourceInstanceId === false) {
+            return self::FAILURE;
+        }
+
         $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
@@ -69,9 +78,12 @@ HELP;
                 root: $this->stringOption('root'),
                 domain: $this->stringOption('domain'),
                 branch: $this->stringOption('branch'),
+                sourceInstanceId: $sourceInstanceId,
             ),
             InstanceResponse::class,
-            ['Create Instance', 'Creating Instance', 'Created Instance'],
+            $sourceInstanceId === null
+                ? ['Create Instance', 'Creating Instance', 'Created Instance']
+                : ['Copy Instance', 'Copying Instance', 'Copied Instance'],
         );
 
         if (! $instance instanceof InstanceResponse) {
@@ -87,5 +99,27 @@ HELP;
         $this->writeInstanceDetails($instance);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * The source Instance id from `--from`, null when the option is omitted, or false when it is not a positive integer.
+     */
+    private function sourceInstanceId(): int|false|null
+    {
+        $value = $this->option('from');
+
+        if ($value === null) {
+            return null;
+        }
+
+        $id = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+
+        if (! is_int($id)) {
+            $this->renderGatewayFailure('instance.id_invalid', 'Instance ID must be a positive integer.');
+
+            return false;
+        }
+
+        return $id;
     }
 }

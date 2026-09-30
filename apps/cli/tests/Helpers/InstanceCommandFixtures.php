@@ -32,6 +32,10 @@ function instance_payload(?array $removal = null): array
         'removal' => $removal,
         'transfer' => null,
         'deploy_steps' => [],
+        'creation' => 'repository',
+        'copy_mode' => null,
+        'source_instance' => null,
+        'shared_databases' => [],
     ];
 }
 

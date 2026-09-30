@@ -33,8 +33,8 @@ operations. Keep the public API typed and small.
 - Send `host_key_fingerprint` in a node add request. Parse
   `ssh_host_fingerprint` from a node response.
 - Keep Instance lifecycle transport limited to Project, Node, name, optional
-  root, optional Route domain, optional creation branch, explicit
-  source-profile recovery, and explicit force intent.
+  root, optional Route domain, optional creation branch, optional source
+  Instance id, explicit source-profile recovery, and explicit force intent.
   The Gateway owns placement, source, and Route policy.
 - Keep candidate clone transport limited to the numeric candidate Instance
   ID, destination Node ID, target name, preview name, optional branch, and

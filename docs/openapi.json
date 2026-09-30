@@ -4107,7 +4107,7 @@
         "tags": [
           "Instances"
         ],
-        "description": "Create a development Instance on an app-dev Node.\n\nCreates a development Instance. New production Instances require a candidate. Use instance:clone.",
+        "description": "Create a development Instance on an app-dev Node.\n\nCreates a development Instance. New production Instances require a candidate. Use instance:clone.\n\nA source Instance id copies another development Instance on the same Node instead of cloning the repository.",
         "requestBody": {
           "required": true,
           "content": {
@@ -4144,7 +4144,8 @@
                   },
                   "source_instance_id": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "description": "Numeric source Instance id. Copy that development checkout instead of cloning the repository."
                   }
                 },
                 "required": [

@@ -1452,8 +1452,10 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             return list(x.items()) if isinstance(x, dict) else [(o.get('name'), o) for o in x]
         opts = {k.replace('-', '_'): o['description'] for k, o in items(cmd['definition']['options'])}
         args = {k.replace('-', '_'): a['description'] for k, a in items(cmd['definition']['arguments'])}
+        # CLI flags whose API field uses another name.
+        aliases = {'instance:create': {'source_instance_id': 'from'}}.get(route['name'], {})
         for k, v in (body_schema.get('properties') or {}).items():
-            d = opts.get(k) or args.get(k)
+            d = opts.get(k) or args.get(k) or opts.get(aliases.get(k, ''), '')
             if d and 'description' not in v:
                 v['description'] = d
     if body_schema is not None:

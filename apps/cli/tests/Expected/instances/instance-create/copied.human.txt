@@ -1,0 +1,43 @@
+Copying Instance...
+
+┌  Copy Instance
+│
+├  ● Copied Instance
+│
+└  Copied Instance.
+
+
+┌  Instance: feature
+│
+├  ID                2
+│
+├  Project           acme
+│
+├  Node              app-dev
+│
+├  Status            active
+│
+├  Source layout     checkout
+│
+├  Checkout          /srv/orbit/apps/acme/feature
+│
+├  Vite port         5174
+│
+├  Root override     —
+│
+├  Effective root    public
+│
+├  Selected branch   feature
+│
+├  Branch override   feature
+│
+├  Domain            feature.acme.test
+│
+├  Creation          copy
+│
+├  Copy mode         reflink
+│
+├  Copied from       default
+│
+└  URL               https://feature.acme.test
+

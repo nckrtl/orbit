@@ -3032,7 +3032,7 @@ describe('development instance copies', function (): void {
             'node_id' => $this->node->id,
             'name' => 'feature',
             'source_instance_id' => $source->id,
-        ])->assertCreated()
+        ], ['X-Orbit-Request-Id' => fixture_request_id()])->assertCreated()
             ->assertJsonPath('data.creation', 'copy')
             ->assertJsonPath('data.copy_mode', 'reflink')
             ->assertJsonPath('data.source_instance.id', $source->id)
@@ -3045,6 +3045,7 @@ describe('development instance copies', function (): void {
             ->assertJsonPath('data.domain', 'feature.acme.test')
             ->assertJsonPath('data.url', 'https://feature.acme.test')
             ->assertJsonPath('data.shared_databases', []);
+        record_fixture($response, 'instances/instance-create/copied', CreateInstanceRequest::class, 'POST /api/v1/instances');
 
         expect($copier->inspections)->toBe(1)
             ->and($copier->copies)->toBe(1)

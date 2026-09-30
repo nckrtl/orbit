@@ -35,7 +35,11 @@ use SensitiveParameter;
  *     url: string|null,
  *     removal: array<string, bool|int|string|null>|null,
  *     transfer: array<string, mixed>|null,
- *     deploy_steps: list<array{name: string, phase: string, command: string, timeout_seconds: int}>
+ *     deploy_steps: list<array{name: string, phase: string, command: string, timeout_seconds: int}>,
+ *     creation: string,
+ *     copy_mode: string|null,
+ *     source_instance: array{id: int, name: string}|null,
+ *     shared_databases: list<array{slug: string, driver: string}>
  * }
  * @phpstan-type InstanceRecord array{
  *     id: int,
@@ -62,6 +66,10 @@ use SensitiveParameter;
  *     removal: array<string, bool|int|string|null>|null,
  *     transfer: array<string, mixed>|null,
  *     deploy_steps: list<array{name: string, phase: string, command: string, timeout_seconds: int}>,
+ *     creation: string,
+ *     copy_mode: string|null,
+ *     source_instance: array{id: int, name: string}|null,
+ *     shared_databases: list<array{slug: string, driver: string}>,
  *     request_id: string
  * }
  */
@@ -94,6 +102,11 @@ final readonly class InstanceResponse
         public array $deploySteps,
         public string $requestId,
         public ?int $vitePort = null,
+        public string $creation = 'repository',
+        public ?string $copyMode = null,
+        public ?InstanceSourceIdentityResponse $sourceInstance = null,
+        /** @var list<InstanceSharedDatabaseResponse> */
+        public array $sharedDatabases = [],
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -129,6 +142,10 @@ final readonly class InstanceResponse
             transfer: self::transfer($data['transfer'] ?? null),
             deploySteps: self::parseDeploySteps($data['deploy_steps'] ?? []),
             requestId: $requestId,
+            creation: is_string($data['creation'] ?? null) && $data['creation'] !== '' ? $data['creation'] : 'repository',
+            copyMode: is_string($data['copy_mode'] ?? null) && $data['copy_mode'] !== '' ? $data['copy_mode'] : null,
+            sourceInstance: InstanceSourceIdentityResponse::tryFromGatewayData($data['source_instance'] ?? null),
+            sharedDatabases: self::sharedDatabases($data['shared_databases'] ?? null),
         );
     }
 
@@ -162,6 +179,13 @@ final readonly class InstanceResponse
             'deploy_steps' => array_map(
                 static fn (DeploymentStepResponse $step): array => $step->toArray(),
                 $this->deploySteps,
+            ),
+            'creation' => $this->creation,
+            'copy_mode' => $this->copyMode,
+            'source_instance' => $this->sourceInstance?->toArray(),
+            'shared_databases' => array_map(
+                static fn (InstanceSharedDatabaseResponse $database): array => $database->toArray(),
+                $this->sharedDatabases,
             ),
             'request_id' => $this->requestId,
         ];
@@ -253,5 +277,31 @@ final readonly class InstanceResponse
         }
 
         return InstanceTransferProgressResponse::fromGatewayData($transfer);
+    }
+
+    /** @return list<InstanceSharedDatabaseResponse> */
+    private static function sharedDatabases(#[SensitiveParameter] mixed $value): array
+    {
+        if (! is_array($value) || ! array_is_list($value)) {
+            return [];
+        }
+
+        $databases = [];
+
+        foreach ($value as $row) {
+            if (
+                ! is_array($row)
+                || ! is_string($row['slug'] ?? null)
+                || $row['slug'] === ''
+                || ! is_string($row['driver'] ?? null)
+                || $row['driver'] === ''
+            ) {
+                continue;
+            }
+
+            $databases[] = new InstanceSharedDatabaseResponse($row['slug'], $row['driver']);
+        }
+
+        return $databases;
     }
 }

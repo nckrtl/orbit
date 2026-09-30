@@ -27,6 +27,12 @@ Fetching Processes...
 │
 ├  Domain            dev.acme.test
 │
+├  Creation          repository
+│
+├  Copy mode         —
+│
+├  Copied from       —
+│
 └  URL               https://dev.acme.test
 
  ┌────┬───────────┬─────────┬─────────┬────────────────┬────────┐

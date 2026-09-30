@@ -716,6 +716,8 @@ export interface paths {
          * @description Create a development Instance on an app-dev Node.
          *
          *     Creates a development Instance. New production Instances require a candidate. Use instance:clone.
+         *
+         *     A source Instance id copies another development Instance on the same Node instead of cloning the repository.
          */
         post: operations["instance-create"];
         delete?: never;
@@ -5859,6 +5861,7 @@ export interface operations {
                     domain?: string;
                     /** @description Optional explicit source branch */
                     branch?: string;
+                    /** @description Numeric source Instance id. Copy that development checkout instead of cloning the repository. */
                     source_instance_id?: number;
                 };
             };

@@ -980,6 +980,7 @@
             "concepts": [
                 "Deployment",
                 "Gateway",
+                "Instance",
                 "Route",
                 "Task"
             ],
