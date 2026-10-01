@@ -119,7 +119,7 @@ An agent is a process of the Pi server and shares its user. It can read the serv
 - `orbit-worker` on beast is in `incus-admin`, so the home boundary there is policy.
 - Agents can read the Pi server token and the provider sign-in.
 - Token-bearing `git` uses a private git directory. Checkout programs, including filters and teardown, run as `orbit-worker`.
-- The Pi cutover saves `process:list` and `ORBIT_PI_TOKEN` before the new token file is installed. It copies session files and checks each open `external_id` before the scheduler starts. Rollback before destroy starts the stopped Process. Rollback after destroy removes any replacement named `pi-server`, confirms the name is absent, restores the saved token, and creates the saved spec.
+- The Pi cutover saves `process:list` and `ORBIT_PI_TOKEN` before the new token file is installed. It copies session files and checks each open `external_id` before the scheduler starts. Rollback before destroy starts the stopped Process. Rollback after destroy lists the Node and removes every `pi-server` row, including `failed` and `provisioning`, then confirms the name is absent, restores the saved token, and creates the saved spec.
 - `orbit-worker`'s global Git config lists each task checkout, the primary, and each bridge as `safe.directory`. The value is not `*`.
 - Existing primary-checkout registrations are copied to `/var/lib/orbit/e2e-primary-checkouts/` before teardown runs as `orbit-worker`.
 - The unit file is mode `0644`. `User=` is not a secret.
