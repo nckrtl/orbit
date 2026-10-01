@@ -73,10 +73,10 @@ Set the managed home to mode `0700` when the apps root is outside it. Set it to 
 
 Build the binary on a workstation with `bun run build:linux` in `apps/pi-server`. It writes `dist/pi-server-linux-x64` and `dist/pi-server-linux-arm64`. Each is one file that includes the Bun runtime.
 
-The files belong to `orbit-worker`. `orbit-worker` has no sudo, so the managed user runs these steps and `sudo -u orbit-worker -H` does the work inside that account:
+The files belong to `orbit-worker`. `orbit-worker` has no sudo, so the managed user runs these steps and `sudo -u orbit-worker -H` does the work inside that account. On a Node that does not already run Pi, step 2 also sets `ORBIT_PI_TOKEN` on the Gateway. On a Node that already runs Pi, leave that Gateway value unchanged. [Roll out orbit-worker on beast](#roll-out-orbit-worker-on-beast) sets it after the copied sessions have been checked.
 
 1. Copy the binary for the Node's architecture to `/home/orbit-worker/.local/bin/pi-server` and make it executable. `sudo install -o orbit-worker -g orbit-worker -m 0755` writes it.
-2. Write a random token of at least 32 characters to `/home/orbit-worker/.pi/agent/orbit-token` with mode `600`, as `orbit-worker`. Set the same value as `ORBIT_PI_TOKEN` on the Gateway.
+2. Write a random token of at least 32 characters to `/home/orbit-worker/.pi/agent/orbit-token` with mode `600`, as `orbit-worker`.
 3. [Connect through CLIProxyAPI](#connect-through-cliproxyapi), or complete device-code sign-in as `orbit-worker`: `sudo -u orbit-worker -H /home/orbit-worker/.local/bin/pi-server login openai-codex`.
 
 Then register the Process from a machine with the Orbit CLI. Replace the address with the Node's WireGuard address and the root with its apps path:
@@ -110,12 +110,17 @@ An agent is a process of the Pi server and shares its user. It can read `/home/o
 
 beast is the Node that runs Pi for Orbit's tasks, and task agents there run `incus`. Use the same cutover on any Node that already runs `pi-server` as the managed user. Deploy the Gateway that grants the workspace ACL, runs checks and teardown as `orbit-worker`, and isolates token-bearing `git` before this cutover. An agent cannot write a checkout until the ACL exists, and a check cannot start until the account exists.
 
-Follow [Roll out a new binary](#roll-out-a-new-binary) until no Pi session you will restart is `working`. Leave the scheduler stopped, and stop the `pi-server` Process. Confirm no `pi-server` process remains. Create the account with [Host setup](#host-setup), and on beast add `orbit-worker` to `incus-admin`. Install the binary, token, and provider sign-in under `/home/orbit-worker`.
+Follow [Roll out a new binary](#roll-out-a-new-binary) until no Pi session you will restart is `working`. Leave the scheduler stopped, and stop the `pi-server` Process. Confirm no `pi-server` process remains.
 
-Apply the ACL to each existing development checkout as the managed user. The command is the same recursive grant prepare uses, including `.git`, because `git commit` creates `index.lock` in that directory. The example uses `orbit`. Substitute the managed user when the name differs:
+Save the installed spec and the Gateway token before [Install on a Node](#install-on-a-node). `orbit process:list --node=NODE --json` lists Node Processes. `process:show` does not: it shows a Project definition and requires `--project`. Keep the object whose `name` is `pi-server`, including `id`, `user`, `working_directory`, `runtime_config`, `restart_policy`, and `keep_alive`. A null `user` is the managed user. The command and its token-file path are in `runtime_config`. Record the current Gateway `ORBIT_PI_TOKEN` beside that object. Leave the old token file in place.
+
+Create the account with [Host setup](#host-setup), and on beast add `orbit-worker` to `incus-admin`. Install the binary, the new token file, and the provider sign-in under `/home/orbit-worker`. Do not change `ORBIT_PI_TOKEN` in that install.
+
+Apply the ACL to each existing development checkout as the managed user. The command is the same recursive grant prepare uses, including `.git`, because `git commit` creates `index.lock` in that directory. Then add that checkout's absolute path to `safe.directory` in `orbit-worker`'s global Git config. Git 2.55 ignores the key in the checkout's own config, and the ACL does not change the directory owner. Do not set `*`. The example uses `orbit`. Substitute the managed user and the checkout path:
 
 ```bash
 setfacl -R -m u:orbit-worker:rwX,u:orbit:rwX -m d:u:orbit-worker:rwX,d:u:orbit:rwX -- /srv/orbit/apps/PROJECT/CHECKOUT
+sudo -u orbit-worker -H git config --global --add safe.directory /srv/orbit/apps/PROJECT/CHECKOUT
 ```
 
 Copy primary-checkout registrations before any task teardown runs as `orbit-worker`. [Primary registration](/reference/instance-setup#primary-registration) is the procedure. A registration left only in the managed user's home is invisible to the helper, and the helper then leaves the bridge in place.
@@ -126,7 +131,7 @@ Confirm a private directory of the managed home, such as `.ssh`, is mode `0700`.
 
 The default session directory is `<agent dir>/orbit-sessions`. For the managed user that is `/home/orbit/.pi/agent/orbit-sessions`. The new Process uses `/home/orbit-worker/.pi/agent/orbit-sessions`. The server does not move the files. Each session is one `<id>.orbit.json` record and one `<timestamp>_<id>.jsonl` transcript. The Gateway's `external_id` is that `<id>`.
 
-Save the Process and the Gateway token before destroy. The Process is already stopped. `orbit process:show pi-server --json` is the spec. Record its user, command, working directory, and token-file path, and record the Gateway `ORBIT_PI_TOKEN`. Leave the old token file in place. Do not change `ORBIT_PI_TOKEN` until the session copy has been checked.
+The spec and `ORBIT_PI_TOKEN` were saved before install. Do not destroy the Process, and do not change `ORBIT_PI_TOKEN`, until the session copy has been checked.
 
 Copy while `pi-server` is stopped. On the same filesystem, copy the `*.orbit.json` and `*.jsonl` files into `/home/orbit-worker/.pi/agent/orbit-sessions.migrate`. Leave every other file behind. Set the directory to mode `0700` and the files to mode `0600`, owned by `orbit-worker:orbit-worker`. When the destination `orbit-sessions` already contains a file, stop and do not merge over it.
 
@@ -134,13 +139,15 @@ Rename the staging directory to `orbit-sessions` only after the copy is complete
 
 Check the copy before the Process is destroyed. From [`tasks:agents`](/cli/tasks#orbit-tasksagents), take each `pi` thread whose task is not completed or cancelled, and skip an `external_id` that starts with `pending:`. For every other id, the destination has exactly one `<id>.orbit.json` and exactly one file ending in `_<id>.jsonl`. Each file's size and SHA-256 match the source. A missing id, a second transcript, or a checksum mismatch stops the cutover.
 
-When the copy or a checksum fails, delete the staging directory and leave the source. Start the stopped Process. It still exists. `ORBIT_PI_TOKEN` is still the saved value. `GET /sessions/{external_id}` for one id already stored on that server returns the session. Start the scheduler only after that read. This rollback is available only before destroy.
+When the copy or a checksum fails, delete the staging directory and leave the source. Start the stopped Process. It still exists. Install did not change `ORBIT_PI_TOKEN`, so the Gateway token still matches that Process. `GET /sessions/{external_id}` for one id already stored on that server returns the session. Start the scheduler only after that read. This rollback is available only before destroy.
 
-When the copy matches, destroy the old Process and create it again with `--user=orbit-worker` and the paths under `/home/orbit-worker`. Create has no update. Set `ORBIT_PI_TOKEN` to the token in `/home/orbit-worker/.pi/agent/orbit-token`, then start the new Process. Do not start the scheduler yet.
+When the copy matches, destroy the old Process by its saved `id`. [`process:list`](/cli/process#orbit-processlist) `--node=NODE --json` then has no `name` of `pi-server`. Create the replacement with `--user=orbit-worker` and the paths under `/home/orbit-worker`. Create has no update. If that create fails, the name is already absent. Use the rollback below, and do not destroy a record that is not there.
 
-`GET /sessions/{external_id}` for every id checked above returns the session, not `session_not_found` and not an authentication failure. Start the scheduler with [`process:start`](/cli/process#orbit-processstart) only after those reads. Confirm a session can create a file in a task workspace, and `orbit-worker` cannot read `/home/orbit/.ssh`. Keep the old session directory and the old token file until those reads succeed. Deleting the old binary, the old token, and the old session directory is a separate step after that.
+After a successful create, set `ORBIT_PI_TOKEN` to the token in `/home/orbit-worker/.pi/agent/orbit-token`, then start the new Process. Do not start the scheduler yet. `GET /sessions/{external_id}` for every id checked above returns the session, not `session_not_found` and not an authentication failure. Start the scheduler with [`process:start`](/cli/process#orbit-processstart) only after those reads. Confirm a session can create a file in a task workspace, and `orbit-worker` cannot read `/home/orbit/.ssh`. Keep the old session directory and the old token file until those reads succeed. Deleting the old binary, the old token, and the old session directory is a separate step after that.
 
-After the old Process has been destroyed, start does not bring it back. Stop the new Process, restore `ORBIT_PI_TOKEN` to the saved value, and create the old Process again from the saved spec, including its user, command, and token file. That Process reads the old session directory. Do not start the scheduler until `GET /sessions/{external_id}` succeeds against it. A Gateway token that still names the new file fails authentication against the old server.
+After the old Process has been destroyed, start does not bring it back. Stop the replacement when it is running. When the list still contains `pi-server`, destroy that `id`. A create of the saved name while that record exists returns `process.name_taken` and changes nothing. List again and confirm the name is absent. When the replacement create never succeeded, the name is already absent, so there is nothing to destroy.
+
+Restore `ORBIT_PI_TOKEN` to the value saved before install. Create the old Process from the saved object: the same command, working directory, user, restart policy, and keep-alive, with the old token file. That Process reads the old session directory. Do not start the scheduler until `GET /sessions/{external_id}` succeeds against it. A Gateway token that still names the new file fails authentication against the old server.
 
 ## Agent tools
 

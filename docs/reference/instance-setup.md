@@ -59,6 +59,8 @@ When the Linux account `orbit-worker` exists, prepare and inspect run `setfacl -
 
 `git add`, `git checkout`, and `git commit` create `index.lock` in `.git` and rename it to `index`. They also create `HEAD.lock`, `packed-refs.lock`, `ORIG_HEAD`, `FETCH_HEAD`, and `COMMIT_EDITMSG` there. The `.git` directory has to be writable. The checkout root is writable too, so `orbit-worker` can rename `.git` and replace it. An ACL that skips `.git/config` or `.git/hooks` does not keep those files.
 
+Git 2.55 also refuses the checkout because the managed user owns it. The ACL does not change that owner, so a baseline `git` command fails closed until the path is trusted. Prepare and inspect add the checkout's absolute path to `safe.directory` in `orbit-worker`'s global Git config. Git reads that key only from protected config, so a value in `.git/config` does not count. The value is that path, not `*`. Removal deletes that one value.
+
 The ACL is not applied to the apps root or to either home. New files in the checkout stay readable and deletable by the other user. When the account does not exist, prepare sets no ACL and succeeds. When `setfacl` fails, prepare fails with `instance.clone_failed` and inspect fails with `instance.source_identity_invalid`. Neither records a new checkout. The managed user writes under `.git/orbit` only when `.git` and `.git/orbit` are directories it owns and not symbolic links.
 
 [Tasks](/reference/tasks#shared-instance) uses this ACL so task agents can write the workspace. [Host setup](/reference/pi-server#host-setup) creates the account. [Instance removal](/reference/instance-removal#checks-before-removal) still requires the managed user to own the directory.
@@ -236,6 +238,10 @@ fi
 ```
 
 For each staged link, `readlink` equals the source link, and the target directory exists. A broken link is not copied. `sudo mv` the staging directory to `/var/lib/orbit/e2e-primary-checkouts` only after that check. A rename on the same filesystem is one replacement. When the copy is interrupted, delete the staging directory and copy again. The source directory stays in place.
+
+The copied link is not enough. `orbit-worker` must walk every parent of the primary and of its worktree root. That root is the primary's `orbit.worktreeRoot`, and the default is `/fast/worktrees/orbit`. Grant `orbit-worker` and the managed user `rwX` on the primary's `.git`, including the directory root, with the same default ACL a task checkout gets. Grant write and execute on the worktree root, and the same recursive ACL on each existing bridge directory under it. Set the default ACL on the worktree root so a new bridge stays removable. Do not grant this on the managed home or on `.ssh`, `.config`, or `.pi`.
+
+Add the primary's absolute path, and the absolute path of each bridge, to `safe.directory` in `orbit-worker`'s global Git config. Use the checkout path itself, not `*`. Teardown and `bin/e2e-clone-bridge` run `git` in those trees as `orbit-worker`, and Git 2.55 rejects them while the managed user owns them.
 
 ### Record teardown
 

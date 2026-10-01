@@ -538,7 +538,7 @@ When the implementer cannot start, the subtask and the task become `failed`, and
 
 The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives in the Node's apps root like any development Instance.
 
-The checkout directory stays owned by the Node's managed user and group. When `orbit-worker` exists, prepare and inspect grant that user and the managed user `rwX` on the whole checkout, including `.git`. Git creates `index.lock` in that directory. The checkout root stays writable, so this grant does not keep Git configuration. [Checkout access](/reference/instance-setup#checkout-access) states the ACL. The grant does not cover either user's home. [ADR 0191](/decisions/0191-run-task-agents-as-a-dedicated-user) is the contract.
+The checkout directory stays owned by the Node's managed user and group. When `orbit-worker` exists, prepare and inspect grant that user and the managed user `rwX` on the whole checkout, including `.git`. Git creates `index.lock` in that directory. The checkout root stays writable, so this grant does not keep Git configuration. Git 2.55 also refuses the tree because the owner is the managed user. Prepare adds the absolute path to `safe.directory` in `orbit-worker`'s global Git config. [Checkout access](/reference/instance-setup#checkout-access) states both. The grant does not cover either user's home. [ADR 0191](/decisions/0191-run-task-agents-as-a-dedicated-user) is the contract.
 
 | Project setting | New workspace |
 | --- | --- |
