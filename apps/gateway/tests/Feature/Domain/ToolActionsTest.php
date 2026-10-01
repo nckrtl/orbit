@@ -326,7 +326,9 @@ describe(InstallToolAction::class, function (): void {
         $exception = tool_operation_exception(fn () => $action->execute(tool_install_data($node)));
 
         expect($exception->errorCode)
-            ->toBe('tool.manager_unavailable')
+            ->toBe('tool.manager_unsupported')
+            ->and($exception->status)
+            ->toBe(422)
             ->and($manager->calls)
             ->toBe(['validatePackage'])
             ->and($lock->runs)

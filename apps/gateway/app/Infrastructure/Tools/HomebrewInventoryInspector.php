@@ -100,7 +100,9 @@ final readonly class HomebrewInventoryInspector
     private function macInventories(Node $node, array $toolIds): array
     {
         try {
-            $prefix = $this->mac->resolvePrefix($node);
+            $scope = $this->mac->resolveScope($node);
+            $prefix = $scope->prefix;
+            $home = $scope->home;
         } catch (ToolManagerException $exception) {
             $state = $this->stateFromPrefix($exception);
 
@@ -121,7 +123,7 @@ final readonly class HomebrewInventoryInspector
 
         return [
             $this->formulaScan($node, $prefix, $bottleTag, $toolIds),
-            $this->caskScan($node, $prefix, $bottleTag, $toolIds),
+            $this->caskScan($node, $prefix, $home, $bottleTag, $toolIds),
         ];
     }
 
@@ -153,7 +155,7 @@ final readonly class HomebrewInventoryInspector
     /**
      * @param  array<string, int>  $toolIds
      */
-    private function caskScan(Node $node, string $prefix, string $bottleTag, array $toolIds): ToolInventoryScan
+    private function caskScan(Node $node, string $prefix, ?string $home, string $bottleTag, array $toolIds): ToolInventoryScan
     {
         try {
             $result = $this->commands->execute(
@@ -171,7 +173,7 @@ final readonly class HomebrewInventoryInspector
                 return $this->blank(ToolManagerName::BrewCask, ToolInventoryScanState::Incomplete);
             }
 
-            $discoveries = $this->casks->interpretInstalledInventory($prefix, $bottleTag, $result);
+            $discoveries = $this->casks->interpretInstalledInventory($prefix, $home, $bottleTag, $result);
         } catch (ToolManagerException) {
             return $this->blank(ToolManagerName::BrewCask, ToolInventoryScanState::Incomplete);
         }

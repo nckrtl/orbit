@@ -256,6 +256,62 @@ describe(HomebrewInventoryInspector::class, function (): void {
         homebrew_inventory_assert_read_only($ssh);
     });
 
+    it('classifies an expanded home font as supported and a path outside that home as authorization', function (): void {
+        $home = '/Users/mini';
+        [$inspector] = homebrew_inventory_inspector([
+            homebrew_inventory_result("/opt/homebrew\n{$home}\n"),
+            homebrew_inventory_result("27.0.1\n"),
+            homebrew_inventory_result(homebrew_inventory_json()),
+            homebrew_inventory_names([]),
+            homebrew_inventory_result(homebrew_inventory_json([], [
+                homebrew_inventory_cask('font-hack', '2.0.0', artifacts: [[
+                    'font' => ['Hack-Regular.ttf'],
+                    'target' => $home.'/Library/Fonts/Hack-Regular.ttf',
+                ]]),
+                homebrew_inventory_cask('font-outside', '1.0.0', artifacts: [[
+                    'font' => ['Outside.ttf'],
+                    'target' => '/Users/other/Library/Fonts/Outside.ttf',
+                ]]),
+            ])),
+            homebrew_inventory_names(['font-hack', 'font-outside']),
+        ]);
+
+        $scans = $inspector->inspect(homebrew_inventory_node(saved: false));
+        $casks = [];
+        foreach ($scans[1]->packages as $package) {
+            $casks[$package->package] = $package;
+        }
+
+        expect($scans[1]->scanState)->toBe(ToolInventoryScanState::Complete)
+            ->and($casks['font-hack']->adoption)->toBe(ToolInventoryPackage::SUPPORTED)
+            ->and($casks['font-hack']->adoptionBlock)->toBeNull()
+            ->and($casks['font-hack']->installedVersion)->toBe('2.0.0')
+            ->and($casks['font-outside']->adoptionBlock)->toBe(ToolInventoryPackage::BLOCK_AUTHORIZATION);
+    });
+
+    it('keeps a scan complete when the account home is not a safe path', function (): void {
+        $home = '/Users/Ada Lovelace';
+        [$inspector] = homebrew_inventory_inspector([
+            homebrew_inventory_result("/opt/homebrew\n{$home}\n"),
+            homebrew_inventory_result("27.0.1\n"),
+            homebrew_inventory_result(homebrew_inventory_json()),
+            homebrew_inventory_names([]),
+            homebrew_inventory_result(homebrew_inventory_json([], [
+                homebrew_inventory_cask('font-hack', '2.0.0', artifacts: [[
+                    'font' => ['Hack-Regular.ttf'],
+                    'target' => $home.'/Library/Fonts/Hack-Regular.ttf',
+                ]]),
+            ])),
+            homebrew_inventory_names(['font-hack']),
+        ]);
+
+        $scans = $inspector->inspect(homebrew_inventory_node(saved: false));
+
+        expect($scans[0]->scanState)->toBe(ToolInventoryScanState::Complete)
+            ->and($scans[1]->scanState)->toBe(ToolInventoryScanState::Complete)
+            ->and($scans[1]->packages[0]->adoptionBlock)->toBe(ToolInventoryPackage::BLOCK_AUTHORIZATION);
+    });
+
     it('keeps an empty finished read complete and a failed read incomplete', function (CommandResult $formula, ToolInventoryScanState $state): void {
         [$inspector] = homebrew_inventory_inspector([
             homebrew_inventory_result("/opt/homebrew\n"),

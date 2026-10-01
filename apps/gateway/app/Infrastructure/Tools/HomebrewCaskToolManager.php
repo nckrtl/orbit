@@ -156,11 +156,12 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
             return null;
         }
 
-        [$prefix, $bottleTag, $result] = $metadata;
+        [$prefix, $home, $bottleTag, $result] = $metadata;
         $assessment = $this->assess(
             $this->forBottleTag($this->soleCask($result), $bottleTag, $result, 'candidate-version'),
             $package,
             $prefix,
+            $home,
             $result,
             'candidate-version',
         );
@@ -221,11 +222,12 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
             return new ToolAdoptionFact($installed, HomebrewCaskDiscovery::BLOCK_SOURCE);
         }
 
-        [$prefix, $bottleTag, $result] = $metadata;
+        [$prefix, $home, $bottleTag, $result] = $metadata;
         $assessment = $this->assess(
             $this->forBottleTag($this->soleCask($result), $bottleTag, $result, 'installed-version'),
             $package,
             $prefix,
+            $home,
             $result,
             'installed-version',
         );
@@ -282,11 +284,11 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
     {
         $this->guardSupportedNode($node);
         $this->checksumArchitecture($node);
-        $prefix = $this->mac->resolvePrefix($node);
+        $scope = $this->mac->resolveScope($node);
         $bottleTag = $this->mac->bottleTag($node);
         $result = $this->commands->execute(
             $node,
-            $this->mac->command($prefix, false, [
+            $this->mac->command($scope->prefix, false, [
                 'info',
                 '--json=v2',
                 '--cask',
@@ -296,11 +298,11 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
         );
         $this->guardSuccessfulResult($result, 'inventory', 'The Homebrew cask inventory probe failed.');
 
-        return $this->interpretInstalledInventory($prefix, $bottleTag, $result);
+        return $this->interpretInstalledInventory($scope->prefix, $scope->home, $bottleTag, $result);
     }
 
     /** @return list<HomebrewCaskDiscovery> */
-    public function interpretInstalledInventory(string $prefix, string $bottleTag, CommandResult $result): array
+    public function interpretInstalledInventory(string $prefix, ?string $home, string $bottleTag, CommandResult $result): array
     {
         if ($result->truncated) {
             throw $this->malformed($result, 'inventory', 'The Homebrew cask inventory was malformed.');
@@ -335,7 +337,7 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
 
             $seen[$cask->token] = true;
             $resolved = $this->forBottleTag($cask, $bottleTag, $result, 'inventory');
-            $assessment = $this->assess($resolved, $cask->token, $prefix, $result, 'inventory');
+            $assessment = $this->assess($resolved, $cask->token, $prefix, $home, $result, 'inventory');
             $installed = $this->readableInstalledVersion($cask);
 
             if ($assessment->supported() && $installed === null) {
@@ -368,11 +370,12 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
             );
         }
 
-        [$prefix, $bottleTag, $result] = $metadata;
+        [$prefix, $home, $bottleTag, $result] = $metadata;
         $assessment = $this->assess(
             $this->forBottleTag($this->soleCask($result), $bottleTag, $result, 'candidate-version'),
             $package,
             $prefix,
+            $home,
             $result,
             'candidate-version',
         );
@@ -384,13 +387,13 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
         throw new ToolManagerException($assessment->step, $assessment->message, $result);
     }
 
-    /** @return array{string, string, CommandResult}|null */
+    /** @return array{string, ?string, string, CommandResult}|null */
     private function metadata(Node $node, string $package, bool $refreshApi): ?array
     {
         $this->checksumArchitecture($node);
-        $prefix = $this->mac->resolvePrefix($node);
+        $scope = $this->mac->resolveScope($node);
         $bottleTag = $this->mac->bottleTag($node);
-        $result = $this->commands->execute($node, $this->mac->command($prefix, $refreshApi, [
+        $result = $this->commands->execute($node, $this->mac->command($scope->prefix, $refreshApi, [
             'info',
             '--json=v2',
             '--cask',
@@ -409,7 +412,7 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
             );
         }
 
-        return [$prefix, $bottleTag, $result];
+        return [$scope->prefix, $scope->home, $bottleTag, $result];
     }
 
     /**
@@ -420,7 +423,9 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
     private function requireRemovalAllowed(Node $node, string $package): string
     {
         $this->checksumArchitecture($node);
-        $prefix = $this->mac->resolvePrefix($node);
+        $scope = $this->mac->resolveScope($node);
+        $prefix = $scope->prefix;
+        $home = $scope->home;
         $bottleTag = $this->mac->bottleTag($node);
         $official = $this->commands->execute($node, $this->mac->command($prefix, false, [
             'info',
@@ -471,7 +476,7 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
             );
         }
 
-        $refusal = $this->removalRefusal($cask, $prefix, $result);
+        $refusal = $this->removalRefusal($cask, $prefix, $home, $result);
 
         if ($refusal !== null) {
             throw new ToolManagerException($refusal->step, $refusal->message, $result);
@@ -505,7 +510,7 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
         return $found;
     }
 
-    private function removalRefusal(stdClass $cask, string $prefix, CommandResult $result): ?HomebrewCaskAssessment
+    private function removalRefusal(stdClass $cask, string $prefix, ?string $home, CommandResult $result): ?HomebrewCaskAssessment
     {
         if (! is_array($cask->artifacts ?? null)) {
             throw $this->malformed($result, 'remove', 'The installed Homebrew cask metadata was malformed.');
@@ -521,7 +526,7 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
             }
         }
 
-        if ($this->authorizationBlock($cask, $prefix)) {
+        if ($this->authorizationBlock($cask, $prefix, $home)) {
             return $this->refusal(HomebrewCaskDiscovery::BLOCK_AUTHORIZATION);
         }
 
@@ -580,6 +585,7 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
         stdClass $cask,
         string $package,
         string $prefix,
+        ?string $home,
         CommandResult $result,
         string $malformedStep,
     ): HomebrewCaskAssessment {
@@ -593,13 +599,13 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
             return $this->refusal($source);
         }
 
-        $artifact = $this->artifactBlock($cask, $prefix);
+        $artifact = $this->artifactBlock($cask, $prefix, $home);
 
         if ($artifact !== null) {
             return $this->refusal($artifact);
         }
 
-        if ($this->authorizationBlock($cask, $prefix)) {
+        if ($this->authorizationBlock($cask, $prefix, $home)) {
             return $this->refusal('authorization_required');
         }
 
@@ -638,7 +644,7 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
         return null;
     }
 
-    private function artifactBlock(stdClass $cask, string $prefix): ?string
+    private function artifactBlock(stdClass $cask, string $prefix, ?string $home): ?string
     {
         if ($cask->disabled === true) {
             return HomebrewCaskDiscovery::BLOCK_ARTIFACT;
@@ -675,7 +681,7 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
                 }
 
                 foreach ($this->destinations($key, $artifact) as $path) {
-                    if ($this->pathClass($path, $prefix) === 'unsupported') {
+                    if ($this->pathClass($path, $prefix, $home) === 'unsupported') {
                         return HomebrewCaskDiscovery::BLOCK_ARTIFACT;
                     }
                 }
@@ -685,7 +691,7 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
         return $installKinds === 0 ? HomebrewCaskDiscovery::BLOCK_ARTIFACT : null;
     }
 
-    private function authorizationBlock(stdClass $cask, string $prefix): bool
+    private function authorizationBlock(stdClass $cask, string $prefix, ?string $home): bool
     {
         foreach ($cask->artifacts as $artifact) {
             if (! $artifact instanceof stdClass) {
@@ -698,7 +704,7 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
                 }
 
                 if ($key === 'uninstall') {
-                    if ($this->uninstallNeedsAuthorization($artifact->uninstall, $prefix)) {
+                    if ($this->uninstallNeedsAuthorization($artifact->uninstall, $prefix, $home)) {
                         return true;
                     }
 
@@ -714,7 +720,7 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
                 }
 
                 foreach ($this->destinations($key, $artifact) as $path) {
-                    if ($this->pathClass($path, $prefix) === 'authorization') {
+                    if ($this->pathClass($path, $prefix, $home) === 'authorization') {
                         return true;
                     }
                 }
@@ -745,7 +751,7 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
         return false;
     }
 
-    private function uninstallNeedsAuthorization(mixed $stanza, string $prefix): bool
+    private function uninstallNeedsAuthorization(mixed $stanza, string $prefix, ?string $home): bool
     {
         if (! is_array($stanza)) {
             return false;
@@ -776,7 +782,7 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
                 }
 
                 foreach ($paths as $path) {
-                    if ($this->pathClass($path, $prefix) !== 'user') {
+                    if ($this->pathClass($path, $prefix, $home) !== 'user') {
                         return true;
                     }
                 }
@@ -824,7 +830,7 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
         return ['relative/missing-target'];
     }
 
-    private function pathClass(string $path, string $prefix): string
+    private function pathClass(string $path, string $prefix, ?string $home): string
     {
         if ($path === '' || str_contains($path, '..') || preg_match('/[\x00-\x1F\x7F]/', $path) === 1) {
             return 'unsupported';
@@ -840,6 +846,7 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
             || $path === '$HOMEBREW_PREFIX'
             || str_starts_with($path, $prefix.'/')
             || $path === $prefix
+            || $this->insideResolvedHome($path, $home)
             || ! str_contains($path, '/');
 
         if ($userOwned) {
@@ -851,6 +858,19 @@ final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, To
         }
 
         return 'unsupported';
+    }
+
+    /**
+     * Homebrew expands /$HOME to the enrolled account's absolute home.
+     * Another account, /Applications, and system paths stay outside it.
+     */
+    private function insideResolvedHome(string $path, ?string $home): bool
+    {
+        if ($home === null || $home === '/' || str_contains($home, '..')) {
+            return false;
+        }
+
+        return $path === $home || str_starts_with($path, $home.'/');
     }
 
     private function checksumSatisfied(mixed $sha): bool

@@ -323,6 +323,116 @@ describe(HomebrewCaskToolManager::class, function (): void {
         ],
     ]);
 
+    it('accepts a font whose target Homebrew expanded inside the enrolled home', function (): void {
+        $home = '/Users/mini';
+        [$manager] = cask_manager([
+            cask_result("/opt/homebrew\n{$home}\n"),
+            cask_product(),
+            cask_result(cask_metadata([
+                'artifacts' => [[
+                    'font' => ['Hack-Regular.ttf'],
+                    'target' => $home.'/Library/Fonts/Hack-Regular.ttf',
+                ]],
+            ])),
+        ]);
+
+        expect($manager->candidateVersion(cask_node(), 'font-hack', ToolOperation::Install))->toBe('3.003');
+    });
+
+    it('refuses an expanded font path outside the enrolled home', function (string $target): void {
+        [$manager] = cask_manager([
+            cask_result("/opt/homebrew\n/Users/mini\n"),
+            cask_product(),
+            cask_result(cask_metadata([
+                'artifacts' => [[
+                    'font' => ['Hack-Regular.ttf'],
+                    'target' => $target,
+                ]],
+            ])),
+        ]);
+
+        expect(fn () => $manager->candidateVersion(cask_node(), 'font-hack', ToolOperation::Install))
+            ->toThrow(ToolManagerException::class, 'administrator authorization');
+    })->with([
+        'another account' => ['/Users/other/Library/Fonts/Hack-Regular.ttf'],
+        'home prefix of another account' => ['/Users/mini-other/Library/Fonts/Hack-Regular.ttf'],
+        'applications' => ['/Applications/Font Hack.app'],
+    ]);
+
+    it('allows uninstall trash inside the enrolled home and refuses a system font path', function (string $trash, ?string $message): void {
+        $home = '/Users/mini';
+        [$manager, $ssh] = cask_manager([
+            cask_result("/opt/homebrew\n{$home}\n"),
+            cask_product(),
+            cask_result(cask_metadata([
+                'artifacts' => [
+                    [
+                        'font' => ['Hack-Regular.ttf'],
+                        'target' => $home.'/Library/Fonts/Hack-Regular.ttf',
+                    ],
+                    ['uninstall' => [['trash' => $trash]]],
+                ],
+            ])),
+            cask_result("/opt/homebrew\n{$home}\n"),
+            cask_result(),
+        ]);
+
+        if ($message === null) {
+            $manager->remove(cask_node(), 'font-hack');
+            expect($ssh->arguments()[4])->toContain('uninstall');
+
+            return;
+        }
+
+        expect(fn () => $manager->remove(cask_node(), 'font-hack'))
+            ->toThrow(ToolManagerException::class, $message);
+        expect(json_encode($ssh->arguments()))->not->toContain('uninstall');
+    })->with([
+        'home trash' => ['/Users/mini/Library/Fonts/Hack-Regular.ttf', null],
+        'system font directory' => ['/Library/Fonts/Hack-Regular.ttf', 'administrator authorization'],
+    ]);
+
+    it('keeps the prefix when the account home is not a safe path', function (string $home): void {
+        [$manager] = cask_manager([
+            cask_result("/opt/homebrew\n{$home}\n"),
+            cask_product(),
+            cask_result(cask_metadata()),
+        ]);
+
+        expect($manager->candidateVersion(cask_node(), 'font-hack', ToolOperation::Install))->toBe('3.003');
+    })->with([
+        'space' => ['/Users/Ada Lovelace'],
+        'at sign' => ['/Users/mini@mac'],
+        'filesystem root' => ['/'],
+        'traversal' => ['/Users/mini/../other'],
+    ]);
+
+    it('does not treat an absolute path as user-owned when the home was ignored', function (): void {
+        $home = '/Users/Ada Lovelace';
+        [$manager] = cask_manager([
+            cask_result("/opt/homebrew\n{$home}\n"),
+            cask_product(),
+            cask_result(cask_metadata([
+                'artifacts' => [[
+                    'font' => ['Hack-Regular.ttf'],
+                    'target' => $home.'/Library/Fonts/Hack-Regular.ttf',
+                ]],
+            ])),
+        ]);
+
+        expect(fn () => $manager->candidateVersion(cask_node(), 'font-hack', ToolOperation::Install))
+            ->toThrow(ToolManagerException::class, 'administrator authorization');
+    });
+
+    it('rejects a prefix probe with an extra line', function (): void {
+        [$manager] = cask_manager([
+            cask_result("/opt/homebrew\n/Users/mini\nextra\n"),
+        ]);
+
+        expect(fn () => $manager->candidateVersion(cask_node(), 'font-hack', ToolOperation::Install))
+            ->toThrow(ToolManagerException::class, 'malformed output');
+    });
+
     it('redacts malformed cask metadata', function (): void {
         [$manager] = cask_manager([
             cask_prefix(),

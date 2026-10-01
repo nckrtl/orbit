@@ -126,7 +126,7 @@ final readonly class HomebrewMacCommand
         consider "$home/.homebrew"
 
         if [ -n "$valid" ] && [ "$saw_conflict" -eq 0 ]; then
-            printf '%s\n' "$valid"
+            printf '%s\n%s\n' "$valid" "$home"
             exit 0
         fi
         if [ "$saw_conflict" -eq 1 ]; then
@@ -140,6 +140,16 @@ final readonly class HomebrewMacCommand
     public function __construct(private RemoteToolCommandRunner $commands) {}
 
     public function resolvePrefix(Node $node): string
+    {
+        return $this->resolveScope($node)->prefix;
+    }
+
+    /**
+     * The prefix and the enrolled account home from one probe.
+     * A one-line fixture leaves the home unknown. The live probe prints both.
+     * An unsafe home is ignored so the prefix still works; classification stays conservative.
+     */
+    public function resolveScope(Node $node): HomebrewMacScope
     {
         $result = $this->commands->execute(
             $node,
@@ -171,8 +181,13 @@ final readonly class HomebrewMacCommand
 
         $lines = preg_split('/\R/', rtrim($result->stdout, "\r\n"));
         $prefix = is_array($lines) ? ($lines[0] ?? '') : '';
+        $reportedHome = is_array($lines) && count($lines) === 2 ? $lines[1] : null;
 
-        if (! is_array($lines) || count($lines) !== 1 || ! $this->isSafePrefix($prefix)) {
+        if (
+            ! is_array($lines)
+            || ! in_array(count($lines), [1, 2], true)
+            || ! $this->isSafePrefix($prefix)
+        ) {
             throw new ToolManagerException(
                 step: 'manager-probe',
                 message: 'The Homebrew prefix probe returned malformed output.',
@@ -180,7 +195,9 @@ final readonly class HomebrewMacCommand
             );
         }
 
-        return $prefix;
+        $home = is_string($reportedHome) && $this->isSafeHome($reportedHome) ? $reportedHome : null;
+
+        return new HomebrewMacScope($prefix, $home);
     }
 
     /**
@@ -279,5 +296,13 @@ final readonly class HomebrewMacCommand
             '/\A(?:\/opt\/homebrew|\/usr\/local|\/(?:[A-Za-z0-9._-]+\/)+homebrew|\/(?:[A-Za-z0-9._-]+\/)+\.homebrew)\z/D',
             $prefix,
         ) === 1 && ! str_contains($prefix, '..');
+    }
+
+    private function isSafeHome(string $home): bool
+    {
+        return $home !== '/'
+            && ! str_contains($home, '..')
+            && ! str_ends_with($home, '/')
+            && preg_match('/\A\/[A-Za-z0-9._\/-]+\z/D', $home) === 1;
     }
 }

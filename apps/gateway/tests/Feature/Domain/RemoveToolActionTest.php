@@ -66,7 +66,9 @@ describe(RemoveToolAction::class, function (): void {
         $exception = removal_tool_exception(fn () => $action->execute($tool));
 
         expect($exception->errorCode)
-            ->toBe('tool.manager_unavailable')
+            ->toBe('tool.manager_unsupported')
+            ->and($exception->status)
+            ->toBe(422)
             ->and($manager->calls)
             ->toBeEmpty()
             ->and($lock->runs)

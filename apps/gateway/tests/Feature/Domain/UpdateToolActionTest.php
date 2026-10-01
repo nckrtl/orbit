@@ -201,6 +201,20 @@ describe(UpdateToolAction::class, function (): void {
             ->toBe(0);
     });
 
+    it('rejects a manager the platform does not offer before the lock', function (): void {
+        [$action, $manager, $lock, $tool] = update_action_fixture();
+        $manager->supports = false;
+
+        $exception = update_action_exception(fn (): mixed => $action->execute($tool));
+
+        expect($exception->errorCode)->toBe('tool.manager_unsupported')
+            ->and($exception->status)->toBe(422)
+            ->and($manager->calls)->toBeEmpty()
+            ->and($lock->runs)->toBe(0)
+            ->and($tool->refresh()->status)->toBe(ToolStatus::Installed)
+            ->and($tool->error_code)->toBeNull();
+    });
+
     it('rejects inactive managers before manager probes', function (): void {
         $node = update_action_node();
         $record = update_action_manager($node, status: LifecycleStatus::Failed);

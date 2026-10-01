@@ -34,7 +34,7 @@ The Gateway has five managers, fixed in code. There is no plugin registry and no
 | `brew` | Linux and macOS | A verified Homebrew Core bottle | `/home/linuxbrew/.linuxbrew` on Linux; the existing prefix on macOS | Linux: pinned revision on first use. macOS: verified in place |
 | `brew-cask` | macOS only | An official Homebrew cask | That macOS prefix and its casks; shares the `brew` lock | Verified in place. Orbit does not install it |
 
-`apt` and `composer` are not offered on macOS, and `brew-cask` is not offered on Linux. Those requests return `tool.manager_unsupported` (HTTP 422) before SSH.
+`apt` and `composer` are not offered on macOS, and `brew-cask` is not offered on Linux. Install, update, removal, and adoption return `tool.manager_unsupported` (HTTP 422) before a lock or SSH. An absent or conflicting scope still returns `tool.manager_unavailable` (HTTP 409).
 
 On Linux, `composer` uses `COMPOSER_HOME=/opt/orbit/composer`. `vp` uses the first existing Vite+ store for the enrolled account, in this order: `/opt/orbit/vite-plus`, `~/.vite-plus`, then `~/.local/share/vite-plus`. Install, update, removal, and scan all use that store. A later store does not change the choice. The Gateway may install a missing Linux manager on first use.
 
@@ -253,7 +253,9 @@ Before install or update, the Gateway reads `brew info --json=v2 --cask` for tha
 
 `brew info --json=v2` returns the current arm64 definition as the base fields. Other Mac definitions are shallow overrides under `variations`, keyed by the same bottle tag formulae use (`sw_vers` plus the code-owned symbol table; arm64 prefixes the symbol, Intel uses the symbol alone). The Gateway applies `variations[<tag>]` before it checks the URL, version, checksum, and artifacts. `sha256` must be one lowercase SHA-256 on that definition. `no_check` fails the checksum policy. Discovery reports that checksum failure as `unsupported_artifact`.
 
-Supported artifacts install into the enrolled user's home or the Homebrew prefix. That includes fonts, binaries, man pages, completions, and user plugins whose target is `/$HOME`, `~/`, or `$HOMEBREW_PREFIX`. An app or suite that targets `/Applications`, a package installer, a privileged plugin, or an uninstall that uses `pkgutil`, `kext`, `launchctl`, or a system path is `authorization_required`. Preflight, postflight, stage-only, and arbitrary uninstall scripts are `unsupported_artifact`. A disabled cask is too. Zap stanzas are ignored and never run.
+Supported artifacts install into the enrolled user's home or the Homebrew prefix. That includes fonts, binaries, man pages, completions, and user plugins whose target is `/$HOME`, `~/`, or `$HOMEBREW_PREFIX`. `brew info --json=v2` expands a default home target to that account's absolute home, such as `/Users/mini/Library/Fonts/Hack.ttf`. The same expansion applies to uninstall `trash`, `delete`, and `rmdir` paths. An absolute path inside the resolved home is still the user's home.
+
+An app or suite that targets `/Applications`, another account's home, a package installer, a privileged plugin, or an uninstall that uses `pkgutil`, `kext`, `launchctl`, or a system path is `authorization_required`. Preflight, postflight, stage-only, and arbitrary uninstall scripts are `unsupported_artifact`. A disabled cask is too. Zap stanzas are ignored and never run.
 
 Removal does not repeat the disabled, checksum, version, or source gates. It still refuses an arbitrary uninstall script, a package installer, an app in `/Applications`, or any other uninstall that needs interactive or administrator authorization. A disabled, unchecksummed, or `latest` cask can still be removed when that uninstall is safe.
 

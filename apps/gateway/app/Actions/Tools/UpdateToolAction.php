@@ -364,10 +364,10 @@ final readonly class UpdateToolAction
         if (! $manager->supportsNode($node)) {
             throw $this->failure(
                 tool: $tool,
-                errorCode: 'tool.manager_unavailable',
+                errorCode: 'tool.manager_unsupported',
                 outcome: ToolOutcome::ManagerFailed,
-                status: 409,
-                message: 'The tool manager is not available on this node.',
+                status: 422,
+                message: 'The requested tool manager is not supported.',
             );
         }
 

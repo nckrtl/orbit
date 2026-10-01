@@ -101,12 +101,12 @@ final readonly class InstallToolAction
 
         if (! $manager->supportsNode($node)) {
             throw $this->failure(
-                errorCode: 'tool.manager_unavailable',
+                errorCode: 'tool.manager_unsupported',
                 outcome: ToolOutcome::ManagerFailed,
-                status: 409,
+                status: 422,
                 data: $data,
                 manager: $managerName,
-                message: 'The tool manager is not available on this node.',
+                message: 'The requested tool manager is not supported.',
             );
         }
 
@@ -157,12 +157,12 @@ final readonly class InstallToolAction
 
         if (! $manager->supportsNode($node)) {
             throw $this->failure(
-                errorCode: 'tool.manager_unavailable',
+                errorCode: 'tool.manager_unsupported',
                 outcome: ToolOutcome::ManagerFailed,
-                status: 409,
+                status: 422,
                 data: $data,
                 manager: $managerName,
-                message: 'The tool manager is not available on this node.',
+                message: 'The requested tool manager is not supported.',
             );
         }
 

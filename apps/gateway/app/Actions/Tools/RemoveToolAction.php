@@ -184,7 +184,7 @@ final readonly class RemoveToolAction
         $manager = $this->managers->find($record->name);
 
         if (! $manager instanceof ToolManager || ! $manager->supportsNode($node)) {
-            throw $this->failure($tool, 'tool.manager_unavailable', 409, 'The tool manager is not available.');
+            throw $this->failure($tool, 'tool.manager_unsupported', 422, 'The requested tool manager is not supported.');
         }
 
         return [$node, $record, $manager];
