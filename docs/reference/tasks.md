@@ -596,9 +596,9 @@ Before every agent turn, the Gateway fetches `origin` in the task workspace. The
 
 The command is `git fetch --no-tags`. It uses the repository [read token](/reference/github-app#how-orbit-reads-a-repository), not the token that publishes the pull request. The read token is `contents: read` for that one repository. It is passed through the environment of that one command, as for any other read. It never appears in the origin URL, the arguments, `.git/config`, or a file on the Node.
 
-The fetch asks for the Project's default branch and for `task-{id}`. When the pull request base is not the default branch, the fetch asks for that base too. Before a pull request exists, a missing `task-{id}` ref is skipped, and that skip is not a failure. The fetch updates those remote-tracking refs. It does not check out, merge, rebase, or move the task branch.
+The fetch asks for the Project's default branch and for `task-{id}`. When the pull request base is not the default branch, the fetch asks for that base too. A missing `task-{id}` ref is not a failure of this fetch, with or without a pull request. That exemption belongs to the turn. [Resumed preparation](#fix-a-settling-pull-request) decides a missing task branch on its own. The fetch updates remote-tracking refs and does not move `HEAD`. It does not check out, merge, or rebase.
 
-When the fetch fails, the turn still starts, and its message notes the failure. The agent holds no GitHub token. Every turn prompt says that the agent must not fetch and must not push. Orbit fetches, and it [publishes](#pull-request-and-settle-metrics) the approved commit itself.
+When the fetch fails, the turn still starts. Its message says the fetch failed and warns that `origin/*` may be stale. This note is not the blocking retry for [resumed preparation](#fix-a-settling-pull-request). The agent holds no GitHub token. Every turn prompt says that the agent must not fetch and must not push. Orbit fetches, and it [publishes](#pull-request-and-settle-metrics) the approved commit itself.
 
 ### Turn receipt
 
@@ -823,9 +823,9 @@ When the last fixup changed nothing, the task asks for assistance and adds `Fixu
 
 A `todo` subtask on a `settling` task, a fixup or an operator's subtask, returns the task to `running`. This works when the pull request is open, and when the task has no `pr_url`. Another assistance cause keeps the task `settling`.
 
-A fixup reuses the [fetch before a turn](#fetch-before-a-turn). It does not fetch again. That fetch already updates `origin/task-{id}` and, when the pull request base is not the default branch, `origin/{base}`.
+Before that subtask starts, the Gateway prepares the workspace. It reuses the [fetch before a turn](#fetch-before-a-turn) instead of fetching again. That fetch already updates `origin/task-{id}` and, when the pull request base is not the default branch, `origin/{base}`. The Gateway then fast-forwards the workspace to `origin/task-{id}` when the workspace is strictly behind that ref. It never forces. A workspace that is level, ahead, or diverged stays unchanged.
 
-Before the subtask's first turn, the Gateway fast-forwards the workspace to `origin/task-{id}` when the workspace is strictly behind that ref. It never forces. A workspace that is level, ahead, or diverged stays unchanged. When the task has no pull request and `task-{id}` is not on `origin`, there is nothing to fast-forward. A failed fetch or fast-forward does not keep the subtask `todo` and does not ask for assistance. The turn proceeds, and its message notes the failure.
+When the task has no pull request and `task-{id}` is not on `origin`, there is nothing to fast-forward, and that absence is not a failure of this preparation. A failed fetch or fast-forward keeps the subtask `todo`, retries on the same backoff, and asks for assistance on the fifth failure. That blocking retry is only for this preparation. An ordinary agent turn still starts when its own fetch fails, and its message warns that `origin/*` may be stale.
 
 The fixup runs like any subtask, with a fresh implementer and a fresh reviewer. Its approval needs no pull request fields, and its push updates the open pull request. Orbit does not rebase, does not force-push, does not open a second pull request, and does not merge.
 
@@ -1072,9 +1072,11 @@ The default branch and the pull request base move while a task is open. A turn t
 
 The fetch names only the default branch, `task-{id}`, and the pull request base when that base differs. `--no-tags` keeps the read to those branches. Tags are not part of the review. The read token cannot push, so a command that runs with it cannot publish the branch.
 
-A failed fetch does not stop the turn. The checkout is already on the Node, and the message notes the failure. A retry that holds the turn would stall every subtask on one GitHub error. The agent keeps working with the last fetched refs.
+A missing `task-{id}` ref is not a failure of the turn fetch, whether or not a pull request exists. The branch is absent until Orbit publishes it. Resumed preparation still treats a missing task branch as a failure when a pull request exists, because that preparation expects the published branch.
 
-A fixup reuses this fetch instead of a second one. It needs `origin/task-{id}` and the pull request base, and those refs are already in the set. A second fetch would repeat the read. A failure of that second fetch would hold the subtask, even though the turn can continue.
+When an ordinary turn's fetch fails, the turn still starts. The message says the fetch failed and warns that `origin/*` may be stale. Holding every ordinary turn for a retry would stall the task on one GitHub error. The agent keeps working with the last fetched refs.
+
+A resumed fixup reuses this fetch instead of a second one. It needs `origin/task-{id}` and the pull request base, and those refs are already in the set. The preparation still fast-forwards a workspace that is strictly behind, and it never forces. A failed preparation keeps the subtask `todo`, retries on the same backoff, and asks for assistance on the fifth failure. The subtask has not started, so a stale base would make the fixup merge the wrong commits. That wait does not apply to an ordinary turn.
 
 An agent holds no GitHub token and never fetches or pushes. A token in the agent environment would land in the transcript or the workspace. The Gateway fetches with the read token, and it pushes an approved commit with the write token.
 
