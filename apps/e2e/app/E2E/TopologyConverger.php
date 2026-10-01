@@ -278,10 +278,7 @@ final readonly class TopologyConverger
                 $script = $commands[$label]['script'];
                 $instance = $commands[$label]['instance'];
 
-                throw new RuntimeException(
-                    "Guest convergence script {$script} failed on {$instance} "
-                    ."with exit code {$result->exitCode}{$this->failureDetails($script, $result)}.",
-                );
+                throw new RuntimeException($this->guestFailure($script, $instance, $result));
             }
         }
     }
@@ -315,10 +312,7 @@ final readonly class TopologyConverger
         );
 
         if (! $result->successful()) {
-            throw new RuntimeException(
-                "Guest convergence script {$script} failed on {$instance} "
-                ."with exit code {$result->exitCode}{$this->failureDetails($script, $result)}.",
-            );
+            throw new RuntimeException($this->guestFailure($script, $instance, $result));
         }
 
         return $result;
@@ -337,13 +331,16 @@ final readonly class TopologyConverger
             }
 
             if ($attempt === self::INSTANCE_API_READINESS_ATTEMPTS) {
-                throw new RuntimeException(
+                throw new RuntimeException($this->guestFailure(
+                    'converge-sample-app.sh',
+                    $instance,
+                    $result,
                     'Guest convergence readiness action converge-sample-app.sh instance-api-readiness failed '
                     ."on {$instance} after "
                     .self::INSTANCE_API_READINESS_ATTEMPTS
                     ." attempts; probe instance:list --json failed on attempt {$attempt} "
                     ."with exit code {$result->exitCode}.",
-                );
+                ));
             }
 
             if ($this->instanceApiReadinessRetryDelayMicroseconds > 0) {
@@ -495,7 +492,19 @@ final readonly class TopologyConverger
         ];
     }
 
-    private function failureDetails(string $script, GuestCommandResult $result): string
+    private function guestFailure(
+        string $script,
+        string $instance,
+        GuestCommandResult $result,
+        ?string $message = null,
+    ): string {
+        $message ??= "Guest convergence script {$script} failed on {$instance} "
+            ."with exit code {$result->exitCode}{$this->stepSuffix($script, $result)}.";
+
+        return (new GuestFailureDetail)->append($message, $result->stderr);
+    }
+
+    private function stepSuffix(string $script, GuestCommandResult $result): string
     {
         $pattern = match (true) {
             $script === 'converge-gateway.sh' && $result->exitCode === 71 => '/(?:\A|\R)Gateway bootstrap failed at step \[([a-z0-9:-]+)\] with error \[([a-z0-9._-]+)\]\.(?:\R|\z)/D',

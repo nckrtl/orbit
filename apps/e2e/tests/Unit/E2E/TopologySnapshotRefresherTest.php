@@ -654,7 +654,7 @@ function refreshGuestProcess(array $guestArguments, string $target, object $stat
     }
 
     if ($guestArguments === ['/usr/local/bin/converge-sample-app.sh', 'inspect-state']) {
-        return Process::result('{"shape":"workspaces"}');
+        return Process::result('');
     }
 
     if (
