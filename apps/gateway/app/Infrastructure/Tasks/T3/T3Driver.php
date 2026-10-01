@@ -12,10 +12,10 @@ use App\Domain\Tasks\AgentMetricCollector;
 use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentThreadEvent;
 use App\Domain\Tasks\AgentThreadStart;
-use App\Domain\Tasks\TaskAgentDefaults;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Models\AgentThread;
 use App\Models\Node;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Str;
 
 final readonly class T3Driver implements AgentDriver, AgentMetricCollector
@@ -52,7 +52,7 @@ final readonly class T3Driver implements AgentDriver, AgentMetricCollector
             $thread->refresh();
             // A reserved resume key is the command id and the message id. T3 0.0.42 returns the
             // existing receipt for that command id, so a retry does not start a second turn (ADR 0167).
-            $this->creator->startTurn($this->node($thread), $thread->external_id, $message, T3ModelSelection::forModel($thread->model ?? '', $thread->effort ?? ($thread->role === 'reviewer' ? TaskAgentDefaults::ReviewerEffort : TaskAgentDefaults::ImplementerEffort)), $key);
+            $this->creator->startTurn($this->node($thread), $thread->external_id, $message, T3ModelSelection::forModel($thread->model ?? '', $thread->effort ?? Config::string($thread->role === 'reviewer' ? 'orbit.tasks.reviewer_effort' : 'orbit.tasks.implementer_effort')), $key);
         } finally {
             $this->sendLeases->release($thread, $leaseToken);
             $thread->refresh();

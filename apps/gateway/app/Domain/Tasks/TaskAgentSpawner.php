@@ -8,6 +8,7 @@ use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskComment;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
@@ -192,7 +193,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
             'external_id' => self::PendingPrefix.(string) Str::uuid(),
             'role' => $role->value,
             'model' => $reviewer ? $group->reviewer_model : $group->implementer_model,
-            'effort' => $reviewer ? TaskAgentDefaults::ReviewerEffort : TaskAgentDefaults::ImplementerEffort,
+            'effort' => config($reviewer ? 'orbit.tasks.reviewer_effort' : 'orbit.tasks.implementer_effort'),
         ]);
     }
 
@@ -250,7 +251,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
             $driver = $this->drivers->get($thread->driver);
             $externalId = $driver->create(new AgentThreadStart(
                 $instance->node, $instance, $title, $prompt,
-                $thread->model ?? '', $thread->effort ?? '', $role,
+                $thread->model ?? '', $thread->effort ?? Config::string($role === TaskThreadRole::Reviewer ? 'orbit.tasks.reviewer_effort' : 'orbit.tasks.implementer_effort'), $role,
             ));
         } catch (AgentDriverException) {
             Log::error('Agent conversation creation failed.', ['task_group_id' => $group->id, 'task_id' => $thread->task_id, 'role' => $thread->role]);

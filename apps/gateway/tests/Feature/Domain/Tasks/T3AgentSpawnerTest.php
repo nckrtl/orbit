@@ -159,8 +159,8 @@ it('spawns the group reviewer with its first review and a fresh implementer on t
     $reviewerCreate = $dispatcher->commands[1];
     $implementerProject = $dispatcher->commands[3];
     $implementerCreate = $dispatcher->commands[4];
-    $reviewerSelection = T3ModelSelection::forModel(TaskAgentDefaults::ReviewerModel, TaskAgentDefaults::ReviewerEffort);
-    $implementerSelection = T3ModelSelection::forModel(TaskAgentDefaults::ImplementerModel, TaskAgentDefaults::ImplementerEffort);
+    $reviewerSelection = T3ModelSelection::forModel(TaskAgentDefaults::ReviewerModel, 'high');
+    $implementerSelection = T3ModelSelection::forModel(TaskAgentDefaults::ImplementerModel, 'high');
 
     $task = $group->tasks->first();
     expect($reviewerCreate['title'])->toBe('Orbit task #'.$group->id.' · Review: '.$task->title)
@@ -319,7 +319,7 @@ it('sends the review request to the stored reviewer thread', function (): void {
         ->and($dispatcher->commands[0]['message']['text'])->toContain('The change list, summary and breaking list are yours to write: add a missing entry yourself instead of requesting changes.')
         ->and($dispatcher->commands[0]['message']['text'])->not->toContain('are the feature\'s contract.')
         ->and($dispatcher->commands[0]['message']['role'])->toBe('user')
-        ->and($dispatcher->commands[0]['modelSelection'])->toBe(T3ModelSelection::forModel(TaskAgentDefaults::ReviewerModel, TaskAgentDefaults::ReviewerEffort))
+        ->and($dispatcher->commands[0]['modelSelection'])->toBe(T3ModelSelection::forModel(TaskAgentDefaults::ReviewerModel, 'high'))
         ->and($dispatcher->commands[0]['runtimeMode'])->toBe('full-access')
         ->and($dispatcher->commands[0]['interactionMode'])->toBe('default');
 });
@@ -671,15 +671,18 @@ it('keeps persisted role links after workspace removal', function (): void {
         ->and($links[0]->id)->toBe($reviewer)
         ->and($links[0]->task_id)->toBe($group->tasks->firstOrFail()->id)
         ->and($links[0]->model)->toBe(TaskAgentDefaults::ReviewerModel)
-        ->and($links[0]->effort)->toBe(TaskAgentDefaults::ReviewerEffort)
+        ->and($links[0]->effort)->toBe('high')
         ->and($links[1]->id)->toBe($implementer)
         ->and($links[1]->task_id)->toBe($group->tasks->firstOrFail()->id)
         ->and($links[1]->model)->toBe(TaskAgentDefaults::ImplementerModel)
-        ->and($links[1]->effort)->toBe(TaskAgentDefaults::ImplementerEffort)
+        ->and($links[1]->effort)->toBe('high')
         ->and($links[1]->node_id)->not->toBeNull();
 });
 
-it('imports legacy thread links using the instance morph alias', function (string $scenario): void {
+it('imports legacy thread links and effort using the instance morph alias', function (string $scenario): void {
+    $configured = $scenario === 'configured effort';
+    config()->set('orbit.tasks.implementer_effort', $configured ? 'medium' : 'high');
+    config()->set('orbit.tasks.reviewer_effort', $configured ? 'medium' : 'high');
     $default = DB::getDefaultConnection();
     config()->set('database.connections.agent_migration', ['driver' => 'sqlite', 'database' => ':memory:', 'foreign_key_constraints' => true]);
     DB::setDefaultConnection('agent_migration');
@@ -706,7 +709,7 @@ it('imports legacy thread links using the instance morph alias', function (strin
             'reviewer_thread_id' => 'legacy-review', 'reviewer_model' => 'claude-opus-5', 'implementer_model' => 'gpt-5.6-luna',
         ]);
         $taskId = DB::table('tasks')->insertGetId(['task_group_id' => $groupId, 'position' => 1, 'title' => 'Legacy task', 'brief' => 'Legacy', 'implementer_thread_id' => 'legacy-implement']);
-        if ($scenario !== 'pointers') {
+        if ($scenario !== 'pointers' && ! $configured) {
             DB::table('task_agent_sessions')->insert([
                 'id' => 42, 'task_group_id' => $groupId, 'node_id' => $nodeId, 'task_id' => null,
                 'role' => $scenario === 'conflict' ? 'implementer' : 'reviewer', 'thread_id' => 'legacy-review',
@@ -724,9 +727,9 @@ it('imports legacy thread links using the instance morph alias', function (strin
         $links = AgentThread::query()->orderBy('id')->get();
         expect($links)->toHaveCount(2)
             ->and($links[0]->node_id)->toBe($nodeId)
-            ->and($links[0]->id)->toBe($scenario === 'pointers' ? 1 : 42)
-            ->and($links[0]->effort)->toBe('high')
-            ->and($links[1]->effort)->toBe('low')
+            ->and($links[0]->id)->toBe($scenario === 'pointers' || $configured ? 1 : 42)
+            ->and($links[0]->effort)->toBe($configured ? 'medium' : 'high')
+            ->and($links[1]->effort)->toBe($configured ? 'medium' : 'high')
             ->and($links[0]->model)->toBe('claude-opus-5')
             ->and($links[0]->driver)->toBe('t3')
             ->and($links[0]->runtime_key)->toBe('node:'.$nodeId)
@@ -738,7 +741,7 @@ it('imports legacy thread links using the instance morph alias', function (strin
         DB::setDefaultConnection($default);
         DB::purge('agent_migration');
     }
-})->with(['persisted', 'pointers', 'conflict']);
+})->with(['persisted', 'pointers', 'conflict', 'configured effort']);
 
 it('uses high effort for a reviewer follow-up when a legacy effort is absent', function (): void {
     $group = t3_spawner_group();

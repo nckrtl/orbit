@@ -169,7 +169,7 @@ it('starts an implementer turn with the T3 0.0.42 message struct', function (): 
             'attachments' => [],
         ])
         ->and($dispatcher->commands[0]['message']['text'])->toContain('Do not expand scope.')
-        ->and($dispatcher->commands[0]['modelSelection'])->toBe(T3ModelSelection::forModel(TaskAgentDefaults::ImplementerModel, TaskAgentDefaults::ImplementerEffort))
+        ->and($dispatcher->commands[0]['modelSelection'])->toBe(T3ModelSelection::forModel(TaskAgentDefaults::ImplementerModel, 'high'))
         ->and($dispatcher->commands[0]['runtimeMode'])->toBe('full-access')
         ->and($dispatcher->commands[0]['interactionMode'])->toBe('default');
 });

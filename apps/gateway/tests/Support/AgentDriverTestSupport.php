@@ -26,7 +26,7 @@ function test_agent_thread(Task $group, string $externalId, ?Task $task = null):
         'task_group_id' => $group->id, 'task_id' => $task?->id, 'node_id' => $nodeId,
         'role' => $task === null ? 'reviewer' : 'implementer',
         'model' => $task === null ? TaskAgentDefaults::ReviewerModel : TaskAgentDefaults::ImplementerModel,
-        'effort' => $task === null ? TaskAgentDefaults::ReviewerEffort : TaskAgentDefaults::ImplementerEffort,
+        'effort' => config($task === null ? 'orbit.tasks.reviewer_effort' : 'orbit.tasks.implementer_effort'),
     ]);
 }
 
