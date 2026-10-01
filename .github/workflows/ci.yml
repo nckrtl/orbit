@@ -16,7 +16,7 @@ concurrency:
 jobs:
   project:
     name: ${{ matrix.name }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:
@@ -62,10 +62,14 @@ jobs:
 
       - name: Install Gateway system dependencies
         if: matrix.directory == 'apps/gateway'
+        timeout-minutes: 10
+        env:
+          # A mirror that stops answering fails the request after 30 seconds and is retried, instead of hanging the job.
+          APT_OPTIONS: -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
         run: |
           sudo rm -f /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/google-chrome.sources
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends --yes acl attr wireguard-tools
+          sudo apt-get $APT_OPTIONS update
+          sudo apt-get $APT_OPTIONS install --no-install-recommends --yes acl attr wireguard-tools
           brew install caddy openssl@3
           id -u caddy >/dev/null 2>&1 || sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin caddy
           echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
@@ -195,7 +199,7 @@ jobs:
 
   api-reference:
     name: API reference
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - name: Check out repository
@@ -225,7 +229,7 @@ jobs:
 
   web:
     name: Web
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     defaults:
       run:
@@ -264,7 +268,7 @@ jobs:
 
   pi-server:
     name: Pi server
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     defaults:
       run:
@@ -293,7 +297,7 @@ jobs:
 
   agent-annotation:
     name: Agent annotation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     defaults:
       run:
@@ -325,7 +329,7 @@ jobs:
 
   agent:
     name: Rust agent
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     defaults:
       run:
         working-directory: apps/agent
@@ -354,7 +358,7 @@ jobs:
     name: Required checks
     if: always()
     needs: [project, api-reference, web, agent-annotation, pi-server, agent]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Require every project to pass
         env:
