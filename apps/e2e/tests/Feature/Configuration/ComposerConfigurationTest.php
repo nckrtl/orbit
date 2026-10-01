@@ -238,6 +238,9 @@ describe('Composer configuration', function (): void {
             ])
             ->and($steps['Run architecture tests']['run'])
             ->toContain('tests/Feature/CommandSurfaceTest.php')
+            // TIA does not link workflow files to the tests that read them, so these contracts always run on pull requests.
+            ->toContain('tests/Feature/CliBinaryBuildContractTest.php')
+            ->toContain('tests/Feature/Configuration/ComposerConfigurationTest.php')
             ->toContain('tests/Unit/Architecture')
             ->toContain('tests/Feature/Infrastructure/Instances/ConfiguredOriginReadTest.php')
             ->toContain('tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php')
