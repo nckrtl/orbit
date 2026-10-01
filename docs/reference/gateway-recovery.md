@@ -15,7 +15,7 @@ This guide helps an operator keep Gateway state safe during a source update and 
 
 ## Gateway request logs
 
-The Gateway logs an exception at `ERROR` when its response status is 500 or higher. A lower status is a client refusal. The Gateway does not log it, because [Activity](/cli/activity) already records the failed request.
+The Gateway logs an exception at `ERROR` when its response status is 500 or higher. A lower status is a client refusal. The Gateway does not log it, because [Activity](/cli/activity) already records the failed request. An invalid task definition is HTTP 422, so it is one of those refusals.
 
 Every log entry written during an HTTP request carries that request's `request_id`. When the request creates an Activity row, its `activity_log.request_id` has the same value. Search the Gateway logs for the Activity row's request ID to find all related request log entries.
 

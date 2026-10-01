@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Mcp;
 
+use App\Domain\Tasks\TaskDefinitionJson;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Http\Request;
@@ -25,6 +26,7 @@ final readonly class ApiDispatcher
     /** @param array<string, mixed> $arguments */
     public function dispatch(ToolDefinition $definition, array $arguments, Request $caller): ApiResult
     {
+        $arguments = $this->argumentsKeepingObjects($definition, $arguments, $caller->getContent());
         $path = $definition->path;
         $query = [];
 
@@ -68,6 +70,33 @@ final readonly class ApiDispatcher
             $this->app->instance('request', $caller);
             Facade::clearResolvedInstance('request');
         }
+    }
+
+    /**
+     * Laravel MCP decodes the JSON-RPC body associatively, which turns `{}` into a list.
+     * The caller's raw `params.arguments` still has the objects, so the API body keeps them.
+     *
+     * @param  array<string, mixed>  $arguments
+     * @return array<string, mixed>
+     */
+    private function argumentsKeepingObjects(ToolDefinition $definition, array $arguments, string $raw): array
+    {
+        $decoded = TaskDefinitionJson::decode($raw);
+        $params = is_array($decoded) ? ($decoded['params'] ?? null) : null;
+
+        if (! is_array($params) || ($params['name'] ?? null) !== $definition->name || ! is_array($params['arguments'] ?? null) || array_is_list($params['arguments'])) {
+            return $arguments;
+        }
+
+        $preserved = [];
+
+        foreach ($params['arguments'] as $key => $value) {
+            if (is_string($key)) {
+                $preserved[$key] = $value;
+            }
+        }
+
+        return $preserved;
     }
 
     private function body(Response $response): string

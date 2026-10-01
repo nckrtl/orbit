@@ -219,6 +219,8 @@ A create call that finds the same record already stored, such as an identical Pr
 
 No event reports a change of a Node's or an Instance's runtime state. A Node's status changes only through actions that already fire `node.*`. Hibernation keeps an Instance's awake state outside the Instance and Process records.
 
+Creating, replacing, or deleting a task definition fires nothing. The [web app](/reference/web-app#polling) loads definition lists and the definition view when those pages open.
+
 ## Node agent channels
 
 Each Node has a presence channel, `presence-node.{id}`. Its [Node agent](/reference/node-agent) publishes presence and Process state there. The Gateway broadcasts nothing on these channels. Its agent view subscriber joins every channel and keeps the latest state as the [Gateway view](/reference/node-agent#gateway-view).

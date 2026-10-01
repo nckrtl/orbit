@@ -14,8 +14,9 @@ final readonly class ProxyCliPoolCompiler
 
     /**
      * @param  list<ProxyCliAccount>  $accounts
+     * @param  list<ProxyCliModel>  $models
      */
-    public function compile(array $accounts, ?string $collectedAt): ProxyCliSnapshot
+    public function compile(array $accounts, ?string $collectedAt, array $models = []): ProxyCliSnapshot
     {
         $grouped = [];
 
@@ -34,7 +35,7 @@ final readonly class ProxyCliPoolCompiler
             );
         }
 
-        return new ProxyCliSnapshot($accounts, $providers, $collectedAt);
+        return new ProxyCliSnapshot($accounts, $providers, $collectedAt, $models);
     }
 
     /**

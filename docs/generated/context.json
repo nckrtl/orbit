@@ -535,6 +535,7 @@
                 "Subtask",
                 "Task",
                 "Task check",
+                "Task definition",
                 "Tool"
             ],
             "governing_adrs": []
@@ -580,6 +581,7 @@
                 "Subtask",
                 "Task",
                 "Task check",
+                "Task definition",
                 "Task workspace",
                 "Tool",
                 "Turn receipt"
@@ -761,6 +763,7 @@
                 "Schedule",
                 "Subtask",
                 "Task",
+                "Task definition",
                 "Task workspace",
                 "Turn receipt"
             ],
@@ -978,8 +981,11 @@
             "concepts": [
                 "Deployment",
                 "Gateway",
+                "Instance",
                 "Route",
-                "Task"
+                "Subtask",
+                "Task",
+                "Task definition"
             ],
             "governing_adrs": []
         },
@@ -1246,6 +1252,7 @@
                 "Schedule",
                 "Subtask",
                 "Task",
+                "Task definition",
                 "Turn receipt"
             ],
             "governing_adrs": []
@@ -1264,7 +1271,9 @@
                 "Gateway",
                 "Node",
                 "Process",
-                "Schedule"
+                "Schedule",
+                "Task",
+                "Task definition"
             ],
             "governing_adrs": []
         },
@@ -1591,6 +1600,7 @@
                 "Schedule",
                 "Subtask",
                 "Task",
+                "Task definition",
                 "Tool"
             ],
             "governing_adrs": []
@@ -1912,6 +1922,7 @@
                 "Subtask",
                 "Task",
                 "Task check",
+                "Task definition",
                 "Task workspace",
                 "Tool",
                 "Turn receipt"
@@ -1980,8 +1991,10 @@
                 "Project",
                 "Role",
                 "Route",
+                "Schedule",
                 "Subtask",
-                "Task"
+                "Task",
+                "Task definition"
             ],
             "governing_adrs": []
         },
