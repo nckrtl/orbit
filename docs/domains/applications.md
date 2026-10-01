@@ -81,7 +81,7 @@ Orbit skips a directory in these cases:
 - It is a symlink in the `default` Instance.
 - The new checkout already has it, for example because the repository commits `vendor`.
 
-Orbit copies each directory to a staging path next to the checkout, `.orbit-copy.<instance>.<directory>`, and then renames it into place. So a directory in the new checkout is complete or absent. During the copy, Orbit holds the Process admission lock of the `default` Instance, so the dependency prune and its restore wait. The copy may take 120 seconds on the Node, and then `timeout` stops it.
+Orbit copies each directory to a staging path next to the checkout, `.orbit-copy.<instance>.<directory>`, and then renames it into place. So a directory in the new checkout is complete or absent. During the copy, Orbit holds the Process admission lock of the `default` Instance. The dependency prune and its restore wait for that lock for up to 30 seconds. Then they report `process.operation_busy`: the hibernation sweep tries again on its next pass, and waking the `default` Instance succeeds once the copy ends. The copy may take 120 seconds on the Node, and then `timeout` stops it.
 
 A failed or stopped copy removes its staging path, and creation continues without the missing directories. The Gateway log gets a warning with the code `instance.dependency_copy_failed`, both Instance IDs, the exit code, and the end of the error output.
 

@@ -86,7 +86,7 @@ When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job run
 
 On Sabre the job skips the Homebrew and system package steps, because Sabre already has PHP 8.5 with PCOV, Caddy, `acl`, `attr`, and `wireguard-tools`. Pest runs 6 processes there instead of 4.
 
-Sabre has no Orbit role and serves no Instance. Two runner services, `sabre-1` and `sabre-2`, run as the `github-runner` user, so a pull request run and a `main` run do not wait for each other. That user has passwordless `sudo`, because the PHP setup step installs packages.
+Sabre has no Orbit role and serves no Instance. Two runner services, `sabre-1` and `sabre-2`, run as the `github-runner` user, so a pull request run and a `main` run do not wait for each other. That user has passwordless `sudo`, because the PHP setup step installs packages. Each runner service mounts its own work directory at `/home/runner/work`, the path that GitHub-hosted runners use. PHPStan and Rector key their caches on absolute paths, so the caches saved by either kind of runner stay valid on the other.
 
 The `github-runner-egress` systemd unit loads an nftables rule that rejects traffic from `github-runner` to private addresses: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, and `100.64.0.0/10`. Orbit trusts WireGuard source addresses, so this rule keeps a job from reaching the Gateway or another Node as Sabre. DNS still works through the local resolver. A command that a job runs with `sudo` runs as root, and the rule does not cover it. So the runner accepts only code from this repository.
 
