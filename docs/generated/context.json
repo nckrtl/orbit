@@ -1350,7 +1350,8 @@
                 "Project",
                 "Schedule",
                 "Subtask",
-                "Task"
+                "Task",
+                "Task workspace"
             ],
             "governing_adrs": []
         },
@@ -1367,9 +1368,11 @@
             "concepts": [
                 "Deployment",
                 "Gateway",
+                "Instance",
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Subtask",
                 "Task",
                 "Task check",
@@ -1933,6 +1936,7 @@
                 "Access grant",
                 "Activity",
                 "Deliverable",
+                "Deployment",
                 "Doctor",
                 "Extension",
                 "Gateway",

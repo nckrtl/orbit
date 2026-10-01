@@ -11,5 +11,6 @@ final readonly class ProblemLogSignal
         public string $frame,
         public ?string $requestId,
         public string $excerpt,
+        public string $recordedAt,
     ) {}
 }

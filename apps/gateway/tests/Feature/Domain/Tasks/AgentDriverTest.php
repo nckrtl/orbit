@@ -270,31 +270,6 @@ it('rejects an older in-flight read after another reader records a new outcome',
         ->and($older->fresh()->tokens)->toBe(500);
 });
 
-it('does not lower tokens when a T3 polling read is stale', function (): void {
-    [, $task, , $registry] = driver_group();
-    $observer = new AgentThreadObserver($registry);
-    $thread = $task->implementerThread;
-
-    expect($observer->record($thread, new AgentObservation(
-        state: AgentThreadState::Done,
-        tokens: 100,
-        metricsCheckpoint: [
-            't3_input_tokens' => 80,
-            't3_cached_input_tokens' => 20,
-            't3_output_tokens' => 10,
-            't3_model_calls' => 1,
-            't3_peak_context_tokens' => 100,
-            't3_counted_total_processed_tokens' => 500,
-            't3_observed_total_processed_tokens' => 500,
-            't3_metrics_partial' => false,
-            't3_metrics_initialized' => true,
-            't3_event_sequence' => 12,
-        ],
-    )))->toBeTrue();
-
-    expect($thread->fresh()->tokens)->toBe(500);
-});
-
 it('stores a token breakdown and keeps it when a later read omits the fields', function (): void {
     [, $task, , $registry] = driver_group();
     $observer = new AgentThreadObserver($registry);

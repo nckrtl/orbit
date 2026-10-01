@@ -70,6 +70,8 @@ GitHub CI runs on every pull request, on every push to `main`, and on manual dis
 | Rust agent | `cargo fmt`, `cargo clippy`, tests, and static builds for x86_64 and aarch64 |
 | Required checks | Passes only when every other job passes |
 
+On a pull request, each Composer project job runs the TIA-selected tests and the architecture tests. The architecture tests include the contract tests that read the workflow files, `CliBinaryBuildContractTest` and `ComposerConfigurationTest`, because TIA does not link a workflow file to the tests that read it. On a push to `main` or a manual dispatch, it runs the full suite once with `--tia --fresh`, which also records a new TIA graph, and saves that graph to the cache.
+
 On `main`, GitHub enforces three rules. The branch cannot be deleted, and it accepts no force pushes, with no bypass. A change to `main` also needs a passing `Required checks` status from GitHub Actions. The branch does not have to be up to date first, so the merge rules in [Merge and cleanup](#merge-and-cleanup) still check the merged result. GitHub requires no review.
 
 Repository admins bypass the status rule automatically, so the maintainer can push straight to `main`. The bypass also applies to `gh pr merge` from an admin account, with or without `--admin`. An admin who merges must first wait until `Required checks` passes on the pull request's head commit. The [contributor guide](/contributor-guide#3-implement-and-verify) describes how pull requests and pushes select tests.
@@ -77,6 +79,16 @@ Repository admins bypass the status rule automatically, so the maintainer can pu
 Each Composer project job checks out the branch by name with full history, so Pest can write its test-impact graph. On a detached HEAD, Pest does not save the graph. The Docs job's `composer check` also runs `composer docs-lint`. The E2E job runs `bin/bootstrap --skip-checks` to install every project, because its integration tests use the other projects. The Gateway job installs the Linux tools that the Gateway tests need and creates the `caddy` user. That step stops after 10 minutes, and apt retries a mirror that does not answer within 30 seconds.
 
 Hosted jobs run on `ubuntu-26.04`, the Ubuntu release that Nodes run, so tests use the same uutils coreutils as a Node.
+
+### Self-hosted Gateway runner
+
+When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job runs on the self-hosted runner on Sabre, with the labels `self-hosted` and `sabre`. Pushes, manual dispatches, and pull requests from branches in this repository use it. A pull request from a fork always uses a GitHub-hosted runner, so code from outside the repository never runs on Sabre. Set the variable to anything else to move the job back to GitHub-hosted runners.
+
+On Sabre the job skips the Homebrew and system package steps, because Sabre already has PHP 8.5 with PCOV, Caddy, `acl`, `attr`, and `wireguard-tools`. Pest runs 6 processes there instead of 4.
+
+Sabre has no Orbit role and serves no Instance. Two runner services, `sabre-1` and `sabre-2`, run as the `github-runner` user, so a pull request run and a `main` run do not wait for each other. That user has passwordless `sudo`, because the PHP setup step installs packages.
+
+The `github-runner-egress` systemd unit loads an nftables rule that rejects traffic from `github-runner` to private addresses: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, and `100.64.0.0/10`. Orbit trusts WireGuard source addresses, so this rule keeps a job from reaching the Gateway or another Node as Sabre. DNS still works through the local resolver. A command that a job runs with `sudo` runs as root, and the rule does not cover it. So the runner accepts only code from this repository.
 
 Docs-lint also checks the ADR lifecycle. A row in the decisions overview's lower table has no file with its recorded slug, and a redirect exists from that exact path. ADRs from 0180 onward have an `In progress.` Status and a `Principle:` line. A lower number follows those rules only when that lower table does not list its number. The open gaps are 0007 and 0020. The committed allowlist of older live ADRs can only shrink. The [contributor guide](/contributor-guide#checks-that-need-no-network) explains these checks.
 
@@ -124,7 +136,7 @@ Root `composer check` runs `bin/review-check`. It checks the working tree as it 
 
 For each Composer project, the gate runs `composer validate --strict`, `composer check`, and `composer test:affected`. Each affected-test run records into its own copy of the project graph. That copy keeps only the `main` baseline. The gate selects tests for every change since `main`, whatever local `composer test:affected` runs happened earlier. Local runs are unchanged. Each one still writes its branch baseline into the project's own graph, and the gate leaves that graph unchanged.
 
-When the candidate changes the project, the gate runs that project's architecture tests. When that project has changed and `test:affected` selects no tests, the gate runs its full suite with `--no-tia` instead of only warning. A project with changed source files but no selected tests is this case. When `test:affected` passed, the gate looks for changed test files that TIA did not select. It lists the tests of each such file and runs the file without TIA. A file without tests fails.
+When the candidate changes the project, the gate runs that project's architecture tests. When that project has changed and `test:affected` selects no tests, the gate runs its full suite with `--no-tia` in four parallel processes instead of only warning. A project with changed source files but no selected tests is this case. When `test:affected` passed, the gate looks for changed test files that TIA did not select. It lists the tests of each such file and runs the file without TIA. A file without tests fails.
 
 #### Web and Pi server checks
 

@@ -55,7 +55,7 @@ function configure_task_effort(string $role, ?string $value): void
     }
 }
 
-function effort_task(string $driver): Task
+function effort_task(): Task
 {
     $project = Project::query()->create([
         'name' => 'effort', 'slug' => 'effort',
@@ -72,9 +72,7 @@ function effort_task(string $driver): Task
     ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id, 'title' => 'Effort', 'brief' => 'Configure effort.', 'status' => 'running',
-        'implementer_agent_driver' => $driver, 'reviewer_agent_driver' => $driver,
-        // Pi only supports Codex models; T3 also exercises the Claude effort option.
-        'reviewer_model' => $driver === 'pi' ? 'gpt-5.6-luna' : 'claude-opus-5',
+        'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
     ]);
     $group->taskable()->associate($instance);
     $group->save();
@@ -86,9 +84,18 @@ function effort_task(string $driver): Task
     ]);
 }
 
+function fake_effort_pi(): void
+{
+    Http::preventStrayRequests();
+    Http::fake([
+        'http://10.44.0.110:3774/sessions' => Http::response(['id' => 'session'], 201),
+        'http://10.44.0.110:3774/sessions/*/messages' => Http::response(['duplicate' => false], 202),
+    ]);
+}
+
 dataset('effort roles', [
-    'implementer' => ['implementer', 'spawnImplementer', 'reserveImplementer', 'reasoningEffort'],
-    'reviewer' => ['reviewer', 'spawnReviewer', 'reserveReviewer', 'effort'],
+    'implementer' => ['implementer', 'spawnImplementer', 'reserveImplementer'],
+    'reviewer' => ['reviewer', 'spawnReviewer', 'reserveReviewer'],
 ]);
 
 dataset('effort settings', [
@@ -99,33 +106,11 @@ dataset('effort settings', [
 ]);
 
 describe('thread effort', function (): void {
-    it('stores configured or default effort and sends it to T3', function (string $role, string $spawn, string $reserve, string $option, ?string $value, string $expected): void {
-        $task = effort_task('t3');
+    it('stores configured or default effort and sends it to Pi', function (string $role, string $spawn, string $reserve, ?string $value, string $expected): void {
+        $task = effort_task();
         $spawner = app(TaskAgentSpawner::class);
         configure_task_effort($role, $value);
-        Http::preventStrayRequests();
-        Http::fake(['http://10.44.0.110:3773/api/orchestration/dispatch' => Http::response(['sequence' => 1])]);
-
-        $id = $spawner->{$spawn}($task);
-
-        expect(config('orbit.tasks.'.$role.'_effort'))->toBe($expected);
-        $this->assertDatabaseHas('agent_threads', ['id' => $id, 'role' => $role, 'effort' => $expected]);
-        foreach (['project.create', 'thread.create', 'thread.turn.start'] as $type) {
-            $selection = $type === 'project.create' ? 'defaultModelSelection' : 'modelSelection';
-            Http::assertSent(fn (Request $request): bool => $request['type'] === $type
-                && $request[$selection]['options'] === [['id' => $option, 'value' => $expected]]);
-        }
-    })->with('effort roles')->with('effort settings');
-
-    it('stores configured or default effort and sends it to Pi', function (string $role, string $spawn, string $reserve, string $option, ?string $value, string $expected): void {
-        $task = effort_task('pi');
-        $spawner = app(TaskAgentSpawner::class);
-        configure_task_effort($role, $value);
-        Http::preventStrayRequests();
-        Http::fake([
-            'http://10.44.0.110:3774/sessions' => Http::response(['id' => 'session'], 201),
-            'http://10.44.0.110:3774/sessions/*/messages' => Http::response(['duplicate' => false], 202),
-        ]);
+        fake_effort_pi();
 
         $id = $spawner->{$spawn}($task);
 
@@ -136,52 +121,50 @@ describe('thread effort', function (): void {
             && $request['id'] === $thread->external_id && $request['thinkingLevel'] === $expected);
     })->with('effort roles')->with('effort settings');
 
-    it('keeps stored effort while the next thread in an open group reads changed config', function (string $role, string $spawn, string $reserve, string $option): void {
-        $task = effort_task('t3');
+    it('keeps stored effort while the next thread in an open group reads changed config', function (string $role, string $spawn, string $reserve): void {
+        $task = effort_task();
         $spawner = app(TaskAgentSpawner::class);
         configure_task_effort($role, 'medium');
         $id = $spawner->{$reserve}($task);
         configure_task_effort($role, 'low');
-        Http::preventStrayRequests();
-        Http::fake(['http://10.44.0.110:3773/api/orchestration/dispatch' => Http::response(['sequence' => 1])]);
+        fake_effort_pi();
 
         expect($spawner->{$spawn}($task))->toBe($id);
         $thread = AgentThread::query()->findOrFail($id);
-        app(AgentDriverRegistry::class)->get('t3')->send($thread, 'Continue.');
+        app(AgentDriverRegistry::class)->get('pi')->send($thread, 'Continue.');
 
         $this->assertDatabaseHas('agent_threads', ['id' => $id, 'effort' => 'medium']);
-        Http::assertSent(fn (Request $request): bool => $request['type'] === 'thread.create'
-            && $request['modelSelection']['options'] === [['id' => $option, 'value' => 'medium']]);
-        $turns = Http::recorded(fn (Request $request): bool => $request['type'] === 'thread.turn.start');
-        expect($turns)->toHaveCount(2);
-        foreach ($turns as [$request]) {
-            expect($request['modelSelection']['options'])->toBe([['id' => $option, 'value' => 'medium']]);
-        }
+        Http::assertSent(fn (Request $request): bool => $request->url() === 'http://10.44.0.110:3774/sessions'
+            && $request['id'] === $thread->external_id && $request['thinkingLevel'] === 'medium');
+        expect(Http::recorded(fn (Request $request): bool => $request->url() === 'http://10.44.0.110:3774/sessions'))->toHaveCount(1);
+        Http::assertSent(fn (Request $request): bool => $request->url() === 'http://10.44.0.110:3774/sessions/'.$thread->external_id.'/messages'
+            && $request['text'] === 'Continue.');
 
         $next = Task::query()->create([
             'parent_id' => $task->parent_id, 'position' => 2,
             'title' => 'Next thread', 'brief' => 'Use changed effort.', 'status' => 'running',
         ]);
         $nextId = $spawner->{$spawn}($next);
+        $nextThread = AgentThread::query()->findOrFail($nextId);
 
         $this->assertDatabaseHas('agent_threads', ['id' => $nextId, 'role' => $role, 'effort' => 'low']);
-        Http::assertSent(fn (Request $request): bool => $request['type'] === 'thread.create'
-            && $request['modelSelection']['options'] === [['id' => $option, 'value' => 'low']]);
+        Http::assertSent(fn (Request $request): bool => $request->url() === 'http://10.44.0.110:3774/sessions'
+            && $request['id'] === $nextThread->external_id && $request['thinkingLevel'] === 'low');
     })->with('effort roles');
 
-    it('starts a legacy reserved thread with configured effort when stored effort is absent', function (string $role, string $spawn, string $reserve, string $option): void {
-        $task = effort_task('t3');
+    it('starts a legacy reserved thread with configured effort when stored effort is absent', function (string $role, string $spawn, string $reserve): void {
+        $task = effort_task();
         $spawner = app(TaskAgentSpawner::class);
         $id = $spawner->{$reserve}($task);
         AgentThread::query()->findOrFail($id)->update(['effort' => null]);
         configure_task_effort($role, 'medium');
-        Http::preventStrayRequests();
-        Http::fake(['http://10.44.0.110:3773/api/orchestration/dispatch' => Http::response(['sequence' => 1])]);
+        fake_effort_pi();
 
         expect($spawner->{$spawn}($task))->toBe($id);
 
-        Http::assertSent(fn (Request $request): bool => $request['type'] === 'thread.create'
-            && $request['modelSelection']['options'] === [['id' => $option, 'value' => 'medium']]);
+        $thread = AgentThread::query()->findOrFail($id);
+        Http::assertSent(fn (Request $request): bool => $request->url() === 'http://10.44.0.110:3774/sessions'
+            && $request['id'] === $thread->external_id && $request['thinkingLevel'] === 'medium');
     })->with('effort roles');
 
     it('backfills configured effort for legacy sessions of both roles', function (): void {
@@ -216,21 +199,4 @@ describe('thread effort', function (): void {
             DB::purge('effort_migration');
         }
     });
-
-    it('uses configured effort for a legacy T3 follow-up without stored effort', function (string $role, string $spawn, string $reserve, string $option): void {
-        $task = effort_task('t3');
-        $spawner = app(TaskAgentSpawner::class);
-        Http::preventStrayRequests();
-        Http::fake(['http://10.44.0.110:3773/api/orchestration/dispatch' => Http::response(['sequence' => 1])]);
-        $id = $spawner->{$spawn}($task);
-        $thread = AgentThread::query()->findOrFail($id);
-        $thread->update(['effort' => null]);
-        configure_task_effort($role, 'medium');
-
-        app(AgentDriverRegistry::class)->get('t3')->send($thread, 'Continue.');
-
-        $request = Http::recorded()->last()[0];
-        expect($request['type'])->toBe('thread.turn.start')
-            ->and($request['modelSelection']['options'])->toBe([['id' => $option, 'value' => 'medium']]);
-    })->with('effort roles');
 });

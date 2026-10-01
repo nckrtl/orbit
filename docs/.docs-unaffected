@@ -85,6 +85,12 @@ docs/reference/instance-removal.md: The published-commit check reads through the
 docs/reference/mcp.mdx: The instance-register tool follows its regenerated contract; the MCP page lists no per-tool fields.
 docs/reference/php-runtime.md: Production source reads pass the Project's source access through the shared read access; the PHP runtime does not change.
 docs/reference/tools.md: The service provider only binds the GitHub CLI token source; Tool behavior does not change.
+docs/reference/environment-variables.md: Instance .env behavior is unchanged. Gateway task-agent settings stay in /reference/tasks, including Pi-only drivers and the T3 settings annotations use.
+docs/reference/app-dev-runtime-hibernation.md: Hibernation timing is unchanged. Task agents run on Pi; that contract is in /reference/tasks.
+docs/reference/cli-ux.md: Task command snapshots now show gpt-5.6-luna as the reviewer model. Input, consent, and presentation rules on this page are unchanged.
+docs/reference/gateway-response-fixtures.md: Recorded task fixtures now store gpt-5.6-luna as the reviewer model. Fixture recording and replay on this page are unchanged.
+docs/reference/app-dev-runtime-hibernation.md: The config/orbit.php change adds only outer-loop suppression lists, documented in /reference/tasks#suppression. Hibernation settings, idle detection, and wake behavior are unchanged.
+docs/reference/environment-variables.md: The problems key in config/orbit.php holds Gateway suppression lists, not an environment variable. The change adds no env() keys and does not alter Instance environment import, storage, or synchronization; /reference/tasks#suppression owns these settings.
 docs/reference/api-reference.md: bin/docs-openapi only gains the new database server operations and the database:create body variants; the API reference workflow does not change.
 docs/reference/cli-ux.md: New recorded CLI outputs for database servers and users follow the existing CLI design standard unchanged.
 docs/reference/gateway-response-fixtures.md: New and re-recorded database fixtures follow the existing fixture workflow unchanged.

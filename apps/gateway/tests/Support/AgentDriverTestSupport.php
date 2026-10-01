@@ -7,13 +7,13 @@ use App\Domain\Tasks\AgentThreadObserver;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskScheduler;
-use App\Infrastructure\Tasks\T3\T3Dispatcher;
-use App\Infrastructure\Tasks\T3\T3Driver;
-use App\Infrastructure\Tasks\T3\T3ThreadCreator;
-use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Task;
+use Tests\Support\AgentCommandDispatcher;
+use Tests\Support\AgentSnapshotReader;
+use Tests\Support\NullAgentSnapshotReader;
+use Tests\Support\SnapshotAgentDriver;
 
 function test_agent_thread(Task $group, string $externalId, ?Task $task = null): AgentThread
 {
@@ -21,7 +21,7 @@ function test_agent_thread(Task $group, string $externalId, ?Task $task = null):
     $nodeId = $instance instanceof Instance ? $instance->node_id : null;
 
     return AgentThread::query()->firstOrCreate([
-        'driver' => 't3', 'runtime_key' => $nodeId === null ? 'test:'.$group->id : 'node:'.$nodeId, 'external_id' => $externalId,
+        'driver' => 'pi', 'runtime_key' => $nodeId === null ? 'test:'.$group->id : 'node:'.$nodeId, 'external_id' => $externalId,
     ], [
         'task_group_id' => $group->id, 'task_id' => $task?->id, 'node_id' => $nodeId,
         'role' => $task === null ? 'reviewer' : 'implementer',
@@ -38,29 +38,23 @@ function test_link_agent_threads(Task $group, string $reviewer = 'reviewer-threa
     }
 }
 
-function test_t3_registry(?T3Dispatcher $dispatcher = null, ?T3ThreadReader $reader = null): AgentDriverRegistry
+function test_snapshot_registry(?AgentCommandDispatcher $dispatcher = null, ?AgentSnapshotReader $reader = null): AgentDriverRegistry
 {
-    $parameters = [];
-    if ($dispatcher !== null) {
-        $parameters['dispatcher'] = $dispatcher;
-        $parameters['creator'] = new T3ThreadCreator($dispatcher);
-    }
-    if ($reader !== null) {
-        $parameters['reader'] = $reader;
-    }
-
-    return new AgentDriverRegistry([app()->makeWith(T3Driver::class, $parameters)]);
+    return new AgentDriverRegistry([new SnapshotAgentDriver($dispatcher, $reader)]);
 }
 
-function test_agent_observer(T3ThreadReader $reader): AgentThreadObserver
+function test_bind_snapshot_driver(): void
 {
-    return new AgentThreadObserver(test_t3_registry(reader: $reader));
+    app()->instance(AgentSnapshotReader::class, new NullAgentSnapshotReader);
+    app()->instance(AgentDriverRegistry::class, test_snapshot_registry());
 }
 
-/**
- * Runs one scheduler tick, which reads the baseline check that claiming a group started and, when it passes,
- * starts the first implementer.
- */
+function test_agent_observer(AgentSnapshotReader $reader): AgentThreadObserver
+{
+    return new AgentThreadObserver(test_snapshot_registry(reader: $reader));
+}
+
+/** Reads the baseline check started by claiming, then starts the first implementer when it passes. */
 function test_pass_baseline(): void
 {
     app(TaskExtensionState::class)->enable();
