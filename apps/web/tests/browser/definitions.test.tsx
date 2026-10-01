@@ -174,10 +174,18 @@ it("shows that the model list is unavailable when the list is empty", async () =
     await expect.element(findings).not.toHaveTextContent("No driver can run");
 });
 
-it("reports a model no driver can run, and not a Claude model", async () => {
+it("reports Claude as unrunnable for task agents even when ProxyCli offers it", async () => {
     const models: Transport = async (_method, path) => {
         if (path === "/api/v1/proxycli/models") {
-            return { status: 200, payload: { data: [{ id: "gemini-ultra", provider: "google" }] } };
+            return {
+                status: 200,
+                payload: {
+                    data: [
+                        { id: "gpt-5.6-luna", provider: "codex" },
+                        { id: "claude-opus-5", provider: "claude" },
+                    ],
+                },
+            };
         }
         return { status: 404, payload: { error: { code: "route.not_found", message: path } } };
     };
@@ -189,11 +197,11 @@ it("reports a model no driver can run, and not a Claude model", async () => {
                 : inner(method, path, body),
     });
     const findings = page.getByTestId("definition-findings");
-    await expect.element(findings).toHaveTextContent("No driver can run gpt-5.6-luna.");
-    await expect.element(findings).not.toHaveTextContent("claude-opus-5");
+    await expect.element(findings).not.toHaveTextContent("No driver can run gpt-5.6-luna.");
+    await expect.element(findings).toHaveTextContent("No driver can run claude-opus-5.");
     await expect.element(findings).not.toHaveTextContent("The model list is unavailable.");
     const finding = findings.getByRole("button", {
-        name: "update No driver can run gpt-5.6-luna.",
+        name: "update No driver can run claude-opus-5.",
     });
     expect(
         Number.parseFloat(getComputedStyle(finding.element()).paddingTop),
@@ -202,7 +210,13 @@ it("reports a model no driver can run, and not a Claude model", async () => {
         Number.parseFloat(getComputedStyle(finding.element()).paddingLeft),
     ).toBeGreaterThanOrEqual(8);
     await finding.click();
-    await expect.element(page.getByTestId("definition-subtask")).toHaveTextContent("gpt-5.6-luna");
+    await expect.element(page.getByTestId("definition-subtask")).toHaveTextContent("claude-opus-5");
+    await expect
+        .element(page.getByTestId("definition-subtask").getByText("claude-opus-5 · claude"))
+        .toHaveClass("text-yellow");
+    await expect
+        .element(page.getByTestId("definition-subtask").getByText("gpt-5.6-luna · codex"))
+        .not.toHaveClass("text-yellow");
 });
 
 it("keeps a definition with side paths readable on a phone", async () => {

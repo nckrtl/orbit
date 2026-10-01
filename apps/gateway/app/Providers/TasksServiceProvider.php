@@ -44,9 +44,6 @@ use App\Infrastructure\Tasks\RemoteTaskWorkspaceStateReader;
 use App\Infrastructure\Tasks\T3\HttpT3Dispatcher;
 use App\Infrastructure\Tasks\T3\HttpT3ThreadReader;
 use App\Infrastructure\Tasks\T3\T3Dispatcher;
-use App\Infrastructure\Tasks\T3\T3Driver;
-use App\Infrastructure\Tasks\T3\T3Stream;
-use App\Infrastructure\Tasks\T3\T3TaskAgentStream;
 use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
 use App\Models\Task;
@@ -59,7 +56,6 @@ final class TasksServiceProvider extends ServiceProvider
 {
     /** @var array<class-string, class-string> */
     public array $bindings = [
-        T3Stream::class => T3TaskAgentStream::class,
         InstanceProvisioning::class => TaskWorkspaceProvisioner::class,
         AgentSpawner::class => TaskAgentSpawner::class,
         TaskWorkspaceMcp::class => RemoteTaskWorkspaceMcp::class,
@@ -85,7 +81,7 @@ final class TasksServiceProvider extends ServiceProvider
     {
         parent::register();
 
-        $this->app->bind(AgentDriverRegistry::class, fn (Application $app): AgentDriverRegistry => new AgentDriverRegistry([$app->make(T3Driver::class), $app->make(PiDriver::class)]));
+        $this->app->bind(AgentDriverRegistry::class, fn (Application $app): AgentDriverRegistry => new AgentDriverRegistry([$app->make(PiDriver::class)]));
         $this->app->bind(TaskReviewPacketBuilder::class, fn (Application $app): TaskReviewPacketBuilder => new TaskReviewPacketBuilder($app->make(TaskReviewDiff::class)));
         $this->app->singleton(TaskBroadcasts::class);
         $this->app->singleton(OpenApiTaskActions::class);

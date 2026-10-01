@@ -25,6 +25,9 @@ final readonly class StreamAgentThreadAction
     {
         $this->requireExtension->execute();
         abort_unless($session->task_group_id === $group->id, 404);
+        if ($session->driver === 't3') {
+            throw new ResourceOperationException('tasks.agent_transcript_unavailable', 'Transcripts for retired T3 task threads are unavailable.', 409);
+        }
         $node = $session->node;
         if ($node === null || $node->status !== LifecycleStatus::Active) {
             throw new ResourceOperationException('tasks.agent_unavailable', 'The original agent Node is unavailable.', 409);

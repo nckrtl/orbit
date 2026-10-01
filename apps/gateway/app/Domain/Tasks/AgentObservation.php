@@ -26,8 +26,6 @@ final readonly class AgentObservation
         public ?string $cursor = null,
         public ?string $turnId = null,
         public ?string $sessionUpdatedAt = null,
-        /** @var array<string, mixed>|null */
-        public ?array $metricsCheckpoint = null,
     ) {}
 
     public function lastText(string $role): ?string

@@ -1342,6 +1342,10 @@
       "destination": "/reference/projects#registration-needs-a-project"
     },
     {
+      "source": "/decisions/0192-run-task-agents-on-pi-only",
+      "destination": "/reference/tasks#task-agents-run-on-pi"
+    },
+    {
       "source": "/decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop",
       "destination": "/cli/extension#why-it-works-this-way"
     },
