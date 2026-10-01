@@ -19,6 +19,7 @@ final readonly class RemoteToolCommandRunner
         private SshExecutor $ssh,
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
+        private ?ToolCommandBudget $budget = null,
     ) {}
 
     /** @param non-empty-list<string> $arguments */
@@ -44,6 +45,7 @@ final readonly class RemoteToolCommandRunner
                 port: 22,
                 identityFile: $this->keys->privateKeyPath(),
                 knownHostsFile: $this->knownHosts->path(),
+                commandTimeout: $this->budget?->seconds() ?? 900.0,
             ),
             new RemoteCommand($arguments, $input, maxOutputBytes: $maxOutputBytes),
         );

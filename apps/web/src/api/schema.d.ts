@@ -3138,13 +3138,13 @@ export interface components {
         };
         DoctorIssue: {
             /** @enum {string} */
-            kind?: "drift" | "unverifiable";
+            kind?: "informational" | "drift" | "unverifiable";
             resource_type?: string;
-            resource_id?: string | null;
+            resource_id?: number | string | null;
             resource_name?: string | null;
             summary?: string;
-            expected?: string | null;
-            observed?: string | null;
+            expected?: boolean | string | null;
+            observed?: boolean | string | null;
         };
         FirewallRule: {
             id?: number;

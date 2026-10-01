@@ -48,8 +48,9 @@ it('documents the doctor verification boundary', function (): void {
         ./orbit doctor --family=firewall --json
         ```
 
-        Doctor only verifies state and never repairs it. Exit status 1 means unhealthy,
-        unverifiable, or a transport failure.
+        Doctor only verifies state and never repairs it. Informational findings alone
+        still exit 0. Exit status 1 means drift, an unverifiable finding, or a transport
+        failure.
         MARKDOWN;
 
     expect($readme)

@@ -1052,7 +1052,15 @@ def prop_schema(p):
     doc = (p['doc'] or '').replace('\\', '')
     nullable = t.startswith('?') or '|null' in t or 'null|' in t
     t = t.lstrip('?').replace('|null', '').replace('null|', '')
-    if t in SCALARS:
+    union = [part.strip() for part in t.split('|') if part.strip()]
+    if len(union) > 1 and all(part in SCALARS for part in union):
+        kinds = []
+        for part in union:
+            kind = SCALARS[part]
+            if kind not in kinds:
+                kinds.append(kind)
+        sch = {'type': kinds if len(kinds) > 1 else kinds[0]}
+    elif t in SCALARS:
         sch = {'type': SCALARS[t]}
     elif t == 'mixed':
         sch = {}
@@ -1083,7 +1091,10 @@ def prop_schema(p):
         if '$ref' in sch:
             sch = {'oneOf': [sch, {'type': 'null'}]}
         elif 'type' in sch:
-            sch = {**sch, 'type': [sch['type'], 'null']}
+            kinds = sch['type'] if isinstance(sch['type'], list) else [sch['type']]
+            if 'null' not in kinds:
+                kinds = [*kinds, 'null']
+            sch = {**sch, 'type': kinds}
     return sch
 
 

@@ -22446,6 +22446,7 @@
           "kind": {
             "type": "string",
             "enum": [
+              "informational",
               "drift",
               "unverifiable"
             ]
@@ -22455,6 +22456,7 @@
           },
           "resource_id": {
             "type": [
+              "integer",
               "string",
               "null"
             ]
@@ -22470,12 +22472,14 @@
           },
           "expected": {
             "type": [
+              "boolean",
               "string",
               "null"
             ]
           },
           "observed": {
             "type": [
+              "boolean",
               "string",
               "null"
             ]

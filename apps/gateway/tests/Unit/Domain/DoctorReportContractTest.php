@@ -75,7 +75,7 @@ it('serializes bounded doctor reports and derives status precedence', function (
         ->and($report->healthy)
         ->toBeFalse()
         ->and($report->summary)
-        ->toBe(['nodes' => 1, 'families' => 1, 'checks' => 1, 'drift' => 2, 'unverifiable' => 1])
+        ->toBe(['nodes' => 1, 'families' => 1, 'checks' => 1, 'drift' => 2, 'unverifiable' => 1, 'informational' => 0])
         ->and($family->issues[0]->resourceType)
         ->toBe('instance')
         ->and($family->issues[0]->resourceId)
@@ -131,10 +131,43 @@ it('serializes bounded doctor reports and derives status precedence', function (
                     ],
                 ]],
             ]],
-            'summary' => ['nodes' => 1, 'families' => 1, 'checks' => 1, 'drift' => 2, 'unverifiable' => 1],
+            'summary' => ['nodes' => 1, 'families' => 1, 'checks' => 1, 'drift' => 2, 'unverifiable' => 1, 'informational' => 0],
         ])
         ->and(new DoctorInspectionException()->getMessage())
         ->toBe('');
+});
+
+it('keeps informational findings out of health, drift, and unverifiable counts', function (): void {
+    $informational = new DoctorIssueData(
+        ToolDoctorIssueCode::PackageUnregistered,
+        DoctorIssueKind::Informational,
+        'tool',
+        null,
+        'jq',
+        'Installed package has no Tool row.',
+        'brew',
+        'version=1.7.1;dependency=no;adoption=supported;block=none',
+    );
+    $family = DoctorFamilyReportData::fromIssues(DoctorFamily::Tool, 2, [$informational]);
+    $report = DoctorReportData::fromNodes([
+        DoctorNodeReportData::fromFamilies(4, 'mini', [$family]),
+    ]);
+
+    expect($family->status->value)
+        ->toBe('healthy')
+        ->and($family->checked)
+        ->toBe(2)
+        ->and($report->healthy)
+        ->toBeTrue()
+        ->and($report->summary)
+        ->toBe([
+            'nodes' => 1,
+            'families' => 1,
+            'checks' => 2,
+            'drift' => 0,
+            'unverifiable' => 0,
+            'informational' => 1,
+        ]);
 });
 
 it('maps unknown internal issue codes to the family inspection failure', function (): void {
@@ -273,7 +306,14 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'schedule.node_unreachable',
             'schedule.inspection_failed',
         ],
-        'tool' => ['tool.not_installed', 'tool.version_mismatch', 'tool.inspection_failed', 'tool.node_unreachable'],
+        'tool' => [
+            'tool.not_installed',
+            'tool.version_mismatch',
+            'tool.package_unregistered',
+            'tool.inventory_scan',
+            'tool.node_unreachable',
+            'tool.inspection_failed',
+        ],
         'process' => [
             'process.runtime_missing',
             'process.state_mismatch',
