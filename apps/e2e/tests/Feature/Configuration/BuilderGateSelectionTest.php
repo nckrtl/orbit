@@ -212,6 +212,15 @@ function orb277_run_gate(
     ];
 }
 
+/** @return list<string> */
+function orb277_full_suite_command(): array
+{
+    return [
+        '../../bin/pest-plain', 'vendor/bin/pest', '--no-tia', '--fail-on-empty-test-suite',
+        '--compact', '--colors=never',
+    ];
+}
+
 /** @param array<string, mixed> $receipt */
 function orb277_check(array $receipt, string $project, string $script): array
 {
@@ -438,7 +447,18 @@ describe('Builder gate', function (): void {
         expect(collect($receipt['checks'])->pluck('project')->unique()->values()->all())->toBe(orb277_selected_projects());
         expect(collect($receipt['checks'])->pluck('command')->all())
             ->toContain(['vendor/bin/pest', '--list-tests', 'tests/ExampleTest.php'])
-            ->toContain(['../../bin/pest-plain', 'vendor/bin/pest', '--no-tia', '--fail-on-empty-test-suite', '--compact', '--colors=never', 'tests/ExampleTest.php']);
+            ->toContain(['../../bin/pest-plain', 'vendor/bin/pest', '--no-tia', '--fail-on-empty-test-suite', '--compact', '--colors=never', 'tests/ExampleTest.php'])
+            ->toContain(orb277_full_suite_command());
+        $suite = collect($receipt['checks'])->first(
+            static fn (array $check): bool => $check['project'] === 'apps/gateway'
+                && $check['command'] === orb277_full_suite_command(),
+        );
+        expect($suite)->toMatchArray(['exit_code' => 0])
+            ->and(file_exists($suite['log']))->toBeTrue();
+        expect(collect($receipt['checks'])->contains(
+            static fn (array $check): bool => $check['project'] === 'apps/cli'
+                && $check['command'] === orb277_full_suite_command(),
+        ))->toBeFalse();
         expect(orb277_check($receipt, 'apps/gateway', 'check'))->not->toHaveKey('warning');
         expect(collect($receipt['checks'])->first(static fn (array $check): bool => $check['project'] === 'apps/gateway'
             && $check['command'] === ['vendor/bin/pest', 'tests/Unit/Architecture']))
@@ -446,6 +466,50 @@ describe('Builder gate', function (): void {
         expect($run['process']->getOutput())
             ->toContain('[apps/gateway] WARNING: composer test:affected selected no tests', 'Selection warnings: 1')
             ->not->toContain('[apps/cli] WARNING');
+    });
+
+    it('runs the full suite for an empty selection on a source-only change', function (): void {
+        $fixture = orb277_gate_fixture('apps/gateway/app/SourceOnly.php');
+        $run = orb277_run_gate($fixture, 'apps/gateway,apps/cli');
+        $receipt = $run['receipt'];
+        $fullSuite = orb277_full_suite_command();
+        $suite = collect($receipt['checks'])->first(
+            static fn (array $check): bool => $check['project'] === 'apps/gateway' && $check['command'] === $fullSuite,
+        );
+
+        expect($receipt['passed'])->toBeTrue()
+            ->and($receipt['changed_paths'])->toBe(['apps/gateway/app/SourceOnly.php'])
+            ->and($suite)->toBeArray()
+            ->and($suite['exit_code'])->toBe(0)
+            ->and(file_exists($suite['log']))->toBeTrue();
+        expect(collect($receipt['checks'])->pluck('command')->all())
+            ->not->toContain(['vendor/bin/pest', '--list-tests', 'tests/ExampleTest.php']);
+        expect(collect($receipt['checks'])->contains(
+            static fn (array $check): bool => $check['project'] !== 'apps/gateway' && $check['command'] === $fullSuite,
+        ))->toBeFalse();
+    });
+
+    it('fails the gate when the empty selection full suite fails', function (): void {
+        $fixture = orb277_gate_fixture('apps/gateway/app/SourceOnly.php');
+        file_put_contents($fixture['root'].'/apps/gateway/vendor/bin/pest', <<<'SH'
+#!/usr/bin/env sh
+if [ "$1" = "--no-tia" ]; then
+    echo 'full suite failed'
+    exit 4
+fi
+exit 0
+SH);
+        chmod($fixture['root'].'/apps/gateway/vendor/bin/pest', 0o700);
+        $run = orb277_run_gate($fixture, 'apps/gateway', expectedExit: 1);
+        $suite = collect($run['receipt']['checks'])->first(
+            static fn (array $check): bool => $check['project'] === 'apps/gateway'
+                && $check['command'] === orb277_full_suite_command(),
+        );
+
+        expect($run['receipt']['passed'])->toBeFalse()
+            ->and($suite)->toBeArray()
+            ->and($suite['exit_code'])->toBe(4)
+            ->and(file_get_contents($suite['log']))->toContain('full suite failed');
     });
 
     it('runs only changed tests that affected-test analysis did not select', function (): void {
@@ -580,7 +644,8 @@ PHP);
         expect(orb277_check($executed, 'apps/gateway', 'test:affected'))
             ->toHaveKey('selected_test_files', ['tests/ExampleTest.php']);
         expect(collect($executed['checks'])->pluck('command')->all())
-            ->not->toContain(['vendor/bin/pest', '--list-tests', 'tests/ExampleTest.php']);
+            ->not->toContain(['vendor/bin/pest', '--list-tests', 'tests/ExampleTest.php'])
+            ->not->toContain(orb277_full_suite_command());
 
         (new Process(['git', 'checkout', '--quiet', 'main'], $fixture['root']))->mustRun();
         $main = orb277_run_gate($fixture, 'apps/gateway');
@@ -589,6 +654,8 @@ PHP);
         expect($main['receipt']['changed_paths'])->toBe([]);
         expect(collect($main['receipt']['checks'])->pluck('project')->unique()->values()->all())->toBe(orb277_selected_projects());
         expect(collect($main['receipt']['checks'])->count())->toBe(17);
+        expect(collect($main['receipt']['checks'])->pluck('command')->all())
+            ->not->toContain(orb277_full_suite_command());
         expect($main['receipt']['passed'])->toBeTrue();
         expect($main['receipt']['warnings'])->toBe([]);
         expect($main['process']->getOutput())->not->toContain('WARNING');
