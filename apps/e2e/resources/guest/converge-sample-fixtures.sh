@@ -107,7 +107,7 @@ exit($status);"""
         else:
             require(not verify, 'Missing database Process '+name)
             result=orbit(*args)
-            process=result.get('process',result)
+            process=result
         require(isinstance(process.get('id'),int) and process['id'] > 0, 'Missing Process identity')
         pid=process['id']
         processes[name]=pid

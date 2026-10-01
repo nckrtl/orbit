@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\E2E;
 
-use App\E2E\State\SecretRedactor;
 use App\E2E\Value\ApplicationEndpoint;
 use App\E2E\Value\ConvergenceReport;
 use App\E2E\Value\GuestCommand;
@@ -501,9 +500,8 @@ final readonly class TopologyConverger
     ): string {
         $message ??= "Guest convergence script {$script} failed on {$instance} "
             ."with exit code {$result->exitCode}{$this->stepSuffix($script, $result)}.";
-        $tail = $this->stderrTail($result->stderr);
 
-        return $tail === '' ? $message : $message."\n".$tail;
+        return (new GuestFailureDetail)->append($message, $result->stderr);
     }
 
     private function stepSuffix(string $script, GuestCommandResult $result): string
@@ -523,23 +521,5 @@ final readonly class TopologyConverger
         }
 
         return " at step {$failure[1]} ({$failure[2]})";
-    }
-
-    /**
-     * The evidence-log redactor, then the last 20 lines, then the last 2000 characters.
-     */
-    private function stderrTail(string $stderr): string
-    {
-        $redacted = rtrim((new SecretRedactor)->redact($stderr), "\r\n");
-        if ($redacted === '') {
-            return '';
-        }
-        $lines = preg_split('/\R/u', $redacted) ?: [];
-        $tail = implode("\n", array_slice($lines, -20));
-        if (mb_strlen($tail) <= 2000) {
-            return $tail;
-        }
-
-        return mb_substr($tail, -2000);
     }
 }

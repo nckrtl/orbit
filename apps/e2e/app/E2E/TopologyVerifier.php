@@ -301,7 +301,7 @@ final readonly class TopologyVerifier
         ]);
         $result = $results['sample-app-state'] ?? null;
         if (! $result instanceof GuestCommandResult || ! $result->successful()) {
-            throw new RuntimeException('Failed to inspect the sample App convergence state.');
+            throw new RuntimeException($this->sampleStateFailure($appDevInstance, $result));
         }
 
         if (trim($result->stdout) === '') {
@@ -340,6 +340,21 @@ final readonly class TopologyVerifier
         }
 
         return ['checkout_path' => $state['checkout_path'], 'production' => $production];
+    }
+
+    private function sampleStateFailure(string $instance, ?GuestCommandResult $result): string
+    {
+        $script = 'converge-sample-app.sh';
+        if (! $result instanceof GuestCommandResult) {
+            return 'Failed to inspect the sample App convergence state. '
+                ."Guest convergence script {$script} on {$instance} returned no result.";
+        }
+
+        return (new GuestFailureDetail)->append(
+            'Failed to inspect the sample App convergence state. '
+            ."Guest convergence script {$script} failed on {$instance} with exit code {$result->exitCode}.",
+            $result->stderr,
+        );
     }
 
     /**

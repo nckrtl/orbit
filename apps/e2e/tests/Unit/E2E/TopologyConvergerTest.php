@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\E2E\IncusHost;
 use App\E2E\TopologyConverger;
+use App\E2E\Value\GuestCommandResult;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyRecipe;
@@ -864,6 +865,34 @@ describe('TopologyConverger', function () {
                 ->and(mb_strlen($tail))->toBeLessThanOrEqual(2000)
                 ->and(str_ends_with($tail, 'Authorization: [REDACTED]'))->toBeTrue();
         }
+    });
+
+    it('keeps a redacted stderr tail when guest script stderr is not valid UTF-8', function (): void {
+        $converger = new TopologyConverger(task7_host());
+        $message = new ReflectionMethod(TopologyConverger::class, 'guestFailure')->invoke(
+            $converger,
+            'converge-gateway.sh',
+            'orbit-e2e-tst-123-aaaaaaaa-gateway',
+            new GuestCommandResult('', "boom\xff\nAuthorization: Bearer private-token\n", 9),
+        );
+        assert(is_string($message));
+
+        expect($message)
+            ->toStartWith(
+                'Guest convergence script converge-gateway.sh failed on orbit-e2e-tst-123-aaaaaaaa-gateway '
+                .'with exit code 9.',
+            )
+            ->toContain("exit code 9.\nboom")
+            ->toContain('Authorization: [REDACTED]')
+            ->not->toContain('private-token', "\xff")
+            ->and(mb_check_encoding($message, 'UTF-8'))->toBeTrue();
+
+        expect(json_encode([
+            'state' => 'failed',
+            'error' => $message,
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+            ->toContain('boom')
+            ->toContain('Authorization: [REDACTED]');
     });
 
     it('does not retry the hydration invocation after readiness succeeds', function (int $exitCode): void {

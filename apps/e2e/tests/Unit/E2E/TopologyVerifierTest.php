@@ -416,6 +416,34 @@ describe('TopologyVerifier typed application state', function () {
             ->toBe(['/usr/local/bin/converge-sample-app.sh', 'inspect-state', 'native']);
     });
 
+    it('names the script, exit code, and redacted stderr tail when sample state inspection fails', function (): void {
+        setUpTopologyVerifierProcessFacade();
+        Process::fake(function (PendingProcess $process): ProcessResult {
+            $inventory = topologyVerifierInventory($process);
+            if ($inventory instanceof ProcessResult) {
+                return $inventory;
+            }
+
+            return Process::result(json_encode([[
+                'label' => 'sample-app-state',
+                'stdout' => '',
+                'stderr' => "sample-app: boom\nAuthorization: Bearer private-token\n",
+                'exit_code' => 65,
+            ]], JSON_THROW_ON_ERROR));
+        });
+
+        expect(fn () => new TopologyVerifier(new IncusHost(pool: 'orbit-e2e'))->verify(
+            TopologyTarget::topologySnapshot(),
+            VerificationMode::Proof,
+            new SourceState(str_repeat('a', 40), str_repeat('a', 40)),
+        ))->toThrow(
+            RuntimeException::class,
+            "Failed to inspect the sample App convergence state. Guest convergence script converge-sample-app.sh failed on orbit-e2e-topology-snapshot-app-dev with exit code 65.\n"
+            ."sample-app: boom\n"
+            .'Authorization: [REDACTED]',
+        );
+    });
+
     it('refuses incomplete native production state instead of omitting production readiness', function (): void {
         setUpTopologyVerifierProcessFacade();
         $sha = str_repeat('a', 40);
