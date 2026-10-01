@@ -85,7 +85,7 @@ function docsImpactFixture(): string
     file_put_contents($root.'/config/app.php', "<?php return [];\n");
     file_put_contents($root.'/apps/docs/config/docs-covers-ratchet.php', "<?php return ['docs/reference/tasks.md'];\n");
     exec('git -C '.escapeshellarg($root).' init -q');
-    // Detached maintenance can create object files while teardown removes the repository.
+    // Keep background Git processes from writing pack files during cleanup.
     exec('git -C '.escapeshellarg($root).' config gc.auto 0');
     exec('git -C '.escapeshellarg($root).' config maintenance.auto false');
     exec('git -C '.escapeshellarg($root).' add .');
@@ -101,6 +101,10 @@ it('docs impact fixtures disable automatic Git maintenance before cleanup', func
 
     expect($status)->toBe(0)
         ->and($settings)->toContain('gc.auto 0', 'maintenance.auto false');
+
+    removeDocsImpactFixturePath($root);
+
+    expect(is_dir($root))->toBeFalse();
 });
 
 it('docs impact reports a new API operation and generator surfaces', function (): void {

@@ -43,9 +43,9 @@ it('runs from the release without the Gateway autoloader and serves a published 
     $directory = orb_release_install();
     $catalog = $directory.'/catalog.json';
     file_put_contents($catalog, '{"requesters":{},"records":{"release.orbit":"10.44.0.9"},"suffixes":{},"overrides":{}}');
-    $port = orb_release_free_port();
     $selfTest = new Process([PHP_BINARY, $directory.'/serve.php', '--self-test']);
     $selfTest->run();
+    $port = orb_release_free_port();
     $listener = new Process([PHP_BINARY, $directory.'/serve.php', '--listen=127.0.0.1', '--port='.$port, '--catalog='.$catalog, '--upstream=127.0.0.1:9']);
 
     try {
@@ -71,11 +71,7 @@ it('answers a query that arrives while the listener restarts on sockets it inher
     $directory = orb_release_install();
     $catalog = $directory.'/catalog.json';
     file_put_contents($catalog, '{"requesters":{},"records":{"handover.orbit":"10.44.0.9"},"suffixes":{},"overrides":{}}');
-    $udp = stream_socket_server('udp://127.0.0.1:0', $errorCode, $errorMessage, STREAM_SERVER_BIND);
-    expect($udp)->toBeResource();
-    $port = (int) substr((string) stream_socket_get_name($udp, false), strrpos((string) stream_socket_get_name($udp, false), ':') + 1);
-    $tcp = stream_socket_server('tcp://127.0.0.1:'.$port, $errorCode, $errorMessage);
-    expect($tcp)->toBeResource();
+    [$udp, $tcp, $port] = orb_release_sockets();
     $start = static fn () => proc_open(
         ['sh', '-c', 'LISTEN_PID=$$ LISTEN_FDS=2 exec "$0" "$@"', PHP_BINARY, $directory.'/serve.php', '--listen=127.0.0.1', '--port='.$port, '--catalog='.$catalog, '--upstream=127.0.0.1:9'],
         [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['file', $directory.'/listener.log', 'a'], 3 => $udp, 4 => $tcp],
@@ -148,11 +144,33 @@ function orb_release_dig(int $port, string $name, string $transport): string
 
 function orb_release_free_port(): int
 {
-    $udp = stream_socket_server('udp://127.0.0.1:0', $errorCode, $errorMessage, STREAM_SERVER_BIND);
-    $name = (string) stream_socket_get_name($udp, false);
+    [$udp, $tcp, $port] = orb_release_sockets();
     fclose($udp);
+    fclose($tcp);
 
-    return (int) substr($name, strrpos($name, ':') + 1);
+    return $port;
+}
+
+/** @return array{resource, resource, int} */
+function orb_release_sockets(): array
+{
+    // UDP's ephemeral port may already be occupied by TCP. Reserve both protocols before using it.
+    for ($attempt = 0; $attempt < 100; $attempt++) {
+        $tcp = stream_socket_server('tcp://127.0.0.1:0', $errorCode, $errorMessage);
+        if ($tcp === false) {
+            throw new RuntimeException('Cannot reserve a TCP listener socket: '.$errorMessage);
+        }
+        $name = (string) stream_socket_get_name($tcp, false);
+        $port = (int) substr($name, strrpos($name, ':') + 1);
+        $udp = @stream_socket_server('udp://127.0.0.1:'.$port, $errorCode, $errorMessage, STREAM_SERVER_BIND);
+        if ($udp !== false) {
+            return [$udp, $tcp, $port];
+        }
+
+        fclose($tcp);
+    }
+
+    throw new RuntimeException('Cannot reserve a shared UDP/TCP listener port: '.$errorMessage);
 }
 
 function orb_release_wait_until(callable $ready, float $seconds): bool

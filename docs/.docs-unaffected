@@ -85,7 +85,15 @@ docs/reference/instance-removal.md: The published-commit check reads through the
 docs/reference/mcp.mdx: The instance-register tool follows its regenerated contract; the MCP page lists no per-tool fields.
 docs/reference/php-runtime.md: Production source reads pass the Project's source access through the shared read access; the PHP runtime does not change.
 docs/reference/tools.md: The service provider only binds the GitHub CLI token source; Tool behavior does not change.
-docs/cli/extension.mdx: The extension-switch migration only moves Gateway extension keys. Ended-task assistance does not change the extension commands.
+docs/reference/api-reference.md: bin/docs-openapi only gains the new database server operations and the database:create body variants; the API reference workflow does not change.
+docs/reference/cli-ux.md: New recorded CLI outputs for database servers and users follow the existing CLI design standard unchanged.
+docs/reference/gateway-response-fixtures.md: New and re-recorded database fixtures follow the existing fixture workflow unchanged.
+docs/reference/incus-topologies.md: The sample fixture script creates the e2e MySQL user with docker exec instead of the removed --process form; the topology contents stay the same.
+docs/reference/mcp.mdx: The new database server tools follow their generated contracts; the MCP page lists no per-tool fields.
+docs/reference/tools.md: The service provider only binds the database server admin and clone services; Tool behavior does not change.
+docs/reference/topology-snapshot.md: The prepared-state manifest only lists the new source files; the snapshot workflow does not change.
+docs/reference/web-app.md: The web API types are regenerated for the new database endpoints; no web screen changes. Boolean request fields stay on /reference/api-reference and /reference/mcp.
+docs/cli/extension.mdx: Served tool schema types stay on /reference/mcp. The extension-switch migration only moves Gateway extension keys. Neither tool schema types nor ended-task assistance change the extension commands.
 docs/reference/agent-annotation.md: The existing annotations migration that also touches tasks stores annotation delivery. Ended-task assistance does not change annotations.
 docs/reference/assigned-vite-ports.md: The existing vite port assignment migration allocates ports. Ended-task assistance does not change port assignment.
 docs/reference/database-connections.md: The existing database connection migrations store connections, targets, and users. Ended-task assistance does not change database connections.
@@ -100,3 +108,5 @@ docs/reference/routes.md: The existing route and workspace migrations store rout
 docs/reference/schedules.md: The existing schedule migrations store timer records. Ended-task assistance does not change Schedules.
 docs/reference/tools.md: The existing tool and tool-manager migrations store package records. Ended-task assistance does not change Tools.
 unowned: Unchanged migration files in the planned migrations directory have no covers owner and no model page. The extractor lists those surfaces and raises no error because this branch adds or removes none of them. Ended-task assistance does not add a page for them.
+docs/reference/database-connections.md: The SQLite clone now takes a reflink on the same Node; this page links to the Database clone section, which describes it, and its connection and ownership rules are unchanged.
+docs/reference/tools.md: The service provider only binds the new dependency copier; Tool management is unchanged.

@@ -26,6 +26,7 @@ use App\Domain\Schedules\ScheduleTargetUseGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
+use App\Models\DatabaseServer;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -85,6 +86,7 @@ final readonly class RemoveNodeAction
 
         ($this->schedules ?? app(ScheduleTargetUseGuard::class))->assertNodeRemovable($node);
         ($this->routes ?? app(RouteRemovalGuard::class))->assertNodeRemovable($node);
+        $this->guardDatabaseServers($node);
         $this->guardProtected($node, $caller);
         $shed = $offline ? $this->shedRoles($node, $force) : null;
         $this->guardRemoval($node);
@@ -408,6 +410,16 @@ final readonly class RemoveNodeAction
         }
 
         return $shed;
+    }
+
+    private function guardDatabaseServers(Node $node): void
+    {
+        if (DatabaseServer::query()->where('node_id', $node->id)->exists()) {
+            throw $this->conflict(
+                'node.has_database_servers',
+                "Node [{$node->name}] still runs Database servers. Remove them with database:server:destroy first.",
+            );
+        }
     }
 
     private function guardOwnedRuntime(Node $node): void

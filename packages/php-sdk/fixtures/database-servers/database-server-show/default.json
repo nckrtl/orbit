@@ -1,0 +1,38 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\DatabaseServers\\ShowDatabaseServerRequest",
+    "route": "GET /api/v1/database-servers/{database_server}",
+    "status": 200,
+    "body": {
+        "data": {
+            "id": 1,
+            "slug": "beast-mysql",
+            "node_id": 2,
+            "process_id": 1,
+            "tag": "8.4",
+            "port": 3306,
+            "status": "active",
+            "databases_count": 1,
+            "databases": [
+                {
+                    "id": 1,
+                    "slug": "dlf-leden",
+                    "driver": "mysql",
+                    "node_id": 2,
+                    "host": "10.44.0.80",
+                    "port": 3306,
+                    "database": "dlf_leden",
+                    "path": null,
+                    "username": "dlf_main",
+                    "has_password": true,
+                    "server": "beast-mysql",
+                    "owner_instance_id": 1,
+                    "test_database": "dlf_leden_test"
+                }
+            ]
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

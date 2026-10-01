@@ -580,7 +580,7 @@
             "description": "Numeric Node ID."
           },
           "force": {
-            "type": "string",
+            "type": "boolean",
             "description": "Skip the destructive confirmation prompt"
           }
         },
@@ -647,7 +647,7 @@
             "description": "Numeric Cluster ID."
           },
           "force": {
-            "type": "string",
+            "type": "boolean",
             "description": "Skip the destructive confirmation prompt"
           }
         },
@@ -738,7 +738,7 @@
       "name": "database-create",
       "extension": null,
       "title": "Create a Database connection",
-      "description": "Create a Database connection through the Gateway.",
+      "description": "Registers an existing database, or with `server` creates a MySQL database and user on that Database server. `server` excludes every connection field; `instance_id` makes that Instance the owner, creates the test database, and attaches the connection under prefix DB. The response never contains a password.",
       "method": "POST",
       "path": "/api/v1/database-connections",
       "path_inputs": [],
@@ -746,8 +746,190 @@
       "streams": false,
       "input_schema": {
         "type": "object",
-        "properties": {},
-        "additionalProperties": false
+        "properties": {
+          "slug": {
+            "type": "string",
+            "pattern": "",
+            "maxLength": 63
+          },
+          "driver": {
+            "type": "string",
+            "enum": [
+              "mysql",
+              "pgsql",
+              "sqlite",
+              "redis"
+            ]
+          },
+          "node_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "host": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "",
+            "maxLength": 255
+          },
+          "port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "maximum": 65535,
+            "minimum": 1
+          },
+          "database": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "",
+            "maxLength": 64
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "",
+            "maxLength": 1024
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "",
+            "maxLength": 128
+          },
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1024
+          },
+          "server": {
+            "type": "string",
+            "pattern": "",
+            "maxLength": 63
+          },
+          "instance_id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "slug": {
+                "type": "string",
+                "pattern": "",
+                "maxLength": 63
+              },
+              "driver": {
+                "type": "string",
+                "enum": [
+                  "mysql",
+                  "pgsql",
+                  "sqlite",
+                  "redis"
+                ]
+              },
+              "node_id": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1
+              },
+              "host": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "",
+                "maxLength": 255
+              },
+              "port": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "maximum": 65535,
+                "minimum": 1
+              },
+              "database": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "",
+                "maxLength": 64
+              },
+              "path": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "",
+                "maxLength": 1024
+              },
+              "username": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "",
+                "maxLength": 128
+              },
+              "password": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 1024
+              }
+            },
+            "required": [
+              "slug",
+              "driver"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "slug": {
+                "type": "string",
+                "pattern": "",
+                "maxLength": 63
+              },
+              "server": {
+                "type": "string",
+                "pattern": "",
+                "maxLength": 63
+              },
+              "instance_id": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "required": [
+              "slug",
+              "server"
+            ],
+            "additionalProperties": false
+          }
+        ]
       }
     },
     {
@@ -893,6 +1075,119 @@
       }
     },
     {
+      "name": "database-server-create",
+      "extension": null,
+      "title": "Create a Database server",
+      "description": "Runs a MySQL server as a Docker Node Process. The Gateway generates the root password, passes it to the container for the first start only, and then keeps it only encrypted. A retry of the same request continues from the first step that did not finish; another Node, tag, or port for an existing slug returns `database.server_slug_conflict`. No response contains the password.",
+      "method": "POST",
+      "path": "/api/v1/database-servers",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "pattern": "",
+            "maxLength": 63,
+            "description": "Database server slug"
+          },
+          "node_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "tag": {
+            "type": "string",
+            "pattern": "",
+            "maxLength": 128,
+            "description": "MySQL image tag. Defaults to 8.4"
+          },
+          "port": {
+            "type": "integer",
+            "maximum": 65535,
+            "minimum": 1,
+            "description": "Port to publish on the Node WireGuard address. Defaults to 3306"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "slug",
+          "node_id"
+        ]
+      }
+    },
+    {
+      "name": "database-server-destroy",
+      "extension": null,
+      "title": "Remove a Database server",
+      "description": "Removes the Process and the record of a Database server that no connection uses. The data volume stays on the Node. A server that a connection points to returns `database.server_in_use`.",
+      "method": "DELETE",
+      "path": "/api/v1/database-servers/{database_server}",
+      "path_inputs": [
+        "database_server"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "database_server": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "Database server slug."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "database_server"
+        ]
+      }
+    },
+    {
+      "name": "database-server-list",
+      "extension": null,
+      "title": "List Database servers",
+      "description": "List the Database servers.",
+      "method": "GET",
+      "path": "/api/v1/database-servers",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "database-server-show",
+      "extension": null,
+      "title": "Show a Database server",
+      "description": "Shows one Database server with the connections of the databases on it.",
+      "method": "GET",
+      "path": "/api/v1/database-servers/{database_server}",
+      "path_inputs": [
+        "database_server"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "database_server": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "Database server slug."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "database_server"
+        ]
+      }
+    },
+    {
       "name": "database-show",
       "extension": null,
       "title": "Show a Database connection",
@@ -976,52 +1271,42 @@
     {
       "name": "database-user-create",
       "extension": null,
-      "title": "Create a managed MySQL user",
-      "description": "Creates a MySQL user and database through a Node-targeted Docker MySQL Process, then registers or refreshes the connection. The host is the Node WireGuard address and the port is the published host port for container port 3306. A slug that already names a mysql connection is refreshed. A pgsql or sqlite slug returns `database.slug_conflict`.",
+      "title": "Add a database user",
+      "description": "Adds a user to a database on a Database server, or sets the password and privileges of an existing one. `read_only` grants SELECT; otherwise the user gets all privileges on the database. A connection without a server returns `database.server_required`. The username of a connection on the server returns `database.name_conflict`.",
       "method": "POST",
-      "path": "/api/v1/processes/{process}/database-users",
+      "path": "/api/v1/database-connections/{database_connection}/users",
       "path_inputs": [
-        "process"
+        "database_connection"
       ],
       "query_inputs": [],
       "streams": false,
       "input_schema": {
         "type": "object",
         "properties": {
-          "process": {
-            "type": "integer",
-            "minimum": 1,
-            "description": "Numeric Process ID."
-          },
-          "slug": {
+          "database_connection": {
             "type": "string",
-            "pattern": "",
-            "maxLength": 63,
-            "description": "Database connection slug"
-          },
-          "database": {
-            "type": "string",
-            "pattern": "",
-            "maxLength": 32,
-            "description": "Database name to create"
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "Database connection slug."
           },
           "username": {
             "type": "string",
             "pattern": "",
             "maxLength": 32,
-            "description": "Username to create"
+            "description": "Username, a 1-32 character identifier"
           },
           "password": {
             "type": "string",
             "maxLength": 1024,
-            "description": "Password for the created user"
+            "description": "Password for the new user"
+          },
+          "read_only": {
+            "type": "boolean",
+            "description": "Grant only SELECT on the database"
           }
         },
         "additionalProperties": false,
         "required": [
-          "process",
-          "slug",
-          "database",
+          "database_connection",
           "username",
           "password"
         ]
@@ -2191,7 +2476,7 @@
             "description": "Numeric Instance ID."
           },
           "force": {
-            "type": "string",
+            "type": "boolean",
             "description": "Delete dirty or unpublished source after identity checks"
           }
         },
@@ -2947,11 +3232,11 @@
         "type": "object",
         "properties": {
           "force": {
-            "type": "string",
+            "type": "boolean",
             "description": "Skip confirmation"
           },
           "purge_data": {
-            "type": "string",
+            "type": "boolean",
             "description": "Delete Metrics data"
           }
         },
@@ -3408,11 +3693,11 @@
             "description": "Numeric Node ID."
           },
           "force": {
-            "type": "string",
+            "type": "boolean",
             "description": "Skip the destructive confirmation prompt"
           },
           "offline": {
-            "type": "string",
+            "type": "boolean",
             "description": "Shed roles and remove a node Orbit cannot reach"
           }
         },
@@ -3578,7 +3863,7 @@
             "description": "Role name"
           },
           "force": {
-            "type": "string",
+            "type": "boolean",
             "description": "Confirm the role transfer"
           },
           "from": {
@@ -3632,15 +3917,15 @@
             "description": "Role name"
           },
           "force": {
-            "type": "string",
+            "type": "boolean",
             "description": "Confirm destructive role removal and dependent cleanup"
           },
           "purge_data": {
-            "type": "string",
+            "type": "boolean",
             "description": "Request supported role-owned data cleanup"
           },
           "offline": {
-            "type": "string",
+            "type": "boolean",
             "description": "Remove the role from a node Orbit cannot reach"
           }
         },
@@ -5904,7 +6189,10 @@
           },
           "status": {
             "type": "string",
-            "enum": [],
+            "enum": [
+              "backlog",
+              "todo"
+            ],
             "description": "backlog (default) or todo"
           },
           "notify_coder": {
@@ -7021,7 +7309,10 @@
           },
           "status": {
             "type": "string",
-            "enum": [],
+            "enum": [
+              "backlog",
+              "todo"
+            ],
             "description": "backlog or todo"
           }
         },

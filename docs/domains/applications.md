@@ -2,10 +2,11 @@
 title: "Applications"
 description: "How a Project becomes an Instance on a Node: create or adopt a development checkout, provision its endpoint, clone to production, move, and remove."
 covers:
-  - apps/gateway/app/Actions/Instances/{CreateInstanceAction,RegisterInstanceAction,ListInstancesAction,ShowInstanceAction}.php
+  - apps/gateway/app/Actions/Instances/{CreateInstanceAction,CopyInstanceDependenciesAction,CloneInstanceDatabaseAction,RegisterInstanceAction,ListInstancesAction,ShowInstanceAction}.php
+  - apps/gateway/app/Domain/Instances/{DatabaseClone,DependencyCopy}/**
   - apps/gateway/app/Domain/Instances/{InstanceState,InstanceSourceLayout,InstanceDestinationGuard,ComposerSourceClassifier,Development*}.php
   - apps/gateway/app/Domain/Instances/Registration/**
-  - apps/gateway/app/Infrastructure/Instances/{NativeDevelopmentInstanceProvisioner,RemoteDevelopmentInstanceSourceLifecycle,RemoteDevelopmentInstanceConfigurator,RemoteRegistrationSourceManager,RemoteInstanceDestinationGuard}.php
+  - apps/gateway/app/Infrastructure/Instances/{NativeDevelopmentInstanceProvisioner,RemoteDevelopmentInstanceSourceLifecycle,RemoteDevelopmentInstanceConfigurator,RemoteRegistrationSourceManager,RemoteInstanceDestinationGuard,RemoteInstanceSqliteCloner,RemoteInstanceDependencyCopier}.php
   - apps/gateway/app/{Http/Controllers/Api/InstancesController.php,Http/Requests/Instances/**,Data/Instances/**,Models/Instance.php}
   - apps/cli/app/Commands/Instances/{CreateInstanceCommand,RegisterInstanceCommand,ListInstancesCommand,ShowInstanceCommand,InstanceOutput}.php
   - apps/cli/app/Services/Git/**
@@ -66,6 +67,56 @@ The Gateway refuses these requests before it changes anything:
 | `instance.candidate_required` | The Node has the active `app-prod` role. A repeat for an existing production Instance is refused the same way. Use [`instance:clone`](/reference/instance-cloning). |
 | `instance.placement_unavailable` | The owning Node does not have exactly one active `app-dev` or `app-prod` role. |
 
+### Dependency copy
+
+Installing dependencies is the slowest part of a new checkout. When the Project has an active Instance named `default` on the same Node, every other new development Instance gets a copy of that Instance's `vendor` and `node_modules` directories. Orbit makes the copy after the source is ready and before the database clone and the setup steps.
+
+Orbit copies with `cp -a --reflink=auto`. On a filesystem with block cloning, such as XFS, btrfs, or OpenZFS 2.2 or later with block cloning enabled, the copy shares the data blocks of the `default` Instance. It takes seconds and uses almost no extra disk space. A file gets its own blocks only when one of the two Instances changes it, so neither Instance sees the other's changes. On a filesystem without block cloning, such as ext4, `cp` makes a normal copy instead.
+
+Orbit copies only these two directories. The rest of the checkout comes from the clone, so the new Instance never gets the `.env`, caches, logs, or runtime files of the `default` Instance. Symlinks inside the directories stay symlinks. Composer and npm write relative links, so a link to a package inside the repository points into the new checkout.
+
+Orbit skips a directory in these cases:
+
+- The `default` Instance does not have it, for example after the [dependency prune](/reference/app-dev-runtime-hibernation#dependency-prune).
+- It is a symlink in the `default` Instance.
+- The new checkout already has it, for example because the repository commits `vendor`.
+
+Orbit copies each directory to a staging path next to the checkout, `.orbit-copy.<instance>.<directory>`, and then renames it into place. So a directory in the new checkout is complete or absent. During the copy, Orbit holds the Process admission lock of the `default` Instance, so the dependency prune and its restore wait. The copy may take 120 seconds on the Node, and then `timeout` stops it.
+
+A failed or stopped copy removes its staging path, and creation continues without the missing directories. The Gateway log gets a warning with the code `instance.dependency_copy_failed`, both Instance IDs, the exit code, and the end of the error output.
+
+The [setup steps](/reference/instance-setup) still run. `composer install` and `npm install` compare the copied directories with the lock files of the new branch and change only what differs. A setup step that deletes the directory first, such as `npm ci`, discards the copy and installs everything again.
+
+[Task workspaces](/reference/tasks#shared-instance) get the same copy.
+
+### Database clone
+
+When the Project has an Instance named `default` with a database attached under prefix `DB`, every other new development Instance gets its own copy of that database. The copy has the same kind as the source. Orbit makes it after the source is ready and before the setup steps, so a setup step such as a migration runs against the copy.
+
+| Source | Copy |
+| --- | --- |
+| MySQL on a [Database server](/reference/database-servers) | A database named `<project>_<instance>` on the same server, owned by the Instance's user and filled with `mysqldump --single-transaction` piped into `mysql` inside the server's container, plus the test database `<project>_<instance>_test`. |
+| SQLite file inside the `default` checkout | A copy at the same relative path in the new checkout, also on another Node. Tests use `:memory:`. |
+
+On the same Node, Orbit holds SQLite's write lock while it takes a reflink of the SQLite database file and its `-wal` file. It first checks that the filesystem can clone the file, so no writer waits when it cannot. Orbit copies a snapshot made with SQLite's backup API instead in three cases: the filesystem has no block cloning, a writer holds the lock for two seconds, or the source is on another Node.
+
+Orbit records the copy as a [database the Instance owns](/reference/database-connections#owned-databases) with the connection slug `<project>-<instance>`, attaches it under prefix `DB`, and synchronizes `.env` and `.env.testing`.
+
+When the Instance has no stored configuration yet and its checkout has a `.env`, Orbit first [imports](/reference/environment-variables#import) that file, so synchronization keeps its other keys. Without a `.env`, synchronization writes only the stored keys.
+
+The clone returns these codes.
+
+| Code | HTTP | Cause |
+| --- | --- | --- |
+| `instance.database_clone_unsupported` | 422 | The source is not MySQL on a Database server or a SQLite file inside the `default` checkout. Nothing changes. |
+| `instance.database_clone_failed` | 502 | The copy failed. Orbit drops the partial copy and removes the Instance as a failed setup does. |
+
+No teardown step runs after a failed copy, because no setup step ran yet. When the removal cannot finish, the error has `cleanup: incomplete` and names the `instance:destroy` command that finishes it.
+
+Orbit records each finished step of the copy on its connection. When a create stops before the copy finished, an identical `instance:create` finishes the copy and then runs the setup steps. It copies the data again unless the earlier copy finished, so it never keeps a partial copy.
+
+The copy holds the full data of the `default` Instance, including personal data. A Project without a `default` Instance, or whose `default` Instance has no `DB` attachment, gets no copy.
+
 ## Register an existing checkout
 
 Run registration on the `app-dev` Node that holds the source. The Node that sends the request is the Node that receives the Instance.
@@ -113,7 +164,7 @@ For an Instance with a Route, a retry after step 1 inspects the source again. If
 
 A failed setup step during `instance:create` runs the teardown steps and removes the new Instance. See [Run setup](/reference/instance-setup#run-setup).
 
-An identical `instance:create` for an active Instance returns it unchanged and runs no setup. An Instance can stay active with a failed setup: after `instance:setup` or `instance:register --setup` fails, or when Orbit could not confirm the failed step or finish the rollback. Then `instance:create` returns `instance.setup_step_failed` until `instance:setup` succeeds.
+An identical `instance:create` for an active Instance returns it unchanged and runs no setup. An Instance can stay active with a failed setup: after `instance:setup` or `instance:register --setup` fails, or when Orbit could not confirm the failed step or finish the rollback. Then `instance:create` returns `instance.setup_step_failed` until `instance:setup` succeeds, unless the [database clone](#database-clone) did not finish: then `instance:create` finishes it and runs setup.
 
 Orbit does not recover missing source profiles on older Instances. ADR 0177 records the no-legacy-support rule.
 
@@ -174,6 +225,14 @@ An Instance is active once Orbit prepared its source, runtime, Route, and Larave
 ### Orbit owns the Laravel URL
 
 Laravel uses `APP_URL` to build links outside a request. When Orbit changes a domain and leaves `APP_URL` alone, links break. So Orbit derives `APP_URL` from the Route in development and production. Reading an existing `APP_URL` as the source of the domain was rejected: the Route decides the endpoint.
+
+### Copy dependencies, not the checkout
+
+A new Instance needs the slow part of the `default` Instance, its installed dependencies, and nothing that names the `default` Instance. A copy of the whole checkout would bring its `.env`, configuration cache, `public/hot`, logs, and absolute links. Each of those would need a rewrite before the copy is safe to run. The clone brings only tracked files, and the dependency directories hold relative paths, so nothing needs a rewrite. The setup steps run after the copy, so every Instance has one creation path, and the copy only makes the installs fast.
+
+An opt-in flag was rejected: the copy is always correct and always faster. A ZFS dataset clone per Instance was rejected: it works only on ZFS, needs a dataset and permissions per Instance, and saves only seconds over a reflink.
+
+A reflink of a SQLite file that the `default` Instance is writing could pair a database file and a WAL file from different moments. The write lock makes the pair consistent. Readers continue, and writers wait only while Orbit takes the reflink.
 
 ### One application model
 

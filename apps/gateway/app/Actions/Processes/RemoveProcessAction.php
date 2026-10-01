@@ -10,6 +10,7 @@ use App\Domain\AppDev\AgentationSiteProjection;
 use App\Domain\AppDev\AgentationUrlProjection;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\DatabaseServers\DatabaseServerProcessOwnership;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
@@ -52,13 +53,14 @@ final readonly class RemoveProcessAction
         $this->broadcaster = $broadcaster ?? app(RecordEventBroadcaster::class);
     }
 
-    /** `$removedByOwningRole` is true only when the analytics role removes its own `plausible` Process. */
+    /** `$removedByOwningRole` is true only when the analytics role removes its own `plausible` Process, or a Database server removes its own Process. */
     public function execute(#[SensitiveParameter] Process $process, bool $removedByOwningRole = false): Process
     {
         return $this->lease->run($process, function (Process $fresh) use ($removedByOwningRole): Process {
             if (! $removedByOwningRole) {
                 app(AnalyticsProcessOwnership::class)->assertRemovable($fresh);
                 app(ProxyCliProcessOwnership::class)->assertRemovable($fresh);
+                app(DatabaseServerProcessOwnership::class)->assertRemovable($fresh);
             }
 
             if (RouteCustomProxy::query()->where('process_id', $fresh->id)->exists()) {

@@ -723,6 +723,47 @@
             ]
         },
         {
+            "path": "docs/decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password.md",
+            "title": "ADR 0190: Run MySQL servers with a Gateway-held admin password",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0190"
+            ]
+        },
+        {
+            "path": "docs/decisions/0191-clone-the-default-instance-database-for-each-new-instance.md",
+            "title": "ADR 0191: Clone the default Instance's database for each new Instance",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Route"
+            ],
+            "governing_adrs": [
+                "0190",
+                "0191"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -766,7 +807,9 @@
             "governing_adrs": [
                 "0097",
                 "0175",
-                "0182"
+                "0182",
+                "0190",
+                "0191"
             ]
         },
         {
@@ -793,9 +836,11 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
                 "Role",
-                "Route"
+                "Route",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -1109,6 +1154,25 @@
                 "Process",
                 "Role",
                 "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/database-servers.md",
+            "title": "Database servers",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Activity",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project"
             ],
             "governing_adrs": []
         },
