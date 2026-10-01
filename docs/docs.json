@@ -561,7 +561,8 @@
               "decisions/0175-docs-impact-check-in-orbit-repo",
               "decisions/0176-file-repro-first-bug-groups",
               "decisions/0178-run-project-agnostic-tasks-without-a-planner",
-              "decisions/0182-start-tasks-from-project-task-definitions"
+              "decisions/0182-start-tasks-from-project-task-definitions",
+              "decisions/0187-ask-the-reviewer-before-the-operator"
             ]
           }
         ]

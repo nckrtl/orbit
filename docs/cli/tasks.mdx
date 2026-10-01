@@ -50,11 +50,11 @@ Show whether the tasks extension is on, then list every task currently asking fo
 orbit tasks:status [--json]
 ```
 
-JSON returns `enabled` as `true` or `false`, and `assistance` as a list in ascending task id order. Each entry has the task's `id`, `project_id`, `project`, `project_code`, `title`, `status`, and `assistance_reason`. The list is empty when no task is asking, and it is present while the extension is off. The human table shows the task reference, title, status, and reason. An empty table says `No groups are asking for assistance.`
+JSON returns `enabled` as `true` or `false`, and `assistance` as a list in ascending task id order. Each entry has the task's `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. The list is empty when no task is asking, and it is present while the extension is off. The human output shows direction requests first, under `Needs your direction`, with the task reference, title, status, and question. Failures follow under `Failures`, with the task reference, title, status, and reason. An empty list says `No groups are asking for assistance.` The [tasks reference](/reference/tasks#direction-requests) defines the two kinds.
 
 ## orbit tasks:list
 
-List tasks with their title, Project, status, number of completed subtasks, and assistance reason when the task is asking.
+List tasks with their title, Project, status, and number of completed subtasks. A task that asks for direction shows its question. A task that asks because of a failure shows its reason.
 
 ```bash
 orbit tasks:list [--project=ID] [--status=STATUS] [--json]
@@ -75,7 +75,7 @@ Show one task as a detail tree, followed by its brief and a table of its subtask
 orbit tasks:show [group] [--json]
 ```
 
-The tree shows the ID, title, Project, status, whether the task is asking for assistance, the assistance reason, Instance, pull request, Coder notification, models, tokens, line diff, and duration. The subtask table shows the position, ID, title, status, deliverables, tokens, line diff, duration, and assistance reason of each subtask. A subtask or task that is not asking shows an em dash in that column, even when an old reason is still stored. JSON includes `assistance_requested` and `assistance_reason` on the task and each subtask, and `fails_on_base` on every test deliverable. When that value is true, the detail names the deliverable under Fails on the start commit. Showing an active task refreshes its metrics, as the [tasks reference](/reference/tasks#tokens-and-line-diff) describes.
+The tree shows the ID, title, Project, status, whether the task is asking for assistance, the assistance kind, the question or reason, Instance, pull request, Coder notification, models, tokens, line diff, and duration. The subtask table shows the position, ID, title, status, deliverables, tokens, line diff, duration, and assistance reason of each subtask. A subtask or task that is not asking shows an em dash in that column, even when an old reason is still stored. JSON includes `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason` on the task and each subtask, and `fails_on_base` on every test deliverable. When that value is true, the detail names the deliverable under Fails on the start commit. Showing an active task refreshes its metrics, as the [tasks reference](/reference/tasks#tokens-and-line-diff) describes.
 
 ## orbit tasks:create
 
@@ -251,7 +251,7 @@ In a terminal, the task list shows tasks with a cancellable `todo` or `running` 
 
 ## orbit tasks:comment:create
 
-Post a typed comment on a subtask. An `assistance_requested` comment flags the subtask and its task and notifies Coder once. A `resolution` comment clears the flag and continues the blocked agent thread. The [tasks reference](/reference/tasks#assistance-and-resolution) owns these effects.
+Post a typed comment on a subtask. An `assistance_requested` comment flags the subtask and its task as a direction request and notifies Coder once. A `resolution` comment clears the flag. It goes to the subtask's reviewer on a direction request, and to the blocked agent thread on a failure. The [tasks reference](/reference/tasks#assistance-and-resolution) owns these effects.
 
 ```bash
 orbit tasks:comment:create [group] [subtask] [--type=TYPE] [--body=TEXT] [--author=NAME] [--agent-thread=ID] [--json]
