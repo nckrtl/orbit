@@ -649,6 +649,84 @@ it('isolates hot, cache, and config behind a contained source symlink for both c
     }
 });
 
+it('isolates hot, cache, and config behind multi-hop source symlinks for both copy paths', function (): void {
+    $root = sys_get_temp_dir().'/orbit-copy-multihop-'.bin2hex(random_bytes(4));
+    $apps = $root.'/apps';
+    $sourcePath = $apps.'/acme/default';
+    $destPath = $apps.'/acme/feature';
+    $head = str_repeat('b', 40);
+
+    try {
+        copy_multihop_source($sourcePath);
+        $preserved = copy_contained_source_bytes($sourcePath);
+        $node = Node::query()->create([
+            'name' => 'copy-node',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'tld' => 'test',
+            'public_ssh_host' => '192.0.2.61',
+            'wireguard_ip' => '10.44.0.61',
+            'user' => 'orbit',
+            'settings' => ['apps' => ['path' => $apps]],
+        ]);
+        $project = Project::query()->create([
+            'name' => 'Acme',
+            'slug' => 'acme',
+            'repository_url' => 'https://github.com/acme/site.git',
+            'default_branch' => 'main',
+            'root' => 'public',
+        ]);
+        $source = Instance::query()->create([
+            'project_id' => $project->id,
+            'node_id' => $node->id,
+            'name' => 'default',
+            'source_layout' => InstanceSourceLayout::Checkout,
+            'checkout_path' => $sourcePath,
+            'branch' => 'main',
+            'starting_commit' => $head,
+            'status' => InstanceState::Active,
+        ]);
+        $target = Instance::query()->create([
+            'project_id' => $project->id,
+            'node_id' => $node->id,
+            'name' => 'feature',
+            'source_layout' => InstanceSourceLayout::Checkout,
+            'checkout_path' => $destPath,
+            'branch_override' => 'feature',
+            'status' => InstanceState::Reserved,
+        ]);
+        $source = $source->refresh();
+        $target = $target->refresh();
+        $copier = copy_checkout_copier(new CopyTreeSshExecutor($head));
+
+        foreach (['copy', 'workspace'] as $path) {
+            if ($path === 'copy') {
+                $copier->copy($source, $target, 'feature', $head, 'instance.path_taken');
+            } else {
+                $copier->copyOntoFetchedTip($source, $target, 'feature', 'main', $head, 'instance.path_taken');
+            }
+
+            expect(copy_contained_source_bytes($sourcePath))->toBe($preserved)
+                ->and(is_file($sourcePath.'/web/public/hot'))->toBeTrue()
+                ->and(readlink($sourcePath.'/alias'))->toBe($sourcePath.'/web')
+                ->and(readlink($sourcePath.'/public'))->toBe($sourcePath.'/alias/public')
+                ->and(is_file($destPath.'/web/public/hot'))->toBeFalse()
+                ->and(is_file($destPath.'/web/storage/framework/cache/data/payload.php'))->toBeFalse()
+                ->and(is_file($destPath.'/web/storage/framework/sessions/state'))->toBeFalse()
+                ->and(is_file($destPath.'/web/storage/framework/views/home.php'))->toBeFalse()
+                ->and(readlink($destPath.'/alias'))->toBe($destPath.'/web')
+                ->and(readlink($destPath.'/public'))->toBe($destPath.'/alias/public')
+                ->and(readlink($destPath.'/bootstrap'))->toBe($destPath.'/alias/bootstrap')
+                ->and(readlink($destPath.'/storage/framework'))->toBe($destPath.'/alias/storage/framework')
+                ->and(file_get_contents($destPath.'/web/bootstrap/cache/config.php'))->toContain($destPath.'/database/database.sqlite')
+                ->and(file_get_contents($destPath.'/web/bootstrap/cache/config.php'))->not->toContain($sourcePath.'/database/database.sqlite')
+                ->and(file_get_contents($destPath.'/.env'))->toContain($destPath.'/database/database.sqlite');
+        }
+    } finally {
+        new Process(['rm', '-rf', $root])->run();
+    }
+});
+
 it('runs the same isolation program from a client copy and a workspace copy', function (): void {
     [$source, $target] = copy_checkout_pair();
     $head = str_repeat('b', 40);
@@ -975,6 +1053,18 @@ function copy_git_env(): array
         'GIT_COMMITTER_NAME' => 'Orbit',
         'GIT_COMMITTER_EMAIL' => 'orbit@example.test',
     ];
+}
+
+function copy_multihop_source(string $source): void
+{
+    copy_contained_source($source);
+    unlink($source.'/public');
+    unlink($source.'/bootstrap');
+    unlink($source.'/storage/framework');
+    symlink($source.'/web', $source.'/alias');
+    symlink($source.'/alias/public', $source.'/public');
+    symlink($source.'/alias/bootstrap', $source.'/bootstrap');
+    symlink($source.'/alias/storage/framework', $source.'/storage/framework');
 }
 
 function copy_contained_source(string $source): void

@@ -215,157 +215,303 @@ final class DevelopmentInstanceCopyIsolationProgram
                 return path_b.startswith(root_b + b"/")
 
 
-            def retargeted_link(path, source, target, dest):
-                link = os.readlink(path)
+            def open_root(path):
+                return os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+
+
+            def close_fds(fds):
+                for fd in fds:
+                    os.close(fd)
+
+
+            def open_chain(root_fd, parts):
+                # Every component is opened with O_NOFOLLOW from the previous directory fd.
+                # A symlink ancestor cannot be followed, because no full path is used.
+                current = root_fd
+                owned = []
+                for name in parts:
+                    try:
+                        nxt = os.open(
+                            name,
+                            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                            dir_fd=current,
+                        )
+                    except OSError:
+                        close_fds(owned)
+                        return None
+                    owned.append(nxt)
+                    current = nxt
+                return current, owned
+
+
+            def list_fd(fd):
+                return os.listdir("/proc/self/fd/" + str(fd))
+
+
+            def lexical_parts(dest, absolute):
+                absolute = os.path.abspath(absolute)
+                if not inside(dest, absolute):
+                    return None
+                relative = os.path.relpath(absolute, os.path.abspath(dest))
+                if relative == ".":
+                    return []
+                if relative.startswith(".."):
+                    return None
+                parts = relative.split("/")
+                if any(part in ("", ".", "..") for part in parts):
+                    return None
+                return parts
+
+
+            def link_parts(dest, source, target, current_parts, link):
                 if link.startswith("/"):
                     updated = os.fsdecode(replace_path(os.fsencode(link), source, target))
                 else:
-                    updated = os.path.normpath(os.path.join(os.path.dirname(path), link))
-                updated = os.path.abspath(updated)
-                if not inside(dest, updated):
-                    return None
-                return updated
+                    base = os.path.abspath(dest)
+                    if current_parts:
+                        base = os.path.join(base, *current_parts)
+                    updated = os.path.normpath(os.path.join(base, link))
+                return lexical_parts(dest, updated)
 
 
-            def contained(dest, source, target, relative, follow_final):
-                # An ancestor symlink is not opened. A retargeted target inside dest is
-                # the contained directory. A target outside dest is external.
-                current = os.path.abspath(dest)
-                parts = relative.split("/")
-                seen = set()
+            def resolve_parts(dest, root_fd, source, target, parts, follow_final, seen, depth):
+                if depth > 16:
+                    return None, "external"
+                current = []
                 for index, segment in enumerate(parts):
                     if segment in ("", ".", ".."):
                         raise Failure()
-                    final = index == len(parts) - 1
-                    nxt = os.path.join(current, segment)
-                    if not inside(dest, nxt):
-                        return nxt, "external"
+                    opened = open_chain(root_fd, current)
+                    if opened is None:
+                        return None, "external"
+                    parent, owned = opened
                     try:
-                        info = os.lstat(nxt)
-                    except FileNotFoundError:
-                        return nxt, "missing"
-                    if not stat.S_ISLNK(info.st_mode):
-                        if not final and not stat.S_ISDIR(info.st_mode):
-                            return nxt, "missing"
-                        current = nxt
-                        continue
-                    if final and not follow_final:
-                        return nxt, "symlink"
-                    updated = retargeted_link(nxt, source, target, dest)
-                    guard = 0
-                    while updated is not None:
-                        guard += 1
-                        if guard > 16 or updated in seen:
-                            return nxt, "external"
-                        seen.add(updated)
                         try:
-                            info = os.lstat(updated)
+                            info = os.lstat(segment, dir_fd=parent)
                         except FileNotFoundError:
-                            return updated, "missing"
+                            return None, "missing"
+                        final = index == len(parts) - 1
                         if not stat.S_ISLNK(info.st_mode):
-                            break
-                        updated = retargeted_link(updated, source, target, dest)
-                    if updated is None or not inside(dest, updated):
-                        return nxt, "external"
-                    if not final and not stat.S_ISDIR(info.st_mode):
-                        return updated, "missing"
-                    if final and follow_final and not stat.S_ISDIR(info.st_mode):
-                        return updated, "external"
-                    if final:
-                        return updated, "real"
-                    current = updated
+                            if not final and not stat.S_ISDIR(info.st_mode):
+                                return None, "missing"
+                            current.append(segment)
+                            continue
+                        if final and not follow_final:
+                            return current + [segment], "symlink"
+                        ident = (info.st_dev, info.st_ino)
+                        if ident in seen:
+                            return None, "external"
+                        seen.add(ident)
+                        target_parts = link_parts(
+                            dest,
+                            source,
+                            target,
+                            current,
+                            os.readlink(segment, dir_fd=parent),
+                        )
+                        if target_parts is None:
+                            return None, "external"
+                        resolved, kind = resolve_parts(
+                            dest,
+                            root_fd,
+                            source,
+                            target,
+                            target_parts,
+                            True,
+                            seen,
+                            depth + 1,
+                        )
+                        if kind == "missing":
+                            return None, "missing"
+                        if kind != "real":
+                            return None, "external"
+                        if not final or follow_final:
+                            probe = open_chain(root_fd, resolved)
+                            if probe is None:
+                                return None, "external"
+                            close_fds(probe[1])
+                        if not final:
+                            current = list(resolved)
+                            continue
+                        return resolved, "real"
+                    finally:
+                        close_fds(owned)
                 return current, "real"
 
 
-            def isolate(dest, source, target, source_domain, target_domain):
-                planned = []
-                for relative in ("public/hot",):
-                    planned.append(("unlink",) + contained(dest, source, target, relative, False))
-                for relative in (
-                    "storage/logs",
-                    "storage/framework/cache",
-                    "storage/framework/sessions",
-                    "storage/framework/views",
-                ):
-                    planned.append(("clear",) + contained(dest, source, target, relative, False))
-                for relative in ("node_modules/.vite", "node_modules/.cache"):
-                    planned.append(("remove",) + contained(dest, source, target, relative, False))
-                env_path, env_kind = contained(dest, source, target, ".env", False)
-                cache_path, cache_kind = contained(dest, source, target, "bootstrap/cache", True)
-                for action, path, kind in planned:
-                    if kind == "external":
-                        raise Failure()
-                if env_kind == "external" or cache_kind == "external":
+            def contained(dest, root_fd, source, target, relative, follow_final):
+                parts = relative.split("/")
+                if any(part in ("", ".", "..") for part in parts):
                     raise Failure()
-                for action, path, kind in planned:
-                    if kind == "missing":
-                        continue
-                    if kind == "symlink" or action == "unlink":
-                        if kind == "symlink" or stat.S_ISREG(os.lstat(path).st_mode):
-                            os.unlink(path)
-                        continue
-                    if action == "clear":
-                        clear_directory(path)
-                        continue
-                    remove_tree(path)
-                if env_kind == "real" and stat.S_ISREG(os.lstat(env_path).st_mode):
-                    rewrite_file(env_path, source, target, source_domain, target_domain)
-                if cache_kind != "real" or not stat.S_ISDIR(os.lstat(cache_path).st_mode):
-                    return
-                for dirpath, dirnames, filenames in os.walk(cache_path, followlinks=False):
-                    dirnames[:] = [
-                        name
-                        for name in dirnames
-                        if not os.path.islink(os.path.join(dirpath, name))
-                    ]
-                    for name in filenames:
-                        candidate = os.path.join(dirpath, name)
-                        if os.path.islink(candidate):
+                return resolve_parts(dest, root_fd, source, target, parts, follow_final, set(), 0)
+
+
+            def isolate(dest, source, target, source_domain, target_domain):
+                root_fd = open_root(dest)
+                try:
+                    planned = []
+                    for relative in ("public/hot",):
+                        planned.append(("unlink",) + contained(dest, root_fd, source, target, relative, False))
+                    for relative in (
+                        "storage/logs",
+                        "storage/framework/cache",
+                        "storage/framework/sessions",
+                        "storage/framework/views",
+                    ):
+                        planned.append(("clear",) + contained(dest, root_fd, source, target, relative, False))
+                    for relative in ("node_modules/.vite", "node_modules/.cache"):
+                        planned.append(("remove",) + contained(dest, root_fd, source, target, relative, False))
+                    env_parts, env_kind = contained(dest, root_fd, source, target, ".env", False)
+                    cache_parts, cache_kind = contained(dest, root_fd, source, target, "bootstrap/cache", True)
+                    for action, parts, kind in planned:
+                        if kind == "external":
+                            raise Failure()
+                    if env_kind == "external" or cache_kind == "external":
+                        raise Failure()
+                    for action, parts, kind in planned:
+                        if kind == "missing":
                             continue
-                        rewrite_file(
-                            candidate,
-                            source,
-                            target,
-                            source_domain,
-                            target_domain,
-                        )
+                        if kind == "symlink" or action == "unlink":
+                            unlink_parts(root_fd, parts)
+                            continue
+                        if action == "clear":
+                            clear_parts(root_fd, parts)
+                            continue
+                        remove_parts(root_fd, parts)
+                    if env_kind == "real" and env_parts == [".env"]:
+                        rewrite_name(root_fd, ".env", source, target, source_domain, target_domain)
+                    if cache_kind != "real":
+                        return
+                    opened = open_chain(root_fd, cache_parts)
+                    if opened is None:
+                        raise Failure()
+                    cache_fd, owned = opened
+                    try:
+                        rewrite_tree(cache_fd, source, target, source_domain, target_domain)
+                    finally:
+                        close_fds(owned)
+                finally:
+                    os.close(root_fd)
 
 
-            def clear_directory(path):
-                if not os.path.lexists(path):
-                    return
-                if os.path.islink(path):
-                    os.unlink(path)
-                    return
-                if not os.path.isdir(path):
-                    os.unlink(path)
-                    return
-                for entry in list(os.scandir(path)):
-                    if entry.name == ".gitignore":
+            def unlink_parts(root_fd, parts):
+                if not parts:
+                    raise Failure()
+                opened = open_chain(root_fd, parts[:-1])
+                if opened is None:
+                    raise Failure()
+                parent, owned = opened
+                try:
+                    info = os.lstat(parts[-1], dir_fd=parent)
+                    if stat.S_ISLNK(info.st_mode) or stat.S_ISREG(info.st_mode):
+                        os.unlink(parts[-1], dir_fd=parent)
+                finally:
+                    close_fds(owned)
+
+
+            def clear_parts(root_fd, parts):
+                if not parts:
+                    raise Failure()
+                opened = open_chain(root_fd, parts[:-1])
+                if opened is None:
+                    raise Failure()
+                parent, owned = opened
+                try:
+                    info = os.lstat(parts[-1], dir_fd=parent)
+                    if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+                        os.unlink(parts[-1], dir_fd=parent)
+                        return
+                    fd = os.open(
+                        parts[-1],
+                        os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                        dir_fd=parent,
+                    )
+                    try:
+                        clear_fd(fd)
+                    finally:
+                        os.close(fd)
+                finally:
+                    close_fds(owned)
+
+
+            def clear_fd(fd):
+                for name in list_fd(fd):
+                    if name == ".gitignore":
                         continue
-                    if entry.is_symlink() or not entry.is_dir(follow_symlinks=False):
-                        remove_tree(entry.path)
+                    info = os.lstat(name, dir_fd=fd)
+                    if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+                        os.unlink(name, dir_fd=fd)
                         continue
-                    clear_directory(entry.path)
-                    if os.listdir(entry.path) == []:
-                        os.rmdir(entry.path)
+                    child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=fd)
+                    try:
+                        clear_fd(child)
+                        empty = list_fd(child) == []
+                    finally:
+                        os.close(child)
+                    if empty:
+                        os.rmdir(name, dir_fd=fd)
 
 
-            def remove_tree(path):
-                if not os.path.lexists(path):
+            def remove_parts(root_fd, parts):
+                if not parts:
+                    raise Failure()
+                opened = open_chain(root_fd, parts[:-1])
+                if opened is None:
+                    raise Failure()
+                parent, owned = opened
+                try:
+                    info = os.lstat(parts[-1], dir_fd=parent)
+                    if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+                        os.unlink(parts[-1], dir_fd=parent)
+                        return
+                    fd = os.open(
+                        parts[-1],
+                        os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                        dir_fd=parent,
+                    )
+                    try:
+                        remove_fd(fd)
+                    finally:
+                        os.close(fd)
+                    os.rmdir(parts[-1], dir_fd=parent)
+                finally:
+                    close_fds(owned)
+
+
+            def remove_fd(fd):
+                for name in list_fd(fd):
+                    info = os.lstat(name, dir_fd=fd)
+                    if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+                        os.unlink(name, dir_fd=fd)
+                        continue
+                    child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=fd)
+                    try:
+                        remove_fd(child)
+                    finally:
+                        os.close(child)
+                    os.rmdir(name, dir_fd=fd)
+
+
+            def rewrite_tree(fd, source, target, source_domain, target_domain):
+                for name in list_fd(fd):
+                    info = os.lstat(name, dir_fd=fd)
+                    if stat.S_ISLNK(info.st_mode):
+                        continue
+                    if stat.S_ISDIR(info.st_mode):
+                        child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=fd)
+                        try:
+                            rewrite_tree(child, source, target, source_domain, target_domain)
+                        finally:
+                            os.close(child)
+                        continue
+                    if stat.S_ISREG(info.st_mode):
+                        rewrite_name(fd, name, source, target, source_domain, target_domain)
+
+
+            def rewrite_name(dir_fd, name, source, target, source_domain, target_domain):
+                original = read_name(dir_fd, name)
+                if original is None:
                     return
-                if os.path.islink(path) or not os.path.isdir(path):
-                    os.unlink(path)
-                    return
-                for entry in os.scandir(path):
-                    remove_tree(entry.path)
-                os.rmdir(path)
-
-
-            def rewrite_file(path, source, target, source_domain, target_domain):
-                if os.path.islink(path) or not os.path.isfile(path):
-                    return
-                original = read_rewrite(path)
                 updated = replace_domain(
                     replace_path(original, source, target),
                     source_domain,
@@ -373,27 +519,38 @@ final class DevelopmentInstanceCopyIsolationProgram
                 )
                 if updated == original:
                     return
-                temporary = path + ".orbit-rewrite"
-                if os.path.lexists(temporary):
-                    os.unlink(temporary)
-                mode = os.lstat(path).st_mode & 0o777
-                descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
+                temporary = name + ".orbit-rewrite"
+                try:
+                    os.lstat(temporary, dir_fd=dir_fd)
+                except FileNotFoundError:
+                    pass
+                else:
+                    os.unlink(temporary, dir_fd=dir_fd)
+                mode = os.lstat(name, dir_fd=dir_fd).st_mode & 0o777
+                descriptor = os.open(
+                    temporary,
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                    mode,
+                    dir_fd=dir_fd,
+                )
                 try:
                     write_all(descriptor, updated)
                     os.fsync(descriptor)
                 finally:
                     os.close(descriptor)
-                os.replace(temporary, path)
+                os.rename(temporary, name, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
 
 
-            def read_rewrite(path):
+            def read_name(dir_fd, name):
                 # Read the whole file. A short read would drop the tail or leave a later
                 # source path in place. Above the limit, fail before replacing anything.
                 limit = 64 * 1024 * 1024
-                info = os.lstat(path)
-                if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode) or info.st_size > limit:
+                info = os.lstat(name, dir_fd=dir_fd)
+                if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+                    return None
+                if info.st_size > limit:
                     raise Failure()
-                descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+                descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=dir_fd)
                 try:
                     chunks = []
                     total = 0
@@ -416,7 +573,6 @@ final class DevelopmentInstanceCopyIsolationProgram
                     if written <= 0:
                         raise Failure()
                     view = view[written:]
-
 
             def retarget(dest, source, target):
                 for dirpath, dirnames, filenames in os.walk(dest, followlinks=False):

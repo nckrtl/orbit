@@ -161,7 +161,7 @@ The new checkout is the source tree after the reset, rewrite, and SQLite snapsho
 
 ## What the copy resets
 
-These paths are deleted in the new checkout only. A symlink is removed as a symlink and is not followed. The Gateway does not open a symlink ancestor. When that link retargets inside the new checkout, reset and the bootstrap cache rewrite use the contained directory. A link that lands outside the new checkout fails the copy. The source checkout is not modified. The same rule applies to `public/hot` and to `node_modules/.vite` and `node_modules/.cache`.
+These paths are deleted in the new checkout only. A symlink is removed as a symlink and is not followed. The Gateway resolves a symlink one component at a time inside the new checkout. It does not follow an intermediate symlink. Reset and the bootstrap cache rewrite then use that contained directory. A chain that leaves the checkout, or a cycle, fails the copy. The source checkout is not modified. The same rule applies to `public/hot` and to `node_modules/.vite` and `node_modules/.cache`.
 
 | Path | What is deleted |
 | --- | --- |
