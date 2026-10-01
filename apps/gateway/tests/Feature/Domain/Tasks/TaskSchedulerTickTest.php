@@ -36,6 +36,7 @@ use App\Domain\Tasks\TaskSettleMetrics;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskTurnFetchNotice;
 use App\Domain\Tasks\TaskTurnInstructions;
 use App\Domain\Tasks\TaskTurnPullRequest;
 use App\Domain\Tasks\TaskTurnReceipt;
@@ -650,11 +651,13 @@ function tick_watch_pulls(array $pulls, array $checks = []): void
     Http::fake($fake);
 }
 
-/** @return object{spawned: list<int>, fetched: list<string>, events: list<string>, fastForwards: int, missingRefOk: bool} */
+/** @return object{spawned: list<int>, fetched: list<string>, events: list<string>, turnFetches: int, fastForwards: int, missingRefOk: bool} */
 function tick_running_agents(bool $fetchFails = false, bool $fastForwardFails = false): object
 {
     $agents = new class($fetchFails, $fastForwardFails) implements AgentSpawner, TaskBaseBranchFetcher
     {
+        public int $turnFetches = 0;
+
         public int $fastForwards = 0;
 
         public bool $missingRefOk = false;
@@ -701,6 +704,15 @@ function tick_running_agents(bool $fetchFails = false, bool $fastForwardFails = 
             $this->events[] = 'fast-forward';
             if ($this->fastForwardFails) {
                 throw new TaskPullRequestException('The task branch could not be fetched.');
+            }
+        }
+
+        public function fetchForTurn(Task $group): void
+        {
+            $this->turnFetches++;
+            $this->events[] = 'turn-fetch';
+            if ($this->fetchFails) {
+                throw new TaskPullRequestException('The base branch could not be fetched.');
             }
         }
     };
@@ -1090,7 +1102,7 @@ it('changes nothing on a settling group when GitHub cannot report the pull reque
     expect($notifier->reasons)->toBe([]);
 });
 
-it('appends one conflict fixup with a merge brief and returns the group to running', function (): void {
+it('appends one conflict fixup and reuses its turn fetch before fast-forwarding and starting', function (): void {
     $group = tick_settling_group();
     Task::query()->create([
         'parent_id' => $group->id, 'position' => 2, 'title' => 'Operator', 'brief' => 'Not a fixup.', 'status' => TaskStatus::Completed,
@@ -1119,8 +1131,9 @@ it('appends one conflict fixup with a merge brief and returns the group to runni
         ->and($group->fresh()?->pr_url)->toBe('https://github.com/acme/orbit/pull/42')
         ->and($group->fresh()?->assistance_requested)->toBeFalse()
         ->and(Task::query()->where('fixup_problem', 'check:Rust agent')->exists())->toBeFalse()
-        ->and($agents->events)->toBe(['fast-forward', 'fetch', 'spawn'])
-        ->and($agents->fetched)->toBe(['main'])
+        ->and($agents->events)->toBe(['turn-fetch', 'fast-forward', 'spawn'])
+        ->and($agents->turnFetches)->toBe(1)
+        ->and($agents->fetched)->toBe([])
         ->and($agents->spawned)->toBe([$fixup->id]);
 });
 
@@ -1276,7 +1289,7 @@ it('appends a fresh conflict fixup after operator work', function (): void {
         ->and($group->fresh()?->assistance_requested)->toBeFalse()
         ->and(Task::query()->where('fixup_problem', 'conflict:main')->count())->toBe(3)
         ->and(Task::query()->where('fixup_problem', 'conflict:main')->orderByDesc('position')->first()?->status)->toBe(TaskStatus::Running)
-        ->and($agents->fetched)->toBe(['main']);
+        ->and($agents->turnFetches)->toBe(1);
 });
 
 it('asks for assistance instead of a third fixup for the same problem', function (): void {
@@ -1324,7 +1337,7 @@ it('appends a conflict fixup when a different-cased problem is already at the ca
     app(TaskScheduler::class)->tick();
 
     expect(Task::query()->where('fixup_problem', 'conflict:main')->sole()->status)->toBe(TaskStatus::Running)
-        ->and($agents->fetched)->toBe(['main']);
+        ->and($agents->turnFetches)->toBe(1);
 });
 
 it('appends the next failed check in GitHub order after the conflict cap', function (): void {
@@ -1482,7 +1495,7 @@ it('leaves a conflict fixup todo when the base fetch fails', function (): void {
         ->and($fixup->communication_failures)->toBe(1)
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
         ->and($group->fresh()?->assistance_requested)->toBeFalse()
-        ->and($agents->events)->toBe(['fast-forward', 'fetch'])
+        ->and($agents->events)->toBe(['turn-fetch'])
         ->and($agents->spawned)->toBe([]);
 });
 
@@ -1495,7 +1508,7 @@ it('retries a failed conflict fixup fetch on the backoff and asks for assistance
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
 
-    expect($agents->fetched)->toBe(['main']);
+    expect($agents->turnFetches)->toBe(1);
 
     foreach ([60, 120, 300, 600] as $seconds) {
         $this->travel($seconds)->seconds();
@@ -1513,7 +1526,7 @@ it('retries a failed conflict fixup fetch on the backoff and asks for assistance
     app(TaskScheduler::class)->tick();
 
     expect($fixup->fresh()?->communication_failures)->toBe(5)
-        ->and($agents->fetched)->toHaveCount(5);
+        ->and($agents->turnFetches)->toBe(5);
 });
 
 it('appends no fixup while the head is the one the last fixup committed from', function (): void {
@@ -1682,7 +1695,7 @@ it('appends a conflict fixup while a check is pending', function (): void {
 
     expect(Task::query()->where('fixup_problem', 'conflict:main')->sole()->status)->toBe(TaskStatus::Running)
         ->and(Task::query()->where('fixup_problem', 'like', 'check:%')->exists())->toBeFalse()
-        ->and($agents->fetched)->toBe(['main'])
+        ->and($agents->turnFetches)->toBe(1)
         ->and($agents->spawned)->not->toBe([]);
 });
 
@@ -1810,16 +1823,19 @@ it('asks for assistance once the group has three Gateway fixups', function (): v
         ->and($agents->spawned)->toBe([]);
 });
 
-it('fast-forwards the workspace before a resumed subtask starts and retries a failure on the backoff', function (): void {
+it('fast-forwards the workspace after the turn fetch and backs off until assistance on the fifth failure', function (): void {
     $group = tick_settling_group();
     $waiting = tick_appended_subtask($group);
     $agents = tick_running_agents(fastForwardFails: true);
-    tick_watch_pulls(array_fill(0, 3, tick_open_pull()), ['abc123' => []]);
+    $notifier = tick_assistance_notifier();
+    tick_watch_pulls(array_fill(0, 6, tick_open_pull()), ['abc123' => []]);
 
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
 
     expect($agents->fastForwards)->toBe(1)
+        ->and($agents->turnFetches)->toBe(1)
+        ->and($agents->events)->toBe(['turn-fetch', 'fast-forward'])
         ->and($agents->missingRefOk)->toBeFalse()
         ->and($waiting->fresh()?->status)->toBe(TaskStatus::Todo)
         ->and($waiting->fresh()?->communication_failures)->toBe(1)
@@ -1829,7 +1845,26 @@ it('fast-forwards the workspace before a resumed subtask starts and retries a fa
     app(TaskScheduler::class)->tick();
 
     expect($agents->fastForwards)->toBe(2)
+        ->and($agents->turnFetches)->toBe(2)
         ->and($waiting->fresh()?->communication_failures)->toBe(2);
+
+    foreach ([120, 300, 600] as $seconds) {
+        $this->travel($seconds)->seconds();
+        app(TaskScheduler::class)->tick();
+    }
+
+    expect($agents->fastForwards)->toBe(5)
+        ->and($agents->turnFetches)->toBe(5)
+        ->and($waiting->fresh()?->status)->toBe(TaskStatus::Todo)
+        ->and($waiting->fresh()?->communication_failures)->toBe(5)
+        ->and($group->fresh()?->assistance_requested)->toBeTrue()
+        ->and($notifier->reasons)->toBe(['The task branch could not be fetched.']);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($agents->fastForwards)->toBe(5)
+        ->and($agents->turnFetches)->toBe(5)
+        ->and($agents->spawned)->toBe([]);
 });
 
 it('reports a throwing brief coverage labeler and continues the tick', function (): void {
@@ -2223,7 +2258,7 @@ it('resumes a Pi implementer restarted during the turn instead of asking for ass
         ->and($task->parent->fresh()?->assistance_requested)->toBeFalse()
         ->and($notifier->called)->toBeFalse()
         ->and($sent)->toBeInstanceOf(Request::class)
-        ->and($sent['text'])->toBe('Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the turn command.')
+        ->and($sent['text'])->toBe(TaskTurnFetchNotice::Failed."\n\n".TaskScheduler::PiServerRestartContinue)
         ->and($sent['key'])->not->toBe('turn-key-1')
         ->and($sent['key'])->toBeUuid()
         ->and($fresh?->pi_restart_resumes)->toBe(1)
@@ -2471,7 +2506,7 @@ it('does not send an implementer Pi resume to the reviewer', function (): void {
         ->and($messages)->toHaveCount(2)
         ->and($messages[1]['session'])->toBe('reviewer-thread')
         ->and($messages[1]['key'])->toBe($reviewerKey)
-        ->and($messages[1]['text'])->toBe('Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the turn command.')
+        ->and($messages[1]['text'])->toBe(TaskTurnFetchNotice::Failed."\n\n".TaskScheduler::PiServerRestartContinue)
         ->and(collect($messages)->where('session', 'reviewer-thread')->pluck('key')->all())->not->toContain($implementerKey);
 
     $review->turnId = (string) $reviewerKey;
@@ -2683,7 +2718,7 @@ it('resumes a T3 reviewer whose provider session did not survive a server restar
         ->and($starts[0]['commandId'])->toBe($fresh?->pi_restart_key)
         ->and($starts[0]['commandId'])->toBe($starts[1]['commandId'])
         ->and($starts[0]['message']['messageId'])->toBe($starts[0]['commandId'])
-        ->and($starts[0]['message']['text'])->toBe(TaskScheduler::PiServerRestartContinue)
+        ->and($starts[0]['message']['text'])->toBe(TaskTurnFetchNotice::Failed."\n\n".TaskScheduler::PiServerRestartContinue)
         ->and($starts[0]['threadId'])->toBe('reviewer-thread')
         ->and($fresh?->assistance_requested)->toBeFalse()
         ->and($fresh?->pi_restart_resumes)->toBe(1)
@@ -2971,7 +3006,7 @@ it('reminds an implementer that ends a turn without a receipt once, then asks fo
 
     $reminder = $dispatcher->commands[0]['message']['text'];
     expect($dispatcher->commands)->toHaveCount(1)
-        ->and($reminder)->toBe('Orbit could not confirm the brief is complete. No turn receipt was found. '.TaskTurnInstructions::implementer(check: $group->project->taskCheckCommand(), threadId: $task->implementer_agent_thread_id))
+        ->and($reminder)->toBe(TaskTurnFetchNotice::Failed."\n\n".'Orbit could not confirm the brief is complete. No turn receipt was found. '.TaskTurnInstructions::implementer(check: $group->project->taskCheckCommand(), threadId: $task->implementer_agent_thread_id))
         ->and($receipts->prepared)->toBe(['implementer'])
         ->and($group->fresh()?->assistance_requested)->toBeFalse();
 
@@ -3880,7 +3915,7 @@ it('does not commit an approval while the workspace is on another branch', funct
     $dispatcher = app(T3Dispatcher::class);
     expect($signer->messages)->toBe([])
         ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
-        ->and($dispatcher->commands[0]['message']['text'])->toBe('Orbit could not confirm the review is complete. The workspace branch is not task-'.$group->id.'. Switch back to it. '.TaskTurnInstructions::reviewer(threadId: $group->reviewer_agent_thread_id));
+        ->and($dispatcher->commands[0]['message']['text'])->toBe(TaskTurnFetchNotice::Failed."\n\n".'Orbit could not confirm the review is complete. The workspace branch is not task-'.$group->id.'. Switch back to it. '.TaskTurnInstructions::reviewer(threadId: $group->reviewer_agent_thread_id));
 
     app(TaskScheduler::class)->tick();
 
@@ -3904,7 +3939,7 @@ it('reminds a reviewer that ends a turn without a receipt once, then asks for as
 
     app(TaskScheduler::class)->tick();
 
-    expect(app(T3Dispatcher::class)->commands[0]['message']['text'])->toBe('Orbit could not confirm the review is complete. No turn receipt was found. '.TaskTurnInstructions::reviewer(threadId: $group->reviewer_agent_thread_id))
+    expect(app(T3Dispatcher::class)->commands[0]['message']['text'])->toBe(TaskTurnFetchNotice::Failed."\n\n".'Orbit could not confirm the review is complete. No turn receipt was found. '.TaskTurnInstructions::reviewer(threadId: $group->reviewer_agent_thread_id))
         ->and($receipts->prepared)->toBe(['reviewer']);
 
     app(TaskScheduler::class)->tick();
@@ -4090,7 +4125,7 @@ it('reminds the reviewer when the approval of the last subtask has no pull reque
 
     app(TaskScheduler::class)->tick();
 
-    expect(app(T3Dispatcher::class)->commands[0]['message']['text'])->toBe('Orbit could not confirm the review is complete. The approval of the last subtask needs --pr-summary, --pr-change, and --pr-breaking. '.TaskTurnInstructions::reviewer(final: true, threadId: $group->reviewer_agent_thread_id))
+    expect(app(T3Dispatcher::class)->commands[0]['message']['text'])->toBe(TaskTurnFetchNotice::Failed."\n\n".'Orbit could not confirm the review is complete. The approval of the last subtask needs --pr-summary, --pr-change, and --pr-breaking. '.TaskTurnInstructions::reviewer(final: true, threadId: $group->reviewer_agent_thread_id))
         ->and($publishing->coverage->calls)->toBe(0)
         ->and($signer->messages)->toBe([]);
 });

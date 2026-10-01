@@ -1349,7 +1349,8 @@
                 "Project",
                 "Schedule",
                 "Subtask",
-                "Task"
+                "Task",
+                "Task workspace"
             ],
             "governing_adrs": []
         },

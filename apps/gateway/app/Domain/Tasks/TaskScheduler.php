@@ -117,6 +117,7 @@ final readonly class TaskScheduler
         private TaskBaseBranchFetcher $bases,
         private ArchiveFinishedTaskThreads $archives,
         private TaskReviewPacketBuilder $reviewPackets,
+        private TaskTurnFetcher $turnFetcher,
     ) {}
 
     /**
@@ -1019,11 +1020,14 @@ final readonly class TaskScheduler
     }
 
     /** @throws TaskTurnReceiptException */
-    private function prepareTurn(Task $group, Task $task, TaskThreadRole $role, ?int $threadId = null): void
+    private function prepareTurn(Task $group, Task $task, TaskThreadRole $role, ?int $threadId = null, bool $alreadyFetched = false): void
     {
         $instance = $group->taskable;
         if (! $instance instanceof Instance) {
             throw new TaskTurnReceiptException('The task workspace is unavailable.');
+        }
+        if (! $alreadyFetched) {
+            $this->turnFetcher->beforeTurn($group);
         }
         $context = $role === TaskThreadRole::Reviewer ? $this->reviewPackets->reviewContext($task) : null;
         $this->receipts->prepare($instance, $role, $role === TaskThreadRole::Reviewer && $task->opensPullRequest(), $task->deliverableList(), $threadId, $context);
@@ -1224,6 +1228,7 @@ final readonly class TaskScheduler
 
     private function sendPiRestartResume(Task $task, Task $group, TaskThreadObservation $acting, string $key): void
     {
+        $this->turnFetcher->beforeTurn($group);
         try {
             $this->actor->resumeInterruptedTurn($group, $acting, self::PiServerRestartContinue, $key);
         } catch (AgentDriverException $exception) {
@@ -2594,35 +2599,33 @@ final readonly class TaskScheduler
         if ($base !== null && $group->status === TaskGroupStatus::Settling) {
             $this->leaveSettling($group);
         }
-        if (! $this->prepareResumedWorkspace($group, $todo, $base)) {
+        if (! $this->prepareResumedWorkspace($group, $todo)) {
             return;
         }
 
         $started = $this->activateResumedTask($todo);
         if ($started instanceof Task) {
-            $this->beginRunningTask($started);
+            $this->beginRunningTask($started, alreadyFetched: true);
         }
     }
 
     /**
-     * Before a resumed subtask starts, fast-forwards the workspace to `origin/task-{group id}` when it is
-     * strictly behind, and fetches a conflict fixup's base ref. A failure waits out #760's backoff of 1, 2,
+     * Reuses the general turn fetch, then fast-forwards the workspace to `origin/task-{group id}` when
+     * it is strictly behind. A failure waits out #760's backoff of 1, 2,
      * 5, 10, and 30 minutes, leaves the subtask todo, and asks for assistance on the fifth failure.
      * On a group with no pull request, a missing `origin/task-{group id}` is not a failure.
      */
-    private function prepareResumedWorkspace(Task $group, Task $todo, ?string $base): bool
+    private function prepareResumedWorkspace(Task $group, Task $todo): bool
     {
         $key = 'tasks.resume-fetch.'.$todo->id;
         if (! $this->retryIsDue($key, 'resume fetch')) {
             return false;
         }
         try {
-            $fresh = $group->fresh() ?? $group;
+            $fresh = $group->fresh(['project', 'taskable']) ?? $group;
+            $this->turnFetcher->fetch($fresh);
             $this->bases->fastForward($fresh, ! is_string($fresh->pr_url) || $fresh->pr_url === '');
-            if ($base !== null) {
-                $this->bases->fetch($fresh, $base);
-            }
-        } catch (TaskPullRequestException $exception) {
+        } catch (Throwable $exception) {
             $this->extendBackoff($key, $this->readBackoff($key, 'resume fetch'), 'resume fetch');
             $this->recordCommunicationFailure($todo, $group, $exception->getMessage());
 
@@ -2822,14 +2825,14 @@ final readonly class TaskScheduler
      * Starts a subtask the way startTask does: records the start commit, then runs the baseline check
      * when no implementer has started in the group yet, or starts the implementer.
      */
-    private function beginRunningTask(Task $task): void
+    private function beginRunningTask(Task $task, bool $alreadyFetched = false): void
     {
         $this->recordSubtaskStart($task);
         if ($this->needsBaseline($task)) {
             $group = $task->parent()->with(['project', 'taskable'])->firstOrFail();
             $this->handleBaseline($group, $task);
         } else {
-            $this->assignImplementer($task);
+            $this->assignImplementer($task, $alreadyFetched);
         }
     }
 
@@ -3045,7 +3048,7 @@ final readonly class TaskScheduler
             ->first();
     }
 
-    private function assignImplementer(Task $task): void
+    private function assignImplementer(Task $task, bool $alreadyFetched = false): void
     {
         if ($task->status !== TaskStatus::Running) {
             return;
@@ -3059,7 +3062,7 @@ final readonly class TaskScheduler
                 if ($reserved === null && $this->spawner instanceof TaskAgentSpawner) {
                     $reserved = $this->spawner->reserveImplementer($task->fresh() ?? $task);
                 }
-                $this->prepareTurn($group, $task, TaskThreadRole::Implementer, $reserved === null ? null : (int) $reserved);
+                $this->prepareTurn($group, $task, TaskThreadRole::Implementer, $reserved === null ? null : (int) $reserved, $alreadyFetched);
                 $threadId = $this->spawner->spawnImplementer($task->fresh() ?? $task);
             }
         } catch (TaskTurnReceiptException $exception) {
