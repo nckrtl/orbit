@@ -327,7 +327,10 @@ final readonly class RemoteDevelopmentInstanceCheckoutCopier implements Developm
         string $expectedHead,
         string $defaultBranch,
     ): string {
-        $script = GitReadScript::for($this->access->for($paths['origin']), self::fetchedBranchScript());
+        $script = GitReadScript::for(
+            $this->access->for($paths['origin'], $source->loadMissing('project')->project->source_access),
+            self::fetchedBranchScript(),
+        );
         $result = $this->execute(
             $target->node,
             ['bash', '-seu', '--', $paths['source'], $paths['destination'], $branch, $expectedHead, $paths['origin'], $defaultBranch],

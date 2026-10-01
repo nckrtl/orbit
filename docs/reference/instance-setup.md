@@ -138,34 +138,67 @@ A setup list whose timeouts cannot fit is cut with `command.deadline_exceeded`. 
 
 ### Install the helper
 
-Install the reviewed `bin/e2e-task-cleanup` as `$HOME/.local/lib/orbit/e2e-task-cleanup` for the managed user on every eligible Node. Copy that blob from the reviewed commit. Do not copy it from an old checkout: clones created before this change do not contain the file. The command runs with `bash -eu` in the checkout, as the Node's managed user, so `$HOME` is that user's home.
+Install the reviewed `bin/e2e-task-cleanup` as `$HOME/.local/lib/orbit/e2e-task-cleanup` for the managed user on every eligible Node. Copy that blob from the reviewed commit. Do not copy it from an old checkout: clones created before this change do not contain the file. The teardown step runs with `bash -eu` in the checkout, as the Node's managed user, so `$HOME` is that user's home.
+
+Save the reviewed blob first. A failed `git show` must not start the copy. Stage that blob, check that it is non-empty and that its digest matches, and only then rename it onto the destination in the same directory. `set -o pipefail` makes a failed producer fail the copy.
+
+A short or empty stream fails the remote checks. The rename does not run, and the trap removes the stage. The previous helper stays in place. A rename in the same directory is one replacement, so a crash does not leave a half-written destination. Replacing the destination before the digest check was rejected because an interrupted copy can destroy a helper that was already valid.
 
 ```bash
+set -o pipefail
 rev=REVIEWED_SHA
-git show "$rev:bin/e2e-task-cleanup" | ssh MANAGED_USER@NODE 'install -d -m 0755 -- "$HOME/.local/lib/orbit" && cat > "$HOME/.local/lib/orbit/e2e-task-cleanup.new" && install -m 0755 "$HOME/.local/lib/orbit/e2e-task-cleanup.new" "$HOME/.local/lib/orbit/e2e-task-cleanup" && rm -f "$HOME/.local/lib/orbit/e2e-task-cleanup.new"'
+blob=$(mktemp)
+trap 'rm -f -- "$blob"' EXIT
+git show "$rev:bin/e2e-task-cleanup" > "$blob" || exit 1
+test -s "$blob"
+expected=$(sha256sum "$blob" | awk '{print $1}')
+ssh MANAGED_USER@NODE "EXPECTED=$expected bash -eu -c 'install -d -m 0755 -- \"\$HOME/.local/lib/orbit\"
+dir=\$HOME/.local/lib/orbit
+stage=\$dir/e2e-task-cleanup.stage
+dest=\$dir/e2e-task-cleanup
+rm -f -- \"\$stage\"
+trap \"rm -f -- \\\"\$stage\\\"\" EXIT INT TERM HUP
+cat > \"\$stage\"
+test -s \"\$stage\"
+digest=\$(sha256sum \"\$stage\" | awk \"{print \\\$1}\")
+test \"\$digest\" = \"\$EXPECTED\"
+chmod 0755 -- \"\$stage\"
+mv -f -- \"\$stage\" \"\$dest\"
+trap - EXIT'" < "$blob"
+```
+
+If the client loses the response, do not delete the destination and do not treat the loss as a failed install. Read the file back and compare it with the reviewed blob:
+
+```bash
 ssh MANAGED_USER@NODE 'sha256sum "$HOME/.local/lib/orbit/e2e-task-cleanup"'
 git show "$rev:bin/e2e-task-cleanup" | sha256sum
 ```
 
-The two digests must match. A missing file, a different digest, or a command that names a missing file is not a completed handoff. Keep the old Gateway until they match on every eligible Node.
+A match means the replacement finished. Stop. A missing destination or a different digest means the previous helper is still there, or no helper was installed yet. Remove a leftover `$HOME/.local/lib/orbit/e2e-task-cleanup.stage` and run the install again. The stage is not the file the teardown step runs. A missing file, a different digest, or a command that names a missing file is not a completed handoff. Keep the old Gateway until the readback matches on every eligible Node.
 
 The helper returns success without changing anything for an ordinary checkout. For a task checkout it removes only that task's matching bridge, unused bridge branch, and staging ref. It preserves the checkout and its own Git identity. See [Task workspace clones](/reference/incus-topologies#task-workspace-clones) for ownership and retry rules. Clones created before deployment use this installed copy too. The helper and the old Gateway hook may coexist during the handoff because both are idempotent.
 
 ### Record teardown
 
-Record the step only after the helper digest matches. The Incus proof ran the create form. It stores the default timeout of 240 seconds. That is inside the 1 to 540 limit, and it is the whole teardown list, so the list total fits. `instance:create` rollback still has only 60 seconds for teardown; the runner cuts the step to the time that remains. The helper is a short Git operation. This command was not run against the live Project.
+Record the step only after the helper digest matches. Create stores the default timeout of 240 seconds. That is inside the 1 to 540 limit, and it is the whole teardown list, so the list total fits. `instance:create` rollback still has only 60 seconds for teardown; the runner cuts the step to the time that remains. The helper is a short Git operation. Do not run these commands against the live Project until the disposable proof has been repeated there on purpose.
 
 ```bash
 orbit instance:teardown-step:create task-e2e-bridge --project=46 --command='"$HOME/.local/lib/orbit/e2e-task-cleanup"' --json
 ```
 
-When that name already exists, update it instead. The update form stores the same command and an explicit 240 second timeout. It was not part of the Incus proof.
+When that name already exists, update it instead. Update stores the same command and an explicit 240 second timeout.
 
 ```bash
 orbit instance:teardown-step:update task-e2e-bridge --project=46 --command='"$HOME/.local/lib/orbit/e2e-task-cleanup"' --timeout=240 --json
 ```
 
-Read the list again. The stored name is `task-e2e-bridge`, the command is `"$HOME/.local/lib/orbit/e2e-task-cleanup"`, and `timeout_seconds` is 240. Do not deploy the Gateway release that deletes this hook until that read matches. Do not claim the live step is ready from an unread or untested command.
+Read the list after either command:
+
+```bash
+orbit instance:teardown-step:list --project=46 --json
+```
+
+If the client loses the response, run that list again. Do not guess from the lost call. Retry create only when the step is absent. A second create of an existing name fails and leaves the stored row unchanged. Run update when the step is present but the command or timeout differs. Stop when the name is `task-e2e-bridge`, the command is `"$HOME/.local/lib/orbit/e2e-task-cleanup"`, and `timeout_seconds` is 240. Do not deploy the Gateway release that deletes this hook until that read matches.
 
 ### After deployment
 
@@ -177,10 +210,11 @@ If the new Gateway is not deployed yet, remove the step and then the installed f
 
 ```bash
 orbit instance:teardown-step:destroy task-e2e-bridge --project=46 --yes --json
+orbit instance:teardown-step:list --project=46 --json
 ssh MANAGED_USER@NODE 'rm -f -- "$HOME/.local/lib/orbit/e2e-task-cleanup"'
 ```
 
-If the new Gateway is already deployed, keep the helper and the step until the previous Gateway is restored. The new Gateway has no built-in bridge hook, so removing them leaves task bridges behind. Restore the previous Gateway first, re-read the teardown list, and only then destroy the step and delete the file.
+If the destroy response is lost, list again. Retry destroy only when the step is still present. The list is empty when the rollback of the step finished. If the new Gateway is already deployed, keep the helper and the step until the previous Gateway is restored. The new Gateway has no built-in bridge hook, so removing them leaves task bridges behind. Restore the previous Gateway first, re-read the teardown list, and only then destroy the step and delete the file.
 
 ## Failure codes
 

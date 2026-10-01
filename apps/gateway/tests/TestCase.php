@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests;
 
 use App\Domain\Nodes\RoleName;
+use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Models\Node;
@@ -55,12 +56,12 @@ abstract class TestCase extends BaseTestCase
                     private readonly string $defaultBranch,
                 ) {}
 
-                public function resolve(string $repository): string
+                public function resolve(string $repository, ProjectSourceAccess $source): string
                 {
                     return $this->defaultBranch;
                 }
 
-                public function verify(string $repository, string $branch): void {}
+                public function verify(string $repository, string $branch, ProjectSourceAccess $source): void {}
             },
         );
     }

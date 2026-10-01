@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\GitHub\RepositoryReadAccess;
+use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
@@ -34,7 +35,7 @@ beforeEach(function (): void {
 
         public bool $available = true;
 
-        public function resolve(string $repository): string
+        public function resolve(string $repository, ProjectSourceAccess $source): string
         {
             $this->resolvedRepositories[] = $repository;
             $this->assertAvailable();
@@ -42,7 +43,7 @@ beforeEach(function (): void {
             return $this->defaultBranch;
         }
 
-        public function verify(string $repository, string $branch): void
+        public function verify(string $repository, string $branch, ProjectSourceAccess $source): void
         {
             $this->verifiedBranches[] = ['repository' => $repository, 'branch' => $branch];
             $this->assertAvailable();

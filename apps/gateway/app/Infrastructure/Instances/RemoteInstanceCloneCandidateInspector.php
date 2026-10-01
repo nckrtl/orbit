@@ -44,7 +44,7 @@ final readonly class RemoteInstanceCloneCandidateInspector implements InstanceCl
         [$basePath, $executionUser, $configuredBranch, $expectedSource] = $this->identity($candidate, $node);
         $sshUser = $node->user;
 
-        $script = GitReadScript::for($this->access->for($candidate->project->repository_url), <<<'BASH'
+        $script = GitReadScript::for($this->access->for($candidate->project->repository_url, $candidate->project->source_access), <<<'BASH'
                         environment=$1
                         base=$2
                         runtime_user=$3

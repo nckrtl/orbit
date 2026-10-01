@@ -16,6 +16,7 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\StoragePath;
+use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -66,12 +67,12 @@ beforeEach(function (): void {
     app()->instance(InstanceDestinationGuard::class, $this->destinationGuard);
     app()->instance(RepositoryDefaultBranchResolver::class, new class implements RepositoryDefaultBranchResolver
     {
-        public function resolve(string $repository): string
+        public function resolve(string $repository, ProjectSourceAccess $source): string
         {
             return 'main';
         }
 
-        public function verify(string $repository, string $branch): void {}
+        public function verify(string $repository, string $branch, ProjectSourceAccess $source): void {}
     });
     $this->configuration = new class implements DevelopmentInstanceConfigurator
     {
@@ -287,66 +288,56 @@ it('resolves a Project by canonical repository identity and returns bounded sour
         ->not->toHaveKey('source_path');
 });
 
-it('creates a confirmed missing Project before its Instance and retains it after later failure', function (): void {
-    $payload = [
-        'source_path' => '/work/acme',
-        'project_slug' => 'acme',
-        'default_branch' => 'main',
-        'root' => 'public',
-    ];
-
-    $this
-        ->postJson('/api/v1/instances/register', $payload)
-        ->assertCreated()
-        ->assertJsonPath('data.project.slug', 'acme')
-        ->assertJsonPath('data.instance.name', 'default');
-
-    expect(Project::query()->count())->toBe(1)->and(Instance::query()->count())->toBe(1);
-});
-
-it('requires unresolved values without mutating and keeps a valid Project on incomplete registration', function (): void {
-    $facts = registration_facts();
-    $this->registrationSource->facts = [new RegistrationSourceFacts(
-        path: $facts->path,
-        layout: $facts->layout,
-        repositoryUrl: $facts->repositoryUrl,
-        repositoryIdentity: $facts->repositoryIdentity,
-        branch: $facts->branch,
-        detached: $facts->detached,
-        commit: $facts->commit,
-        defaultBranch: null,
-        inferredSlug: $facts->inferredSlug,
-        inferredRoot: null,
-        commonRepositoryPath: $facts->commonRepositoryPath,
-        worktreePaths: $facts->worktreePaths,
-        sourceDigest: $facts->sourceDigest,
-    )];
-
+it('refuses registration when no Project owns the repository and points to project:create', function (): void {
     $this
         ->postJson('/api/v1/instances/register', ['source_path' => '/work/acme'])
         ->assertUnprocessable()
-        ->assertJsonPath('error.code', 'instance.registration_values_unresolved');
-    expect(Project::query()->count())->toBe(0)->and(Instance::query()->count())->toBe(0);
-
-    $this->registrationSource->facts = [registration_facts()];
-    $this->projection->fail = true;
-    $this
-        ->postJson('/api/v1/instances/register', [
-            'source_path' => '/work/acme',
-            'project_slug' => 'acme',
-            'default_branch' => 'main',
-            'root' => 'public',
-        ])
-        ->assertStatus(502)
-        ->assertJsonPath('error.code', 'instance.registration_incomplete')
+        ->assertJsonPath('error.code', 'instance.project_missing')
         ->assertJsonPath(
             'error.message',
-            'Project [acme] was retained; Instance registration is incomplete and can be retried.',
+            'No Project owns repository [git@github.com:acme/acme.git]. Create it with `orbit project:create` first.',
         );
 
     expect(Project::query()->count())
-        ->toBe(1)
-        ->and(Instance::query()->sole()->status->value)
+        ->toBe(0)
+        ->and(Instance::query()->count())
+        ->toBe(0)
+        ->and(Route::query()->count())
+        ->toBe(0)
+        ->and($this->registrationSource->calls)
+        ->toBe(['inspect']);
+});
+
+it('refuses the removed Project creation fields', function (string $field, string $value): void {
+    $this
+        ->postJson('/api/v1/instances/register', ['source_path' => '/work/acme', $field => $value])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'validation.failed');
+
+    expect(Project::query()->count())->toBe(0)->and($this->registrationSource->calls)->toBe([]);
+})->with([
+    'project slug' => ['project_slug', 'acme'],
+    'project name' => ['project_name', 'Acme'],
+    'default branch' => ['default_branch', 'main'],
+]);
+
+it('keeps the adopted source for a retry when registration is incomplete', function (): void {
+    Project::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $this->projection->fail = true;
+
+    $this
+        ->postJson('/api/v1/instances/register', ['source_path' => '/work/acme'])
+        ->assertStatus(502)
+        ->assertJsonPath('error.code', 'instance.registration_incomplete')
+        ->assertJsonPath('error.message', 'Instance registration is incomplete and can be retried.');
+
+    expect(Instance::query()->sole()->status->value)
         ->toBe('source_resolved')
         ->and($this->registrationSource->calls)
         ->toContain('url-restore');
@@ -381,12 +372,6 @@ it('returns the same identities on an identical retry and refuses conflicting ev
             'validate:/srv/orbit/apps/acme/default',
             'url-discard',
         ]);
-
-    $this
-        ->postJson('/api/v1/instances/register', [...$payload, 'project_slug' => 'different'])
-        ->assertConflict()
-        ->assertJsonPath('error.code', 'project.identity_conflict');
-    expect(Instance::query()->count())->toBe(1)->and(Route::query()->count())->toBe(1);
 });
 
 it('preserves an ordinary retained root when retry input is omitted or identical and returns 409 for a conflict', function (): void {

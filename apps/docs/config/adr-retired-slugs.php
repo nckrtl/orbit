@@ -186,4 +186,6 @@ return [
     '0184' => ['0184-adopt-selected-tools-from-existing-managers'],
     '0185' => ['0185-report-informational-tool-discoveries-in-doctor'],
     '0186' => ['0186-create-development-instances-as-copy-on-write-copies'],
+    '0188' => ['0188-read-private-github-repositories-through-the-gateway-github-cli'],
+    '0189' => ['0189-register-instances-only-for-existing-projects'],
 ];

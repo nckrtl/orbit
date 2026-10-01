@@ -63,6 +63,7 @@ use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\GitHub\GitHubApi;
+use App\Domain\GitHub\GitHubCliToken;
 use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\Hibernation\HibernationWakeFailureStore;
@@ -238,6 +239,7 @@ use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\Gateway\NativeGatewaySelfAccessConverger;
 use App\Infrastructure\Gateway\NativeGatewayWebConverger;
 use App\Infrastructure\GitHub\HttpGitHubApi;
+use App\Infrastructure\GitHub\ProcessGitHubCliToken;
 use App\Infrastructure\Hibernation\CacheHibernationWakeFailureStore;
 use App\Infrastructure\Hibernation\NativeRuntimeHibernatorConverger;
 use App\Infrastructure\Hibernation\RemoteHibernationMarkerStore;
@@ -477,6 +479,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         ScheduleRuntimeAccountResolver::class => SshScheduleRuntimeAccountResolver::class,
         ScheduleRuntimeManager::class => RemoteScheduleRuntimeManager::class,
         GitHubApi::class => HttpGitHubApi::class,
+        GitHubCliToken::class => ProcessGitHubCliToken::class,
         RepositoryDefaultBranchResolver::class => NativeRepositoryDefaultBranchResolver::class,
         SshExecutor::class => NativeSshExecutor::class,
         DatabaseInspectionExecutor::class => RegisteredDatabaseInspectionExecutor::class,

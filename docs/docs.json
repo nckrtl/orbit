@@ -1332,6 +1332,14 @@
       "destination": "/reference/instance-copies#why-it-works-this-way"
     },
     {
+      "source": "/decisions/0188-read-private-github-repositories-through-the-gateway-github-cli",
+      "destination": "/reference/github-app#read-through-the-github-cli"
+    },
+    {
+      "source": "/decisions/0189-register-instances-only-for-existing-projects",
+      "destination": "/reference/projects#registration-needs-a-project"
+    },
+    {
       "source": "/decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop",
       "destination": "/cli/extension#why-it-works-this-way"
     },

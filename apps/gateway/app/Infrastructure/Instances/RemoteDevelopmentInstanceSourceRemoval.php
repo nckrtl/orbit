@@ -17,6 +17,7 @@ use App\Domain\Instances\Removal\InstanceSourceRevalidationState;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\Nodes\Storage\StoragePath;
+use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
@@ -262,7 +263,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             ->instanceGroupingDirectory($instance, $context['root'])
             ->value;
         $script = GitReadScript::for(
-            $this->access->for($inventory->origin),
+            $this->access->for($inventory->origin, $this->sourceAccess($instance->project_id)),
             self::releaseEmptyGroupingDirectoryFunction().self::removalScript(),
         );
         $this->executeRefusable(
@@ -403,7 +404,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             [$node, $user, $group, $root, $groupingDirectory] = $this->memberContext($member);
             $removal = $member->removal()->firstOrFail();
             $script = GitReadScript::for(
-                $this->access->for($inventory->origin),
+                $this->access->for($inventory->origin, $this->sourceAccess($member->project_id)),
                 self::releaseEmptyGroupingDirectoryFunction().self::finalizationScript(),
             );
             $result = $this->ssh->execute(
@@ -979,9 +980,14 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
         return $paths;
     }
 
+    private function sourceAccess(int $projectId): ProjectSourceAccess
+    {
+        return Project::query()->findOrFail($projectId)->source_access;
+    }
+
     private function isPublished(Instance $instance, string $origin, string $commit): bool
     {
-        $script = GitReadScript::for($this->access->for($origin), self::publicationScript());
+        $script = GitReadScript::for($this->access->for($origin, $this->sourceAccess($instance->project_id)), self::publicationScript());
         $result = $this->ssh->execute(
             $instance->node,
             new RemoteCommand(

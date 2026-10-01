@@ -161,7 +161,7 @@ The other `instance:create` refusals also apply. [Instance copies](/reference/in
 
 ## orbit instance:register
 
-Adopt the current Git checkout or worktree as a managed Instance. Run it on the app-dev Node that holds the source.
+Adopt the current Git checkout or worktree as a managed Instance of an existing Project. Run it on the app-dev Node that holds the source.
 
 ```bash
 orbit instance:register [options]
@@ -172,18 +172,17 @@ orbit instance:register [options]
 | `--path=PATH` | the current directory | Existing Git checkout or worktree. |
 | `--include-worktrees` | off | Adopt the checkout and every linked worktree as one preflighted set. |
 | `--project=ID` | resolved from the origin | Existing numeric Project ID. |
-| `--project-name=NAME` | inferred | Confirmed Project display name for a new Project. |
-| `--project-slug=SLUG` | the repository name | Confirmed Project slug for a new Project. |
-| `--default-branch=BRANCH` | the remote default | Confirmed Project default branch for a new Project. |
 | `--name=NAME` | inferred | Non-default Instance name. |
-| `--root=PATH` | `public` for an unambiguous Laravel checkout | Confirmed Project root, or a root override for an existing Project. |
+| `--root=PATH` | the Project root | Relative web-root override for this Instance. |
 | `--domain=HOST` | generated | Explicit Route domain for the primary source. |
 | `--yes` | off | Confirm transfer of the source into Orbit ownership without prompting. |
 | `--setup` | off | Run the Project setup steps after adoption. A failed step leaves the Instance and the checkout in place. |
 
 The CLI refuses a directory outside Git and an origin with credentials before it sends a request. The Gateway finds the Project by repository identity, checks the source on the caller's Node, moves it into its managed path, and provisions it as `instance:create` does. See [Register an existing checkout](/domains/applications#register-an-existing-checkout).
 
-In a terminal, the CLI shows the inferred values, asks only for missing ones, and asks for default-No consent that names the source. JSON and noninteractive calls need `--yes` and refuse missing values before any change. Cancellation leaves the source unchanged.
+Registration never creates a Project. When no Project owns the repository, it fails with `instance.project_missing`. Run [`project:create`](/cli/project#orbit-projectcreate) first.
+
+In a terminal, the CLI asks for default-No consent that names the source. JSON and noninteractive calls need `--yes`. Cancellation leaves the source unchanged.
 
 ```bash
 cd ~/apps/acme

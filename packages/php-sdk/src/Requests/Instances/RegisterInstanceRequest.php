@@ -22,9 +22,6 @@ final class RegisterInstanceRequest extends GatewayRequest implements HasBody
         private readonly string $sourcePath,
         private readonly bool $includeWorktrees = false,
         private readonly ?int $projectId = null,
-        private readonly ?string $projectName = null,
-        private readonly ?string $projectSlug = null,
-        private readonly ?string $defaultBranch = null,
         private readonly ?string $instanceName = null,
         private readonly ?string $root = null,
         private readonly ?string $domain = null,
@@ -59,9 +56,6 @@ final class RegisterInstanceRequest extends GatewayRequest implements HasBody
 
         foreach ([
             'project_id' => $this->projectId,
-            'project_name' => $this->projectName,
-            'project_slug' => $this->projectSlug,
-            'default_branch' => $this->defaultBranch,
             'instance_name' => $this->instanceName,
             'root' => $this->root,
             'domain' => $this->domain,
