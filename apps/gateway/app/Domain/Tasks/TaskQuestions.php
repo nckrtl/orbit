@@ -10,11 +10,14 @@ use App\Models\TaskQuestion;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Writes one question record for each direction request and answers it from the receipt
- * that follows the operator's resolution. The same comment never creates a second row.
+ * Writes one question record for each consult and each direction request.
+ * The same comment never creates a second row. A consult the reviewer escalates is that same row.
  */
 final class TaskQuestions
 {
+    /** An implementer attempt consults the reviewer at most this many times (ADR 0187). */
+    public const int ConsultLimit = 2;
+
     public static function recordBlocked(Task $task, TaskComment $receipt): void
     {
         if (self::opened($receipt)) {
@@ -44,6 +47,101 @@ final class TaskQuestions
         $task->refresh();
         self::open($task, $comment, QuestionAsker::Operator, $comment->body);
         self::storeCounts($task);
+    }
+
+    /** Opens the consult for an implementer's blocked receipt. A repeated comment does not count again. */
+    public static function openConsult(Task $task, TaskComment $receipt): void
+    {
+        if (self::opened($receipt)) {
+            return;
+        }
+        $parentId = $task->parent_id;
+        if (! is_int($parentId)) {
+            return;
+        }
+
+        TaskQuestion::query()->create([
+            'task_id' => $parentId,
+            'subtask_id' => $task->id,
+            'attempt' => max(1, (int) $task->completion_attempt),
+            'asked_by' => QuestionAsker::Implementer,
+            'question' => TaskAssistance::questionFromBlockedReason($receipt->body),
+            'status' => QuestionStatus::Open,
+            'consult' => true,
+            'asked_at' => now(),
+            'opened_comment_id' => $receipt->id,
+        ]);
+        self::storeCounts($task);
+    }
+
+    /**
+     * Moves the open consult to escalated. Returns false when this receipt did not escalate one,
+     * so the caller records a new direction request instead.
+     */
+    public static function escalateOpen(Task $task, TaskComment $receipt): bool
+    {
+        $question = self::openConsultRow($task);
+        if (! $question instanceof TaskQuestion) {
+            return false;
+        }
+
+        $question->update([
+            'question' => TaskAssistance::questionFromBlockedReason($receipt->body),
+            'status' => QuestionStatus::Escalated,
+            'cause' => self::cause($receipt),
+            'escalated_at' => now(),
+        ]);
+        self::storeCounts($task);
+
+        return true;
+    }
+
+    /** The reviewer answered the open consult. A repeated receipt does not write a second answer. */
+    public static function answerConsult(Task $task, TaskComment $receipt): bool
+    {
+        if (TaskQuestion::query()->where('subtask_id', $task->id)->where('consult', true)->where('answered_comment_id', $receipt->id)->exists()) {
+            return true;
+        }
+        $question = self::openConsultRow($task);
+        $cause = self::cause($receipt);
+        if (! $question instanceof TaskQuestion || ! $cause instanceof QuestionCause) {
+            return false;
+        }
+
+        $question->update([
+            'status' => QuestionStatus::Answered,
+            'answered_by' => QuestionAsker::Reviewer,
+            'answer' => $receipt->body,
+            'cause' => $cause,
+            'answered_at' => now(),
+            'answered_comment_id' => $receipt->id,
+        ]);
+        self::storeCounts($task);
+
+        return true;
+    }
+
+    /** Consult rows for the subtask's current implementer attempt. A relay and a third block are not consults. */
+    public static function consultCount(Task $task): int
+    {
+        return TaskQuestion::query()
+            ->where('subtask_id', $task->id)
+            ->where('attempt', max(1, (int) $task->completion_attempt))
+            ->where('consult', true)
+            ->count();
+    }
+
+    /** @return list<string> */
+    public static function earlierAnswers(Task $task): array
+    {
+        return array_values(TaskQuestion::query()
+            ->where('subtask_id', $task->id)
+            ->where('attempt', max(1, (int) $task->completion_attempt))
+            ->where('consult', true)
+            ->orderBy('id')
+            ->pluck('answer')
+            ->map(static fn (mixed $answer): string => is_string($answer) ? $answer : '')
+            ->all());
     }
 
     /** Links the resolution to the open direction record without answering it. */
@@ -137,11 +235,24 @@ final class TaskQuestions
             'asked_by' => $asker,
             'question' => $question,
             'status' => QuestionStatus::Escalated,
+            'consult' => false,
             'cause' => $asker === QuestionAsker::Reviewer ? self::cause($comment) : null,
             'asked_at' => now(),
             'escalated_at' => now(),
             'opened_comment_id' => $comment->id,
         ]);
+    }
+
+    private static function openConsultRow(Task $task): ?TaskQuestion
+    {
+        $question = TaskQuestion::query()
+            ->where('subtask_id', $task->id)
+            ->where('consult', true)
+            ->where('status', QuestionStatus::Open)
+            ->latest('id')
+            ->first();
+
+        return $question instanceof TaskQuestion ? $question : null;
     }
 
     private static function pending(Task $task): ?TaskQuestion

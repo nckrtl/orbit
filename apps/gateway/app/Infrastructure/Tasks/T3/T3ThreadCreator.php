@@ -19,7 +19,7 @@ final readonly class T3ThreadCreator
         $selection = T3ModelSelection::forModel($intent->model, $intent->effort);
         $title = $intent->title;
         $message = $intent->prompt;
-        $threadId = (string) Str::uuid();
+        $threadId = $intent->externalId ?? (string) Str::uuid();
         $projectId = (string) Str::uuid();
         $createdAt = now()->toIso8601String();
 
@@ -74,11 +74,19 @@ final readonly class T3ThreadCreator
         }
 
         $resolvedThreadId = $created['thread_id'] !== '' ? $created['thread_id'] : $threadId;
+        if ($intent->deferOpeningTurn) {
+            return $resolvedThreadId;
+        }
 
         try {
-            $this->startOpeningTurn($node, $resolvedThreadId, $message, $selection);
+            $this->startOpeningTurn($node, $resolvedThreadId, $message, $selection, $intent->openingKey);
         } catch (T3DispatchException) {
-            throw new T3DispatchException('T3 conversation creation failed.');
+            // A keyed opening turn belongs to a receipt. The caller keeps this thread id and
+            // retries that same command id instead of creating another conversation.
+            throw new T3DispatchException(
+                'T3 conversation creation failed.',
+                createdThreadId: $intent->openingKey !== null ? $resolvedThreadId : null,
+            );
         }
 
         return $resolvedThreadId;
@@ -87,11 +95,15 @@ final readonly class T3ThreadCreator
     /**
      * @param  array{instanceId: string, model: string, options: list<array{id: string, value: string}>}  $selection
      */
-    private function startOpeningTurn(Node $node, string $threadId, string $message, array $selection): void
+    private function startOpeningTurn(Node $node, string $threadId, string $message, array $selection, ?string $key = null): void
     {
         try {
-            $this->startTurn($node, $threadId, $message, $selection);
-        } catch (T3DispatchException) {
+            $this->startTurn($node, $threadId, $message, $selection, $key);
+        } catch (T3DispatchException $exception) {
+            // The scheduler retries a reserved command id. A second start here would be a second consult.
+            if ($key !== null) {
+                throw $exception;
+            }
             try {
                 $this->startTurn($node, $threadId, $message, $selection);
             } catch (T3DispatchException $exception) {

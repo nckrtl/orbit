@@ -27,6 +27,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon $asked_at
  * @property Carbon|null $escalated_at
  * @property Carbon|null $answered_at
+ * @property bool $consult
  * @property int|null $opened_comment_id
  * @property int|null $resolution_comment_id
  * @property int|null $answered_comment_id
@@ -36,7 +37,7 @@ final class TaskQuestion extends Model
     #[\Override]
     protected $fillable = [
         'task_id', 'subtask_id', 'attempt', 'asked_by', 'question', 'status', 'answered_by', 'answer', 'cause',
-        'asked_at', 'escalated_at', 'answered_at', 'opened_comment_id', 'resolution_comment_id', 'answered_comment_id',
+        'consult', 'asked_at', 'escalated_at', 'answered_at', 'opened_comment_id', 'resolution_comment_id', 'answered_comment_id',
     ];
 
     /** @return BelongsTo<Task, $this> */
@@ -60,6 +61,7 @@ final class TaskQuestion extends Model
             'status' => QuestionStatus::class,
             'answered_by' => QuestionAsker::class,
             'cause' => QuestionCause::class,
+            'consult' => 'boolean',
             'asked_at' => 'datetime',
             'escalated_at' => 'datetime',
             'answered_at' => 'datetime',

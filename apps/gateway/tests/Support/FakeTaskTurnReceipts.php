@@ -50,7 +50,7 @@ final class FakeTaskTurnReceipts implements TaskTurnReceipts
     /** @var list<list<string>> the deliverable IDs written into each prepared turn */
     public array $turnDeliverables = [];
 
-    /** @var list<string|null> `relay`, `cause`, or null for an ordinary turn */
+    /** @var list<string|null> `consult`, `relay`, `cause`, or null for an ordinary turn */
     public array $modes = [];
 
     /** Preparing an implementer turn discards the next unread receipt, as the real prepare deletes receipt.json. */
@@ -61,6 +61,7 @@ final class FakeTaskTurnReceipts implements TaskTurnReceipts
         $this->prepared[] = $role->value.($final ? ':final' : '');
         $this->turnDeliverables[] = array_map(static fn (TaskDeliverable $deliverable): string => $deliverable->id, $deliverables);
         $this->modes[] = match (true) {
+            $mode?->consult === true => 'consult',
             $mode?->relay === true => 'relay',
             $mode?->causeRequired === true => 'cause',
             default => null,

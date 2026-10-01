@@ -745,6 +745,62 @@ it('imports legacy thread links using the instance morph alias', function (strin
     }
 })->with(['persisted', 'pointers', 'conflict']);
 
+it('gives a fresh reviewer the questions and answers from earlier consults', function (): void {
+    $group = t3_spawner_group();
+    $task = $group->tasks->first();
+    expect($task)->not->toBeNull();
+    foreach ([
+        ['May I install intl?', 'Yes. The contract allows it.'],
+        ['Which region?', 'The region named in the brief.'],
+    ] as [$question, $answer]) {
+        TaskQuestion::query()->create([
+            'task_id' => $group->id,
+            'subtask_id' => $task->id,
+            'attempt' => 1,
+            'asked_by' => 'implementer',
+            'question' => $question,
+            'answer' => $answer,
+            'status' => QuestionStatus::Answered,
+            'answered_by' => 'reviewer',
+            'consult' => true,
+            'cause' => 'missed_contract',
+            'asked_at' => now(),
+            'answered_at' => now(),
+        ]);
+    }
+    app()->instance(TaskReviewDiff::class, new class implements TaskReviewDiff
+    {
+        public function read(Instance $instance, string $startCommit): array
+        {
+            return [
+                'files' => [],
+                'diff' => '',
+                'files_complete' => true,
+                'diff_available' => true,
+                'summary' => ['files' => 0, 'insertions' => 0, 'deletions' => 0],
+            ];
+        }
+    });
+    app()->forgetInstance(TaskReviewPacketBuilder::class);
+    $driver = new FakeAgentDriver('t3');
+    $spawner = new TaskAgentSpawner(new AgentDriverRegistry([$driver]), app(TaskReviewPacketBuilder::class), app(TaskWorkspaceMcp::class));
+
+    expect($spawner->spawnReviewer($task))->not->toBeNull();
+    expect($driver->calls[0]['prompt'])->toContain('May I install intl?')
+        ->and($driver->calls[0]['prompt'])->toContain('Yes. The contract allows it.')
+        ->and($driver->calls[0]['prompt'])->toContain('Which region?')
+        ->and($driver->calls[0]['prompt'])->toContain('The region named in the brief.');
+
+    $driver->failNextSend = true;
+    $spawner->requestReview($task->fresh() ?? $task);
+    $continued = collect($driver->calls)->first(fn (array $call): bool => $call['operation'] === 'send');
+    $fresh = collect($driver->calls)->last(fn (array $call): bool => $call['operation'] === 'create');
+    expect($continued['message'] ?? null)->not->toContain('May I install intl?')
+        ->and($fresh['prompt'] ?? null)->toContain('May I install intl?')
+        ->and($fresh['prompt'] ?? null)->toContain('Yes. The contract allows it.')
+        ->and($fresh['prompt'] ?? null)->toContain('The region named in the brief.');
+});
+
 it('uses high effort for a reviewer follow-up when a legacy effort is absent', function (): void {
     $group = t3_spawner_group();
     [$spawner, $dispatcher] = t3_spawner_stack();

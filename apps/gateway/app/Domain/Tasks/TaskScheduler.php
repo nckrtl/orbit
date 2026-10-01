@@ -227,6 +227,11 @@ final readonly class TaskScheduler
 
                     continue;
                 }
+                if ($task->status === TaskStatus::Running && $task->consult_comment_id !== null) {
+                    $this->handleConsult($group, $task);
+
+                    continue;
+                }
                 if ($task->status === TaskStatus::Reviewing && $this->retryCommittedApproval($group, $task)) {
                     continue;
                 }
@@ -333,7 +338,7 @@ final readonly class TaskScheduler
         }
         $receipt = $this->pendingReceipt($task, TaskThreadRole::Implementer);
         if ($receipt instanceof TaskComment && $this->receiptOutcome($receipt) === TaskTurnOutcome::Blocked) {
-            $this->requestAssistance($task, $group, TaskAssistance::ImplementerBlockedPrefix.$receipt->body, $observation, AssistanceKind::Direction, TaskAssistance::questionFromBlockedReason($receipt->body), ['completion_handoff_comment_id' => $receipt->id], $receipt);
+            $this->beginConsult($group, $task, $receipt, $observation);
 
             return true;
         }
@@ -1016,15 +1021,29 @@ final readonly class TaskScheduler
                 return false;
             }
             $this->prepareTurn($group, $task, $thread->role, $actingThreadId);
-            $instructions = $thread->role === TaskThreadRole::Implementer
-                ? TaskTurnInstructions::implementer($task->deliverableList(), $group->project->taskCheckCommand(), $actingThreadId)
-                : TaskTurnInstructions::reviewer($task->opensPullRequest(), $task->deliverableList(), $actingThreadId);
+            $instructions = $this->actingInstructions($group, $task, $thread->role, $actingThreadId);
             $this->actor->remindRubric($group, $thread, 'Orbit bound this turn to its thread. '.$instructions);
         } catch (AgentDriverException|TaskTurnReceiptException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
         }
 
         return true;
+    }
+
+    /** The instructions for the turn that is active now, not for a later review or relay. */
+    private function actingInstructions(Task $group, Task $task, TaskThreadRole $role, ?int $threadId): string
+    {
+        if ($role === TaskThreadRole::Implementer) {
+            return TaskTurnInstructions::implementer($task->deliverableList(), $group->project->taskCheckCommand(), $threadId);
+        }
+        if ($task->consult_comment_id !== null) {
+            return TaskTurnInstructions::consult($threadId);
+        }
+        if ($task->direction_relay_comment_id !== null) {
+            return TaskTurnInstructions::relay($threadId);
+        }
+
+        return TaskTurnInstructions::reviewer($task->opensPullRequest(), $task->deliverableList(), $threadId);
     }
 
     /**
@@ -1058,9 +1077,10 @@ final readonly class TaskScheduler
         if (! $instance instanceof Instance) {
             throw new TaskTurnReceiptException('The task workspace is unavailable.');
         }
-        $relay = $role === TaskThreadRole::Reviewer && $task->direction_relay_comment_id !== null;
-        $causeRequired = $role === TaskThreadRole::Reviewer && ! $relay && TaskQuestions::awaitsCause($task);
-        $mode = $relay || $causeRequired ? new TaskTurnMode(relay: $relay, causeRequired: $causeRequired) : null;
+        $consult = $role === TaskThreadRole::Reviewer && $task->consult_comment_id !== null;
+        $relay = $role === TaskThreadRole::Reviewer && ! $consult && $task->direction_relay_comment_id !== null;
+        $causeRequired = $role === TaskThreadRole::Reviewer && ! $consult && ! $relay && TaskQuestions::awaitsCause($task);
+        $mode = $consult || $relay || $causeRequired ? new TaskTurnMode(consult: $consult, relay: $relay, causeRequired: $causeRequired) : null;
         $this->receipts->prepare($instance, $role, $role === TaskThreadRole::Reviewer && $task->opensPullRequest(), $task->deliverableList(), $threadId, $mode);
     }
 
@@ -1098,7 +1118,11 @@ final readonly class TaskScheduler
         if ($task->{$reminder} !== $task->{$attempt}) {
             try {
                 $this->prepareTurn($group, $task, $thread->role, $thread->threadId);
-                $this->actor->remindRubric($group, $thread, TaskRubricReminder::compose($thread->role, $failures, ! $implementer && $task->opensPullRequest(), $task->deliverableList(), $group->project->taskCheckCommand(), $thread->threadId));
+                $mode = $implementer ? null : new TaskTurnMode(
+                    consult: $task->consult_comment_id !== null,
+                    relay: $task->consult_comment_id === null && $task->direction_relay_comment_id !== null,
+                );
+                $this->actor->remindRubric($group, $thread, TaskRubricReminder::compose($thread->role, $failures, ! $implementer && $task->opensPullRequest(), $task->deliverableList(), $group->project->taskCheckCommand(), $thread->threadId, $mode));
             } catch (AgentDriverException|TaskTurnReceiptException $exception) {
                 $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
@@ -1137,6 +1161,300 @@ final readonly class TaskScheduler
         if ($task->communication_failures >= 5) {
             $this->requestAssistance($task, $group, $reason);
         }
+    }
+
+    /**
+     * An implementer's blocked receipt asks the reviewer first. The third block in one attempt
+     * asks for direction at once, with both earlier answers in the reason.
+     */
+    private function beginConsult(Task $group, Task $task, TaskComment $receipt, TaskSessionObservation $observation): void
+    {
+        if (TaskQuestions::consultCount($task) >= TaskQuestions::ConsultLimit) {
+            $this->requestAssistance($task, $group, $this->thirdBlockReason($task, $receipt), $observation, AssistanceKind::Direction, TaskAssistance::questionFromBlockedReason($receipt->body), ['completion_handoff_comment_id' => $receipt->id], $receipt);
+
+            return;
+        }
+
+        if (! $this->spawner instanceof TaskAgentSpawner) {
+            $this->recordCommunicationFailure($task, $group, self::ReviewRequestFailedReason.' (AgentSpawner).');
+
+            return;
+        }
+        $instance = $group->taskable;
+        if (! $instance instanceof Instance) {
+            $this->recordCommunicationFailure($task, $group, 'The task workspace is unavailable.');
+
+            return;
+        }
+
+        $this->recordConsultIntent($task, $receipt, $observation);
+        $task->refresh();
+        $this->dispatchConsult($group, $task, $receipt, $observation);
+    }
+
+    /** Records the consult for this blocked receipt before the send, so a lost response can be recovered. */
+    private function recordConsultIntent(Task $task, TaskComment $receipt, TaskSessionObservation $observation): void
+    {
+        $own = $this->ownReviewer($task, $observation);
+        $source = $own instanceof TaskThreadObservation && is_string($own->turnId) && $own->turnId !== '' ? $own->turnId : null;
+        $key = $this->consultSendKey($receipt);
+        DB::transaction(function () use ($task, $receipt, $key, $source): void {
+            $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
+            if ($locked->consult_comment_id !== null || $locked->assistance_requested) {
+                return;
+            }
+            TaskQuestions::openConsult($locked, $receipt);
+            $locked->update([
+                'consult_comment_id' => $receipt->id,
+                'completion_handoff_comment_id' => $receipt->id,
+                'direction_answer_key' => $key,
+                'direction_answer_source_turn_id' => $source,
+                'communication_failures' => 0,
+            ]);
+        });
+    }
+
+    /** Sends the reserved consult once. An accepted key, or a later reviewer turn, is not sent again. */
+    private function dispatchConsult(Task $group, Task $task, TaskComment $receipt, TaskSessionObservation $observation): void
+    {
+        $task->refresh();
+        if (! $this->consultSendPending($task, $receipt)) {
+            return;
+        }
+        $own = $this->ownReviewer($task, $observation);
+        if ($own instanceof TaskThreadObservation && $this->relayAnswerAccepted($own, $task)) {
+            $this->confirmConsultDispatch($group, $task, $own->threadId);
+
+            return;
+        }
+        if ($own instanceof TaskThreadObservation && $this->isWorking($own)) {
+            return;
+        }
+        $existing = $this->subtaskReviewer($task);
+        if ($existing instanceof AgentThread && $own === null && $observation->available && $observation->threads === []) {
+            return;
+        }
+        if (! $this->spawner instanceof TaskAgentSpawner) {
+            $this->recordCommunicationFailure($task, $group, self::ReviewRequestFailedReason.' (AgentSpawner).');
+
+            return;
+        }
+        $instance = $group->taskable;
+        if (! $instance instanceof Instance) {
+            $this->recordCommunicationFailure($task, $group, 'The task workspace is unavailable.');
+
+            return;
+        }
+
+        try {
+            $reserved = $this->spawner->reserveReviewer($task);
+            $this->receipts->prepare($instance, TaskThreadRole::Reviewer, false, $task->deliverableList(), $reserved, new TaskTurnMode(consult: true));
+            $threadId = $this->spawner->consult($task, trim($receipt->body)."\n\n".TaskTurnInstructions::consult($reserved), $this->consultSendKey($receipt));
+            if ($threadId === null) {
+                throw new AgentDriverException('The reviewer conversation could not be started.');
+            }
+        } catch (Throwable $exception) {
+            report($exception);
+            $this->recordCommunicationFailure($task, $group, self::ReviewRequestFailedReason.' ('.class_basename($exception).').');
+
+            return;
+        }
+        $this->confirmConsultDispatch($group, $task, $threadId);
+    }
+
+    private function confirmConsultDispatch(Task $group, Task $task, ?int $threadId): void
+    {
+        DB::transaction(function () use ($group, $task, $threadId): void {
+            $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
+            if ($locked->consult_comment_id === null) {
+                return;
+            }
+            $locked->update([
+                'direction_answer_key' => null,
+                'direction_answer_source_turn_id' => null,
+                'communication_failures' => 0,
+            ]);
+            if (is_int($threadId)) {
+                Task::topLevel()->whereKey($group->id)->update(['reviewer_agent_thread_id' => $threadId]);
+            }
+        });
+    }
+
+    private function consultSendPending(Task $task, TaskComment $receipt): bool
+    {
+        return $task->consult_comment_id === $receipt->id && $task->direction_answer_key === $this->consultSendKey($receipt);
+    }
+
+    /** The same blocked receipt always reserves the same reviewer send. */
+    private function consultSendKey(TaskComment $receipt): string
+    {
+        return $this->relayAnswerKey($receipt, 'consult');
+    }
+
+    private function blockedConsultReceipt(Task $task): ?TaskComment
+    {
+        $id = $task->consult_comment_id;
+        if (! is_int($id)) {
+            return null;
+        }
+        $receipt = TaskComment::query()->find($id);
+
+        return $receipt instanceof TaskComment ? $receipt : null;
+    }
+
+    /** This subtask's reviewer, not an earlier subtask's thread that happens to be observed first. */
+    private function ownReviewer(Task $task, TaskSessionObservation $observation): ?TaskThreadObservation
+    {
+        $existing = $this->subtaskReviewer($task);
+        if (! $existing instanceof AgentThread) {
+            return null;
+        }
+        foreach ($observation->threads as $thread) {
+            if ($thread->role === TaskThreadRole::Reviewer && $thread->threadId === $existing->id) {
+                return $thread;
+            }
+        }
+
+        return null;
+    }
+
+    /** Reads the consult receipt. `answered` continues the implementer. `blocked` asks for direction. */
+    private function handleConsult(Task $group, Task $task): void
+    {
+        $observation = $this->observer->observe($group, $task);
+        if (! $observation->available) {
+            $decision = $this->unavailableDecision($group);
+            if ($decision->action === TaskSessionNextAction::EscalateCoder) {
+                $this->requestAssistance($task, $group, $decision->reason, $observation, AssistanceKind::Failure);
+            }
+
+            return;
+        }
+        $this->clearUnavailable($group);
+        $blocked = $this->blockedConsultReceipt($task);
+        if ($blocked instanceof TaskComment && $this->consultSendPending($task, $blocked)) {
+            $this->dispatchConsult($group, $task, $blocked, $observation);
+            $task->refresh();
+            if ($this->consultSendPending($task, $blocked)) {
+                return;
+            }
+            $observation = $this->observer->observe($group, $task);
+        }
+        $reviewer = $this->ownReviewer($task, $observation);
+        if ($reviewer === null || $this->isWorking($reviewer)) {
+            return;
+        }
+        $this->reconcilePiRestart($task, $reviewer);
+        $state = AgentThreadState::tryFrom($reviewer->sessState);
+        if ($state === AgentThreadState::Failed) {
+            if ($this->resumePiServerRestart($task, $group, $reviewer) !== 'handled') {
+                $this->requestAssistance($task, $group, 'The reviewer thread failed.', $observation, AssistanceKind::Failure);
+            }
+
+            return;
+        }
+        if (! in_array($state, [AgentThreadState::Idle, AgentThreadState::Done, AgentThreadState::AskingForInput], true)) {
+            return;
+        }
+        if (! $this->newerTurnHasStopped($task->review_notified_turn_id, $reviewer)) {
+            return;
+        }
+
+        try {
+            $read = $this->collectReceipt($group, $task, TaskThreadRole::Reviewer);
+        } catch (TaskTurnReceiptException $exception) {
+            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+            return;
+        }
+        $receipt = $this->pendingReceipt($task, TaskThreadRole::Reviewer);
+        $outcome = $receipt instanceof TaskComment ? $this->receiptOutcome($receipt) : null;
+        if (! $receipt instanceof TaskComment || ! in_array($outcome, [TaskTurnOutcome::Answered, TaskTurnOutcome::Blocked], true)) {
+            $this->remindOrAssist($group, $task, $reviewer, [
+                $receipt instanceof TaskComment
+                    ? new TaskRubricItem('turn_receipt', false, 'A consult needs --outcome=answered or --outcome=blocked, with --cause.')
+                    : $this->receiptItem($read, $receipt),
+            ]);
+
+            return;
+        }
+        if (! $receipt->cause instanceof QuestionCause) {
+            $this->remindOrAssist($group, $task, $reviewer, [
+                new TaskRubricItem('turn_receipt', false, 'A consult needs --cause with one of: brief_unclear, contract_gap, scope, environment, missed_contract.'),
+            ]);
+
+            return;
+        }
+        if ($outcome === TaskTurnOutcome::Blocked) {
+            $this->requestAssistance($task, $group, TaskAssistance::ReviewerBlockedPrefix.$receipt->body, $observation, AssistanceKind::Direction, TaskAssistance::questionFromBlockedReason($receipt->body), ['review_handled_comment_id' => $receipt->id], $receipt);
+
+            return;
+        }
+        if (! TaskQuestions::answerConsult($task, $receipt)) {
+            return;
+        }
+        $this->deliverConsultAnswer($group, $task, $observation, $receipt);
+    }
+
+    /** Sends the reviewer's answer to the implementer and keeps the same attempt. */
+    private function deliverConsultAnswer(Task $group, Task $task, TaskSessionObservation $observation, TaskComment $receipt): void
+    {
+        $implementer = $observation->thread(TaskThreadRole::Implementer);
+        if ($implementer === null || $this->isWorking($implementer)) {
+            return;
+        }
+        $key = $this->relayAnswerKey($receipt, 'consult-answer');
+        if ($task->direction_answer_key !== $key) {
+            $sourceTurn = $implementer->turnId;
+            $task->update([
+                'direction_answer_key' => $key,
+                'direction_answer_source_turn_id' => is_string($sourceTurn) && $sourceTurn !== '' ? $sourceTurn : null,
+            ]);
+            $task->refresh();
+        }
+        if ($this->relayAnswerAccepted($implementer, $task)) {
+            $this->finishConsultDelivery($task, $receipt);
+
+            return;
+        }
+        try {
+            $this->prepareTurn($group, $task, TaskThreadRole::Implementer, $implementer->threadId);
+            $this->actor->relayAnswer($group, $implementer, $receipt->body, $key);
+        } catch (Throwable $exception) {
+            report($exception);
+            $this->recordCommunicationFailure($task, $group, 'The consult answer could not be sent to the implementer. ('.class_basename($exception).').');
+
+            return;
+        }
+        $this->finishConsultDelivery($task, $receipt);
+    }
+
+    private function finishConsultDelivery(Task $task, TaskComment $receipt): void
+    {
+        DB::transaction(function () use ($task, $receipt): void {
+            $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
+            if ($locked->consult_comment_id === null) {
+                return;
+            }
+            $locked->update([
+                'consult_comment_id' => null,
+                'direction_answer_key' => null,
+                'direction_answer_source_turn_id' => null,
+                'review_handled_comment_id' => $receipt->id,
+                'communication_failures' => 0,
+            ]);
+        });
+    }
+
+    /** The third block in one attempt asks the operator, and the reason keeps both earlier answers. */
+    private function thirdBlockReason(Task $task, TaskComment $receipt): string
+    {
+        $lines = array_map(
+            static fn (string $answer): string => '- '.($answer !== '' ? $answer : '(no answer)'),
+            TaskQuestions::earlierAnswers($task),
+        );
+
+        return TaskAssistance::ImplementerBlockedPrefix.$receipt->body."\n\nEarlier answers:\n".implode("\n", $lines);
     }
 
     /** A direction resolution is waiting to be relayed because the subtask has no reviewer yet. */
@@ -1291,9 +1609,9 @@ final readonly class TaskScheduler
     }
 
     /** The same reviewer receipt always reserves the same implementer send. */
-    private function relayAnswerKey(TaskComment $receipt): string
+    private function relayAnswerKey(TaskComment $receipt, string $prefix = 'relay-answer'): string
     {
-        $hash = md5('relay-answer:'.$receipt->id);
+        $hash = md5($prefix.':'.$receipt->id);
 
         return sprintf(
             '%s-%s-%s-%s-%s',
@@ -1387,7 +1705,11 @@ final readonly class TaskScheduler
             }
             $group->refresh();
             if ($kind === AssistanceKind::Direction && $source instanceof TaskComment) {
-                TaskQuestions::recordBlocked($task, $source);
+                if (TaskQuestions::escalateOpen($task, $source)) {
+                    $task->update(['consult_comment_id' => null]);
+                } else {
+                    TaskQuestions::recordBlocked($task, $source);
+                }
             }
             $groupReason = $group->assistance_reason;
             if (! $wasAsking && $group->assistance_requested && is_string($groupReason)) {

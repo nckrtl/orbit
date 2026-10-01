@@ -88,6 +88,7 @@ use LogicException;
  * @property int $questions
  * @property int $escalations
  * @property int|null $direction_relay_comment_id
+ * @property int|null $consult_comment_id
  * @property string|null $direction_answer_key
  * @property string|null $direction_answer_source_turn_id
  * @property Carbon|null $started_at
@@ -152,6 +153,7 @@ final class Task extends Model
         'communication_failures',
         'resolution_delivered_comment_id',
         'direction_relay_comment_id',
+        'consult_comment_id',
         'direction_answer_key',
         'direction_answer_source_turn_id',
         'pi_restart_resumes',
@@ -201,7 +203,7 @@ final class Task extends Model
         'review_notified_turn_id',
         'review_workspace_head',
         'review_workspace_tree',
-        'assistance_requested', 'assistance_kind', 'assistance_question', 'assistance_reason', 'communication_failures', 'resolution_delivered_comment_id', 'direction_relay_comment_id', 'direction_answer_key', 'direction_answer_source_turn_id',
+        'assistance_requested', 'assistance_kind', 'assistance_question', 'assistance_reason', 'communication_failures', 'resolution_delivered_comment_id', 'direction_relay_comment_id', 'consult_comment_id', 'direction_answer_key', 'direction_answer_source_turn_id',
         'pi_restart_resumes', 'pi_restart_key', 'pi_restart_thread_id', 'pi_restart_source_turn_id', 'pi_restart_reservation', 'pi_restart_session_revision',
         'project_id',
         'taskable_type',
@@ -404,6 +406,7 @@ final class Task extends Model
             'questions' => 'integer',
             'escalations' => 'integer',
             'direction_relay_comment_id' => 'integer',
+            'consult_comment_id' => 'integer',
             'started_at' => 'immutable_datetime',
             'settled_at' => 'immutable_datetime',
             'deliverables' => 'array',

@@ -541,6 +541,12 @@ The reviewer answers from the brief, the ADRs, the documentation, the code, and 
 
 Orbit consults the reviewer at most twice in one implementer attempt. The limit counts the consult records whose `attempt` is the subtask's current `completion_attempt`. A third `blocked` in that attempt asks for direction at once. Its question is the implementer's question, and its reason includes both earlier answers.
 
+Orbit records that consult, keyed to the blocked receipt, before it sends the turn. A fresh reviewer's conversation id is reserved before that opening turn, so a lost response or a failed id write reconnects to the same conversation. An accepted send is not repeated, and the reviewer's answer to that send is kept.
+
+While the reviewer is answering, a failed thread, a server restart, a stopped turn with no receipt, and an observation outage follow the same rules as a review. A system failure asks for assistance with kind `failure`. Only a reviewer who cannot answer from the contract asks for direction.
+
+When Orbit starts a fresh reviewer for a subtask whose earlier reviewer answered consults, that reviewer's opening packet includes those questions and answers. The review that follows a consult uses the same reviewer thread, so that thread already holds them and a continued turn does not repeat them. The packet keeps each answered consult on one line. A line that would pass 400 characters keeps a prefix of the question and a prefix of the answer, and the oldest lines drop once that section passes 2,000 characters. A cut field or an omitted line says that `tasks-question-list` returns each question and answer.
+
 #### Questions
 
 Orbit stores one question record for each consult and each direction request. A consult the reviewer escalates is that same record moving from `open` to `escalated`, not a second row. A subtask should be specific enough that an implementer builds it in one go, so every question marks a brief, a contract, or a scope that left something open. The records let the operator count those questions and trace each one to its brief.
@@ -695,11 +701,12 @@ The opening turn is a review packet of at most 16,000 characters, about 4,000 to
 | Subtask brief | 2,000 | The end is cut. `tasks-show` returns it |
 | Deliverables | 2,000 | One line each, at most 240 characters, with the description cut to 160 |
 | Earlier approvals | 1,500 | One line each, at most 200 characters. The oldest lines drop |
+| Answered consults | 2,000 | Opening packet only. One line each, at most 400 characters. The oldest lines drop |
 | Diff stat | 1,500 | A summary line with every file, insertion, and deletion, then paths until the cap |
 | Handoff result | 2,000 | One line per command the check ran, with the command cut to 160 characters. `.git/orbit/check.log` holds the rest |
 | Diff body | The rest, and at most 16,384 bytes | Cut from the end |
 
-Dropped lines leave one line that says how many were omitted. The diff and the stat replace bytes that are not valid UTF-8. The packet does not name a feature contract. A continued turn keeps the review rules, the subtask brief, the new diff stat, the new handoff result, the diff body, the retrieval block, and the closing instructions. It leaves out the task brief, the deliverables, the earlier approvals, and the held resolution.
+Dropped lines leave one line that says how many were omitted. The diff and the stat replace bytes that are not valid UTF-8. The packet does not name a feature contract. A continued turn keeps the review rules, the subtask brief, the new diff stat, the new handoff result, the diff body, the retrieval block, and the closing instructions. It leaves out the task brief, the deliverables, the earlier approvals, the held resolution, and the answered consults.
 
 The retrieval commands print what the caps cut, including untracked files, without updating the index. The packet puts the subtask's start commit in place of `START`:
 
