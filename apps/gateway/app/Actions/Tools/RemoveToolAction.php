@@ -11,6 +11,7 @@ use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolNodeEligibility;
+use App\Domain\Tools\ToolObjectStatus;
 use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolOperationException;
 use App\Domain\Tools\ToolOperationLock;
@@ -59,18 +60,14 @@ final readonly class RemoveToolAction
         }
 
         if ($this->isUnprovenFailedTool($tool)) {
-            $tool->delete();
-
-            return new ToolActionResult($tool, ToolOutcome::Applied);
+            return $this->removed($tool);
         }
 
         try {
             $installedVersion = $this->installedVersion($tool, $node, $manager);
 
             if ($installedVersion === null) {
-                $tool->delete();
-
-                return new ToolActionResult($tool, ToolOutcome::Applied);
+                return $this->removed($tool);
             }
 
             try {
@@ -90,6 +87,9 @@ final readonly class RemoveToolAction
                 );
             }
 
+            $storedStatus = $tool->status;
+            $storedFailure = $tool->failed_operation;
+            $storedErrorCode = $tool->error_code;
             $tool->update([
                 'status' => ToolStatus::Removing,
                 'failed_operation' => null,
@@ -115,14 +115,34 @@ final readonly class RemoveToolAction
                 );
             }
 
-            $tool->delete();
-
-            return new ToolActionResult($tool, ToolOutcome::Applied);
+            return $this->removed($tool, $storedStatus, $storedFailure, $storedErrorCode);
         } catch (ToolOperationException $exception) {
             $this->markToolFailure($tool, ToolOperation::Remove, $exception);
 
             throw $exception;
         }
+    }
+
+    /**
+     * The activity snapshot is this deleted model. Drop the transient removing
+     * claim so a finished removal does not show `removing`.
+     */
+    private function removed(
+        Tool $tool,
+        ?ToolStatus $statusBeforeClaim = null,
+        ?ToolOperation $failedOperationBeforeClaim = null,
+        ?string $errorCodeBeforeClaim = null,
+    ): ToolActionResult {
+        $tool->delete();
+
+        if ($statusBeforeClaim instanceof ToolStatus && $tool->status === ToolStatus::Removing) {
+            $tool->status = $statusBeforeClaim;
+            $tool->failed_operation = $failedOperationBeforeClaim;
+            $tool->error_code = $errorCodeBeforeClaim;
+            $tool->syncOriginal();
+        }
+
+        return new ToolActionResult($tool, ToolOutcome::Applied, status: ToolObjectStatus::Removed);
     }
 
     private function isUnprovenFailedTool(Tool $tool): bool

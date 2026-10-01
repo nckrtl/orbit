@@ -3832,7 +3832,8 @@ export interface components {
             manager?: string;
             package?: string;
             version_constraint?: string | null;
-            status?: string;
+            /** @enum {string} */
+            status?: "installing" | "installed" | "updating" | "removing" | "failed" | "removed";
             installed_version?: string | null;
             failed_operation?: string | null;
             error_code?: string | null;
