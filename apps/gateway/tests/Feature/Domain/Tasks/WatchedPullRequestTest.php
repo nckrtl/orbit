@@ -77,8 +77,10 @@ it('records an externally opened watched pull request for a running group and th
     $this->travel(1)->seconds();
     app(TaskScheduler::class)->tick();
 
+    $task = $group->tasks()->firstOrFail();
     expect($group->fresh())->watched_pr_state->toBe('merged')->pr_url->toBeNull()
-        ->status->value->toBe('running')->assistance_reason->toBe('A product question.');
+        ->status->value->toBe('running')->assistance_requested->toBeTrue()
+        ->assistance_reason->toBe('Watched pull request ended: https://github.com/acme/orbit/pull/42 is merged. Open subtasks: #'.$task->id.' Open work.');
     Http::assertSentCount(5);
 });
 

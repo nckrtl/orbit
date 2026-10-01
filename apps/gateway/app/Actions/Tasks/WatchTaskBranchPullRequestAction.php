@@ -19,6 +19,9 @@ final readonly class WatchTaskBranchPullRequestAction
 
     public function execute(Task $group): void
     {
+        if (RequestEndedPullRequestAssistanceAction::isReason($group->assistance_reason)) {
+            return;
+        }
         $group->loadMissing(['project', 'tasks']);
         if (! $group->tasks->contains(static fn (Task $task): bool => in_array($task->status, [TaskStatus::Todo, TaskStatus::Running, TaskStatus::Reviewing], true))) {
             return;

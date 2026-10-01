@@ -38,12 +38,14 @@ final readonly class StoreTaskCommentAction
             $rawType = $comment->getRawOriginal('type');
             $type = TaskCommentType::tryFrom(is_string($rawType) ? $rawType : '');
 
-            if ($type === TaskCommentType::AssistanceRequested) {
+            $endedPullRequest = RequestEndedPullRequestAssistanceAction::isReason($task->assistance_reason)
+                || RequestEndedPullRequestAssistanceAction::isReason($task->parent->assistance_reason);
+            if ($type === TaskCommentType::AssistanceRequested && ! $endedPullRequest) {
                 $task->update(['assistance_requested' => true, 'assistance_reason' => $comment->body]);
                 $task->parent()->update(['assistance_requested' => true, 'assistance_reason' => $comment->body]);
                 $this->log($task, $comment, 'assistance requested');
             }
-            if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && $task->assistance_requested) {
+            if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && $task->assistance_requested && ! $endedPullRequest) {
                 $deliverResolution = true;
             }
 
@@ -107,7 +109,10 @@ final readonly class StoreTaskCommentAction
     {
         DB::transaction(function () use ($task, $comment): void {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            if (! $locked->assistance_requested) {
+            $parent = $locked->parent()->lockForUpdate()->firstOrFail();
+            if (! $locked->assistance_requested
+                || RequestEndedPullRequestAssistanceAction::isReason($locked->assistance_reason)
+                || RequestEndedPullRequestAssistanceAction::isReason($parent->assistance_reason)) {
                 return;
             }
             $comment->update(['review_attempt' => $locked->review_attempt]);
@@ -118,7 +123,7 @@ final readonly class StoreTaskCommentAction
                 'review_reminder_attempt' => null,
                 'review_reminder_input_id' => null,
             ]);
-            $locked->parent()->update(['assistance_requested' => false, 'assistance_reason' => null]);
+            $parent->update(['assistance_requested' => false, 'assistance_reason' => null]);
             $this->log($locked, $comment, 'resolution held for reviewer');
         });
     }
@@ -127,7 +132,10 @@ final readonly class StoreTaskCommentAction
     {
         DB::transaction(function () use ($task, $comment, $reviewing): void {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            if (! $locked->assistance_requested) {
+            $parent = $locked->parent()->lockForUpdate()->firstOrFail();
+            if (! $locked->assistance_requested
+                || RequestEndedPullRequestAssistanceAction::isReason($locked->assistance_reason)
+                || RequestEndedPullRequestAssistanceAction::isReason($parent->assistance_reason)) {
                 return;
             }
             // The resolution is the reviewer's next request, so the tick must not send another.
@@ -135,7 +143,7 @@ final readonly class StoreTaskCommentAction
                 ? ['review_attempt' => $locked->review_attempt + 1, 'review_notified_attempt' => $locked->review_attempt + 1]
                 : ['completion_attempt' => $locked->completion_attempt + 1, 'completion_reminder_attempt' => null, 'completion_reminder_input_id' => null];
             $locked->update([...$attempt, 'assistance_requested' => false, 'assistance_reason' => null, 'communication_failures' => 0, 'review_reminder_attempt' => null, 'review_reminder_input_id' => null, 'resolution_delivered_comment_id' => $comment->id]);
-            $locked->parent()->update(['assistance_requested' => false, 'assistance_reason' => null]);
+            $parent->update(['assistance_requested' => false, 'assistance_reason' => null]);
             $this->log($locked, $comment, 'resolution delivered');
         });
     }

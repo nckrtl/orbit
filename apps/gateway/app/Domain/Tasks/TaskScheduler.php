@@ -6,6 +6,7 @@ namespace App\Domain\Tasks;
 
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
+use App\Actions\Tasks\RequestEndedPullRequestAssistanceAction;
 use App\Actions\Tasks\WatchTaskBranchPullRequestAction;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Shared\ResourceOperationException;
@@ -119,6 +120,7 @@ final readonly class TaskScheduler
         private ArchiveFinishedTaskThreads $archives,
         private TaskReviewPacketBuilder $reviewPackets,
         private WatchTaskBranchPullRequestAction $branchPullRequests,
+        private RequestEndedPullRequestAssistanceAction $endedPullRequests,
     ) {}
 
     /**
@@ -144,6 +146,9 @@ final readonly class TaskScheduler
 
         foreach ($groups as $group) {
             $this->branchPullRequests->execute($group);
+            if ($this->endedPullRequests->execute($group)) {
+                continue;
+            }
             if ($group->status !== TaskGroupStatus::Settling) {
                 continue;
             }
@@ -158,6 +163,13 @@ final readonly class TaskScheduler
             }
             $health = $this->pullRequestWatcher->health($group);
             $status = $health?->state;
+            // With open work, only the branch watch decides which pull request ended. Never
+            // auto-complete from pr_url here: it can name an older, reviewed pull request.
+            if (in_array($status, ['merged', 'closed'], true) && $group->tasks->contains(
+                static fn (Task $task): bool => in_array($task->status, [TaskStatus::Todo, TaskStatus::Running, TaskStatus::Reviewing], true),
+            )) {
+                continue;
+            }
             if ($status === 'merged') {
                 try {
                     $this->coverageLabeler->label($group, $health);
@@ -180,6 +192,9 @@ final readonly class TaskScheduler
         $decisions = [];
 
         foreach ($groups as $group) {
+            if (RequestEndedPullRequestAssistanceAction::isReason($group->assistance_reason)) {
+                continue;
+            }
             if (isset($runningAtStart[$group->id])) {
                 $this->resumeStrandedSubtask($group);
             }
@@ -2060,7 +2075,8 @@ final readonly class TaskScheduler
                 ->lockForUpdate()
                 ->findOrFail($locked->parent_id);
 
-            if ($group->status !== TaskGroupStatus::Running || $locked->status !== TaskStatus::Running) {
+            if (RequestEndedPullRequestAssistanceAction::isReason($group->assistance_reason)
+                || $group->status !== TaskGroupStatus::Running || $locked->status !== TaskStatus::Running) {
                 return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
             }
 
@@ -2086,6 +2102,9 @@ final readonly class TaskScheduler
     public function startTask(Task $task): Task
     {
         $task->parent->requireManagedExecution();
+        if (RequestEndedPullRequestAssistanceAction::isReason($task->parent->assistance_reason)) {
+            return $task->parent->fresh(['tasks', 'project', 'taskable']) ?? $task->parent;
+        }
         $started = $this->activateRunningTask($task);
         $this->beginRunningTask($started);
 
@@ -2175,6 +2194,9 @@ final readonly class TaskScheduler
             $assistanceReason = $this->markSubtaskCancelled($locked);
             $tasks = $this->lockedTasks($group);
             $this->clearCancelledSubtaskAssistance($group, $locked, $assistanceReason);
+            if (RequestEndedPullRequestAssistanceAction::isReason($group->assistance_reason)) {
+                return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
+            }
 
             $next = $this->lowestTodo($tasks);
             if ($next instanceof Task) {
@@ -2217,7 +2239,8 @@ final readonly class TaskScheduler
                 ->lockForUpdate()
                 ->findOrFail($locked->parent_id);
 
-            if ($group->status !== TaskGroupStatus::Reviewing || $locked->status !== TaskStatus::Reviewing) {
+            if (RequestEndedPullRequestAssistanceAction::isReason($group->assistance_reason)
+                || $group->status !== TaskGroupStatus::Reviewing || $locked->status !== TaskStatus::Reviewing) {
                 return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
             }
 
@@ -3135,7 +3158,8 @@ final readonly class TaskScheduler
 
     private function clearCancelledSubtaskAssistance(Task $group, Task $task, ?string $assistanceReason): void
     {
-        if (! $group->assistance_requested || $assistanceReason === null || $group->assistance_reason !== $assistanceReason) {
+        if (RequestEndedPullRequestAssistanceAction::isReason($group->assistance_reason)
+            || ! $group->assistance_requested || $assistanceReason === null || $group->assistance_reason !== $assistanceReason) {
             return;
         }
 
