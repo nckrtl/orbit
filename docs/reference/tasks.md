@@ -913,6 +913,8 @@ Cancel, complete, and the sweep remove a workspace the same way. The forced Inst
 
 The Instance remover runs the Project's teardown steps before deleting the checkout. A failed teardown keeps the checkout and Instance for retry and asks for assistance through the normal task cleanup path. The engine has no Orbit bridge cleanup hook. The Orbit Project records its bridge cleanup as a [teardown step](/reference/instance-setup#configure-orbits-task-policy); [Incus topologies](/reference/incus-topologies#task-workspace-clones) defines its ownership checks. Release the Incus topology the bridge holds before the task ends.
 
+`apps/e2e/resources/proofs/task-policy-handoff.sh` runs that install and the teardown create, update, readback, and destroy commands on a disposable Project. `apps/e2e/resources/proofs/project-owned-tasks.sh` proves the task lifecycle on the same topology. Neither proof uses the live Project.
+
 When a manual complete cannot remove the workspace, the task still becomes `completed` and keeps its Instance. It asks for assistance with `Workspace removal failed: `.
 
 Each tick sweeps workspaces that still exist:

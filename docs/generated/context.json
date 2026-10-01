@@ -1860,6 +1860,7 @@
             "title": "Tasks",
             "kind": "reference",
             "components": [
+                "apps/e2e",
                 "apps/gateway",
                 "apps/web"
             ],
