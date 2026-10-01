@@ -4837,7 +4837,7 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @description Skip the destructive confirmation prompt */
-                    force: string;
+                    force: boolean;
                 };
             };
         };
@@ -4906,7 +4906,7 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @description Skip the destructive confirmation prompt */
-                    force: string;
+                    force: boolean;
                 };
             };
         };
@@ -6755,7 +6755,7 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @description Delete dirty or unpublished source after identity checks */
-                    force?: string;
+                    force?: boolean;
                 };
             };
         };
@@ -9143,9 +9143,9 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @description Skip confirmation */
-                    force?: string;
+                    force?: boolean;
                     /** @description Delete Metrics data */
-                    purge_data?: string;
+                    purge_data?: boolean;
                 };
             };
         };
@@ -9642,9 +9642,9 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @description Skip the destructive confirmation prompt */
-                    force?: string;
+                    force?: boolean;
                     /** @description Shed roles and remove a node Orbit cannot reach */
-                    offline?: string;
+                    offline?: boolean;
                 };
             };
         };
@@ -10602,11 +10602,11 @@ export interface operations {
                      */
                     role: "gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket" | "analytics";
                     /** @description Confirm destructive role removal and dependent cleanup */
-                    force?: string;
+                    force?: boolean;
                     /** @description Request supported role-owned data cleanup */
-                    purge_data?: string;
+                    purge_data?: boolean;
                     /** @description Remove the role from a node Orbit cannot reach */
-                    offline?: string;
+                    offline?: boolean;
                 };
             };
         };
@@ -10690,7 +10690,7 @@ export interface operations {
                      */
                     role: "gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket" | "analytics";
                     /** @description Confirm the role transfer */
-                    force?: string;
+                    force?: boolean;
                     /** @description Optional source Node ID or name */
                     from?: number;
                 };
@@ -14984,7 +14984,7 @@ export interface operations {
                      * @description backlog (default) or todo
                      * @enum {string}
                      */
-                    status?: never;
+                    status?: "backlog" | "todo";
                     /** @description Post the Coder settle webhook when the group settles */
                     notify_coder?: boolean;
                     notify_on_settle?: boolean;
@@ -15141,7 +15141,7 @@ export interface operations {
                      * @description backlog or todo
                      * @enum {string}
                      */
-                    status?: never;
+                    status?: "backlog" | "todo";
                 };
             };
         };
