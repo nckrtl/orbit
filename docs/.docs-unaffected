@@ -67,3 +67,4 @@ docs/reference/web-app.md: The task check field comment follows the regenerated 
 docs/cli/activity.mdx: Task workspace routing is a non-secret Project update field. Activity still stores the redacted request input; the redaction rules on this page are unchanged.
 docs/reference/environment-variables.md: Recording whether a task workspace was routed does not change environment import, targets, or placeholders.
 docs/reference/cli-command-vocabulary.md: --task-workspace-routed is an option on the existing project:create and project:update commands. It does not change verbs, family actions, noun-ending commands, or the command count.
+docs/reference/incus-topologies.md: The task workspace clone section already defines bin/e2e-task-cleanup ownership, idempotence, and retry. This change adds that helper and does not change those rules.
