@@ -64,3 +64,5 @@ docs/reference/cli-ux.md: The project create expectation stores a null task chec
 docs/reference/development-node-exclusions.md: A null task check default does not change Node exclusions or placement.
 docs/reference/gateway-response-fixtures.md: The recorded project create response stores a null task check. Fixture recording and replay on this page are unchanged.
 docs/reference/web-app.md: The task check field comment follows the regenerated OpenAPI document. Navigation and layout are unchanged.
+docs/cli/activity.mdx: Task workspace routing is a non-secret Project update field. Activity still stores the redacted request input; the redaction rules on this page are unchanged.
+docs/reference/environment-variables.md: Recording whether a task workspace was routed does not change environment import, targets, or placeholders.

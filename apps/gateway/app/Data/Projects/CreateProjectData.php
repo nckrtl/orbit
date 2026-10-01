@@ -18,6 +18,8 @@ final readonly class CreateProjectData
         public ?string $code = null,
         public bool $taskCheckProvided = false,
         public ?string $taskCheck = null,
+        public bool $taskWorkspaceRoutedProvided = false,
+        public bool $taskWorkspaceRouted = true,
     ) {}
 
     /**
@@ -26,5 +28,13 @@ final readonly class CreateProjectData
     public function resolvedTaskCheck(): ?string
     {
         return $this->taskCheckProvided ? $this->taskCheck : null;
+    }
+
+    /**
+     * Routing for task workspaces created later. An omitted value defaults to routed.
+     */
+    public function resolvedTaskWorkspaceRouted(): bool
+    {
+        return $this->taskWorkspaceRoutedProvided ? $this->taskWorkspaceRouted : true;
     }
 }

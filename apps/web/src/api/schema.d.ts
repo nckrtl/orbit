@@ -3249,6 +3249,7 @@ export interface components {
             default_branch?: string | null;
             root?: string | null;
             task_check?: string | null;
+            task_workspace_routed?: boolean;
         };
         Annotation: {
             id?: string;
@@ -11136,6 +11137,7 @@ export interface operations {
                     root: string;
                     /** @description Task check command. Omitted stores none for every type */
                     task_check?: string | null;
+                    task_workspace_routed?: boolean;
                 };
             };
         };
@@ -11320,6 +11322,7 @@ export interface operations {
                     root?: string;
                     /** @description New task check command for task baselines and handoffs */
                     task_check?: string | null;
+                    task_workspace_routed?: boolean;
                 };
             };
         };

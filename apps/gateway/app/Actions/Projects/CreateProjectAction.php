@@ -59,6 +59,7 @@ final readonly class CreateProjectAction
                 'default_branch' => $defaultBranch,
                 'root' => $root,
                 'task_check' => $data->resolvedTaskCheck(),
+                'task_workspace_routed' => $data->resolvedTaskWorkspaceRouted(),
             ]);
             try {
                 $candidate->save();
@@ -139,6 +140,7 @@ final readonly class CreateProjectAction
             || $project->default_branch === $defaultBranch)
             && $project->root === $root
             && (! $data->taskCheckProvided || $project->task_check === $data->taskCheck)
+            && (! $data->taskWorkspaceRoutedProvided || $project->task_workspace_routed === $data->taskWorkspaceRouted)
         ) {
             return;
         }

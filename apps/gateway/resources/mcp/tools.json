@@ -4100,6 +4100,9 @@
             ],
             "maxLength": 4096,
             "description": "Task check command. Omitted stores none for every type"
+          },
+          "task_workspace_routed": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false,
@@ -4953,6 +4956,9 @@
             ],
             "maxLength": 4096,
             "description": "New task check command for task baselines and handoffs"
+          },
+          "task_workspace_routed": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false,

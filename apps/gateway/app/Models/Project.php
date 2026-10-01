@@ -24,6 +24,7 @@ use SensitiveParameter;
  * @property string|null $default_branch
  * @property string|null $root
  * @property string|null $task_check
+ * @property bool $task_workspace_routed
  * @property-read Collection<int, Task> $tasks
  */
 final class Project extends Model
@@ -36,7 +37,7 @@ final class Project extends Model
 
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'default_branch', 'root', 'task_check'];
+    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'default_branch', 'root', 'task_check', 'task_workspace_routed'];
 
     /** @var list<string> */
     #[\Override]
@@ -118,6 +119,7 @@ final class Project extends Model
     {
         return [
             'type' => ProjectType::class,
+            'task_workspace_routed' => 'boolean',
         ];
     }
 }
