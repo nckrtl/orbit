@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\DatabaseConnections;
 
 use App\Data\DatabaseConnections\AddDatabaseConnectionData;
+use App\Data\DatabaseConnections\CreateServerDatabaseData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use Illuminate\Foundation\Http\FormRequest;
@@ -16,7 +17,15 @@ final class StoreDatabaseConnectionRequest extends FormRequest
     /** @return array<string, list<mixed>> */
     public function rules(): array
     {
-        return DatabaseConnectionFieldRules::store();
+        return $this->createsOnServer()
+            ? DatabaseConnectionFieldRules::onServer()
+            : DatabaseConnectionFieldRules::register();
+    }
+
+    /** A body with `server` creates the database on that Database server instead of registering one. */
+    public function createsOnServer(): bool
+    {
+        return array_key_exists('server', $this->validationData());
     }
 
     /** @return array<string, mixed> */
@@ -30,6 +39,17 @@ final class StoreDatabaseConnectionRequest extends FormRequest
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
+    }
+
+    public function serverPayload(): CreateServerDatabaseData
+    {
+        $validated = $this->validated();
+
+        return new CreateServerDatabaseData(
+            slug: is_string($validated['slug'] ?? null) ? $validated['slug'] : '',
+            server: is_string($validated['server'] ?? null) ? $validated['server'] : '',
+            instanceId: self::nullableInt($validated, 'instance_id'),
+        );
     }
 
     public function payload(): AddDatabaseConnectionData

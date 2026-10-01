@@ -35,7 +35,7 @@ final class DestroyDatabaseConnectionCommand extends DatabaseCommand
         }
 
         if (! $this->confirmAction(
-            "Destroy Database connection record [{$slug}]? The physical database is not dropped.",
+            "Destroy Database connection record [{$slug}]? A registered database stays. A database on a Database server is dropped with its user.",
             'Database connection destruction cancelled.',
             option: 'force',
             requiredCode: 'database.confirmation_required',

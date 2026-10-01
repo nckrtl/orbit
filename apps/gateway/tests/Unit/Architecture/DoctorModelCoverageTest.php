@@ -10,6 +10,7 @@ use App\Models\Annotation;
 use App\Models\Cluster;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
+use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
 use App\Models\DependencyPackage;
 use App\Models\FirewallRule;
@@ -96,6 +97,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         ProblemFingerprint::class,
         ProblemCollectorState::class,
         DatabaseUser::class,
+        DatabaseServer::class,
         Task::class,
         TaskDefinition::class,
         AgentThread::class,

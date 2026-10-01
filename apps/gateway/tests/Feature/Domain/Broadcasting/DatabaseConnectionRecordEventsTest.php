@@ -90,7 +90,7 @@ describe('DatabaseConnection record events', function (): void {
 
         Event::fake([RecordBroadcast::class]);
 
-        new RemoveDatabaseConnectionAction()->execute($connection);
+        app(RemoveDatabaseConnectionAction::class)->execute($connection);
 
         Event::assertDispatched(
             RecordBroadcast::class,

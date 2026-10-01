@@ -2,10 +2,11 @@
 title: "Applications"
 description: "How a Project becomes an Instance on a Node: create or adopt a development checkout, provision its endpoint, clone to production, move, and remove."
 covers:
-  - apps/gateway/app/Actions/Instances/{CreateInstanceAction,RegisterInstanceAction,ListInstancesAction,ShowInstanceAction}.php
+  - apps/gateway/app/Actions/Instances/{CreateInstanceAction,CloneInstanceDatabaseAction,RegisterInstanceAction,ListInstancesAction,ShowInstanceAction}.php
+  - apps/gateway/app/Domain/Instances/DatabaseClone/**
   - apps/gateway/app/Domain/Instances/{InstanceState,InstanceSourceLayout,InstanceDestinationGuard,ComposerSourceClassifier,InstanceCreation,InstanceCopyMode,Development*}.php
   - apps/gateway/app/Domain/Instances/Registration/**
-  - apps/gateway/app/Infrastructure/Instances/{NativeDevelopmentInstanceProvisioner,RemoteDevelopmentInstanceSourceLifecycle,RemoteDevelopmentInstanceConfigurator,RemoteRegistrationSourceManager,RemoteInstanceDestinationGuard}.php
+  - apps/gateway/app/Infrastructure/Instances/{NativeDevelopmentInstanceProvisioner,RemoteDevelopmentInstanceSourceLifecycle,RemoteDevelopmentInstanceConfigurator,RemoteRegistrationSourceManager,RemoteInstanceDestinationGuard,RemoteInstanceSqliteCloner}.php
   - apps/gateway/app/{Http/Controllers/Api/InstancesController.php,Http/Requests/Instances/**,Data/Instances/**,Models/Instance.php}
   - apps/cli/app/Commands/Instances/{CreateInstanceCommand,RegisterInstanceCommand,ListInstancesCommand,ShowInstanceCommand,InstanceOutput}.php
   - apps/cli/app/Services/Git/**
@@ -67,11 +68,39 @@ The Gateway refuses these requests before it changes anything:
 | `instance.candidate_required` | The Node has the active `app-prod` role. A repeat for an existing production Instance is refused the same way. Use [`instance:clone`](/reference/instance-cloning). |
 | `instance.placement_unavailable` | The owning Node does not have exactly one active `app-dev` or `app-prod` role. |
 
+### Database clone
+
+When the Project has an Instance named `default` with a database attached under prefix `DB`, a repository create gives every other new development Instance its own copy of that database. The copy has the same kind as the source. Orbit makes it after the source is ready and before the setup steps, so a setup step such as a migration runs against the copy.
+
+| Source | Copy |
+| --- | --- |
+| MySQL on a [Database server](/reference/database-servers) | A database named `<project>_<instance>` on the same server, owned by the Instance's user and filled with `mysqldump --single-transaction` piped into `mysql` inside the server's container, plus the test database `<project>_<instance>_test`. |
+| SQLite file inside the `default` checkout | A copy at the same relative path in the new checkout, also on another Node, made from a snapshot with SQLite's backup API. Tests use `:memory:`. |
+
+Orbit records the copy as a [database the Instance owns](/reference/database-connections#owned-databases) with the connection slug `<project>-<instance>`, attaches it under prefix `DB`, and synchronizes `.env` and `.env.testing`.
+
+When the Instance has no stored configuration yet and its checkout has a `.env`, Orbit first [imports](/reference/environment-variables#import) that file, so synchronization keeps its other keys. Without a `.env`, synchronization writes only the stored keys.
+
+The clone returns these codes.
+
+| Code | HTTP | Cause |
+| --- | --- | --- |
+| `instance.database_clone_unsupported` | 422 | The source is not MySQL on a Database server or a SQLite file inside the `default` checkout. Nothing changes. |
+| `instance.database_clone_failed` | 502 | The copy failed. Orbit drops the partial copy and removes the Instance as a failed setup does. |
+
+No teardown step runs after a failed copy, because no setup step ran yet. When the removal cannot finish, the error has `cleanup: incomplete` and names the `instance:destroy` command that finishes it.
+
+Orbit records each finished step of the copy on its connection. When a create stops before the copy finished, an identical `instance:create` finishes the copy and then runs the setup steps. It copies the data again unless the earlier copy finished, so it never keeps a partial copy.
+
+The copy holds the full data of the `default` Instance, including personal data. A Project without a `default` Instance, or whose `default` Instance has no `DB` attachment, gets no copy.
+
+`instance:create --from` does not run this clone. It keeps the source attachments. [Instance copies](/reference/instance-copies) is that contract.
+
 ## Copy a development Instance
 
 `instance:create --from` copies an active warm development checkout on the same Node. The Gateway tries a reflink and falls back to a plain copy. The copy gets its own branch at the source `HEAD`, its own Route and Vite port, and SQLite snapshots taken while the source keeps running. It keeps `.env`, rewrites values that name the source checkout or domain, deletes `public/hot` and the other runtime files, and runs setup.
 
-MySQL, PostgreSQL, and Redis attachments stay on the same servers and are listed in `shared_databases`. A SQLite attachment inside the source checkout is not copied. `instance:clone` stays the production command. The [Instance copies](/reference/instance-copies) page is the contract.
+MySQL, PostgreSQL, and Redis attachments stay on the same servers and are listed in `shared_databases`. A SQLite attachment inside the source checkout is not copied. `instance:clone` stays the production command.
 
 ## Register an existing checkout
 
@@ -120,7 +149,7 @@ For an Instance with a Route, a retry after step 1 inspects the source again. If
 
 A failed setup step during `instance:create` runs the teardown steps and removes the new Instance. See [Run setup](/reference/instance-setup#run-setup).
 
-An identical `instance:create` for an active Instance returns it unchanged and runs no setup. An Instance can stay active with a failed setup: after `instance:setup` or `instance:register --setup` fails, or when Orbit could not confirm the failed step or finish the rollback. Then `instance:create` returns `instance.setup_step_failed` until `instance:setup` succeeds.
+An identical `instance:create` for an active Instance returns it unchanged and runs no setup. An Instance can stay active with a failed setup: after `instance:setup` or `instance:register --setup` fails, or when Orbit could not confirm the failed step or finish the rollback. Then `instance:create` returns `instance.setup_step_failed` until `instance:setup` succeeds, unless the [database clone](#database-clone) did not finish: then `instance:create` finishes it and runs setup.
 
 Orbit does not recover missing source profiles on older Instances. ADR 0177 records the no-legacy-support rule.
 

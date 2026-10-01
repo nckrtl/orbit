@@ -9,6 +9,8 @@ use App\Data\Instances\InstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlan;
+use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlanner;
 use App\Domain\Instances\DevelopmentInstanceCheckoutCopier;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
@@ -75,6 +77,8 @@ final readonly class CreateInstanceAction
         private ?RemoveInstanceAction $remover = null,
         private ?InstanceEnvironmentOperationLock $environmentOperations = null,
         private ?CommandDeadline $deadline = null,
+        private ?InstanceDatabaseClonePlanner $clonePlanner = null,
+        private ?CloneInstanceDatabaseAction $databaseClone = null,
     ) {}
 
     /** @return array{instance: Instance, created: bool} */
@@ -117,6 +121,10 @@ final readonly class CreateInstanceAction
             ->where('project_id', $project->id)
             ->where('name', $data->name)
             ->first();
+        // A database the Gateway cannot copy refuses the request before anything changes.
+        $clonePlan = $existing?->status === InstanceState::Active && $existing->failed_step !== 'setup'
+            ? null
+            : ($this->clonePlanner ?? app(InstanceDatabaseClonePlanner::class))->plan($project, $data->name);
 
         if ($existing instanceof Instance) {
             $this->assertRetryIdentity($existing, $requestedNode, $root, $data->branch);
@@ -158,10 +166,15 @@ final readonly class CreateInstanceAction
             [$instance->id],
             fn (): Instance => $this->sourceLock->synchronized(
                 $instance->node_id,
-                function () use ($instance, $created, $data): Instance {
+                function () use ($instance, $created, $data, $clonePlan): Instance {
                     $wasActive = $instance->refresh()->status === InstanceState::Active;
+                    // An interrupted create left the copy unfinished, so this retry finishes it and runs setup.
+                    $resumesClone = $wasActive
+                        && $instance->failed_step === 'setup'
+                        && $clonePlan instanceof InstanceDatabaseClonePlan
+                        && ! $this->databaseCloner()->isComplete($instance);
 
-                    if ($wasActive && $instance->failed_step === 'setup') {
+                    if ($wasActive && $instance->failed_step === 'setup' && ! $resumesClone) {
                         throw new ResourceOperationException('instance.setup_step_failed', 'Setup is incomplete. Run instance:setup before using this Instance.', 409);
                     }
 
@@ -181,7 +194,11 @@ final readonly class CreateInstanceAction
                         throw $exception;
                     }
 
-                    if (! $wasActive) {
+                    if (! $wasActive || $resumesClone) {
+                        if ($clonePlan instanceof InstanceDatabaseClonePlan) {
+                            $this->cloneDatabase($result, $clonePlan);
+                        }
+
                         $this->finishSetup($result);
                     }
 
@@ -191,6 +208,44 @@ final readonly class CreateInstanceAction
         );
 
         return $this->announceCreated(['instance' => $result, 'created' => $created]);
+    }
+
+    /**
+     * Copy the default Instance's database before the setup steps, so a migration runs against
+     * the copy. A failed copy removes the Instance as a failed setup does.
+     */
+    private function cloneDatabase(Instance $instance, InstanceDatabaseClonePlan $plan): void
+    {
+        try {
+            $this->databaseCloner()->execute($instance, $plan);
+        } catch (ResourceOperationException $cloneFailure) {
+            $instance->update(['failed_step' => 'database_clone', 'error_code' => $cloneFailure->errorCode]);
+
+            try {
+                ($this->remover ?? app(RemoveInstanceAction::class))->execute($instance->fresh() ?? $instance, force: true, runTeardown: false, allowCascade: false);
+            } catch (Throwable) {
+                throw new ResourceOperationException(
+                    errorCode: $cloneFailure->errorCode,
+                    message: 'The database copy failed and cleanup is incomplete. Inspect the Instance, then finish the removal with '
+                        ."`orbit instance:destroy {$instance->id} --force`.",
+                    status: $cloneFailure->status,
+                    previous: $cloneFailure,
+                    details: ['cleanup' => 'incomplete'],
+                );
+            }
+
+            throw new ResourceOperationException(
+                errorCode: $cloneFailure->errorCode,
+                message: $cloneFailure->getMessage().' The Instance was removed.',
+                status: $cloneFailure->status,
+                previous: $cloneFailure,
+            );
+        }
+    }
+
+    private function databaseCloner(): CloneInstanceDatabaseAction
+    {
+        return $this->databaseClone ?? app(CloneInstanceDatabaseAction::class);
     }
 
     private function finishSetup(Instance $instance): void

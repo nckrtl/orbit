@@ -33,7 +33,7 @@ afterEach(function (): void {
 
 describe('database user contract', function (): void {
     it('renders database:user:list from the recorded response', function (): void {
-        run_contract('database-connections/database-user-list/default', 'database:user:list', ['slug' => 'app'], 'database-connections/database-user-list/default.human.txt', 0);
-        run_contract('database-connections/database-user-list/default', 'database:user:list', ['slug' => 'app', '--json' => true], 'database-connections/database-user-list/default.json', 0);
+        run_contract('database-connections/database-user-list/default', 'database:user:list', ['slug' => 'dlf-leden'], 'database-connections/database-user-list/default.human.txt', 0);
+        run_contract('database-connections/database-user-list/default', 'database:user:list', ['slug' => 'dlf-leden', '--json' => true], 'database-connections/database-user-list/default.json', 0);
     });
 });

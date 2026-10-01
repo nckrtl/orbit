@@ -81,7 +81,9 @@ The Gateway renders every stored key in sorted order, as a quoted value. It writ
 
 When the Gateway cannot confirm the write, it returns `env.sync_unconfirmed` (the file may have changed). Repeat the request: it checks the file again and either accepts the matching file or writes it.
 
-Synchronization changes only `.env`. It does not run application code, clear a framework cache, or restart a service or Process. Run those steps yourself when running code must see the new values.
+For an Instance that owns its `DB` database, synchronization also writes `.env.testing` the same way: the same values, with `APP_ENV=testing` and `DB_DATABASE` set to the [test database](/reference/database-connections#test-databases). The other `DB_*` keys stay the same. Orbit never deletes `.env.testing`. The file stays after the Instance stops owning its `DB` database.
+
+Synchronization changes only `.env` and `.env.testing`. It does not run application code, clear a framework cache, or restart a service or Process. Run those steps yourself when running code must see the new values.
 
 The Gateway takes one consistent snapshot of the Instance owner, any authoritative Route, and complete stored configuration. It resolves `{{instance.domain}}` from the Route when available and `{{instance.environment}}` to the default Laravel mode for the Instance's Node role (`development` on app-dev or `production` on app-prod). A Route is required only when a stored value uses the domain placeholder; a missing Route or unavailable reference then stops synchronization before replacement. An incomplete Route transition also stops synchronization. The generated dotenv file has stable key order and preserves literal whitespace, newlines, quotes, dollar signs, backslashes, empty strings, and stored application keys.
 

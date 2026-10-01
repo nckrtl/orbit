@@ -11,6 +11,7 @@ use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentResult;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 
 final readonly class ImportInstanceEnvironmentAction
@@ -39,6 +40,35 @@ final readonly class ImportInstanceEnvironmentAction
             }
 
             return $this->store->import($context, $values, $replace);
+        });
+    }
+
+    /**
+     * Import `.env` when the file exists, without replacing stored keys. A missing file imports
+     * nothing. The read itself checks the user, the path, the file type, the owner, and the size.
+     */
+    public function importExisting(Instance $instance): ?InstanceEnvironmentResult
+    {
+        return $this->operations->run([$instance->id], function () use ($instance): ?InstanceEnvironmentResult {
+            $context = $this->contexts->resolve($instance->refresh(), requireActiveNode: true);
+
+            try {
+                $contents = $this->reader->read($context);
+            } catch (ResourceOperationException $exception) {
+                if ($exception->errorCode === 'env.import_source_missing') {
+                    return null;
+                }
+
+                throw $exception;
+            }
+
+            $values = $this->importer->parse($contents);
+
+            if ($context->laravel) {
+                $values['APP_URL'] = 'https://{{instance.domain}}';
+            }
+
+            return $this->store->import($context, $values, replace: false);
         });
     }
 }

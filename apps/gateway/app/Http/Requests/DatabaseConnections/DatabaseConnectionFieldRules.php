@@ -36,6 +36,41 @@ final readonly class DatabaseConnectionFieldRules
         ];
     }
 
+    /**
+     * Registering an existing database never names a server or an Instance.
+     *
+     * @return array<string, list<mixed>>
+     */
+    public static function register(): array
+    {
+        return [
+            ...self::store(),
+            'server' => ['missing'],
+            'instance_id' => ['missing'],
+        ];
+    }
+
+    /**
+     * Creating a database on a server takes only the slug, the server, and an optional Instance.
+     * The Gateway derives every connection field from the server.
+     *
+     * @return array<string, list<mixed>>
+     */
+    public static function onServer(): array
+    {
+        $rules = [
+            'slug' => ['required', 'string', 'max:63', 'regex:'.self::SLUG_PATTERN],
+            'server' => ['required', 'string', 'max:63', 'regex:'.self::SLUG_PATTERN],
+            'instance_id' => ['sometimes', 'integer', 'min:1', 'exists:instances,id', self::strictInteger(...)],
+        ];
+
+        foreach (self::updateKeys() as $key) {
+            $rules[$key] = ['missing'];
+        }
+
+        return $rules;
+    }
+
     /** @return array<string, list<mixed>> */
     public static function update(): array
     {
@@ -49,7 +84,7 @@ final readonly class DatabaseConnectionFieldRules
     /** @return list<string> */
     public static function storeKeys(): array
     {
-        return ['slug', 'driver', 'node_id', 'host', 'port', 'database', 'path', 'username', 'password'];
+        return ['slug', 'driver', 'node_id', 'host', 'port', 'database', 'path', 'username', 'password', 'server', 'instance_id'];
     }
 
     /** @return list<string> */

@@ -157,6 +157,8 @@ The new checkout is the source tree after the reset, rewrite, and SQLite snapsho
 
 `APP_KEY` stays so a snapshotted SQLite file can still be decrypted. MySQL, PostgreSQL, and Redis attachments are copied as rows and keep pointing at the same servers. Those servers are not copied. The create result lists them in `shared_databases` as `{slug, driver}`. A SQLite attachment is not copied when its path is the source checkout or a file inside it. The snapshot and the rewritten environment key name the file in the new checkout. The source connection record is left unchanged. A SQLite path outside that checkout is still copied, including a longer name such as `default-two`. That attachment is not listed in `shared_databases`.
 
+A copy does not run the [database clone](/domains/applications#database-clone) that a repository create runs. It does not create a new database or a test database.
+
 [Transfer](/reference/instance-transfer) keeps `creation`, `source_instance_id`, and `copy_mode`. It does not take a new reflink and does not change those fields.
 
 ## What the copy resets
