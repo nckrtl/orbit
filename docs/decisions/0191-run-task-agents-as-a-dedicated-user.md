@@ -1,12 +1,12 @@
 ---
 title: "ADR 0191: Run task agents as a dedicated user"
 sidebarTitle: "0191 Task agents as orbit-worker"
-description: "In progress. Task agents run as the Linux user orbit-worker. The managed user keeps the GitHub token, and Gateway git disables hooks and fsmonitor."
+description: "In progress. Task agents run as orbit-worker. Token-bearing git uses a private git directory, and checkout programs do not run as the managed user."
 ---
 
 # ADR 0191: Run task agents as a dedicated user
 
-Task agents run as the Linux user `orbit-worker`. The Node's managed user keeps the GitHub token, and Gateway `git` disables hooks and filesystem monitors so the checkout cannot read that token.
+Task agents run as the Linux user `orbit-worker`. Token-bearing `git` uses a private git directory the agent cannot write, and programs named by the checkout run as `orbit-worker`, not as the managed user.
 
 ## Status
 
@@ -16,7 +16,7 @@ Principle: this decision serves [security fits the real threat model](/mission#p
 
 ## Context
 
-The Pi server runs on the Node as a systemd Process, and its sessions are the task agents. The managed user is the account that SSHs in, owns development checkouts, and runs `git` with a GitHub token in its environment. A hook or `fsmonitor` program in the checkout is a child of that `git` and sees the token. Running the agent as that user would hand it the token. The [GitHub App reference](/reference/github-app#what-the-app-does-not-cover) describes the enforced boundary.
+The Pi server runs on the Node as a systemd Process, and its sessions are the task agents. The managed user is the account that SSHs in, owns development checkouts, and runs `git` with a GitHub token in its environment. Git 2.55 executes `core.alternateRefsCommand` from the shell during fetch, and that child inherits `GIT_CONFIG_VALUE_0`, the `Authorization` header. Hooks and `fsmonitor` are the same class of program. Running the agent as the managed user would hand it the token. The [GitHub App reference](/reference/github-app#what-the-app-does-not-cover) describes the enforced boundary.
 
 The managed home also holds SSH keys. When the Pi server runs as `orbit-worker`, the provider sign-in moves to that user's home. The [node agent](/reference/node-agent#reading-git) already reads task checkouts with libgit2, which starts no hook, filter, or `fsmonitor` program. Gateway `git` follows the same rule for hooks and `fsmonitor`.
 
@@ -42,12 +42,7 @@ The default working directory stays `/home/{managed user}`. It does not follow `
 
 Development checkouts stay owned by the managed user and group. Removal's ownership check reads that directory and its parent, not each file inside it.
 
-When `id orbit-worker` succeeds, prepare and inspect of a development checkout run `setfacl` on that checkout, including `.git`:
-
-- An access ACL of `u:orbit-worker:rwX` and `u:{managed user}:rwX`.
-- A default ACL with those two entries.
-
-`rwX` grants execute on directories and on files that already have execute. Group write and other write stay off. The ACL is not applied to the apps root or to the managed home. When the account is absent, prepare sets no ACL and succeeds. When `setfacl` fails, prepare fails with `instance.clone_failed` and inspect fails with `instance.source_identity_invalid`. Neither records a new checkout.
+When `id orbit-worker` succeeds, prepare and inspect grant `orbit-worker` and the managed user `rwX` on the work tree. `rwX` grants execute on directories and on files that already have execute. Group write and other write stay off. The same ACL covers `.git/objects`, `.git/refs`, `.git/logs`, and `.git/orbit`, including as the default ACL on those directories. It does not cover the `.git` directory itself, `.git/config`, or `.git/hooks`, so the agent cannot replace Git configuration or hooks. The Gateway creates `.git/orbit` while it prepares the checkout. The ACL is not applied to the apps root or to the managed home. When the account is absent, prepare sets no ACL and succeeds. When `setfacl` fails, prepare fails with `instance.clone_failed` and inspect fails with `instance.source_identity_invalid`. Neither records a new checkout.
 
 Files either user creates stay readable and deletable by the other user through the default ACL. Tool-output directories are mode `0770` and tool-output files are mode `0660`, so the ACL mask stays open. The server does not chmod a directory to `0700` or a file to `0600`, and it does not chmod a directory it does not own. A symlink is still refused.
 
@@ -57,18 +52,26 @@ The task check, its status and cancel, the workspace snapshot, and baseline setu
 
 When the account is missing, the check does not start. The task asks for assistance with the reason `The Node has no orbit-worker user.` When sudo cannot switch, the reason is `The managed user cannot run commands as orbit-worker.`
 
-Create-time `instance:setup` stays the managed user. Task workspaces do not use that path. Teardown stays the managed user, including on a task workspace, because the installed helper is under that user's home and removal deletes the tree as that user.
+Create-time `instance:setup` stays the managed user. Task workspaces do not use that path. That setup runs before any agent has written the checkout.
+
+Task teardown runs as `orbit-worker`. Its command is `/usr/local/lib/orbit/e2e-task-cleanup`, owned by root, mode `0755`. `orbit-worker` can execute that file and cannot write it. A teardown command inside the checkout, or on a path `orbit-worker` can write, also runs as `orbit-worker`. The managed user does not run it.
+
+Privileged removal is separate. After teardown returns, the managed user deletes the tree, checks directory ownership, and removes routes. That path runs no program from the checkout.
 
 ### Gateway git
 
-Every `git` the Gateway runs in a development checkout, and every `git_read` command, disables hooks and filesystem monitors:
+A `git` command that carries a GitHub token does not use the checkout as its git directory. The Gateway writes a private git directory, owned by the managed user, mode `0700`, with no ACL for `orbit-worker`. It copies `objects` and `refs` from the checkout as files. It does not copy `config` or `hooks`, and it does not run `git` with the checkout as `--git-dir` to make that copy. The private config contains only the remote URL the Gateway writes.
+
+The same command sets these keys, so a checkout config opened by mistake cannot name a program. Git 2.55 runs `core.alternateRefsCommand` from the shell during fetch, and the child inherits `GIT_CONFIG_VALUE_0`. An empty value replaces a value from the checkout:
 
 - `core.hooksPath` is `/dev/null`.
-- `core.fsmonitor` is empty.
+- `core.fsmonitor`, `core.alternateRefsCommand`, `core.sshCommand`, `core.askPass`, `core.gitProxy`, `credential.helper`, and `uploadpack.packObjectsHook` are empty.
 
-`GitReadEnvironment` carries both keys in `GIT_CONFIG_*` for every `git_read`, with or without a token. With a token the count is 5: the authorization header, the two `insteadOf` rewrites, then these two keys. Without a token the count is 2 and the preamble exports them. A command that calls `git` directly passes the same two `-c` options. That includes checkout, commit, rev-parse, push, fetch, and the check script.
+`GitReadEnvironment` exports the credential keys and then these isolation keys for every `git_read`, with or without a token. A direct `git` passes the same `-c` options. The token stays in that one process. It is not written to `.git/config`, a credential helper, or a file on the Node. Clone uses `--no-checkout`. Fetch and push do not check out file contents.
 
-The token stays in the environment of that one `git` process. It is not written to `.git/config`, a credential helper, or a file on the Node. Clone uses `--no-checkout`. Fetch and push do not check out file contents. The node agent's libgit2 reads stay as they are.
+When the private config contains any other key whose value Git executes, the Gateway does not run `git`. The task asks for assistance. The check reads the config file as text.
+
+`git checkout`, `git commit`, and other commands that do not carry the token run as `orbit-worker` once the workspace ACL exists. A filter or other program they start runs as `orbit-worker`. Create-time source resolution, before any agent has run in the checkout, may run as the managed user. The node agent's libgit2 reads stay as they are and start no program.
 
 ### Host setup and beast
 
@@ -84,14 +87,13 @@ On a host where task agents run `incus`, add `orbit-worker` to `incus-admin`. be
 
 An agent is a process of the Pi server and shares its user. It can read the server token at `/home/orbit-worker/.pi/agent/orbit-token` and the provider sign-in in that home. This decision does not give each agent a separate user.
 
-A clean or smudge filter named in the checkout runs as the user who invoked `git`. `git checkout` and the approval commit run as the managed user, without the token in the environment. A filter can read the managed home. Git has no single key that disables every named filter. Hooks and `fsmonitor` do not have this gap.
-
 ## Rejected alternatives
 
 - Keep the agent as the managed user and rely on the prompt. The agent can read the home and can install a hook that runs as that user with the token.
 - One Unix user per task. Each account needs its own Pi sign-in, and the Node runs one Pi server Process per task.
 - Run the Pi server as root and drop to `orbit-worker` inside each session. A fault in that path is root. The Process `user` is the drop.
-- Deny the agent write access to `.git`. Tool output and the agent's commits write there. The Gateway turns hooks off instead.
+- Deny the agent write access to all of `.git`. Tool output and commits write under `.git/objects`, `.git/refs`, and `.git/orbit`. Configuration and hooks stay unwritable.
+- Clear only hooks and `fsmonitor`. Git 2.55 executes `core.alternateRefsCommand` during fetch, and that program inherits the token. The private git directory is the isolation.
 - Store the token in a credential helper on the Node. The helper remains after the command, and the agent can call it.
 - A user namespace that makes the agent the owner of the tree. Every checkout needs a second mount. The ACL keeps one tree both users can edit.
 
@@ -101,7 +103,8 @@ A clean or smudge filter named in the checkout runs as the user who invoked `git
 - An existing Pi Process is destroyed and created again with `--user=orbit-worker` after the Gateway change is deployed. Create has no update.
 - `orbit-worker` on beast is in `incus-admin`, so the home boundary there is policy.
 - Agents can read the Pi server token and the provider sign-in.
-- Checkout filters can run as the managed user. The token is not in that command's environment.
+- Token-bearing `git` uses a private git directory. Checkout programs, including filters and teardown, run as `orbit-worker`.
+- The Pi cutover copies `<id>.orbit.json` and `*_<id>.jsonl` into the new session directory and checks each open thread's `external_id` before the scheduler starts. The server does not migrate those files.
 - The unit file is mode `0644`. `User=` is not a secret.
 
 ## Affects

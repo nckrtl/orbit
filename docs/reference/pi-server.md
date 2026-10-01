@@ -73,11 +73,11 @@ Set the managed home to mode `0700` when the apps root is outside it. Set it to 
 
 Build the binary on a workstation with `bun run build:linux` in `apps/pi-server`. It writes `dist/pi-server-linux-x64` and `dist/pi-server-linux-arm64`. Each is one file that includes the Bun runtime.
 
-On the Node, as `orbit-worker`:
+The files belong to `orbit-worker`. `orbit-worker` has no sudo, so the managed user runs these steps and `sudo -u orbit-worker -H` does the work inside that account:
 
-1. Copy the binary for the Node's architecture to `/home/orbit-worker/.local/bin/pi-server` and make it executable.
-2. Write a random token of at least 32 characters to `/home/orbit-worker/.pi/agent/orbit-token` with mode `600`. Set the same value as `ORBIT_PI_TOKEN` on the Gateway.
-3. [Connect through CLIProxyAPI](#connect-through-cliproxyapi), or run `sudo -u orbit-worker -H /home/orbit-worker/.local/bin/pi-server login openai-codex` and complete the device-code sign-in.
+1. Copy the binary for the Node's architecture to `/home/orbit-worker/.local/bin/pi-server` and make it executable. `sudo install -o orbit-worker -g orbit-worker -m 0755` writes it.
+2. Write a random token of at least 32 characters to `/home/orbit-worker/.pi/agent/orbit-token` with mode `600`, as `orbit-worker`. Set the same value as `ORBIT_PI_TOKEN` on the Gateway.
+3. [Connect through CLIProxyAPI](#connect-through-cliproxyapi), or complete device-code sign-in as `orbit-worker`: `sudo -u orbit-worker -H /home/orbit-worker/.local/bin/pi-server login openai-codex`.
 
 Then register the Process from a machine with the Orbit CLI. Replace the address with the Node's WireGuard address and the root with its apps path:
 
@@ -108,9 +108,9 @@ An agent is a process of the Pi server and shares its user. It can read `/home/o
 
 ## Roll out orbit-worker on beast
 
-beast is the Node that runs Pi for Orbit's tasks, and task agents there run `incus`. Use the same cutover on any Node that already runs `pi-server` as the managed user. Deploy the Gateway that grants the workspace ACL, runs checks as `orbit-worker`, and disables hooks and `fsmonitor` before this cutover. An agent cannot write a checkout until the ACL exists, and a check cannot start until the account exists.
+beast is the Node that runs Pi for Orbit's tasks, and task agents there run `incus`. Use the same cutover on any Node that already runs `pi-server` as the managed user. Deploy the Gateway that grants the workspace ACL, runs checks and teardown as `orbit-worker`, and isolates token-bearing `git` before this cutover. An agent cannot write a checkout until the ACL exists, and a check cannot start until the account exists.
 
-Follow [Roll out a new binary](#roll-out-a-new-binary) until no Pi session you will restart is `working`. Leave the scheduler stopped. Create the account with [Host setup](#host-setup), and on beast add `orbit-worker` to `incus-admin`. Install the binary, token, and provider sign-in under `/home/orbit-worker`.
+Follow [Roll out a new binary](#roll-out-a-new-binary) until no Pi session you will restart is `working`. Leave the scheduler stopped, and stop the `pi-server` Process. Confirm no `pi-server` process remains. Create the account with [Host setup](#host-setup), and on beast add `orbit-worker` to `incus-admin`. Install the binary, token, and provider sign-in under `/home/orbit-worker`.
 
 Apply the ACL to each existing development checkout as the managed user. The example uses `orbit`. Substitute the managed user when the name differs:
 
@@ -120,7 +120,19 @@ setfacl -R -m u:orbit-worker:rwX,u:orbit:rwX -m d:u:orbit-worker:rwX,d:u:orbit:r
 
 Confirm a private directory of the managed home, such as `.ssh`, is mode `0700`. When the apps root is inside that home, set the home to `0711`. When the apps root is outside it, set the home to `0700`.
 
-Destroy the `pi-server` Process and create it again with `--user=orbit-worker` and the paths under `/home/orbit-worker`. Create has no update. Confirm the Process is active, a session can create a file in a task workspace, and `orbit-worker` cannot read `/home/orbit/.ssh`. Start the scheduler again with [`process:start`](/cli/process#orbit-processstart). Delete the old binary and the old token under the managed home.
+### Move existing sessions
+
+The default session directory is `<agent dir>/orbit-sessions`. For the managed user that is `/home/orbit/.pi/agent/orbit-sessions`. The new Process uses `/home/orbit-worker/.pi/agent/orbit-sessions`. The server does not move the files. Each session is one `<id>.orbit.json` record and one `<timestamp>_<id>.jsonl` transcript. The Gateway's `external_id` is that `<id>`.
+
+Copy while `pi-server` is stopped. On the same filesystem, copy the `*.orbit.json` and `*.jsonl` files into `/home/orbit-worker/.pi/agent/orbit-sessions.migrate`. Leave every other file behind. Set the directory to mode `0700` and the files to mode `0600`, owned by `orbit-worker:orbit-worker`. When the destination `orbit-sessions` already contains a file, stop and do not merge over it.
+
+Rename the staging directory to `orbit-sessions` only after the copy is complete. A rename on the same filesystem is one replacement. When the copy is interrupted, delete the staging directory and copy again. The source directory stays in place.
+
+Verify before the scheduler starts. From [`tasks:agents`](/cli/tasks#orbit-tasksagents), take each `pi` thread whose task is not completed or cancelled, and skip an `external_id` that starts with `pending:`. For every other id, the destination has exactly one `<id>.orbit.json` and exactly one file ending in `_<id>.jsonl`. Each file's size and SHA-256 match the source. A missing id, a second transcript, or a checksum mismatch stops the cutover.
+
+Rollback leaves the source directory as the recovery copy. Remove the new destination, do not start the `orbit-worker` Process, and start the old Process as the managed user again.
+
+Destroy the old `pi-server` Process and create it again with `--user=orbit-worker` and the paths under `/home/orbit-worker`. Create has no update. Start it only after the session check matches. `GET /sessions/{external_id}` for one verified id returns the session, not `session_not_found`. Confirm a session can create a file in a task workspace, and `orbit-worker` cannot read `/home/orbit/.ssh`. Start the scheduler again with [`process:start`](/cli/process#orbit-processstart). Keep the old session directory until that session read succeeds. Deleting the old binary, the old token, and the old session directory is a separate step after that read.
 
 ## Agent tools
 
