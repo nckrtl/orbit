@@ -20,6 +20,28 @@ describe('GitHubRepository', function (): void {
         'ssh://git@github.com/acme/shop.api.git',
     ]);
 
+    it('compares pull request repository identity without case while keeping the host path and number strict', function (string $url, ?int $number): void {
+        $repository = GitHubRepository::fromOrigin('https://github.com/acme/orbit.git');
+
+        expect($repository?->pullRequestNumber($url))->toBe($number);
+    })->with([
+        'matching identity' => ['https://github.com/acme/orbit/pull/42', 42],
+        'canonical casing' => ['https://github.com/Acme/Orbit/pull/42', 42],
+        'other owner' => ['https://github.com/Other/Orbit/pull/42', null],
+        'other repository' => ['https://github.com/Acme/Other/pull/42', null],
+        'other host' => ['https://gitlab.com/Acme/Orbit/pull/42', null],
+        'host suffix' => ['https://github.com.evil.test/Acme/Orbit/pull/42', null],
+        'http scheme' => ['http://github.com/Acme/Orbit/pull/42', null],
+        'credentials' => ['https://user@github.com/Acme/Orbit/pull/42', null],
+        'changed path casing' => ['https://github.com/Acme/Orbit/Pull/42', null],
+        'extra path' => ['https://github.com/Acme/Orbit/pull/42/files', null],
+        'query' => ['https://github.com/Acme/Orbit/pull/42?token=secret', null],
+        'fragment' => ['https://github.com/Acme/Orbit/pull/42#discussion', null],
+        'zero number' => ['https://github.com/Acme/Orbit/pull/0', null],
+        'leading zero' => ['https://github.com/Acme/Orbit/pull/042', null],
+        'too long number' => ['https://github.com/Acme/Orbit/pull/12345678901', null],
+    ]);
+
     it('ignores origins on other hosts and malformed paths', function (string $origin): void {
         expect(GitHubRepository::fromOrigin($origin))->toBeNull();
     })->with([

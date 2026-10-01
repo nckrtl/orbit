@@ -66,6 +66,10 @@ describe('tasks contract', function (): void {
         run_task_contract('tasks-show/default', 'tasks:show', ['group' => '1'], 0);
     });
 
+    it('renders a watched pull request in the group JSON without changing pr_url', function (): void {
+        run_task_contract('tasks-show/watched', 'tasks:show', ['group' => '1'], 0);
+    });
+
     it('renders a created group and a refused todo create', function (): void {
         run_task_contract('tasks-create/created', 'tasks:create', ['title' => 'Add the tasks CLI', '--project' => '1', '--brief' => 'Brief'], 0);
         run_task_contract('tasks-create/no-subtasks', 'tasks:create', ['title' => 'Empty', '--project' => '1', '--brief' => 'No subtasks.', '--status' => 'todo'], 1);

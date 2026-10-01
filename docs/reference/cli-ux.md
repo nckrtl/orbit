@@ -185,6 +185,8 @@ macOS enrollment and removal reuse that progress tree and JSON result. Their rec
 
 Streams and prompt flows have no recorded canonical rendering yet. The `design:node-add` sketch under `apps/cli/design` is the reference for a prompt flow until its real command lands. [Gateway response fixtures](/reference/gateway-response-fixtures) describes how a family gains recorded renderings.
 
+The Tasks JSON rendering preserves the distinction between a watched branch pull request and the reviewed pull request Orbit opened. The canonical [watched task result](https://github.com/nckrtl/orbit/blob/main/apps/cli/tests/Expected/tasks/tasks-show/watched.json) includes `watched_pr_url`, `watched_pr_number`, and `watched_pr_state` with a null `pr_url`. Unwatched task results keep all three watched fields null. Do not substitute the watched URL for `pr_url`. The [Tasks command contract](/cli/tasks#orbit-tasksshow) owns these fields; the human rendering still uses the reviewed pull request.
+
 ## Verification and adoption
 
 Each supported public command has an adoption record with its source identity, supported modes, applicable rules, contract-backed exceptions, checks, terminal artifacts, and verdict. Include extension-provided commands with the extension enabled. Extension command discovery reads the enabled set from the active Gateway; do not assume an extension command appears in the default command list when that Gateway has it disabled or its state is unknown. Account separately for internal commands that share input or output infrastructure.

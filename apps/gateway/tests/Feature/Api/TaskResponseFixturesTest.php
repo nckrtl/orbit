@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\WatchTaskBranchPullRequestAction;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\InstanceProvisioning;
@@ -16,6 +17,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskComment;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Http;
 use Orbit\Sdk\Requests\Tasks\CancelSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CancelTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CompleteTaskGroupRequest;
@@ -30,6 +32,7 @@ use Orbit\Sdk\Requests\Tasks\ShowTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTasksStatusRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateTaskGroupRequest;
+use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\FakeAgentDriver;
 
 /**
@@ -139,6 +142,29 @@ describe('task response fixtures', function (): void {
 
         record_fixture($this->getJson('/api/v1/task-groups')->assertOk(), 'tasks/tasks-list/default', ListTaskGroupsRequest::class, 'GET /api/v1/task-groups');
         record_fixture($this->getJson("/api/v1/task-groups/{$group->id}")->assertOk(), 'tasks/tasks-show/default', ShowTaskGroupRequest::class, 'GET /api/v1/task-groups/{group}');
+    });
+
+    it('records a watched pull request opened outside Orbit on a running group', function (): void {
+        Http::preventStrayRequests();
+        GitHubTestSupport::storeApp();
+        $group = task_fixture_group($this->project);
+        $group->update(['status' => TaskGroupStatus::Running]);
+        Http::fake([
+            'https://api.github.com/repos/nckrtl/orbit/installation' => Http::response(['id' => 9]),
+            'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+            'https://api.github.com/repos/nckrtl/orbit/pulls?*' => Http::response([
+                ['number' => 451, 'html_url' => 'https://github.com/nckrtl/orbit/pull/451', 'state' => 'open', 'merged_at' => null],
+            ]),
+        ]);
+        app(WatchTaskBranchPullRequestAction::class)->execute($group);
+
+        record_fixture($this->getJson("/api/v1/task-groups/{$group->id}")->assertOk()
+            ->assertJsonPath('data.pr_url', null)
+            ->assertJsonPath('data.watched_pr_url', 'https://github.com/nckrtl/orbit/pull/451')
+            ->assertJsonPath('data.watched_pr_number', 451)
+            ->assertJsonPath('data.watched_pr_state', 'open'),
+            'tasks/tasks-show/watched', ShowTaskGroupRequest::class, 'GET /api/v1/task-groups/{group}');
+        Http::assertSentCount(3);
     });
 
     it('records group updates, a refused update, cancel, and complete', function (): void {

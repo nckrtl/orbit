@@ -66,6 +66,9 @@ use LogicException;
  * @property string|null $taskable_type
  * @property int|null $taskable_id
  * @property string|null $pr_url
+ * @property string|null $watched_pr_url
+ * @property int|null $watched_pr_number
+ * @property string|null $watched_pr_state
  * @property bool $notify_coder
  * @property string $implementer_model
  * @property string $reviewer_model
@@ -100,6 +103,9 @@ final class Task extends Model
 {
     /** @var list<string> */
     private const array TOP_LEVEL_COLUMNS = [
+        'watched_pr_url',
+        'watched_pr_number',
+        'watched_pr_state',
         'project_id',
         'taskable_type',
         'taskable_id',
@@ -155,6 +161,9 @@ final class Task extends Model
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
+        'watched_pr_url',
+        'watched_pr_number',
+        'watched_pr_state',
         'type', 'target_thread_id', 'completion_summary',
         'parent_id',
         'continuation_of_task_id',
@@ -380,6 +389,7 @@ final class Task extends Model
             'status' => TaskLevelStatusCast::class,
             'execution_mode' => TaskExecutionMode::class,
             'notify_coder' => 'boolean',
+            'watched_pr_number' => 'integer',
             'agent_unavailable_since' => 'datetime',
             'agent_unavailable_notified_at' => 'datetime',
             'reserved_at' => 'datetime',

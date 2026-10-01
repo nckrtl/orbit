@@ -3687,6 +3687,9 @@ export interface components {
             status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "completed" | "failed" | "cancelled";
             reviewer_agent_thread_id?: number | null;
             pr_url?: string | null;
+            watched_pr_url?: string | null;
+            watched_pr_number?: number | null;
+            watched_pr_state?: string | null;
             notify_coder?: boolean;
             assistance_requested?: boolean;
             assistance_reason?: string | null;

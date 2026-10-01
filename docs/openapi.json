@@ -25292,6 +25292,24 @@
               "null"
             ]
           },
+          "watched_pr_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "watched_pr_number": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "watched_pr_state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "notify_coder": {
             "type": "boolean"
           },

@@ -50,6 +50,8 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | `implementer_model`, `reviewer_model` | task | The models used for the task's threads |
 | `pr_url` | task | The reviewed pull request Orbit opened on the last subtask |
 | `watched_pr_url` | task | The pull request on `task-{id}` found by the [branch watch](#watch-the-branch-while-subtasks-are-open). Null until that list finds one. Not `pr_url` |
+| `watched_pr_number` | task | The watched pull request's number. Null until the branch watch finds one |
+| `watched_pr_state` | task | The last watched state: `open`, `merged`, or `closed`. Null until the branch watch finds one |
 | `watched_pr_completion` | task | `merged` or `closed` after `tasks:complete` confirms the end. Null until then. Resume does not call GitHub |
 | `ended_pr_notice_key` | subtask | Stable send key for the one ended-pull-request notice. Null when that subtask has no notice |
 | `ended_pr_notice_thread_id` | subtask | The implementer or reviewer thread that notice belongs to |
@@ -776,7 +778,7 @@ Before Orbit commits the approval that opens the pull request, Jev checks the ch
 
 While a task has a subtask in `todo`, `running`, or `reviewing`, Orbit looks for a pull request whose head is `task-{id}`, in any state. The look runs at most once a minute, even though `tasks:tick` runs every 10 seconds. It uses the [list-by-head read](/reference/github-app#how-orbit-watches-a-task-pull-request). The tick does this look before it starts a `todo` subtask and before it advances a `running` or `reviewing` subtask.
 
-The list can contain more than one pull request. Orbit watches the first open pull request in GitHub's default order. When the list has no open pull request, Orbit watches the first pull request on the page. It stores that URL in `watched_pr_url`. It does not write `pr_url`. An empty list or an unreadable list leaves `watched_pr_url` and the assistance flag as they are, and the task keeps starting subtasks.
+The list can contain more than one pull request. Orbit watches the first open pull request in GitHub's default order. When the list has no open pull request, Orbit watches the first pull request on the page. It stores the URL, number, and state in `watched_pr_url`, `watched_pr_number`, and `watched_pr_state`. These fields appear on the task in the API and `tasks:show --json`. It does not write `pr_url`. An empty list or an unreadable list leaves `watched_pr_url` and the assistance flag as they are, and the task keeps starting subtasks.
 
 `pr_url` remains the pull request Orbit opens on the last subtask. That approval still requires the pull request description, and Jev still checks `brief_coverage`. Cancel still treats only a `settling` task with `pr_url` as published. `watched_pr_url` does not change those rules.
 

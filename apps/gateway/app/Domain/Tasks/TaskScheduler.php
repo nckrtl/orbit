@@ -6,6 +6,7 @@ namespace App\Domain\Tasks;
 
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
+use App\Actions\Tasks\WatchTaskBranchPullRequestAction;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
@@ -117,6 +118,7 @@ final readonly class TaskScheduler
         private TaskBaseBranchFetcher $bases,
         private ArchiveFinishedTaskThreads $archives,
         private TaskReviewPacketBuilder $reviewPackets,
+        private WatchTaskBranchPullRequestAction $branchPullRequests,
     ) {}
 
     /**
@@ -141,6 +143,7 @@ final readonly class TaskScheduler
         }
 
         foreach ($groups as $group) {
+            $this->branchPullRequests->execute($group);
             if ($group->status !== TaskGroupStatus::Settling) {
                 continue;
             }
