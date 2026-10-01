@@ -163,7 +163,7 @@ In a terminal, the task list leaves out `settling` and `completed` tasks. Before
 
 Complete a `settling` task after its pull request is reviewed and merged. Also complete a `running` or `reviewing` task whose watched pull request has merged or closed. The Gateway marks the task `completed` and removes its shared Instance.
 
-On the `running` or `reviewing` path it stores the ended state, then cancels each open subtask and marks the task `completed` in one transaction. The [tasks reference](/reference/tasks#complete-and-cleanup) defines how a crash resumes without another GitHub read. Completing a completed task whose checkout is already gone succeeds and changes nothing. Completing a completed task that still has its Instance retries removal. There is no `tasks:continue` command.
+On the `running` or `reviewing` path it stores the ended state, stops the running implementer or reviewer and any running check, then cancels each open subtask and marks the task `completed` in one transaction. A failed stop returns `tasks.subtask_interrupt_failed`, keeps the task and its subtasks open, and leaves the stored completion for retry. The [tasks reference](/reference/tasks#complete-and-cleanup) defines how a crash resumes without another GitHub read. Completing a completed task whose checkout is already gone succeeds and changes nothing. Completing a completed task that still has its Instance retries removal. There is no `tasks:continue` command.
 
 ```bash
 orbit tasks:complete [group] [--yes] [--json]

@@ -9,6 +9,7 @@ use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskCommentType;
+use App\Domain\Tasks\TaskExecutionHold;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Models\Activity;
@@ -38,8 +39,10 @@ final readonly class StoreTaskCommentAction
             $rawType = $comment->getRawOriginal('type');
             $type = TaskCommentType::tryFrom(is_string($rawType) ? $rawType : '');
 
-            $endedPullRequest = RequestEndedPullRequestAssistanceAction::isReason($task->assistance_reason)
-                || RequestEndedPullRequestAssistanceAction::isReason($task->parent->assistance_reason);
+            $group = Task::topLevel()->lockForUpdate()->findOrFail($task->parent_id);
+            $endedPullRequest = TaskExecutionHold::active($group)
+                || RequestEndedPullRequestAssistanceAction::isReason($task->assistance_reason)
+                || RequestEndedPullRequestAssistanceAction::isReason($group->assistance_reason);
             if ($type === TaskCommentType::AssistanceRequested && ! $endedPullRequest) {
                 $task->update(['assistance_requested' => true, 'assistance_reason' => $comment->body]);
                 $task->parent()->update(['assistance_requested' => true, 'assistance_reason' => $comment->body]);
@@ -53,25 +56,27 @@ final readonly class StoreTaskCommentAction
         });
 
         if ($deliverResolution) {
-            $task->loadMissing('implementerThread');
-            // A reviewing subtask is blocked on its own reviewer. The group pointer can still name an older thread.
-            $reviewing = $task->status === TaskStatus::Reviewing;
-            try {
-                $thread = $reviewing ? $this->subtaskReviewer($task) : $task->implementerThread;
-                if ($reviewing && $thread === null) {
-                    $this->holdResolutionForFreshReviewer($task, $comment);
-                } else {
-                    if ($thread === null) {
-                        throw new AgentDriverException('Blocked AgentThread is unavailable.');
+            TaskExecutionHold::run($task->parent, function () use ($task, $comment): void {
+                $task->loadMissing('implementerThread');
+                // A reviewing subtask is blocked on its own reviewer. The group pointer can still name an older thread.
+                $reviewing = $task->status === TaskStatus::Reviewing;
+                try {
+                    $thread = $reviewing ? $this->subtaskReviewer($task) : $task->implementerThread;
+                    if ($reviewing && $thread === null) {
+                        $this->holdResolutionForFreshReviewer($task, $comment);
+                    } else {
+                        if ($thread === null) {
+                            throw new AgentDriverException('Blocked AgentThread is unavailable.');
+                        }
+                        $this->drivers->get($thread->driver)->send($thread, $comment->body);
+                        $this->recordResolutionDelivered($task, $comment, $reviewing);
                     }
-                    $this->drivers->get($thread->driver)->send($thread, $comment->body);
-                    $this->recordResolutionDelivered($task, $comment, $reviewing);
+                } catch (AgentDriverException) {
+                    DB::transaction(function () use ($task, $comment): void {
+                        $this->log($task, $comment, 'resolution delivery failed');
+                    });
                 }
-            } catch (AgentDriverException) {
-                DB::transaction(function () use ($task, $comment): void {
-                    $this->log($task, $comment, 'resolution delivery failed');
-                });
-            }
+            });
         }
 
         $rawType = $comment->getRawOriginal('type');

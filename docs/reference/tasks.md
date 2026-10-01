@@ -953,9 +953,13 @@ After a successful removal, cancel clears the assistance flags on the task and i
 
 A merged pull request completes its `settling` task on the next tick when every subtask has ended. `tasks:complete` completes a `settling` task by hand, without reading the pull request again.
 
-It also completes a `running` or `reviewing` task when a read of `watched_pr_url` reports `merged` or `closed`. Before it changes a subtask, that command stores the state on the task as `watched_pr_completion`. The branch watch does not set this column. The scheduler tick resumes a `running` or `reviewing` task that already has `watched_pr_completion`, and that resume does not read GitHub.
+It also completes a `running` or `reviewing` task when a read of `watched_pr_url` reports `merged` or `closed`. Before it changes a subtask, that command stores the state on the task as `watched_pr_completion`. The branch watch does not set this column. The receipt is a durable execution hold, even when the task has no ended-PR assistance reason. Fresh locked transitions and agent or check start/send boundaries honor it. The scheduler tick resumes a `running` or `reviewing` task that already has `watched_pr_completion`, and that resume does not read GitHub.
 
-Resume marks each `todo`, `running`, and `reviewing` subtask `cancelled` and marks the task `completed` in one database transaction. Subtasks already `completed`, `failed`, or `cancelled` stay as they are. A failed transaction rolls back, so the parent stays `running` or `reviewing` and its open subtasks stay open. The stored `watched_pr_completion` remains.
+Resume stops a running implementer or reviewer and any running check before the database transaction, using the same stop as subtask cancel. A failed stop returns HTTP 502 `tasks.subtask_interrupt_failed`, leaves the task and open subtasks in their statuses, and keeps `watched_pr_completion` for retry. Resume marks each `todo`, `running`, and `reviewing` subtask `cancelled` and marks the task `completed` in one database transaction. Subtasks already `completed`, `failed`, or `cancelled` stay as they are. A failed transaction rolls back, so the parent stays `running` or `reviewing` and its open subtasks stay open. The stored `watched_pr_completion` remains.
+
+The Gateway serializes receipt authorization with agent and check start/send operations using a file lock for each task under `$ORBIT_HOME`. It holds no database transaction across those remote calls. Work admitted before authorization finishes recording its thread or check before authorization can commit. Completion rechecks the stopped status, acting thread, and running checks under the cancellation lock; if that snapshot changed, it stops the new work before retrying cancellation. A failed stop keeps the receipt and the workspace for recovery.
+
+A running check without a positive PID and a recorded start time cannot be stopped safely. A crash may have started it remotely before recording that identity. Completion returns `tasks.subtask_interrupt_failed` and keeps the receipt, open statuses, and workspace until the check is reconciled. Once its process identity is recorded, a retry stops it without reading GitHub again.
 
 Workspace removal runs only after that transaction commits. A crash before the commit cannot leave a `running` or `reviewing` task with no open subtasks. A crash after the commit leaves the task `completed`.
 
@@ -964,6 +968,7 @@ A missing `watched_pr_url`, an open watched pull request, or an unreadable watch
 The Gateway tests inject these completion failures:
 
 - Commit `watched_pr_completion`, then stop before any subtask is cancelled. The parent stays `running` or `reviewing` with its open subtasks. Resume completes the task and does not call GitHub.
+- A baseline start loses its process identity. Completion returns `tasks.subtask_interrupt_failed` and preserves the receipt and workspace. Recording the identity lets a retry stop the check without GitHub.
 - The parent update fails inside the completion transaction. The subtask cancellations roll back. Resume uses the receipt and does not call GitHub.
 - Stop after the task is `completed` and before workspace removal. The next complete retries removal and does not call GitHub.
 

@@ -1,0 +1,9 @@
+Completing task group...
+
+┌  Complete task group
+│
+├  ● Completing task group
+│
+└  Operation failed.
+
+The task group is not ready to complete.

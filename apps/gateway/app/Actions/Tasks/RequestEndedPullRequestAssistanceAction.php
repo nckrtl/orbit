@@ -8,6 +8,7 @@ use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\TaskAgentSpawner;
+use App\Domain\Tasks\TaskExecutionHold;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Models\Activity;
@@ -31,6 +32,11 @@ final readonly class RequestEndedPullRequestAssistanceAction
 
     /** Returns whether this group must not advance, including while a pending notice is retried. */
     public function execute(Task $group): bool
+    {
+        return TaskExecutionHold::run($group, fn (): bool => $this->requestWhileAdmitted($group)) ?? true;
+    }
+
+    private function requestWhileAdmitted(Task $group): bool
     {
         $group->loadMissing('tasks');
         $open = $group->tasks

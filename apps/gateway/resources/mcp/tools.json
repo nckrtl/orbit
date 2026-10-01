@@ -5852,7 +5852,7 @@
       "name": "tasks-complete",
       "extension": "tasks",
       "title": "Complete a Task group",
-      "description": "Marks a settling Task group completed and removes its shared Instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.",
+      "description": "Completes a settling Task group without reading GitHub, or a running or reviewing group whose watched pull request has merged or closed. Stores the ended state in watched_pr_completion before cancelling open subtasks and completing the group in one transaction. Stops running agents and checks as subtask cancel does. Workspace and Route removal runs after the commit. Resume and completed-group cleanup retries do not read GitHub. A removal failure leaves the group completed with its Instance attached and asks for assistance. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.not_settling` when the group is not ready (including a missing, open, or unreadable watched PR without a completion receipt), and `tasks.subtask_interrupt_failed` when an agent or check cannot be stopped.",
       "method": "POST",
       "path": "/api/v1/task-groups/{group}/complete",
       "path_inputs": [

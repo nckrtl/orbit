@@ -145,6 +145,16 @@ final readonly class TaskScheduler
         }
 
         foreach ($groups as $group) {
+            if (in_array($group->status, [TaskGroupStatus::Running, TaskGroupStatus::Reviewing], true)
+                && in_array($group->watched_pr_completion, ['merged', 'closed'], true)) {
+                try {
+                    $this->completeGroup->execute($group);
+                } catch (Throwable $exception) {
+                    report($exception);
+                }
+
+                continue;
+            }
             $this->branchPullRequests->execute($group);
             if ($this->endedPullRequests->execute($group)) {
                 continue;
@@ -192,7 +202,9 @@ final readonly class TaskScheduler
         $decisions = [];
 
         foreach ($groups as $group) {
-            if (RequestEndedPullRequestAssistanceAction::isReason($group->assistance_reason)) {
+            if ($group->status === TaskGroupStatus::Completed
+                || in_array($group->watched_pr_completion, ['merged', 'closed'], true)
+                || RequestEndedPullRequestAssistanceAction::isReason($group->assistance_reason)) {
                 continue;
             }
             if (isset($runningAtStart[$group->id])) {
@@ -294,6 +306,11 @@ final readonly class TaskScheduler
     }
 
     private function handleImplementerCompletion(Task $group, Task $task, TaskSessionObservation $observation): bool
+    {
+        return TaskExecutionHold::run($group, fn (): bool => $this->handleAdmittedImplementerCompletion($group, $task, $observation)) ?? true;
+    }
+
+    private function handleAdmittedImplementerCompletion(Task $group, Task $task, TaskSessionObservation $observation): bool
     {
         $implementer = $observation->thread(TaskThreadRole::Implementer);
         if ($implementer === null) {
@@ -493,6 +510,11 @@ final readonly class TaskScheduler
 
     private function handleReviewerOutcome(Task $group, Task $task, TaskSessionObservation $observation): bool
     {
+        return TaskExecutionHold::run($group, fn (): bool => $this->handleAdmittedReviewerOutcome($group, $task, $observation)) ?? true;
+    }
+
+    private function handleAdmittedReviewerOutcome(Task $group, Task $task, TaskSessionObservation $observation): bool
+    {
         $reviewer = $observation->thread(TaskThreadRole::Reviewer);
         // Before this subtask's review is requested, the observed reviewer can be an earlier
         // subtask's thread. A Pi restart of that turn is not this review. Request the review
@@ -660,6 +682,11 @@ final readonly class TaskScheduler
      * A failed push asks for assistance on the fifth failure, and the tick keeps retrying it. This does not commit again.
      */
     private function retryCommittedApproval(Task $group, Task $task): bool
+    {
+        return TaskExecutionHold::run($group, fn (): bool => $this->retryAdmittedApproval($group, $task)) ?? true;
+    }
+
+    private function retryAdmittedApproval(Task $group, Task $task): bool
     {
         $receipt = $this->pendingReceipt($task, TaskThreadRole::Reviewer);
         if (! $receipt instanceof TaskComment || $this->receiptOutcome($receipt) !== TaskTurnOutcome::Approved || ! $this->committedApproval($receipt)) {
@@ -1983,6 +2010,11 @@ final readonly class TaskScheduler
      */
     private function nudgeReviewer(Task $task, ?TaskThreadObservation $reviewer): void
     {
+        TaskExecutionHold::run($task->parent, fn () => $this->nudgeAdmittedReviewer($task, $reviewer));
+    }
+
+    private function nudgeAdmittedReviewer(Task $task, ?TaskThreadObservation $reviewer): void
+    {
         if ($task->review_notified_attempt === $task->review_attempt) {
             return;
         }
@@ -2075,7 +2107,7 @@ final readonly class TaskScheduler
                 ->lockForUpdate()
                 ->findOrFail($locked->parent_id);
 
-            if (RequestEndedPullRequestAssistanceAction::isReason($group->assistance_reason)
+            if (TaskExecutionHold::active($group) || RequestEndedPullRequestAssistanceAction::isReason($group->assistance_reason)
                 || $group->status !== TaskGroupStatus::Running || $locked->status !== TaskStatus::Running) {
                 return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
             }
@@ -2101,8 +2133,9 @@ final readonly class TaskScheduler
 
     public function startTask(Task $task): Task
     {
+        $task->load('parent');
         $task->parent->requireManagedExecution();
-        if (RequestEndedPullRequestAssistanceAction::isReason($task->parent->assistance_reason)) {
+        if (TaskExecutionHold::active($task->parent) || RequestEndedPullRequestAssistanceAction::isReason($task->parent->assistance_reason)) {
             return $task->parent->fresh(['tasks', 'project', 'taskable']) ?? $task->parent;
         }
         $started = $this->activateRunningTask($task);
@@ -2148,6 +2181,9 @@ final readonly class TaskScheduler
                     );
                 }
 
+                if (TaskExecutionHold::active($group)) {
+                    return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
+                }
                 $assistanceReason = $this->markSubtaskCancelled($locked);
                 $tasks = $this->lockedTasks($group);
                 $this->clearCancelledSubtaskAssistance($group, $locked, $assistanceReason);
@@ -2191,6 +2227,9 @@ final readonly class TaskScheduler
                 );
             }
 
+            if (TaskExecutionHold::active($group)) {
+                return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
+            }
             $assistanceReason = $this->markSubtaskCancelled($locked);
             $tasks = $this->lockedTasks($group);
             $this->clearCancelledSubtaskAssistance($group, $locked, $assistanceReason);
@@ -2239,7 +2278,7 @@ final readonly class TaskScheduler
                 ->lockForUpdate()
                 ->findOrFail($locked->parent_id);
 
-            if (RequestEndedPullRequestAssistanceAction::isReason($group->assistance_reason)
+            if (TaskExecutionHold::active($group) || RequestEndedPullRequestAssistanceAction::isReason($group->assistance_reason)
                 || $group->status !== TaskGroupStatus::Reviewing || $locked->status !== TaskStatus::Reviewing) {
                 return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
             }
@@ -2593,6 +2632,11 @@ final readonly class TaskScheduler
      */
     private function resumeWaitingSubtask(Task $group): void
     {
+        TaskExecutionHold::run($group, fn () => $this->resumeAdmittedSubtask($group));
+    }
+
+    private function resumeAdmittedSubtask(Task $group): void
+    {
         if ($group->relationLoaded('tasks') && $this->hasBusyTask($group->tasks)) {
             return;
         }
@@ -2680,7 +2724,7 @@ final readonly class TaskScheduler
                 $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
                     ->lockForUpdate()
                     ->findOrFail($locked->parent_id);
-                if (! in_array($group->status, [TaskGroupStatus::Settling, TaskGroupStatus::Running], true)) {
+                if (TaskExecutionHold::active($group) || ! in_array($group->status, [TaskGroupStatus::Settling, TaskGroupStatus::Running], true)) {
                     return null;
                 }
                 if ($group->status === TaskGroupStatus::Running && $group->assistance_requested) {
@@ -2814,7 +2858,9 @@ final readonly class TaskScheduler
                 ->findOrFail($locked->parent_id);
             $tasks = $this->lockedTasks($group);
 
-            $this->markRunning($locked, $tasks);
+            if (! TaskExecutionHold::active($group)) {
+                $this->markRunning($locked, $tasks);
+            }
 
             return $locked->fresh(['parent.tasks', 'parent.project', 'parent.taskable']) ?? $locked;
         });
@@ -2849,6 +2895,11 @@ final readonly class TaskScheduler
      * when no implementer has started in the group yet, or starts the implementer.
      */
     private function beginRunningTask(Task $task): void
+    {
+        TaskExecutionHold::run($task->parent, fn () => $this->beginAdmittedTask($task));
+    }
+
+    private function beginAdmittedTask(Task $task): void
     {
         $this->recordSubtaskStart($task);
         if ($this->needsBaseline($task)) {
@@ -2903,6 +2954,11 @@ final readonly class TaskScheduler
      * after it passes, so an agent never starts on a broken checkout.
      */
     private function handleBaseline(Task $group, Task $task): void
+    {
+        TaskExecutionHold::run($group, fn () => $this->handleAdmittedBaseline($group, $task));
+    }
+
+    private function handleAdmittedBaseline(Task $group, Task $task): void
     {
         $check = $this->baselineCheck($task);
         $instance = $group->taskable;
@@ -3017,6 +3073,10 @@ final readonly class TaskScheduler
     {
         return DB::transaction(function () use ($task): ?TaskCheck {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
+            $group = Task::topLevel()->lockForUpdate()->findOrFail($locked->parent_id);
+            if (TaskExecutionHold::active($group) || $locked->status !== TaskStatus::Running) {
+                return null;
+            }
             $running = TaskCheck::query()
                 ->where('task_id', $locked->id)
                 ->where('kind', TaskCheckKind::Baseline->value)
@@ -3072,6 +3132,11 @@ final readonly class TaskScheduler
     }
 
     private function assignImplementer(Task $task): void
+    {
+        TaskExecutionHold::run($task->parent, fn () => $this->assignAdmittedImplementer($task));
+    }
+
+    private function assignAdmittedImplementer(Task $task): void
     {
         if ($task->status !== TaskStatus::Running) {
             return;

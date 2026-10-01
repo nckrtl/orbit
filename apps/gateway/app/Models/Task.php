@@ -72,6 +72,7 @@ use LogicException;
  * @property string|null $watched_pr_url
  * @property int|null $watched_pr_number
  * @property string|null $watched_pr_state
+ * @property string|null $watched_pr_completion
  * @property bool $notify_coder
  * @property string $implementer_model
  * @property string $reviewer_model
@@ -106,6 +107,7 @@ final class Task extends Model
 {
     /** @var list<string> */
     private const array TOP_LEVEL_COLUMNS = [
+        'watched_pr_completion',
         'watched_pr_url',
         'watched_pr_number',
         'watched_pr_state',
@@ -167,6 +169,7 @@ final class Task extends Model
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
+        'watched_pr_completion',
         'watched_pr_url',
         'watched_pr_number',
         'watched_pr_state',
