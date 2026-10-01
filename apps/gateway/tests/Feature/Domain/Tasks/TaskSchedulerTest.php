@@ -54,6 +54,7 @@ use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadObservation;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskTurnFetchNotice;
 use App\Domain\Tasks\TaskTurnInstructions;
 use App\Domain\Tasks\TaskTurnPullRequest;
 use App\Domain\Tasks\TaskTurnReceiptException;
@@ -2310,7 +2311,7 @@ it('refuses a review when the reviewer changed the workspace and asks for assist
         ->and($task->comments()->sole()->getRawOriginal('type'))->toBe('approved')
         ->and($task->comments()->sole()->commit_sha)->toBeNull()
         ->and($dispatcher->commands)->toHaveCount(1)
-        ->and($dispatcher->commands[0]['message']['text'])->toBe($reminder);
+        ->and($dispatcher->commands[0]['message']['text'])->toBe(TaskTurnFetchNotice::Failed."\n\n".$reminder);
 
     app(TaskScheduler::class)->tick();
     $checks->tree = str_repeat('b', 40);
