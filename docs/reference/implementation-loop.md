@@ -67,7 +67,7 @@ GitHub CI runs on every pull request, on every push to `main`, and on manual dis
 | Web | Generated API types, formatting, lint, types, tests, and build |
 | Pi server | Formatting, lint, types, tests, and build |
 | Agent annotation | Formatting, lint, tests, and build |
-| Rust agent | `cargo fmt`, `cargo clippy`, tests, and static builds for x86_64 and aarch64 |
+| Rust agent | `cargo fmt`, `cargo clippy`, tests, and static builds for x86_64 and aarch64, with Cargo caches. A pull request that changes neither `apps/agent` nor `ci.yml` skips these steps |
 | Required checks | Passes only when every other job passes |
 
 On a pull request, each Composer project job runs the TIA-selected tests and the architecture tests. The architecture tests include the contract tests that read the workflow files, `CliBinaryBuildContractTest` and `ComposerConfigurationTest`, because TIA does not link a workflow file to the tests that read it. On a push to `main` or a manual dispatch, it runs the full suite once with `--tia --fresh`, which also records a new TIA graph, and saves that graph to the cache.

@@ -338,22 +338,50 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      # A pull request that changes neither the agent nor this workflow cannot change the agent build.
+      # Pushes to main and manual runs always build it.
+      - name: Detect agent changes
+        id: changes
+        working-directory: .
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" != pull_request ] || git diff --name-only HEAD^1 HEAD | grep -qE '^(apps/agent/|\.github/workflows/ci\.yml$)'; then
+            echo "agent=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "agent=false" >> "$GITHUB_OUTPUT"
+            echo "The pull request does not change apps/agent or ci.yml; skipping the agent build."
+          fi
       - name: Install Rust toolchain
+        if: steps.changes.outputs.agent == 'true'
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
           components: clippy,rustfmt
+      - name: Restore Rust caches
+        if: steps.changes.outputs.agent == 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/agent
       - name: Install cross compiler
-        run: cargo install cross --locked
+        if: steps.changes.outputs.agent == 'true'
+        run: command -v cross >/dev/null || cargo install cross --locked
       - name: Check formatting
+        if: steps.changes.outputs.agent == 'true'
         run: cargo fmt --all -- --check
       - name: Run clippy
+        if: steps.changes.outputs.agent == 'true'
         run: cargo clippy --locked --all-targets -- -D warnings
       - name: Run tests
+        if: steps.changes.outputs.agent == 'true'
         run: cargo test --locked
       - name: Build static x86_64 binary
+        if: steps.changes.outputs.agent == 'true'
         run: cross build --locked --release --target x86_64-unknown-linux-musl
       - name: Build static aarch64 binary
+        if: steps.changes.outputs.agent == 'true'
         run: cross build --locked --release --target aarch64-unknown-linux-musl
 
   required:
