@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Tasks\CreateTaskDefinitionRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskDefinitionsRequest;
+use Orbit\Sdk\Requests\Tasks\ShowTaskDefinitionRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateTaskDefinitionRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -181,6 +182,39 @@ describe('task definition command contract', function (): void {
         $mock->assertSent(static fn (Request $request): bool => $request instanceof UpdateTaskDefinitionRequest
             && (string) $request->body() === definition_command_json()
             && $request->resolveEndpoint() === '/api/v1/projects/1/task-definitions/build-feature');
+    });
+
+    it('keeps a nested empty object through show and a file update', function (): void {
+        $body = <<<'JSON'
+{"data":{"project_id":1,"name":"build-feature","title":"Build a feature","brief":"Document and build it.","parameters":[{"name":"tuning","type":"text","required":false,"default":{"options":{},"flags":[]}}],"status":"backlog","schedule":null,"phases":[],"subtasks":[{"key":"ship","title":"Ship it","kind":"action","operation":"instance:deploy","arguments":{"options":{},"flags":[]}}]},"meta":{"request_id":"0198e15c-bf97-7c23-8f1f-61b8fe67a844"}}
+JSON;
+        $mock = MockClient::global([
+            ...gateway_fixture_mock(),
+            ShowTaskDefinitionRequest::class => MockResponse::make($body, 200, ['Content-Type' => 'application/json']),
+            UpdateTaskDefinitionRequest::class => MockResponse::make($body, 200, ['Content-Type' => 'application/json']),
+        ]);
+
+        expect(Artisan::call('tasks:definition:show', [
+            'name' => 'build-feature',
+            '--project' => '1',
+            '--json' => true,
+        ]))->toBe(0);
+
+        $shown = Artisan::output();
+        file_put_contents($this->definitionFile, $shown);
+
+        expect($shown)->toContain('"default":{"options":{},"flags":[]}')
+            ->and($shown)->toContain('"arguments":{"options":{},"flags":[]}')
+            ->and(Artisan::call('tasks:definition:update', [
+                'name' => 'build-feature',
+                '--project' => '1',
+                '--definition' => $this->definitionFile,
+                '--json' => true,
+            ]))->toBe(0);
+
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof UpdateTaskDefinitionRequest
+            && str_contains((string) $request->body(), '"default":{"options":{},"flags":[]}')
+            && str_contains((string) $request->body(), '"arguments":{"options":{},"flags":[]}'));
     });
 
     it('does not send a destroy request without confirmation', function (): void {

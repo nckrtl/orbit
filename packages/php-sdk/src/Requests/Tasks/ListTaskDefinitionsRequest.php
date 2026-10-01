@@ -36,7 +36,7 @@ final class ListTaskDefinitionsRequest extends GatewayRequest
         $requestId = $this->successRequestId($response);
         $definitions = [];
 
-        foreach ($this->unwrapDataList($response, true) as $entry) {
+        foreach ($this->unwrapDataListKeepingObjects($response) as $entry) {
             $definitions[] = TaskDefinitionResponse::fromGatewayData($entry, $requestId);
         }
 

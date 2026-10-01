@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Tasks;
 
+use App\Domain\Tasks\TaskDefinitionJson;
 use App\Domain\Tasks\TaskDefinitionName;
 use App\Domain\Tasks\TaskDeliverableType;
 use App\Http\Requests\TopLevelJsonObjectInspector;
@@ -14,6 +15,7 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Validator;
+use stdClass;
 use UnexpectedValueException;
 
 final class TaskDefinitionRequest extends FormRequest
@@ -125,6 +127,8 @@ final class TaskDefinitionRequest extends FormRequest
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
 
+        $payload = $this->keepJsonObjects($payload, $this->getContent());
+
         // MCP removes the path argument from the body. An update then has no name unless the path supplies it.
         $pathName = $this->route('name');
 
@@ -133,5 +137,55 @@ final class TaskDefinitionRequest extends FormRequest
         }
 
         return $this->inspected = $payload;
+    }
+
+    /**
+     * Arguments and parameter defaults are free-form JSON. Associative decoding turns {} into [],
+     * so a nested empty object is copied from a decode that still knows it was an object.
+     * An empty arguments value stays a list here; the response restores that one known object.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function keepJsonObjects(array $payload, #[\SensitiveParameter] string $json): array
+    {
+        $shaped = TaskDefinitionJson::decode($json);
+
+        if (! is_array($shaped)) {
+            return $payload;
+        }
+
+        $parameters = $shaped['parameters'] ?? null;
+
+        if (isset($payload['parameters']) && is_array($payload['parameters']) && is_array($parameters)) {
+            foreach ($payload['parameters'] as $index => $parameter) {
+                $source = $parameters[$index] ?? null;
+
+                if (! is_array($parameter) || ! is_array($source) || ! array_key_exists('default', $source)) {
+                    continue;
+                }
+
+                $parameter['default'] = $source['default'];
+                $payload['parameters'][$index] = $parameter;
+            }
+        }
+
+        $subtasks = $shaped['subtasks'] ?? null;
+
+        if (isset($payload['subtasks']) && is_array($payload['subtasks']) && is_array($subtasks)) {
+            foreach ($payload['subtasks'] as $index => $subtask) {
+                $source = $subtasks[$index] ?? null;
+
+                if (! is_array($subtask) || ! is_array($source) || ! array_key_exists('arguments', $source)) {
+                    continue;
+                }
+
+                $arguments = $source['arguments'];
+                $subtask['arguments'] = $arguments instanceof stdClass ? [] : $arguments;
+                $payload['subtasks'][$index] = $subtask;
+            }
+        }
+
+        return $payload;
     }
 }

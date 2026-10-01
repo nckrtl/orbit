@@ -21,7 +21,7 @@ Both endpoints speak MCP over streamable HTTP and offer the same catalogue.
 | `https://gateway.orbit/mcp` | One tool for every API operation, on one page. | The client loads tool definitions on demand, or its context has room for the full catalogue. |
 | `https://gateway.orbit/mcp/search` | `search_tools` and `execute_tools`. | The client loads every listed tool into its context. |
 
-`search_tools` returns exact tool names with their input schemas. An empty query browses the catalogue. `execute_tools` takes `{"calls": [{"name": "...", "arguments": {...}}]}`, runs up to 25 calls in order, and stops at the first error. `/mcp/search` limits the output of one call to 65,536 bytes. `execute_tools` stops when the combined results pass that limit, so a large list result can fail through `/mcp/search` and still work through `/mcp`.
+`search_tools` returns exact tool names with their input schemas. An empty query browses the catalogue. `execute_tools` takes `{"calls": [{"name": "...", "arguments": {...}}]}`, runs up to 25 calls in order, and stops at the first error. A nested empty object in a tool argument, such as `{"options":{}}`, stays an object through a direct `tools/call` and through `execute_tools`, and an empty list stays a list. The tool result text keeps that shape. `/mcp/search` limits the output of one call to 65,536 bytes. `execute_tools` stops when the combined results pass that limit, so a large list result can fail through `/mcp/search` and still work through `/mcp`.
 
 ## Identity and access
 

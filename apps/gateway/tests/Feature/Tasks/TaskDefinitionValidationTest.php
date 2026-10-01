@@ -103,6 +103,21 @@ describe('task definition validation', function (): void {
         ]);
     });
 
+    it('refuses reserved subtask keys', function (): void {
+        task_definition_gateway();
+        $project = task_definition_project();
+
+        foreach (['complete', 'fail'] as $key) {
+            reject_task_definition($project, task_definition_payload([
+                'subtasks' => [
+                    ['key' => $key, 'title' => 'End', 'kind' => 'agent'],
+                ],
+            ]), [
+                ['rule' => 'keys', 'subtask' => $key],
+            ]);
+        }
+    });
+
     it('returns 422 tasks.definition_invalid when a subtask kind is unknown', function (): void {
         task_definition_gateway();
         $project = task_definition_project();
@@ -286,6 +301,20 @@ describe('task definition validation', function (): void {
         ]);
     });
 
+    it('returns 422 tasks.definition_invalid when a parameter name is duplicated', function (): void {
+        task_definition_gateway();
+        $project = task_definition_project();
+
+        reject_task_definition($project, task_definition_payload([
+            'parameters' => [
+                ['name' => 'app', 'type' => 'text', 'required' => true],
+                ['name' => 'app', 'type' => 'app', 'required' => false],
+            ],
+        ]), [
+            ['rule' => 'parameters', 'subtask' => null],
+        ]);
+    });
+
     it('returns 422 tasks.definition_invalid when more than one parameter has type subtasks', function (): void {
         task_definition_gateway();
         $project = task_definition_project();
@@ -359,6 +388,19 @@ describe('task definition validation', function (): void {
             ['rule' => 'cron', 'subtask' => null],
         ]);
     });
+
+    it('returns 422 tasks.definition_invalid when a model name is empty', function (string $field): void {
+        task_definition_gateway();
+        $project = task_definition_project();
+
+        reject_task_definition($project, task_definition_payload([
+            'subtasks' => [
+                ['key' => 'docs', 'title' => 'Write the docs', 'kind' => 'agent', $field => ''],
+            ],
+        ]), [
+            ['rule' => 'fields', 'subtask' => 'docs'],
+        ]);
+    })->with(['implementer_model', 'reviewer_model']);
 
     it('stores a definition that uses marked task actions and does not refuse models', function (string $operation): void {
         task_definition_gateway();

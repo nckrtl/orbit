@@ -26,6 +26,6 @@ final class DestroyTaskDefinitionRequest extends GatewayRequest
 
     public function createDtoFromResponse(#[\SensitiveParameter] Response $response): TaskDefinitionResponse
     {
-        return TaskDefinitionResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
+        return TaskDefinitionResponse::fromGatewayData($this->unwrapDataKeepingObjects($response), $this->successRequestId($response));
     }
 }

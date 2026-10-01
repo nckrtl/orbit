@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Tasks\TaskDefinitionJsonCast;
 use App\Domain\Tasks\TaskDefinitionStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -47,10 +48,10 @@ final class TaskDefinition extends Model
     protected function casts(): array
     {
         return [
-            'parameters' => 'array',
+            'parameters' => TaskDefinitionJsonCast::class,
             'schedule' => 'array',
             'phases' => 'array',
-            'subtasks' => 'array',
+            'subtasks' => TaskDefinitionJsonCast::class,
             'status' => TaskDefinitionStatus::class,
         ];
     }

@@ -139,6 +139,36 @@ describe('task definition requests', function (): void {
             ->toContain('"routes":{}');
     });
 
+    it('keeps a nested empty object through show and update', function (): void {
+        $body = <<<'JSON'
+{"data":{"project_id":1,"name":"build-feature","title":"Build a feature","brief":"Document and build it.","parameters":[{"name":"tuning","type":"text","required":false,"default":{"options":{},"flags":[]}}],"status":"backlog","schedule":null,"phases":[],"subtasks":[{"key":"ship","title":"Ship it","kind":"action","operation":"instance:deploy","arguments":{"options":{},"flags":[]}}]},"meta":{"request_id":"0198e15c-bf97-7c23-8f1f-61b8fe67a844"}}
+JSON;
+        $mock = new MockClient([
+            ShowTaskDefinitionRequest::class => MockResponse::make($body, 200),
+            UpdateTaskDefinitionRequest::class => MockResponse::make($body, 200),
+        ]);
+        $connector = definition_request_connector($mock);
+        $shown = $connector->send(new ShowTaskDefinitionRequest(1, 'build-feature'))->dto();
+
+        expect($shown)->toBeInstanceOf(TaskDefinitionResponse::class);
+        assert($shown instanceof TaskDefinitionResponse);
+
+        $shownJson = json_encode($shown->toArray(), JSON_THROW_ON_ERROR);
+        $document = json_decode($shownJson, false, 512, JSON_THROW_ON_ERROR);
+        unset($document->request_id, $document->project_id);
+        $updateJson = json_encode($document, JSON_THROW_ON_ERROR);
+        $updated = $connector->send(new UpdateTaskDefinitionRequest(1, 'build-feature', $updateJson))->dto();
+
+        expect($shownJson)->toContain('"default":{"options":{},"flags":[]}')
+            ->and($shownJson)->toContain('"arguments":{"options":{},"flags":[]}')
+            ->and((string) $mock->getLastRequest()?->body())->toBe($updateJson)
+            ->and($updated)->toBeInstanceOf(TaskDefinitionResponse::class);
+        assert($updated instanceof TaskDefinitionResponse);
+        expect(json_encode($updated->toArray(), JSON_THROW_ON_ERROR))
+            ->toContain('"default":{"options":{},"flags":[]}')
+            ->toContain('"arguments":{"options":{},"flags":[]}');
+    });
+
     it('preserves a refused invalid definition and a name that already exists', function (string $fixture, GatewayRequest $request, string $code, array $details): void {
         try {
             definition_fixture_send($fixture, $request);

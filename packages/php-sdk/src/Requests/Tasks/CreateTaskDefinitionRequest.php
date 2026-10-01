@@ -38,7 +38,7 @@ final class CreateTaskDefinitionRequest extends GatewayRequest implements HasBod
 
     public function createDtoFromResponse(#[SensitiveParameter] Response $response): TaskDefinitionResponse
     {
-        return TaskDefinitionResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
+        return TaskDefinitionResponse::fromGatewayData($this->unwrapDataKeepingObjects($response), $this->successRequestId($response));
     }
 
     protected function defaultBody(): string

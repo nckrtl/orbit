@@ -13,6 +13,9 @@ final readonly class TaskDefinitionValidator
     /** @var list<string> */
     private const array CommonFields = ['key', 'title', 'kind', 'brief', 'phase', 'deliverables', 'routes'];
 
+    /** @var list<string> */
+    private const array ReservedKeys = ['complete', 'fail'];
+
     private const int MaxSubtasks = 100;
 
     private const int MaxParameters = 50;
@@ -75,7 +78,7 @@ final readonly class TaskDefinitionValidator
         $violations = [];
 
         foreach ($counts as $key => $count) {
-            if ($count > 1) {
+            if ($count > 1 || in_array($key, self::ReservedKeys, true)) {
                 $violations[] = new TaskDefinitionViolation('keys', $key);
             }
         }
@@ -163,6 +166,24 @@ final readonly class TaskDefinitionValidator
 
         if (array_key_exists('min_probability', $subtask) && ! $this->probability($subtask['min_probability'])) {
             return true;
+        }
+
+        return $kind === TaskDefinitionKind::Agent && $this->emptyModel($subtask);
+    }
+
+    /** @param array<string, mixed> $subtask */
+    private function emptyModel(array $subtask): bool
+    {
+        foreach (['implementer_model', 'reviewer_model'] as $field) {
+            if (! array_key_exists($field, $subtask)) {
+                continue;
+            }
+
+            $model = $subtask[$field];
+
+            if (! is_string($model) || $model === '') {
+                return true;
+            }
         }
 
         return false;

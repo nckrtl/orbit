@@ -43,6 +43,8 @@ Each command accepts `--json`. Enable and disable need Gateway access.
 
 `tasks:status` is a core view. It stays available while `tasks` is disabled. Disabling an extension keeps its data, such as tasks or the proxycli collector.
 
+A nested empty object in a tool argument stays an object through a direct `tools/call` and through `execute_tools`. [MCP](/reference/mcp) describes that shape.
+
 ## Extension state in the CLI
 
 The CLI asks the Gateway for the switches at most once per process: when it lists commands or shows help, when it runs `extension:list`, and when it runs an extension command. The request has a 2-second deadline, which includes its one retry after a connection failure. The CLI stores no copy.

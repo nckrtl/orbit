@@ -74,7 +74,7 @@ A subtask definition has `key`, `title`, `kind`, and optional `brief`, `phase`, 
 | `action` | `operation` and `arguments` |
 | `decide` | `question`, `options`, `evidence`, and optional `min_probability` |
 
-`key` is unique within the definition. `deliverables` follow the [Tasks deliverables](/reference/tasks#deliverables) contract.
+`key` is unique within the definition. `complete` and `fail` are reserved for route ends, so a subtask cannot use either name. `deliverables` follow the [Tasks deliverables](/reference/tasks#deliverables) contract.
 
 A `subtasks` parameter inserts the subtasks that the starter passes at that point in the list. Every inserted subtask is an `agent` subtask. Orbit's own feature work uses it: the "Build a feature" definition has a fixed documentation subtask and a `subtasks` parameter for the implementation subtasks that the ADE plans.
 
@@ -115,7 +115,7 @@ Each kind is one Gateway class that implements one contract, registered as agent
 
 ### Routes
 
-A subtask's `routes` map each of its outcomes to a target: the `key` of a subtask after it, `complete`, or `fail`. A missing route uses the default:
+A subtask's `routes` map each of its outcomes to a target: the `key` of a subtask after it, `complete`, or `fail`. `complete` and `fail` are reserved subtask keys, so a route target with either name is always the end and never a subtask. A missing route uses the default:
 
 | Outcome | Default target |
 | --- | --- |
@@ -131,7 +131,7 @@ A route points only forward, so a task cannot loop and always ends. The fix loop
 
 The Gateway validates a definition on every write and refuses an invalid one with HTTP 422 `tasks.definition_invalid`. `details` names each failing rule with the subtask key it concerns. It refuses:
 
-- a duplicate subtask key, an unknown kind, a field that the kind does not declare, or a missing field that the kind requires;
+- a duplicate subtask key, a subtask key of `complete` or `fail`, an unknown kind, a field that the kind does not declare, a missing field that the kind requires, or an empty model name;
 - a route from an outcome that the kind does not declare, or to an unknown key, to the subtask itself, or to a subtask before it;
 - a `decide` subtask without a route for each option;
 - a subtask that no path from the first subtask reaches;
@@ -139,12 +139,12 @@ The Gateway validates a definition on every write and refuses an invalid one wit
 - a duplicate phase key;
 - an `action` operation that is not marked as a task action;
 - more than 100 subtasks, 50 parameters, 50 phases, 50 arguments on one subtask, or 100 schedule values;
-- a `{parameter}` that `parameters` does not declare, more than one `subtasks` parameter, or a schedule value for a parameter that the definition does not declare;
+- a `{parameter}` that `parameters` does not declare, a duplicate parameter name, more than one `subtasks` parameter, or a schedule value for a parameter that the definition does not declare;
 - a cron expression that is not five valid fields, or a schedule without a value for each required parameter.
 
 A name that the Project already uses returns HTTP 409 `tasks.definition_exists`. Starting a definition with a missing or wrongly typed parameter returns HTTP 422 `tasks.parameters_invalid`.
 
-Models are not refused, because ProxyCli's model list changes over time. When that list is available, the web app reports a model that no driver can run as a finding: a model is known when ProxyCli offers it, or when it is a Claude model, which T3 runs on its own Claude subscription. When the list is missing, empty, or refused, the view says that the model list is unavailable and reports no driver findings.
+An empty model name is refused. Any other model name is not checked against ProxyCli's list, because that list changes over time. When that list is available, the web app reports a model that no driver can run as a finding: a model is known when ProxyCli offers it, or when it is a Claude model, which T3 runs on its own Claude subscription. When the list is missing, empty, or refused, the view says that the model list is unavailable and reports no driver findings.
 
 ### API
 
@@ -170,7 +170,7 @@ The web app lists definitions on the Tasks page and on each Project page, and dr
 - each phase as one card that opens into a frame around its subtasks;
 - the engine's fixed stages around the definition: starting the workspace before the first subtask, the implementer, handoff check, and reviewer inside each `agent` subtask, and the pull request, the merge by a person unless the definition has a `merge` subtask, and the cleanup after the last subtask;
 - the schedule in words, such as "Weekly on Monday at 03:00 UTC";
-- findings: a subtask no path reaches, a `decide` subtask whose options all lead to one subtask, and, when the ProxyCli model list is available, a model that no driver can run. A missing, empty, or refused list is one notice and no driver findings. The drawing opens at full size, and a side path is reached by panning.
+- findings: a `decide` subtask whose options all lead to one subtask, and, when the ProxyCli model list is available, a model that no driver can run. The Gateway refuses a definition that contains a subtask no path reaches, so the view does not report that finding for a stored definition. A missing, empty, or refused list is one notice and no driver findings. The drawing opens at full size, and a side path is reached by panning.
 
 The Tasks board shows scheduled tasks in Backlog with their `scheduled_at`.
 

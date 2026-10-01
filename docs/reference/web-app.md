@@ -79,13 +79,13 @@ The main path runs down the middle. A detour or a failure path sits in a side co
 
 Each subtask shows its kind, its models, and its routes with their outcome labels. A default route to an end stays hidden. [Routes](/reference/tasks#routes) defines the defaults.
 
-Each phase is one card. Opening the card shows a frame around that phase's subtasks.
+Each phase is one card. Opening the card shows a frame around that phase's subtasks. The canvas label says to open a phase, and after a phase is open it says to collapse a phase.
 
 The drawing also shows the stages the engine always runs around the definition. Before the first subtask it shows the workspace start. Inside each `agent` subtask it shows the implementer, the handoff check, and the reviewer. After the last subtask it shows the pull request, the merge, and the cleanup. A person merges unless the definition has a `merge` subtask.
 
 A schedule is shown in words, such as "Weekly on Monday at 03:00 UTC".
 
-The view reports a finding in three cases. It reports a subtask that no path reaches. It reports a `decide` subtask whose options all lead to one subtask. It reports a model that no driver can run when the [ProxyCli model list](/reference/proxycli#models) is available. A model is known when ProxyCli offers it, or when it is a Claude model. When that list is missing, empty, or refused, the view says that the model list is unavailable and reports no driver findings.
+The view reports a finding when every option of a `decide` subtask leads to the same subtask. It reports a model that no driver can run when the [ProxyCli model list](/reference/proxycli#models) is available. A model is known when ProxyCli offers it, or when it is a Claude model. When that list is missing, empty, or refused, the view says that the model list is unavailable and reports no driver findings. The Gateway refuses a definition that contains a subtask no path reaches, so the view does not report that finding for a stored definition.
 
 ## Live Activity
 

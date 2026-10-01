@@ -101,13 +101,13 @@ A phase is `{key, title, brief, repeat}`. A stored schedule does not create a ta
 
 Each parameter is `{name, type, required, default}`. `type` is `text`, `app`, or `subtasks`. The field is required, and an empty list is valid. Omitting it returns HTTP 422 `validation.failed`.
 
-A `{parameter}` in the title or brief names a parameter in `parameters`. The definition declares at most one parameter whose type is `subtasks`.
+A `{parameter}` in the title or brief names a parameter in `parameters`. Parameter names are unique, and a duplicate name is refused. The definition declares at most one parameter whose type is `subtasks`.
 
 A schedule value names a parameter the definition declares. The schedule includes a value for each required parameter.
 
 ### Subtask definitions
 
-Each subtask definition has `key`, `title`, and `kind`. It may also have `brief`, `phase`, `deliverables`, and `routes`. `key` is unique in the definition. `deliverables` follow the [deliverables](#deliverables) contract. A `phase` is a key in `phases`. The subtasks of one phase sit next to each other.
+Each subtask definition has `key`, `title`, and `kind`. It may also have `brief`, `phase`, `deliverables`, and `routes`. `key` is unique in the definition. The names `complete` and `fail` are reserved for [route ends](#routes), so a subtask cannot use them. `deliverables` follow the [deliverables](#deliverables) contract. A `phase` is a key in `phases`. The subtasks of one phase sit next to each other.
 
 The kind adds fields and declares the outcomes a route may name.
 
@@ -121,11 +121,11 @@ The kind adds fields and declares the outcomes a route may name.
 
 An `action` `operation` is an OpenAPI operation marked `x-orbit-task-action: true`. Orbit marks `instance:deploy` and `instance:rollback`. The Gateway reads those names from the list `bin/mcp-tools` generates, and `bin/mcp-tools --check` keeps that list current. Marking another operation needs its own decision. A `decide` subtask's `evidence` names earlier subtasks by `key`. `min_probability` is from 0 to 1 and defaults to 0.8.
 
-A write does not refuse `implementer_model` or `reviewer_model`. The [ProxyCli model list](/reference/proxycli#models) changes over time. When that list is available, the definition view reports a model that no driver can run. A model is known when ProxyCli offers it, or when it is a Claude model. T3 runs a Claude model on its own Claude subscription. A listed model whose provider no driver runs, such as `google`, is that finding. When the model list is missing, empty, or refused, the view says that the model list is unavailable and reports no driver findings.
+A write refuses an empty `implementer_model` or `reviewer_model`. It does not check either name against the [ProxyCli model list](/reference/proxycli#models), because that list changes over time. When that list is available, the definition view reports a model that no driver can run. A model is known when ProxyCli offers it, or when it is a Claude model. T3 runs a Claude model on its own Claude subscription. A listed model whose provider no driver runs, such as `google`, is that finding. When the model list is missing, empty, or refused, the view says that the model list is unavailable and reports no driver findings.
 
 ### Routes
 
-A subtask's `routes` map each declared outcome to one target. The target is the `key` of a later subtask, `complete`, or `fail`. A route cannot target the same subtask or an earlier subtask.
+A subtask's `routes` map each declared outcome to one target. The target is the `key` of a later subtask, `complete`, or `fail`. `complete` and `fail` are reserved, so they are never subtask keys, and the Gateway and the drawing read every route the same way. A route cannot target the same subtask or an earlier subtask.
 
 An outcome with no route uses this default. A `decide` subtask has no defaults. Its routes name a target for every option.
 
@@ -141,9 +141,9 @@ The Gateway validates a definition on every write. An invalid definition is not 
 
 | Rule | The write is refused when |
 | --- | --- |
-| Keys | A subtask key is duplicated |
+| Keys | A subtask key is duplicated, or it is the reserved name `complete` or `fail` |
 | Kind | The kind is unknown |
-| Fields | The kind does not declare a field, or a field the kind requires is missing |
+| Fields | The kind does not declare a field, a field the kind requires is missing, or a model name is empty |
 | Route outcome | A route names an outcome the kind does not declare |
 | Route target | A route names an unknown key, the same subtask, or an earlier subtask |
 | Decide routes | A `decide` subtask has no route for an option |
@@ -151,7 +151,7 @@ The Gateway validates a definition on every write. An invalid definition is not 
 | Phases | A subtask `phase` is not in `phases`, or one phase's subtasks are not adjacent |
 | Phase keys | A phase key is duplicated |
 | Action | The `operation` is not marked as a task action |
-| Parameters | A `{parameter}` is not declared, or more than one parameter has type `subtasks` |
+| Parameters | A `{parameter}` is not declared, a parameter name is duplicated, or more than one parameter has type `subtasks` |
 | Schedule names | A schedule value names an undeclared parameter |
 | Cron | The cron expression is not five valid fields |
 | Schedule values | The schedule omits a value for a required parameter |

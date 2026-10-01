@@ -310,6 +310,54 @@ describe('task definition routes', function (): void {
             ->and(TaskDefinition::query()->value('name'))->toBe('build-feature');
     });
 
+    it('keeps a nested empty object in arguments and a parameter default', function (): void {
+        task_definition_gateway();
+        $project = task_definition_project();
+        $url = "/api/v1/projects/{$project->id}/task-definitions";
+        $object = '{"options":{},"flags":[]}';
+
+        $created = $this->postJson($url, task_definition_payload([
+            'parameters' => [
+                [
+                    'name' => 'tuning',
+                    'type' => 'text',
+                    'required' => false,
+                    'default' => ['options' => (object) [], 'flags' => []],
+                ],
+            ],
+            'subtasks' => [
+                [
+                    'key' => 'ship',
+                    'title' => 'Deploy',
+                    'kind' => 'action',
+                    'operation' => 'instance:deploy',
+                    'arguments' => ['options' => (object) [], 'flags' => []],
+                ],
+            ],
+        ]))->assertCreated();
+
+        expect($created->getContent())->toContain('"default":'.$object)->toContain('"arguments":'.$object);
+
+        $shown = $this->getJson($url.'/build-feature')->assertOk();
+        expect($shown->getContent())->toContain('"default":'.$object)->toContain('"arguments":'.$object);
+
+        $document = json_decode($shown->getContent(), false, 512, JSON_THROW_ON_ERROR);
+        unset($document->data->project_id);
+
+        $replaced = $this->call(
+            'PUT',
+            $url.'/build-feature',
+            server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'],
+            content: json_encode($document->data, JSON_THROW_ON_ERROR),
+        );
+
+        $replaced->assertOk();
+        expect($replaced->getContent())->toContain('"default":'.$object)->toContain('"arguments":'.$object);
+
+        $again = $this->getJson($url.'/build-feature')->assertOk();
+        expect($again->getContent())->toContain('"default":'.$object)->toContain('"arguments":'.$object);
+    });
+
     it('reads an empty schedule values object back as an object', function (): void {
         task_definition_gateway();
         $project = task_definition_project();

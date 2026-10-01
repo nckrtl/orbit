@@ -186,7 +186,7 @@ export function DefinitionCanvas({
                 }}
                 minZoom={0.25}
                 maxZoom={1.5}
-                attributionPosition="bottom-left"
+                attributionPosition="bottom-right"
                 colorMode="dark"
             >
                 <Background variant={BackgroundVariant.Dots} gap={24} size={1} />

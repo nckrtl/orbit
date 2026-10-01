@@ -91,13 +91,40 @@ function inside(inner: DOMRect, outer: DOMRect): boolean {
     );
 }
 
+/** The phase hint is fully on screen, not under the React Flow credit, and clear of the Subtask title. */
+function phaseHintIsClear(): boolean {
+    const hint = [
+        ...document.querySelectorAll(
+            ".definition-frame .frame-edge[data-edge='bottom'] .frame-label",
+        ),
+    ].find((node) => node.textContent?.includes("phase"));
+    const main = document.querySelector("main");
+    if (!(hint instanceof HTMLElement) || !(main instanceof HTMLElement)) return false;
+    const box = hint.getBoundingClientRect();
+    if (box.height < 10 || !inside(box, main.getBoundingClientRect())) return false;
+    const credit = document.querySelector(".react-flow__attribution");
+    if (!(credit instanceof HTMLElement) || overlaps(box, credit.getBoundingClientRect())) {
+        return false;
+    }
+    const title = document.querySelector('[data-testid="definition-subtask"] .frame-label');
+    if (!(title instanceof HTMLElement)) return true;
+    const titleBox = title.getBoundingClientRect();
+    if (titleBox.top < box.top) return true;
+    return !overlaps(box, titleBox) && titleBox.top - box.bottom >= 8;
+}
+
 it("opens a phase into a frame around its subtasks", async () => {
     await openApp("/projects/1/task-definitions/publish");
     const phase = page.getByTestId("definition-phase").filter({ hasText: "Draft" });
     await expect.element(phase).toBeVisible();
     expect(page.getByLabelText("agent subtask: Write the page").query()).toBeNull();
     await expect.element(page.getByLabelText("Engine stage: Merge")).toBeVisible();
+    await expect.element(page.getByText("Open a phase to see its subtasks")).toBeVisible();
+    await expect.poll(() => phaseHintIsClear()).toBe(true);
     await phase.click();
+    await expect.element(page.getByText("Collapse a phase to hide its subtasks")).toBeVisible();
+    expect(page.getByText("Open a phase to see its subtasks").query()).toBeNull();
+    await expect.poll(() => phaseHintIsClear()).toBe(true);
     await expect.element(page.getByTestId("definition-phase-frame")).toHaveTextContent("Draft");
     await expect.element(page.getByLabelText("agent subtask: Write the page")).toBeVisible();
     await expect.element(page.getByLabelText("agent subtask: Edit the page")).toBeVisible();
@@ -118,13 +145,7 @@ it("shows that the model list is unavailable and reports no driver findings when
     const findings = page.getByTestId("definition-findings");
     await expect.element(findings).toHaveTextContent("The model list is unavailable.");
     await expect.element(findings).not.toHaveTextContent("No driver can run");
-    const routeFinding = findings.getByRole("button", {
-        name: "note No path reaches this subtask.",
-    });
-    await expect.element(routeFinding).toBeVisible();
-    expect(
-        Number.parseFloat(getComputedStyle(routeFinding.element()).paddingTop),
-    ).toBeGreaterThanOrEqual(8);
+    await expect.element(findings).not.toHaveTextContent("No path reaches");
     await expect
         .element(page.getByTestId("definition-subtask").getByText("gpt-5.6-luna"))
         .not.toHaveClass("text-yellow");
@@ -209,7 +230,11 @@ it("keeps a definition with side paths readable on a phone", async () => {
         }
 
         await openApp("/projects/1/task-definitions/publish");
+        await expect.element(page.getByText("Open a phase to see its subtasks")).toBeVisible();
+        await expect.poll(() => phaseHintIsClear()).toBe(true);
         await page.getByRole("button", { name: /Phase: Draft/ }).click();
+        await expect.element(page.getByText("Collapse a phase to hide its subtasks")).toBeVisible();
+        await expect.poll(() => phaseHintIsClear()).toBe(true);
         const title = page.getByRole("button", { name: "Collapse phase Draft" });
         await expect.element(title).toBeVisible();
         const titleBox = title.element().getBoundingClientRect();

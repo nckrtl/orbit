@@ -606,6 +606,29 @@ body {
 }
 
 /* Task definition canvas. Cards are the subtasks; the engine's stages use the same card. */
+
+/* The phase hint hangs out of the canvas border. On a desktop the canvas fills the page, so the
+   page keeps room under that border or the hint is clipped. Stacked under the Subtask title, the
+   normal panel gap is too small for both hanging labels, so that layout keeps a line between them. */
+.definition-page {
+    padding-bottom: calc(var(--lh) / 2 + 6px);
+}
+
+.definition-layout {
+    row-gap: calc(var(--panel-gap) + var(--lh));
+}
+
+@media (min-width: 1024px) {
+    .definition-layout {
+        column-gap: var(--panel-gap);
+        row-gap: var(--panel-gap);
+    }
+}
+
+.definition-frame > .frame-edge {
+    z-index: 6;
+}
+
 .definition-frame-body {
     padding: 0;
     overflow: hidden;

@@ -204,23 +204,6 @@
                         "routes": {
                             "passed": "fail"
                         }
-                    },
-                    {
-                        "key": "note",
-                        "title": "Record the outage",
-                        "kind": "check",
-                        "brief": "Record what the smoke test saw.",
-                        "deliverables": [
-                            {
-                                "id": "note",
-                                "type": "command",
-                                "description": "The outage note is written",
-                                "command": "bun run note:outage"
-                            }
-                        ],
-                        "routes": {
-                            "passed": "complete"
-                        }
                     }
                 ]
             }

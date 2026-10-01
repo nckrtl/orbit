@@ -139,7 +139,7 @@ function DefinitionView() {
     };
 
     return (
-        <div className="flex min-w-0 flex-col gap-[var(--panel-gap)] md:h-full">
+        <div className="definition-page flex min-w-0 flex-col gap-[var(--panel-gap)] md:h-full">
             <PageHeader
                 titleTestId="definition-title"
                 trail={[
@@ -160,15 +160,13 @@ function DefinitionView() {
                 <p role="alert">Task definition not found.</p>
             )}
             {flow && drawn && (
-                <div className="grid min-w-0 grid-cols-1 gap-[var(--panel-gap)] lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_minmax(36ch,48ch)] lg:grid-rows-[minmax(0,1fr)]">
+                <div className="definition-layout grid min-w-0 grid-cols-1 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_minmax(36ch,48ch)] lg:grid-rows-[minmax(0,1fr)]">
                     <Frame
                         title="Definition"
                         topRight={describeSchedule(flow)}
-                        className="min-h-[360px] lg:h-full lg:min-h-0"
+                        className="definition-frame min-h-[360px] lg:h-full lg:min-h-0"
                         bodyClassName="definition-frame-body"
-                        bottomLeft={
-                            flow.phases.length > 0 ? "Open a phase to see its subtasks" : undefined
-                        }
+                        bottomLeft={phaseHint(flow.phases, open)}
                     >
                         <DefinitionCanvas
                             definition={flow}
@@ -228,6 +226,14 @@ function DefinitionView() {
             )}
         </div>
     );
+}
+
+/** Collapsed phases say to open one. After a phase is open, the same label says to collapse it. */
+function phaseHint(phases: Definition["phases"], open: ReadonlySet<string>): string | undefined {
+    if (phases.length === 0) return undefined;
+    return phases.some((phase) => open.has(phase.key))
+        ? "Collapse a phase to hide its subtasks"
+        : "Open a phase to see its subtasks";
 }
 
 function DefinitionError({ error }: { error: Error }) {

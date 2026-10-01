@@ -181,8 +181,10 @@ function defaultTarget(subtasks: readonly Subtask[], index: number, on: string):
 }
 
 /**
- * What the drawing reports: a subtask no path reaches, a decide subtask whose options all lead to
- * one subtask, and a model no driver can run. Without `models`, models are not checked.
+ * What the drawing reports: a decide subtask whose options all lead to one subtask, and a model no
+ * driver can run. It can also report a subtask no path reaches, but the Gateway refuses a stored
+ * definition that contains one, so that finding is not shown for a stored definition. Without
+ * `models`, models are not checked.
  */
 export function findings(
     definition: Pick<Definition, "subtasks">,

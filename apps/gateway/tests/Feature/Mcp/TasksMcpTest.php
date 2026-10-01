@@ -16,9 +16,22 @@ use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /** @param array<string, mixed> $params */
-function tasks_mcp_call(mixed $test, string $method, array $params = []): TestResponse
+function tasks_mcp_call(mixed $test, string $method, array $params = [], string $endpoint = '/mcp'): TestResponse
 {
-    return $test->postJson('/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => $method, 'params' => (object) $params]);
+    return $test->postJson($endpoint, ['jsonrpc' => '2.0', 'id' => 1, 'method' => $method, 'params' => (object) $params]);
+}
+
+/**
+ * The Gateway JSON inside one execute_tools result.
+ *
+ * @param  array<string, mixed>  $message
+ */
+function tasks_execute_text(array $message): string
+{
+    $outer = json_decode((string) ($message['result']['content'][0]['text'] ?? ''));
+    $text = $outer->results[0]->content[0]->text ?? '';
+
+    return is_string($text) ? $text : '';
 }
 
 /**
@@ -169,6 +182,138 @@ it('creates, shows, updates, and destroys a task definition through MCP', functi
 
     expect($destroyed['result']['isError'] ?? true)->toBeFalse()
         ->and(TaskDefinition::query()->where('project_id', $this->appRecord->id)->count())->toBe(0);
+});
+
+it('keeps a nested empty object through a definition show and update', function (): void {
+    app(TaskExtensionState::class)->enable();
+    $shape = '{"options":{},"flags":[]}';
+    $arguments = [
+        'project' => $this->appRecord->id,
+        'name' => 'keep-objects',
+        'title' => 'Keep objects',
+        'brief' => 'Nested objects stay objects.',
+        'parameters' => [[
+            'name' => 'tuning',
+            'type' => 'text',
+            'required' => false,
+            'default' => ['options' => (object) [], 'flags' => []],
+        ]],
+        'status' => 'backlog',
+        'subtasks' => [[
+            'key' => 'ship',
+            'title' => 'Ship it',
+            'kind' => 'action',
+            'operation' => 'instance:deploy',
+            'arguments' => ['options' => (object) [], 'flags' => []],
+        ]],
+    ];
+
+    $created = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [
+        'name' => 'tasks-definition-create',
+        'arguments' => $arguments,
+    ]));
+    $createdText = $created['result']['content'][0]['text'] ?? '';
+
+    expect($created['result']['isError'] ?? true)->toBeFalse()
+        ->and($createdText)->toContain('"default":'.$shape)
+        ->and($createdText)->toContain('"arguments":'.$shape);
+
+    $shown = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [
+        'name' => 'tasks-definition-show',
+        'arguments' => ['project' => $this->appRecord->id, 'name' => 'keep-objects'],
+    ]));
+    $shownText = $shown['result']['content'][0]['text'] ?? '';
+    $document = json_decode($shownText);
+    $replacement = $document->data;
+    $replacement->project = $replacement->project_id;
+    unset($replacement->project_id);
+
+    $updated = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [
+        'name' => 'tasks-definition-update',
+        'arguments' => $replacement,
+    ]));
+    $updatedText = $updated['result']['content'][0]['text'] ?? '';
+    $again = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [
+        'name' => 'tasks-definition-show',
+        'arguments' => ['project' => $this->appRecord->id, 'name' => 'keep-objects'],
+    ]));
+
+    expect($shown['result']['isError'] ?? true)->toBeFalse()
+        ->and($shownText)->toContain('"default":'.$shape)
+        ->and($shownText)->toContain('"arguments":'.$shape)
+        ->and($updated['result']['isError'] ?? true)->toBeFalse()
+        ->and($updatedText)->toContain('"default":'.$shape)
+        ->and($updatedText)->toContain('"arguments":'.$shape)
+        ->and($again['result']['content'][0]['text'] ?? '')->toContain('"default":'.$shape)
+        ->and($again['result']['content'][0]['text'] ?? '')->toContain('"arguments":'.$shape);
+});
+
+it('keeps a nested empty object through execute_tools on the search endpoint', function (): void {
+    app(TaskExtensionState::class)->enable();
+    $shape = '{"options":{},"flags":[]}';
+    $definition = [
+        'project' => $this->appRecord->id,
+        'name' => 'keep-objects',
+        'title' => 'Keep objects',
+        'brief' => 'Nested objects stay objects.',
+        'parameters' => [[
+            'name' => 'tuning',
+            'type' => 'text',
+            'required' => false,
+            'default' => ['options' => (object) [], 'flags' => []],
+        ]],
+        'status' => 'backlog',
+        'subtasks' => [[
+            'key' => 'ship',
+            'title' => 'Ship it',
+            'kind' => 'action',
+            'operation' => 'instance:deploy',
+            'arguments' => ['options' => (object) [], 'flags' => []],
+        ]],
+    ];
+
+    $created = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [
+        'name' => 'execute_tools',
+        'arguments' => ['calls' => [['name' => 'tasks-definition-create', 'arguments' => $definition]]],
+    ], '/mcp/search'));
+    $createdText = tasks_execute_text($created);
+
+    expect($created['result']['isError'] ?? true)->toBeFalse()
+        ->and($createdText)->toContain('"default":'.$shape)
+        ->and($createdText)->toContain('"arguments":'.$shape);
+
+    $shown = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [
+        'name' => 'execute_tools',
+        'arguments' => ['calls' => [[
+            'name' => 'tasks-definition-show',
+            'arguments' => ['project' => $this->appRecord->id, 'name' => 'keep-objects'],
+        ]]],
+    ], '/mcp/search'));
+    $shownText = tasks_execute_text($shown);
+    $document = json_decode($shownText);
+    $replacement = $document->data;
+    $replacement->project = $replacement->project_id;
+    unset($replacement->project_id);
+
+    $updated = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [
+        'name' => 'execute_tools',
+        'arguments' => ['calls' => [['name' => 'tasks-definition-update', 'arguments' => $replacement]]],
+    ], '/mcp/search'));
+    $updatedText = tasks_execute_text($updated);
+    $again = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [
+        'name' => 'tasks-definition-show',
+        'arguments' => ['project' => $this->appRecord->id, 'name' => 'keep-objects'],
+    ]));
+
+    expect($shown['result']['isError'] ?? true)->toBeFalse()
+        ->and($shownText)->toContain('"default":'.$shape)
+        ->and($shownText)->toContain('"arguments":'.$shape)
+        ->and($updated['result']['isError'] ?? true)->toBeFalse()
+        ->and($updatedText)->toContain('"default":'.$shape)
+        ->and($updatedText)->toContain('"arguments":'.$shape)
+        ->and($again['result']['isError'] ?? true)->toBeFalse()
+        ->and($again['result']['content'][0]['text'] ?? '')->toContain('"default":'.$shape)
+        ->and($again['result']['content'][0]['text'] ?? '')->toContain('"arguments":'.$shape);
 });
 
 it('describes definition routes, arguments, and schedule values as objects', function (): void {

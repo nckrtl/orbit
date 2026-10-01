@@ -7,6 +7,7 @@ namespace Orbit\Sdk;
 use JsonException;
 use LogicException;
 use Orbit\Sdk\Support\GatewayRequestId;
+use Orbit\Sdk\Support\JsonObjects;
 use Saloon\Http\Request;
 use Saloon\Http\Response;
 use SensitiveParameter;
@@ -96,6 +97,41 @@ abstract class GatewayRequest extends Request
         }
 
         return $this->stringKeyedArray($body['data'] ?? []);
+    }
+
+    /**
+     * Associative decoding turns `{}` into a list. Definition arguments and parameter defaults
+     * stay objects so a later encode still writes `{}`.
+     *
+     * @return array<string, mixed>
+     */
+    protected function unwrapDataKeepingObjects(#[SensitiveParameter] Response $response): array
+    {
+        $body = $this->decodeKeepingObjects($response);
+
+        return $this->stringKeyedArray($body['data'] ?? []);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    protected function unwrapDataListKeepingObjects(#[SensitiveParameter] Response $response): array
+    {
+        $body = $this->decodeKeepingObjects($response);
+
+        return $this->strictDataList($body['data'] ?? null);
+    }
+
+    /** @return array<string, mixed> */
+    private function decodeKeepingObjects(#[SensitiveParameter] Response $response): array
+    {
+        $decoded = JsonObjects::decode($response->body());
+
+        if (! is_array($decoded)) {
+            throw new GatewayApiException('Gateway response is not valid JSON.');
+        }
+
+        return $this->stringKeyedArray($decoded);
     }
 
     /**
