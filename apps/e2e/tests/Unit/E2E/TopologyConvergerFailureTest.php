@@ -136,7 +136,8 @@ describe('TopologyConverger failures', function () {
                     $process,
                     'converge-app-dev.sh',
                     'private stdout',
-                    "Node provisioning failed at step [base-packages] with error [node.package_install_failed].\n",
+                    "Node provisioning failed at step [base-packages] with error [node.package_install_failed].\n"
+                    .'Bearer private-token',
                     $exitCode ?? 1,
                 );
             }
@@ -162,7 +163,9 @@ describe('TopologyConverger failures', function () {
             expect($exception->getMessage())
                 ->toBe(
                     'Guest convergence script converge-app-dev.sh failed on orbit-e2e-tst-123-aaaaaaaa-gateway '
-                    .'with exit code 1 at step base-packages (node.package_install_failed).',
+                    ."with exit code 1 at step base-packages (node.package_install_failed).\n"
+                    ."Node provisioning failed at step [base-packages] with error [node.package_install_failed].\n"
+                    .'Bearer [REDACTED]',
                 )
                 ->not->toContain('private stdout', 'private-token');
         }
@@ -240,7 +243,8 @@ describe('TopologyConverger guest failures', function () {
         'migration exit' => [
             70,
             'Bearer private-token',
-            'Guest convergence script converge-gateway.sh failed on orbit-e2e-tst-123-aaaaaaaa-gateway with exit code 70.',
+            "Guest convergence script converge-gateway.sh failed on orbit-e2e-tst-123-aaaaaaaa-gateway with exit code 70.\n"
+                .'Bearer [REDACTED]',
         ],
         'gateway domain failure' => [
             71,
@@ -248,7 +252,9 @@ describe('TopologyConverger guest failures', function () {
                 .'Bearer private-token',
             'Guest convergence script converge-gateway.sh failed on '
                 .'orbit-e2e-tst-123-aaaaaaaa-gateway with exit code 71 at step '
-                .'wireguard-server-install (vpn.server_config_install_failed).',
+                ."wireguard-server-install (vpn.server_config_install_failed).\n"
+                ."Gateway bootstrap failed at step [wireguard-server-install] with error [vpn.server_config_install_failed].\n"
+                .'Bearer [REDACTED]',
         ],
     ]);
 });

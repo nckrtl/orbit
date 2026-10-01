@@ -99,9 +99,12 @@ function rename_migration_is_recorded(): bool
 
 function rename_migration_migrate(): void
 {
+    // Stop at the rename migration. Rollback uses --step=1, so a later
+    // migration would be the one reversed and the Project schema would stay.
+    $cutoff = RENAME_APP_DOMAIN_MIGRATION.'.php';
     $paths = array_values(array_filter(
         glob(database_path('migrations/*.php')) ?: [],
-        static fn (string $path): bool => basename($path) <= RENAME_APP_DOMAIN_MIGRATION.'.php',
+        static fn (string $path): bool => basename($path) <= $cutoff,
     ));
     Artisan::call('migrate', ['--path' => $paths, '--realpath' => true, '--force' => true]);
 }
