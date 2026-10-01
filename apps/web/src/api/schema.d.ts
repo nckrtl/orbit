@@ -2874,6 +2874,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/task-questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List task questions
+         * @description Lists task questions, newest first. Optional `project_id`, `cause`, `status`, and `since` filters. `since` is an ISO date and includes questions asked at that moment. Returns `extension.disabled` while the extension is off.
+         */
+        get: operations["tasks-question-list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tasks/status": {
         parameters: {
             query?: never;
@@ -3503,6 +3523,8 @@ export interface components {
             lines_added?: number | null;
             lines_deleted?: number | null;
             duration_ms?: number | null;
+            questions?: number;
+            escalations?: number;
             tasks?: components["schemas"]["Task"][];
             /** @enum {string} */
             execution_mode?: "managed" | "existing_thread";
@@ -3522,6 +3544,8 @@ export interface components {
             lines_added?: number | null;
             lines_deleted?: number | null;
             duration_ms?: number | null;
+            questions?: number;
+            escalations?: number;
             /** @enum {string} */
             type?: "implementation" | "annotation";
             target_thread_id?: string | null;
@@ -3588,6 +3612,25 @@ export interface components {
             summary?: string;
             changes?: string[];
             breaking?: string[];
+        };
+        TaskQuestion: {
+            id?: number;
+            task_id?: number;
+            subtask_id?: number;
+            attempt?: number;
+            /** @enum {string} */
+            asked_by?: "implementer" | "reviewer" | "operator";
+            question?: string;
+            /** @enum {string} */
+            status?: "open" | "escalated" | "answered";
+            /** @enum {string|null} */
+            answered_by?: "implementer" | "reviewer" | "operator" | null;
+            answer?: string | null;
+            /** @enum {string|null} */
+            cause?: "brief_unclear" | "contract_gap" | "scope" | "environment" | "missed_contract" | null;
+            asked_at?: string;
+            escalated_at?: string | null;
+            answered_at?: string | null;
         };
         TasksStatus: {
             enabled?: boolean;
@@ -15015,6 +15058,52 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-question-list": {
+        parameters: {
+            query?: {
+                project_id?: number;
+                cause?: "brief_unclear" | "contract_gap" | "scope" | "environment" | "missed_contract";
+                status?: "open" | "escalated" | "answered";
+                since?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskQuestion"][];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The tasks extension is disabled (`extension.disabled`). A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

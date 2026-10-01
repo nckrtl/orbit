@@ -38,7 +38,15 @@ final readonly class TaskTurnInstructions
             $approve .= ' The approval must confirm each review deliverable ('.self::ids($reviews).') with --deliverable=ID=evidence, where the evidence says what you checked.';
         }
 
-        return 'This review is read-only. Do not create, edit, reset, or delete workspace files, including disposable fixtures. Request changes from the implementer instead. Do not commit; Orbit commits after you approve. Report a missing guarantee against injected failures, such as a lost response or a crash between two writes, as a finding when this subtask adds or changes that state transition, or when the brief, an ADR, or a deliverable names it; otherwise list it as a follow-up in your summary. '.$approve.' Otherwise end your turn with '.self::command($threadId, '--outcome=changes_requested --summary="The findings the implementer must address"').'. '.self::blocked($threadId);
+        return 'This review is read-only. Do not create, edit, reset, or delete workspace files, including disposable fixtures. Request changes from the implementer instead. Do not commit; Orbit commits after you approve. Report a missing guarantee against injected failures, such as a lost response or a crash between two writes, as a finding when this subtask adds or changes that state transition, or when the brief, an ADR, or a deliverable names it; otherwise list it as a follow-up in your summary. '.$approve.' Otherwise end your turn with '.self::command($threadId, '--outcome=changes_requested --summary="The findings the implementer must address"').'. When this review follows an operator direction, every outcome also needs --cause. '.self::blocked($threadId, true);
+    }
+
+    /** The reviewer translates an operator's direction before the implementer continues. */
+    public static function relay(?int $threadId = null): string
+    {
+        $causes = 'CAUSE is one of brief_unclear, contract_gap, scope, environment, or missed_contract.';
+
+        return 'This is a relay of the operator\'s direction, not a review. End your turn with '.self::command($threadId, '--outcome=answered --summary="The answer for the implementer" --cause=CAUSE').', or '.self::command($threadId, '--outcome=blocked --summary="Why the contract cannot answer it" --question="One specific question" --cause=CAUSE').'. '.$causes;
     }
 
     /**
@@ -81,9 +89,12 @@ final readonly class TaskTurnInstructions
     /**
      * A blocked turn pauses the whole group until the operator answers, so it must ask one specific question.
      */
-    private static function blocked(?int $threadId): string
+    private static function blocked(?int $threadId, bool $reviewer = false): string
     {
-        return 'Ask for help only when ownership is uncertain, an action affects live or shared resources beyond the task\'s authorization, required access is missing, or a product decision needs the operator. If one of these boundaries prevents further progress, end your turn with '.self::command($threadId, '--outcome=blocked --summary="What stops you, what you tried, and the boundary you cannot cross" --question="One specific question the operator can answer"').'. A blocked turn pauses the group until the operator answers. If you can decide or find the answer yourself, keep working instead.';
+        $cause = $reviewer ? ' --cause=CAUSE' : '';
+        $causes = $reviewer ? ' CAUSE is one of brief_unclear, contract_gap, scope, environment, or missed_contract.' : '';
+
+        return 'Ask for help only when ownership is uncertain, an action affects live or shared resources beyond the task\'s authorization, required access is missing, or a product decision needs the operator. If one of these boundaries prevents further progress, end your turn with '.self::command($threadId, '--outcome=blocked --summary="What stops you, what you tried, and the boundary you cannot cross" --question="One specific question the operator can answer"'.$cause).'.'.$causes.' A blocked turn pauses the group until the operator answers. If you can decide or find the answer yourself, keep working instead.';
     }
 
     /** @param list<TaskDeliverable> $deliverables */

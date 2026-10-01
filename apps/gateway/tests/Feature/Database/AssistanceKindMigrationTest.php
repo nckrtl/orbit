@@ -114,7 +114,17 @@ it('classifies open blocked requests as direction and every other open request a
             ->and(DB::table('tasks')->where('id', $taskOnly)->value('assistance_question'))->toBeNull()
             ->and(DB::table('tasks')->where('id', $closed)->value('assistance_kind'))->toBeNull()
             ->and(DB::table('tasks')->where('id', $closed)->value('assistance_question'))->toBeNull()
-            ->and(Schema::hasColumn('tasks', 'assistance_kind'))->toBeTrue();
+            ->and(Schema::hasColumn('tasks', 'assistance_kind'))->toBeTrue()
+            ->and(DB::table('task_questions')->where('subtask_id', $implementer)->value('asked_by'))->toBe('implementer')
+            ->and(DB::table('task_questions')->where('subtask_id', $implementer)->value('cause'))->toBeNull()
+            ->and(DB::table('task_questions')->where('subtask_id', $implementer)->value('status'))->toBe('escalated')
+            ->and(DB::table('task_questions')->where('subtask_id', $implementer)->value('attempt'))->toBe(2)
+            ->and(DB::table('task_questions')->where('subtask_id', $reviewer)->value('asked_by'))->toBe('reviewer')
+            ->and(DB::table('task_questions')->where('subtask_id', $failureSubtask)->count())->toBe(0)
+            ->and(DB::table('task_questions')->where('subtask_id', $closed)->count())->toBe(0)
+            ->and(DB::table('tasks')->where('id', $directionTask)->value('questions'))->toBe(1)
+            ->and(DB::table('tasks')->where('id', $directionTask)->value('escalations'))->toBe(1)
+            ->and(DB::table('tasks')->where('id', $reviewerTask)->value('questions'))->toBe(1);
     } finally {
         DB::setDefaultConnection($default);
         DB::purge('assistance_kind');
@@ -190,7 +200,14 @@ it('classifies the remaining open requests when a backfill attempt stops after t
             ->and(DB::table('tasks')->where('id', $failureId)->value('assistance_question'))->toBeNull()
             ->and(DB::table('tasks')->where('id', $taskId)->value('assistance_kind'))->toBe('direction')
             ->and(DB::table('tasks')->where('id', $taskId)->value('assistance_question'))->toBe('Which mirror should I use?')
-            ->and(DB::table('tasks')->where('id', $taskId)->value('assistance_reason'))->toBe('stale task reason');
+            ->and(DB::table('tasks')->where('id', $taskId)->value('assistance_reason'))->toBe('stale task reason')
+            ->and(DB::table('task_questions')->count())->toBe(1);
+
+        $migration->up();
+
+        expect(DB::table('task_questions')->count())->toBe(1)
+            ->and(DB::table('tasks')->where('id', $directionId)->value('questions'))->toBe(1)
+            ->and(DB::table('tasks')->where('id', $taskId)->value('escalations'))->toBe(1);
     } finally {
         DB::setDefaultConnection($default);
         DB::purge('assistance_kind');

@@ -32,6 +32,8 @@ final class TaskData extends Data
         public ?int $linesAdded,
         public ?int $linesDeleted,
         public ?int $durationMs,
+        public int $questions,
+        public int $escalations,
         public TaskType $type,
         public ?string $targetThreadId,
         public ?string $completionSummary,
@@ -71,6 +73,8 @@ final class TaskData extends Data
             linesAdded: $task->lines_added,
             linesDeleted: $task->lines_deleted,
             durationMs: $task->duration_ms,
+            questions: (int) ($task->questions ?? 0),
+            escalations: (int) ($task->escalations ?? 0),
         );
     }
 }

@@ -28,6 +28,8 @@
             "lines_added": null,
             "lines_deleted": null,
             "duration_ms": null,
+            "questions": 0,
+            "escalations": 0,
             "tasks": [
                 {
                     "id": 5,
@@ -58,6 +60,8 @@
                     "lines_added": null,
                     "lines_deleted": null,
                     "duration_ms": null,
+                    "questions": 0,
+                    "escalations": 0,
                     "type": "implementation",
                     "target_thread_id": null,
                     "completion_summary": null,
@@ -95,6 +99,8 @@
                     "lines_added": null,
                     "lines_deleted": null,
                     "duration_ms": null,
+                    "questions": 0,
+                    "escalations": 0,
                     "type": "implementation",
                     "target_thread_id": null,
                     "completion_summary": null,

@@ -104,7 +104,7 @@ Five commands end in a noun.
 
 The Gateway lives in `apps/gateway`, and it records each route name as the Activity command. A named route must carry the name of its CLI command when two conditions hold. Its name without the last segment is the prefix of a CLI command, and its last segment is allowed for that family. `CommandSurfaceTest` checks every named route in `routes/api.php`.
 
-Some routes have no CLI command. `instance:dependencies:show` reads the stored dependency inventory for the API and SDK. The CLI has `instance:dependencies:scan` and `instance:dependencies:update`, as [Instance dependencies](/reference/instance-dependencies) describes. `tasks:agent-stream` is a server-sent event stream for the web task board.
+Some routes have no CLI command. `instance:dependencies:show` reads the stored dependency inventory for the API and SDK. The CLI has `instance:dependencies:scan` and `instance:dependencies:update`, as [Instance dependencies](/reference/instance-dependencies) describes. `tasks:agent-stream` is a server-sent event stream for the web task board. `tasks:question:list` reads the question list. Its prefix is not a CLI family, so the route does not require a command. The [tasks reference](/reference/tasks#questions) defines the records.
 
 ## Why it works this way
 

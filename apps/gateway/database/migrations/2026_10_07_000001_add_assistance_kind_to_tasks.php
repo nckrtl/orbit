@@ -106,6 +106,86 @@ return new class extends Migration
                 'assistance_question' => null,
             ]);
         }
+
+        $this->recordDirectionQuestions();
+    }
+
+    /**
+     * One escalated question, with no cause, for each open direction subtask.
+     * The rows do not store the original ask time, so both timestamps are this run.
+     */
+    private function recordDirectionQuestions(): void
+    {
+        if (! Schema::hasTable('task_questions')) {
+            return;
+        }
+
+        $askedAt = now();
+        $subtasks = DB::table('tasks')
+            ->whereNotNull('parent_id')
+            ->where('assistance_requested', true)
+            ->where('assistance_kind', AssistanceKind::Direction->value)
+            ->orderBy('id')
+            ->get(['id', 'parent_id', 'assistance_reason', 'assistance_question', 'completion_attempt', 'review_attempt']);
+
+        foreach ($subtasks as $subtask) {
+            $exists = DB::table('task_questions')->where('subtask_id', $subtask->id)->exists();
+            if ($exists) {
+                continue;
+            }
+
+            $reason = is_string($subtask->assistance_reason) ? $subtask->assistance_reason : '';
+            $reviewer = str_starts_with($reason, TaskAssistance::ReviewerBlockedPrefix);
+            DB::table('task_questions')->insert([
+                'task_id' => (int) $subtask->parent_id,
+                'subtask_id' => (int) $subtask->id,
+                'attempt' => max(1, $reviewer ? (int) $subtask->review_attempt : (int) $subtask->completion_attempt),
+                'asked_by' => $reviewer ? 'reviewer' : 'implementer',
+                'question' => is_string($subtask->assistance_question) ? $subtask->assistance_question : '',
+                'status' => 'escalated',
+                'answered_by' => null,
+                'answer' => null,
+                'cause' => null,
+                'asked_at' => $askedAt,
+                'escalated_at' => $askedAt,
+                'answered_at' => null,
+                'opened_comment_id' => null,
+                'resolution_comment_id' => null,
+                'answered_comment_id' => null,
+                'created_at' => $askedAt,
+                'updated_at' => $askedAt,
+            ]);
+        }
+
+        $this->storeQuestionCounts();
+    }
+
+    /**
+     * Fills questions and escalations when those columns already exist.
+     * The following migration adds the columns and fills them when this file runs first.
+     */
+    private function storeQuestionCounts(): void
+    {
+        if (! Schema::hasColumn('tasks', 'questions') || ! Schema::hasColumn('tasks', 'parent_id')) {
+            return;
+        }
+
+        foreach (DB::table('tasks')->whereNotNull('parent_id')->pluck('id') as $subtaskId) {
+            DB::table('tasks')->where('id', $subtaskId)->update([
+                'questions' => (int) DB::table('task_questions')->where('subtask_id', $subtaskId)->count(),
+                'escalations' => (int) DB::table('task_questions')->where('subtask_id', $subtaskId)->whereNotNull('escalated_at')->count(),
+            ]);
+        }
+
+        foreach (DB::table('tasks')->whereNull('parent_id')->pluck('id') as $parentId) {
+            $row = DB::table('tasks')->where('parent_id', $parentId)
+                ->selectRaw('coalesce(sum(questions), 0) as questions, coalesce(sum(escalations), 0) as escalations')
+                ->first();
+            DB::table('tasks')->where('id', $parentId)->update([
+                'questions' => (int) ($row->questions ?? 0),
+                'escalations' => (int) ($row->escalations ?? 0),
+            ]);
+        }
     }
 
     public function down(): void

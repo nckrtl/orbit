@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentSpawner;
+use App\Domain\Tasks\QuestionStatus;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskCheckKind;
@@ -17,6 +18,7 @@ use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskTurnInstructions;
+use App\Domain\Tasks\TaskTurnMode;
 use App\Domain\Tasks\TaskTurnReceipt;
 use App\Domain\Tasks\TaskTurnReceiptException;
 use App\Domain\Tasks\TaskTurnReceipts;
@@ -32,6 +34,8 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
+use App\Models\TaskComment;
+use App\Models\TaskQuestion;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -40,6 +44,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Tests\Support\AcceptingTaskWorkspaceMcp;
 use Tests\Support\FakeAgentDriver;
+use Tests\Support\FakeTaskTurnReceipts;
 
 beforeEach(function (): void {
     app()->instance(TaskWorkspaceMcp::class, new AcceptingTaskWorkspaceMcp);
@@ -452,7 +457,7 @@ it('does not start a replacement reviewer when the turn file cannot be written',
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->instance(TaskTurnReceipts::class, new class implements TaskTurnReceipts
     {
-        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void
+        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?TaskTurnMode $mode = null): void
         {
             throw new TaskTurnReceiptException('The turn file could not be written.');
         }
@@ -487,7 +492,7 @@ it('deletes a reserved reviewer when preparing the turn throws', function (): vo
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->instance(TaskTurnReceipts::class, new class implements TaskTurnReceipts
     {
-        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void
+        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?TaskTurnMode $mode = null): void
         {
             throw new RuntimeException('The turn file could not be written.');
         }
@@ -782,4 +787,40 @@ it('lists the deliverables for the implementer and names the review deliverables
         ->and($review)->toContain('- web-tests (command: `bun test` in apps/web): The web tests pass')
         ->and($review)->toContain('- error-copy (review: confirmed by the reviewer): Errors name the subtask')
         ->and($review)->toContain('The approval must confirm each review deliverable (error-copy) with --deliverable=ID=evidence');
+});
+
+it('installs relay mode for a new reviewer and keeps relay or cause-required mode when that thread is replaced', function (): void {
+    $group = t3_spawner_group();
+    $task = $group->tasks->sole();
+    $receipts = new FakeTaskTurnReceipts;
+    app()->instance(TaskTurnReceipts::class, $receipts);
+    $driver = new FakeAgentDriver('t3');
+    $spawner = new TaskAgentSpawner(new AgentDriverRegistry([$driver]), app(TaskReviewPacketBuilder::class), app(TaskWorkspaceMcp::class));
+
+    $started = $spawner->relay($task, 'Use the mirror. '.TaskTurnInstructions::relay());
+
+    expect($started)->not->toBeNull()
+        ->and($receipts->modes)->toBe(['relay'])
+        ->and($driver->calls[0]['prompt'])->toContain('--outcome=answered');
+
+    $task->update(['direction_relay_comment_id' => 1]);
+    $driver->failNextSend = true;
+    $spawner->requestReview($task->fresh() ?? $task);
+
+    expect($receipts->modes)->toBe(['relay', 'relay']);
+
+    $task->update(['direction_relay_comment_id' => null]);
+    $resolution = TaskComment::query()->create([
+        'task_id' => $task->id, 'task_group_id' => $group->id, 'type' => 'resolution',
+        'body' => 'Follow the ADR.', 'author' => 'operator', 'posted_at' => now(),
+    ]);
+    TaskQuestion::query()->create([
+        'task_id' => $group->id, 'subtask_id' => $task->id, 'attempt' => 1, 'asked_by' => 'reviewer',
+        'question' => 'Which ADR?', 'status' => QuestionStatus::Escalated, 'asked_at' => now(), 'escalated_at' => now(),
+        'resolution_comment_id' => $resolution->id,
+    ]);
+    $driver->failNextSend = true;
+    $spawner->requestReview($task->fresh() ?? $task);
+
+    expect($receipts->modes)->toBe(['relay', 'relay', 'cause']);
 });

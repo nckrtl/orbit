@@ -44,6 +44,39 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         return $this->openReviewer($task);
     }
 
+    /** Sends a direction resolution to this subtask's reviewer, starting that reviewer when none exists. */
+    public function relay(Task $task, string $message): ?int
+    {
+        $mode = new TaskTurnMode(relay: true);
+        $existing = $this->subtaskReviewer($task);
+        if ($existing instanceof AgentThread) {
+            $this->drivers->get($existing->driver)->send($existing, $message);
+
+            return $existing->id;
+        }
+
+        $pending = $this->pending($task->requireGroupId(), $task->id, TaskThreadRole::Reviewer);
+        if ($pending instanceof AgentThread) {
+            if (! $this->installReviewerMcp($task)) {
+                return null;
+            }
+            $this->installReceipt($pending, $mode);
+
+            return $this->startPending($pending, $this->reviewTitle($task), $message);
+        }
+
+        if (! $this->installReviewerMcp($task)) {
+            return null;
+        }
+        $thread = $this->insertPending($task->parent, $task->id, TaskThreadRole::Reviewer);
+        if (! $thread instanceof AgentThread) {
+            return null;
+        }
+        $this->installReceipt($thread, $mode);
+
+        return $this->startPending($thread, $this->reviewTitle($task), $message);
+    }
+
     /** Reserves the subtask reviewer's Orbit id before the opening prompt, or returns the thread that already exists. */
     public function reserveReviewer(Task $task): ?int
     {
@@ -196,7 +229,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         ]);
     }
 
-    private function prepareReceipt(AgentThread $thread): void
+    private function prepareReceipt(AgentThread $thread, ?TaskTurnMode $mode = null): void
     {
         $group = Task::topLevel()->with(['taskable', 'project'])->find($thread->task_group_id);
         $instance = $group?->taskable;
@@ -211,14 +244,31 @@ final readonly class TaskAgentSpawner implements AgentSpawner
             $role === TaskThreadRole::Reviewer && $task instanceof Task && $task->opensPullRequest(),
             $task instanceof Task ? $task->deliverableList() : [],
             $thread->id,
+            $mode ?? $this->reviewerTurnMode($task, $role),
         );
     }
 
+    /** A relay or a review after a direction resolution keeps that mode when the thread is replaced. */
+    private function reviewerTurnMode(?Task $task, TaskThreadRole $role): ?TaskTurnMode
+    {
+        if ($role !== TaskThreadRole::Reviewer || ! $task instanceof Task) {
+            return null;
+        }
+        if ($task->direction_relay_comment_id !== null) {
+            return new TaskTurnMode(relay: true);
+        }
+        if (TaskQuestions::awaitsCause($task)) {
+            return new TaskTurnMode(causeRequired: true);
+        }
+
+        return null;
+    }
+
     /** Installs the turn file, and removes the reserved row when that install fails so the replacement does not start. */
-    private function installReceipt(AgentThread $thread): void
+    private function installReceipt(AgentThread $thread, ?TaskTurnMode $mode = null): void
     {
         try {
-            $this->prepareReceipt($thread);
+            $this->prepareReceipt($thread, $mode);
         } catch (Throwable $exception) {
             if ($thread->exists) {
                 $thread->delete();

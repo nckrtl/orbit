@@ -1528,7 +1528,7 @@ it('keeps the reviewed pull request, writes settle metrics, and notifies Coder a
     {
         public function collect(Task $group): TaskSettleMetrics
         {
-            return new TaskSettleMetrics(tokens: 40, lineDiff: 12, durationMs: 1500);
+            return new TaskSettleMetrics(tokens: 40, lineDiff: 12, durationMs: 1500, questions: 3, escalations: 2);
         }
     };
     $notifier = new class implements CoderSettleNotifier
@@ -1582,6 +1582,8 @@ it('keeps the reviewed pull request, writes settle metrics, and notifies Coder a
         ->and($settled->tokens)->toBe(40)
         ->and($settled->line_diff)->toBe(12)
         ->and($settled->duration_ms)->toBe(1500)
+        ->and($settled->questions)->toBe(3)
+        ->and($settled->escalations)->toBe(2)
         ->and($settled->settled_at)->not->toBeNull()
         ->and($notifier->notified?->id)->toBe($settled->id)
         ->and($notifier->notified?->pr_url)->toBe('https://github.com/nckrtl/orbit/pull/543');

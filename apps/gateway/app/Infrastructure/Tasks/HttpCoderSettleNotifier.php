@@ -29,6 +29,8 @@ final readonly class HttpCoderSettleNotifier implements CoderSettleNotifier
             'tokens' => max(0, (int) ($group->tokens ?? 0)),
             'line_diff' => max(0, (int) ($group->line_diff ?? 0)),
             'duration_ms' => max(0, (int) ($group->duration_ms ?? 0)),
+            'questions' => max(0, (int) ($group->questions ?? 0)),
+            'escalations' => max(0, (int) ($group->escalations ?? 0)),
             'pull_request_url' => $group->pr_url,
         ]);
     }

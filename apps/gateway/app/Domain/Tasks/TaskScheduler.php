@@ -6,6 +6,7 @@ namespace App\Domain\Tasks;
 
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
+use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
@@ -16,6 +17,7 @@ use App\Models\ProjectLifecycleStep;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
+use App\Models\TaskQuestion;
 use Closure;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -207,11 +209,24 @@ final readonly class TaskScheduler
                         $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
                         $this->retryCommittedApproval($group, $task);
                     }
+                    $resolution = $task->status === TaskStatus::Running ? $this->pendingRelayResolution($task) : null;
+                    if ($resolution instanceof TaskComment && $this->spawner instanceof TaskAgentSpawner && $this->subtaskReviewer($task) === null) {
+                        $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
+                        $this->beginDirectionRelay($group, $task, $resolution);
+                    }
+                    if ($task->status === TaskStatus::Reviewing && $task->assistance_kind === AssistanceKind::Direction && $this->subtaskReviewer($task) === null) {
+                        $this->replayHeldDirectionReview($task);
+                    }
 
                     continue;
                 }
 
                 $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
+                if ($task->status === TaskStatus::Running && $task->direction_relay_comment_id !== null) {
+                    $this->handleDirectionRelay($group, $task);
+
+                    continue;
+                }
                 if ($task->status === TaskStatus::Reviewing && $this->retryCommittedApproval($group, $task)) {
                     continue;
                 }
@@ -318,7 +333,7 @@ final readonly class TaskScheduler
         }
         $receipt = $this->pendingReceipt($task, TaskThreadRole::Implementer);
         if ($receipt instanceof TaskComment && $this->receiptOutcome($receipt) === TaskTurnOutcome::Blocked) {
-            $this->requestAssistance($task, $group, TaskAssistance::ImplementerBlockedPrefix.$receipt->body, $observation, AssistanceKind::Direction, TaskAssistance::questionFromBlockedReason($receipt->body), ['completion_handoff_comment_id' => $receipt->id]);
+            $this->requestAssistance($task, $group, TaskAssistance::ImplementerBlockedPrefix.$receipt->body, $observation, AssistanceKind::Direction, TaskAssistance::questionFromBlockedReason($receipt->body), ['completion_handoff_comment_id' => $receipt->id], $receipt);
 
             return true;
         }
@@ -518,6 +533,13 @@ final readonly class TaskScheduler
         }
         $receipt = $this->pendingReceipt($task, TaskThreadRole::Reviewer);
         $outcome = $receipt instanceof TaskComment ? $this->receiptOutcome($receipt) : null;
+        if ($receipt instanceof TaskComment && TaskQuestions::awaitsCause($task) && ! $receipt->cause instanceof QuestionCause) {
+            $this->remindOrAssist($group, $task, $reviewer, [
+                new TaskRubricItem('turn_receipt', false, 'This review follows a direction resolution and needs --cause with one of: brief_unclear, contract_gap, scope, environment, missed_contract.'),
+            ]);
+
+            return true;
+        }
         if ($outcome === TaskTurnOutcome::Approved && $this->isWorking($observation->thread(TaskThreadRole::Implementer))) {
             // Orbit commits the whole workspace, so the approval waits until the implementer stops changing it.
             return true;
@@ -557,7 +579,7 @@ final readonly class TaskScheduler
             return true;
         }
         if ($receipt instanceof TaskComment && $outcome === TaskTurnOutcome::Blocked) {
-            $this->requestAssistance($task, $group, TaskAssistance::ReviewerBlockedPrefix.$receipt->body, $observation, AssistanceKind::Direction, TaskAssistance::questionFromBlockedReason($receipt->body), ['review_handled_comment_id' => $receipt->id]);
+            $this->requestAssistance($task, $group, TaskAssistance::ReviewerBlockedPrefix.$receipt->body, $observation, AssistanceKind::Direction, TaskAssistance::questionFromBlockedReason($receipt->body), ['review_handled_comment_id' => $receipt->id], $receipt);
 
             return true;
         }
@@ -720,6 +742,7 @@ final readonly class TaskScheduler
         }
 
         $this->rememberBackoff($this->publicationBackoffKey($task), null, 'approved publication');
+        TaskQuestions::answerPending($task, $receipt);
         $task->update([
             'review_handled_comment_id' => $receipt->id,
             'communication_failures' => 0,
@@ -834,6 +857,7 @@ final readonly class TaskScheduler
 
             return;
         }
+        TaskQuestions::answerPending($task, $findings);
         $task->update([
             'status' => TaskStatus::Running,
             'review_handled_comment_id' => $findings->id,
@@ -952,6 +976,7 @@ final readonly class TaskScheduler
                 'body' => $receipt->body(),
                 'pull_request' => $receipt->pullRequest?->toArray(),
                 'deliverables' => $receipt->deliverables === [] ? null : $receipt->deliverables,
+                'cause' => $receipt->cause,
                 'author' => $role->value,
                 'posted_at' => now(),
             ]);
@@ -1033,7 +1058,10 @@ final readonly class TaskScheduler
         if (! $instance instanceof Instance) {
             throw new TaskTurnReceiptException('The task workspace is unavailable.');
         }
-        $this->receipts->prepare($instance, $role, $role === TaskThreadRole::Reviewer && $task->opensPullRequest(), $task->deliverableList(), $threadId);
+        $relay = $role === TaskThreadRole::Reviewer && $task->direction_relay_comment_id !== null;
+        $causeRequired = $role === TaskThreadRole::Reviewer && ! $relay && TaskQuestions::awaitsCause($task);
+        $mode = $relay || $causeRequired ? new TaskTurnMode(relay: $relay, causeRequired: $causeRequired) : null;
+        $this->receipts->prepare($instance, $role, $role === TaskThreadRole::Reviewer && $task->opensPullRequest(), $task->deliverableList(), $threadId, $mode);
     }
 
     private function waitingItem(TaskThreadObservation $thread): ?TaskRubricItem
@@ -1111,13 +1139,239 @@ final readonly class TaskScheduler
         }
     }
 
+    /** A direction resolution is waiting to be relayed because the subtask has no reviewer yet. */
+    private function pendingRelayResolution(Task $task): ?TaskComment
+    {
+        if ($task->assistance_kind !== AssistanceKind::Direction || $task->direction_relay_comment_id !== null) {
+            return null;
+        }
+        $question = TaskQuestion::query()
+            ->where('subtask_id', $task->id)
+            ->where('status', QuestionStatus::Escalated)
+            ->latest('id')
+            ->first();
+        if (! $question instanceof TaskQuestion) {
+            return null;
+        }
+        if (is_int($question->resolution_comment_id)) {
+            $held = TaskComment::query()->find($question->resolution_comment_id);
+            $rawType = $held?->getRawOriginal('type');
+
+            return $held instanceof TaskComment && $rawType === TaskCommentType::Resolution->value ? $held : null;
+        }
+
+        $openedCommentId = $question->opened_comment_id;
+        $resolution = TaskComment::query()
+            ->where('task_id', $task->id)
+            ->where('type', TaskCommentType::Resolution)
+            ->when(is_int($openedCommentId), static fn ($query) => $query->where('id', '>', $openedCommentId))
+            ->latest('id')
+            ->first();
+
+        return $resolution instanceof TaskComment ? $resolution : null;
+    }
+
+    /** Starts the reviewer and sends the operator's resolution as a relay, not as a review packet. */
+    private function beginDirectionRelay(Task $group, Task $task, TaskComment $resolution): void
+    {
+        $instance = $group->taskable;
+        if (! $instance instanceof Instance || ! $this->spawner instanceof TaskAgentSpawner) {
+            return;
+        }
+
+        try {
+            $reserved = $this->spawner->reserveReviewer($task);
+            $this->receipts->prepare($instance, TaskThreadRole::Reviewer, $task->opensPullRequest(), $task->deliverableList(), $reserved, new TaskTurnMode(relay: true));
+            $threadId = $this->spawner->relay($task, trim($resolution->body)."\n\n".TaskTurnInstructions::relay($reserved));
+            if ($threadId === null) {
+                throw new AgentDriverException('The reviewer conversation could not be started.');
+            }
+        } catch (Throwable $exception) {
+            report($exception);
+            $this->recordCommunicationFailure($task, $group, self::ReviewRequestFailedReason.' ('.class_basename($exception).').');
+
+            return;
+        }
+
+        DB::transaction(function () use ($task, $group, $resolution, $threadId): void {
+            $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
+            if (! $locked->assistance_requested || $locked->assistance_kind !== AssistanceKind::Direction) {
+                return;
+            }
+            $locked->update([
+                ...TaskAssistance::cleared(),
+                'communication_failures' => 0,
+                'direction_relay_comment_id' => $resolution->id,
+                'resolution_delivered_comment_id' => $resolution->id,
+            ]);
+            Task::topLevel()->whereKey($group->id)->update([
+                ...TaskAssistance::cleared(),
+                'reviewer_agent_thread_id' => $threadId,
+            ]);
+            TaskQuestions::attachResolution($locked, $resolution);
+        });
+    }
+
+    /** Reads the relay receipt. `answered` records the operator's answer. `blocked` keeps the same question. */
+    private function handleDirectionRelay(Task $group, Task $task): void
+    {
+        $observation = $this->observer->observe($group, $task);
+        $reviewer = $observation->thread(TaskThreadRole::Reviewer);
+        if (! $observation->available || $reviewer === null || $this->isWorking($reviewer)) {
+            return;
+        }
+        if (! $this->newerTurnHasStopped($task->review_notified_turn_id, $reviewer)) {
+            return;
+        }
+
+        try {
+            $read = $this->collectReceipt($group, $task, TaskThreadRole::Reviewer);
+        } catch (TaskTurnReceiptException $exception) {
+            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+            return;
+        }
+        $receipt = $this->pendingReceipt($task, TaskThreadRole::Reviewer);
+        $outcome = $receipt instanceof TaskComment ? $this->receiptOutcome($receipt) : null;
+        if (! $receipt instanceof TaskComment || ! in_array($outcome, [TaskTurnOutcome::Answered, TaskTurnOutcome::Blocked], true)) {
+            if ($read instanceof TaskTurnReceipt || $receipt instanceof TaskComment) {
+                $this->remindOrAssist($group, $task, $reviewer, [
+                    new TaskRubricItem('turn_receipt', false, 'A relay needs --outcome=answered or --outcome=blocked, with --cause.'),
+                ]);
+            }
+
+            return;
+        }
+        if (! $receipt->cause instanceof QuestionCause) {
+            $this->remindOrAssist($group, $task, $reviewer, [
+                new TaskRubricItem('turn_receipt', false, 'A relay needs --cause with one of: brief_unclear, contract_gap, scope, environment, missed_contract.'),
+            ]);
+
+            return;
+        }
+        if ($outcome === TaskTurnOutcome::Blocked) {
+            $this->requestAssistance($task, $group, TaskAssistance::ReviewerBlockedPrefix.$receipt->body, $observation, AssistanceKind::Direction, TaskAssistance::questionFromBlockedReason($receipt->body), ['review_handled_comment_id' => $receipt->id], $receipt);
+
+            return;
+        }
+
+        // The answer is durable immediately. The relay stays until the implementer has the summary.
+        // A receipt-keyed reservation is reused, and an accepted or superseded turn is not sent again.
+        TaskQuestions::answerPending($task, $receipt);
+        $implementer = $observation->thread(TaskThreadRole::Implementer);
+        if ($implementer === null || $this->isWorking($implementer)) {
+            return;
+        }
+        $key = $this->relayAnswerKey($receipt);
+        if ($task->direction_answer_key !== $key) {
+            $sourceTurn = $implementer->turnId;
+            $task->update([
+                'direction_answer_key' => $key,
+                'direction_answer_source_turn_id' => is_string($sourceTurn) && $sourceTurn !== '' ? $sourceTurn : null,
+            ]);
+            $task->refresh();
+        }
+        if ($this->relayAnswerAccepted($implementer, $task)) {
+            $this->finishRelayDelivery($task, $receipt);
+
+            return;
+        }
+        try {
+            $this->prepareTurn($group, $task, TaskThreadRole::Implementer, $implementer->threadId);
+            $this->actor->relayAnswer($group, $implementer, $receipt->body, $key);
+        } catch (Throwable $exception) {
+            // Keep this receipt's key. An uncertain response may still have been accepted, and a
+            // rejected T3 command id stays rejected, so the same id is not replaced on this failure.
+            report($exception);
+            $this->recordCommunicationFailure($task, $group, 'The relay answer could not be sent to the implementer. ('.class_basename($exception).').');
+
+            return;
+        }
+        $this->finishRelayDelivery($task, $receipt);
+    }
+
+    /** The same reviewer receipt always reserves the same implementer send. */
+    private function relayAnswerKey(TaskComment $receipt): string
+    {
+        $hash = md5('relay-answer:'.$receipt->id);
+
+        return sprintf(
+            '%s-%s-%s-%s-%s',
+            substr($hash, 0, 8),
+            substr($hash, 8, 4),
+            substr($hash, 12, 4),
+            substr($hash, 16, 4),
+            substr($hash, 20, 12),
+        );
+    }
+
+    /** An accepted key, its message, or a later implementer turn means the send already landed. */
+    private function relayAnswerAccepted(TaskThreadObservation $implementer, Task $task): bool
+    {
+        $key = $task->direction_answer_key;
+        if (! is_string($key) || $key === '') {
+            return false;
+        }
+        $turnId = $implementer->turnId;
+        if (is_string($turnId) && $turnId !== '' && $turnId === $key) {
+            return true;
+        }
+        foreach ($implementer->recentMessages as $message) {
+            if ($message['id'] === $key) {
+                return true;
+            }
+        }
+        $source = $task->direction_answer_source_turn_id;
+
+        return is_string($turnId) && $turnId !== ''
+            && is_string($source) && $source !== ''
+            && $turnId !== $source;
+    }
+
+    private function finishRelayDelivery(Task $task, TaskComment $receipt): void
+    {
+        DB::transaction(function () use ($task, $receipt): void {
+            $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
+            if ($locked->direction_relay_comment_id === null) {
+                return;
+            }
+            $locked->update([
+                'direction_relay_comment_id' => null,
+                'direction_answer_key' => null,
+                'direction_answer_source_turn_id' => null,
+                'review_handled_comment_id' => $receipt->id,
+                'communication_failures' => 0,
+            ]);
+        });
+    }
+
+    /** Finishes a reviewing direction hold from the resolution comment already stored. */
+    private function replayHeldDirectionReview(Task $task): void
+    {
+        $opened = TaskQuestion::query()
+            ->where('subtask_id', $task->id)
+            ->where('status', QuestionStatus::Escalated)
+            ->latest('id')
+            ->value('opened_comment_id');
+        $resolution = TaskComment::query()
+            ->where('task_id', $task->id)
+            ->where('type', TaskCommentType::Resolution)
+            ->when(is_int($opened), fn ($query) => $query->where('id', '>', $opened))
+            ->latest('id')
+            ->first();
+        if (! $resolution instanceof TaskComment) {
+            return;
+        }
+        app(StoreTaskCommentAction::class)->commitHeldDirectionReview($task, $resolution);
+    }
+
     /**
      * @param  array<string, int>  $handled
      */
-    private function requestAssistance(Task $task, Task $group, string $reason, ?TaskSessionObservation $observation = null, AssistanceKind $kind = AssistanceKind::Failure, ?string $question = null, array $handled = []): void
+    private function requestAssistance(Task $task, Task $group, string $reason, ?TaskSessionObservation $observation = null, AssistanceKind $kind = AssistanceKind::Failure, ?string $question = null, array $handled = [], ?TaskComment $source = null): void
     {
         $notifyReason = null;
-        DB::transaction(function () use ($task, $group, $reason, $kind, $question, $handled, &$notifyReason): void {
+        DB::transaction(function () use ($task, $group, $reason, $kind, $question, $handled, $source, &$notifyReason): void {
             if ($handled !== []) {
                 $task->update($handled);
             }
@@ -1132,6 +1386,9 @@ final readonly class TaskScheduler
                 TaskAssistance::apply($group, $kind, $question, $reason);
             }
             $group->refresh();
+            if ($kind === AssistanceKind::Direction && $source instanceof TaskComment) {
+                TaskQuestions::recordBlocked($task, $source);
+            }
             $groupReason = $group->assistance_reason;
             if (! $wasAsking && $group->assistance_requested && is_string($groupReason)) {
                 $notifyReason = $groupReason;
@@ -2311,6 +2568,8 @@ final readonly class TaskScheduler
         $group->tokens = $metrics->tokens;
         $group->line_diff = $metrics->lineDiff;
         $group->duration_ms = $metrics->durationMs;
+        $group->questions = $metrics->questions;
+        $group->escalations = $metrics->escalations;
         $group->settled_at ??= now();
         $group->save();
 

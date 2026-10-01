@@ -43,6 +43,8 @@ final class TaskGroupData extends Data
         public ?int $linesAdded,
         public ?int $linesDeleted,
         public ?int $durationMs,
+        public int $questions,
+        public int $escalations,
         public array $tasks,
         public TaskExecutionMode $executionMode,
     ) {}
@@ -81,6 +83,8 @@ final class TaskGroupData extends Data
             durationMs: $status->isActive() && $group->started_at !== null
                 ? max(0, (int) now()->diffInMilliseconds($group->started_at, true))
                 : $group->duration_ms,
+            questions: (int) ($group->questions ?? 0),
+            escalations: (int) ($group->escalations ?? 0),
             tasks: array_values($group->tasks
                 ->map(static fn (Task $task): TaskData => TaskData::fromModel($task))
                 ->all()),

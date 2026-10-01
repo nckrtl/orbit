@@ -6022,6 +6022,53 @@
       }
     },
     {
+      "name": "tasks-question-list",
+      "extension": "tasks",
+      "title": "List task questions",
+      "description": "Lists task questions, newest first. Optional `project_id`, `cause`, `status`, and `since` filters. `since` is an ISO date and includes questions asked at that moment. Returns `extension.disabled` while the extension is off.",
+      "method": "GET",
+      "path": "/api/v1/task-questions",
+      "path_inputs": [],
+      "query_inputs": [
+        "project_id",
+        "cause",
+        "status",
+        "since"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "cause": {
+            "type": "string",
+            "enum": [
+              "brief_unclear",
+              "contract_gap",
+              "scope",
+              "environment",
+              "missed_contract"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "escalated",
+              "answered"
+            ]
+          },
+          "since": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "tasks-show",
       "extension": "tasks",
       "title": "Show a Task group",

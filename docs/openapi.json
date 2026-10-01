@@ -21213,6 +21213,118 @@
         ]
       }
     },
+    "/api/v1/task-questions": {
+      "get": {
+        "operationId": "tasks-question-list",
+        "summary": "List task questions",
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cause",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "brief_unclear",
+                "contract_gap",
+                "scope",
+                "environment",
+                "missed_contract"
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "escalated",
+                "answered"
+              ]
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-orbit-extension": "tasks",
+        "description": "Lists task questions, newest first. Optional `project_id`, `cause`, `status`, and `since` filters. `since` is an ISO date and includes questions asked at that moment. Returns `extension.disabled` while the extension is off.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TaskQuestion"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The tasks extension is disabled (`extension.disabled`). A disabled extension returns HTTP 409 (`extension.disabled`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/task-questions?project_id=4&cause=1&status=success&since=1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
     "/api/v1/tasks/status": {
       "get": {
         "operationId": "tasks-status",
@@ -23778,6 +23890,12 @@
               "null"
             ]
           },
+          "questions": {
+            "type": "integer"
+          },
+          "escalations": {
+            "type": "integer"
+          },
           "tasks": {
             "type": "array",
             "items": {
@@ -23864,6 +23982,12 @@
               "integer",
               "null"
             ]
+          },
+          "questions": {
+            "type": "integer"
+          },
+          "escalations": {
+            "type": "integer"
           },
           "type": {
             "type": "string",
@@ -24182,6 +24306,89 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "TaskQuestion": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "task_id": {
+            "type": "integer"
+          },
+          "subtask_id": {
+            "type": "integer"
+          },
+          "attempt": {
+            "type": "integer"
+          },
+          "asked_by": {
+            "type": "string",
+            "enum": [
+              "implementer",
+              "reviewer",
+              "operator"
+            ]
+          },
+          "question": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "escalated",
+              "answered"
+            ]
+          },
+          "answered_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "implementer",
+              "reviewer",
+              "operator",
+              null
+            ]
+          },
+          "answer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cause": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "brief_unclear",
+              "contract_gap",
+              "scope",
+              "environment",
+              "missed_contract",
+              null
+            ]
+          },
+          "asked_at": {
+            "type": "string"
+          },
+          "escalated_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "answered_at": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
