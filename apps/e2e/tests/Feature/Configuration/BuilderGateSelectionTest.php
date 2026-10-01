@@ -224,6 +224,65 @@ function orb277_check(array $receipt, string $project, string $script): array
     return $check;
 }
 
+/**
+ * Point the gateway stand-in at the run copy so the test can read the graph Pest would see.
+ */
+function orb277_install_recording_pest(string $root, string $record, string $directoryRecord): void
+{
+    $pest = <<<'SH'
+#!/usr/bin/env sh
+if [ "$1" = "--list-tests" ]; then
+    echo 'Available test:'
+    echo ' - ExampleTest::exists'
+    exit 0
+fi
+if [ -n "${ORBIT_TIA_DIRECTORY:-}" ] && [ -f "${ORBIT_TIA_DIRECTORY}/graph.json" ]; then
+    printf '%s\n' "$ORBIT_TIA_DIRECTORY" > "__DIRECTORY__"
+    cp "${ORBIT_TIA_DIRECTORY}/graph.json" "__RECORD__"
+fi
+exit 0
+SH;
+    file_put_contents($root.'/apps/gateway/vendor/bin/pest', str_replace(
+        ['__DIRECTORY__', '__RECORD__'],
+        [$directoryRecord, $record],
+        $pest,
+    ));
+    chmod($root.'/apps/gateway/vendor/bin/pest', 0o700);
+
+    file_put_contents($root.'/tooling/composer', <<<'PHP'
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+$command = $argv[1] ?? '';
+
+if ($command === 'test:affected') {
+    $pest = (getcwd() ?: '.').'/vendor/bin/pest';
+    if (is_file($pest)) {
+        $process = proc_open([$pest], [1 => ['file', '/dev/null', 'a'], 2 => ['file', '/dev/null', 'a']], $pipes);
+        if (is_resource($process)) {
+            proc_close($process);
+        }
+    }
+
+    $tiaDirectory = getenv('ORBIT_TIA_DIRECTORY');
+    $tiaDirectory = is_string($tiaDirectory) && $tiaDirectory !== '' ? $tiaDirectory : '.orbit-tia';
+    if (! str_starts_with($tiaDirectory, DIRECTORY_SEPARATOR)) {
+        $tiaDirectory = (getcwd() ?: '.').DIRECTORY_SEPARATOR.$tiaDirectory;
+    }
+    if (! is_dir($tiaDirectory)) {
+        mkdir($tiaDirectory, 0700, true);
+    }
+    file_put_contents($tiaDirectory.'/affected.json', json_encode(['tests/ExampleTest.php'], JSON_THROW_ON_ERROR));
+    fwrite(STDOUT, "\n  Tests:    3 passed (9 assertions)\n\n");
+}
+
+exit(0);
+PHP);
+    chmod($root.'/tooling/composer', 0o700);
+}
+
 describe('Builder gate', function (): void {
     it('selects the web profile for web changes', function (): void {
         $fixture = orb277_gate_fixture('apps/web/src/App.tsx');
@@ -533,5 +592,67 @@ PHP);
         expect($main['receipt']['passed'])->toBeTrue();
         expect($main['receipt']['warnings'])->toBe([]);
         expect($main['process']->getOutput())->not->toContain('WARNING');
+    });
+
+    it('keeps only the main baseline in the run copy when a branch baseline exists', function (): void {
+        $fixture = orb277_gate_fixture();
+        $graph = [
+            'schema' => 1,
+            'fingerprint' => ['structural' => ['schema' => 1]],
+            'files' => ['app/Example.php', 'tests/ExampleTest.php'],
+            'edges' => ['tests/ExampleTest.php' => [0]],
+            'baselines' => [
+                'main' => [
+                    'sha' => $fixture['main'],
+                    'tree' => [],
+                    'results' => [
+                        'example' => [
+                            'status' => 0,
+                            'message' => '',
+                            'time' => 1,
+                            'assertions' => 1,
+                            'file' => 'tests/ExampleTest.php',
+                        ],
+                    ],
+                ],
+                'task-x' => [
+                    'sha' => $fixture['candidate'],
+                    'tree' => ['app/Example.php' => 'branch-hash'],
+                    'results' => [
+                        'example' => [
+                            'status' => 0,
+                            'message' => 'branch',
+                            'time' => 2,
+                            'assertions' => 1,
+                            'file' => 'tests/ExampleTest.php',
+                        ],
+                    ],
+                ],
+            ],
+            'test_tables' => [],
+            'test_inertia_components' => [],
+            'js_file_to_components' => [],
+        ];
+        $projectGraph = $fixture['root'].'/apps/gateway/.orbit-tia';
+        mkdir($projectGraph, 0o700, true);
+        file_put_contents($projectGraph.'/graph.json', json_encode($graph, JSON_THROW_ON_ERROR));
+        $record = temporaryFile('orbit-gate-tia-graph-');
+        $recordedDirectory = temporaryFile('orbit-gate-tia-directory-');
+        orb277_install_recording_pest($fixture['root'], $record, $recordedDirectory);
+
+        $run = orb277_run_gate($fixture, '');
+        $seenDirectory = trim((string) file_get_contents($recordedDirectory));
+        $recorded = json_decode((string) file_get_contents($record), true, flags: JSON_THROW_ON_ERROR);
+        $preserved = json_decode((string) file_get_contents($projectGraph.'/graph.json'), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($run['receipt']['passed'])->toBeTrue();
+        expect($seenDirectory)->toEndWith('/tia/apps-gateway')
+            ->and($seenDirectory)->toContain('/orbit-checks/')
+            ->and($seenDirectory)->not->toBe($projectGraph);
+        expect(array_keys($recorded['baselines']))->toBe(['main'])
+            ->and($recorded['baselines']['main'])->toBe($graph['baselines']['main'])
+            ->and($recorded['files'])->toBe($graph['files'])
+            ->and($recorded['edges'])->toBe($graph['edges']);
+        expect(array_keys($preserved['baselines']))->toBe(['main', 'task-x']);
     });
 });

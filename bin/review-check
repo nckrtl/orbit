@@ -120,12 +120,31 @@ def project_tia_directory(root, project):
     return root / project / '.orbit-tia'
 
 
+def keep_main_baseline(destination):
+    """Drop branch baselines so the run selects every change since main."""
+    graph_path = destination / 'graph.json'
+    if not graph_path.is_file():
+        return
+    try:
+        graph = json.loads(graph_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return
+    if not isinstance(graph, dict):
+        return
+    baselines = graph.get('baselines')
+    if not isinstance(baselines, dict) or set(baselines) <= {'main'}:
+        return
+    graph['baselines'] = {'main': baselines['main']} if 'main' in baselines else {}
+    graph_path.write_text(json.dumps(graph, separators=(',', ':'), ensure_ascii=True))
+
+
 def prepare_tia_directory(root, project, destination):
-    """Copy the configured TIA cache into a fresh, run-specific directory."""
+    """Copy the project TIA cache into a run directory that keeps only the main baseline."""
     source = project_tia_directory(root, project)
     destination.mkdir(parents=True, exist_ok=True)
     if source.is_dir() and source.resolve() != destination.resolve() and destination.resolve() not in source.resolve().parents:
         shutil.copytree(source, destination, dirs_exist_ok=True)
+        keep_main_baseline(destination)
     (destination / 'affected.json').unlink(missing_ok=True)
 
 
