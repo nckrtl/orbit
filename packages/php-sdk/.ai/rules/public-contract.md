@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 169 concrete public Gateway API operations:
+The SDK models exactly 170 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -15,7 +15,7 @@ The SDK models exactly 169 concrete public Gateway API operations:
 - Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.
 - Schedule: list, add, show, run, logs, complete, remove, and activate.
 - Firewall: list, allow, deny, and remove.
-- Tool: manager list, inventory scan, tool list, show, install, update, and remove.
+- Tool: manager list, inventory scan, tool list, show, install, adopt, update, and remove.
 - Doctor: run the complete typed Gateway report.
 - Database connection: list, show, add, update, remove, attach, detach, query, tables, schema, describe, user create, and user list.
 - Metrics: enable, disable, status, credentials, credential reset, exporter enable, and exporter disable.
@@ -128,6 +128,10 @@ operations. Keep the public API typed and small.
   scan state, package kind, version, dependency, registration, adoption block,
   and inspection time. Do not adopt a package, infer ownership, or apply manager
   policy.
+- Keep Tool adoption transport limited to a numeric Node ID, manager, package,
+  and optional version constraint. Preserve an explicit empty constraint and
+  omit only a null constraint. Do not decide ownership, scope, package support,
+  or manager policy.
 - Preserve manager, package, nullable constraint, outcomes, structured errors,
   and request IDs without applying policy. The SDK transports typed values; the
   Gateway owns validation and execution policy.

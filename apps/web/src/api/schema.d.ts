@@ -2967,7 +2967,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** tool:adopt */
+        /**
+         * Adopt a Tool
+         * @description Records Orbit ownership of one supported installed package. Send the Node, manager, package, and optional SemVer constraint. The call installs, updates, removes, and repins nothing. The same intent returns unchanged. A different constraint, a busy scope, a missing or unsupported package, or missing Node access leaves the host unchanged. `error.details.step` is `adopt`. `error.details.id` is present only when a Tool row already exists. `tool.adoption_unsupported` also includes `error.details.adoption_block`.
+         */
         post: operations["tool-adopt"];
         delete?: never;
         options?: never;
@@ -15320,7 +15323,9 @@ export interface operations {
             content: {
                 "application/json": {
                     node_id: number;
+                    /** @description Tool manager name */
                     manager: string;
+                    /** @description Manager-native package coordinate */
                     package: string;
                     version_constraint?: string | null;
                 };

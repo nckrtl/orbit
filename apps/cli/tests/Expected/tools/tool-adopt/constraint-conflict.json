@@ -1,0 +1,1 @@
+{"error":{"code":"tool.constraint_conflict","message":"The stored tool constraint cannot be changed.","details":{"id":1,"step":"adopt","outcome":"manager_failed"},"request_id":null}}

@@ -1,0 +1,1 @@
+{"error":{"code":"tool.manager_unavailable","message":"The tool manager is not available on this node.","details":{"step":"adopt","outcome":"manager_failed"},"request_id":null}}

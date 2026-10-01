@@ -9,7 +9,7 @@ gateway application.
 During monorepo development, `apps/cli` consumes this package through a
 Composer path repository with symlinking enabled.
 
-The SDK exposes exactly 169 public Gateway operations. It preserves typed
+The SDK exposes exactly 170 public Gateway operations. It preserves typed
 payloads, bounded responses, structured errors, and request IDs without
 applying Gateway policy. It does not define command-line presentation or
 remote execution behavior.
@@ -44,6 +44,11 @@ assert($response instanceof ToolResponse);
 The response preserves each manager's scan state and package facts, including
 kind, dependency, registration, and adoption block. It does not adopt a
 package or decide manager policy.
+
+`AdoptToolRequest` posts the Node, manager, package, and optional constraint to
+`POST /api/v1/tools/adopt`. A null constraint is omitted. An explicit empty
+constraint is sent. The request does not install the package or decide whether
+that package may be adopted.
 
 ## Instance deployment and environment
 

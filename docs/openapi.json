@@ -21645,10 +21645,11 @@
     "/api/v1/tools/adopt": {
       "post": {
         "operationId": "tool-adopt",
-        "summary": "tool:adopt",
+        "summary": "Adopt a Tool",
         "tags": [
           "Tools"
         ],
+        "description": "Records Orbit ownership of one supported installed package. Send the Node, manager, package, and optional SemVer constraint. The call installs, updates, removes, and repins nothing. The same intent returns unchanged. A different constraint, a busy scope, a missing or unsupported package, or missing Node access leaves the host unchanged. `error.details.step` is `adopt`. `error.details.id` is present only when a Tool row already exists. `tool.adoption_unsupported` also includes `error.details.adoption_block`.",
         "requestBody": {
           "required": true,
           "content": {
@@ -21662,11 +21663,13 @@
                   },
                   "manager": {
                     "type": "string",
-                    "maxLength": 32
+                    "maxLength": 32,
+                    "description": "Tool manager name"
                   },
                   "package": {
                     "type": "string",
-                    "maxLength": 255
+                    "maxLength": 255,
+                    "description": "Manager-native package coordinate"
                   },
                   "version_constraint": {
                     "type": [
@@ -21767,6 +21770,11 @@
             "lang": "bash",
             "label": "curl",
             "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/tools/adopt\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"node_id\": 7, \"manager\": \"vp\", \"package\": \"@openai/codex\", \"version_constraint\": \"^0.150\"}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tools\\AdoptToolRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new AdoptToolRequest(nodeId: 7, manager: 'vp', package: '@openai/codex'))->dto();\n"
           }
         ]
       }

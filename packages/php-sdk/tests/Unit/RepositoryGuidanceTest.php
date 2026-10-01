@@ -188,7 +188,7 @@ describe('repository guidance bootstrap', function (): void {
     });
 
     it('inventories every concrete transport operation and the Tool response DTOs', function (): void {
-        $preScheduleOperationCount = 107;
+        $preScheduleOperationCount = 108;
         $scheduleRequests = [
             ListSchedulesRequest::class,
             CreateScheduleRequest::class,
@@ -277,6 +277,7 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Tools\\ListToolsRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ShowToolRequest',
             'Orbit\\Sdk\\Requests\\Tools\\InstallToolRequest',
+            'Orbit\\Sdk\\Requests\\Tools\\AdoptToolRequest',
             'Orbit\\Sdk\\Requests\\Tools\\UpdateToolRequest',
             'Orbit\\Sdk\\Requests\\Tools\\RemoveToolRequest',
         ];
@@ -307,7 +308,7 @@ describe('repository guidance bootstrap', function (): void {
         );
 
         expect($toolRequestClasses)
-            ->toHaveCount(7)
+            ->toHaveCount(8)
             ->toEqualCanonicalizing($expectedRequests)
             ->and($toolResponseClasses)
             ->toHaveCount(7)
@@ -434,12 +435,12 @@ describe('repository guidance bootstrap', function (): void {
             ->toEqualCanonicalizing($taskRequests);
     });
 
-    it('documents the 169-operation SDK surface including proxycli transport', function (): void {
+    it('documents the 170-operation SDK surface including proxycli transport', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 169 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 170 concrete public Gateway API operations:')
             ->toContain('- Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.')
             ->toContain('- Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.')
             ->toContain('- proxycli: enable, disable, status, provider list, provider show, and account update.')
@@ -512,7 +513,7 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(repository_guidance_normalized_contents('README.md'))
             ->toContain(
-                'The SDK exposes exactly 169 public Gateway operations.',
+                'The SDK exposes exactly 170 public Gateway operations.',
                 'The SDK exposes typed enable, disable, status, provider list, provider show, and account update requests for the optional CLIProxyAPI quota collector.',
                 'The SDK exposes typed list, show, add, update, remove, attach, detach, query, tables, schema, describe, and user create requests for Gateway-owned database connection records.',
                 'The SDK exposes typed list, create, show, update, and destroy requests for Project process and Schedule definitions.',

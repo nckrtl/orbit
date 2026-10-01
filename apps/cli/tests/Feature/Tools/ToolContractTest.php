@@ -51,3 +51,40 @@ describe('tool scan contract', function (): void {
         'unmanaged node' => ['tools/tool-scan/node-unmanaged'],
     ]);
 });
+
+describe('tool adopt contract', function (): void {
+    it('renders a recorded adoption', function (string $fixture): void {
+        $arguments = ['package' => 'jq', '--node' => '2', '--manager' => 'apt', '--constraint' => '^1.0', '--yes' => true];
+        run_contract($fixture, 'tool:adopt', $arguments, $fixture.'.human.txt', 0);
+        run_contract($fixture, 'tool:adopt', [...$arguments, '--json' => true], $fixture.'.json', 0);
+    })->with([
+        'created' => ['tools/tool-adopt/adopted'],
+        'same intent' => ['tools/tool-adopt/unchanged'],
+        'repaired failure' => ['tools/tool-adopt/repaired'],
+    ]);
+
+    it('renders a recorded adoption refusal', function (string $fixture): void {
+        $arguments = ['package' => 'jq', '--node' => '2', '--manager' => 'apt', '--constraint' => '^1.0', '--yes' => true];
+        run_contract($fixture, 'tool:adopt', $arguments, $fixture.'.human.txt', 1);
+        run_contract($fixture, 'tool:adopt', [...$arguments, '--json' => true], $fixture.'.json', 1);
+    })->with([
+        'absent' => ['tools/tool-adopt/absent'],
+        'access required' => ['tools/tool-adopt/access-required'],
+        'constraint conflict' => ['tools/tool-adopt/constraint-conflict'],
+        'constraint drift' => ['tools/tool-adopt/constraint-drift'],
+        'constraint invalid' => ['tools/tool-adopt/constraint-invalid'],
+        'constraint violated' => ['tools/tool-adopt/constraint-violated'],
+        'dependency' => ['tools/tool-adopt/dependency'],
+        'manager unavailable' => ['tools/tool-adopt/manager-unavailable'],
+        'manager unsupported' => ['tools/tool-adopt/manager-unsupported'],
+        'inactive node' => ['tools/tool-adopt/node-inactive'],
+        'unmanaged node' => ['tools/tool-adopt/node-unmanaged'],
+        'operation locked' => ['tools/tool-adopt/operation-locked'],
+        'package invalid' => ['tools/tool-adopt/package-invalid'],
+        'protected' => ['tools/tool-adopt/protected'],
+        'state invalid' => ['tools/tool-adopt/state-invalid'],
+        'validation failed' => ['tools/tool-adopt/validation-failed'],
+        'version probe failed' => ['tools/tool-adopt/version-probe-failed'],
+        'version unparseable' => ['tools/tool-adopt/version-unparseable'],
+    ]);
+});

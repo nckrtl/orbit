@@ -50,7 +50,7 @@ final readonly class CommandVocabulary
         'realtime' => ['tail'],
         'schedule' => ['logs', 'run'],
         'tasks' => ['cancel', 'complete', 'status'],
-        'tool' => ['scan'],
+        'tool' => ['adopt', 'scan'],
     ];
 
     /** @var list<string> */

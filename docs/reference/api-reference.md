@@ -41,7 +41,7 @@ One input still reads outside the checkout. `php artisan route:list` loads the G
 
 The generator reads every command class, including commands the CLI hides at runtime. It does not run `orbit list`, and it does not load `apps/cli/vendor`.
 
-`bin/docs-openapi` also contains fixed schema text that it does not parse from the rows above, such as the annotation record and the deployment event stream. It also stores the summary and description of `tool:scan`. The description stays in the script so the API and MCP keep the inventory contract rather than only the short CLI summary. That text is part of the checkout. Editing the script changes the document in the same way on every machine.
+`bin/docs-openapi` also contains fixed schema text that it does not parse from the rows above, such as the annotation record and the deployment event stream. It also stores the summary and description of `tool:scan` and `tool:adopt`. Those descriptions stay in the script so the API and MCP keep the inventory and adoption contracts rather than only the short CLI summaries. That text is part of the checkout. Editing the script changes the document in the same way on every machine.
 
 ## Pinned environment
 

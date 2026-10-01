@@ -1,0 +1,12 @@
+Adopting Tool...
+
+┌  Adopt Tool
+│
+├  ● Adopting Tool
+│
+└  Operation failed.
+
+The installed version does not satisfy the constraint.
+id: 1
+step: adopt
+outcome: manager_failed

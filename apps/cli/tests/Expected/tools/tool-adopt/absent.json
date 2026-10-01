@@ -1,0 +1,1 @@
+{"error":{"code":"tool.package_absent","message":"The package is not installed.","details":{"step":"adopt","outcome":"manager_failed"},"request_id":null}}

@@ -1,0 +1,1 @@
+{"error":{"code":"tool.adoption_unsupported","message":"The package cannot be adopted.","details":{"step":"adopt","outcome":"manager_failed","adoption_block":"protected"},"request_id":null}}

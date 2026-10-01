@@ -1,0 +1,11 @@
+Adopting Tool...
+
+┌  Adopt Tool
+│
+├  ● Adopting Tool
+│
+└  Operation failed.
+
+The tool manager is not available on this node.
+step: adopt
+outcome: manager_failed

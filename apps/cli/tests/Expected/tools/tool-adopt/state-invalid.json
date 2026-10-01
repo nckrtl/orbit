@@ -1,0 +1,1 @@
+{"error":{"code":"tool.state_invalid","message":"The tool is not in a state that adoption can repair.","details":{"id":1,"step":"adopt","outcome":"manager_failed"},"request_id":null}}

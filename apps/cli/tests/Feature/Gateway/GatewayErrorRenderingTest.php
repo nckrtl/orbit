@@ -1111,6 +1111,22 @@ it('keeps the step, outcome, and id of a tool operation failure', function (): v
         ->and(GatewayFailureRenderer::safeDetails('tool.version_probe_failed', ['outcome' => 'Manager Failed!', 'id' => 0]))->toBe([]);
 });
 
+it('keeps a closed adoption block token and drops a malformed one', function (): void {
+    expect(GatewayFailureRenderer::safeDetails('tool.adoption_unsupported', [
+        'step' => 'adopt',
+        'outcome' => 'manager_failed',
+        'adoption_block' => 'authorization_required',
+        'manager_output' => 'secret',
+    ]))->toBe([
+        'step' => 'adopt',
+        'outcome' => 'manager_failed',
+        'adoption_block' => 'authorization_required',
+    ])->and(GatewayFailureRenderer::safeDetails('tool.adoption_unsupported', [
+        'step' => 'adopt',
+        'adoption_block' => 'Not A Token',
+    ]))->toBe(['step' => 'adopt']);
+});
+
 it('keeps the step next to the set of a failed Caddy build', function (): void {
     expect(GatewayFailureRenderer::safeDetails('node_role.convergence_failed', [
         'step' => 'converge:websocket-caddy', 'node' => 'app-prod', 'stage' => 'validate', 'message' => 'Error: bad config',
