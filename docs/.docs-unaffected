@@ -81,3 +81,4 @@ docs/reference/gateway-response-fixtures.md: Task definition fixtures follow the
 docs/reference/web-verification.md: The feature map adds the task definition route and its controls. Web verification commands, the map schema, and the demo server are unchanged.
 docs/solutions/doctor-incus-proof.md: Guest convergence reuses the evidence-log redactor. The Doctor proof procedure on this page is unchanged.
 docs/cli/doctor.mdx: The caller-facing Doctor report is unchanged. The fleet inspection used by the outer loop is documented in /reference/tasks.
+docs/reference/tools.md: Binding the checkout copier and passing the Node source lock to checkout inspection does not change Tool managers, discovery, adoption, or install behavior.
