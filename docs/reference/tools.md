@@ -160,7 +160,7 @@ Success returns the same Tool object as install, update, and remove. `status` is
 | `manager` | string | The manager name. |
 | `package` | string | The package name. |
 | `version_constraint` | string or null | The stored SemVer range, or null. |
-| `status` | string | `installing`, `installed`, `updating`, `removing`, or `failed`. Adoption success is `installed`. |
+| `status` | string | `installing`, `installed`, `updating`, `removing`, `failed`, or `removed`. `removed` is response-only and is never stored, so list and show never return it. Adoption success is `installed`. |
 | `installed_version` | string or null | The live version recorded at creation. It may be non-SemVer when unconstrained. |
 | `failed_operation` | string or null | `install`, `update`, or `remove` after a failed mutation. Null on adoption success. |
 | `error_code` | string or null | The last mutation error, or null. |
@@ -277,7 +277,7 @@ An unsupported installed cask stays in discovery with `adoption` `unsupported` a
 
 ## Remove a Tool
 
-`tool:remove` removes an `installed` or `failed` Tool. Success uses outcome `applied`.
+`tool:remove` removes an `installed` or `failed` Tool. Every success returns the Tool object with `status` `removed` and `outcome` `applied`. This covers an actual removal, a package that was already absent, and a failed Tool with no probed version. `removed` appears only in that response. It is never stored, so list and show never return it.
 
 The Gateway first reads the installed version. For `apt`, it then plans the removal with `apt-get --simulate remove` and refuses a plan that removes any other package, with `tool.removal_plan_unsafe`. It removes only the recorded package and never runs an autoremove. After the removal, it reads the version again. A Tool whose package is gone is deleted.
 
@@ -285,9 +285,9 @@ The Gateway first reads the installed version. For `apt`, it then plans the remo
 
 | Condition | Result | Tool record |
 | --- | --- | --- |
-| The package is already absent | Success, with no manager command | Deleted |
-| The Tool failed with `tool.version_probe_failed` and never recorded a version | Success, with no probe | Deleted |
-| The removal succeeds and the package is gone | Success | Deleted |
+| The package is already absent | Success, `status` `removed` and `outcome` `applied`, with no manager command | Deleted |
+| The Tool failed with `tool.version_probe_failed` and never recorded a version | Success, `status` `removed` and `outcome` `applied`, with no probe | Deleted |
+| The removal succeeds and the package is gone | Success, `status` `removed` and `outcome` `applied` | Deleted |
 | The version probe fails on a Tool with a known package | `tool.version_probe_failed` | Kept as `failed` |
 | The macOS scope is absent or conflicting | `tool.manager_unavailable` | Kept as `failed` |
 | The removal fails or the package stays | `tool.remove_failed` | Kept as `failed` |
@@ -300,7 +300,7 @@ Every Tool success body and every Tool error `details.outcome` uses one of these
 
 | Outcome | Success operations | Meaning |
 | --- | --- | --- |
-| `applied` | install, update, remove, adopt | A mutation changed the package, or adopt created a Tool without changing the host. |
+| `applied` | install, update, remove, adopt | A mutation changed the package, adopt created a Tool without changing the host, or remove deleted the Tool. Every remove success uses `applied`. |
 | `unchanged` | install, update, adopt | The requested intent already held. |
 | `blocked_by_constraint` | update | The candidate is outside the stored constraint. Update leaves the Tool installed. Install records `failed` and installs nothing. |
 | `constraint_invalid` | none | The constraint is not a SemVer range. |

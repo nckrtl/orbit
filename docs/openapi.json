@@ -25930,7 +25930,15 @@
             ]
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "installing",
+              "installed",
+              "updating",
+              "removing",
+              "failed",
+              "removed"
+            ]
           },
           "installed_version": {
             "type": [
