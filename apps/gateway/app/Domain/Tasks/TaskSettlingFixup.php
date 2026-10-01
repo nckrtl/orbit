@@ -16,24 +16,6 @@ final readonly class TaskSettlingFixup
     public const int GroupLimit = 3;
 
     /**
-     * Orbit check names whose reproduction command is the job's check steps, not its setup.
-     *
-     * @var array<string, array{string, string}>
-     */
-    private const array OrbitChecks = [
-        'CLI' => ['composer check', 'apps/cli'],
-        'Docs' => ['composer check', 'apps/docs'],
-        'Gateway' => ['composer check', 'apps/gateway'],
-        'E2E' => ['composer check', 'apps/e2e'],
-        'PHP SDK' => ['composer check', 'packages/php-sdk'],
-        'API reference' => ['bin/docs-openapi --check && bin/mcp-tools --check', '.'],
-        'Web' => ['copy=$(mktemp) && cp src/api/schema.d.ts "$copy" && bun run types && git diff --exit-code --no-index "$copy" src/api/schema.d.ts && bun run check && bun run test && bun run build', 'apps/web'],
-        'Pi server' => ['bun run check && bun run test && bun run build', 'apps/pi-server'],
-        'Agent annotation' => ['bun run check && bun run build && bun run test', 'packages/agent-annotation'],
-        'Rust agent' => ['cargo fmt --all -- --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked', 'apps/agent'],
-    ];
-
-    /**
      * @param  list<array<string, string>>  $deliverables
      */
     public function __construct(
@@ -54,14 +36,15 @@ final readonly class TaskSettlingFixup
     }
 
     /**
-     * Problems in the order one tick considers them: the conflict, then failed checks that have an
-     * Orbit reproduction row, then the other failed checks. Both check groups keep GitHub's order.
+     * Problems in the order one tick considers them: the conflict, then failed checks in GitHub's order.
+     * The Project slug and CI job names do not change that order. Each plan snapshots `$taskCheck`.
      *
      * @param  list<TaskPullRequestCheck>  $failedChecks
      * @return list<self>
      */
-    public static function plans(string $projectSlug, bool $conflicts, ?string $baseRef, array $failedChecks): array
+    public static function plans(?string $taskCheck, bool $conflicts, ?string $baseRef, array $failedChecks): array
     {
+        $deliverables = self::deliverables($taskCheck);
         $plans = [];
         if ($conflicts) {
             $base = $baseRef ?? 'the base branch';
@@ -69,73 +52,54 @@ final readonly class TaskSettlingFixup
                 identity: 'conflict:'.$base,
                 title: 'Merge origin/'.$base,
                 brief: 'Merge origin/'.$base.' into the task branch and resolve the conflicts. Do not rebase and do not force-push.',
-                deliverables: self::deliverables(null, null),
+                deliverables: $deliverables,
             );
         }
 
-        $reproducible = [];
-        $others = [];
         foreach ($failedChecks as $check) {
-            $plan = new self(
+            $plans[] = new self(
                 identity: 'check:'.$check->name,
                 title: mb_substr('Fix '.$check->name, 0, 160),
                 brief: 'Check '.$check->name.' failed'.($check->url !== null ? ': '.$check->url : '').'. Do not rebase and do not force-push.',
-                deliverables: self::deliverables($projectSlug, $check->name),
+                deliverables: $deliverables,
             );
-            if (self::reproduces($projectSlug, $check->name)) {
-                $reproducible[] = $plan;
-            } else {
-                $others[] = $plan;
-            }
         }
 
-        return [...$plans, ...$reproducible, ...$others];
-    }
-
-    public static function reproduces(string $projectSlug, string $checkName): bool
-    {
-        return $projectSlug === 'orbit' && isset(self::OrbitChecks[$checkName]);
+        return $plans;
     }
 
     /**
+     * The Project task check as one command in `.`, or a review when none is configured.
+     * A blank command is treated as no check, matching a Project task check.
+     *
      * @return list<array<string, string>>
      */
-    private static function deliverables(?string $projectSlug, ?string $checkName): array
+    private static function deliverables(?string $taskCheck): array
     {
-        $items = [
-            new TaskDeliverable(
-                id: 'composer-check',
+        $command = is_string($taskCheck) ? trim($taskCheck) : '';
+        $deliverable = $command === ''
+            ? new TaskDeliverable(
+                id: 'fixup-review',
+                type: TaskDeliverableType::Review,
+                description: 'Confirm the conflict or failed check is resolved from the available evidence.',
+            )
+            : new TaskDeliverable(
+                id: 'project-check',
                 type: TaskDeliverableType::Command,
-                description: 'Run composer check',
-                command: 'composer check',
+                description: 'Run the Project task check',
+                command: $command,
                 directory: '.',
-            ),
-        ];
-        if (is_string($projectSlug) && is_string($checkName) && self::reproduces($projectSlug, $checkName)) {
-            [$command, $directory] = self::OrbitChecks[$checkName];
-            if ($command !== 'composer check' || $directory !== '.') {
-                $items[] = new TaskDeliverable(
-                    id: 'reproduce-check',
-                    type: TaskDeliverableType::Command,
-                    description: mb_substr('Reproduce '.$checkName, 0, 500),
-                    command: $command,
-                    directory: $directory,
-                );
+            );
+
+        $encoded = [];
+        foreach ($deliverable->toArray() as $key => $value) {
+            if (! is_string($value)) {
+                throw new \LogicException('A fixup deliverable field must be a string.');
             }
+
+            $encoded[$key] = $value;
         }
 
-        return array_map(static function (TaskDeliverable $deliverable): array {
-            $encoded = [];
-
-            foreach ($deliverable->toArray() as $key => $value) {
-                if (! is_string($value)) {
-                    throw new \LogicException('A command deliverable field must be a string.');
-                }
-
-                $encoded[$key] = $value;
-            }
-
-            return $encoded;
-        }, $items);
+        return [$encoded];
     }
 }

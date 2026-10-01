@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Models\Project;
 use App\Models\Task;
 
 /**
  * Intent a Project instance create path must honor.
  *
- * visitable=false: isolated Orbit monorepo checkout or worktree, no public URL.
- * visitable=true: a real App keeps its inspect subdomain.
+ * visitable is the Project's task_workspace_routed setting for a new workspace.
+ * The provisioner records that choice. Lifecycle and Doctor then use the record,
+ * not the Project slug or a later change to the setting.
  */
 final readonly class InstanceProvisionIntent
 {
@@ -24,12 +24,6 @@ final readonly class InstanceProvisionIntent
     {
         $group->loadMissing('project');
 
-        return new self($group, self::visitableFor($group->project));
-    }
-
-    /** Orbit monorepo feature work (`orbit`) gets an isolated checkout; every other Project stays visitable. */
-    public static function visitableFor(Project $project): bool
-    {
-        return $project->slug !== 'orbit';
+        return new self($group, $group->project->task_workspace_routed);
     }
 }

@@ -29,6 +29,7 @@ final class UpdateProjectRequest extends GatewayRequest implements HasBody
         private readonly ?string $taskCheck = null,
         private readonly bool $taskCheckProvided = false,
         private readonly ?string $sourceAccess = null,
+        private readonly ?bool $taskWorkspaceRouted = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -53,8 +54,9 @@ final class UpdateProjectRequest extends GatewayRequest implements HasBody
                 'default_branch' => $this->defaultBranch,
                 'root' => $this->root,
                 ...($this->taskCheckProvided ? ['task_check' => $this->taskCheck] : []),
+                ...($this->taskWorkspaceRouted === null ? [] : ['task_workspace_routed' => $this->taskWorkspaceRouted]),
             ],
-            static fn (mixed $value, string $key): bool => $key === 'task_check' || $value !== null,
+            static fn (mixed $value, string $key): bool => $key === 'task_check' || $key === 'task_workspace_routed' || $value !== null,
             ARRAY_FILTER_USE_BOTH,
         );
     }

@@ -107,11 +107,6 @@ function cancel_subtask_in_baseline(int $suffix): array
         {
             return 'task-test';
         }
-
-        public function definesComposerCheckScript(Instance $instance): bool
-        {
-            return true;
-        }
     });
     $spawner = new class implements AgentSpawner
     {
@@ -229,11 +224,6 @@ it('cancel running subtask preserves its group and Instance', function (): void 
         public function currentBranch(Instance $instance): ?string
         {
             return 'task-test';
-        }
-
-        public function definesComposerCheckScript(Instance $instance): bool
-        {
-            return false;
         }
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner

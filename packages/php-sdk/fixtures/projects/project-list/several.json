@@ -15,7 +15,8 @@
                 "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 2,
@@ -27,7 +28,8 @@
                 "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 3,
@@ -39,7 +41,8 @@
                 "source_access": "github_app",
                 "default_branch": "release",
                 "root": "web/public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 4,
@@ -51,7 +54,8 @@
                 "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             }
         ],
         "meta": {

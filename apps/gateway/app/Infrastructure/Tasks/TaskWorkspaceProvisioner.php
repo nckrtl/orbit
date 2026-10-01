@@ -59,18 +59,21 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             return $existing;
         }
 
-        if (! $this->hasSourceDefaults($group->project, $intent->visitable)) {
+        $workspace = $this->existingWorkspace($group);
+        $visitable = $this->routingForClaim($workspace, $intent->visitable);
+
+        if (! $this->hasSourceDefaults($group->project, $visitable)) {
             return null;
         }
 
-        $node = $this->selectNode($group->project, [$intent->group->implementer_agent_driver, $intent->group->reviewer_agent_driver], $this->existingWorkspaceNodeId($group));
+        $node = $this->selectNode($group->project, [$intent->group->implementer_agent_driver, $intent->group->reviewer_agent_driver], $this->existingWorkspaceNodeId($workspace));
 
         if (! $node instanceof Node) {
             return null;
         }
 
         try {
-            return $this->createWorkspace($group, $node, $intent->visitable);
+            return $this->createWorkspace($group, $node, $visitable);
         } catch (ResourceOperationException|RuntimeConvergenceException) {
             return null;
         }
@@ -103,6 +106,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             }
 
             $instance = $existing;
+            $visitable = $this->recordedRouting($instance, $visitable);
         } else {
             $account = $this->accounts->resolve($node);
             $roots = $this->storageRoots->resolveApps(
@@ -121,6 +125,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
                 'checkout_path' => $checkout->value,
                 'root' => $visitable ? $group->project->root : null,
                 'branch_override' => $name,
+                'task_workspace_routed' => $visitable,
                 'status' => InstanceState::Reserved,
             ]);
         }
@@ -139,6 +144,41 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
                 return $this->development->complete($resolved, null);
             },
         );
+    }
+
+    /**
+     * An existing workspace keeps the mode recorded at creation. The Project setting
+     * applies only when no workspace exists. A row with no record is routed only when
+     * it already chose a Route, matching the one-time migration.
+     */
+    private function routingForClaim(?Instance $workspace, bool $selected): bool
+    {
+        if (! $workspace instanceof Instance) {
+            return $selected;
+        }
+
+        if (is_bool($workspace->task_workspace_routed)) {
+            return $workspace->task_workspace_routed;
+        }
+
+        return $workspace->status === InstanceState::Active
+            || (is_string($workspace->root) && $workspace->root !== '')
+            || $workspace->routes()->exists();
+    }
+
+    /**
+     * A resumed workspace keeps the mode stored when it was created.
+     * A row that has no record adopts the mode this claim already resolved.
+     */
+    private function recordedRouting(Instance $instance, bool $selected): bool
+    {
+        if (is_bool($instance->task_workspace_routed)) {
+            return $instance->task_workspace_routed;
+        }
+
+        $instance->update(['task_workspace_routed' => $selected]);
+
+        return $selected;
     }
 
     private function prepareSource(Instance $instance): Instance
@@ -267,14 +307,20 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
      * A workspace that an interrupted claim created but never attached keeps its Node, so a later claim resumes it
      * there instead of creating a second one.
      */
-    private function existingWorkspaceNodeId(Task $group): ?int
+    private function existingWorkspace(Task $group): ?Instance
     {
         $name = TaskWorkspaceName::for($group);
-        $nodeId = Instance::query()
+
+        return Instance::query()
             ->where('project_id', $group->project_id)
             ->where('name', $name)
             ->where('branch_override', $name)
-            ->value('node_id');
+            ->first();
+    }
+
+    private function existingWorkspaceNodeId(?Instance $workspace): ?int
+    {
+        $nodeId = $workspace?->node_id;
 
         return is_numeric($nodeId) ? (int) $nodeId : null;
     }

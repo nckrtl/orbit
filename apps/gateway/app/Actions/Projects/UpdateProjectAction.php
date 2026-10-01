@@ -93,7 +93,7 @@ final readonly class UpdateProjectAction
             ->all());
 
         if (! $data->hasReconcilableChanges()) {
-            if ($data->taskCheckProvided) {
+            if ($data->taskCheckProvided || $data->taskWorkspaceRoutedProvided) {
                 $project = $this->operations->run(
                     $instanceIds,
                     fn (): Project => $this->applyProjectCommands($project->fresh() ?? $project, $data),
@@ -143,13 +143,17 @@ final readonly class UpdateProjectAction
     }
 
     /**
-     * Stores Project task command configuration while the caller holds the update's operation lock.
+     * Stores Project task settings while the caller holds the update's operation lock.
+     * Routing does not reconcile sources or Routes.
      */
     private function applyProjectCommands(Project $project, UpdateProjectData $data): Project
     {
         $changes = [];
         if ($data->taskCheckProvided) {
             $changes['task_check'] = $data->taskCheck;
+        }
+        if ($data->taskWorkspaceRoutedProvided) {
+            $changes['task_workspace_routed'] = $data->taskWorkspaceRouted;
         }
         if ($changes === []) {
             return $project;

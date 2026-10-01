@@ -4093,7 +4093,11 @@
               "null"
             ],
             "maxLength": 4096,
-            "description": "Task check command; defaults to composer check for Laravel types and none otherwise"
+            "description": "Task check command. Omitted stores none"
+          },
+          "task_workspace_routed": {
+            "type": "boolean",
+            "description": "Whether new task workspaces get a Route (true or false)"
           }
         },
         "additionalProperties": false,
@@ -4955,6 +4959,10 @@
             ],
             "maxLength": 4096,
             "description": "New task check command for task baselines and handoffs"
+          },
+          "task_workspace_routed": {
+            "type": "boolean",
+            "description": "Change routing for future task workspaces (true or false)"
           }
         },
         "additionalProperties": false,

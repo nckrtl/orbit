@@ -33,6 +33,7 @@ final class UpdateProjectRequest extends FormRequest
             'default_branch' => ['sometimes', 'required', 'string', 'max:255'],
             'root' => ['sometimes', 'required', 'string', 'max:255'],
             'task_check' => ['sometimes', 'nullable', 'string', 'max:4096'],
+            'task_workspace_routed' => ['sometimes', 'boolean:strict'],
         ];
     }
 
@@ -42,7 +43,7 @@ final class UpdateProjectRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['code', 'type', 'slug', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check'],
+                ['code', 'type', 'slug', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -62,6 +63,7 @@ final class UpdateProjectRequest extends FormRequest
                 && ! $this->exists('default_branch')
                 && ! $this->exists('root')
                 && ! $this->exists('task_check')
+                && ! $this->exists('task_workspace_routed')
             ) {
                 $validator->errors()->add('body', 'Provide at least one Project update.');
             }
@@ -117,6 +119,8 @@ final class UpdateProjectRequest extends FormRequest
             taskCheck: is_string($validated['task_check'] ?? null) ? $validated['task_check'] : null,
             sourceAccessProvided: array_key_exists('source_access', $validated),
             sourceAccess: is_string($validated['source_access'] ?? null) ? ProjectSourceAccess::tryFrom($validated['source_access']) : null,
+            taskWorkspaceRoutedProvided: array_key_exists('task_workspace_routed', $validated),
+            taskWorkspaceRouted: ($validated['task_workspace_routed'] ?? false) === true,
         );
     }
 

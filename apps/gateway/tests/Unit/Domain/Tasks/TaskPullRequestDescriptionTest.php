@@ -10,7 +10,7 @@ it('renders the summary, changes, breaking changes, and the check line in order'
         'Adds an order export.',
         ['Orders export as CSV.', 'A download route serves the export.'],
         ['The orders:export command is renamed.'],
-    ), 2);
+    ), 2, 'composer check');
 
     expect($description)->toBe(<<<'MD'
         Adds an order export.
@@ -51,5 +51,8 @@ it('names the Project task check, or only the review when the Project has none',
     expect(TaskPullRequestDescription::render($pullRequest, 1, 'vp run check'))
         ->toContain('Checks: each of the 1 subtasks passed `vp run check` and was approved by the reviewer.')
         ->and(TaskPullRequestDescription::render($pullRequest, 1, null))
-        ->toContain('Checks: each of the 1 subtasks was approved by the reviewer.');
+        ->toContain('Checks: each of the 1 subtasks was approved by the reviewer.')
+        ->and(TaskPullRequestDescription::render($pullRequest, 1))
+        ->toContain('Checks: each of the 1 subtasks was approved by the reviewer.')
+        ->not->toContain('composer check');
 });

@@ -22,6 +22,7 @@ final readonly class ProjectResponse
         public ?array $excludedNodes = null,
         public ?string $taskCheck = null,
         public string $sourceAccess = 'github_app',
+        public ?bool $taskWorkspaceRouted = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -47,6 +48,7 @@ final readonly class ProjectResponse
             excludedNodes: self::exclusions($data['excluded_nodes'] ?? null),
             taskCheck: is_string($data['task_check'] ?? null) ? $data['task_check'] : null,
             sourceAccess: is_string($data['source_access'] ?? null) ? $data['source_access'] : 'github_app',
+            taskWorkspaceRouted: is_bool($data['task_workspace_routed'] ?? null) ? $data['task_workspace_routed'] : null,
         );
     }
 
@@ -63,6 +65,7 @@ final readonly class ProjectResponse
             'default_branch' => $this->defaultBranch,
             'root' => $this->root,
             'task_check' => $this->taskCheck,
+            ...($this->taskWorkspaceRouted === null ? [] : ['task_workspace_routed' => $this->taskWorkspaceRouted]),
             'request_id' => $this->requestId,
             ...($this->excludedNodes === null ? [] : ['excluded_nodes' => $this->excludedNodes]),
         ];

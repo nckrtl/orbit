@@ -11,6 +11,4 @@ interface TaskWorkspaceStateReader
     public function headCommit(Instance $instance): ?string;
 
     public function currentBranch(Instance $instance): ?string;
-
-    public function definesComposerCheckScript(Instance $instance): bool;
 }

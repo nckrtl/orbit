@@ -15,6 +15,7 @@
             "default_branch": null,
             "root": null,
             "task_check": null,
+            "task_workspace_routed": true,
             "excluded_nodes": []
         },
         "meta": {

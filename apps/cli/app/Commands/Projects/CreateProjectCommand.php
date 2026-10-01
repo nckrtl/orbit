@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Commands\Projects;
 
 use App\Commands\GatewayCommand;
+use App\Commands\Projects\Concerns\ParsesTaskWorkspaceRouted;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Projects\CreateProjectRequest;
@@ -12,6 +13,8 @@ use Orbit\Sdk\Responses\Projects\ProjectResponse;
 
 final class CreateProjectCommand extends GatewayCommand
 {
+    use ParsesTaskWorkspaceRouted;
+
     #[\Override]
     protected $signature = 'project:create
         {slug : Unique project slug}
@@ -21,7 +24,8 @@ final class CreateProjectCommand extends GatewayCommand
         {--source-access= : How Orbit reads a private github.com repository: github_app (default) or gh_cli}
         {--default-branch= : Stored default branch; resolve the remote default when omitted}
         {--root= : Repository-relative root; defaults to . for package types and public otherwise}
-        {--task-check= : Task check command; defaults to composer check for Laravel types and none otherwise}
+        {--task-check= : Task check command. Omitted stores none}
+        {--task-workspace-routed= : Whether new task workspaces get a Route (true or false)}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -54,6 +58,15 @@ final class CreateProjectCommand extends GatewayCommand
             return $this->renderGatewayFailure(
                 'project.slug_invalid',
                 'Project slug is invalid.',
+            );
+        }
+
+        $taskWorkspaceRouted = $this->taskWorkspaceRouted();
+
+        if (! $taskWorkspaceRouted['valid']) {
+            return $this->renderGatewayFailure(
+                'project.task_workspace_routed_invalid',
+                'Task workspace routed must be true or false.',
             );
         }
 
@@ -91,6 +104,7 @@ final class CreateProjectCommand extends GatewayCommand
         if ($taskCheck !== null && (trim($taskCheck) === '' || strlen($taskCheck) > 4096)) {
             return $this->renderGatewayFailure('project.task_check_invalid', 'Task check command is invalid.');
         }
+
         $project = $this->sendWithProgress(
             $connector,
             new CreateProjectRequest(
@@ -103,6 +117,7 @@ final class CreateProjectCommand extends GatewayCommand
                 taskCheck: $taskCheck,
                 taskCheckProvided: $taskCheck !== null,
                 sourceAccess: $sourceAccess,
+                taskWorkspaceRouted: $taskWorkspaceRouted['value'],
             ),
             ProjectResponse::class,
             ['Create Project', 'Creating Project', 'Created Project'],

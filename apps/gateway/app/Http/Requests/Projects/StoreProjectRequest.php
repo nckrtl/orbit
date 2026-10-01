@@ -37,6 +37,7 @@ final class StoreProjectRequest extends FormRequest
             'default_branch' => ['sometimes', 'string', 'max:255'],
             'root' => ['required', 'string', 'max:255'],
             'task_check' => ['sometimes', 'nullable', 'string', 'max:4096'],
+            'task_workspace_routed' => ['sometimes', 'boolean:strict'],
         ];
     }
 
@@ -46,7 +47,7 @@ final class StoreProjectRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['code', 'name', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check'],
+                ['code', 'name', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -98,6 +99,8 @@ final class StoreProjectRequest extends FormRequest
             taskCheck: is_string($validated['task_check'] ?? null) ? $validated['task_check'] : null,
             sourceAccess: ProjectSourceAccess::tryFrom(is_string($validated['source_access'] ?? null) ? $validated['source_access'] : '')
                 ?? ProjectSourceAccess::GitHubApp,
+            taskWorkspaceRoutedProvided: array_key_exists('task_workspace_routed', $validated),
+            taskWorkspaceRouted: ($validated['task_workspace_routed'] ?? false) === true,
         );
     }
 

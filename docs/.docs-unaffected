@@ -60,6 +60,14 @@ docs/reference/environment-variables.md: Environment variables are unchanged. Re
 docs/solutions/doctor-incus-proof.md: The Incus doctor proof is unchanged. Renaming the task relation is internal.
 docs/reference/web-verification.md: The quota-unavailable purpose in the feature map now follows proxycli-only Quota. Web verification commands, the map schema, and the demo routes on this page are unchanged.
 docs/reference/cli-ux.md: Task contract snapshots follow the new subtask and group ids. Input, consent, and presentation rules on this page are unchanged.
+docs/reference/cli-ux.md: The project create expectation stores a null task check. Input, consent, and presentation rules on this page are unchanged.
+docs/reference/development-node-exclusions.md: A null task check default does not change Node exclusions or placement.
+docs/reference/gateway-response-fixtures.md: The recorded project create response stores a null task check. Fixture recording and replay on this page are unchanged.
+docs/reference/web-app.md: The task check field comment follows the regenerated OpenAPI document. Navigation and layout are unchanged.
+docs/cli/activity.mdx: Task workspace routing is a non-secret Project update field. Activity still stores the redacted request input; the redaction rules on this page are unchanged.
+docs/reference/environment-variables.md: Recording whether a task workspace was routed does not change environment import, targets, or placeholders.
+docs/reference/cli-command-vocabulary.md: --task-workspace-routed is an option on the existing project:create and project:update commands. It does not change verbs, family actions, noun-ending commands, or the command count.
+docs/reference/incus-topologies.md: The task workspace clone section already defines bin/e2e-task-cleanup ownership, idempotence, and retry. This change adds that helper and does not change those rules.
 docs/reference/cli-ux.md: Task definition command snapshots follow the existing input, consent, and presentation rules. This page is unchanged.
 docs/reference/gateway-response-fixtures.md: Task definition fixtures follow the existing recording process. Fixture maintenance on this page is unchanged.
 docs/reference/web-verification.md: The feature map adds the task definition route and its controls. Web verification commands, the map schema, and the demo server are unchanged.
