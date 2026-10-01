@@ -57,7 +57,7 @@ JSON returns `enabled` as `true` or `false`, and `assistance` as a list in ascen
 
 ## orbit tasks:list
 
-List tasks with their title, Project, status, and number of completed subtasks. A task that asks for direction shows its question. A task that asks because of a failure shows its reason. JSON includes `assistance_kind` and `assistance_question` on each task.
+List tasks with their title, Project, status, and number of completed subtasks. The list shows each task's assistance kind. A task that asks for direction shows its question. A task that asks because of a failure shows its reason. A task that is not asking shows an em dash for both, even when an old value is still stored. JSON includes `assistance_kind` and `assistance_question` on each task.
 
 ```bash
 orbit tasks:list [--project=ID] [--status=STATUS] [--json]
@@ -78,7 +78,7 @@ Show one task as a detail tree, followed by its brief and a table of its subtask
 orbit tasks:show [group] [--json]
 ```
 
-The tree shows the ID, title, Project, status, whether the task is asking for assistance, the assistance kind, the question or reason, Instance, pull request, Coder notification, models, tokens, line diff, and duration. The subtask table shows the position, ID, title, status, deliverables, tokens, line diff, duration, and assistance reason of each subtask. A subtask or task that is not asking shows an em dash in that column, even when an old reason is still stored. JSON includes `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason` on the task and each subtask, and `fails_on_base` on every test deliverable. When that value is true, the detail names the deliverable under Fails on the start commit. Showing an active task refreshes its metrics, as the [tasks reference](/reference/tasks#tokens-and-line-diff) describes.
+The tree shows the ID, title, Project, status, whether the task is asking for assistance, the assistance kind, the question, the reason, Instance, pull request, Coder notification, models, tokens, line diff, and duration. The subtask table shows the position, ID, title, status, deliverables, tokens, line diff, duration, assistance kind, and the question or reason of each subtask. A direction request shows its question in that last column. A failure shows its reason. A subtask or task that is not asking shows an em dash in the kind, question, and reason columns, even when an old value is still stored. JSON includes `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason` on the task and each subtask, and `fails_on_base` on every test deliverable. When that value is true, the detail names the deliverable under Fails on the start commit. Showing an active task refreshes its metrics, as the [tasks reference](/reference/tasks#tokens-and-line-diff) describes.
 
 ## orbit tasks:create
 
@@ -293,6 +293,8 @@ orbit tasks:question:list [--project=ID] [--cause=CAUSE] [--status=STATUS] [--si
 | `--cause=CAUSE` | every cause | `brief_unclear`, `contract_gap`, `scope`, `environment`, or `missed_contract`. |
 | `--status=STATUS` | every status | `open`, `escalated`, or `answered`. |
 | `--since=DATE` | no limit | Only questions asked on or after this ISO 8601 date or time. |
+
+An invalid filter fails with `tasks.project_invalid`, `tasks.cause_invalid`, `tasks.status_invalid`, or `tasks.since_invalid` before the request.
 
 Human output prints one header line for each question, with its time, task and subtask reference, asker, status, and cause. The question and the answer follow, each indented by two spaces. An empty list says `No questions match.` JSON holds the records under `questions`. The [tasks reference](/reference/tasks#questions) defines each field, the relay routes, and the consult limit. The limit counts the consult records of the current implementer attempt, and a relay does not count. A direction resolution does not start a new implementer attempt. [Migrate open requests](/reference/tasks#migrate-open-requests) names `2026_10_07_000000_create_task_questions` before `2026_10_07_000001_add_assistance_kind_to_tasks`.
 

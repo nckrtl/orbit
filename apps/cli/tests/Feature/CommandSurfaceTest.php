@@ -855,6 +855,13 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ],
         'tool:list' => [[], ['node' => null, 'json' => false]],
         'tool:manager:list' => [[], ['node' => null, 'json' => false]],
+        'tasks:question:list' => [[], [
+            'project' => null,
+            'cause' => null,
+            'status' => null,
+            'since' => null,
+            'json' => false,
+        ]],
         'tasks:status' => [[], ['json' => false]],
         'tool:remove' => [['tool'], ['yes' => false, 'json' => false]],
         'tool:show' => [['tool'], ['json' => false]],

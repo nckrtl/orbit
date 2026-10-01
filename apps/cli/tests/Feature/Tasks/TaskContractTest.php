@@ -123,4 +123,9 @@ describe('tasks contract', function (): void {
         run_task_contract('tasks-comment-list/default', 'tasks:comment:list', ['group' => '1', 'subtask' => '1'], 0);
         run_task_contract('tasks-agents/default', 'tasks:agents', ['group' => '1'], 0);
     });
+
+    it('renders the question list and an empty list', function (): void {
+        run_task_contract('tasks-question-list/default', 'tasks:question:list', [], 0);
+        run_task_contract('tasks-question-list/empty', 'tasks:question:list', [], 0);
+    });
 });

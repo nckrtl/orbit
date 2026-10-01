@@ -63,3 +63,5 @@ docs/reference/cli-ux.md: Task contract snapshots follow the new subtask and gro
 docs/cli/doctor.mdx: The caller-facing Doctor report is unchanged. The fleet inspection used by the outer loop is documented in /reference/tasks.
 docs/reference/api-reference.md: The generator contract is unchanged, and bin/docs-openapi leaves no diff after the task data classes added assistance_kind and assistance_question.
 docs/reference/gateway-response-fixtures.md: The fixture process is unchanged. The task fixtures gained assistance_kind, assistance_question, and the question and escalation counts.
+docs/reference/cli-command-vocabulary.md: tasks:question:list uses the list verb. The naming rules on this page are unchanged.
+docs/reference/cli-ux.md: Task snapshots now show assistance kind, the question or reason, and direction requests before failures. Input, consent, and presentation rules on this page are unchanged.

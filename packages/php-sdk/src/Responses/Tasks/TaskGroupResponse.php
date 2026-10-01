@@ -24,6 +24,8 @@ final readonly class TaskGroupResponse
         public ?string $prUrl,
         public bool $notifyCoder,
         public bool $assistanceRequested,
+        public ?string $assistanceKind,
+        public ?string $assistanceQuestion,
         public ?string $assistanceReason,
         public ?string $implementerModel,
         public ?string $reviewerModel,
@@ -33,6 +35,8 @@ final readonly class TaskGroupResponse
         public ?int $linesAdded,
         public ?int $linesDeleted,
         public ?int $durationMs,
+        public int $questions,
+        public int $escalations,
         public array $tasks,
         public string $requestId,
     ) {}
@@ -54,6 +58,8 @@ final readonly class TaskGroupResponse
             prUrl: TaskFields::nullableText($data, 'pr_url'),
             notifyCoder: ($data['notify_coder'] ?? false) === true,
             assistanceRequested: ($data['assistance_requested'] ?? false) === true,
+            assistanceKind: TaskFields::nullableText($data, 'assistance_kind'),
+            assistanceQuestion: TaskFields::nullableText($data, 'assistance_question'),
             assistanceReason: TaskFields::nullableText($data, 'assistance_reason'),
             implementerModel: TaskFields::nullableText($data, 'implementer_model'),
             reviewerModel: TaskFields::nullableText($data, 'reviewer_model'),
@@ -63,6 +69,8 @@ final readonly class TaskGroupResponse
             linesAdded: TaskFields::nullableInt($data, 'lines_added'),
             linesDeleted: TaskFields::nullableInt($data, 'lines_deleted'),
             durationMs: TaskFields::nullableInt($data, 'duration_ms'),
+            questions: TaskFields::count($data, 'questions', 'task group', $requestId),
+            escalations: TaskFields::count($data, 'escalations', 'task group', $requestId),
             tasks: self::subtasks($data['tasks'] ?? [], $requestId),
             requestId: $requestId,
         );
@@ -95,6 +103,8 @@ final readonly class TaskGroupResponse
             'pr_url' => $this->prUrl,
             'notify_coder' => $this->notifyCoder,
             'assistance_requested' => $this->assistanceRequested,
+            'assistance_kind' => $this->assistanceKind,
+            'assistance_question' => $this->assistanceQuestion,
             'assistance_reason' => $this->assistanceReason,
             'implementer_model' => $this->implementerModel,
             'reviewer_model' => $this->reviewerModel,
@@ -104,6 +114,8 @@ final readonly class TaskGroupResponse
             'lines_added' => $this->linesAdded,
             'lines_deleted' => $this->linesDeleted,
             'duration_ms' => $this->durationMs,
+            'questions' => $this->questions,
+            'escalations' => $this->escalations,
             'tasks' => array_map(static function (SubtaskResponse $task): array {
                 $data = $task->toArray();
                 unset($data['request_id']);
