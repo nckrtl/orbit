@@ -21,6 +21,7 @@ final readonly class ProjectResponse
         /** @var list<array{project_id: int, project_slug: string, node_id: int, node_name: string, development_instance_count: int}>|null */
         public ?array $excludedNodes = null,
         public ?string $taskCheck = null,
+        public ?bool $taskWorkspaceRouted = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -45,6 +46,7 @@ final readonly class ProjectResponse
             requestId: $requestId,
             excludedNodes: self::exclusions($data['excluded_nodes'] ?? null),
             taskCheck: is_string($data['task_check'] ?? null) ? $data['task_check'] : null,
+            taskWorkspaceRouted: is_bool($data['task_workspace_routed'] ?? null) ? $data['task_workspace_routed'] : null,
         );
     }
 
@@ -60,6 +62,7 @@ final readonly class ProjectResponse
             'default_branch' => $this->defaultBranch,
             'root' => $this->root,
             'task_check' => $this->taskCheck,
+            ...($this->taskWorkspaceRouted === null ? [] : ['task_workspace_routed' => $this->taskWorkspaceRouted]),
             'request_id' => $this->requestId,
             ...($this->excludedNodes === null ? [] : ['excluded_nodes' => $this->excludedNodes]),
         ];

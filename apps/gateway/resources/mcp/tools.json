@@ -4099,10 +4099,11 @@
               "null"
             ],
             "maxLength": 4096,
-            "description": "Task check command. Omitted stores none for every type"
+            "description": "Task check command. Omitted stores none"
           },
           "task_workspace_routed": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Whether new task workspaces get a Route (true or false)"
           }
         },
         "additionalProperties": false,
@@ -4958,7 +4959,8 @@
             "description": "New task check command for task baselines and handoffs"
           },
           "task_workspace_routed": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Change routing for future task workspaces (true or false)"
           }
         },
         "additionalProperties": false,

@@ -66,3 +66,4 @@ docs/reference/gateway-response-fixtures.md: The recorded project create respons
 docs/reference/web-app.md: The task check field comment follows the regenerated OpenAPI document. Navigation and layout are unchanged.
 docs/cli/activity.mdx: Task workspace routing is a non-secret Project update field. Activity still stores the redacted request input; the redaction rules on this page are unchanged.
 docs/reference/environment-variables.md: Recording whether a task workspace was routed does not change environment import, targets, or placeholders.
+docs/reference/cli-command-vocabulary.md: --task-workspace-routed is an option on the existing project:create and project:update commands. It does not change verbs, family actions, noun-ending commands, or the command count.

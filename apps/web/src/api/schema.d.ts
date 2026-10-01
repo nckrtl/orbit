@@ -11135,8 +11135,9 @@ export interface operations {
                     default_branch?: string;
                     /** @description Repository-relative root; defaults to . for package types and public otherwise */
                     root: string;
-                    /** @description Task check command. Omitted stores none for every type */
+                    /** @description Task check command. Omitted stores none */
                     task_check?: string | null;
+                    /** @description Whether new task workspaces get a Route (true or false) */
                     task_workspace_routed?: boolean;
                 };
             };
@@ -11322,6 +11323,7 @@ export interface operations {
                     root?: string;
                     /** @description New task check command for task baselines and handoffs */
                     task_check?: string | null;
+                    /** @description Change routing for future task workspaces (true or false) */
                     task_workspace_routed?: boolean;
                 };
             };
