@@ -207,10 +207,15 @@ final class DevelopmentInstanceCopyIsolationProgram
                 if not os.path.isdir(path):
                     os.unlink(path)
                     return
-                for entry in os.scandir(path):
+                for entry in list(os.scandir(path)):
                     if entry.name == ".gitignore":
                         continue
-                    remove_tree(entry.path)
+                    if entry.is_symlink() or not entry.is_dir(follow_symlinks=False):
+                        remove_tree(entry.path)
+                        continue
+                    clear_directory(entry.path)
+                    if os.listdir(entry.path) == []:
+                        os.rmdir(entry.path)
 
 
             def remove_tree(path):

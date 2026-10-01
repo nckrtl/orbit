@@ -81,11 +81,14 @@ it('reports a reflink when cp --reflink=always succeeds and creates the branch o
     expect($result->mode)->toBe('reflink')
         ->and($result->head)->toBe($head)
         ->and($ssh->commands[1]->arguments)->toBe(['sync', '-f', '/srv/orbit/apps'])
-        ->and($ssh->commands[2]->arguments)->toBe([
-            'env', 'LC_ALL=C', 'cp', '-a', '--reflink=always', '--',
+        ->and($ssh->commands[2]->arguments[0])->toBe('bash')
+        ->and($ssh->commands[2]->input)->toContain('timeout -k 5')
+        ->and($ssh->commands[2]->arguments)->toContain(
+            '--reflink=always',
             '/srv/orbit/apps/acme/default',
             '/srv/orbit/apps/acme/feature',
-        ])
+        )
+        ->and($ssh->commands[2]->arguments[3])->toEndWith('.pid')
         ->and(implode("\n", array_map(static fn ($command) => $command->shellCommand(), $ssh->commands)))->not->toContain('--reflink=auto')
         ->and($ssh->commands[3]->input)->toContain('git -C "$dest" checkout --quiet --force -B "$branch"')
         ->and($ssh->commands[3]->input)->not->toContain('git fetch')
@@ -267,11 +270,13 @@ it('falls back to a plain copy only for a reflink errno and reports full', funct
     $result = $copier->copy($source, $target, 'feature', $head, 'instance.path_taken');
 
     expect($result->mode)->toBe('full')
-        ->and($ssh->commands[4]->arguments)->toBe([
-            'env', 'LC_ALL=C', 'cp', '-a', '--',
+        ->and($ssh->commands[4]->arguments[0])->toBe('bash')
+        ->and($ssh->commands[4]->input)->toContain('timeout -k 5')
+        ->and($ssh->commands[4]->arguments)->toContain(
             '/srv/orbit/apps/acme/default',
             '/srv/orbit/apps/acme/feature',
-        ])
+        )
+        ->and($ssh->commands[4]->arguments)->not->toContain('--reflink=always')
         ->and($ssh->commands[3]->input)->toContain('rm -rf -- "$dest"');
 });
 
@@ -288,7 +293,7 @@ it('continues the copy when sync fails', function (): void {
 
     expect(copy_checkout_copier($ssh)->copy($source, $target, 'feature', $head, 'instance.path_taken')->mode)
         ->toBe('reflink')
-        ->and($ssh->commands[2]->arguments[4])->toBe('--reflink=always');
+        ->and($ssh->commands[2]->arguments)->toContain('--reflink=always');
 });
 
 it('retries one missing reset path and does not treat another missing path as a fallback', function (string $stderr, bool $retried): void {
@@ -359,8 +364,17 @@ it('discards the owned tree when cp exceeds the deadline and keeps that error', 
 
     $discard = $ssh->commands[array_key_last($ssh->commands)];
 
+    $copy = array_values(array_filter(
+        $ssh->commands,
+        static fn ($command): bool => in_array('--reflink=always', $command->arguments, true),
+    ));
+
     expect($discard->input)->toContain('keep_marker')
-        ->and($discard->arguments)->toContain('0', '/srv/orbit/apps/acme/feature');
+        ->and($discard->input)->toContain('kill -TERM')
+        ->and($discard->arguments)->toContain('0', '/srv/orbit/apps/acme/feature')
+        ->and($copy)->toHaveCount(1)
+        ->and($copy[0]->input)->toContain('timeout -k 5')
+        ->and($copy[0]->arguments[3])->toEndWith('.pid');
 });
 
 it('refuses an occupied destination before copying', function (): void {
@@ -437,6 +451,8 @@ it('snapshots SQLite from the live source, rewrites names, and resets runtime fi
             ->and(is_file($dest.'/storage/logs/.gitignore'))->toBeTrue()
             ->and(is_file($dest.'/storage/framework/cache/data.php'))->toBeFalse()
             ->and(is_file($dest.'/storage/framework/cache/.gitignore'))->toBeTrue()
+            ->and(is_file($dest.'/storage/framework/cache/data/.gitignore'))->toBeTrue()
+            ->and(is_file($dest.'/storage/framework/cache/data/payload.php'))->toBeFalse()
             ->and(is_file($dest.'/storage/framework/views/home.php'))->toBeFalse()
             ->and(is_dir($dest.'/node_modules/.vite'))->toBeFalse()
             ->and(is_dir($dest.'/node_modules/.cache'))->toBeFalse()
@@ -608,7 +624,7 @@ function copy_isolation_fixture(string $source, string $outside): void
         $source.'/public',
         $source.'/storage/app/public',
         $source.'/storage/logs',
-        $source.'/storage/framework/cache',
+        $source.'/storage/framework/cache/data',
         $source.'/storage/framework/views',
         $source.'/bootstrap/cache',
         $source.'/node_modules/left',
@@ -636,6 +652,8 @@ function copy_isolation_fixture(string $source, string $outside): void
     file_put_contents($source.'/storage/logs/.gitignore', "*\n!.gitignore\n");
     file_put_contents($source.'/storage/framework/cache/data.php', 'cache');
     file_put_contents($source.'/storage/framework/cache/.gitignore', "*\n!.gitignore\n");
+    file_put_contents($source.'/storage/framework/cache/data/.gitignore', "*\n!.gitignore\n");
+    file_put_contents($source.'/storage/framework/cache/data/payload.php', 'payload');
     file_put_contents($source.'/storage/framework/views/home.php', 'view');
     file_put_contents($source.'/node_modules/left/index.js', 'keep');
     file_put_contents($source.'/node_modules/.vite/deps', 'vite');

@@ -606,8 +606,17 @@ final readonly class CreateInstanceAction
                             $started = $owned
                                 || ($current instanceof Instance && $current->status !== InstanceState::Reserved)
                                 || ($exception instanceof ResourceOperationException && ($exception->details['copy_started'] ?? '') === '1');
+                            $refusedBeforeCopy = $exception instanceof ResourceOperationException
+                                && in_array($exception->errorCode, ['instance.path_taken', 'instance.default_path_occupied'], true)
+                                && ! $started
+                                && $current instanceof Instance
+                                && $current->status === InstanceState::Reserved;
 
-                            if ($started && (! $current instanceof Instance || $current->status !== InstanceState::Active)) {
+                            if ($refusedBeforeCopy) {
+                                // The destination belongs to someone else. Release the reservation
+                                // and leave that directory in place.
+                                $this->releaseCopyReservations($current);
+                            } elseif ($started && (! $current instanceof Instance || $current->status !== InstanceState::Active)) {
                                 $this->removeFailedCopy($current ?? $instance);
                             }
 

@@ -20,6 +20,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Infrastructure\GitHub\GitReadScript;
+use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -41,6 +42,7 @@ final readonly class RemoteDevelopmentInstanceCheckoutCopier implements Developm
         private StorageRootResolver $storageRoots,
         private NodeSettingsNormalizer $nodeSettings,
         private RepositoryReadAccess $access,
+        private ?CommandDeadline $deadline = null,
     ) {}
 
     public function inspect(Instance $source, string $branch): DevelopmentInstanceCopyInspection
@@ -253,7 +255,15 @@ final readonly class RemoteDevelopmentInstanceCheckoutCopier implements Developm
         $arguments[] = '--';
         $arguments[] = $paths['source'];
         $arguments[] = $paths['destination'];
-        $result = $this->execute($node, $arguments);
+        // The local SSH client dies when the deadline or the connection cuts it. `cp` would
+        // keep running on the Node. `timeout` is the backstop, and the pid file lets cleanup
+        // signal the process group as soon as removal starts.
+        $seconds = (string) max(1, (int) ceil($this->copyBudget()) + 15);
+        $result = $this->execute(
+            $node,
+            ['bash', '-seu', '--', $paths['marker'].'.pid', $seconds, ...$arguments],
+            self::copyScript(),
+        );
 
         if ($result->succeeded()) {
             return 'ok';
@@ -783,6 +793,34 @@ final readonly class RemoteDevelopmentInstanceCheckoutCopier implements Developm
             BASH;
     }
 
+    /** Remaining seconds for the remote copy, before the cleanup reserve. */
+    private function copyBudget(): float
+    {
+        return ($this->deadline ?? app(CommandDeadline::class))->cap(900.0);
+    }
+
+    private static function copyScript(): string
+    {
+        return <<<'BASH'
+            pidfile=$1
+            seconds=$2
+            shift 2
+            case "$seconds" in
+                ''|*[!0-9]*) exit 1 ;;
+            esac
+            [ ! -L "$pidfile" ]
+            child=
+            trap 'if [ -n "$child" ]; then kill -TERM "-$child" 2>/dev/null || true; fi; rm -f -- "$pidfile"' TERM HUP INT
+            timeout -k 5 "$seconds" "$@" &
+            child=$!
+            printf '%s\n' "$child" > "$pidfile"
+            wait "$child"
+            status=$?
+            rm -f -- "$pidfile"
+            exit "$status"
+            BASH;
+    }
+
     private static function discardScript(): string
     {
         return <<<'BASH'
@@ -796,6 +834,14 @@ final readonly class RemoteDevelopmentInstanceCheckoutCopier implements Developm
                 *) exit 1 ;;
             esac
             [ "$dest" != "$apps" ]
+            pidfile="${marker}.pid"
+            if [ -f "$pidfile" ] && [ ! -L "$pidfile" ]; then
+                pid=$(tr -dc '0-9' < "$pidfile" | head -c 20)
+                if [ -n "$pid" ] && [ "$pid" != 1 ]; then
+                    kill -TERM "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+                fi
+                rm -f -- "$pidfile"
+            fi
             if [ -f "$marker" ] && [ ! -L "$marker" ]; then
                 IFS= read -r recorded < "$marker"
                 [ "$recorded" = "$dest" ]

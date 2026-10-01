@@ -3286,6 +3286,35 @@ describe('development instance copies', function (): void {
             ->and($source->refresh()->checkout_path)->toBe('/srv/orbit/apps/acme/default');
     });
 
+    it('releases the reservation and leaves the directory when a copy destination is occupied', function (string $name, string $code): void {
+        $source = copy_development_source();
+        if ($name === 'default') {
+            $source->update([
+                'name' => 'source',
+                'checkout_path' => '/srv/orbit/apps/acme/source',
+            ]);
+        }
+        $copier = bind_development_copier();
+        $copier->failCopy = $code;
+
+        $this->postJson('/api/v1/instances', [
+            'project_id' => $this->orbitApp->id,
+            'node_id' => $this->node->id,
+            'name' => $name,
+            'source_instance_id' => $source->id,
+        ])->assertConflict()->assertJsonPath('error.code', $code);
+
+        expect($copier->copies)->toBe(1)
+            ->and($copier->discards)->toBe(0)
+            ->and(Instance::query()->where('name', $name)->exists())->toBeFalse()
+            ->and(Route::query()->where('domain', $name.'.acme.test')->exists())->toBeFalse()
+            ->and(DB::table('route_targets')->whereNotIn('instance_id', Instance::query()->pluck('id'))->exists())->toBeFalse()
+            ->and(DB::table('vite_port_assignments')->whereNotIn('instance_id', Instance::query()->pluck('id'))->exists())->toBeFalse();
+    })->with([
+        'path taken' => ['feature', 'instance.path_taken'],
+        'default path occupied' => ['default', 'instance.default_path_occupied'],
+    ]);
+
     it('removes the checkout, route, and port when preparation fails after the copy', function (): void {
         $source = copy_development_source();
         $copier = bind_development_copier();

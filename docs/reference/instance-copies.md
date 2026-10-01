@@ -103,7 +103,7 @@ An identical request for a complete copy returns that Instance and does not copy
 
 The check in step 3 happens before any marker is written. A new marker is not proof that a directory already on disk belongs to this request. The marker is `<apps-root>/.orbit/copies/instance-{id}`, and its contents are the destination path. It sits outside the destination, so `cp` cannot replace it. It is proof of ownership only for a directory created after that write. A path that shares a prefix does not match.
 
-An occupied destination with no matching marker returns `instance.path_taken` or `instance.default_path_occupied`, the same codes as a repository create. The directory stays, and no marker is written. A marker for this Instance id that names another path returns `instance.placement_conflict`, and neither path is deleted.
+An occupied destination with no matching marker returns `instance.path_taken` or `instance.default_path_occupied`, the same codes as a repository create. The directory stays, and no marker is written. A reservation made for that request is released: the Instance row, its Route, and its Vite port are removed. A marker for this Instance id that names another path returns `instance.placement_conflict`, and neither path is deleted.
 
 Activation deletes the marker when the checkout is recorded on the active Instance. Setup that fails after that uses the Instance row to remove the checkout. A transfer finds no marker to carry or to leave behind.
 
@@ -121,7 +121,7 @@ A failure after the copy starts uses the same removal `instance:create` already 
 
 An identical retry returns the Instance when it is active and setup succeeded. When another request still holds the Instance lifecycle lock, including during setup, the retry returns `instance.lifecycle_busy` and does not remove the row. When the row is incomplete and that lock is free, the retry removes it through the same removal path, then copies again.
 
-The copy uses the same request deadline as `instance:create`. A deadline is a failure: the owned partial target is removed through that same path, and the response is `command.deadline_exceeded`.
+The copy uses the same request deadline as `instance:create`. A deadline is a failure: the owned partial target is removed through that same path, and the response is `command.deadline_exceeded`. The remote `cp` runs under `timeout` for the remaining budget plus a short backstop, and its process group id is recorded beside the ownership marker. When the deadline or a lost connection cuts the local SSH client, cleanup signals that process group before it deletes the partial checkout, so the remote copy does not keep writing.
 
 ## Branch
 
@@ -159,7 +159,7 @@ These paths are deleted in the new checkout only. A symlink is removed as a syml
 | --- | --- |
 | `public/hot` | The file, so the copy does not use the source dev server. |
 | `storage/logs/` | Files inside it. The directory and `.gitignore` stay. |
-| `storage/framework/cache/`, `sessions/`, `views/` | Files inside each directory. The directory and `.gitignore` stay. |
+| `storage/framework/cache/`, `sessions/`, `views/` | Cache, session, and view files inside each directory, including nested directories. The directory and every `.gitignore` stay, so the copy does not record a tracked deletion. |
 | `node_modules/.vite/`, `node_modules/.cache/` | Those directories. |
 
 These resources are created for the new Instance, not copied:
