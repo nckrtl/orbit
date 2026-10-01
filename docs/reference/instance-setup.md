@@ -51,11 +51,19 @@ A list holds at most 32 steps. The timeouts of one list add up to at most 540 se
 
 Authorized reads return the commands. [Activity](/cli/activity) records no input for the step commands and `instance:setup`, so it never holds command text or command output.
 
+## Checkout access
+
+The Gateway prepares a development checkout as the Node's managed user. The checkout directory stays owned by that user and group. Production releases are unchanged.
+
+When the Linux account `orbit-worker` exists, prepare and inspect run `setfacl` on the checkout, including `.git`. The access ACL and the default ACL each name `orbit-worker` and the managed user with `rwX`. Execute is granted on directories and on files that already have it. Group write and other write stay off. The ACL is not applied to the apps root or to either home. New files either user creates stay readable and deletable by the other. When the account does not exist, prepare sets no ACL and succeeds. When `setfacl` fails, prepare fails with `instance.clone_failed` and inspect fails with `instance.source_identity_invalid`. Neither records a new checkout.
+
+[Tasks](/reference/tasks#shared-instance) uses this ACL so task agents can write the workspace. [Host setup](/reference/pi-server#host-setup) creates the account. [Instance removal](/reference/instance-removal#checks-before-removal) still requires the managed user to own the directory.
+
 ## Run setup
 
 `instance:create` runs the setup list after the Instance and its Route are active. Activation records `failed_step: setup` in the same transaction, so a Gateway interruption before or during setup cannot make an identical create retry report success without setup. Orbit clears the marker only after setup completes.
 
-Each command runs with `bash -eu` in the checkout, on the Instance's Node, as the Node's managed user. Commands read no input, and Orbit discards their output. When a step ends, for any reason, Orbit kills its process group, so background processes do not survive the step. Each run holds a lifecycle lock on the Instance. If another operation holds that lock during `instance:create`, Orbit keeps the active Instance and records `error_code: instance.lifecycle_busy`.
+Each command runs with `bash -eu` in the checkout, on the Instance's Node, as the Node's managed user. This is the `instance:create` and `instance:setup` path. A task workspace does not use it. The task baseline runs the same commands as `orbit-worker`. [Project check](/reference/tasks#project-check) describes that run. Commands read no input, and Orbit discards their output. When a step ends, for any reason, Orbit kills its process group, so background processes do not survive the step. Each run holds a lifecycle lock on the Instance. If another operation holds that lock during `instance:create`, Orbit keeps the active Instance and records `error_code: instance.lifecycle_busy`.
 
 An identical create retry then reports that setup must run; use `instance:setup` to retry the list. A busy lock never removes the Instance.
 
@@ -138,7 +146,7 @@ A setup list whose timeouts cannot fit is cut with `command.deadline_exceeded`. 
 
 ### Install the helper
 
-Install the reviewed `bin/e2e-task-cleanup` as `$HOME/.local/lib/orbit/e2e-task-cleanup` for the managed user on every eligible Node. Copy that blob from the reviewed commit. Do not copy it from an old checkout: clones created before this change do not contain the file. The teardown step runs with `bash -eu` in the checkout, as the Node's managed user, so `$HOME` is that user's home.
+Install the reviewed `bin/e2e-task-cleanup` as `$HOME/.local/lib/orbit/e2e-task-cleanup` for the managed user on every eligible Node. Copy that blob from the reviewed commit. Do not copy it from an old checkout: clones created before this change do not contain the file. The teardown step runs with `bash -eu` in the checkout, as the Node's managed user, so `$HOME` is that user's home. A task workspace uses the same user for teardown. The agent runs as `orbit-worker` and does not run this step.
 
 Save the reviewed blob first. A failed `git show` must not start the copy. Stage that blob, check that it is non-empty and that its digest matches, and only then rename it onto the destination in the same directory. `set -o pipefail` makes a failed producer fail the copy.
 
@@ -254,3 +262,7 @@ Teardown is the operator's cleanup. Removal continues only after that cleanup su
 ### The Project removes its own bridge
 
 Orbit's task bridge is this repository's cleanup, so the Orbit Project runs `bin/e2e-task-cleanup` as a teardown step. A Gateway hook for that bridge was rejected, because another Project would inherit Orbit's worktree layout. The installed helper, not the Gateway, performs the ownership checks in [Task workspace clones](/reference/incus-topologies#task-workspace-clones).
+
+### Task setup runs as orbit-worker
+
+Create-time setup runs as the managed user, before an agent uses the Instance. A task workspace skips that path. Its baseline runs the setup list as `orbit-worker`, so a command from the checkout does not run as the account that holds the GitHub token. Teardown stays the managed user. The helper path is under that user's home, outside the checkout.

@@ -538,6 +538,8 @@ When the implementer cannot start, the subtask and the task become `failed`, and
 
 The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives in the Node's apps root like any development Instance.
 
+The checkout directory stays owned by the Node's managed user and group. When `orbit-worker` exists, prepare and inspect grant that user and the managed user an ACL on the checkout, including `.git`. [Checkout access](/reference/instance-setup#checkout-access) states the ACL. The grant does not cover either user's home. [ADR 0191](/decisions/0191-run-task-agents-as-a-dedicated-user) is the contract.
+
 | Project setting | New workspace |
 | --- | --- |
 | `task_workspace_routed: false` | Not visitable. The checkout has no Route and stays in the lifecycle state `source_resolved`. |
@@ -667,6 +669,8 @@ Each Project stores one task check command in `task_check`. Orbit runs it on the
 
 The Gateway installs `.git/orbit/check` and starts it over SSH as a detached process group. The check records HEAD and a hash of the whole working tree, uncommitted and untracked files included, without touching the Git index. It runs the command in a login shell at the workspace root, writes the output to `.git/orbit/check.log`, and writes `.git/orbit/check.json` when the command ends. The subtask stays `running` while the check runs. There is no time limit.
 
+The check process runs as `orbit-worker`. The Gateway connects as the managed user, writes `.git/orbit/check` as that user, and starts the process with `sudo -n -u orbit-worker -H`. Status, cancel, and the workspace snapshot use the same account, because the process belongs to it. `git` inside the check passes `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=`. Baseline setup commands run in that process. When the account is missing, the check does not start and the task asks for assistance with the reason `The Node has no orbit-worker user.` When sudo cannot switch, the reason is `The managed user cannot run commands as orbit-worker.` [Host setup](/reference/pi-server#host-setup) creates the account.
+
 | Check state | Result |
 | --- | --- |
 | `running` | The tick waits. The subtask's `check` shows the start time. |
@@ -753,7 +757,7 @@ After that reminder, the Gateway waits for a newer stopped reviewer turn. When t
 
 ## Pull request and settle metrics
 
-Orbit publishes through the Project's [GitHub App](/reference/github-app#how-orbit-publishes-a-task-pull-request) installation. Agents never receive a token. A task whose Project changes to `source_access: gh_cli` fails to publish and asks for assistance.
+Orbit publishes through the Project's [GitHub App](/reference/github-app#how-orbit-publishes-a-task-pull-request) installation. The agent does not receive a GitHub token. [What the App does not cover](/reference/github-app#what-the-app-does-not-cover) states how that is enforced. A task whose Project changes to `source_access: gh_cli` fails to publish and asks for assistance.
 
 After each approval, the Gateway pushes the stored commit, never `HEAD`, with `git push --quiet origin <commit_sha>:refs/heads/task-{id}`. The push is never forced. Then the next subtask starts. On the subtask that opens the pull request, the Gateway then opens it against the Project's default branch, or uses an open pull request with that head. It stores `pr_url` and moves the task to `settling`.
 
@@ -973,6 +977,10 @@ Tasks is an extension, so an operator can switch it off without a Gateway downgr
 Three alternatives were rejected. Selecting one Project's behavior by its slug would keep a second task policy in the Gateway. Inferring that policy from repository files would hide it in the engine instead of the Project's skill and task check. A compatibility path for a planner thread was rejected, because you plan with an external ADE and the engine keeps no planner state.
 
 Shared prompts stay free of Project policy. They do not name a feature contract or an Orbit lease rule. The repository's instructions and `orbit-tasks` skill carry that policy.
+
+### Agents and checks run as orbit-worker
+
+The task check and the baseline setup run programs from the workspace. Running them as the managed user would let those programs read that user's home, so they run as `orbit-worker`. The Pi server runs as the same user, and an agent can read the server token and the provider sign-in. Teardown stays the managed user, because the installed helper lives in that home and removal deletes the checkout as that user. [ADR 0191](/decisions/0191-run-task-agents-as-a-dedicated-user) records the `incus-admin` limit.
 
 ### Backlog before Todo
 

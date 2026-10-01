@@ -394,7 +394,8 @@
             "title": "process",
             "kind": "product",
             "components": [
-                "apps/cli"
+                "apps/cli",
+                "packages/php-sdk"
             ],
             "concepts": [
                 "Doctor",
@@ -723,6 +724,32 @@
             ]
         },
         {
+            "path": "docs/decisions/0191-run-task-agents-as-a-dedicated-user.md",
+            "title": "ADR 0191: Run task agents as a dedicated user",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process",
+                "Project",
+                "Task",
+                "Task check",
+                "Task workspace",
+                "Tool",
+                "Turn receipt"
+            ],
+            "governing_adrs": [
+                "0191"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -766,7 +793,8 @@
             "governing_adrs": [
                 "0097",
                 "0175",
-                "0182"
+                "0182",
+                "0191"
             ]
         },
         {
@@ -1282,12 +1310,15 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
                 "Schedule",
                 "Subtask",
                 "Task"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0191"
+            ]
         },
         {
             "path": "docs/reference/implementation-loop.md",
@@ -1701,9 +1732,12 @@
                 "Schedule",
                 "Subtask",
                 "Task",
+                "Task workspace",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0191"
+            ]
         },
         {
             "path": "docs/reference/private-dns.md",
@@ -1888,7 +1922,8 @@
                 "Turn receipt"
             ],
             "governing_adrs": [
-                "0182"
+                "0182",
+                "0191"
             ]
         },
         {

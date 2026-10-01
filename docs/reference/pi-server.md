@@ -1,6 +1,6 @@
 ---
 title: "Pi server"
-description: "How the Pi server runs Pi agent sessions on a Node for the Gateway's pi driver: configuration, sign-in, agent tools, API, thread states, and restart behavior."
+description: "How the Pi server runs Pi agent sessions on a Node for the Gateway's pi driver: configuration, sign-in, the orbit-worker install, agent tools, API, thread states, and restart behavior."
 covers:
   - apps/pi-server/**
   - apps/gateway/app/Infrastructure/Tasks/Pi/{PiConnection,PiModel,PiNodeEligibility}.php
@@ -53,27 +53,74 @@ The Gateway's `pi` driver refuses every Claude model, also through CLIProxyAPI. 
 
 ## Sign in to a provider
 
-Sign in once per provider on each Node, as the user that runs the server. Run `pi-server login openai-codex` or `pi-server login xai`, choose device-code sign-in, and approve the code from any browser. Pi stores the credential in its own directory, where the server reads it. The Gateway never receives it. `pi-server login anthropic` is refused.
+Sign in once per provider on each Node, as the user that runs the server. On a Node that runs task agents, that user is `orbit-worker`. Run `pi-server login openai-codex` or `pi-server login xai`, choose device-code sign-in, and approve the code from any browser. Pi stores the credential in its own directory, where the server reads it. The Gateway never receives it. `pi-server login anthropic` is refused.
 
 By default the server accepts only subscription sign-ins, such as ChatGPT for Codex models. A provider signed in with an API key, including a key in the server's environment, is not available until `PI_SERVER_ALLOW_API_KEYS=1` is set or `--allow-provider` names it.
+
+## Host setup
+
+Create `orbit-worker` on every Node that runs task agents, before [Install on a Node](#install-on-a-node). The Gateway does not create the account during `node:add`. [ADR 0191](/decisions/0191-run-task-agents-as-a-dedicated-user) is the contract.
+
+1. Create the user and group `orbit-worker`, with home `/home/orbit-worker` and shell `/bin/bash`. Give the user no password and no sudo. Do not add the user to the managed user's group.
+2. Set `/home/orbit-worker` to mode `0700`.
+3. Install the `acl` package when `setfacl` is missing.
+4. Confirm `sudo -n -u orbit-worker -H true` works as the managed user. Node bootstrap already grants that user passwordless sudo.
+5. Add `orbit-worker` to `incus-admin` only on a host where task agents run `incus`.
+
+Set the managed home to mode `0700` when the apps root is outside it. Set it to mode `0711` when the apps root is inside it, so `orbit-worker` can traverse to the checkouts without listing the home. Private directories in that home, including `.ssh`, `.config`, and `.pi`, stay mode `0700`. [Limits](#limits) states what membership of `incus-admin` does to this boundary.
 
 ## Install on a Node
 
 Build the binary on a workstation with `bun run build:linux` in `apps/pi-server`. It writes `dist/pi-server-linux-x64` and `dist/pi-server-linux-arm64`. Each is one file that includes the Bun runtime.
 
-On the Node, as the managed runtime user:
+On the Node, as `orbit-worker`:
 
-1. Copy the binary for the Node's architecture to `~/.local/bin/pi-server` and make it executable.
-2. Write a random token of at least 32 characters to `~/.pi/agent/orbit-token` with mode `600`. Set the same value as `ORBIT_PI_TOKEN` on the Gateway.
-3. [Connect through CLIProxyAPI](#connect-through-cliproxyapi), or run `pi-server login openai-codex` and complete the device-code sign-in.
+1. Copy the binary for the Node's architecture to `/home/orbit-worker/.local/bin/pi-server` and make it executable.
+2. Write a random token of at least 32 characters to `/home/orbit-worker/.pi/agent/orbit-token` with mode `600`. Set the same value as `ORBIT_PI_TOKEN` on the Gateway.
+3. [Connect through CLIProxyAPI](#connect-through-cliproxyapi), or run `sudo -u orbit-worker -H /home/orbit-worker/.local/bin/pi-server login openai-codex` and complete the device-code sign-in.
 
-Then register the managed Process from a machine with the Orbit CLI. Replace the address with the Node's WireGuard address and the root with its apps path:
+Then register the Process from a machine with the Orbit CLI. Replace the address with the Node's WireGuard address and the root with its apps path:
 
 ```bash
-orbit process:create pi-server --node=NODE --command=/home/orbit/.local/bin/pi-server --command=serve --command=--host=10.44.0.9 --command=--token-file=/home/orbit/.pi/agent/orbit-token --command=--workspace-root=/srv/orbit/apps --restart=always --keep-alive --start
+orbit process:create pi-server \
+  --node=NODE \
+  --user=orbit-worker \
+  --working-directory=/home/orbit-worker \
+  --command=/home/orbit-worker/.local/bin/pi-server \
+  --command=serve \
+  --command=--host=10.44.0.9 \
+  --command=--token-file=/home/orbit-worker/.pi/agent/orbit-token \
+  --command=--workspace-root=/srv/orbit/apps \
+  --restart=always \
+  --keep-alive \
+  --start
 ```
 
-Add `--command=--allow-provider=cliproxyapi` when the Node uses CLIProxyAPI. The `pi` driver accepts the Node once this Process is active with desired state `running`. `GET /capabilities` lists the signed-in models. Select Pi for implementers with `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER=pi` on the Gateway.
+`--user` is the [Process user](/reference/processes-and-schedules#owners). The default working directory is the managed home, which `orbit-worker` cannot use, so the command sets `--working-directory`. Add `--command=--allow-provider=cliproxyapi` when the Node uses CLIProxyAPI. The `pi` driver accepts the Node once this Process is active with desired state `running`. `GET /capabilities` lists the signed-in models. Select Pi for implementers with `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER=pi` on the Gateway.
+
+## Limits
+
+Two limits bound what `orbit-worker` separates.
+
+`incus-admin` is root-equivalent. A member can start a privileged container, read any home, and observe another user's process. Homes at mode `0700` are the policy for a worker who is not in that group. They are not a hard wall on a host where the worker is in the group. beast adds `orbit-worker` to `incus-admin` so task agents can run `incus`.
+
+An agent is a process of the Pi server and shares its user. It can read `/home/orbit-worker/.pi/agent/orbit-token` and the provider sign-in in that home. The design does not give each agent a separate user. The GitHub token is a different secret: the agent does not receive it. [What the App does not cover](/reference/github-app#what-the-app-does-not-cover) states that enforcement.
+
+## Roll out orbit-worker on beast
+
+beast is the Node that runs Pi for Orbit's tasks, and task agents there run `incus`. Use the same cutover on any Node that already runs `pi-server` as the managed user. Deploy the Gateway that grants the workspace ACL, runs checks as `orbit-worker`, and disables hooks and `fsmonitor` before this cutover. An agent cannot write a checkout until the ACL exists, and a check cannot start until the account exists.
+
+Follow [Roll out a new binary](#roll-out-a-new-binary) until no Pi session you will restart is `working`. Leave the scheduler stopped. Create the account with [Host setup](#host-setup), and on beast add `orbit-worker` to `incus-admin`. Install the binary, token, and provider sign-in under `/home/orbit-worker`.
+
+Apply the ACL to each existing development checkout as the managed user. The example uses `orbit`. Substitute the managed user when the name differs:
+
+```bash
+setfacl -R -m u:orbit-worker:rwX,u:orbit:rwX -m d:u:orbit-worker:rwX,d:u:orbit:rwX -- /srv/orbit/apps/PROJECT/CHECKOUT
+```
+
+Confirm a private directory of the managed home, such as `.ssh`, is mode `0700`. When the apps root is inside that home, set the home to `0711`. When the apps root is outside it, set the home to `0700`.
+
+Destroy the `pi-server` Process and create it again with `--user=orbit-worker` and the paths under `/home/orbit-worker`. Create has no update. Confirm the Process is active, a session can create a file in a task workspace, and `orbit-worker` cannot read `/home/orbit/.ssh`. Start the scheduler again with [`process:start`](/cli/process#orbit-processstart). Delete the old binary and the old token under the managed home.
 
 ## Agent tools
 
@@ -103,7 +150,9 @@ A `read` or `bash` result larger than 8 KiB does not enter the model context. Th
 
 8 KiB is 8,192 UTF-8 bytes. `read` measures the selected lines when the call sets `offset` or `limit`, and the whole file otherwise. `bash` measures stdout and stderr in the order the tool read them, without the exit line. A result of 8,192 bytes or fewer is returned in full. There is no line cap on that result.
 
-The file is new, under the session workspace at `.git/orbit/tool-output/`. The server creates the directory with mode `0700` when `.git` is a directory. The file mode is `0600`. Its name starts with the tool, the session id, and the tool call id. A second result does not replace an earlier file. The file contains the measured text only. The notice uses the absolute path.
+The file is new, under the session workspace at `.git/orbit/tool-output/`. The server creates the directory with mode `0770` when `.git` is a directory and the process can create it. The file mode is `0660`. Its name starts with the tool, the session id, and the tool call id. A second result does not replace an earlier file. The file contains the measured text only. The notice uses the absolute path.
+
+Those group bits keep the workspace ACL in force, so the managed user and `orbit-worker` can both read the file and delete it. The server does not change the mode of a directory it does not own.
 
 The notice is at most 8,192 bytes:
 
@@ -214,7 +263,7 @@ Stop the Gateway scheduler before you replace `pi-server` on a Node. A restart k
 
 For a `pi` thread, `GET /sessions/{external_id}` on that Node is the live snapshot. Wait until `state` is not `working`. The first `snapshot` event on `GET /api/v1/task-groups/{group}/agents/{thread}/stream` is that same snapshot. The stream reads Pi and does not write the stored row. The [agent viewer](/reference/tasks#agent-viewer) shows it.
 
-The [install steps](#install-on-a-node) copy the binary to `~/.local/bin/pi-server`. Replace the file that Process actually runs.
+The [install steps](#install-on-a-node) copy the binary to `/home/orbit-worker/.local/bin/pi-server`. Replace the file that Process actually runs.
 
 A turn still `working` at the restart fails with the restart error. The next tick resumes it, at most twice for that subtask. Do not post a resolution comment for that failure.
 
@@ -236,4 +285,8 @@ The server already holds the transcript and its order, so it resumes a stream af
 
 ### Large tool output goes to a file
 
-A large tool result fills the model context, and each later call sends that text again. Cutting the result would lose the rest for good. So a large result goes to a file that a later turn can read. The file sits inside `.git`, so diffs and the review tree never include it. When the file cannot be written, the result is an error, because inlining it would bring back the cost.
+A large tool result fills the model context, and each later call sends that text again. Cutting the result would lose the rest for good. So a large result goes to a file that a later turn can read. The file sits inside `.git`, so diffs and the review tree never include it. When the file cannot be written, the result is an error, because inlining it would bring back the cost. The file mode keeps the workspace ACL, so the managed user can delete what `orbit-worker` wrote.
+
+### One user for every task agent
+
+The managed user holds the SSH login and runs Gateway `git` with the GitHub token. `orbit-worker` has neither. One Pi server Process on the Node serves every session, so every agent shares that user and can read the server token. A user per task would copy the provider sign-in into every account. Running the server as root and dropping privileges inside a session was rejected, because a fault in that path is root. [ADR 0191](/decisions/0191-run-task-agents-as-a-dedicated-user) records the other rejected alternatives.

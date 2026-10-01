@@ -78,6 +78,8 @@ Orbit accepts any login and does not check its scopes. A usual `gh auth login` g
 
 For each read, the Gateway runs `gh auth token --hostname github.com` as `orbit`. It hands the token to `git` in the same way as an App token, for the same reads: through `GIT_CONFIG_*` variables of one command, on the Gateway or on a Node through the script on standard input. An SSH-form origin is read through its HTTPS form, and the stored origin stays as it is.
 
+Those variables set `core.hooksPath` to `/dev/null` and set `core.fsmonitor` empty, whether or not the command carries a token. A `git` command in a development checkout that does not use this wrapper passes the same two `-c` options. A hook or filesystem monitor in the checkout does not run.
+
 The Gateway stores no token. No API response, Activity, Doctor result, origin URL, command argument, `.git/config`, or file on a Node contains it.
 
 ### Limits and failures
@@ -108,7 +110,11 @@ The checks token is separate, because GitHub refuses a whole token request when 
 
 ## What the App does not cover
 
-Git commands that you or an agent run by hand in a development checkout use your own credentials. Orbit installs no credential helper on a Node and does not sign the GitHub CLI in on a Node. Agents never receive a token.
+Git commands that you run by hand in a development checkout use your own credentials. Orbit installs no credential helper on a Node and does not sign the GitHub CLI in on a Node.
+
+A task agent does not receive a GitHub token. The agent runs as `orbit-worker`. The token exists only in the environment of the one `git` command the Gateway runs, and that command runs as the Node's managed user. Hooks and `fsmonitor` are off, so the checkout cannot start a program that sees the token. The agent shares the Pi server's user, so it can read that server's token and provider sign-in. [Limits](/reference/pi-server#limits) records both bounds. [ADR 0191](/decisions/0191-run-task-agents-as-a-dedicated-user) is the contract.
+
+A clean or smudge filter named in the checkout runs as the user who invoked `git`. Fetch, `git clone --no-checkout`, and push do not check out file contents. `git checkout` and the approval commit run as the managed user without the token. A filter can read the managed home. Git has no single key that disables every named filter.
 
 ## Errors
 
@@ -142,6 +148,10 @@ A shared Orbit App would need a central token service that holds its private key
 ### A token for each operation
 
 The Gateway starts every repository read and push itself, so it can create a token at the moment of use. A token stored on a Node, or refreshed there on a schedule, would rest on every Node and need recovery when it goes stale. A leaked token reads one repository for at most one hour.
+
+### The checkout cannot inherit the token
+
+The token is in the environment of one `git` process, running as the managed user. A hook or `fsmonitor` program in the checkout would be a child of that process and would see the token. Every Gateway `git` in a development checkout, and every read wrapper, turns both off. The task agent runs as `orbit-worker` and is not that process. A credential helper on the Node was rejected, because the agent can call it after the command ends. [ADR 0191](/decisions/0191-run-task-agents-as-a-dedicated-user) records the account.
 
 ### No personal access token and no deploy keys
 

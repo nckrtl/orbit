@@ -65,6 +65,8 @@ For a development Instance, the Gateway compares the checkout with its record. E
 | `instance.checkout_path_unsafe` | The path overlaps another managed Instance. |
 | `instance.force_failed` | A forced check failed for another reason. |
 
+The ownership check reads the owner of the checkout directory and its parent. It does not read the owner of every file inside. A development checkout can hold an ACL for `orbit-worker` and files that user created. [Checkout access](/reference/instance-setup#checkout-access) grants that ACL. Removal still refuses a directory the managed user does not own.
+
 ### Worktree sets
 
 A worktree Instance is removed alone. A linked worktree whose directory is gone, which Git calls prunable, does not count.
@@ -145,3 +147,7 @@ A completed transfer is history, so it survives removal. An unfinished or failed
 ### Production keeps its content
 
 Production data and releases are hard to rebuild. Removal stops serving the Instance but leaves its home for recovery.
+
+### The owner check is the directory
+
+The managed user must own the checkout directory and its parent. Files inside can belong to `orbit-worker` when that user has an ACL on the tree. Checking every file was rejected, because the agent creates files and the managed user can still delete them while the directory stays writable. An ACL does not change the owner the check reads.
