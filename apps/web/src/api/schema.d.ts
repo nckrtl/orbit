@@ -2653,7 +2653,7 @@ export interface paths {
         };
         /**
          * List Task groups
-         * @description Lists Task groups, newest first. Optional `project_id` and `status` filters. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.
+         * @description Lists Task groups, newest first. Optional `project_id` and `status` filters. The group and each subtask include `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason`. Returns `extension.disabled` while the extension is off.
          */
         get: operations["tasks-list"];
         put?: never;
@@ -2677,7 +2677,7 @@ export interface paths {
         };
         /**
          * Show a Task group
-         * @description Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.
+         * @description Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason`. Returns `extension.disabled` while the extension is off.
          */
         get: operations["tasks-show"];
         put?: never;
@@ -2883,7 +2883,7 @@ export interface paths {
         };
         /**
          * Show Tasks status
-         * @description Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, and reason. The list is present while the extension is off.
+         * @description Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, `assistance_kind`, `assistance_question`, and `assistance_reason`. The list is present while the extension is off.
          */
         get: operations["tasks-status"];
         put?: never;
@@ -3492,6 +3492,9 @@ export interface components {
             pr_url?: string | null;
             notify_coder?: boolean;
             assistance_requested?: boolean;
+            /** @enum {string|null} */
+            assistance_kind?: "direction" | "failure" | null;
+            assistance_question?: string | null;
             assistance_reason?: string | null;
             implementer_model?: string;
             reviewer_model?: string;
@@ -3525,6 +3528,9 @@ export interface components {
             completion_summary?: string | null;
             check?: components["schemas"]["TaskCheck"] | null;
             assistance_requested?: boolean;
+            /** @enum {string|null} */
+            assistance_kind?: "direction" | "failure" | null;
+            assistance_question?: string | null;
             assistance_reason?: string | null;
             fixup_problem?: string | null;
         };
@@ -3595,6 +3601,9 @@ export interface components {
             title?: string;
             /** @enum {string} */
             status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "completed" | "failed" | "cancelled";
+            /** @enum {string|null} */
+            assistance_kind?: "direction" | "failure" | null;
+            assistance_question?: string | null;
             assistance_reason?: string | null;
         };
         ToolManager: {

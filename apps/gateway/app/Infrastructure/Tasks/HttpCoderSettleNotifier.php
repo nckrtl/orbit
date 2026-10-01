@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Tasks;
 
+use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\TaskSessionDecision;
 use App\Domain\Tasks\TaskSessionObservation;
@@ -47,10 +48,14 @@ final readonly class HttpCoderSettleNotifier implements CoderSettleNotifier
 
     public function assistance(Task $group, string $reason): void
     {
+        $kind = $group->assistance_kind;
+
         $this->post([
             'event' => 'task_group.assistance_requested',
             'task_group_id' => $group->id,
             'title' => $group->title,
+            'kind' => $kind instanceof AssistanceKind ? $kind->value : null,
+            'question' => $group->assistance_question,
             'reason' => $reason,
         ]);
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Tasks;
 
+use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Models\Instance;
@@ -32,6 +33,8 @@ final class TaskGroupData extends Data
         public ?string $prUrl,
         public bool $notifyCoder,
         public bool $assistanceRequested,
+        public ?AssistanceKind $assistanceKind,
+        public ?string $assistanceQuestion,
         public ?string $assistanceReason,
         public string $implementerModel,
         public string $reviewerModel,
@@ -66,6 +69,8 @@ final class TaskGroupData extends Data
             prUrl: $group->pr_url,
             notifyCoder: $group->notify_coder,
             assistanceRequested: $group->assistance_requested,
+            assistanceKind: $group->assistance_kind,
+            assistanceQuestion: $group->assistance_question,
             assistanceReason: $group->assistance_reason,
             implementerModel: $group->implementer_model,
             reviewerModel: $group->reviewer_model,

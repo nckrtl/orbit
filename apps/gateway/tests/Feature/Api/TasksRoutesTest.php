@@ -624,23 +624,33 @@ it('returns assistance fields on show and list for flagged and unflagged groups'
 
     Task::topLevel()->whereKey($flagged['id'])->update([
         'assistance_requested' => true,
+        'assistance_kind' => 'direction',
+        'assistance_question' => $question,
         'assistance_reason' => $blocked,
     ]);
     Task::query()->whereKey($flagged['tasks'][0]['id'])->update([
         'assistance_requested' => true,
+        'assistance_kind' => 'direction',
+        'assistance_question' => $question,
         'assistance_reason' => $question,
     ]);
 
-    $expectFields = function (array $group, bool $requested, ?string $reason, bool $firstRequested, ?string $firstReason): void {
+    $expectFields = function (array $group, bool $requested, ?string $kind, ?string $question, ?string $reason, bool $firstRequested, ?string $firstKind, ?string $firstQuestion, ?string $firstReason): void {
         expect($group)->toMatchArray([
             'assistance_requested' => $requested,
+            'assistance_kind' => $kind,
+            'assistance_question' => $question,
             'assistance_reason' => $reason,
         ])->and($group['tasks'])->toHaveCount(2)
             ->and($group['tasks'][0])->toMatchArray([
                 'assistance_requested' => $firstRequested,
+                'assistance_kind' => $firstKind,
+                'assistance_question' => $firstQuestion,
                 'assistance_reason' => $firstReason,
             ])->and($group['tasks'][1])->toMatchArray([
                 'assistance_requested' => false,
+                'assistance_kind' => null,
+                'assistance_question' => null,
                 'assistance_reason' => null,
             ]);
 
@@ -660,15 +670,15 @@ it('returns assistance fields on show and list for flagged and unflagged groups'
     $shown = $this->getJson('/api/v1/task-groups/'.$flagged['id'])->assertOk()->json('data');
     $clearShown = $this->getJson('/api/v1/task-groups/'.$clear['id'])->assertOk()->json('data');
     expect($shown)->toBeArray()->and($clearShown)->toBeArray();
-    $expectFields($shown, true, $blocked, true, $question);
-    $expectFields($clearShown, false, null, false, null);
+    $expectFields($shown, true, 'direction', $question, $blocked, true, 'direction', $question, $question);
+    $expectFields($clearShown, false, null, null, null, false, null, null, null);
 
     $listed = collect($this->getJson('/api/v1/task-groups')->assertOk()->json('data'))->keyBy('id');
     $flaggedList = $listed->get($flagged['id']);
     $clearList = $listed->get($clear['id']);
     expect($flaggedList)->toBeArray()->and($clearList)->toBeArray();
-    $expectFields($flaggedList, true, $blocked, true, $question);
-    $expectFields($clearList, false, null, false, null);
+    $expectFields($flaggedList, true, 'direction', $question, $blocked, true, 'direction', $question, $question);
+    $expectFields($clearList, false, null, null, null, false, null, null, null);
 });
 
 it('summarises groups asking for assistance on tasks status', function (): void {
@@ -702,6 +712,8 @@ it('summarises groups asking for assistance on tasks status', function (): void 
     Task::topLevel()->whereKey($first)->update([
         'status' => 'running',
         'assistance_requested' => true,
+        'assistance_kind' => 'direction',
+        'assistance_question' => $question,
         'assistance_reason' => 'The implementer is blocked.',
     ]);
     Task::topLevel()->whereKey($clear)->update([
@@ -711,6 +723,8 @@ it('summarises groups asking for assistance on tasks status', function (): void 
     Task::topLevel()->whereKey($second)->update([
         'status' => 'settling',
         'assistance_requested' => true,
+        'assistance_kind' => 'failure',
+        'assistance_question' => null,
         'assistance_reason' => null,
     ]);
     Task::query()->where('parent_id', $subtaskOnly)->update([
@@ -726,6 +740,8 @@ it('summarises groups asking for assistance on tasks status', function (): void 
             'project_code' => $project->code,
             'title' => 'First stalled',
             'status' => 'running',
+            'assistance_kind' => 'direction',
+            'assistance_question' => $question,
             'assistance_reason' => 'The implementer is blocked.',
         ],
         [
@@ -735,6 +751,8 @@ it('summarises groups asking for assistance on tasks status', function (): void 
             'project_code' => $project->code,
             'title' => 'Second stalled',
             'status' => 'settling',
+            'assistance_kind' => 'failure',
+            'assistance_question' => null,
             'assistance_reason' => null,
         ],
     ];

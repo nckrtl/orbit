@@ -294,7 +294,7 @@ orbit tasks:question:list [--project=ID] [--cause=CAUSE] [--status=STATUS] [--si
 | `--status=STATUS` | every status | `open`, `escalated`, or `answered`. |
 | `--since=DATE` | no limit | Only questions asked on or after this ISO 8601 date or time. |
 
-Human output prints one header line for each question, with its time, task and subtask reference, asker, status, and cause. The question and the answer follow, each indented by two spaces. An empty list says `No questions match.` JSON holds the records under `questions`. The [tasks reference](/reference/tasks#questions) defines each field, the relay routes, and the consult limit. The limit counts the consult records of the current implementer attempt, and a relay does not count. A direction resolution does not start a new implementer attempt. [Migrate open requests](/reference/tasks#migrate-open-requests) names `2026_10_02_000000_create_task_questions` before `2026_10_02_000001_add_assistance_kind_to_tasks`.
+Human output prints one header line for each question, with its time, task and subtask reference, asker, status, and cause. The question and the answer follow, each indented by two spaces. An empty list says `No questions match.` JSON holds the records under `questions`. The [tasks reference](/reference/tasks#questions) defines each field, the relay routes, and the consult limit. The limit counts the consult records of the current implementer attempt, and a relay does not count. A direction resolution does not start a new implementer attempt. [Migrate open requests](/reference/tasks#migrate-open-requests) names `2026_10_07_000000_create_task_questions` before `2026_10_07_000001_add_assistance_kind_to_tasks`.
 
 ## orbit tasks:agents
 

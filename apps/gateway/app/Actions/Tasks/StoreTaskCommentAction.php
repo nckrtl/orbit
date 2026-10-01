@@ -6,8 +6,10 @@ namespace App\Actions\Tasks;
 
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
+use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\TaskAgentSpawner;
+use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
@@ -39,8 +41,11 @@ final readonly class StoreTaskCommentAction
             $type = TaskCommentType::tryFrom(is_string($rawType) ? $rawType : '');
 
             if ($type === TaskCommentType::AssistanceRequested) {
-                $task->update(['assistance_requested' => true, 'assistance_reason' => $comment->body]);
-                $task->parent()->update(['assistance_requested' => true, 'assistance_reason' => $comment->body]);
+                TaskAssistance::apply($task, AssistanceKind::Direction, $comment->body, $comment->body, replaceDirection: true);
+                $parent = $task->parent()->lockForUpdate()->first();
+                if ($parent instanceof Task) {
+                    TaskAssistance::apply($parent, AssistanceKind::Direction, $comment->body, $comment->body, replaceDirection: true);
+                }
                 $this->log($task, $comment, 'assistance requested');
             }
             if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && $task->assistance_requested) {
@@ -112,13 +117,12 @@ final readonly class StoreTaskCommentAction
             }
             $comment->update(['review_attempt' => $locked->review_attempt]);
             $locked->update([
-                'assistance_requested' => false,
-                'assistance_reason' => null,
+                ...TaskAssistance::cleared(),
                 'communication_failures' => 0,
                 'review_reminder_attempt' => null,
                 'review_reminder_input_id' => null,
             ]);
-            $locked->parent()->update(['assistance_requested' => false, 'assistance_reason' => null]);
+            $locked->parent()->update(TaskAssistance::cleared());
             $this->log($locked, $comment, 'resolution held for reviewer');
         });
     }
@@ -134,8 +138,8 @@ final readonly class StoreTaskCommentAction
             $attempt = $reviewing
                 ? ['review_attempt' => $locked->review_attempt + 1, 'review_notified_attempt' => $locked->review_attempt + 1]
                 : ['completion_attempt' => $locked->completion_attempt + 1, 'completion_reminder_attempt' => null, 'completion_reminder_input_id' => null];
-            $locked->update([...$attempt, 'assistance_requested' => false, 'assistance_reason' => null, 'communication_failures' => 0, 'review_reminder_attempt' => null, 'review_reminder_input_id' => null, 'resolution_delivered_comment_id' => $comment->id]);
-            $locked->parent()->update(['assistance_requested' => false, 'assistance_reason' => null]);
+            $locked->update([...$attempt, ...TaskAssistance::cleared(), 'communication_failures' => 0, 'review_reminder_attempt' => null, 'review_reminder_input_id' => null, 'resolution_delivered_comment_id' => $comment->id]);
+            $locked->parent()->update(TaskAssistance::cleared());
             $this->log($locked, $comment, 'resolution delivered');
         });
     }

@@ -7,6 +7,8 @@ namespace App\Actions\Tasks;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
@@ -68,8 +70,9 @@ final readonly class CancelTaskGroupAction
             $keepOffline = $current instanceof Instance && $current->id === $offlineId;
             $attached = $current instanceof Instance && $current->id !== $removedId && ! $keepOffline ? $current : null;
             if ($keepOffline) {
-                $locked->assistance_requested = true;
-                $locked->assistance_reason = RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.';
+                if (! ($locked->assistance_requested && $locked->assistance_kind === AssistanceKind::Direction)) {
+                    $locked->fill(TaskAssistance::attributes(AssistanceKind::Failure, null, RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.'));
+                }
             } else {
                 $locked->taskable()->dissociate();
                 $locked->assistance_requested = false;

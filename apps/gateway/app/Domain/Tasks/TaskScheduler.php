@@ -171,7 +171,7 @@ final readonly class TaskScheduler
                     $this->completeMergedGroup($group);
                 }
             } elseif ($status === 'closed') {
-                $group->update(['assistance_requested' => true, 'assistance_reason' => 'The expected pull request closed without merging.']);
+                TaskAssistance::apply($group, AssistanceKind::Failure, null, 'The expected pull request closed without merging.', replaceFailure: true);
             } elseif ($health instanceof TaskPullRequestHealth) {
                 $this->healOpenPullRequest($group, $health);
             }
@@ -197,6 +197,12 @@ final readonly class TaskScheduler
                     $this->recordSubtaskStart($task);
                 }
                 if ($task->assistance_requested || $group->assistance_requested) {
+                    if ($task->assistance_requested && ! $group->assistance_requested && $task->assistance_kind instanceof AssistanceKind && is_string($task->assistance_reason)) {
+                        $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
+                        if (! $group->assistance_requested) {
+                            $this->requestAssistance($task, $group, $task->assistance_reason, null, $task->assistance_kind, $task->assistance_question);
+                        }
+                    }
                     if ($task->status === TaskStatus::Reviewing) {
                         $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
                         $this->retryCommittedApproval($group, $task);
@@ -263,8 +269,7 @@ final readonly class TaskScheduler
                     $task->increment('communication_failures');
                     $task->refresh();
                     if ($task->communication_failures >= 5) {
-                        $task->update(['assistance_requested' => true, 'assistance_reason' => $exception->getMessage()]);
-                        $group->update(['assistance_requested' => true, 'assistance_reason' => $exception->getMessage()]);
+                        $this->requestAssistance($task, $group, $exception->getMessage());
                     }
                     $this->actor->execute($group, $observation, $decision);
                 }
@@ -313,8 +318,7 @@ final readonly class TaskScheduler
         }
         $receipt = $this->pendingReceipt($task, TaskThreadRole::Implementer);
         if ($receipt instanceof TaskComment && $this->receiptOutcome($receipt) === TaskTurnOutcome::Blocked) {
-            $task->update(['completion_handoff_comment_id' => $receipt->id]);
-            $this->requestAssistance($task, $group, 'The implementer is blocked: '.$receipt->body, $observation);
+            $this->requestAssistance($task, $group, TaskAssistance::ImplementerBlockedPrefix.$receipt->body, $observation, AssistanceKind::Direction, TaskAssistance::questionFromBlockedReason($receipt->body), ['completion_handoff_comment_id' => $receipt->id]);
 
             return true;
         }
@@ -384,13 +388,13 @@ final readonly class TaskScheduler
         }
         // The implementer cannot change deliverables, so an invalid project or file asks for assistance with no reminder.
         if ($check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step === self::INVALID_DELIVERABLE_STEP) {
-            $task->update(['completion_handoff_comment_id' => $receipt->id]);
             $reason = trim((string) $check->output);
             $this->requestAssistance(
                 $task,
                 $group,
                 $reason !== '' ? $reason : 'A command deliverable names an invalid directory or overlay path.',
                 $observation,
+                handled: ['completion_handoff_comment_id' => $receipt->id],
             );
 
             return;
@@ -415,8 +419,7 @@ final readonly class TaskScheduler
             return;
         }
         if ($status === TaskCheckStatus::Lost && $repeats >= 2) {
-            $task->update(['completion_handoff_comment_id' => $receipt->id]);
-            $this->requestAssistance($task, $group, "{$owned} stopped twice without a result.", $observation);
+            $this->requestAssistance($task, $group, "{$owned} stopped twice without a result.", $observation, handled: ['completion_handoff_comment_id' => $receipt->id]);
 
             return;
         }
@@ -554,8 +557,7 @@ final readonly class TaskScheduler
             return true;
         }
         if ($receipt instanceof TaskComment && $outcome === TaskTurnOutcome::Blocked) {
-            $task->update(['review_handled_comment_id' => $receipt->id]);
-            $this->requestAssistance($task, $group, 'The reviewer is blocked: '.$receipt->body, $observation);
+            $this->requestAssistance($task, $group, TaskAssistance::ReviewerBlockedPrefix.$receipt->body, $observation, AssistanceKind::Direction, TaskAssistance::questionFromBlockedReason($receipt->body), ['review_handled_comment_id' => $receipt->id]);
 
             return true;
         }
@@ -782,8 +784,9 @@ final readonly class TaskScheduler
         }
 
         $reason = self::OrphanedCommitPrefix.'Commit '.$commit.' reached task-'.$group->id.' after '.$group->pr_url.' merged at '.$health->headSha.'. Open a pull request for task-'.$group->id.', or complete the group.';
-        $group->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
-        $this->coder->assistance($group, $reason);
+        if (TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason)) {
+            $this->coder->assistance($group, $reason);
+        }
     }
 
     /** A failed push or open waits out the backoff and asks for assistance on the fifth failure. */
@@ -800,10 +803,10 @@ final readonly class TaskScheduler
         $task->refresh();
         $group->refresh();
         if (is_string($task->assistance_reason) && str_starts_with($task->assistance_reason, self::PublicationFailedPrefix)) {
-            $task->update(['assistance_requested' => false, 'assistance_reason' => null]);
+            $task->update(TaskAssistance::cleared());
         }
         if (is_string($group->assistance_reason) && str_starts_with($group->assistance_reason, self::PublicationFailedPrefix)) {
-            $group->update(['assistance_requested' => false, 'assistance_reason' => null]);
+            $group->update(TaskAssistance::cleared());
         }
     }
 
@@ -1108,14 +1111,35 @@ final readonly class TaskScheduler
         }
     }
 
-    private function requestAssistance(Task $task, Task $group, string $reason, ?TaskSessionObservation $observation = null): void
+    /**
+     * @param  array<string, int>  $handled
+     */
+    private function requestAssistance(Task $task, Task $group, string $reason, ?TaskSessionObservation $observation = null, AssistanceKind $kind = AssistanceKind::Failure, ?string $question = null, array $handled = []): void
     {
-        if ($task->assistance_requested || $group->assistance_requested) {
-            return;
+        $notifyReason = null;
+        DB::transaction(function () use ($task, $group, $reason, $kind, $question, $handled, &$notifyReason): void {
+            if ($handled !== []) {
+                $task->update($handled);
+            }
+            $wasAsking = (bool) DB::table('tasks')->where('id', $group->id)->value('assistance_requested');
+            TaskAssistance::apply($task, $kind, $question, $reason);
+            $task->refresh();
+            $taskKind = $task->assistance_kind;
+            $taskReason = $task->assistance_reason;
+            if ($task->assistance_requested && $taskKind instanceof AssistanceKind && is_string($taskReason)) {
+                TaskAssistance::apply($group, $taskKind, $task->assistance_question, $taskReason);
+            } else {
+                TaskAssistance::apply($group, $kind, $question, $reason);
+            }
+            $group->refresh();
+            $groupReason = $group->assistance_reason;
+            if (! $wasAsking && $group->assistance_requested && is_string($groupReason)) {
+                $notifyReason = $groupReason;
+            }
+        });
+        if (is_string($notifyReason)) {
+            $this->coder->assistance($group, $notifyReason);
         }
-        $task->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
-        $group->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
-        $this->coder->assistance($group, $reason);
     }
 
     /**
@@ -1426,8 +1450,7 @@ final readonly class TaskScheduler
         $group->status = TaskGroupStatus::Running;
         $group->started_at ??= now();
         if (self::isClaimFailureReason($group->assistance_reason)) {
-            $group->assistance_requested = false;
-            $group->assistance_reason = null;
+            $group->fill(TaskAssistance::cleared());
         }
         $group->save();
 
@@ -1624,17 +1647,14 @@ final readonly class TaskScheduler
 
         try {
             if (TaskPullRequestHealth::isReason($group->assistance_reason)) {
-                $group->update(['assistance_requested' => false, 'assistance_reason' => null]);
+                $group->update(TaskAssistance::cleared());
             }
             $this->completeGroup->execute($group, finishWhenRemovalFails: false);
             if (is_string($backoffKey)) {
                 $this->rememberBackoff($backoffKey, null, 'workspace removal');
             }
         } catch (Throwable $exception) {
-            $group->update([
-                'assistance_requested' => true,
-                'assistance_reason' => RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.$exception->getMessage(),
-            ]);
+            TaskAssistance::apply($group, AssistanceKind::Failure, null, RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.$exception->getMessage(), replaceFailure: true);
             if (is_string($backoffKey)) {
                 $this->extendBackoff($backoffKey, $backoff, 'workspace removal');
             }
@@ -2709,13 +2729,10 @@ final readonly class TaskScheduler
 
     private function requestMissingPullRequest(Task $group): void
     {
-        if ($group->assistance_requested) {
-            return;
-        }
-
         $reason = self::MissingPullRequestPrefix.' Cancel the group to push its approved commits to task-'.$group->id.' and remove its workspace.';
-        $group->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
-        $this->coder->assistance($group, $reason);
+        if (TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason)) {
+            $this->coder->assistance($group, $reason);
+        }
     }
 
     public static function isMissingPullRequestReason(?string $reason): bool
@@ -2737,8 +2754,7 @@ final readonly class TaskScheduler
         if (! TaskPullRequestHealth::isReason($group->assistance_reason) && ! self::isMissingPullRequestReason($group->assistance_reason)) {
             return;
         }
-        $group->assistance_requested = false;
-        $group->assistance_reason = null;
+        $group->fill(TaskAssistance::cleared());
     }
 
     /**
@@ -2747,11 +2763,12 @@ final readonly class TaskScheduler
      */
     private function reportPullRequestHealth(Task $group, TaskPullRequestHealth $health, ?string $extra = null): void
     {
+        $group->refresh();
         $ownRequest = TaskPullRequestHealth::isReason($group->assistance_reason);
 
         if ($health->problems === []) {
             if ($ownRequest) {
-                $group->update(['assistance_requested' => false, 'assistance_reason' => null]);
+                $group->update(TaskAssistance::cleared());
             }
 
             return;
@@ -2762,8 +2779,9 @@ final readonly class TaskScheduler
             return;
         }
 
-        $group->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
-        $this->coder->assistance($group, $reason);
+        if (TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason, replaceFailure: $ownRequest)) {
+            $this->coder->assistance($group, $reason);
+        }
     }
 
     private function startFirstTask(Task $group): void
@@ -3160,8 +3178,7 @@ final readonly class TaskScheduler
             'status' => TaskStatus::Cancelled,
             'settled_at' => now(),
             'completion_summary' => 'Cancelled by operator.',
-            'assistance_requested' => false,
-            'assistance_reason' => null,
+            ...TaskAssistance::cleared(),
         ]);
 
         return $assistanceReason;
@@ -3178,8 +3195,7 @@ final readonly class TaskScheduler
             ->where('assistance_requested', true)
             ->exists();
         if (! $otherAssistance) {
-            $group->assistance_requested = false;
-            $group->assistance_reason = null;
+            $group->fill(TaskAssistance::cleared());
         }
     }
 

@@ -61,3 +61,5 @@ docs/solutions/doctor-incus-proof.md: The Incus doctor proof is unchanged. Renam
 docs/reference/web-verification.md: The quota-unavailable purpose in the feature map now follows proxycli-only Quota. Web verification commands, the map schema, and the demo routes on this page are unchanged.
 docs/reference/cli-ux.md: Task contract snapshots follow the new subtask and group ids. Input, consent, and presentation rules on this page are unchanged.
 docs/cli/doctor.mdx: The caller-facing Doctor report is unchanged. The fleet inspection used by the outer loop is documented in /reference/tasks.
+docs/reference/api-reference.md: The generator contract is unchanged, and bin/docs-openapi leaves no diff after the task data classes added assistance_kind and assistance_question.
+docs/reference/gateway-response-fixtures.md: The fixture process is unchanged; the task fixtures only gained the assistance_kind and assistance_question fields.

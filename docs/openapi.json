@@ -19268,7 +19268,7 @@
           }
         ],
         "x-orbit-extension": "tasks",
-        "description": "Lists Task groups, newest first. Optional `project_id` and `status` filters. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.",
+        "description": "Lists Task groups, newest first. Optional `project_id` and `status` filters. The group and each subtask include `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason`. Returns `extension.disabled` while the extension is off.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -19577,7 +19577,7 @@
           }
         ],
         "x-orbit-extension": "tasks",
-        "description": "Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.",
+        "description": "Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason`. Returns `extension.disabled` while the extension is off.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -21220,7 +21220,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, and reason. The list is present while the extension is off.",
+        "description": "Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, `assistance_kind`, `assistance_question`, and `assistance_reason`. The list is present while the extension is off.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -23056,7 +23056,8 @@
             ],
             "enum": [
               "cleaned",
-              "uncleaned"
+              "uncleaned",
+              null
             ]
           }
         }
@@ -23183,7 +23184,8 @@
             "enum": [
               "unreachable",
               "firewall_inactive",
-              "reconcile_failed"
+              "reconcile_failed",
+              null
             ]
           },
           "degraded_error_code": {
@@ -23717,6 +23719,23 @@
           "assistance_requested": {
             "type": "boolean"
           },
+          "assistance_kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "direction",
+              "failure",
+              null
+            ]
+          },
+          "assistance_question": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "assistance_reason": {
             "type": [
               "string",
@@ -23878,6 +23897,23 @@
           "assistance_requested": {
             "type": "boolean"
           },
+          "assistance_kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "direction",
+              "failure",
+              null
+            ]
+          },
+          "assistance_question": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "assistance_reason": {
             "type": [
               "string",
@@ -24003,7 +24039,8 @@
               "working",
               "asking_for_input",
               "done",
-              "failed"
+              "failed",
+              null
             ]
           },
           "observed_at": {
@@ -24192,6 +24229,23 @@
               "completed",
               "failed",
               "cancelled"
+            ]
+          },
+          "assistance_kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "direction",
+              "failure",
+              null
+            ]
+          },
+          "assistance_question": {
+            "type": [
+              "string",
+              "null"
             ]
           },
           "assistance_reason": {

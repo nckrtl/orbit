@@ -80,6 +80,8 @@ it("counts completed nested tasks against the group total", () => {
         completion_summary: null,
         check: null,
         assistance_requested: false,
+        assistance_kind: null,
+        assistance_question: null,
         assistance_reason: null,
         fixup_problem: null,
         position: id,

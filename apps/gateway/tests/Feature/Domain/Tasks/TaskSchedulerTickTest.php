@@ -10,6 +10,7 @@ use App\Domain\Instances\InstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\ArchiveFinishedTaskThreads;
+use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\BriefCoverageLabeler;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\NullAgentSpawner;
@@ -761,7 +762,7 @@ it('asks for assistance once per set of pull request problems and withdraws it w
     $checkReason = 'The pull request needs attention: Check Rust agent failed: https://github.com/acme/orbit/runs/1. Orbit reached the cap of 2 fixups for check:Rust agent in the current window (2 counted).';
 
     app(TaskScheduler::class)->tick();
-    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => $conflictReason]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_kind' => 'failure', 'assistance_question' => null, 'assistance_reason' => $conflictReason]);
     $requestedAt = $group->fresh()?->updated_at;
     $this->travel(1)->minute();
 
@@ -770,13 +771,13 @@ it('asks for assistance once per set of pull request problems and withdraws it w
         ->and($group->fresh()?->updated_at?->equalTo($requestedAt))->toBeTrue();
 
     app(TaskScheduler::class)->tick();
-    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'assistance_requested' => true, 'assistance_reason' => $checkReason]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'assistance_requested' => true, 'assistance_kind' => 'failure', 'assistance_question' => null, 'assistance_reason' => $checkReason]);
     expect($notifier->reasons)->toBe([$conflictReason, $checkReason]);
 
     // A re-run on the same head commit is read once the minute-long check cache expires.
     $this->travel(61)->seconds();
     app(TaskScheduler::class)->tick();
-    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => false, 'assistance_reason' => null]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => false, 'assistance_kind' => null, 'assistance_question' => null, 'assistance_reason' => null]);
     expect($notifier->reasons)->toHaveCount(2)
         ->and(Task::query()->where('parent_id', $group->id)->count())->toBe(5);
 });
@@ -799,6 +800,35 @@ it('leaves another cause of assistance on a settling group alone while its pull 
 
     $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => 'Merged pull request cleanup failed: disk full']);
     expect($notifier->reasons)->toBe([]);
+});
+
+it('does not replace an open direction request when the pull request needs attention', function (): void {
+    $group = tick_settling_group();
+    $question = 'Which base should the conflict follow?';
+    $reason = "The reviewer is blocked: The pull request conflicts.\n\nQuestion: {$question}";
+    $group->update([
+        'assistance_requested' => true,
+        'assistance_kind' => AssistanceKind::Direction,
+        'assistance_question' => $question,
+        'assistance_reason' => $reason,
+    ]);
+    $notifier = tick_assistance_notifier();
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/pulls/42' => Http::sequence()
+            ->push(['merged' => false, 'state' => 'open', 'mergeable' => false, 'base' => ['ref' => 'main']])
+            ->push(['merged' => false, 'state' => 'open', 'mergeable' => true, 'base' => ['ref' => 'main']]),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    expect($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($group->fresh()?->assistance_question)->toBe($question)
+        ->and($group->fresh()?->assistance_reason)->toBe($reason)
+        ->and($notifier->reasons)->toBe([]);
 });
 
 it('withdraws its pull request assistance request when the pull request merges', function (): void {
@@ -853,6 +883,8 @@ it('backs off a merged pull request cleanup and retries it on a later tick', fun
 
     expect($calls)->toBe(1)
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($group->fresh()?->assistance_question)->toBeNull()
         ->and($group->fresh()?->assistance_reason)->toBe('Merged pull request cleanup failed: disk full');
 
     $this->travel(TaskScheduler::AbandonedWorkspaceBackoffSeconds + 1)->seconds();
@@ -1070,7 +1102,32 @@ it('replaces its pull request assistance request with the cleanup failure when a
 
     app(TaskScheduler::class)->tick();
 
-    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => 'Merged pull request cleanup failed: disk full']);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_kind' => 'failure', 'assistance_question' => null, 'assistance_reason' => 'Merged pull request cleanup failed: disk full']);
+});
+
+it('does not replace an open direction request when merged pull request cleanup fails', function (): void {
+    $group = tick_settling_group();
+    $question = 'Should the merged branch be kept?';
+    $reason = "The reviewer is blocked: The merge removed a migration.\n\nQuestion: {$question}";
+    $group->update([
+        'assistance_requested' => true,
+        'assistance_kind' => AssistanceKind::Direction,
+        'assistance_question' => $question,
+        'assistance_reason' => $reason,
+    ]);
+    mock(InstanceRemover::class)->shouldReceive('execute')->once()->andThrow(new RuntimeException('disk full'));
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response(['merged' => true, 'state' => 'closed']),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($group->fresh()?->assistance_question)->toBe($question)
+        ->and($group->fresh()?->assistance_reason)->toBe($reason);
 });
 
 it('changes nothing on a settling group when GitHub cannot report the pull request', function (): void {
@@ -1328,6 +1385,27 @@ it('does not start an appended subtask while another assistance cause is set', f
         ->and(Task::query()->whereNotNull('fixup_problem')->exists())->toBeFalse();
 });
 
+it('does not replace an open direction request when the pull request closes', function (): void {
+    $group = tick_settling_group();
+    $question = 'Which database should this use?';
+    $reason = "The implementer is blocked: Need a database.\n\nQuestion: {$question}";
+    $group->update([
+        'assistance_requested' => true,
+        'assistance_kind' => AssistanceKind::Direction,
+        'assistance_question' => $question,
+        'assistance_reason' => $reason,
+    ]);
+    tick_appended_subtask($group);
+    tick_running_agents();
+    tick_watch_pulls([['merged' => false, 'state' => 'closed']]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($group->fresh()?->assistance_question)->toBe($question)
+        ->and($group->fresh()?->assistance_reason)->toBe($reason);
+});
+
 it('asks for assistance for a closed pull request and does not start an appended subtask', function (): void {
     $group = tick_settling_group();
     $todo = tick_appended_subtask($group);
@@ -1337,6 +1415,8 @@ it('asks for assistance for a closed pull request and does not start an appended
     app(TaskScheduler::class)->tick();
 
     expect($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($group->fresh()?->assistance_question)->toBeNull()
         ->and($group->fresh()?->assistance_reason)->toBe('The expected pull request closed without merging.')
         ->and($todo->fresh()?->status)->toBe(TaskStatus::Todo)
         ->and($agents->spawned)->toBe([]);
@@ -1431,8 +1511,12 @@ it('retries a failed conflict fixup fetch on the backoff and asks for assistance
     $fixup = Task::query()->where('fixup_problem', 'conflict:main')->sole();
     expect($fixup->status)->toBe(TaskStatus::Todo)
         ->and($fixup->communication_failures)->toBe(5)
+        ->and($fixup->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($fixup->assistance_question)->toBeNull()
         ->and($fixup->assistance_reason)->toBe('The base branch could not be fetched.')
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
+        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($group->fresh()?->assistance_question)->toBeNull()
         ->and($group->fresh()?->assistance_reason)->toBe('The base branch could not be fetched.')
         ->and($notifier->reasons)->toBe(['The base branch could not be fetched.']);
 
@@ -2137,11 +2221,83 @@ it('asks for assistance with the summary of a blocked receipt', function (): voi
     app(TaskScheduler::class)->tick();
 
     expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($task->fresh()?->assistance_question)->toBe('May the Node user run sudo apt-get install php8.5-intl?')
         ->and($task->fresh()?->assistance_reason)->toBe("The implementer is blocked: Installing the extension needs sudo, and sudo was denied.\n\nQuestion: May the Node user run sudo apt-get install php8.5-intl?")
+        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($group->fresh()?->assistance_question)->toBe('May the Node user run sudo apt-get install php8.5-intl?')
         ->and($task->fresh()?->status)->toBe(TaskStatus::Running)
         ->and($task->comments()->sole()->getRawOriginal('type'))->toBe('blocked')
+        ->and($task->fresh()?->completion_handoff_comment_id)->toBe($task->comments()->sole()->id)
         ->and($receipts->cleared)->toHaveCount(1)
         ->and($dispatcher->commands)->toBe([]);
+});
+
+it('rolls back a blocked receipt and both assistance rows when saving them fails, then retries', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    app(TaskExtensionState::class)->enable();
+    app()->instance(T3Dispatcher::class, tick_dispatcher());
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => ['session' => ['status' => 'idle']]];
+        }
+    });
+    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([FakeTaskTurnReceipts::contents('blocked', 'Installing the extension needs sudo, and sudo was denied.', 'May the Node user run sudo apt-get install php8.5-intl?')]));
+    $inject = true;
+    DB::beforeExecuting(function (string $sql) use (&$inject): void {
+        if (! $inject || ! str_starts_with(strtolower(ltrim($sql)), 'update') || ! str_contains($sql, 'assistance_kind')) {
+            return;
+        }
+        $inject = false;
+        throw new RuntimeException('injected assistance failure');
+    });
+
+    expect(fn () => app(TaskScheduler::class)->tick())->toThrow(RuntimeException::class, 'injected assistance failure');
+    expect($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($task->fresh()?->assistance_kind)->toBeNull()
+        ->and($task->fresh()?->completion_handoff_comment_id)->toBeNull()
+        ->and($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and($group->fresh()?->assistance_kind)->toBeNull();
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($task->fresh()?->assistance_question)->toBe('May the Node user run sudo apt-get install php8.5-intl?')
+        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($group->fresh()?->assistance_question)->toBe('May the Node user run sudo apt-get install php8.5-intl?')
+        ->and($task->fresh()?->completion_handoff_comment_id)->toBe($task->comments()->sole()->id);
+});
+
+it('flags the parent when a subtask already asks and the parent does not', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    app(TaskExtensionState::class)->enable();
+    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => ['session' => ['status' => 'idle']]];
+        }
+    });
+    $question = 'Which database should this subtask use?';
+    $reason = "The implementer is blocked: The mirror is down.\n\nQuestion: {$question}";
+    $task->update([
+        'assistance_requested' => true,
+        'assistance_kind' => AssistanceKind::Direction,
+        'assistance_question' => $question,
+        'assistance_reason' => $reason,
+    ]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($task->fresh()?->assistance_question)->toBe($question)
+        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($group->fresh()?->assistance_question)->toBe($question)
+        ->and($group->fresh()?->assistance_reason)->toBe($reason);
 });
 
 it('resumes a Pi implementer restarted during the turn instead of asking for assistance', function (): void {
@@ -2215,10 +2371,41 @@ it('asks for assistance when a Pi implementer fails for another reason', functio
     app(TaskScheduler::class)->tick();
 
     expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($task->fresh()?->assistance_question)->toBeNull()
         ->and($task->fresh()?->assistance_reason)->toBe('The implementer thread failed.')
+        ->and($task->parent->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($task->parent->fresh()?->assistance_question)->toBeNull()
         ->and($task->parent->fresh()?->assistance_requested)->toBeTrue()
         ->and(tick_pi_message_keys())->toBe([])
         ->and($task->fresh()?->pi_restart_resumes)->toBe(0);
+});
+
+it('does not replace an open direction request when the implementer thread fails', function (): void {
+    $task = tick_pi_implementer();
+    $question = 'May the Node user run sudo?';
+    $reason = "The implementer is blocked: sudo was denied.\n\nQuestion: {$question}";
+    $task->update([
+        'assistance_requested' => true,
+        'assistance_kind' => AssistanceKind::Direction,
+        'assistance_question' => $question,
+        'assistance_reason' => $reason,
+    ]);
+    $task->parent->update([
+        'assistance_requested' => true,
+        'assistance_kind' => AssistanceKind::Direction,
+        'assistance_question' => $question,
+        'assistance_reason' => $reason,
+    ]);
+    tick_pi_failure((object) ['turnId' => 'turn-key-1', 'error' => 'The turn was interrupted.']);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($task->fresh()?->assistance_question)->toBe($question)
+        ->and($task->fresh()?->assistance_reason)->toBe($reason)
+        ->and($task->parent->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($task->parent->fresh()?->assistance_question)->toBe($question);
 });
 
 it('asks for assistance after two reserved Pi resumes', function (): void {
@@ -3851,7 +4038,11 @@ it('asks for assistance with the summary of a blocked reviewer receipt', functio
     app(TaskScheduler::class)->tick();
 
     expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($task->fresh()?->assistance_question)->toBe('Should the subtask follow the brief or ADR 0098?')
         ->and($task->fresh()?->assistance_reason)->toBe("The reviewer is blocked: The brief contradicts ADR 0098.\n\nQuestion: Should the subtask follow the brief or ADR 0098?")
+        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($group->fresh()?->assistance_question)->toBe('Should the subtask follow the brief or ADR 0098?')
         ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
         ->and(app(T3Dispatcher::class)->commands)->toBe([]);
 });
@@ -3867,6 +4058,10 @@ it('reminds a reviewer that ends a turn without a receipt once, then asks for as
     app(TaskScheduler::class)->tick();
 
     expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($task->fresh()?->assistance_question)->toBeNull()
+        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($group->fresh()?->assistance_question)->toBeNull()
         ->and($task->fresh()?->assistance_reason)->toBe('Checks still failed after the reminder. No turn receipt was found.');
     Classification::assertNothingClassified();
 });

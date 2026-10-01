@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Tasks;
 
+use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskType;
@@ -36,6 +37,8 @@ final class TaskData extends Data
         public ?string $completionSummary,
         public ?TaskCheckData $check,
         public bool $assistanceRequested,
+        public ?AssistanceKind $assistanceKind,
+        public ?string $assistanceQuestion,
         public ?string $assistanceReason,
         public ?string $fixupProblem,
     ) {}
@@ -50,6 +53,8 @@ final class TaskData extends Data
             completionSummary: $task->completion_summary,
             check: $check instanceof TaskCheck ? TaskCheckData::fromModel($check) : null,
             assistanceRequested: $task->assistance_requested,
+            assistanceKind: $task->assistance_kind,
+            assistanceQuestion: $task->assistance_question,
             assistanceReason: $task->assistance_reason,
             fixupProblem: $task->fixup_problem,
 
