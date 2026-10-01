@@ -1,20 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { Outlet, useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useMemo } from "react";
-import {
-    type Fleet,
-    liveFirewallQuery,
-    managedFirewallQuery,
-    toolsQuery,
-    useFleet,
-} from "../api/queries";
+import { type Fleet, liveFirewallQuery, managedFirewallQuery, useFleet } from "../api/queries";
 import type {
     FirewallRule,
     LiveFirewallMatch,
     LiveFirewallRule,
     ManagedFirewallRule,
     Node,
-    Tool,
 } from "../api/types";
 import {
     instanceHealthy,
@@ -32,6 +25,7 @@ import { Properties } from "../ui/Properties";
 import { SectionMenu } from "../ui/SectionMenu";
 import { Status } from "../ui/Status";
 import { instanceColumns, processColumns } from "./columns";
+import { NodeTools } from "./NodeTools";
 import { RecordLayout } from "./RecordLayout";
 
 const GAPS = "gap-x-[1ch] gap-y-[var(--panel-gap)]";
@@ -53,29 +47,6 @@ export function nodePanelFromPath(pathname: string): NodePanel {
         panel !== "overview"
         ? (panel as NodePanel)
         : "overview";
-}
-
-/** The version the last operation recorded. A live scan is a different reading and is not shown here. */
-export function toolRecordedVersion(tool: Tool): string {
-    return tool.installed_version ?? "—";
-}
-
-export function toolConstraint(tool: Tool): string {
-    return tool.version_constraint ?? "—";
-}
-
-/** The failed operation and its code, or a dash when the stored tool has no failure. */
-export function toolFailure(tool: Tool): string {
-    const parts = [tool.failed_operation, tool.error_code].filter(
-        (part): part is string => part !== null && part !== "",
-    );
-
-    return parts.length === 0 ? "—" : parts.join(" · ");
-}
-
-/** Constraint and failure on one wrapping line. A phone has no room for those columns. */
-export function toolPhoneDetail(tool: Tool): string {
-    return `constraint ${toolConstraint(tool)} · ${toolFailure(tool)}`;
 }
 
 /** The node page's htop-like block: cores in two columns, then memory and swap beside the root disk and uptime. */
@@ -274,69 +245,6 @@ function intendedLine(rule: ManagedFirewallRule, index: number): FirewallLine {
     };
 }
 
-const toolColumns: Column<Tool>[] = [
-    { header: "Manager", width: 12, fit: true, value: (tool) => tool.manager },
-    { header: "Package", width: 22, value: (tool) => tool.package },
-    { header: "Version", width: 14, fit: true, value: toolRecordedVersion },
-    {
-        header: "Constraint",
-        width: 14,
-        fit: true,
-        hideOnMobile: true,
-        value: toolConstraint,
-    },
-    { header: "Status", width: 12, fit: true, value: (tool) => tool.status },
-    {
-        header: "Failure",
-        width: 28,
-        hideOnMobile: true,
-        value: toolFailure,
-    },
-];
-
-function NodeTools({ node }: { node: Node }) {
-    const tools = useQuery(toolsQuery(node.id));
-
-    if (tools.isPending) {
-        return (
-            <Frame title="Tools">
-                <Note>Loading…</Note>
-            </Frame>
-        );
-    }
-
-    if (tools.isError) {
-        return (
-            <Frame title="Tools" state="warn" testId="node-tools-error">
-                <Note>{tools.error.message}</Note>
-            </Frame>
-        );
-    }
-
-    return (
-        <div className="flex h-full min-h-0 min-w-0 flex-col gap-y-[var(--panel-gap)]">
-            {node.status !== "active" && (
-                <p className="text-dim" data-testid="node-tools-offline">
-                    This Node is unreachable. These registered tools are stored records.
-                </p>
-            )}
-            <Pane
-                name="tools"
-                order={1}
-                title="Tools"
-                testId="node-tools-list"
-                className="min-h-[160px] w-full flex-1"
-                columns={toolColumns}
-                rows={tools.data}
-                rowId={(tool) => String(tool.id)}
-                warn={(tool) => tool.status === "failed"}
-                detail={toolPhoneDetail}
-                empty="No registered tools."
-            />
-        </div>
-    );
-}
-
 function NodeOverview({ fleet, node }: { fleet: Fleet; node: Node }) {
     const columns = useMemo(() => instanceColumns(fleet, "project"), [fleet]);
 
@@ -457,7 +365,7 @@ function NodeSections({ fleet, node, panel }: { fleet: Fleet; node: Node; panel:
                 {selected === "overview" ? (
                     <NodeOverview fleet={fleet} node={node} />
                 ) : selected === "tools" ? (
-                    <NodeTools node={node} />
+                    <NodeTools key={node.id} node={node} />
                 ) : (
                     <NodeFirewall fleet={fleet} node={node} />
                 )}

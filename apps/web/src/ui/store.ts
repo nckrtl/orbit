@@ -27,6 +27,8 @@ export type UiState = {
     menu: MenuState | null;
     /** The output of an action that prints a report, such as a profile; `output` is null while it runs. */
     modal: { title: string; output: string | null; failed: boolean } | null;
+    /** A page dialog, such as adopt or remove. While set, the shell does not navigate. Esc calls it. */
+    dialog: (() => void) | null;
     message: string;
 };
 
@@ -46,6 +48,7 @@ const initial: UiState = {
     selected: {},
     menu: null,
     modal: null,
+    dialog: null,
     message: "",
 };
 let state: UiState = initial;

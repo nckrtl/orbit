@@ -19,6 +19,10 @@ Run every command from the repository root. Stdout is one JSON object and nothin
 
 A Node Tools change includes phone and desktop screenshots from `bin/web-verify`. Open the Node's Overview, Tools, and supported Firewall sections through their menu. Review registered, discovered-unmanaged, dependency, unsupported-cask, scan-failure, and unreachable-Node states. Adopt one supported fixture through its visible action, then verify it appears as managed and the request names the exact Node, manager, and package.
 
+Studio is Node 4. `/nodes/4/tools` shows managed Tools with a separate observed version, unregistered formulae, the `openssl@3` dependency, the unsupported `docker` and `font-hack` casks, and the `visual-studio-code` formula beside the managed cask of the same name. `[data-testid=node-tools-adopt-brew-delta]` adopts `delta`. `[data-testid=node-tools-adopt-brew-ghost]` is offered as supported and then refused, and the error stays on the form.
+
+`/nodes/2/tools` is the partial scan: `brew` is incomplete, `vp` is conflicting, and the registered apt Tools stay. `/nodes/3/tools` is the unreachable Node: no inventory request, the offline note, and the stored rows. `/nodes/1/tools` has no Tool rows and an empty completed scan. The same route overwrites one PNG per device, so copy a picture before the next capture of that route.
+
 On the phone, navigation and Adopt remain reachable, content starts near the top, and long package lists do not force a narrow desktop sidebar beside the content. Screenshots supplement browser tests that assert requests and states. Demo fixtures prove UI behavior only; real macOS tool operations need a task-owned Mac fixture.
 
 ## Commands

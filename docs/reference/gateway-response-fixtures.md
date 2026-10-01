@@ -71,6 +71,10 @@ The change cycle is: change the Gateway, re-record the fixtures, review the fixt
 
 The web app's demo mode and its tests run against the files under `apps/web/fixtures/fleet`. These files use the same format without a request class. They are written by hand as one coherent fleet, because a recorded fixture covers one route and the web app needs records that refer to each other. `bin/api-fixtures --check` validates them together with the recorded fixtures.
 
+The demo fleet has one tool inventory for each active Node. Node 1 is an empty Linux read: `brew` completed with no packages, `brew-cask` unsupported, and `vp` absent. Node 2 is a partial Linux read: `brew` incomplete, `brew-cask` unsupported, and `vp` conflicting, so none of those empty arrays is an inventory. Node 3 is unreachable and has no inventory fixture; the demo refuses a scan with `tool.node_inactive`.
+
+Node 4 is the macOS read: registered packages with a newer observed version, the `openssl@3` dependency, unsupported casks, a formula and a cask both named `visual-studio-code`, and `ghost`, which the demo lists as supported and then refuses on adopt. The demo adopt, update, and remove handlers change only that in-memory fleet.
+
 ## Families with fixtures
 
 The directories under `packages/php-sdk/fixtures` list the families that have recorded fixtures and contract tests. Add a family by recording from its Gateway tests with `record_fixture()` and writing its CLI contract test in the same change. Extension responses are replayed by the `extension:list`, `extension:enable`, and `extension:disable` command contracts; do not leave a changed extension fixture without a CLI test that names it. `bin/cli-contract --coverage` shows the commands that still have no expected output.

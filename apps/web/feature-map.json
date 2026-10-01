@@ -203,7 +203,7 @@
     },
     {
         "path": "/nodes/$id/tools",
-        "purpose": "Every registered Tool stored for the Node, including failed rows and an unreachable Node.",
+        "purpose": "Registered Tools and detected packages for one Node, including adoption, update, and removal.",
         "reach": "Open a Node, then choose Tools. The address is /nodes/<id>/tools.",
         "controls": [
             { "testid": "node-overview", "purpose": "Back to the Node overview." },
@@ -223,6 +223,86 @@
             {
                 "testid": "node-tools-error",
                 "purpose": "Shown when the tool list cannot be loaded, instead of an empty list."
+            },
+            {
+                "testid": "node-tools-inspection",
+                "purpose": "When the inventory was read, or that the inspection is unavailable."
+            },
+            {
+                "testid": "node-tools-refresh",
+                "purpose": "Reads the inventory again. It does not adopt or update a package."
+            },
+            {
+                "testid": "node-tools-scan-stale",
+                "purpose": "Shown when a refresh fails and the previous observation is still on screen."
+            },
+            {
+                "testid": "node-tools-scan-unavailable",
+                "purpose": "Shown when there is no observation. This is not an empty inventory."
+            },
+            {
+                "testid": "node-tools-scan-states",
+                "purpose": "Managers whose package lists are not an inventory."
+            },
+            {
+                "testid": "node-tools-unmanaged",
+                "purpose": "Detected packages Orbit does not own. Dependencies and unsupported packages stay informational."
+            },
+            {
+                "testid": "node-tools-adopt-brew-delta",
+                "purpose": "Opens the ownership form for the demo formula delta."
+            },
+            {
+                "testid": "node-tools-adopt-brew-ghost",
+                "purpose": "Opens the ownership form for a package the demo then refuses."
+            },
+            {
+                "testid": "node-tools-adopt-form",
+                "purpose": "The ownership question, the optional constraint, and any revalidation error."
+            },
+            {
+                "testid": "node-tools-adopt-prompt",
+                "purpose": "Names the package, manager, and Node before adoption."
+            },
+            {
+                "testid": "node-tools-adopt-constraint",
+                "purpose": "Optional SemVer constraint. Empty sends no constraint."
+            },
+            {
+                "testid": "node-tools-adopt-submit",
+                "purpose": "Sends tool:adopt. Disabled while that request is in flight."
+            },
+            {
+                "testid": "node-tools-adopt-cancel",
+                "purpose": "Closes the ownership form without a request."
+            },
+            {
+                "testid": "node-tools-adopt-error",
+                "purpose": "The Gateway's revalidation error. It stays until the form closes."
+            },
+            {
+                "testid": "node-tools-remove-form",
+                "purpose": "Asks before uninstalling one Tool and deleting its record."
+            },
+            {
+                "testid": "node-tools-remove-prompt",
+                "purpose": "Names the package, manager, Node, and the effect of removal."
+            },
+            {
+                "testid": "node-tools-remove-confirm",
+                "purpose": "Sends tool:remove for the named Tool."
+            },
+            {
+                "testid": "node-tools-remove-cancel",
+                "purpose": "Closes the removal question without a request."
+            },
+            {
+                "testid": "node-tools-remove-error",
+                "purpose": "A failed removal. The Tool row stays."
+            },
+            {
+                "testid": "node-tools-result",
+                "purpose": "The outcome of the last adopt, update, or removal."
             }
         ]
     },

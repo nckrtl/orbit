@@ -46,11 +46,19 @@ The menu chooses the URL. Overview is `/nodes/<id>`. Tools is `/nodes/<id>/tools
 
 ### Tools
 
-Tools always shows every registered Tool for that Node, including failed tools and records on an unreachable machine. Managed rows show manager, package, recorded version, version constraint, status, and failures. On a narrow screen, the constraint and the failure wrap onto a second line so a phone still shows both. Update and remove use the Gateway's Tool operations and show their outcomes. The recorded version is the last operation's result; a live scan supplies a separate observed version.
+Tools always shows every registered Tool for that Node, including failed tools and records on an unreachable machine. Managed rows show manager, package, recorded version, observed version, version constraint, status, and failures. On a narrow screen, the observed version, the constraint, and the failure wrap onto a second line so a phone still shows them, and Update and Remove sit on that line.
 
-A separate detected-unmanaged group shows installed Homebrew formulae, casks, and Vite+ globals from `GET /api/v1/tool-inventory` (`tool:scan`). It labels dependencies and unsupported packages. Discoveries are informational and do not affect Node health. The page shows inspection time and status and has an explicit refresh action. A failed refresh preserves registered Tools and identifies stale or unavailable observations; it never displays a failed scan as an empty healthy result.
+The recorded version is the last operation's result. A live scan supplies the observed version beside it: a newer install, `absent` when a completed scan did not see the package, `not scanned` when that manager is outside the inventory, and `unavailable` when no observation is loaded.
 
-Each supported unregistered package has an Adopt action. It sends the Node, exact manager, package, and optional constraint to the same Gateway operation the CLI and MCP use. The Gateway rechecks the live installation before creating intent. Success moves the package into the managed group without installing or updating it. Unsupported packages show a reason instead of an enabled action. Discovery never adopts packages automatically.
+A separate detected-unmanaged group shows installed Homebrew formulae, casks, and Vite+ globals from `GET /api/v1/tool-inventory` (`tool:scan`). It labels package kind, observed version, dependency status, and the support reason. A formula and a cask that share a name stay on separate rows. Discoveries are informational and do not affect Node health.
+
+The page shows inspection time and status and has an explicit Refresh action. Refresh sends only another inventory read. An active Node is read when the section opens. An unreachable Node does not start that read, and Refresh stays disabled so it cannot start one later. The inspection says no scan was started, and the registered rows stay.
+
+A failed refresh keeps the last observation and marks it stale, or says the inspection is unavailable when there was none. Neither case is shown as an empty healthy inventory. A manager that is `incomplete`, `absent`, `unsupported`, or `conflicting` is named, and its empty package array is not an inventory.
+
+Each supported unregistered package has an Adopt action. Unsupported packages, including dependencies and unsupported casks, show the block reason and have no enabled Adopt action. Adopt opens an ownership form that names the Node, manager, and package, and asks before it sends `POST /api/v1/tools/adopt`. The optional constraint is omitted when the field is empty. The Gateway rechecks the live installation before creating intent. A revalidation error stays on that form.
+
+Success refreshes registered Tools and drops only that package from the unmanaged group. It does not install or update the package. Update sends `POST /api/v1/tools/<id>/update` with an empty object and shows whether the Tool changed, stayed current, or was blocked by its constraint. Remove asks before it sends `DELETE /api/v1/tools/<id>`. The question names the package, the manager, the Node, and that the package is uninstalled and the record deleted. A failed removal stays on that question and leaves the row. No scan, refresh, or page load adopts or updates a package.
 
 Phone navigation and actions remain reachable without compressing the package list beside a full desktop sidebar. The [web verification](/reference/web-verification#node-tools-review) covers phone and desktop layouts, successful adoption, and offline or failed scan states.
 

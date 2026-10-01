@@ -24,6 +24,7 @@ import type {
     Schedule,
     TasksStatus,
     Tool,
+    ToolInventory,
 } from "./types";
 
 /** How often views without record-change events reload, such as the task board and log panes. */
@@ -169,6 +170,19 @@ export const toolsQuery = (nodeId: number) =>
     queryOptions({
         queryKey: ["tools", nodeId],
         queryFn: () => get<Tool[]>(`/api/v1/tools?node_id=${nodeId}`),
+        retry: false,
+    });
+
+/**
+ * Installed Homebrew and Vite+ packages. The first read happens when the query is enabled.
+ * Refresh is explicit: nothing here refetches on a timer or adopts a package.
+ */
+export const toolInventoryQuery = (nodeId: number) =>
+    queryOptions({
+        queryKey: ["tool-inventory", nodeId],
+        queryFn: () => get<ToolInventory>(`/api/v1/tool-inventory?node_id=${nodeId}`),
+        staleTime: Number.POSITIVE_INFINITY,
+        refetchOnWindowFocus: false,
         retry: false,
     });
 
