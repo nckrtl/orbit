@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\Tools\DebianVersionNormalizer;
 use App\Domain\Tools\SemverVersionNormalizer;
+use App\Domain\Tools\ToolAdoptionFact;
+use App\Domain\Tools\ToolInventoryPackage;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
@@ -387,6 +389,38 @@ describe(AptToolManager::class, function (): void {
         expect($ssh->arguments())->toBe([
             ['sudo', 'apt-get', 'remove', '--yes', '--', 'jq'],
         ]);
+    });
+
+    it('adopts an ordinary apt package and refuses a bootstrap package without installing', function (): void {
+        [$manager, $ssh] = apt_tool_manager([
+            apt_result("apt 2.8.3 (amd64)\n"),
+            apt_result("install ok installed\n28.0.0\n"),
+            apt_result("apt 2.8.3 (amd64)\n"),
+            apt_result("install ok installed\n1.7.1\n"),
+        ]);
+        $node = apt_tool_node();
+
+        expect($manager->inspectForAdoption($node, 'docker.io'))
+            ->toEqual(new ToolAdoptionFact('28.0.0', ToolInventoryPackage::BLOCK_PROTECTED))
+            ->and($manager->inspectForAdoption($node, 'jq'))
+            ->toEqual(new ToolAdoptionFact('1.7.1', null));
+
+        expect(json_encode($ssh->arguments()))
+            ->not->toContain('install')
+            ->not->toContain('update')
+            ->not->toContain('remove')
+            ->not->toContain('autoremove');
+    });
+
+    it('treats a missing apt package as absent during adoption', function (): void {
+        [$manager, $ssh] = apt_tool_manager([
+            apt_result("apt 2.8.3 (amd64)\n"),
+            apt_result(exitCode: 1, stderr: "dpkg-query: no packages found matching jq\n"),
+        ]);
+
+        expect($manager->inspectForAdoption(apt_tool_node(), 'jq'))
+            ->toEqual(new ToolAdoptionFact(null, null))
+            ->and($ssh->commands)->toHaveCount(2);
     });
 });
 

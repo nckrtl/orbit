@@ -43,7 +43,7 @@ it('preserves the exact report, received order, aggregates, and scalar variants'
         'healthy' => true,
         'families' => [],
     ];
-    $data['summary'] = ['nodes' => 99, 'families' => 88, 'checks' => 77, 'drift' => 66, 'unverifiable' => 55];
+    $data['summary'] = ['nodes' => 99, 'families' => 88, 'checks' => 77, 'drift' => 66, 'unverifiable' => 55, 'informational' => 44];
     $data['unknown'] = 'drop';
     $data['nodes'][0]['unknown'] = 'drop';
 
@@ -94,6 +94,43 @@ it('accepts every family and all statuses', function (): void {
             static fn (int $index): string => $statuses[$index % count($statuses)],
             array_keys($families),
         ));
+});
+
+it('keeps an informational finding without treating it as drift', function (): void {
+    $data = doctor_report_data();
+    $data['healthy'] = true;
+    $data['summary']['drift'] = 0;
+    $data['summary']['informational'] = 1;
+    $data['nodes'][0]['healthy'] = true;
+    $data['nodes'][0]['families'][0] = doctor_family_data(
+        family: 'tool',
+        status: 'healthy',
+        checked: 0,
+        issues: [doctor_issue_data(
+            code: 'tool.package_unregistered',
+            kind: 'informational',
+            resourceType: 'tool',
+            resourceId: null,
+            resourceName: 'jq',
+            expected: 'brew',
+            observed: 'version=1.7.1;dependency=no;adoption=supported;block=none',
+        )],
+    );
+
+    $response = DoctorReportResponse::fromGatewayData($data, '');
+
+    expect($response->healthy)
+        ->toBeTrue()
+        ->and($response->summary['informational'])
+        ->toBe(1)
+        ->and($response->summary['drift'])
+        ->toBe(0)
+        ->and($response->nodes[0]->families[0]->issues[0]->kind)
+        ->toBe('informational')
+        ->and($response->nodes[0]->families[0]->issues[0]->resourceId)
+        ->toBeNull()
+        ->and($response->toArray()['nodes'][0]['families'][0]['issues'][0]['resource_name'])
+        ->toBe('jq');
 });
 
 it('drops malformed nested members without fallback DTOs', function (string $level, mixed $value): void {
@@ -160,6 +197,9 @@ it('fails closed for invalid required top-level data', function (Closure $mutate
     }],
     'summary missing' => [static function (array &$data): void {
         unset($data['summary']['checks']);
+    }],
+    'summary informational missing' => [static function (array &$data): void {
+        unset($data['summary']['informational']);
     }],
     'summary negative' => [static function (array &$data): void {
         $data['summary']['drift'] = -1;
@@ -286,7 +326,7 @@ it('normalizes invalid request IDs and keeps constructors private', function ():
     }
 });
 
-/** @return array{healthy:bool,nodes:list<array{node_id:int,node_name:string,healthy:bool,families:list<array{family:string,status:string,checked:int,issues:list<array{code:string,kind:string,resource_type:string,resource_id:int|string|null,resource_name:string|null,summary:string,expected:bool|string|null,observed:bool|string|null}>}>}>,summary:array{nodes:int,families:int,checks:int,drift:int,unverifiable:int}} */
+/** @return array{healthy:bool,nodes:list<array{node_id:int,node_name:string,healthy:bool,families:list<array{family:string,status:string,checked:int,issues:list<array{code:string,kind:string,resource_type:string,resource_id:int|string|null,resource_name:string|null,summary:string,expected:bool|string|null,observed:bool|string|null}>}>}>,summary:array{nodes:int,families:int,checks:int,drift:int,unverifiable:int,informational:int}} */
 function doctor_report_data(): array
 {
     return [
@@ -297,7 +337,7 @@ function doctor_report_data(): array
             'healthy' => false,
             'families' => [doctor_family_data()],
         ]],
-        'summary' => ['nodes' => 1, 'families' => 1, 'checks' => 1, 'drift' => 1, 'unverifiable' => 0],
+        'summary' => ['nodes' => 1, 'families' => 1, 'checks' => 1, 'drift' => 1, 'unverifiable' => 0, 'informational' => 0],
     ];
 }
 

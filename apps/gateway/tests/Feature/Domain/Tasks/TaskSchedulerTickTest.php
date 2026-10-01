@@ -3715,7 +3715,7 @@ it('does not apply a receipt from the thread named by a stale turn file', functi
     {
         public function __construct(private int $acting) {}
 
-        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void {}
+        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?string $context = null): void {}
 
         public function read(Instance $instance, ?int $actingThreadId = null): ?TaskTurnReceipt
         {
@@ -3750,7 +3750,7 @@ it('does not apply an unbound legacy receipt and reissues the bound turn command
         /** @var list<int|null> */
         public array $preparedThreads = [];
 
-        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void
+        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?string $context = null): void
         {
             $this->preparedThreads[] = $threadId;
             $this->legacy = false;
@@ -3790,7 +3790,7 @@ it('applies a receipt that names the acting reviewer', function (): void {
     {
         public function __construct(private int $acting) {}
 
-        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void {}
+        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?string $context = null): void {}
 
         public function read(Instance $instance, ?int $actingThreadId = null): ?TaskTurnReceipt
         {

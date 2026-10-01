@@ -15,6 +15,7 @@ use Orbit\Sdk\Requests\Tools\InstallToolRequest;
 use Orbit\Sdk\Requests\Tools\ListToolManagersRequest;
 use Orbit\Sdk\Requests\Tools\ListToolsRequest;
 use Orbit\Sdk\Requests\Tools\RemoveToolRequest;
+use Orbit\Sdk\Requests\Tools\ScanToolInventoryRequest;
 use Orbit\Sdk\Requests\Tools\ShowToolRequest;
 use Orbit\Sdk\Requests\Tools\UpdateToolRequest;
 use Saloon\Exceptions\Request\FatalRequestException;
@@ -334,6 +335,7 @@ it('renders shared gateway errors safely for every tool command', function (
     ],
     'tool update' => ['tool:update', ['tool' => '41'], UpdateToolRequest::class],
     'tool remove' => ['tool:remove', ['tool' => '41', '--yes' => true], RemoveToolRequest::class],
+    'tool scan' => ['tool:scan', ['--node' => '12'], ScanToolInventoryRequest::class],
 ]);
 
 it('renders malformed successful tool responses through the shared json boundary', function (): void {
@@ -636,7 +638,7 @@ it('renders local validation failures through the exact json boundary', function
         'node:add',
         ['name' => 'node', 'host' => 'node.test', '--platform' => 'validation-secret'],
         'node.platform_invalid',
-        'Platform must be linux.',
+        'Platform must be linux or macos.',
     ],
     'node host key fingerprint' => [
         'node:add',
@@ -1107,6 +1109,22 @@ it('keeps the step, outcome, and id of a tool operation failure', function (): v
         'step' => 'install', 'outcome' => 'manager_failed', 'id' => 110, 'manager_output' => 'private-output',
     ]))->toBe(['id' => 110, 'step' => 'install', 'outcome' => 'manager_failed'])
         ->and(GatewayFailureRenderer::safeDetails('tool.version_probe_failed', ['outcome' => 'Manager Failed!', 'id' => 0]))->toBe([]);
+});
+
+it('keeps a closed adoption block token and drops a malformed one', function (): void {
+    expect(GatewayFailureRenderer::safeDetails('tool.adoption_unsupported', [
+        'step' => 'adopt',
+        'outcome' => 'manager_failed',
+        'adoption_block' => 'authorization_required',
+        'manager_output' => 'secret',
+    ]))->toBe([
+        'step' => 'adopt',
+        'outcome' => 'manager_failed',
+        'adoption_block' => 'authorization_required',
+    ])->and(GatewayFailureRenderer::safeDetails('tool.adoption_unsupported', [
+        'step' => 'adopt',
+        'adoption_block' => 'Not A Token',
+    ]))->toBe(['step' => 'adopt']);
 });
 
 it('keeps the step next to the set of a failed Caddy build', function (): void {

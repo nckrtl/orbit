@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""Generate the Gateway's MCP tool manifest from docs/openapi.json.
+"""Generate the Gateway's MCP tool manifest and task-action list from docs/openapi.json.
 
 Run from any directory:
 
-    bin/mcp-tools            write apps/gateway/resources/mcp/tools.json
-    bin/mcp-tools --check    exit 1 when the manifest differs from what the OpenAPI document produces
+    bin/mcp-tools            write the MCP manifest and the task-action list
+    bin/mcp-tools --check    exit 1 when either file differs from what the OpenAPI document produces
 
 Every Gateway API operation becomes one MCP tool named after its operationId. The tool's input schema is the
 operation's path parameters, query parameters, and JSON body properties flattened into one object; the manifest
-records which inputs travel in the path and the query, and the rest form the body. Run bin/docs-openapi first
-when routes, form requests, or data classes changed.
+records which inputs travel in the path and the query, and the rest form the body. The same run writes the
+operation ids marked x-orbit-task-action to apps/gateway/resources/tasks/actions.json. The Gateway reads that
+list when it validates an action subtask. Run bin/docs-openapi first when routes, form requests, or data classes
+changed.
 """
 
 import json
@@ -19,6 +21,8 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OPENAPI = ROOT / 'docs/openapi.json'
 OUTPUT = ROOT / 'apps/gateway/resources/mcp/tools.json'
+ACTIONS = ROOT / 'apps/gateway/resources/tasks/actions.json'
+ACTION_METHODS = ('get', 'post', 'put', 'patch', 'delete', 'head')
 
 # Machine callbacks and browser pages, not operator actions: Pusher channel signatures, the Node agent's Reverb
 # discovery, watch list, and log stream list, live log streams that need a Reverb socket, Caddy forward-auth, the wake page a browser receives, the completion report a Node's schedule timer
@@ -126,8 +130,20 @@ def tool(method, path, operation, components):
     }
 
 
-def manifest():
-    document = json.loads(OPENAPI.read_text())
+def task_actions(document):
+    """Operation ids an action subtask may name. The Gateway compares these after replacing ':' with '-'."""
+    names = []
+    for item in document['paths'].values():
+        for method, operation in item.items():
+            if method not in ACTION_METHODS or operation.get('x-orbit-task-action') is not True:
+                continue
+            operation_id = operation.get('operationId')
+            if isinstance(operation_id, str) and operation_id != '':
+                names.append(operation_id)
+    return json.dumps({'actions': sorted(set(names))}, indent=2, ensure_ascii=False) + '\n'
+
+
+def manifest(document):
     components = document.get('components', {}).get('schemas', {})
     tools = [
         tool(method, path, operation, components)
@@ -143,17 +159,28 @@ def manifest():
     return json.dumps({'tools': tools}, indent=2, ensure_ascii=False) + '\n', len(tools)
 
 
+def generated(document):
+    tools, count = manifest(document)
+    return {OUTPUT: tools, ACTIONS: task_actions(document)}, count
+
+
 def main():
-    expected, count = manifest()
+    outputs, count = generated(json.loads(OPENAPI.read_text()))
     if '--check' in sys.argv[1:]:
-        current = OUTPUT.read_text() if OUTPUT.exists() else ''
-        if current != expected:
-            sys.exit('apps/gateway/resources/mcp/tools.json is stale. Run bin/mcp-tools.')
-        print(f'{OUTPUT.relative_to(ROOT)} matches docs/openapi.json.')
+        stale = [
+            str(path.relative_to(ROOT))
+            for path, expected in outputs.items()
+            if not path.exists() or path.read_text() != expected
+        ]
+        if stale:
+            verb = 'is' if len(stale) == 1 else 'are'
+            sys.exit(f'{" and ".join(stale)} {verb} stale. Run bin/mcp-tools.')
+        print(f'{OUTPUT.relative_to(ROOT)} and {ACTIONS.relative_to(ROOT)} match docs/openapi.json.')
         return
-    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT.write_text(expected)
-    print(f'Wrote {OUTPUT.relative_to(ROOT)} ({count} tools).')
+    for path, expected in outputs.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(expected)
+    print(f'Wrote {OUTPUT.relative_to(ROOT)} ({count} tools) and {ACTIONS.relative_to(ROOT)}.')
 
 
 if __name__ == '__main__':

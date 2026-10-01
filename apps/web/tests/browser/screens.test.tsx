@@ -1,4 +1,5 @@
 import { expect, it } from "vite-plus/test";
+import { page } from "vite-plus/test/browser";
 import { openApp, pane, row } from "./app";
 import { screenText } from "./screen";
 
@@ -28,8 +29,13 @@ it("draws a section list with its filters", async () => {
 
 it("draws a node record", async () => {
     await openApp("/nodes/2");
-    await expect.element(row("Firewall", "443/tcp")).toBeVisible();
+    await expect
+        .element(page.getByTestId("node-overview"))
+        .toHaveAttribute("aria-selected", "true");
+    await expect.element(pane("Firewall")).not.toBeInTheDocument();
     await expect.element(pane("beast · active · metrics")).toBeVisible();
+    await expect.element(pane("Instances on this node")).toBeVisible();
+    await expect.element(pane("Node processes")).toBeVisible();
 
     await expect(screenText()).toMatchFileSnapshot("./expected/node-beast.txt");
 });

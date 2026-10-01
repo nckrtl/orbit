@@ -1,6 +1,6 @@
 ---
 title: "proxycli"
-description: "Set up the fleet CLIProxyAPI quota collector, read provider pools, and toggle accounts."
+description: "Set up the fleet CLIProxyAPI quota collector, read provider pools and the model list, and toggle accounts."
 covers:
   - apps/cli/app/Commands/ProxyCli/**
   - packages/php-sdk/src/{Requests,Responses}/ProxyCli/**
@@ -24,6 +24,7 @@ Enabling the extension deploys nothing, and disabling it removes nothing. `proxy
 | [`proxycli:list`](#orbit-proxyclilist) | List provider pools from the Valkey snapshot. |
 | [`proxycli:show`](#orbit-proxyclishow) | Show one provider and its accounts. |
 | [`proxycli:update`](#orbit-proxycliupdate) | Enable or disable one CLIProxyAPI account. |
+| [`proxycli:models`](#orbit-proxyclimodels) | List models from the collector snapshot. |
 
 Every command accepts `--json`.
 
@@ -42,7 +43,7 @@ orbit proxycli:setup --node=<node> --cache-connection=<slug> --cliproxy-url=<url
 | `--cliproxy-url` | yes | CLIProxyAPI Management API origin, for example `http://127.0.0.1:8317`. |
 | `--cliproxy-management-key-file` | yes | File that contains only the management key. The CLI never accepts the key as an argument. |
 
-The output shows `enabled`, `hostname`, `node_id`, `cache_connection`, and `collected_at`. It never includes a token or the management key. Setup can run again with the same options.
+The output shows `enabled`, `hostname`, `node_id`, `cache_connection`, and `collected_at`. It never includes a token or the management key. Setup can run again with the same options. That run rewrites the collector script and recreates the Process. The management key is the only CLIProxyAPI credential. The script uses it for `/v0/management`, including auth-file models. A collector set up before that read stores no models until setup runs again and the next poll finishes.
 
 ## orbit proxycli:teardown
 
@@ -107,6 +108,18 @@ orbit proxycli:update <account> --disabled|--enabled [--json]
 
 The command changes the account in CLIProxyAPI and rewrites the snapshot from cache. It fetches no quota.
 
+## orbit proxycli:models
+
+List the models CLIProxyAPI offers, from the collector snapshot.
+
+```bash
+orbit proxycli:models [--json]
+```
+
+Each item is `{id, provider}`. The command does not call CLIProxyAPI. `provider` follows the [owned_by mapping](/reference/proxycli#models), including `anthropic` to `claude`. `google` and `meta` keep those names, and no ProxyCli provider serves them. While the collector is not set up, the command fails with `proxycli.disabled`. A snapshot with no models returns an empty list. Run `proxycli:setup` again, then wait for the next poll, before expecting models from a collector that was deployed earlier. When a later poll cannot read one auth file, the snapshot keeps that file's models from the previous poll.
+
+When a model has no `owned_by`, `provider` comes from that model's auth file, using the same mapping. A model with neither is absent from the list.
+
 ## Errors
 
 | Code | Meaning |
@@ -125,5 +138,5 @@ The command changes the account in CLIProxyAPI and rewrites the snapshot from ca
 
 ## Related
 
-- [proxycli](/reference/proxycli) describes placement, publication, and the cache.
+- [proxycli](/reference/proxycli) describes placement, publication, the cache, and the model list.
 - [`extension`](/cli/extension) controls the Gateway switch.

@@ -1,0 +1,22 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tools\\AdoptToolRequest",
+    "route": "POST /api/v1/tools/adopt",
+    "status": 403,
+    "body": {
+        "error": {
+            "code": "node_access.required",
+            "message": "Node access is required.",
+            "details": {
+                "consumer_node": {
+                    "id": 3,
+                    "name": "adopt-consumer"
+                },
+                "serving_node": {
+                    "id": 2,
+                    "name": "adopt-node"
+                }
+            }
+        }
+    }
+}

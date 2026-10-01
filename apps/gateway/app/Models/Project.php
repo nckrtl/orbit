@@ -96,6 +96,12 @@ final class Project extends Model
         return $this->hasMany(Task::class)->topLevel();
     }
 
+    /** @return HasMany<TaskDefinition, $this> */
+    public function taskDefinitions(): HasMany
+    {
+        return $this->hasMany(TaskDefinition::class);
+    }
+
     /** @return HasMany<ProjectNodeExclusion, $this> */
     public function nodeExclusions(): HasMany
     {

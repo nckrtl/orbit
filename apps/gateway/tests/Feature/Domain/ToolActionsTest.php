@@ -213,6 +213,56 @@ describe(InstallToolAction::class, function (): void {
             ->toBe(ToolStatus::Installed);
     });
 
+    it('keeps a missing or conflicting macOS manager unavailable and retries after it is verified', function (string $step, string $errorCode): void {
+        $node = tool_action_node();
+        $node->update([
+            'platform' => 'macos',
+            'architecture' => 'arm64',
+            'user' => 'mini',
+        ]);
+        $manager = new FakeToolManager(ToolManagerName::Brew);
+        $manager->failures['materialize'] = [new ToolManagerException($step, 'secret prefix')];
+        $action = new InstallToolAction(
+            managers: new ToolManagerRegistry([$manager]),
+            constraints: new VersionConstraint,
+            lock: new ImmediateToolOperationLock,
+            materializer: new NativeToolManagerMaterializer(
+                new ToolManagerRegistry([$manager]),
+                new NativeToolManagerScopeLock,
+            ),
+            eligibility: new ToolNodeEligibility,
+        );
+
+        $failure = tool_operation_exception(fn () => $action->execute(tool_install_data(
+            node: $node,
+            manager: ToolManagerName::Brew,
+            package: 'ripgrep',
+        )));
+        $record = $node->toolManagers()->where('name', 'brew')->sole();
+
+        expect($failure->errorCode)->toBe('tool.manager_unavailable')
+            ->and($failure->status)->toBe(409)
+            ->and($failure->getMessage())->not->toContain('secret')
+            ->and($record->status)->toBe(LifecycleStatus::Failed)
+            ->and($record->failed_step)->toBe($step)
+            ->and($record->error_code)->toBe($errorCode)
+            ->and(Tool::query()->count())->toBe(0);
+
+        $manager->installedVersions = [null, '14.1.1'];
+        $result = $action->execute(tool_install_data(
+            node: $node,
+            manager: ToolManagerName::Brew,
+            package: 'ripgrep',
+        ));
+
+        expect($result->outcome)->toBe(ToolOutcome::Applied)
+            ->and($record->refresh()->status)->toBe(LifecycleStatus::Active)
+            ->and(Tool::query()->sole()->package)->toBe('ripgrep');
+    })->with([
+        'absent prefix' => ['manager-absent', 'node.tool_manager_absent'],
+        'conflicting prefix' => ['manager-conflict', 'node.tool_manager_conflict'],
+    ]);
+
     it('allows provisioning app roles for app-scoped managers', function (
         ToolManagerName $managerName,
         RoleName $role,
@@ -276,7 +326,9 @@ describe(InstallToolAction::class, function (): void {
         $exception = tool_operation_exception(fn () => $action->execute(tool_install_data($node)));
 
         expect($exception->errorCode)
-            ->toBe('tool.manager_unavailable')
+            ->toBe('tool.manager_unsupported')
+            ->and($exception->status)
+            ->toBe(422)
             ->and($manager->calls)
             ->toBe(['validatePackage'])
             ->and($lock->runs)

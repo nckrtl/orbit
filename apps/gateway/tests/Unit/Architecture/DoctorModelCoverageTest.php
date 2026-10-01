@@ -28,6 +28,8 @@ use App\Models\JevDecision;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\NodeRole;
+use App\Models\ProblemCollectorState;
+use App\Models\ProblemFingerprint;
 use App\Models\Process;
 use App\Models\ProcessDefinition;
 use App\Models\Project;
@@ -44,6 +46,7 @@ use App\Models\Setting;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
+use App\Models\TaskDefinition;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 
@@ -90,8 +93,11 @@ it('partitions every persisted model across doctor dispositions', function (): v
         InstanceTransfer::class,
         JevDecision::class,
         ProjectUpdate::class,
+        ProblemFingerprint::class,
+        ProblemCollectorState::class,
         DatabaseUser::class,
         Task::class,
+        TaskDefinition::class,
         AgentThread::class,
         AgentThreadSendLease::class,
         Task::class,

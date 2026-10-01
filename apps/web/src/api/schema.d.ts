@@ -2264,6 +2264,54 @@ export interface paths {
         patch: operations["instance-setup-step-update"];
         trace?: never;
     };
+    "/api/v1/projects/{project}/task-definitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * tasks:definition:create
+         * @description Stores a task definition for a Project. The body is the whole definition. Gateway access is required. The call does not start a task. An invalid definition returns `tasks.definition_invalid` (422), and `details.rules` names each failing rule and the subtask key. A name the Project already uses returns `tasks.definition_exists` (409). Returns `extension.disabled` while the tasks extension is off.
+         */
+        post: operations["tasks-definition-create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project}/task-definitions/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * tasks:definition:show
+         * @description Shows one task definition. Any authorized peer can show it. The call does not start a task. Returns `extension.disabled` while the tasks extension is off.
+         */
+        get: operations["tasks-definition-show"];
+        /**
+         * tasks:definition:update
+         * @description Replaces a task definition. The body is the whole definition. It may omit `name`; the path then supplies it. A body `name` that differs from the path is refused. Gateway access is required. The call does not start a task. An invalid definition returns `tasks.definition_invalid` (422). Returns `extension.disabled` while the tasks extension is off.
+         */
+        put: operations["tasks-definition-update"];
+        post?: never;
+        /**
+         * tasks:definition:destroy
+         * @description Deletes a task definition and returns it. The call does not delete a task and does not start one. Gateway access is required. Returns `extension.disabled` while the tasks extension is off.
+         */
+        delete: operations["tasks-definition-destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/teardown-steps": {
         parameters: {
             query?: never;
@@ -2358,6 +2406,26 @@ export interface paths {
          * @description Patches CLIProxyAPI account status, then recompiles pools from the cached snapshot without fetching quota.
          */
         patch: operations["proxycli-update"];
+        trace?: never;
+    };
+    "/api/v1/proxycli/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List proxycli models
+         * @description Returns the models CLIProxyAPI offers, each as `id` and `provider`, from the collector snapshot. The request never calls CLIProxyAPI. A snapshot with no models returns an empty list. Returns `proxycli.disabled` while the collector is not set up.
+         */
+        get: operations["proxycli-models"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/proxycli/providers": {
@@ -2644,6 +2712,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/task-definitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * tasks:definition:list
+         * @description Lists task definitions, optionally filtered by numeric `project_id`. Any authorized peer can list them. The call does not start a task. Returns `extension.disabled` while the tasks extension is off.
+         */
+        get: operations["tasks-definition-list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/task-groups": {
         parameters: {
             query?: never;
@@ -2894,6 +2982,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tool-inventory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Scan installed packages
+         * @description Reads installed Homebrew formulae, casks, and Vite+ global packages for the enrolled account. The response reports each manager scan state, safe package facts, dependency and adoption support, and the UTC inspection time. It stores nothing, creates no Tool row, takes no manager lock, and does not install or refresh a manager. A failed read is `incomplete`, never an empty `complete` inventory. `absent` means the scope is not installed. `unsupported` means this platform does not offer the manager.
+         */
+        get: operations["tool-scan"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tool-managers": {
         parameters: {
             query?: never;
@@ -2932,6 +3040,26 @@ export interface paths {
          * @description Install a tool through the gateway.
          */
         post: operations["tool-install"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tools/adopt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Adopt a Tool
+         * @description Records Orbit ownership of one supported installed package. Send the Node, manager, package, and optional SemVer constraint. The call installs, updates, removes, and repins nothing. The same intent returns unchanged. A different constraint, a busy scope, a missing or unsupported package, or missing Node access leaves the host unchanged. `error.details.step` is `adopt`. `error.details.id` is present only when a Tool row already exists. `tool.adoption_unsupported` also includes `error.details.adoption_block`.
+         */
+        post: operations["tool-adopt"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3098,13 +3226,13 @@ export interface components {
         };
         DoctorIssue: {
             /** @enum {string} */
-            kind?: "drift" | "unverifiable";
+            kind?: "informational" | "drift" | "unverifiable";
             resource_type?: string;
-            resource_id?: string | null;
+            resource_id?: number | string | null;
             resource_name?: string | null;
             summary?: string;
-            expected?: string | null;
-            observed?: string | null;
+            expected?: boolean | string | null;
+            observed?: boolean | string | null;
         };
         FirewallRule: {
             id?: number;
@@ -3459,6 +3587,72 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        TaskDefinition: {
+            project_id: number;
+            name: string;
+            title: string;
+            brief: string;
+            parameters: {
+                name: string;
+                /** @enum {string} */
+                type: "text" | "app" | "subtasks";
+                required: boolean;
+                default?: unknown;
+            }[];
+            /** @enum {string} */
+            status: "backlog" | "todo";
+            schedule: {
+                [key: string]: unknown;
+            } | null;
+            phases: {
+                key: string;
+                title: string;
+                brief: string;
+                repeat: boolean;
+            }[];
+            subtasks: {
+                key: string;
+                title: string;
+                kind: string;
+                brief?: string;
+                phase?: string;
+                deliverables?: {
+                    id: string;
+                    /** @enum {string} */
+                    type: "file" | "command" | "review";
+                    description: string;
+                    /** @description Conditionally required. */
+                    path?: string;
+                    /**
+                     * @description Conditionally required.
+                     * @enum {string}
+                     */
+                    change?: "created" | "modified" | "any";
+                    fails_on_base?: boolean;
+                    /** @description Conditionally required. */
+                    command?: string;
+                    directory?: string;
+                    paths?: string[];
+                }[];
+                routes?: {
+                    [key: string]: string;
+                };
+                implementer_model?: string;
+                reviewer_model?: string;
+                operation?: string;
+                arguments?: {
+                    [key: string]: unknown;
+                };
+                question?: string;
+                options?: string[];
+                evidence?: string[];
+                min_probability?: number;
+            }[];
+        };
+        ProxyCliModel: {
+            id?: string;
+            provider?: string;
+        };
         Schedule: {
             id?: string;
             target_type?: string;
@@ -3597,6 +3791,29 @@ export interface components {
             /** @enum {string} */
             status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "completed" | "failed" | "cancelled";
             assistance_reason?: string | null;
+        };
+        ToolInventory: {
+            node_id?: number;
+            observed_at?: string;
+            managers?: components["schemas"]["ToolInventoryManager"][];
+        };
+        ToolInventoryManager: {
+            manager?: string;
+            /** @enum {string} */
+            scan_state?: "complete" | "absent" | "unsupported" | "incomplete" | "conflicting";
+            packages?: components["schemas"]["ToolInventoryPackage"][];
+        };
+        ToolInventoryPackage: {
+            manager?: string;
+            package?: string;
+            /** @enum {string} */
+            package_kind?: "formula" | "cask" | "global";
+            installed_version?: string | null;
+            dependency?: boolean;
+            registered?: boolean;
+            tool_id?: number | null;
+            adoption?: string;
+            adoption_block?: string | null;
         };
         ToolManager: {
             id?: number | null;
@@ -7824,11 +8041,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
                 "application/json": {
                     /** @description Exact string value; quote empty, multiline, or placeholder values for the shell */
-                    value?: string;
+                    value: string;
                 };
             };
         };
@@ -8937,22 +9154,22 @@ export interface operations {
                     /** @description Conditionally required. */
                     public_ssh_host?: string;
                     /**
-                     * @description Node platform (linux only)
+                     * @description linux for Ubuntu service Nodes, or macos for tools on an existing account; no default account or address
                      * @enum {string}
                      */
-                    platform?: "linux";
+                    platform?: "linux" | "macos";
                     /** @description Node machine architecture; defaults to the architecture observed on the machine and must match it when given */
                     architecture?: string | null;
                     /** @description Node TLD; required for production clone preview domains */
                     tld?: string | null;
                     public_ssh_port?: number;
-                    /** @description Bootstrap SSH user; defaults to root for a new node and to the managed user for an existing node */
+                    /** @description Bootstrap SSH user; root for a new Linux node, the managed user for an existing one; macOS requires the account */
                     user?: string;
-                    /** @description Orbit-managed system user; defaults to orbit for a new node */
+                    /** @description Managed user; Linux defaults to orbit, and macOS requires the same existing account as user */
                     orbit_user?: string;
                     roles?: ("gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket" | "analytics")[];
                     cluster_id?: number | null;
-                    /** @description Stable WireGuard IP address */
+                    /** @description Stable WireGuard address; Linux allocates when omitted. macOS requires the existing one and does not replace it */
                     wireguard_ip?: string | null;
                     /**
                      * Format: ipv4
@@ -12436,6 +12653,402 @@ export interface operations {
             };
         };
     };
+    "tasks-definition-create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Project ID. */
+                project: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    title: string;
+                    brief: string;
+                    parameters: {
+                        name: string;
+                        /** @enum {string} */
+                        type: "text" | "app" | "subtasks";
+                        required: boolean;
+                        default?: unknown;
+                    }[];
+                    /** @enum {string} */
+                    status: "backlog" | "todo";
+                    schedule?: {
+                        cron?: string;
+                        values?: {
+                            [key: string]: unknown;
+                        };
+                    } | null;
+                    phases?: {
+                        key: string;
+                        title: string;
+                        brief: string;
+                        repeat: boolean;
+                    }[];
+                    subtasks: {
+                        key: string;
+                        title: string;
+                        kind: string;
+                        brief?: string;
+                        phase?: string;
+                        deliverables?: {
+                            id: string;
+                            /** @enum {string} */
+                            type: "file" | "command" | "review";
+                            description: string;
+                            /** @description Conditionally required. */
+                            path?: string;
+                            /**
+                             * @description Conditionally required.
+                             * @enum {string}
+                             */
+                            change?: "created" | "modified" | "any";
+                            fails_on_base?: boolean;
+                            /** @description Conditionally required. */
+                            command?: string;
+                            directory?: string;
+                            paths?: string[];
+                        }[];
+                        routes?: {
+                            [key: string]: string;
+                        };
+                        implementer_model?: string;
+                        reviewer_model?: string;
+                        operation?: string;
+                        arguments?: {
+                            [key: string]: unknown;
+                        };
+                        question?: string;
+                        options?: string[];
+                        evidence?: string[];
+                        min_probability?: number;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded; an exact retry returned the existing record. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskDefinition"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskDefinition"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The Project already uses the name (`tasks.definition_exists`). A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The definition breaks a validation rule (`tasks.definition_invalid`). `details.rules` names each failing rule and the subtask key it concerns. A malformed body returns `validation.failed`. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-definition-show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Project ID. */
+                project: number;
+                /** @description Task definition name, unique within the Project. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskDefinition"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-definition-update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Project ID. */
+                project: number;
+                /** @description Task definition name, unique within the Project. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Definition name */
+                    name: string;
+                    title: string;
+                    brief: string;
+                    parameters: {
+                        name: string;
+                        /** @enum {string} */
+                        type: "text" | "app" | "subtasks";
+                        required: boolean;
+                        default?: unknown;
+                    }[];
+                    /** @enum {string} */
+                    status: "backlog" | "todo";
+                    schedule?: {
+                        cron?: string;
+                        values?: {
+                            [key: string]: unknown;
+                        };
+                    } | null;
+                    phases?: {
+                        key: string;
+                        title: string;
+                        brief: string;
+                        repeat: boolean;
+                    }[];
+                    subtasks: {
+                        key: string;
+                        title: string;
+                        kind: string;
+                        brief?: string;
+                        phase?: string;
+                        deliverables?: {
+                            id: string;
+                            /** @enum {string} */
+                            type: "file" | "command" | "review";
+                            description: string;
+                            /** @description Conditionally required. */
+                            path?: string;
+                            /**
+                             * @description Conditionally required.
+                             * @enum {string}
+                             */
+                            change?: "created" | "modified" | "any";
+                            fails_on_base?: boolean;
+                            /** @description Conditionally required. */
+                            command?: string;
+                            directory?: string;
+                            paths?: string[];
+                        }[];
+                        routes?: {
+                            [key: string]: string;
+                        };
+                        implementer_model?: string;
+                        reviewer_model?: string;
+                        operation?: string;
+                        arguments?: {
+                            [key: string]: unknown;
+                        };
+                        question?: string;
+                        options?: string[];
+                        evidence?: string[];
+                        min_probability?: number;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskDefinition"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The definition breaks a validation rule (`tasks.definition_invalid`). `details.rules` names each failing rule and the subtask key it concerns. A malformed body returns `validation.failed`. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-definition-destroy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Project ID. */
+                project: number;
+                /** @description Task definition name, unique within the Project. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskDefinition"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "instance-teardown-step-list": {
         parameters: {
             query?: never;
@@ -12904,6 +13517,47 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "proxycli-models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ProxyCliModel"][];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The collector is not set up (`proxycli.disabled`). A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13957,6 +14611,49 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-definition-list": {
+        parameters: {
+            query?: {
+                project_id?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskDefinition"][];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -15052,6 +15749,67 @@ export interface operations {
             };
         };
     };
+    "tool-scan": {
+        parameters: {
+            query: {
+                node_id: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["ToolInventory"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No Node matches `node_id` (`http.404`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The Node is not active (`tool.node_inactive`) or is not Gateway-managed (`tool.node_unmanaged`). `error.details.step` is `scan`, `error.details.outcome` is `manager_failed`, and there is no Tool id. A manager that is absent, unsupported, conflicting, or incomplete does not fail the request. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The query is not the one strict integer `node_id`, or the body is not empty (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "tool-manager-list": {
         parameters: {
             query: {
@@ -15121,6 +15879,79 @@ export interface operations {
         };
     };
     "tool-install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    node_id: number;
+                    /** @description Tool manager name */
+                    manager: string;
+                    /** @description Manager-native package coordinate */
+                    package: string;
+                    version_constraint?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded; an exact retry returned the existing record. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Tool"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Tool"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tool-adopt": {
         parameters: {
             query?: never;
             header?: never;

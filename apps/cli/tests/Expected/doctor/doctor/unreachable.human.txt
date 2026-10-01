@@ -1,0 +1,16 @@
+Verifying registered state...
+
+┌  Verify registered state
+│
+├  ● Verified registered state
+│
+└  Verified registered state.
+
+ ┌────────────┬────────┬──────────────┬─────────┬──────────┬───────────────────────────────────────────────────────────────────────────────────────┐
+ │ NODE       │ FAMILY │ STATUS       │ CHECKED │ RESOURCE │ FINDING                                                                               │
+ ├────────────┼────────┼──────────────┼─────────┼──────────┼───────────────────────────────────────────────────────────────────────────────────────┤
+ │ linux-node │ tool   │ unverifiable │ 1       │ tool     │ tool.node_unreachable: Tool node is unreachable. (expected: —, observed: unreachable) │
+ └────────────┴────────┴──────────────┴─────────┴──────────┴───────────────────────────────────────────────────────────────────────────────────────┘
+Nodes: 1, families: 1, checks: 1, drift: 0, unverifiable: 1, informational: 0
+Healthy: no
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

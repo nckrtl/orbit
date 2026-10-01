@@ -117,6 +117,10 @@ Orbit's independent reviewer checks the code, the documentation, and the ADRs, a
 
 Address the review findings. Reviewers check the fixes and repeat the affected checks on the updated pull request. A merge needs passing CI, a successful independent code and Incus review, resolved findings, and the maintainer's approval.
 
+For Orbit task pull requests whose final review and merge the maintainer delegates, a Tasks engine subtask approval is not the final review of the whole pull request. The DevOps reviewer submits a formal GitHub `APPROVED` review for the exact head and merges that commit through the maintainer's GitHub CLI profile.
+
+The review body records the full head SHA, the checks and results, limitations, evidence links, and the verdict. A plain comment alone does not satisfy the gate. Follow the [final review workflow](/reference/implementation-loop#final-review-of-an-orbit-task-pull-request) for the delegated consent, the reviewer's identity and `commit_id`, successful `Required checks` on that head, the immediate merge with `--match-head-commit`, and a new formal approval after the head changes.
+
 ## Use an agent
 
 The skills in the repository guide an agent through the work.
@@ -159,7 +163,7 @@ All maintained documentation lives under the root `docs/` directory, for humans 
 
 `composer docs-lint` checks structure, links, ADR format, blocked wording, and the freshness of the committed context index. It also enforces the ADR lifecycle. A number in the retirement table on the [decisions overview](/decisions/overview) must have no matching file in `docs/decisions`. Matching uses the full slug recorded in `apps/docs/config/adr-retired-slugs.php`, so the Tasks 0114 slug clash is allowed. Every row in that table must have a redirect from that exact ADR path.
 
-Every ADR numbered 0180 or higher must say `In progress.` in its Status section and include a `Principle:` line. Older ADRs still in Records with other statuses are listed in a committed allowlist that can only shrink.
+Every ADR numbered 0180 or higher must say `In progress.` in its Status section and include a `Principle:` line. A lower number follows the same two rules only when the retirement table does not list its number. The open gaps are 0007 and 0020. Older ADRs still in Records with other statuses are listed in a committed allowlist that can only shrink.
 
 The lint command reads the repository only, with no network, external service, or Incus topology. Live behavior is proved on Incus, separately. A lint rule earns its place only when it protects a current invariant and has tests for a valid and an invalid case.
 

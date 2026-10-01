@@ -1,0 +1,11 @@
+Adopting Tool...
+
+┌  Adopt Tool
+│
+├  ● Adopting Tool
+│
+└  Operation failed.
+
+Tools can be adopted only on a Gateway-managed node.
+step: adopt
+outcome: manager_failed

@@ -26,7 +26,10 @@ final class DoctorFamilyReportData extends Data
     public static function fromIssues(DoctorFamily $family, int $checked, array $issues): self
     {
         $status = DoctorFamilyStatus::Healthy;
-        if (count($issues) > 0) {
+        if (array_any(
+            $issues,
+            static fn (DoctorIssueData $issue): bool => $issue->kind === DoctorIssueKind::Drift,
+        )) {
             $status = DoctorFamilyStatus::Drift;
         }
         if (array_any(

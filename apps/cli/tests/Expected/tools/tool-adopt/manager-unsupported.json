@@ -1,0 +1,1 @@
+{"error":{"code":"tool.manager_unsupported","message":"The requested tool manager is not supported.","details":{"step":"adopt","outcome":"manager_failed"},"request_id":null}}

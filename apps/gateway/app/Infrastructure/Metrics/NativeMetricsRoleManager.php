@@ -41,6 +41,7 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
             );
         }
         $node = Node::query()->findOrFail($nodeId);
+        $this->guardLinuxPlatform($node);
         $result = $this->add->execute($node, RoleName::Metrics, true);
 
         return new MetricsMutationData($nodeId, $result['assignment']->status->value);
@@ -74,6 +75,7 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
     public function enableExporter(int $nodeId): MetricsMutationData
     {
         $node = $this->activeNode($nodeId);
+        $this->guardLinuxPlatform($node);
 
         if (! $this->eligibility->allows($node)) {
             throw new ResourceOperationException(
@@ -92,6 +94,7 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
     public function disableExporter(int $nodeId): MetricsMutationData
     {
         $node = $this->activeNode($nodeId);
+        $this->guardLinuxPlatform($node);
         if ($node->roles()->where('role', RoleName::Metrics->value)->exists()) {
             throw new RoleAssignmentException('The metrics node exporter cannot be disabled.');
         }
@@ -114,5 +117,18 @@ final readonly class NativeMetricsRoleManager implements MetricsRoleManager
         }
 
         return $node;
+    }
+
+    private function guardLinuxPlatform(Node $node): void
+    {
+        if ($node->platform === 'linux') {
+            return;
+        }
+
+        throw new ResourceOperationException(
+            'metrics.platform_unsupported',
+            'Metrics exporters and the Metrics role require a Linux node.',
+            422,
+        );
     }
 }

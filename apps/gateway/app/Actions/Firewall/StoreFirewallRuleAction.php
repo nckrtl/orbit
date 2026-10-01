@@ -28,6 +28,7 @@ final readonly class StoreFirewallRuleAction
     /** @return array{rule: FirewallRule, created: bool, backend_status: FirewallBackendStatus} */
     public function execute(Node $node, StoreFirewallRuleData $data): array
     {
+        $this->guardLinuxPlatform($node);
         $this->guardRecoverySsh($node, $data);
         $this->guardActionConflict($node, $data);
         $rule = FirewallRule::query()->firstOrNew([
@@ -115,6 +116,20 @@ final readonly class StoreFirewallRuleAction
             && $rule->source === $attributes['source']
             && $rule->protocol === $attributes['protocol']
             && $rule->port === $attributes['port'];
+    }
+
+    private function guardLinuxPlatform(Node $node): void
+    {
+        if ($node->platform === 'linux') {
+            return;
+        }
+
+        throw new FirewallOperationException(
+            step: 'platform',
+            errorCode: 'firewall.platform_unsupported',
+            message: 'Firewall rules require a Linux node.',
+            status: 422,
+        );
     }
 
     private function guardRecoverySsh(Node $node, StoreFirewallRuleData $data): void

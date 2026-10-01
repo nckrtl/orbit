@@ -30,6 +30,21 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Process;
 
+it('refuses macOS agent installation before SSH and skips removal', function (): void {
+    $ssh = new AgentInstallSsh(null);
+    $agent = nodeAgentExecutor($ssh);
+    $node = nodeAgentNode();
+    $node->platform = 'macos';
+
+    expect(fn () => $agent->converge($node))->toThrow(function (ResourceOperationException $exception): void {
+        expect($exception->errorCode)->toBe('node.agent_unsupported')
+            ->and($exception->status)->toBe(422);
+    });
+    $agent->remove($node);
+
+    expect($ssh->commands)->toBeEmpty();
+});
+
 it('pins agent v0.3.0', function (): void {
     expect(NodeAgentFootprint::Version)->toBe('0.3.0')
         ->and(NodeAgentFootprint::checksum('x86_64'))->toBe('f5125b2ab36abd79882b3b11eb5d40f5e457fbf23cc8bf3ff4c096e2cab4618a')
@@ -644,6 +659,7 @@ function nodeAgentNode(): Node
 {
     return new Node([
         'name' => 'app-prod',
+        'platform' => 'linux',
         'user' => 'orbit',
         'architecture' => 'x86_64',
         'wireguard_ip' => '10.44.0.4',

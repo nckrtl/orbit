@@ -1,0 +1,1 @@
+{"error":{"code":"tool.node_inactive","message":"Tools can be scanned only on an active node.","details":{"step":"scan","outcome":"manager_failed"},"request_id":null}}

@@ -1,0 +1,1 @@
+{"error":{"code":"tool.node_unmanaged","message":"Tools can be scanned only on a Gateway-managed node.","details":{"step":"scan","outcome":"manager_failed"},"request_id":null}}

@@ -6,9 +6,11 @@ import {
 } from "@tanstack/react-router";
 import { readActivitySearch } from "./api/activities";
 import { ActivityDetail, ActivityPage } from "./pages/Activity";
+import { DefinitionPage, readDefinitionSearch } from "./definitions/definition-page";
 import { TasksBoard, TaskDetail, SubtaskDetail } from "./pages/Tasks";
 import { Dashboard } from "./pages/Dashboard";
 import { NodeCreate } from "./pages/NodeCreate";
+import { NodeRecordPage } from "./pages/NodeRecord";
 import { DeploymentPage, RecordPage } from "./pages/RecordPage";
 import { SectionList } from "./pages/SectionList";
 import { Shell } from "./ui/Shell";
@@ -20,6 +22,12 @@ const rootRoute = createRootRoute({ component: Shell });
 const text = (value: unknown): string | undefined =>
     typeof value === "string" && value !== "" ? value : undefined;
 
+const nodeRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/nodes/$id",
+    component: NodeRecordPage,
+});
+
 const routeTree = rootRoute.addChildren([
     createRoute({ getParentRoute: () => rootRoute, path: "/", component: Dashboard }),
     createRoute({ getParentRoute: () => rootRoute, path: "/tasks", component: TasksBoard }),
@@ -28,6 +36,12 @@ const routeTree = rootRoute.addChildren([
         getParentRoute: () => rootRoute,
         path: "/tasks/$id/subtasks/$subtaskId",
         component: SubtaskDetail,
+    }),
+    createRoute({
+        getParentRoute: () => rootRoute,
+        path: "/projects/$project/task-definitions/$name",
+        component: DefinitionPage,
+        validateSearch: (search: Record<string, unknown>) => readDefinitionSearch(search),
     }),
     createRoute({
         getParentRoute: () => rootRoute,
@@ -42,6 +56,14 @@ const routeTree = rootRoute.addChildren([
         validateSearch: (search: Record<string, unknown>) => readActivitySearch(search),
     }),
     createRoute({ getParentRoute: () => rootRoute, path: "/nodes/create", component: NodeCreate }),
+    nodeRoute.addChildren([
+        createRoute({ getParentRoute: () => nodeRoute, path: "tools", component: () => null }),
+        createRoute({
+            getParentRoute: () => nodeRoute,
+            path: "firewall",
+            component: () => null,
+        }),
+    ]),
     createRoute({
         getParentRoute: () => rootRoute,
         path: "/instances/$id/deployments/$deploymentId",

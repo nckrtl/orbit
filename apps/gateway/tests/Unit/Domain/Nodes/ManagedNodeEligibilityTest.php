@@ -21,6 +21,7 @@ it('requires the supported platform and both managed identities', function (arra
     'managed Linux node' => [[], true],
     'inactive node' => [['status' => LifecycleStatus::Failed], false],
     'unsupported platform' => [['platform' => 'darwin'], false],
+    'verified mac stays outside the Linux service boundary' => [['platform' => 'macos'], false],
     'missing WireGuard identity' => [['wireguard_ip' => null], false],
     'blank WireGuard identity' => [['wireguard_ip' => ''], false],
     'missing pinned SSH identity' => [['ssh_host_fingerprint' => null], false],
@@ -67,6 +68,7 @@ it('requires supported managed network identity and stored management evidence f
 })->with([
     'managed identity' => [[], true],
     'unsupported platform' => [['platform' => 'darwin'], false],
+    'verified mac' => [['platform' => 'macos'], true],
     'missing WireGuard identity' => [['wireguard_ip' => null], false],
     'blank WireGuard identity' => [['wireguard_ip' => ''], false],
     'missing SSH management evidence' => [['ssh_host_fingerprint' => null], false],

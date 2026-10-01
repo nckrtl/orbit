@@ -82,7 +82,11 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
 
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Node, 1, $issues);
         }
-        $expectedPlatform = strtolower($node->platform) === 'linux' ? 'linux' : null;
+        $expectedPlatform = match (strtolower($node->platform)) {
+            'linux' => 'linux',
+            'macos' => 'darwin',
+            default => null,
+        };
         $expectedArchitecture = $this->managedArchitecture($node->architecture);
         $managedIdentitySupported =
             $expectedPlatform !== null && ($node->architecture === null || $expectedArchitecture !== null);

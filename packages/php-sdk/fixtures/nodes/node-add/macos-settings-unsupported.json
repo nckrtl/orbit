@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Nodes\\AddNodeRequest",
+    "route": "POST /api/v1/nodes",
+    "status": 422,
+    "body": {
+        "error": {
+            "code": "node.platform_unsupported",
+            "message": "macOS enrollment does not change Cluster, DNS, tunnel, or storage settings.",
+            "details": {}
+        }
+    }
+}

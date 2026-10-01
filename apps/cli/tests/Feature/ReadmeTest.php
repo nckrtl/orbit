@@ -48,8 +48,9 @@ it('documents the doctor verification boundary', function (): void {
         ./orbit doctor --family=firewall --json
         ```
 
-        Doctor only verifies state and never repairs it. Exit status 1 means unhealthy,
-        unverifiable, or a transport failure.
+        Doctor only verifies state and never repairs it. Informational findings alone
+        still exit 0. Exit status 1 means drift, an unverifiable finding, or a transport
+        failure.
         MARKDOWN;
 
     expect($readme)
@@ -84,6 +85,8 @@ it('documents JavaScript processes through the managed Vite+ entry point', funct
 it('documents tool management through the gateway boundary', function (): void {
     $readme = file_get_contents(base_path('README.md'));
     $toolFlow = <<<'MARKDOWN'
+        ./orbit tool:scan --node=12
+        ./orbit tool:adopt jq --node=12 --manager=apt --yes
         ./orbit tool:manager:list --node=12
         ./orbit tool:install @openai/codex --node=12 --manager=vp --constraint='^0.150'
         ./orbit tool:list --node=12
@@ -99,5 +102,6 @@ it('documents tool management through the gateway boundary', function (): void {
         ->toContain('npm-compatible global tools')
         ->toContain('`vendor/package`')
         ->toContain('Ubuntu packages')
-        ->toContain('unsafe normal candidate');
+        ->toContain('unsafe normal candidate')
+        ->toContain('Installation does not adopt an existing package');
 });

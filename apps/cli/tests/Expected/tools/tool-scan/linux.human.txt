@@ -1,0 +1,24 @@
+Scanning installed packages...
+
+┌  Scan installed packages
+│
+├  ● Scanned installed packages
+│
+└  Scanned installed packages.
+
+Node #2 observed at 2026-04-26T12:00:00+00:00.
+ ┌───────────┬─────────────┐
+ │ MANAGER   │ SCAN STATE  │
+ ├───────────┼─────────────┤
+ │ brew      │ complete    │
+ │ brew-cask │ unsupported │
+ │ vp        │ absent      │
+ └───────────┴─────────────┘
+brew-cask is unsupported, so its package list is not an inventory.
+vp is absent, so its package list is not an inventory.
+ ┌─────────┬─────────┬─────────┬─────────┬────────────┬─────────┬───────────┬───────┐
+ │ MANAGER │ PACKAGE │ KIND    │ VERSION │ DEPENDENCY │ TOOL ID │ ADOPTION  │ BLOCK │
+ ├─────────┼─────────┼─────────┼─────────┼────────────┼─────────┼───────────┼───────┤
+ │ brew    │ ripgrep │ formula │ 14.1.1  │ no         │ —       │ supported │ —     │
+ └─────────┴─────────┴─────────┴─────────┴────────────┴─────────┴───────────┴───────┘
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

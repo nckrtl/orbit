@@ -69,6 +69,28 @@
                 "error_code": "node.provisioning_failed",
                 "roles": ["app-prod"],
                 "settings": null
+            },
+            {
+                "id": 4,
+                "cluster_id": 1,
+                "name": "studio",
+                "status": "active",
+                "platform": "macos",
+                "architecture": "arm64",
+                "tld": null,
+                "public_ssh_host": "203.0.113.4",
+                "public_ssh_port": 22,
+                "user": "orbit",
+                "wireguard_ip": "10.44.0.4",
+                "lan_ip": "10.0.0.4",
+                "wireguard_public_key": "studio-public-key",
+                "wireguard_endpoint_override": null,
+                "dns_server_override": null,
+                "ssh_host_fingerprint": "SHA256:4dxvKOYfyTcqJHYoxamTSu9bYYI5KE3xYWQPCAmeUTo",
+                "failed_step": null,
+                "error_code": null,
+                "roles": [],
+                "settings": null
             }
         ],
         "meta": {

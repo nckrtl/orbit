@@ -1,0 +1,16 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest",
+    "route": "GET /api/v1/tool-inventory",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "tool.node_inactive",
+            "message": "Tools can be scanned only on an active node.",
+            "details": {
+                "step": "scan",
+                "outcome": "manager_failed"
+            }
+        }
+    }
+}

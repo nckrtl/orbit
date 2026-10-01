@@ -152,6 +152,49 @@ describe(NativeToolManagerMaterializer::class, function (): void {
             ->toBe(1);
     });
 
+    it('materializes brew and brew-cask under one prefix lock even when their records differ', function (): void {
+        $node = materializer_node();
+        $events = [];
+        $brew = new MaterializerToolManagerFake(ToolManagerName::Brew, $events, 'Homebrew 4.6.15');
+        $cask = new MaterializerToolManagerFake(ToolManagerName::BrewCask, $events, 'Homebrew 4.6.15');
+
+        new NativeToolManagerMaterializer(
+            new ToolManagerRegistry([$brew, $cask]),
+            new OrderingMaterializerScopeLock($events),
+        )->converge($node, ToolManagerName::Brew, ToolManagerName::BrewCask);
+
+        $records = ToolManagerRecord::query()->orderBy('id')->get();
+
+        expect($events)->toBe([
+            'enter:brew',
+            'materialize:brew',
+            'brew',
+            'materialize:brew-cask',
+            'brew-cask',
+            'release:brew',
+        ])
+            ->and($records)->toHaveCount(2)
+            ->and($records[0]->name)->toBe('brew')
+            ->and($records[1]->name)->toBe('brew-cask')
+            ->and($records[0]->id)->not->toBe($records[1]->id);
+
+        $separate = Cache::lock("orbit:tool-manager:{$node->id}:brew-cask", 3_600);
+        expect($separate->get())->toBeTrue();
+        $separate->release();
+
+        $shared = Cache::lock("orbit:tool-manager:{$node->id}:brew", 3_600);
+        expect($shared->get())->toBeTrue();
+
+        try {
+            expect(fn () => new NativeToolManagerMaterializer(
+                new ToolManagerRegistry([new MaterializerToolManagerFake(ToolManagerName::BrewCask, $events, 'Homebrew 4.6.15')]),
+                new NativeToolManagerScopeLock,
+            )->converge($node, ToolManagerName::BrewCask))->toThrow(NodeProvisioningException::class);
+        } finally {
+            $shared->release();
+        }
+    });
+
     it('runs the role failure transition before releasing app scopes', function (): void {
         $node = materializer_node(RoleName::AppDev, LifecycleStatus::Provisioning);
         $events = [];

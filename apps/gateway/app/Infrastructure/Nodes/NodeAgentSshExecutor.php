@@ -150,6 +150,7 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
 
     public function converge(Node $node): void
     {
+        $this->guardLinuxPlatform($node);
         $architecture = is_string($node->architecture) ? $node->architecture : '';
 
         try {
@@ -208,6 +209,19 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
         } finally {
             $lock->release();
         }
+    }
+
+    private function guardLinuxPlatform(Node $node): void
+    {
+        if ($node->platform === 'linux') {
+            return;
+        }
+
+        throw new ResourceOperationException(
+            'node.agent_unsupported',
+            'The Node agent supports Linux nodes only.',
+            422,
+        );
     }
 
     /**
@@ -296,6 +310,10 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
 
     public function remove(Node $node): void
     {
+        if ($node->platform !== 'linux') {
+            return;
+        }
+
         $failure = null;
 
         try {

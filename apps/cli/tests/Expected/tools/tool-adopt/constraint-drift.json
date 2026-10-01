@@ -1,0 +1,1 @@
+{"error":{"code":"tool.installed_version_constraint_violated","message":"The installed version does not satisfy the constraint.","details":{"id":1,"step":"adopt","outcome":"manager_failed"},"request_id":null}}

@@ -1,0 +1,31 @@
+{
+    "schema": 1,
+    "route": "GET /api/v1/tool-inventory",
+    "status": 200,
+    "body": {
+        "data": {
+            "node_id": 1,
+            "observed_at": "2026-04-26T12:00:00+00:00",
+            "managers": [
+                {
+                    "manager": "brew",
+                    "scan_state": "complete",
+                    "packages": []
+                },
+                {
+                    "manager": "brew-cask",
+                    "scan_state": "unsupported",
+                    "packages": []
+                },
+                {
+                    "manager": "vp",
+                    "scan_state": "absent",
+                    "packages": []
+                }
+            ]
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

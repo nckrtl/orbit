@@ -1,0 +1,6 @@
+Package                              Node version   Binaries
+---                                  ---            ---
+@anthropic-ai/claude-code@1.0.24     22.21.0        claude
+@openai/codex@0.150.0                22.21.0        codex
+pnpm@10.15.1                         22.21.0        pnpm
+typescript@5.8.3                     22.21.0        tsc, tsserver

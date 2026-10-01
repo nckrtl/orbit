@@ -45,11 +45,12 @@ final readonly class CommandVocabulary
         'metrics' => ['status'],
         'node' => ['relocate', 'rename'],
         'process' => ['logs', 'restart', 'start', 'stop'],
-        'proxycli' => ['setup', 'teardown', 'status'],
+        'proxycli' => ['models', 'setup', 'status', 'teardown'],
         'profile' => ['profile'],
         'realtime' => ['tail'],
         'schedule' => ['logs', 'run'],
         'tasks' => ['cancel', 'complete', 'status'],
+        'tool' => ['adopt', 'scan'],
     ];
 
     /** @var list<string> */

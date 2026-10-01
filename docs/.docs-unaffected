@@ -68,3 +68,8 @@ docs/cli/activity.mdx: Task workspace routing is a non-secret Project update fie
 docs/reference/environment-variables.md: Recording whether a task workspace was routed does not change environment import, targets, or placeholders.
 docs/reference/cli-command-vocabulary.md: --task-workspace-routed is an option on the existing project:create and project:update commands. It does not change verbs, family actions, noun-ending commands, or the command count.
 docs/reference/incus-topologies.md: The task workspace clone section already defines bin/e2e-task-cleanup ownership, idempotence, and retry. This change adds that helper and does not change those rules.
+docs/reference/cli-ux.md: Task definition command snapshots follow the existing input, consent, and presentation rules. This page is unchanged.
+docs/reference/gateway-response-fixtures.md: Task definition fixtures follow the existing recording process. Fixture maintenance on this page is unchanged.
+docs/reference/web-verification.md: The feature map adds the task definition route and its controls. Web verification commands, the map schema, and the demo server are unchanged.
+docs/solutions/doctor-incus-proof.md: Guest convergence reuses the evidence-log redactor. The Doctor proof procedure on this page is unchanged.
+docs/cli/doctor.mdx: The caller-facing Doctor report is unchanged. The fleet inspection used by the outer loop is documented in /reference/tasks.

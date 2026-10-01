@@ -1,0 +1,16 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tools\\AdoptToolRequest",
+    "route": "POST /api/v1/tools/adopt",
+    "status": 422,
+    "body": {
+        "error": {
+            "code": "tool.manager_unsupported",
+            "message": "The requested tool manager is not supported.",
+            "details": {
+                "step": "adopt",
+                "outcome": "manager_failed"
+            }
+        }
+    }
+}

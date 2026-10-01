@@ -1183,7 +1183,8 @@
         "additionalProperties": false,
         "required": [
           "instance",
-          "key"
+          "key",
+          "value"
         ]
       }
     },
@@ -3162,9 +3163,10 @@
           "platform": {
             "type": "string",
             "enum": [
-              "linux"
+              "linux",
+              "macos"
             ],
-            "description": "Node platform (linux only)"
+            "description": "linux for Ubuntu service Nodes, or macos for tools on an existing account; no default account or address"
           },
           "architecture": {
             "type": [
@@ -3189,11 +3191,11 @@
           },
           "user": {
             "type": "string",
-            "description": "Bootstrap SSH user; defaults to root for a new node and to the managed user for an existing node"
+            "description": "Bootstrap SSH user; root for a new Linux node, the managed user for an existing one; macOS requires the account"
           },
           "orbit_user": {
             "type": "string",
-            "description": "Orbit-managed system user; defaults to orbit for a new node"
+            "description": "Managed user; Linux defaults to orbit, and macOS requires the same existing account as user"
           },
           "roles": {
             "type": "array",
@@ -3225,7 +3227,7 @@
               "string",
               "null"
             ],
-            "description": "Stable WireGuard IP address"
+            "description": "Stable WireGuard address; Linux allocates when omitted. macOS requires the existing one and does not replace it"
           },
           "lan_ip": {
             "type": [
@@ -4986,6 +4988,22 @@
       }
     },
     {
+      "name": "proxycli-models",
+      "extension": "proxycli",
+      "title": "List proxycli models",
+      "description": "Returns the models CLIProxyAPI offers, each as `id` and `provider`, from the collector snapshot. The request never calls CLIProxyAPI. A snapshot with no models returns an empty list. Returns `proxycli.disabled` while the collector is not set up.",
+      "method": "GET",
+      "path": "/api/v1/proxycli/models",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "proxycli-setup",
       "extension": "proxycli",
       "title": "Set up proxycli",
@@ -5992,6 +6010,623 @@
       }
     },
     {
+      "name": "tasks-definition-create",
+      "extension": "tasks",
+      "title": "tasks:definition:create",
+      "description": "Stores a task definition for a Project. The body is the whole definition. Gateway access is required. The call does not start a task. An invalid definition returns `tasks.definition_invalid` (422), and `details.rules` names each failing rule and the subtask key. A name the Project already uses returns `tasks.definition_exists` (409). Returns `extension.disabled` while the tasks extension is off.",
+      "method": "POST",
+      "path": "/api/v1/projects/{project}/task-definitions",
+      "path_inputs": [
+        "project"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "brief": {
+            "type": "string",
+            "maxLength": 8000
+          },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "app",
+                    "subtasks"
+                  ]
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "default": {}
+              },
+              "required": [
+                "name",
+                "type",
+                "required"
+              ]
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "backlog",
+              "todo"
+            ]
+          },
+          "schedule": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "cron": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "values": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          },
+          "phases": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string",
+                  "maxLength": 160
+                },
+                "brief": {
+                  "type": "string",
+                  "maxLength": 8000
+                },
+                "repeat": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "key",
+                "title",
+                "brief",
+                "repeat"
+              ]
+            }
+          },
+          "subtasks": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string",
+                  "maxLength": 160
+                },
+                "kind": {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                "brief": {
+                  "type": "string",
+                  "maxLength": 8000
+                },
+                "phase": {
+                  "type": "string"
+                },
+                "deliverables": {
+                  "type": "array",
+                  "maxItems": 5,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "file",
+                          "command",
+                          "review"
+                        ]
+                      },
+                      "description": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "path": {
+                        "type": "string",
+                        "maxLength": 500,
+                        "description": "Conditionally required."
+                      },
+                      "change": {
+                        "type": "string",
+                        "enum": [
+                          "created",
+                          "modified",
+                          "any"
+                        ],
+                        "description": "Conditionally required."
+                      },
+                      "fails_on_base": {
+                        "type": "boolean"
+                      },
+                      "command": {
+                        "type": "string",
+                        "maxLength": 1000,
+                        "description": "Conditionally required."
+                      },
+                      "directory": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "paths": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {
+                          "type": "string",
+                          "maxLength": 500
+                        }
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "type",
+                      "description"
+                    ]
+                  }
+                },
+                "routes": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "implementer_model": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "reviewer_model": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "operation": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "arguments": {
+                  "type": "object",
+                  "additionalProperties": true
+                },
+                "question": {
+                  "type": "string",
+                  "maxLength": 8000
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "evidence": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "min_probability": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "key",
+                "title",
+                "kind"
+              ]
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "name",
+          "title",
+          "brief",
+          "parameters",
+          "status",
+          "subtasks"
+        ]
+      }
+    },
+    {
+      "name": "tasks-definition-destroy",
+      "extension": "tasks",
+      "title": "tasks:definition:destroy",
+      "description": "Deletes a task definition and returns it. The call does not delete a task and does not start one. Gateway access is required. Returns `extension.disabled` while the tasks extension is off.",
+      "method": "DELETE",
+      "path": "/api/v1/projects/{project}/task-definitions/{name}",
+      "path_inputs": [
+        "project",
+        "name"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "maxLength": 63,
+            "description": "Task definition name, unique within the Project."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "tasks-definition-list",
+      "extension": "tasks",
+      "title": "tasks:definition:list",
+      "description": "Lists task definitions, optionally filtered by numeric `project_id`. Any authorized peer can list them. The call does not start a task. Returns `extension.disabled` while the tasks extension is off.",
+      "method": "GET",
+      "path": "/api/v1/task-definitions",
+      "path_inputs": [],
+      "query_inputs": [
+        "project_id"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "tasks-definition-show",
+      "extension": "tasks",
+      "title": "tasks:definition:show",
+      "description": "Shows one task definition. Any authorized peer can show it. The call does not start a task. Returns `extension.disabled` while the tasks extension is off.",
+      "method": "GET",
+      "path": "/api/v1/projects/{project}/task-definitions/{name}",
+      "path_inputs": [
+        "project",
+        "name"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "maxLength": 63,
+            "description": "Task definition name, unique within the Project."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "tasks-definition-update",
+      "extension": "tasks",
+      "title": "tasks:definition:update",
+      "description": "Replaces a task definition. The body is the whole definition. It may omit `name`; the path then supplies it. A body `name` that differs from the path is refused. Gateway access is required. The call does not start a task. An invalid definition returns `tasks.definition_invalid` (422). Returns `extension.disabled` while the tasks extension is off.",
+      "method": "PUT",
+      "path": "/api/v1/projects/{project}/task-definitions/{name}",
+      "path_inputs": [
+        "project",
+        "name"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "name": {
+            "type": "string",
+            "description": "Task definition name, unique within the Project.",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "maxLength": 63
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "brief": {
+            "type": "string",
+            "maxLength": 8000
+          },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "app",
+                    "subtasks"
+                  ]
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "default": {}
+              },
+              "required": [
+                "name",
+                "type",
+                "required"
+              ]
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "backlog",
+              "todo"
+            ]
+          },
+          "schedule": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "cron": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "values": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          },
+          "phases": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string",
+                  "maxLength": 160
+                },
+                "brief": {
+                  "type": "string",
+                  "maxLength": 8000
+                },
+                "repeat": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "key",
+                "title",
+                "brief",
+                "repeat"
+              ]
+            }
+          },
+          "subtasks": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string",
+                  "maxLength": 160
+                },
+                "kind": {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                "brief": {
+                  "type": "string",
+                  "maxLength": 8000
+                },
+                "phase": {
+                  "type": "string"
+                },
+                "deliverables": {
+                  "type": "array",
+                  "maxItems": 5,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "file",
+                          "command",
+                          "review"
+                        ]
+                      },
+                      "description": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "path": {
+                        "type": "string",
+                        "maxLength": 500,
+                        "description": "Conditionally required."
+                      },
+                      "change": {
+                        "type": "string",
+                        "enum": [
+                          "created",
+                          "modified",
+                          "any"
+                        ],
+                        "description": "Conditionally required."
+                      },
+                      "fails_on_base": {
+                        "type": "boolean"
+                      },
+                      "command": {
+                        "type": "string",
+                        "maxLength": 1000,
+                        "description": "Conditionally required."
+                      },
+                      "directory": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "paths": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {
+                          "type": "string",
+                          "maxLength": 500
+                        }
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "type",
+                      "description"
+                    ]
+                  }
+                },
+                "routes": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "implementer_model": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "reviewer_model": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "operation": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "arguments": {
+                  "type": "object",
+                  "additionalProperties": true
+                },
+                "question": {
+                  "type": "string",
+                  "maxLength": 8000
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "evidence": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "min_probability": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "key",
+                "title",
+                "kind"
+              ]
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "name",
+          "title",
+          "brief",
+          "parameters",
+          "status",
+          "subtasks"
+        ]
+      }
+    },
+    {
       "name": "tasks-list",
       "extension": "tasks",
       "title": "List Task groups",
@@ -6397,6 +7032,49 @@
       }
     },
     {
+      "name": "tool-adopt",
+      "extension": null,
+      "title": "Adopt a Tool",
+      "description": "Records Orbit ownership of one supported installed package. Send the Node, manager, package, and optional SemVer constraint. The call installs, updates, removes, and repins nothing. The same intent returns unchanged. A different constraint, a busy scope, a missing or unsupported package, or missing Node access leaves the host unchanged. `error.details.step` is `adopt`. `error.details.id` is present only when a Tool row already exists. `tool.adoption_unsupported` also includes `error.details.adoption_block`.",
+      "method": "POST",
+      "path": "/api/v1/tools/adopt",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "manager": {
+            "type": "string",
+            "maxLength": 32,
+            "description": "Tool manager name"
+          },
+          "package": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "Manager-native package coordinate"
+          },
+          "version_constraint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node_id",
+          "manager",
+          "package"
+        ]
+      }
+    },
+    {
       "name": "tool-install",
       "extension": null,
       "title": "Install a Tool",
@@ -6515,6 +7193,32 @@
         "additionalProperties": false,
         "required": [
           "tool"
+        ]
+      }
+    },
+    {
+      "name": "tool-scan",
+      "extension": null,
+      "title": "Scan installed packages",
+      "description": "Reads installed Homebrew formulae, casks, and Vite+ global packages for the enrolled account. The response reports each manager scan state, safe package facts, dependency and adoption support, and the UTC inspection time. It stores nothing, creates no Tool row, takes no manager lock, and does not install or refresh a manager. A failed read is `incomplete`, never an empty `complete` inventory. `absent` means the scope is not installed. `unsupported` means this platform does not offer the manager.",
+      "method": "GET",
+      "path": "/api/v1/tool-inventory",
+      "path_inputs": [],
+      "query_inputs": [
+        "node_id"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node_id"
         ]
       }
     },

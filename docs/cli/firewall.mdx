@@ -141,7 +141,7 @@ The CLI validates the name, source, protocol, and port before it sends a request
 | `firewall.public_ssh_deny_forbidden` | The deny rule would cover the public recovery SSH port. |
 | `firewall.rule_collision` | The rule name identifies conflicting UFW rules on the machine; Orbit adopts neither. |
 | `firewall.backend_inactive` | UFW is inactive on the Node. |
-| `firewall.platform_unsupported` | The Node is not a Linux Node. |
+| `firewall.platform_unsupported` | The Node is not a Linux Node. macOS is refused before SSH and before a rule is stored. |
 | `firewall.apply_failed`, `firewall.verify_failed` | UFW did not accept the rule or the verification did not find it. |
 | `firewall.remove_failed`, `firewall.remove_verify_failed` | UFW did not remove the rule or the verification still found it. |
 | `firewall.node_unreachable` | The Gateway could not reach the Node over SSH. |

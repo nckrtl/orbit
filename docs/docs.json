@@ -271,9 +271,11 @@
             "group": "Tools",
             "openapi": "/openapi.json",
             "pages": [
+              "GET /api/v1/tool-inventory",
               "GET /api/v1/tool-managers",
               "GET /api/v1/tools",
               "POST /api/v1/tools",
+              "POST /api/v1/tools/adopt",
               "DELETE /api/v1/tools/{tool}",
               "GET /api/v1/tools/{tool}",
               "POST /api/v1/tools/{tool}/update"
@@ -466,6 +468,11 @@
             "group": "Tasks",
             "openapi": "/openapi.json",
             "pages": [
+              "POST /api/v1/projects/{project}/task-definitions",
+              "DELETE /api/v1/projects/{project}/task-definitions/{name}",
+              "GET /api/v1/projects/{project}/task-definitions/{name}",
+              "PUT /api/v1/projects/{project}/task-definitions/{name}",
+              "GET /api/v1/task-definitions",
               "GET /api/v1/task-groups",
               "POST /api/v1/task-groups",
               "GET /api/v1/task-groups/{group}",
@@ -516,6 +523,7 @@
               "GET /api/v1/proxycli",
               "POST /api/v1/proxycli",
               "PATCH /api/v1/proxycli/accounts/{account}",
+              "GET /api/v1/proxycli/models",
               "GET /api/v1/proxycli/providers",
               "GET /api/v1/proxycli/providers/{provider}"
             ]
@@ -1307,6 +1315,18 @@
       "destination": "/reference/projects#project-and-instance"
     },
     {
+      "source": "/decisions/0183-manage-macos-tools-without-service-roles",
+      "destination": "/reference/node-provisioning#a-mac-needs-no-service-role"
+    },
+    {
+      "source": "/decisions/0184-adopt-selected-tools-from-existing-managers",
+      "destination": "/reference/tools#selected-adoption"
+    },
+    {
+      "source": "/decisions/0185-report-informational-tool-discoveries-in-doctor",
+      "destination": "/cli/doctor#informational-findings-stay-healthy"
+    },
+    {
       "source": "/decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop",
       "destination": "/cli/extension#why-it-works-this-way"
     },
@@ -1333,6 +1353,10 @@
     {
       "source": "/decisions/0174-match-the-task-gate-to-ci-and-repeated-findings",
       "destination": "/reference/implementation-loop#the-candidate-gate"
+    },
+    {
+      "source": "/decisions/0176-file-repro-first-bug-groups",
+      "destination": "/reference/tasks#outer-loop"
     },
     {
       "source": "/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension",
