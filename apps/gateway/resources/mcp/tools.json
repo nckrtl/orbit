@@ -5904,7 +5904,10 @@
           },
           "status": {
             "type": "string",
-            "enum": [],
+            "enum": [
+              "backlog",
+              "todo"
+            ],
             "description": "backlog (default) or todo"
           },
           "notify_coder": {
@@ -7021,7 +7024,10 @@
           },
           "status": {
             "type": "string",
-            "enum": [],
+            "enum": [
+              "backlog",
+              "todo"
+            ],
             "description": "backlog or todo"
           }
         },

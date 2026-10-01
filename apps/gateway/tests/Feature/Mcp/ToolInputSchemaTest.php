@@ -61,6 +61,53 @@ describe('MCP tool input schemas', function (): void {
 
         expect($failures)->toBe([]);
     });
+
+    it('serves a valid input schema for every tool', function (): void {
+        $this->postJson('/api/v1/extensions/tasks/enable')->assertOk();
+        $this->postJson('/api/v1/extensions/proxycli/enable')->assertOk();
+
+        $schemas = [];
+        $cursor = null;
+
+        do {
+            $response = mcp781_call($this, 'tools/list', $cursor === null ? [] : ['cursor' => $cursor]);
+            $response->assertOk();
+            $document = json_decode($response->getContent(), false, 512, JSON_THROW_ON_ERROR);
+            $tools = $document->result->tools ?? null;
+
+            expect($tools)->toBeArray();
+
+            foreach ($tools as $tool) {
+                expect($tool)->toBeObject();
+                $schemas[$tool->name] = $tool->inputSchema;
+            }
+
+            $cursor = $document->result->nextCursor ?? null;
+        } while (is_string($cursor));
+
+        $failures = [];
+
+        foreach ($schemas as $name => $schema) {
+            mcp782_check_schema($schema, $name, $failures);
+        }
+
+        foreach (['tasks-create', 'tasks-update', 'tasks-definition-create', 'tasks-definition-update'] as $name) {
+            if (! array_key_exists($name, $schemas)) {
+                $failures[] = "{$name} is not served";
+            }
+        }
+
+        foreach (['tasks-create', 'tasks-update'] as $name) {
+            $enum = $schemas[$name]->properties->status->enum ?? null;
+
+            if ($enum !== ['backlog', 'todo']) {
+                $failures[] = "{$name} status enum is ".json_encode($enum);
+            }
+        }
+
+        expect($schemas)->not->toBeEmpty()
+            ->and($failures)->toBe([]);
+    });
 });
 
 describe('instance-destroy', function (): void {
@@ -402,6 +449,76 @@ function mcp781_tool_name(string $method, string $uri): ?string
     }
 
     return null;
+}
+
+/**
+ * A served JSON Schema must keep object keywords as objects. PHP's decoded array cannot tell {} from [].
+ *
+ * @param  list<string>  $failures
+ */
+function mcp782_check_schema(mixed $schema, string $path, array &$failures): void
+{
+    if (is_bool($schema)) {
+        return;
+    }
+
+    if (is_array($schema) || ! $schema instanceof stdClass) {
+        $failures[] = "{$path} is not an object";
+
+        return;
+    }
+
+    if (property_exists($schema, 'enum')) {
+        $enum = $schema->enum;
+
+        if (! is_array($enum) || $enum === [] || ! array_is_list($enum)) {
+            $failures[] = "{$path}.enum is empty";
+        }
+    }
+
+    foreach (['properties', 'patternProperties', '$defs', 'definitions', 'dependentSchemas'] as $keyword) {
+        if (! property_exists($schema, $keyword)) {
+            continue;
+        }
+
+        $value = $schema->{$keyword};
+
+        if (! $value instanceof stdClass) {
+            $failures[] = "{$path}.{$keyword} is not an object";
+
+            continue;
+        }
+
+        foreach (get_object_vars($value) as $name => $child) {
+            mcp782_check_schema($child, "{$path}.{$keyword}.{$name}", $failures);
+        }
+    }
+
+    foreach (['items', 'additionalProperties', 'unevaluatedProperties', 'unevaluatedItems', 'contains', 'propertyNames', 'if', 'then', 'else', 'not', 'contentSchema'] as $keyword) {
+        if (! property_exists($schema, $keyword) || is_bool($schema->{$keyword})) {
+            continue;
+        }
+
+        mcp782_check_schema($schema->{$keyword}, "{$path}.{$keyword}", $failures);
+    }
+
+    foreach (['oneOf', 'anyOf', 'allOf', 'prefixItems'] as $keyword) {
+        if (! property_exists($schema, $keyword)) {
+            continue;
+        }
+
+        $value = $schema->{$keyword};
+
+        if (! is_array($value) || ! array_is_list($value)) {
+            $failures[] = "{$path}.{$keyword} is not a list";
+
+            continue;
+        }
+
+        foreach ($value as $index => $child) {
+            mcp782_check_schema($child, "{$path}.{$keyword}.{$index}", $failures);
+        }
+    }
 }
 
 /** @return array<string, array<string, mixed>> */

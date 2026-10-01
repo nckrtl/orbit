@@ -14720,7 +14720,7 @@ export interface operations {
                      * @description backlog (default) or todo
                      * @enum {string}
                      */
-                    status?: never;
+                    status?: "backlog" | "todo";
                     /** @description Post the Coder settle webhook when the group settles */
                     notify_coder?: boolean;
                     notify_on_settle?: boolean;
@@ -14877,7 +14877,7 @@ export interface operations {
                      * @description backlog or todo
                      * @enum {string}
                      */
-                    status?: never;
+                    status?: "backlog" | "todo";
                 };
             };
         };
