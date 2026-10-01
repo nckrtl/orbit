@@ -142,7 +142,7 @@ Install the reviewed `bin/e2e-task-cleanup` as `$HOME/.local/lib/orbit/e2e-task-
 
 Save the reviewed blob first. A failed `git show` must not start the copy. Stage that blob, check that it is non-empty and that its digest matches, and only then rename it onto the destination in the same directory. `set -o pipefail` makes a failed producer fail the copy.
 
-A short or empty stream fails the remote checks. The rename does not run, and the trap removes the stage. The previous helper stays in place. A rename in the same directory is one replacement, so a crash does not leave a half-written destination. Replacing the destination before the digest check was rejected because an interrupted copy can destroy a helper that was already valid.
+A short or empty stream fails the remote checks. The rename does not run, and the trap removes only this run's stage. The previous helper stays in place. Each run creates its own temporary file in the destination directory, so a retry does not unlink a stage another run has already verified. A rename in the same directory is one replacement, so a crash does not leave a half-written destination. Replacing the destination before the digest check was rejected because an interrupted copy can destroy a helper that was already valid.
 
 ```bash
 set -o pipefail
@@ -154,9 +154,8 @@ test -s "$blob"
 expected=$(sha256sum "$blob" | awk '{print $1}')
 ssh MANAGED_USER@NODE "EXPECTED=$expected bash -eu -c 'install -d -m 0755 -- \"\$HOME/.local/lib/orbit\"
 dir=\$HOME/.local/lib/orbit
-stage=\$dir/e2e-task-cleanup.stage
+stage=\$(mktemp \"\$dir/e2e-task-cleanup.stage.XXXXXX\")
 dest=\$dir/e2e-task-cleanup
-rm -f -- \"\$stage\"
 trap \"rm -f -- \\\"\$stage\\\"\" EXIT INT TERM HUP
 cat > \"\$stage\"
 test -s \"\$stage\"
@@ -174,7 +173,9 @@ ssh MANAGED_USER@NODE 'sha256sum "$HOME/.local/lib/orbit/e2e-task-cleanup"'
 git show "$rev:bin/e2e-task-cleanup" | sha256sum
 ```
 
-A match means the replacement finished. Stop. A missing destination or a different digest means the previous helper is still there, or no helper was installed yet. Remove a leftover `$HOME/.local/lib/orbit/e2e-task-cleanup.stage` and run the install again. The stage is not the file the teardown step runs. A missing file, a different digest, or a command that names a missing file is not a completed handoff. Keep the old Gateway until the readback matches on every eligible Node.
+A match means the replacement finished. Stop. A missing destination or a different digest means the previous helper is still there, or no helper was installed yet. Run the install again. Do not delete a stage file first. A retry that removes a shared stage can unlink a file another run has already verified, and that run can then publish the retry's incomplete file.
+
+The stage is not the file the teardown step runs. A leftover `e2e-task-cleanup.stage.*` file belongs to one run, and that run deletes it. Remove a leftover stage only after no install is still running. A missing file, a different digest, or a command that names a missing file is not a completed handoff. Keep the old Gateway until the readback matches on every eligible Node.
 
 The helper returns success without changing anything for an ordinary checkout. For a task checkout it removes only that task's matching bridge, unused bridge branch, and staging ref. It preserves the checkout and its own Git identity. See [Task workspace clones](/reference/incus-topologies#task-workspace-clones) for ownership and retry rules. Clones created before deployment use this installed copy too. The helper and the old Gateway hook may coexist during the handoff because both are idempotent.
 
