@@ -170,12 +170,8 @@ jobs:
         if: github.event_name == 'pull_request'
         run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --tia --compact
 
-      - name: Run full test suite
+      - name: Run full test suite and refresh Pest TIA graph
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-        run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --no-tia --compact
-
-      - name: Refresh Pest TIA graph
-        if: github.event_name == 'push'
         run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --tia --fresh --compact
 
       - name: Run architecture tests
