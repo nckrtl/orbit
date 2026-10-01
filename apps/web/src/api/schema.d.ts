@@ -735,7 +735,7 @@ export interface paths {
         put?: never;
         /**
          * Register an Instance
-         * @description Adopt the current Git source as a managed Instance.
+         * @description Adopt the current Git source as a managed Instance of an existing Project.
          */
         post: operations["instance-register"];
         delete?: never;
@@ -3374,6 +3374,8 @@ export interface components {
             /** @enum {string} */
             type?: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
             repository_url?: string;
+            /** @enum {string} */
+            source_access?: "github_app" | "gh_cli";
             default_branch?: string | null;
             root?: string | null;
             task_check?: string | null;
@@ -6136,14 +6138,8 @@ export interface operations {
                     /** @description Adopt the checkout and every linked worktree */
                     include_worktrees?: boolean;
                     project_id?: number;
-                    /** @description Confirmed Project display name */
-                    project_name?: string;
-                    /** @description Confirmed Project slug */
-                    project_slug?: string;
-                    /** @description Confirmed Project default branch */
-                    default_branch?: string;
                     instance_name?: string;
-                    /** @description Confirmed Project root or existing-Project root override */
+                    /** @description Relative web-root override for this Instance */
                     root?: string;
                     /** @description Optional explicit Route domain */
                     domain?: string;
@@ -6153,20 +6149,8 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The request succeeded; an exact retry returned the existing record. */
+            /** @description The request succeeded. */
             200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: components["schemas"]["InstanceRegistration"];
-                        meta: components["schemas"]["Meta"];
-                    };
-                };
-            };
-            /** @description Created. */
-            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11348,6 +11332,11 @@ export interface operations {
                      */
                     type: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
                     repository_url: string;
+                    /**
+                     * @description How Orbit reads a private github.com repository: github_app (default) or gh_cli
+                     * @enum {string}
+                     */
+                    source_access?: "github_app" | "gh_cli";
                     /** @description Stored default branch; resolve the remote default when omitted */
                     default_branch?: string;
                     /** @description Repository-relative root; defaults to . for package types and public otherwise */
@@ -11534,6 +11523,11 @@ export interface operations {
                     /** @description New Project slug */
                     slug?: string;
                     repository_url?: string;
+                    /**
+                     * @description How Orbit reads a private github.com repository: github_app or gh_cli
+                     * @enum {string}
+                     */
+                    source_access?: "github_app" | "gh_cli";
                     /** @description New stored default branch */
                     default_branch?: string;
                     /** @description New repository-relative root; package types may use . */

@@ -13,6 +13,7 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Projects\ProjectCode;
 use App\Domain\Projects\ProjectDefaultBranchInheritance;
 use App\Domain\Projects\ProjectRepositoryUpdatePlanner;
+use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Projects\ProjectUpdateProjectionMutator;
 use App\Domain\Projects\ProjectUpdateSourceMutator;
@@ -54,7 +55,7 @@ final readonly class UpdateProjectAction
             );
         }
 
-        if ($data->code !== null && ($data->hasReconcilableChanges() || $data->typeProvided)) {
+        if ($data->code !== null && ($data->hasReconcilableChanges() || $data->typeProvided || $data->sourceAccessProvided)) {
             throw new ResourceOperationException('project.code_update_separate', 'Update the Project code separately from source settings.', 422);
         }
 
@@ -79,6 +80,10 @@ final readonly class UpdateProjectAction
             $this->assertTypeChange($project, $data->type);
             $project->update(['type' => $data->type]);
             $project = $project->fresh() ?? $project;
+        }
+
+        if ($data->sourceAccessProvided && $data->sourceAccess instanceof ProjectSourceAccess) {
+            $project = $this->changeSourceAccess($project, $data, $data->sourceAccess);
         }
 
         $instanceIds = array_values($project->instances()
@@ -115,6 +120,26 @@ final readonly class UpdateProjectAction
         );
 
         return $result;
+    }
+
+    /**
+     * Applies a source access change at once, after the repository reads with the new value
+     * ([Projects](/reference/projects#change-source-access)). It
+     * touches no checkout, so a later source change in the same request reads with the new value.
+     */
+    private function changeSourceAccess(Project $project, UpdateProjectData $data, ProjectSourceAccess $access): Project
+    {
+        if ($project->source_access === $access) {
+            return $project;
+        }
+
+        $repository = $data->repositoryUrlProvided && is_string($data->repositoryUrl)
+            ? GitRepositoryOrigin::validate($data->repositoryUrl)
+            : $project->repository_url;
+        $this->branches->resolve($repository, $access);
+        $project->update(['source_access' => $access]);
+
+        return $project->fresh() ?? $project;
     }
 
     /**
@@ -280,6 +305,7 @@ final readonly class UpdateProjectAction
             $this->branches->verify(
                 $update->requested_repository_url ?? $project->repository_url,
                 $update->requested_default_branch,
+                $project->source_access,
             );
 
             foreach ($instances as $instance) {

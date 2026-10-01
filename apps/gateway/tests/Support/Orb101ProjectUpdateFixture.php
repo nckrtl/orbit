@@ -7,6 +7,7 @@ namespace Tests\Support;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectUpdateProjectionMutator;
 use App\Domain\Projects\ProjectUpdateSourceMutator;
 use App\Domain\Routes\RouteProvenance;
@@ -41,12 +42,12 @@ final class Orb101ProjectUpdateFixture
             RepositoryDefaultBranchResolver::class,
             new class implements RepositoryDefaultBranchResolver
             {
-                public function resolve(string $repository): string
+                public function resolve(string $repository, ProjectSourceAccess $source): string
                 {
                     return 'main';
                 }
 
-                public function verify(string $repository, string $branch): void {}
+                public function verify(string $repository, string $branch, ProjectSourceAccess $source): void {}
             },
         );
 

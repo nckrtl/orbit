@@ -9,11 +9,5 @@ final readonly class GitRegistrationFacts
     public function __construct(
         public string $path,
         public string $repositoryUrl,
-        public string $slug,
-        public ?string $defaultBranch,
-        public ?string $branch,
-        public ?string $root,
-        public string $layout,
-        public string $commit,
     ) {}
 }

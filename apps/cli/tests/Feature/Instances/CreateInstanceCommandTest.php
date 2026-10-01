@@ -12,7 +12,6 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
-use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -133,7 +132,7 @@ describe('instance:create production refusal', function (): void {
 });
 
 describe('instance registration project options', function (): void {
-    it('accepts the project name option and the project slug and rejects the app name option', function (): void {
+    it('rejects the removed Project creation options and the app name option', function (): void {
         app()->instance(GitRegistrationDiscovery::class, new class implements GitRegistrationDiscovery
         {
             public function inspect(string $path): ?GitRegistrationFacts
@@ -141,32 +140,18 @@ describe('instance registration project options', function (): void {
                 return new GitRegistrationFacts(
                     path: '/work/acme',
                     repositoryUrl: 'git@github.com:acme/acme.git',
-                    slug: 'acme',
-                    defaultBranch: 'main',
-                    branch: 'main',
-                    root: 'public',
-                    layout: 'checkout',
-                    commit: str_repeat(string: 'a', times: 40),
                 );
             }
         });
-        $mock = MockClient::global([
-            RegisterInstanceRequest::class => registration_mock_response(),
-        ]);
 
-        $this->artisan('instance:register', [
-            '--yes' => true,
-            '--project-name' => 'Confirmed',
-            '--project-slug' => 'confirmed',
-            '--no-interaction' => true,
-            '--json' => true,
-        ])->expectsOutput(registration_json())->assertExitCode(0);
+        foreach (['--project-name', '--project-slug', '--default-branch'] as $option) {
+            $tester = new CommandTester(app(Kernel::class)->all()['instance:register']);
 
-        expect($mock->getLastRequest()?->body()->all())->toBe([
-            'source_path' => '/work/acme',
-            'project_name' => 'Confirmed',
-            'project_slug' => 'confirmed',
-        ]);
+            expect($tester->execute([$option => 'value', '--json' => true, '--no-interaction' => true], ['interactive' => false]))
+                ->toBe(1)
+                ->and(json_decode(trim($tester->getDisplay()), associative: true, flags: JSON_THROW_ON_ERROR)['error']['code'])
+                ->toBe('input.invalid');
+        }
 
         MockClient::destroyGlobal();
         $rejected = MockClient::global();

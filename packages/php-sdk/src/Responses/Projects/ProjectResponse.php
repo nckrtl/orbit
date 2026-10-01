@@ -21,6 +21,7 @@ final readonly class ProjectResponse
         /** @var list<array{project_id: int, project_slug: string, node_id: int, node_name: string, development_instance_count: int}>|null */
         public ?array $excludedNodes = null,
         public ?string $taskCheck = null,
+        public string $sourceAccess = 'github_app',
         public ?bool $taskWorkspaceRouted = null,
     ) {}
 
@@ -46,6 +47,7 @@ final readonly class ProjectResponse
             requestId: $requestId,
             excludedNodes: self::exclusions($data['excluded_nodes'] ?? null),
             taskCheck: is_string($data['task_check'] ?? null) ? $data['task_check'] : null,
+            sourceAccess: is_string($data['source_access'] ?? null) ? $data['source_access'] : 'github_app',
             taskWorkspaceRouted: is_bool($data['task_workspace_routed'] ?? null) ? $data['task_workspace_routed'] : null,
         );
     }
@@ -59,6 +61,7 @@ final readonly class ProjectResponse
             'slug' => $this->slug,
             'type' => $this->type,
             'repository_url' => $this->repositoryUrl,
+            'source_access' => $this->sourceAccess,
             'default_branch' => $this->defaultBranch,
             'root' => $this->root,
             'task_check' => $this->taskCheck,

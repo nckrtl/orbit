@@ -1,6 +1,6 @@
 ---
 title: "Projects"
-description: "How a Project records one repository, its type, and the source defaults that Instances inherit, and how create, update, and removal work."
+description: "How a Project records one repository, its type, its source access, and the source defaults that Instances inherit, and how create, update, and removal work."
 covers:
   - "apps/gateway/app/{Actions,Domain,Infrastructure}/Projects/**"
   - "apps/gateway/app/Domain/SourceControl/{GitRepositoryIdentity,GitRepositoryOrigin,ProjectRoot,RelativeWebRoot,RepositoryDefaultBranchResolver}.php"
@@ -26,6 +26,7 @@ A Project stores these fields. API responses, the SDK, and CLI JSON use the same
 | `code` | Unique code of three uppercase letters. See [Project codes](#project-codes). |
 | `type` | `monorepo`, `laravel-app`, `laravel-package`, or `node-package`. See [Project types](#project-types). |
 | `repository_url` | HTTPS or SSH Git URL that Orbit uses to fetch. |
+| `source_access` | `github_app` or `gh_cli`. How Orbit reads a private `github.com` repository. See [Source access](#source-access). |
 | `default_branch` | Branch of the `default` Instance and the base for new branches. |
 | `root` | Repository-relative path that Instances inherit. |
 | `task_check` | Optional command that task baselines and handoffs run. It defaults to null for every type. See [Project check](/reference/tasks#project-check). |
@@ -51,51 +52,37 @@ Create a Project before you create or register its first Instance.
 ```bash
 orbit project:create acme laravel-app git@github.com:acme/site.git
 orbit project:create acme laravel-app git@github.com:acme/site.git --default-branch=stable --root=web/public
+orbit project:create leden laravel-app git@github.com:acme/leden.git --source-access=gh_cli
 ```
 
-The CLI root defaults to `.` for package types and `public` for other types. The API and SDK require `root`. Without `--default-branch`, the Gateway reads the remote default branch once and stores it. A later change on the remote does not update the Project. An explicit branch must exist on the remote. A private `github.com` repository needs the [GitHub App](/reference/github-app) on its owner account.
+The CLI root defaults to `.` for package types and `public` for other types. The API and SDK require `root`. Without `--default-branch`, the Gateway reads the remote default branch once and stores it. A later change on the remote does not update the Project. An explicit branch must exist on the remote. The Gateway reads the remote with the Project's [source access](#source-access).
 
 Creation is idempotent. A retry with the same values returns the existing Project. A retry that omits the default branch does not read the remote again. A retry with any different value, including another URL for the same repository, returns `project.identity_conflict` and changes nothing.
+
+## Source access
+
+`source_access` decides how Orbit reads a private `github.com` repository. It applies to every read: default-branch checks on create and update, branch resolution on `instance:create`, and every clone and fetch on a Node.
+
+| Value | Orbit reads with |
+| --- | --- |
+| `github_app` | The Gateway's [GitHub App](/reference/github-app#how-orbit-reads-a-repository), when an installation covers the repository. Otherwise without a credential. This is the default. |
+| `gh_cli` | The [GitHub CLI login](/reference/github-app#read-through-the-github-cli) of the Gateway's `orbit` user. Only for `github.com` repository URLs. |
+
+A public repository and a repository on another host work with `github_app`. A `gh_cli` Project cannot start [tasks](/reference/tasks), because tasks publish through the App.
 
 ## Repository identity
 
 The Gateway derives a repository identity from the host and path of the URL. Equivalent SSH and HTTPS URLs, with or without `.git`, have the same identity. A second Project for the same repository returns `project.repository_identity_conflict`. Registration uses this identity to find the Project of a checkout.
 
-## Create a Project during registration
+## Registration needs a Project
 
-When [`instance:register`](/domains/applications#register-an-existing-checkout) finds no Project for the repository, the CLI infers these values and asks for the rest:
+[`instance:register`](/domains/applications#register-an-existing-checkout) adopts a checkout only for an existing Project. It finds the Project by repository identity, or uses `--project`. When no Project owns the repository, it fails with `instance.project_missing` and changes nothing. Create the Project with `project:create` first.
 
-| Value | Source |
-| --- | --- |
-| Slug | The repository name. |
-| `default_branch` | The checkout's `origin/HEAD`; optional API and SDK input, returned by every Project response. |
-| Root | `public` when the checkout has `composer.json`, `artisan`, and a `public` directory. |
-| Name | The slug, unless you pass `--project-name`. |
-| Type | `monorepo` for the Orbit repository, or for slug `orbit` with a repository path that ends in `/orbit`. `laravel-app` when the root is `public` or ends in `/public`. `laravel-package` otherwise. |
-| `type` | Required on `project:create`. Closed enum `monorepo`, `laravel-app`, `laravel-package`, or `node-package`. |
-| `repository_url` | Required repository access URL in the Gateway API and PHP SDK. |
-| `--default-branch` | Optional CLI input for `project:create`. |
-| `root` and `--root` | Required API and SDK field. A normalized repository-relative path; `.` is allowed for package types and means the repository root. |
-| `task_check` and `--task-check` | Optional command that task baselines and handoffs run ([Project check](/reference/tasks#project-check)). Omitted or null runs no check command for any type. Existing stored commands remain unchanged. |
-Registration never picks `node-package` and has no type option. Change the type afterwards with `project:update --type`.
-
-SDK Project responses and the `project:list` and `project:show` commands expose the stored type, repository, default branch, root, task check, and `task_workspace_routed`. The task check is an ordinary setting, like setup steps, so activity records it as sent. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` compatibility name.
-
-A value you pass fills an unresolved value only. It must match what the Gateway verifies:
-
-| Input | Code when it differs |
-| --- | --- |
-| `--project-slug` for a new Project | `project.slug_conflict`. The slug is always the repository name. |
-| `--default-branch` for a new Project | `project.default_branch_conflict`, when the checkout has an `origin/HEAD`. |
-| `--root` for a new Project | `project.root_conflict`, when the root was inferred. |
-| `--project-slug`, `--project-name`, or `--default-branch` for an existing Project | `project.identity_conflict`. |
-| A root that the type does not allow | `project.root_invalid`. |
-
-Valid explicit values fill only unresolved or optional values. They do not override a conflicting repository identity or verified source fact. When the Project is created but registration then fails, the Project stays for an identical retry.
+SDK Project responses and the `project:list` and `project:show` commands expose the stored type, repository, source access, default branch, root, task check, and `task_workspace_routed`. The task check is an ordinary setting, like setup steps, so activity records it as sent. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` compatibility name.
 
 ## Retry creation safely
 
-Repeating `project:create` with the same name, slug, type, repository access URL, default branch, root, any sent task check, and any sent `task_workspace_routed` value returns the existing Project. Omitting `task_workspace_routed` keeps the stored value. A retry does not look up an omitted branch again.
+Repeating `project:create` with the same name, slug, type, repository access URL, source access, default branch, root, any sent task check, and any sent `task_workspace_routed` value returns the existing Project. An omitted source access means `github_app`. Omitting `task_workspace_routed` keeps the stored value. A retry does not look up an omitted branch again.
 
 A retry that changes any creation value fails with `project.identity_conflict` and does not mutate the Project. A different repository access URL is a changed value even when it has the same canonical repository identity, so creation never switches the stored URL.
 
@@ -107,10 +94,11 @@ Change the code in the web app, or send `PATCH /api/v1/projects/{project}` with 
 
 ## Update a Project
 
-Use `project:update` when an existing Project must change its type, slug, repository access URL, default branch, relative web root, task check, or task workspace routing. The Gateway API accepts `PATCH /api/v1/projects/{project}` with those same fields, including `task_workspace_routed`. The PHP SDK sends `UpdateProjectRequest` to that path. Omitted fields stay unchanged; send `task_check: null` to clear the task check. The CLI and the MCP `project-update` tool accept the same fields. The [Update lifecycle](#update-lifecycle) defines source reconciliation. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
+Use `project:update` when an existing Project must change its type, slug, repository access URL, source access, default branch, relative web root, task check, or task workspace routing. The Gateway API accepts `PATCH /api/v1/projects/{project}` with those same fields, including `task_workspace_routed`. The PHP SDK sends `UpdateProjectRequest` to that path. Omitted fields stay unchanged; send `task_check: null` to clear the task check. The CLI and the MCP `project-update` tool accept the same fields. The [Update lifecycle](#update-lifecycle) defines source reconciliation. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
 
 ```bash
 orbit project:update 3 --repository=https://github.com/acme/site.git --default-branch=stable
+orbit project:update 14 --source-access=gh_cli --default-branch=main
 ```
 
 `project:update` and `PATCH /api/v1/projects/{project}` change the fields you send and leave the rest. Creation never updates a Project.
@@ -120,12 +108,17 @@ orbit project:update 3 --repository=https://github.com/acme/site.git --default-b
 | `type` and `--type` | Applies at once. A `laravel-app` needs a Route; changing away keeps existing Routes. |
 | `slug` and `--slug` | Projects every Instance before publication, with no partial projection. Checkout paths, production users, and homes stay unchanged. Generated Routes use the new slug; explicit domains do not. |
 | `repository_url` and `--repository` | Runs `git remote set-url origin` in each development checkout. Equivalent HTTPS and SSH URLs share an identity. See [Repository changes](#repository-changes). |
+| `source_access` and `--source-access` | Applies at once and touches no checkout. See [Change source access](#change-source-access). |
 | `default_branch` and `--default-branch` | Must exist on the remote. Switches every development `default` Instance without a `branch_override`. Explicit overrides stay unchanged. |
 | `root` and `--root` | Changes the effective root of every Instance without its own root. Orbit reprojects the runtime of each such Instance that has a Route. |
 | `task_check` and `--task-check` | Sets the command that task baselines and handoffs run. Send null or `--clear-task-check` to run no check. |
 | `task_workspace_routed` and `--task-workspace-routed=true\|false` | Sets routing for future task workspaces. Existing workspaces keep their recorded mode and Routes. |
 
 A type change must keep a valid root. When the stored root is `.` and the new type does not allow it, validation fails on `root`. Send a web root with the type change. A type or root change that leaves a Route target with root `.` returns `route.target_web_root_unsupported`.
+
+### Change source access
+
+The Gateway first resolves the remote default branch with the new `source_access` value. When that read fails, nothing changes. A `default_branch` or `repository_url` sent in the same request is checked with the new value.
 
 ### Task workspace routing
 
@@ -166,13 +159,14 @@ A Project with tasks cannot be removed. The Gateway refuses the request with HTT
 
 ## Errors
 
-The Gateway returns these codes for Project requests. [Create a Project during registration](#create-a-project-during-registration) lists the registration codes.
+The Gateway returns these codes for Project requests.
 
 | Code | Cause |
 | --- | --- |
 | `project.identity_conflict` | A create retry differs from the stored Project. |
 | `project.repository_identity_conflict` | Another Project owns the repository. |
-| `project.default_branch_unavailable` | The Gateway cannot read the remote, or the branch is missing. The message holds no Git output or credentials. |
+| `project.default_branch_unavailable` | The Gateway cannot read the remote, or the branch is missing. The message names the App or the GitHub CLI login. It holds no Git output or credentials. |
+| `github.cli_unauthenticated` | A `gh_cli` read found no `gh` on the Gateway, or no `github.com` login for the `orbit` user. |
 | `project.slug_conflict` | Another Project has the slug. |
 | `project.update_required` | The update sends no field. |
 | `project.update_in_progress` | Another update of this Project is incomplete. |
@@ -193,6 +187,10 @@ These reasons explain the design. Check them before you propose a change.
 ### One repository, one Project
 
 Registration must find exactly one Project from a checkout's origin. Comparing URLs as strings was rejected, because an SSH and an HTTPS URL would allow two Projects for one repository. Letting Projects share a repository and taking the first match was rejected, because the result would depend on database order.
+
+### One way to create a Project
+
+`project:create` is the only way to create a Project, so every field, such as source access, is set in one place. Creating a Project during registration was rejected. That second path needed its own options, prompts, and conflict codes, and could not set every field. A private repository that needs the GitHub CLI failed there before the operator could choose the setting.
 
 ### Updates are separate from creation
 

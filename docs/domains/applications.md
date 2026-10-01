@@ -37,7 +37,7 @@ orbit instance:create <project> <node> default
 orbit instance:create <project> <node> feature-one --branch=release --domain=feature.example.test
 ```
 
-The Gateway clones the repository to `<apps-root>/<project-slug>/<name>`. The [apps root](/reference/node-settings) comes from the Node settings. The name decides the path and the generated domain. The branch is a separate choice.
+The Gateway clones the repository to `<apps-root>/<project-slug>/<name>`. It reads the repository with the Project's [source access](/reference/projects#source-access). A `gh_cli` Project needs no GitHub login on the Node. The [apps root](/reference/node-settings) comes from the Node settings. The name decides the path and the generated domain. The branch is a separate choice.
 
 | Input | Selected branch |
 | --- | --- |
@@ -78,7 +78,7 @@ orbit instance:register --path=/srv/src/acme --include-worktrees --yes --json
 
 Registration transfers ownership of the source to Orbit. Orbit moves the source into its managed path, and `instance:destroy` later deletes it. There is no unregister command.
 
-The CLI reads the stored `remote.origin.url` of the checkout. It sends no request for a directory outside Git or for an unsafe origin. A safe origin is `https://` without a user or password, `ssh://` without a password, or `git@host:path`. Any other scheme, a query, a fragment, whitespace, or a control character is unsafe. The Gateway finds the Project by [repository identity](/reference/projects#repository-identity). When no Project owns the repository, the CLI shows the inferred values and asks the Gateway to create one. The [Projects page](/reference/projects#create-a-project-during-registration) lists those values.
+The CLI reads the stored `remote.origin.url` of the checkout. It sends no request for a directory outside Git or for an unsafe origin. A safe origin is `https://` without a user or password, `ssh://` without a password, or `git@host:path`. Any other scheme, a query, a fragment, whitespace, or a control character is unsafe. The Gateway finds the Project by [repository identity](/reference/projects#repository-identity), or uses `--project`. Registration never creates a Project. When no Project owns the repository, the Gateway returns `instance.project_missing` and changes nothing. Create the Project with [`project:create`](/cli/project#orbit-projectcreate) first.
 
 The Gateway then inspects the source on the caller's Node. It trusts none of the facts the CLI sends.
 
