@@ -144,7 +144,7 @@ The Gateway validates a definition on every write and refuses an invalid one wit
 
 A name that the Project already uses returns HTTP 409 `tasks.definition_exists`. Starting a definition with a missing or wrongly typed parameter returns HTTP 422 `tasks.parameters_invalid`.
 
-An empty model name is refused. Any other model name is not checked against ProxyCli's list, because that list changes over time. When that list is available, the web app reports a model that no driver can run as a finding: a model is known when ProxyCli offers it, or when it is a Claude model, which T3 runs on its own Claude subscription. When the list is missing, empty, or refused, the view says that the model list is unavailable and reports no driver findings.
+An empty model name is refused. Any other model name is not checked against ProxyCli's list, because that list changes over time. When that list is available, the web app reports a model that no driver can run as a finding. A model is known when ProxyCli offers it through a provider Pi runs. A Claude model is not known. [ADR 0190](/decisions/0190-run-task-agents-on-pi-only) keeps Claude off task agents. When the list is missing, empty, or refused, the view says that the model list is unavailable and reports no driver findings.
 
 ### API
 

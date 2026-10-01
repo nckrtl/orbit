@@ -49,7 +49,7 @@ A Node can reuse the subscription accounts that CLIProxyAPI already holds, as Co
 
 A leading `!` runs the command at request time, so the key stays in the file or secret store that Codex already uses. List each model the Node should run; `GET /v1/models` on CLIProxyAPI shows the available IDs. Start the server with `--allow-provider=cliproxyapi`, because Pi sees an API key for this provider. Set `ORBIT_PI_PROVIDER=cliproxyapi` on the Gateway so plain model names, such as `gpt-5.6-luna`, use it.
 
-The Gateway's `pi` driver refuses every Claude model, also through CLIProxyAPI. See [Claude runs on T3](#claude-runs-on-t3).
+The Gateway's `pi` driver refuses every Claude model, also through CLIProxyAPI. See [Claude is unavailable for task agents](#claude-is-unavailable-for-task-agents).
 
 ## Sign in to a provider
 
@@ -73,7 +73,7 @@ Then register the managed Process from a machine with the Orbit CLI. Replace the
 orbit process:create pi-server --node=NODE --command=/home/orbit/.local/bin/pi-server --command=serve --command=--host=10.44.0.9 --command=--token-file=/home/orbit/.pi/agent/orbit-token --command=--workspace-root=/srv/orbit/apps --restart=always --keep-alive --start
 ```
 
-Add `--command=--allow-provider=cliproxyapi` when the Node uses CLIProxyAPI. The `pi` driver accepts the Node once this Process is active with desired state `running`. `GET /capabilities` lists the signed-in models. Select Pi for implementers with `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER=pi` on the Gateway.
+Add `--command=--allow-provider=cliproxyapi` when the Node uses CLIProxyAPI. The `pi` driver accepts the Node once this Process is active with desired state `running`. `GET /capabilities` lists the signed-in models. Select Pi for implementers with `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER=pi` on the Gateway, and for reviewers with `ORBIT_TASKS_REVIEWER_AGENT_DRIVER=pi`. Both default to `pi`.
 
 ## Agent tools
 
@@ -222,9 +222,9 @@ A turn still `working` at the restart fails with the restart error. The next tic
 
 These reasons explain the design. Check them before you propose a change.
 
-### Claude runs on T3
+### Claude is unavailable for task agents
 
-Anthropic permits Claude subscription credentials only in its own applications, also when a proxy such as CLIProxyAPI relays them. So the `pi` driver refuses a Claude model, `pi-server login anthropic` refuses to sign in, and Claude models run on the T3 driver.
+Anthropic permits Claude subscription credentials only in its own applications, also when a proxy such as CLIProxyAPI relays them. So the `pi` driver refuses a Claude model, `pi-server login anthropic` refuses to sign in, and task agents have no other runtime that runs Claude. [ADR 0190](/decisions/0190-run-task-agents-on-pi-only) records that choice. Annotations still use the operator's T3 threads. They are not task agents.
 
 ### A long-lived server, not RPC over SSH
 

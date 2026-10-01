@@ -85,3 +85,5 @@ docs/reference/instance-removal.md: The published-commit check reads through the
 docs/reference/mcp.mdx: The instance-register tool follows its regenerated contract; the MCP page lists no per-tool fields.
 docs/reference/php-runtime.md: Production source reads pass the Project's source access through the shared read access; the PHP runtime does not change.
 docs/reference/tools.md: The service provider only binds the GitHub CLI token source; Tool behavior does not change.
+docs/reference/environment-variables.md: Instance .env behavior is unchanged. Gateway task-agent settings stay in /reference/tasks, including Pi-only drivers and the T3 settings annotations use.
+docs/reference/app-dev-runtime-hibernation.md: Hibernation timing is unchanged. Task agents run on Pi; that contract is in /reference/tasks.

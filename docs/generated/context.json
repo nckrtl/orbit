@@ -690,7 +690,8 @@
                 "Task"
             ],
             "governing_adrs": [
-                "0177"
+                "0177",
+                "0190"
             ]
         },
         {
@@ -719,7 +720,34 @@
                 "Turn receipt"
             ],
             "governing_adrs": [
-                "0182"
+                "0182",
+                "0190"
+            ]
+        },
+        {
+            "path": "docs/decisions/0190-run-task-agents-on-pi-only.md",
+            "title": "ADR 0190: Run task agents on Pi only",
+            "kind": "decision",
+            "components": [
+                "apps/gateway",
+                "apps/web"
+            ],
+            "concepts": [
+                "Deployment",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Role",
+                "Task",
+                "Task workspace",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0177",
+                "0182",
+                "0190"
             ]
         },
         {
@@ -766,7 +794,8 @@
             "governing_adrs": [
                 "0097",
                 "0175",
-                "0182"
+                "0182",
+                "0190"
             ]
         },
         {
@@ -1703,7 +1732,9 @@
                 "Task",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0190"
+            ]
         },
         {
             "path": "docs/reference/private-dns.md",
@@ -1888,7 +1919,8 @@
                 "Turn receipt"
             ],
             "governing_adrs": [
-                "0182"
+                "0182",
+                "0190"
             ]
         },
         {
