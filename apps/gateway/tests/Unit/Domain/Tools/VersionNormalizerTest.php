@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Tools\DebianVersionNormalizer;
 use App\Domain\Tools\SemverVersionNormalizer;
+use App\Domain\Tools\VersionConstraint;
 
 it('normalizes strict and short semantic versions without accepting branches', function (
     string $raw,
@@ -34,9 +35,19 @@ it('normalizes only safely recognizable Debian upstream versions', function (
     expect(new DebianVersionNormalizer(new SemverVersionNormalizer)->normalize($raw))->toBe($normalized);
 })->with([
     'revision' => ['2.4.3-1ubuntu2', '2.4.3'],
+    'documented ubuntu revision' => ['1.25.0-2ubuntu4', '1.25.0'],
     'epoch and revision' => ['1:2.4.3-1', '2.4.3'],
     'short upstream' => ['2.4-1', '2.4.0'],
     'tilde prerelease' => ['2.4.3~rc1-1', null],
     'ubuntu style upstream' => ['8.2+93ubuntu1', null],
     'invalid epoch' => ['x:2.4.3-1', null],
 ]);
+
+it('accepts the documented Debian revision only after it normalizes to SemVer', function (): void {
+    $normalized = new DebianVersionNormalizer(new SemverVersionNormalizer)->normalize('1.25.0-2ubuntu4');
+    $constraint = new VersionConstraint;
+
+    expect($normalized)->toBe('1.25.0')
+        ->and($constraint->allows('1.25.0', '^1.25'))->toBeTrue()
+        ->and($constraint->allows('1.25.0', '^1.26'))->toBeFalse();
+});
