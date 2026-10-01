@@ -131,8 +131,8 @@ final readonly class ComposerToolManager implements SupportsToolAdoption, ToolMa
             managed_group=$(id -gn -- "$managed_user")
 
             export DEBIAN_FRONTEND=noninteractive
-            apt-get update
-            apt-get install --yes --no-install-recommends --no-remove -- composer git unzip
+            apt-get -o DPkg::Lock::Timeout=300 update
+            apt-get -o DPkg::Lock::Timeout=300 install --yes --no-install-recommends --no-remove -- composer git unzip
 
             if { [ -e /opt/orbit ] || [ -L /opt/orbit ]; } \
                 && { [ -L /opt/orbit ] || [ ! -d /opt/orbit ] || [ "$(stat -c '%U:%G' /opt/orbit)" != 'root:root' ]; }; then
