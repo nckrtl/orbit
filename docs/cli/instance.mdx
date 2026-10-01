@@ -152,7 +152,8 @@ A value of `--from` that is not a positive integer returns `instance.id_invalid`
 | `instance.copy_branch_diverged` | The branch name points at another commit. |
 | `instance.copy_source_changed` | The source `HEAD` moved during the copy. |
 | `instance.copy_failed` | The copy, snapshot, rewrite, or completion step failed. |
-| `instance.lifecycle_busy` | Another request holds this Instance's lifecycle lock. |
+| `instance.lifecycle_busy` | Another request holds this Instance's lifecycle lock, or the copy's environment lock set changed. |
+| `env.operation_busy` | Another environment operation holds a Project Instance on the Node. A reservation this request just made is removed. |
 | `instance.placement_conflict` | The retry changes the source, Node, name, root, domain, or branch. |
 | `instance.candidate_required` | The Node has the active `app-prod` role. |
 

@@ -183,19 +183,62 @@ final class DevelopmentInstanceCopyIsolationProgram
                 return current
 
 
+            def place(root, relative):
+                # Walk without following. A symlink ancestor is not the reset path, so callers
+                # must not open, delete, or rewrite through it.
+                current = root
+                parts = relative.split("/")
+                for index, segment in enumerate(parts):
+                    if segment in ("", ".", ".."):
+                        raise Failure()
+                    current = os.path.join(current, segment)
+                    final = index == len(parts) - 1
+                    if os.path.islink(current):
+                        return current, "symlink", final
+                    if not os.path.lexists(current):
+                        return current, "missing", final
+                return current, "real", True
+
+
             def reset(dest):
-                hot = os.path.join(dest, "public", "hot")
-                if os.path.lexists(hot) and (os.path.islink(hot) or os.path.isfile(hot)):
-                    os.unlink(hot)
+                unlink_leaf(dest, "public/hot")
                 for relative in (
                     "storage/logs",
                     "storage/framework/cache",
                     "storage/framework/sessions",
                     "storage/framework/views",
                 ):
-                    clear_directory(os.path.join(dest, relative))
+                    clear_contained(dest, relative)
                 for relative in ("node_modules/.vite", "node_modules/.cache"):
-                    remove_tree(os.path.join(dest, relative))
+                    remove_contained(dest, relative)
+
+
+            def unlink_leaf(dest, relative):
+                path, kind, final = place(dest, relative)
+                if not final or kind == "missing":
+                    return
+                if kind == "symlink" or os.path.isfile(path):
+                    os.unlink(path)
+
+
+            def clear_contained(dest, relative):
+                path, kind, final = place(dest, relative)
+                if not final or kind == "missing":
+                    return
+                if kind == "symlink":
+                    os.unlink(path)
+                    return
+                clear_directory(path)
+
+
+            def remove_contained(dest, relative):
+                path, kind, final = place(dest, relative)
+                if not final or kind == "missing":
+                    return
+                if kind == "symlink":
+                    os.unlink(path)
+                    return
+                remove_tree(path)
 
 
             def clear_directory(path):
@@ -230,9 +273,11 @@ final class DevelopmentInstanceCopyIsolationProgram
 
 
             def rewrite(dest, source, target, source_domain, target_domain):
-                rewrite_file(os.path.join(dest, ".env"), source, target, source_domain, target_domain)
-                cache = os.path.join(dest, "bootstrap", "cache")
-                if not os.path.isdir(cache) or os.path.islink(cache):
+                env, kind, final = place(dest, ".env")
+                if final and kind == "real":
+                    rewrite_file(env, source, target, source_domain, target_domain)
+                cache, kind, final = place(dest, "bootstrap/cache")
+                if not final or kind != "real" or not os.path.isdir(cache):
                     return
                 for dirpath, dirnames, filenames in os.walk(cache, followlinks=False):
                     dirnames[:] = [
@@ -241,8 +286,11 @@ final class DevelopmentInstanceCopyIsolationProgram
                         if not os.path.islink(os.path.join(dirpath, name))
                     ]
                     for name in filenames:
+                        candidate = os.path.join(dirpath, name)
+                        if os.path.islink(candidate):
+                            continue
                         rewrite_file(
-                            os.path.join(dirpath, name),
+                            candidate,
                             source,
                             target,
                             source_domain,
@@ -253,8 +301,11 @@ final class DevelopmentInstanceCopyIsolationProgram
             def rewrite_file(path, source, target, source_domain, target_domain):
                 if os.path.islink(path) or not os.path.isfile(path):
                     return
-                with open(path, "rb") as handle:
-                    original = handle.read()
+                descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+                try:
+                    original = os.read(descriptor, 8 * 1024 * 1024)
+                finally:
+                    os.close(descriptor)
                 updated = replace_domain(
                     replace_path(original, source, target),
                     source_domain,
@@ -265,7 +316,7 @@ final class DevelopmentInstanceCopyIsolationProgram
                 temporary = path + ".orbit-rewrite"
                 if os.path.lexists(temporary):
                     os.unlink(temporary)
-                mode = os.stat(path).st_mode & 0o777
+                mode = os.lstat(path).st_mode & 0o777
                 descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
                 try:
                     os.write(descriptor, updated)

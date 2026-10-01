@@ -95,13 +95,19 @@ A plain `cp` on OpenZFS can still share blocks through `copy_file_range`. `copy_
 
 An identical request for a complete copy returns that Instance and does not copy again. A retry that changes the source, Node, name, root, domain, or branch returns `instance.placement_conflict`.
 
-1. Re-check [eligibility](#source-eligibility) under the Node source lock.
-2. Reserve the Instance row.
-3. Inspect the destination against the ownership rule below.
-4. Write the ownership marker for this Instance id.
-5. Copy the checkout with the [copy mode](#copy-mode) commands.
+1. Reserve a new Instance row for a free name.
+2. Retry the existing row for a taken name.
+3. Take the environment locks for every Project Instance on that Node.
+4. Take the Node source lock after those environment locks.
+5. Re-check [eligibility](#source-eligibility) under those locks.
 
-The check in step 3 happens before any marker is written. A new marker is not proof that a directory already on disk belongs to this request. The marker is `<apps-root>/.orbit/copies/instance-{id}`, and its contents are the destination path. It sits outside the destination, so `cp` cannot replace it. It is proof of ownership only for a directory created after that write. A path that shares a prefix does not match.
+A failed environment lock removes a reservation made by this request. The response is `env.operation_busy`. A changed Instance set returns `instance.lifecycle_busy` and removes that new reservation. An ineligible source removes that new reservation too. A reserved row from an earlier attempt stays. A create retry and a removal take the environment locks before the Node source lock.
+
+6. Inspect the destination against the ownership rule below.
+7. Write the ownership marker for this Instance id.
+8. Copy the checkout with the [copy mode](#copy-mode) commands.
+
+The check in step 6 happens before any marker is written. A new marker is not proof that a directory already on disk belongs to this request. The marker is `<apps-root>/.orbit/copies/instance-{id}`, and its contents are the destination path. It sits outside the destination, so `cp` cannot replace it. It is proof of ownership only for a directory created after that write. A path that shares a prefix does not match.
 
 An occupied destination with no matching marker returns `instance.path_taken` or `instance.default_path_occupied`, the same codes as a repository create. The directory stays, and no marker is written. A reservation made for that request is released: the Instance row, its Route, and its Vite port are removed. A marker for this Instance id that names another path returns `instance.placement_conflict`, and neither path is deleted.
 
@@ -109,11 +115,11 @@ Activation deletes the marker when the checkout is recorded on the active Instan
 
 The source repository is not modified. The copied `.git` directory is the new repository. Orbit does not rewrite a worktree path. `core.worktree` is unset, and `.git` is a directory, so there is no separate worktree file to retarget.
 
-6. Create the [branch](#branch) at the source `HEAD`. This happens before the snapshot and the rewrite, because `git checkout --force` would replace those files with the commit.
-7. Replace each SQLite database with a [snapshot](#sqlite-snapshots).
-8. Delete the [reset paths](#what-the-copy-resets) in the new checkout.
-9. [Rewrite](#values-that-name-the-source) stored values, `.env`, `bootstrap/cache`, and absolute symlinks.
-10. Import file-only `.env` keys, then run completion and the Project setup steps.
+9. Create the [branch](#branch) at the source `HEAD`. This happens before the snapshot and the rewrite, because `git checkout --force` would replace those files with the commit.
+10. Replace each SQLite database with a [snapshot](#sqlite-snapshots).
+11. Delete the [reset paths](#what-the-copy-resets) in the new checkout.
+12. [Rewrite](#values-that-name-the-source) stored values, `.env`, `bootstrap/cache`, and absolute symlinks.
+13. Import file-only `.env` keys, then run completion and the Project setup steps.
 
 Completion is the same path as a repository create: source profile, Laravel `APP_URL` including cached config, Route publication, and activation. The copied repository must pass the same prepared-checkout inspection. The origin URL stays the URL from the source.
 
@@ -155,7 +161,7 @@ The new checkout is the source tree after the reset, rewrite, and SQLite snapsho
 
 ## What the copy resets
 
-These paths are deleted in the new checkout only. A symlink is removed as a symlink and is not followed.
+These paths are deleted in the new checkout only. A symlink is removed as a symlink and is not followed. A symlink among the ancestors of one of these paths is not followed either. Reset and the bootstrap cache rewrite leave that link, and every file it names, untouched. The same rule applies to `public/hot` and to `node_modules/.vite` and `node_modules/.cache`.
 
 | Path | What is deleted |
 | --- | --- |
@@ -283,18 +289,19 @@ The [create refusals](/domains/applications#create-a-development-instance) still
 | `instance.copy_source_changed` | 409 | The source `HEAD` moved during the copy. |
 | `instance.copy_failed` | 409 | The copy, snapshot, rewrite, or completion step failed. |
 | `instance.placement_conflict` | 409 | The retry changes the copy identity. |
-| `instance.lifecycle_busy` | 409 | Another request holds this Instance's lifecycle lock. |
+| `instance.lifecycle_busy` | 409 | Another request holds this Instance's lifecycle lock, or the copy's environment lock set changed. |
+| `env.operation_busy` | 409 | Another environment operation holds one of the Project Instances on the Node. A reservation this request just made is removed. |
 | `instance.candidate_required` | 409 | The Node has the active `app-prod` role. |
 
 A failure after the copy starts removes the row when cleanup finishes. A busy lifecycle during setup leaves the active row in place. A `reserved` row remains only when the request stops before that cleanup. Cleanup uses the [removal path](#copy-steps) above. An unmanaged directory at the destination is never deleted.
 
 ## Limits
 
-A copy stays on one Node. The source checkout is not modified.
+A copy stays on one Node. The source checkout is not modified. The copy, a create retry, and a removal take the environment locks before the Node source lock.
 
 - Reflink is attempted first. A plain copy runs only after `EOPNOTSUPP`, `EXDEV`, `EAGAIN`, or `EINVAL`.
 - Orbit does not convert a Node disk and does not change `zfs_bclone_wait_dirty`. The [errno table](#copy-mode) is the fallback list.
-- The Node source lock covers the copy. The dependency prune takes that same lock before it deletes `vendor` or `node_modules`.
+- The dependency prune takes the Node source lock before it deletes `vendor` or `node_modules`.
 - Setup runs. A copied `vendor` or `node_modules` makes the matching step cheap.
 - The source is not stopped. SQLite consistency comes from snapshots.
 - MySQL, PostgreSQL, and Redis servers are shared. Their attachment rows are copied. A SQLite attachment inside the source checkout is not.

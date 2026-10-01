@@ -43,6 +43,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\RouteTarget;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -541,97 +542,146 @@ final readonly class CreateInstanceAction
         }
 
         $this->assertCopySourceLocal($source, $project, $node);
-        $this->copyRoot($source, $requestedRoot);
+        $root = $this->copyRoot($source, $requestedRoot);
         $existing = Instance::query()
             ->where('project_id', $project->id)
             ->where('name', $data->name)
             ->first();
 
-        return $this->sourceLock->synchronized(
-            $node->id,
-            function () use ($data, $project, $node, $branch, $requestedRoot, $existing): array {
-                $source = $this->copySource($data->sourceInstanceId);
-                $this->assertCopySourceLocal($source, $project, $node);
-                $root = $this->copyRoot($source, $requestedRoot);
-                $existing = $existing instanceof Instance ? $existing->fresh() : null;
+        $created = false;
 
-                if ($existing instanceof Instance) {
-                    $this->assertRetryIdentity($existing, $node, $root, $branch);
-                    $this->assertCopyIdentity($existing, $source, $data->domain);
+        if (! $existing instanceof Instance) {
+            $this->assertPlacement($node);
+            app(DevelopmentNodeExclusion::class)->assertAvailable($project, $node);
 
-                    if ($existing->status === InstanceState::Active && $existing->failed_step === 'setup') {
-                        throw new ResourceOperationException(
-                            'instance.setup_step_failed',
-                            'Setup is incomplete. Run instance:setup before using this Instance.',
-                            409,
-                        );
-                    }
+            try {
+                $existing = $this->reserveCopyInstance($project, $node, $data->name, $root, $branch, $source->id);
+                $created = true;
+            } catch (UniqueConstraintViolationException) {
+                $existing = Instance::query()
+                    ->where('project_id', $project->id)
+                    ->where('name', $data->name)
+                    ->first();
 
-                    if ($existing->status === InstanceState::Active) {
-                        return ['instance' => $existing, 'created' => false];
-                    }
+                if (! $existing instanceof Instance) {
+                    throw $this->conflict('instance.placement_conflict', 'Instance placement is immutable.');
                 }
+            }
+        }
 
-                $inspection = $existing === null || $existing->status === InstanceState::Reserved
-                    ? $this->copies->inspect($source, $branch)
-                    : null;
+        $lockIds = $this->lockedCopyIds($existing);
 
-                if ($existing instanceof Instance) {
-                    $instance = $existing;
-                    $created = false;
-                } else {
-                    $this->assertPlacement($node);
-                    app(DevelopmentNodeExclusion::class)->assertAvailable($project, $node);
-                    $instance = $this->reserveCopyInstance($project, $node, $data->name, $root, $branch, $source->id);
-                    $created = true;
-                }
+        try {
+            return ($this->environmentOperations ?? app(InstanceEnvironmentOperationLock::class))->run(
+                $lockIds,
+                fn (): array => $this->sourceLock->synchronized(
+                    $node->id,
+                    function () use ($data, $project, $node, $branch, $requestedRoot, $existing, $lockIds, $created): array {
+                        $owned = false;
+                        $instance = $existing;
 
-                $owned = false;
-                $completed = ($this->environmentOperations ?? app(InstanceEnvironmentOperationLock::class))->run(
-                    $this->copyLockIds($instance),
-                    function () use ($instance, $data, $source, $branch, $inspection, &$owned): Instance {
                         try {
-                            $this->provisioner->reserve($instance, $data->domain);
-                            $resolved = $this->resumeCopy($instance, $source, $branch, $inspection?->head, $owned);
-                            $result = $this->provisioner->complete($resolved, $data->domain, setupPending: true);
+                            $source = $this->copySource($data->sourceInstanceId);
+                            $this->assertCopySourceLocal($source, $project, $node);
+                            $root = $this->copyRoot($source, $requestedRoot);
+                            $fresh = $existing->fresh();
+
+                            if (! $fresh instanceof Instance) {
+                                throw $this->conflict('instance.lifecycle_conflict', 'Instance lifecycle evidence changed.');
+                            }
+
+                            $instance = $fresh;
+
+                            if ($this->lockedCopyIds($instance) !== $lockIds) {
+                                throw $this->conflict('instance.lifecycle_busy', 'Another Instance operation is active. Retry the request.');
+                            }
+
+                            $this->assertRetryIdentity($instance, $node, $root, $branch);
+                            $this->assertCopyIdentity($instance, $source, $data->domain);
+
+                            if ($instance->status === InstanceState::Active && $instance->failed_step === 'setup') {
+                                throw new ResourceOperationException(
+                                    'instance.setup_step_failed',
+                                    'Setup is incomplete. Run instance:setup before using this Instance.',
+                                    409,
+                                );
+                            }
+
+                            if ($instance->status === InstanceState::Active) {
+                                return ['instance' => $instance, 'created' => false];
+                            }
+
+                            app(DevelopmentNodeExclusion::class)->assertAvailable($project, $node);
+                            $inspection = $instance->status === InstanceState::Reserved
+                                ? $this->copies->inspect($source, $branch)
+                                : null;
 
                             try {
-                                $this->copies->deleteMarker($result);
-                            } catch (Throwable) {
-                                // A leftover marker names this Instance and is outside the checkout.
-                            }
-                        } catch (Throwable $exception) {
-                            $this->recordFailure($instance, $exception);
-                            $current = $instance->fresh();
-                            $started = $owned
-                                || ($current instanceof Instance && $current->status !== InstanceState::Reserved)
-                                || ($exception instanceof ResourceOperationException && ($exception->details['copy_started'] ?? '') === '1');
-                            $refusedBeforeCopy = $exception instanceof ResourceOperationException
-                                && in_array($exception->errorCode, ['instance.path_taken', 'instance.default_path_occupied'], true)
-                                && ! $started
-                                && $current instanceof Instance
-                                && $current->status === InstanceState::Reserved;
+                                $this->provisioner->reserve($instance, $data->domain);
+                                $resolved = $this->resumeCopy($instance, $source, $branch, $inspection?->head, $owned);
+                                $result = $this->provisioner->complete($resolved, $data->domain, setupPending: true);
 
-                            if ($refusedBeforeCopy) {
-                                // The destination belongs to someone else. Release the reservation
-                                // and leave that directory in place.
-                                $this->releaseCopyReservations($current);
-                            } elseif ($started && (! $current instanceof Instance || $current->status !== InstanceState::Active)) {
-                                $this->removeFailedCopy($current ?? $instance);
+                                try {
+                                    $this->copies->deleteMarker($result);
+                                } catch (Throwable) {
+                                    // A leftover marker names this Instance and is outside the checkout.
+                                }
+                            } catch (Throwable $exception) {
+                                $this->recordFailure($instance, $exception);
+                                $current = $instance->fresh();
+                                $started = $owned
+                                    || ($current instanceof Instance && $current->status !== InstanceState::Reserved)
+                                    || ($exception instanceof ResourceOperationException && ($exception->details['copy_started'] ?? '') === '1');
+                                $refusedBeforeCopy = $exception instanceof ResourceOperationException
+                                    && in_array($exception->errorCode, ['instance.path_taken', 'instance.default_path_occupied'], true)
+                                    && ! $started
+                                    && $current instanceof Instance
+                                    && $current->status === InstanceState::Reserved;
+
+                                if ($refusedBeforeCopy) {
+                                    // The destination belongs to someone else. Release the reservation
+                                    // and leave that directory in place.
+                                    $this->releaseCopyReservations($current);
+                                } elseif ($started && (! $current instanceof Instance || $current->status !== InstanceState::Active)) {
+                                    $this->removeFailedCopy($current ?? $instance);
+                                }
+
+                                throw $exception;
+                            }
+
+                            $this->finishSetup($result);
+
+                            return ['instance' => $result->refresh(), 'created' => $created];
+                        } catch (Throwable $exception) {
+                            if ($created && ! $owned) {
+                                $this->releaseUnstartedCopyReservation(true, $instance);
                             }
 
                             throw $exception;
                         }
-
-                        $this->finishSetup($result);
-
-                        return $result->refresh();
                     },
-                );
+                ),
+            );
+        } catch (ResourceOperationException $exception) {
+            if ($exception->errorCode === 'env.operation_busy') {
+                $this->releaseUnstartedCopyReservation($created, $existing);
+            }
 
-                return ['instance' => $completed, 'created' => $created];
-            },
-        );
+            throw $exception;
+        }
+    }
+
+    private function releaseUnstartedCopyReservation(bool $created, Instance $instance): void
+    {
+        if (! $created) {
+            return;
+        }
+
+        $reserved = $instance->fresh();
+
+        if ($reserved instanceof Instance && $reserved->status === InstanceState::Reserved) {
+            $this->releaseCopyReservations($reserved);
+        }
     }
 
     private function resumeCopy(Instance $instance, Instance $source, string $branch, ?string $expectedHead, bool &$owned): Instance
@@ -807,6 +857,20 @@ final readonly class CreateInstanceAction
         if ($route->domain !== $domain) {
             throw $this->conflict('instance.placement_conflict', 'Instance placement is immutable.');
         }
+    }
+
+    /**
+     * Environment locks for every Project Instance on the Node, in id order.
+     * Callers take these before the Node source lock, matching create retry and removal.
+     *
+     * @return list<int>
+     */
+    private function lockedCopyIds(Instance $instance): array
+    {
+        $ids = $this->copyLockIds($instance);
+        sort($ids, SORT_NUMERIC);
+
+        return $ids;
     }
 
     /** @return list<int> */

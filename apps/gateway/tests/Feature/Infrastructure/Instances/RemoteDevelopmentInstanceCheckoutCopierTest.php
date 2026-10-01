@@ -483,6 +483,89 @@ it('snapshots SQLite from the live source, rewrites names, and resets runtime fi
     }
 });
 
+it('does not reset or rewrite through a parent symlink for a client or workspace copy', function (): void {
+    $root = sys_get_temp_dir().'/orbit-copy-parent-link-'.bin2hex(random_bytes(4));
+    $source = $root.'/source';
+    $dest = $root.'/dest';
+    $outside = $root.'/outside';
+
+    try {
+        copy_isolation_fixture($source, $outside);
+        $copied = new Process(['cp', '-a', $source, $dest]);
+        $copied->mustRun();
+        $cache = $source.'/storage/framework/cache/data/payload.php';
+        $session = $outside.'/logs/laravel.log';
+        $view = $source.'/storage/framework/views/home.php';
+        $config = $source.'/bootstrap/cache/config.php';
+        $hot = $outside.'/hot-target';
+        $before = [
+            $cache => (string) file_get_contents($cache),
+            $session => (string) file_get_contents($session),
+            $view => (string) file_get_contents($view),
+            $config => (string) file_get_contents($config),
+            $hot => (string) file_get_contents($hot),
+        ];
+        new Process(['rm', '-rf', $dest.'/storage/framework', $dest.'/bootstrap', $dest.'/public'])->mustRun();
+        if (! is_dir($dest.'/storage')) {
+            mkdir($dest.'/storage', 0777, true);
+        }
+        symlink($source.'/storage/framework', $dest.'/storage/framework');
+        symlink($source.'/bootstrap', $dest.'/bootstrap');
+        symlink($source.'/public', $dest.'/public');
+
+        $process = new Process([
+            'python3', '-c', DevelopmentInstanceCopyIsolationProgram::script(),
+            'prepare', $source, $dest, 'default.acme.test', 'feature.acme.test',
+        ]);
+        $process->mustRun();
+
+        expect(trim($process->getOutput()))->toBe('ready');
+
+        foreach ($before as $path => $contents) {
+            expect(is_file($path))->toBeTrue()
+                ->and(file_get_contents($path))->toBe($contents);
+        }
+
+        expect(readlink($dest.'/storage/framework'))->toBe($dest.'/storage/framework')
+            ->and(readlink($dest.'/bootstrap'))->toBe($dest.'/bootstrap')
+            ->and(readlink($dest.'/public'))->toBe($dest.'/public')
+            ->and(is_link($dest.'/storage/logs') || is_dir($dest.'/storage/logs'))->toBeTrue();
+    } finally {
+        new Process(['rm', '-rf', $root])->run();
+    }
+});
+
+it('runs the same isolation program from a client copy and a workspace copy', function (): void {
+    [$source, $target] = copy_checkout_pair();
+    $head = str_repeat('b', 40);
+    $script = DevelopmentInstanceCopyIsolationProgram::script();
+    $results = [
+        new CommandResult(0, "ready\n", '', 1, false),
+        new CommandResult(0, '', '', 1, false),
+        new CommandResult(0, '', '', 1, false),
+        new CommandResult(0, "ready\n{$head}\n", '', 1, false),
+        new CommandResult(0, "ready\n", '', 1, false),
+    ];
+
+    foreach (['copy', 'workspace'] as $path) {
+        $ssh = new AppDevFakeSshExecutor($results);
+        $copier = copy_checkout_copier($ssh);
+
+        if ($path === 'copy') {
+            $copier->copy($source, $target, 'feature', $head, 'instance.path_taken');
+        } else {
+            $copier->copyOntoFetchedTip($source, $target, 'task-1', 'main', $head, 'instance.path_taken');
+        }
+
+        $prepare = $ssh->commands[array_key_last($ssh->commands)];
+
+        expect($prepare->arguments[0])->toBe('python3')
+            ->and($prepare->arguments[2])->toBe($script)
+            ->and($prepare->arguments[3])->toBe('prepare')
+            ->and($script)->toContain('def place(');
+    }
+});
+
 it('leaves the target untouched when a SQLite path is a symlink', function (): void {
     $root = sys_get_temp_dir().'/orbit-copy-link-'.bin2hex(random_bytes(4));
     $source = $root.'/source';

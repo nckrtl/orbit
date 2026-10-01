@@ -21,6 +21,7 @@ use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Instances\DevelopmentSourceProfile;
 use App\Domain\Instances\DevelopmentSourceResolution;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
+use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
@@ -54,6 +55,8 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
+use App\Infrastructure\Instances\NativeInstanceEnvironmentOperationLock;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceCheckoutCopier;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Ssh\HostKey;
@@ -76,12 +79,14 @@ use App\Models\ProjectLifecycleStep;
 use App\Models\Route;
 use App\Models\RouteTarget;
 use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
 use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
+use Symfony\Component\Process\Process;
 use Tests\Support\DeadlineOnCopySshExecutor;
 use Tests\Support\FakeDevelopmentInstanceCheckoutCopier;
 use Tests\Support\LifecycleSshExecutor;
@@ -3466,6 +3471,147 @@ describe('development instance copies', function (): void {
         expect($copier->inspections)->toBe(0)
             ->and($copier->copies)->toBe(0)
             ->and(Instance::query()->count())->toBe(0);
+    });
+
+    it('takes environment locks before the node lock and drops a new reservation when that acquisition is busy', function (): void {
+        $source = copy_development_source();
+        bind_development_copier();
+        $directory = sys_get_temp_dir().'/orbit-copy-lock-'.bin2hex(random_bytes(4));
+        mkdir($directory, 0700, true);
+        $ready = $directory.'/ready';
+        $release = $directory.'/release';
+        $held = $directory.'/app-instance-'.$source->id.'.lock';
+        $nodeLock = $directory.'/node-'.$this->node->id.'.lock';
+        $script = $directory.'/hold.php';
+        file_put_contents($script, <<<'PHP'
+            <?php
+            [$path, $ready, $release] = array_slice($argv, 1);
+            $handle = fopen($path, 'c+');
+            if ($handle === false || ! flock($handle, LOCK_EX)) {
+                exit(1);
+            }
+            file_put_contents($ready, "held\n");
+            $deadline = time() + 20;
+            while (! is_file($release) && time() < $deadline) {
+                usleep(20_000);
+            }
+            flock($handle, LOCK_UN);
+            PHP);
+        $holder = new Process([PHP_BINARY, $script, $held, $ready, $release]);
+        $holder->start();
+        $deadline = microtime(true) + 5;
+        while (! is_file($ready) && microtime(true) < $deadline) {
+            usleep(20_000);
+        }
+        expect(is_file($ready))->toBeTrue();
+        $sourceFree = null;
+        $now = 0.0;
+        $clock = static function () use (&$now): float {
+            return $now;
+        };
+        $wait = function () use (&$now, &$sourceFree, $nodeLock): void {
+            $code = '$handle = fopen('.var_export($nodeLock, true).', "c+"); echo flock($handle, LOCK_EX | LOCK_NB) ? "free" : "held";';
+            $probe = new Process([PHP_BINARY, '-r', $code]);
+            $probe->mustRun();
+            $sourceFree = trim($probe->getOutput());
+            $now += 1000;
+        };
+        app()->instance(InstanceEnvironmentOperationLock::class, new NativeInstanceEnvironmentOperationLock($directory, new CommandDeadline($clock), $clock, $wait));
+        app()->instance(AppDevSourceOperationLock::class, new NativeAppDevSourceOperationLock($directory));
+
+        try {
+            expect(fn () => app(CreateInstanceAction::class)->execute(new CreateInstanceData(
+                projectId: $this->orbitApp->id,
+                nodeId: $this->node->id,
+                name: 'feature',
+                root: null,
+                domain: null,
+                branch: null,
+                sourceInstanceId: $source->id,
+            )))->toThrow(fn (ResourceOperationException $exception) => $exception->errorCode === 'env.operation_busy');
+            expect($sourceFree)->toBe('free')
+                ->and(Instance::query()->where('name', 'feature')->exists())->toBeFalse()
+                ->and(Instance::query()->whereKey($source->id)->exists())->toBeTrue();
+        } finally {
+            file_put_contents($release, "go\n");
+            $holder->wait();
+            new Filesystem()->deleteDirectory($directory);
+        }
+    });
+
+    it('holds both locks while copying so a create retry or removal can take them afterwards', function (): void {
+        $source = copy_development_source();
+        $copier = bind_development_copier();
+        $this->source->resolution = new DevelopmentSourceResolution('feature', $copier->head);
+        $directory = sys_get_temp_dir().'/orbit-copy-overlap-'.bin2hex(random_bytes(4));
+        mkdir($directory, 0700, true);
+        app()->instance(InstanceEnvironmentOperationLock::class, new NativeInstanceEnvironmentOperationLock($directory, new CommandDeadline));
+        app()->instance(AppDevSourceOperationLock::class, new NativeAppDevSourceOperationLock($directory));
+        $status = $directory.'/status';
+        $script = $directory.'/contender.php';
+        file_put_contents($script, <<<'PHP'
+            <?php
+            [$envPath, $nodePath, $status] = array_slice($argv, 1);
+            $env = fopen($envPath, 'c+');
+            $node = fopen($nodePath, 'c+');
+            $envFree = flock($env, LOCK_EX | LOCK_NB);
+            if ($envFree) {
+                flock($env, LOCK_UN);
+            }
+            $nodeFree = flock($node, LOCK_EX | LOCK_NB);
+            if ($nodeFree) {
+                flock($node, LOCK_UN);
+            }
+            file_put_contents($status, ($envFree ? 'env-free' : 'env-held').' '.($nodeFree ? 'node-free' : 'node-held')."\n");
+            if ($envFree || $nodeFree) {
+                exit(2);
+            }
+            if (! flock($env, LOCK_EX) || ! flock($node, LOCK_EX)) {
+                exit(1);
+            }
+            file_put_contents($status, "acquired\n", FILE_APPEND);
+            flock($node, LOCK_UN);
+            flock($env, LOCK_UN);
+            PHP);
+        $contender = null;
+        $copier->duringCopy = function (mixed $ignored, Instance $target) use ($directory, $script, $status, &$contender): void {
+            $contender = new Process([
+                PHP_BINARY,
+                $script,
+                $directory.'/app-instance-'.$target->id.'.lock',
+                $directory.'/node-'.$target->node_id.'.lock',
+                $status,
+            ]);
+            $contender->start();
+            $deadline = microtime(true) + 5;
+            while (! is_file($status) && microtime(true) < $deadline) {
+                usleep(20_000);
+            }
+            expect(is_file($status))->toBeTrue()
+                ->and(file_get_contents($status))->toContain('env-held node-held');
+        };
+
+        try {
+            $result = app(CreateInstanceAction::class)->execute(new CreateInstanceData(
+                projectId: $this->orbitApp->id,
+                nodeId: $this->node->id,
+                name: 'feature',
+                root: null,
+                domain: null,
+                branch: null,
+                sourceInstanceId: $source->id,
+            ));
+            expect($contender)->toBeInstanceOf(Process::class);
+            $contender->wait();
+            expect($contender->getExitCode())->toBe(0)
+                ->and(file_get_contents($status))->toContain('acquired')
+                ->and($result['instance']->name)->toBe('feature');
+        } finally {
+            if ($contender instanceof Process && $contender->isRunning()) {
+                $contender->wait();
+            }
+            new Filesystem()->deleteDirectory($directory);
+        }
     });
 });
 

@@ -9,6 +9,7 @@ use App\Domain\Instances\DevelopmentInstanceCopyInspection;
 use App\Domain\Instances\DevelopmentInstanceCopyResult;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
+use Closure;
 
 final class FakeDevelopmentInstanceCheckoutCopier implements DevelopmentInstanceCheckoutCopier
 {
@@ -47,6 +48,8 @@ final class FakeDevelopmentInstanceCheckoutCopier implements DevelopmentInstance
 
     public bool $failDiscard = false;
 
+    public ?Closure $duringCopy = null;
+
     public function __construct()
     {
         $this->head = str_repeat('c', 40);
@@ -75,6 +78,10 @@ final class FakeDevelopmentInstanceCheckoutCopier implements DevelopmentInstance
         $this->copies++;
         $this->branch = $branch;
         $this->expectedHead = $expectedHead;
+
+        if ($this->duringCopy instanceof Closure) {
+            ($this->duringCopy)($source, $target);
+        }
 
         if ($this->failCopy !== null) {
             throw new ResourceOperationException(
