@@ -42,9 +42,11 @@ The app connects to Reverb at the URL that `GET /api/v1/realtime` returns.
 
 A Node detail page has the same section menu pattern as an Instance: Overview, Tools, and Firewall where supported. Overview holds identity, roles, metrics when supported, Instances, and Node Processes. Firewall has its own page section on Linux, with the existing operator rules, Orbit rules, live rules, and missing-state comparisons. macOS tool support does not enable firewall management.
 
+The menu chooses the URL. Overview is `/nodes/<id>`. Tools is `/nodes/<id>/tools`. Firewall is `/nodes/<id>/firewall` on Linux. On a narrow screen the menu is one row, so the list keeps the width of the page. A macOS Firewall URL returns to Overview and does not request Linux firewall rules.
+
 ### Tools
 
-Tools always shows every registered Tool for that Node, including failed tools and records on an unreachable machine. Managed rows show manager, package, recorded version, version constraint, status, and failures. Update and remove use the Gateway's Tool operations and show their outcomes. The recorded version is the last operation's result; a live scan supplies a separate observed version.
+Tools always shows every registered Tool for that Node, including failed tools and records on an unreachable machine. Managed rows show manager, package, recorded version, version constraint, status, and failures. On a narrow screen, the constraint and the failure wrap onto a second line so a phone still shows both. Update and remove use the Gateway's Tool operations and show their outcomes. The recorded version is the last operation's result; a live scan supplies a separate observed version.
 
 A separate detected-unmanaged group shows installed Homebrew formulae, casks, and Vite+ globals from `GET /api/v1/tool-inventory` (`tool:scan`). It labels dependencies and unsupported packages. Discoveries are informational and do not affect Node health. The page shows inspection time and status and has an explicit refresh action. A failed refresh preserves registered Tools and identifies stale or unavailable observations; it never displays a failed scan as an empty healthy result.
 
@@ -111,7 +113,7 @@ These views have no event and poll while the tab is visible:
 | View | Interval |
 | --- | --- |
 | Database users, on a database page | 15 seconds |
-| Live UFW rules, on a Node page | 15 seconds |
+| Live UFW rules, on a Linux Node's Firewall section | 15 seconds |
 | Process logs, Instance logs, queue, and analytics | 10 seconds |
 | Node metrics from Grafana | 10 seconds |
 | Quota (`proxycli`) status and provider pools | 60 seconds |

@@ -9,6 +9,7 @@ import type {
     QuotaAccount,
     QuotaProvider,
     Schedule,
+    Tool,
 } from "../api/types";
 import type { Activity } from "../api/activities";
 import type { TaskGroup } from "../api/tasks";
@@ -141,6 +142,7 @@ export function createDemoGateway() {
     let tasksEnabled = true;
     const rules = (node: string) =>
         list<FirewallRule>("GET /api/v1/nodes/{node}/firewall-rules", node);
+    const tools = list<Tool>("GET /api/v1/tools");
     const nodeById = (id: string): Node | undefined =>
         nodes.find((candidate) => String(candidate.id) === id);
     const hasActiveRole = (id: string): boolean => (nodeById(id)?.roles?.length ?? 0) > 0;
@@ -358,6 +360,23 @@ export function createDemoGateway() {
                 "GET",
                 /^\/api\/v1\/nodes\/(\d+)\/live-firewall-rules$/,
                 ([node = ""]) => ok(liveRules(node)),
+            ],
+            [
+                "GET",
+                /^\/api\/v1\/tools(?:\?(.*))?$/,
+                ([query = ""]) => {
+                    const nodeId = new URLSearchParams(query).get("node_id");
+
+                    if (nodeId === null || !/^[1-9]\d*$/.test(nodeId)) {
+                        return failure(
+                            422,
+                            "validation.failed",
+                            "The node id must be a positive integer.",
+                        );
+                    }
+
+                    return ok(tools.filter((tool) => String(tool.node_id) === nodeId));
+                },
             ],
             [
                 "GET",

@@ -45,7 +45,16 @@ it("prefers static map segments and rejects a tie", () => {
         ok: true,
         pattern: "/tasks/$id/subtasks/$subtaskId",
     });
-    expect(matchRoute(routes, "/nodes/1")).toEqual({ ok: true, pattern: "/$section/$id" });
+    expect(matchRoute(routes, "/nodes/1")).toEqual({ ok: true, pattern: "/nodes/$id" });
+    expect(matchRoute(routes, "/nodes/1/tools")).toEqual({
+        ok: true,
+        pattern: "/nodes/$id/tools",
+    });
+    expect(matchRoute(routes, "/nodes/1/firewall")).toEqual({
+        ok: true,
+        pattern: "/nodes/$id/firewall",
+    });
+    expect(matchRoute(routes, "/projects/1")).toEqual({ ok: true, pattern: "/$section/$id" });
     expect(matchRoute(routes, "/nodes/create")).toEqual({ ok: true, pattern: "/nodes/create" });
     expect(matchRoute(routes, "/activity/150")).toEqual({ ok: true, pattern: "/activity/$id" });
     expect(matchRoute(routes, "/nodes")).toEqual({ ok: true, pattern: "/$section" });

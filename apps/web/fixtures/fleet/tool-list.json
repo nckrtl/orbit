@@ -1,0 +1,204 @@
+{
+    "schema": 1,
+    "route": "GET /api/v1/tools",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": 1,
+                "node_id": 2,
+                "manager": "apt",
+                "package": "jq",
+                "version_constraint": null,
+                "status": "installed",
+                "installed_version": "1.7.1-1",
+                "failed_operation": null,
+                "error_code": null,
+                "outcome": null
+            },
+            {
+                "id": 2,
+                "node_id": 2,
+                "manager": "apt",
+                "package": "ripgrep",
+                "version_constraint": "^14",
+                "status": "failed",
+                "installed_version": "14.1.0",
+                "failed_operation": "update",
+                "error_code": "tool.manager_failed",
+                "outcome": null
+            },
+            {
+                "id": 3,
+                "node_id": 2,
+                "manager": "vp",
+                "package": "vite-plus",
+                "version_constraint": "^0.2.0",
+                "status": "installed",
+                "installed_version": "0.2.6",
+                "failed_operation": null,
+                "error_code": null,
+                "outcome": null
+            },
+            {
+                "id": 4,
+                "node_id": 3,
+                "manager": "apt",
+                "package": "nginx",
+                "version_constraint": null,
+                "status": "failed",
+                "installed_version": null,
+                "failed_operation": "install",
+                "error_code": "tool.manager_failed",
+                "outcome": null
+            },
+            {
+                "id": 5,
+                "node_id": 3,
+                "manager": "brew",
+                "package": "gh",
+                "version_constraint": null,
+                "status": "installed",
+                "installed_version": "2.62.0",
+                "failed_operation": null,
+                "error_code": null,
+                "outcome": null
+            },
+            {
+                "id": 6,
+                "node_id": 4,
+                "manager": "brew",
+                "package": "jq",
+                "version_constraint": null,
+                "status": "installed",
+                "installed_version": "1.7.1",
+                "failed_operation": null,
+                "error_code": null,
+                "outcome": null
+            },
+            {
+                "id": 7,
+                "node_id": 4,
+                "manager": "brew",
+                "package": "ripgrep",
+                "version_constraint": null,
+                "status": "installed",
+                "installed_version": "14.1.1",
+                "failed_operation": null,
+                "error_code": null,
+                "outcome": null
+            },
+            {
+                "id": 8,
+                "node_id": 4,
+                "manager": "brew",
+                "package": "fd",
+                "version_constraint": "^10",
+                "status": "installed",
+                "installed_version": "10.1.0",
+                "failed_operation": null,
+                "error_code": null,
+                "outcome": null
+            },
+            {
+                "id": 9,
+                "node_id": 4,
+                "manager": "brew",
+                "package": "bat",
+                "version_constraint": null,
+                "status": "installed",
+                "installed_version": "0.24.0",
+                "failed_operation": null,
+                "error_code": null,
+                "outcome": null
+            },
+            {
+                "id": 10,
+                "node_id": 4,
+                "manager": "brew",
+                "package": "eza",
+                "version_constraint": null,
+                "status": "failed",
+                "installed_version": "0.18.0",
+                "failed_operation": "update",
+                "error_code": "tool.manager_failed",
+                "outcome": null
+            },
+            {
+                "id": 11,
+                "node_id": 4,
+                "manager": "brew",
+                "package": "git",
+                "version_constraint": null,
+                "status": "installed",
+                "installed_version": "2.48.1",
+                "failed_operation": null,
+                "error_code": null,
+                "outcome": null
+            },
+            {
+                "id": 12,
+                "node_id": 4,
+                "manager": "brew",
+                "package": "sqlite",
+                "version_constraint": null,
+                "status": "installed",
+                "installed_version": "3.47.2",
+                "failed_operation": null,
+                "error_code": null,
+                "outcome": null
+            },
+            {
+                "id": 13,
+                "node_id": 4,
+                "manager": "brew",
+                "package": "wget",
+                "version_constraint": null,
+                "status": "installed",
+                "installed_version": "1.25.0",
+                "failed_operation": null,
+                "error_code": null,
+                "outcome": null
+            },
+            {
+                "id": 14,
+                "node_id": 4,
+                "manager": "brew-cask",
+                "package": "visual-studio-code",
+                "version_constraint": null,
+                "status": "installed",
+                "installed_version": "1.96.2",
+                "failed_operation": null,
+                "error_code": null,
+                "outcome": null
+            },
+            {
+                "id": 15,
+                "node_id": 4,
+                "manager": "brew-cask",
+                "package": "firefox",
+                "version_constraint": null,
+                "status": "failed",
+                "installed_version": null,
+                "failed_operation": "install",
+                "error_code": "tool.candidate_version_unavailable",
+                "outcome": null
+            },
+            {
+                "id": 16,
+                "node_id": 4,
+                "manager": "vp",
+                "package": "vite-plus",
+                "version_constraint": "^0.2.0",
+                "status": "installed",
+                "installed_version": "0.2.6",
+                "failed_operation": null,
+                "error_code": null,
+                "outcome": null
+            }
+        ],
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

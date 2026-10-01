@@ -13,8 +13,6 @@ import {
     deploymentsQuery,
     type Fleet,
     instanceAnalyticsQuery,
-    liveFirewallQuery,
-    managedFirewallQuery,
     scheduleLogsQuery,
     useFleet,
 } from "../api/queries";
@@ -25,10 +23,6 @@ import type {
     FirewallRule,
     Instance,
     InstanceAnalytics,
-    LiveFirewallMatch,
-    LiveFirewallRule,
-    ManagedFirewallRule,
-    Node,
     Process,
     Project,
     Schedule,
@@ -41,8 +35,6 @@ import {
     instanceName,
     instanceNodeName,
     instancesForProject,
-    instancesForNode,
-    nodeHealthy,
     nodeName,
     processesFor,
     processCpu,
@@ -54,10 +46,7 @@ import {
     schedulesForProject,
     schedulesForInstance,
 } from "../fleet/fleet";
-import { firewallLineTone, firewallPort, firewallSource } from "../fleet/firewall";
-import { useNodeMetrics } from "../metrics/grafana";
 import { useFallbackPoll } from "../realtime/liveness";
-import { Bar } from "../ui/Bar";
 import { Frame, Note } from "../ui/Frame";
 import { useGo } from "../ui/go";
 import { LogPane } from "../ui/LogPane";
@@ -65,7 +54,7 @@ import { useLogTail } from "../realtime/log-stream";
 import { openInNewTab } from "../ui/newTab";
 import { type Column, Pane } from "../ui/Pane";
 import { Properties, type Property } from "../ui/Properties";
-import { Status } from "../ui/Status";
+import { SectionMenu } from "../ui/SectionMenu";
 import { instanceColumns, processColumns, scheduleColumns } from "./columns";
 import { AnalyticsPanel } from "./AnalyticsPanel";
 import { QueuePanel } from "./QueuePanel";
@@ -73,262 +62,6 @@ import { QuotaProviderPage } from "./Quota";
 import { RecordLayout } from "./RecordLayout";
 
 const GAPS = "gap-x-[1ch] gap-y-[var(--panel-gap)]";
-
-/** The node page's htop-like block: cores in two columns, then memory and swap beside the root disk and uptime. */
-function NodeMetricsPanel({ node }: { node: Node }) {
-    const metrics = useNodeMetrics(node);
-    const state = nodeHealthy(node) ? undefined : "warn";
-
-    if (metrics === null) {
-        return (
-            <Frame title={`${node.name} · ${node.status}`} state={state}>
-                <Note>No metrics.</Note>
-            </Frame>
-        );
-    }
-
-    const [mount, used, total] = metrics.disks[0] ?? ["/", 0, 0];
-
-    return (
-        <Frame
-            title={`${node.name} · ${node.status} · metrics`}
-            state={state}
-            bottomRight={`up ${metrics.uptime}`}
-        >
-            <div className="grid grid-cols-1 gap-x-[2ch] sm:grid-cols-2">
-                {metrics.cores.map((load, core) => (
-                    <Bar
-                        key={core}
-                        label={String(core)}
-                        ratio={load}
-                        reading={`${(load * 100).toFixed(0).padStart(3)}%`}
-                    />
-                ))}
-            </div>
-            <div className="mt-[20px] grid grid-cols-1 gap-x-[2ch] sm:grid-cols-2">
-                <Bar
-                    label="Mem"
-                    ratio={metrics.mem[1] > 0 ? metrics.mem[0] / metrics.mem[1] : 0}
-                    reading={`${metrics.mem[0].toFixed(1)}G/${metrics.mem[1].toFixed(0)}G`}
-                />
-                <Bar
-                    label={mount}
-                    ratio={total > 0 ? used / total : 0}
-                    reading={`${used.toFixed(0)}G/${total.toFixed(0)}G`}
-                    thresholds={[80, 90]}
-                />
-                <Bar
-                    label="Swp"
-                    ratio={metrics.swap[1] > 0 ? metrics.swap[0] / metrics.swap[1] : 0}
-                    reading={`${metrics.swap[0].toFixed(1)}G/${metrics.swap[1].toFixed(0)}G`}
-                />
-            </div>
-        </Frame>
-    );
-}
-
-/** One line of a node's firewall: a live UFW rule, a missing desired rule, or a catalog fallback. */
-type FirewallLine = {
-    key: string;
-    name: string;
-    port: string;
-    action: string;
-    source: string;
-    state: string;
-    match: LiveFirewallMatch | null;
-    rule: FirewallRule | null;
-};
-
-const firewallLineColumns: Column<FirewallLine>[] = [
-    { header: "Name", width: 34, value: (line) => line.name },
-    { header: "Port", width: 16, fit: true, value: (line) => line.port },
-    { header: "Action", width: 10, fit: true, value: (line) => line.action },
-    { header: "Source", width: 26, fit: true, value: (line) => line.source },
-    {
-        header: "Status",
-        width: 14,
-        fit: true,
-        value: (line) => line.state,
-        cell: (line) =>
-            line.rule !== null && line.match !== "missing" ? (
-                <Status value={line.state} />
-            ) : (
-                <span
-                    className={
-                        firewallLineTone(line) === "danger"
-                            ? "text-red"
-                            : firewallLineTone(line) === "warn"
-                              ? "text-yellow"
-                              : "text-dim"
-                    }
-                >
-                    {line.state}
-                </span>
-            ),
-    },
-];
-
-/**
- * A node's firewall: live UFW first, then desired rules that are missing from live. Drift is red.
- * When live UFW cannot be read, the page falls back to operator rules and the desired catalog.
- */
-function NodeFirewall({
-    fleet,
-    node,
-    className,
-}: {
-    fleet: Fleet;
-    node: Node;
-    className?: string;
-}) {
-    const managed = useQuery(managedFirewallQuery(node.id)).data;
-    const live = useQuery(liveFirewallQuery(node.id)).data;
-    const operator = useMemo(
-        () => fleet.firewall.filter((rule) => rule.node_id === node.id),
-        [fleet.firewall, node.id],
-    );
-    const lines = useMemo<FirewallLine[]>(() => {
-        if (live !== undefined && live.backend_status === "active") {
-            return [
-                ...live.live.map((rule, index) => liveLine(rule, operator, `live-${index}`)),
-                ...live.missing.map((rule, index) => liveLine(rule, operator, `missing-${index}`)),
-            ];
-        }
-
-        return [
-            ...operator.map((rule) => ({
-                key: `operator-${rule.id}`,
-                name: rule.name,
-                port: firewallPort(rule.port, rule.protocol),
-                action: rule.action,
-                source: rule.source,
-                state: rule.status,
-                match: null,
-                rule,
-            })),
-            ...(managed ?? []).map((rule, index) => intendedLine(rule, index)),
-        ];
-    }, [live, managed, operator]);
-
-    const tone = (line: FirewallLine) => firewallLineTone(line);
-    const empty =
-        live !== undefined && live.backend_status !== "active" && lines.length === 0
-            ? `Live UFW is ${live.backend_status}.`
-            : "No firewall rules.";
-
-    return (
-        <Pane
-            name="firewall"
-            order={3}
-            title="Firewall"
-            className={className}
-            columns={firewallLineColumns}
-            rows={lines}
-            rowId={(line) => line.key}
-            warn={(line) => tone(line) === "warn"}
-            danger={(line) => tone(line) === "danger"}
-            target={(line) => (line.rule === null ? null : { kind: "firewall", row: line.rule })}
-            divide={{ label: "Missing from live", below: (line) => line.match === "missing" }}
-            empty={empty}
-        />
-    );
-}
-
-function liveLine(rule: LiveFirewallRule, operator: FirewallRule[], key: string): FirewallLine {
-    const record = operator.find((candidate) => candidate.name === rule.name) ?? null;
-    const state =
-        rule.match === "missing"
-            ? "missing"
-            : rule.match === "exact" && record !== null
-              ? record.status
-              : rule.match === "exact"
-                ? "live"
-                : "drift";
-
-    return {
-        key,
-        name: rule.name,
-        port: firewallPort(rule.port, rule.protocol),
-        action: rule.action,
-        source: firewallSource(rule.source, rule.interface),
-        state,
-        match: rule.match,
-        rule: record,
-    };
-}
-
-function intendedLine(rule: ManagedFirewallRule, index: number): FirewallLine {
-    return {
-        key: `orbit-${index}`,
-        name: rule.name,
-        port: firewallPort(rule.port, rule.protocol),
-        action: rule.action,
-        source: firewallSource(rule.source, rule.interface),
-        state: "locked",
-        match: null,
-        rule: null,
-    };
-}
-
-function NodePage({ fleet, node }: { fleet: Fleet; node: Node }) {
-    const columns = useMemo(() => instanceColumns(fleet, "project"), [fleet]);
-
-    return (
-        <div
-            className={`w-full min-w-0 max-w-full flex flex-col md:grid md:h-full md:grid-cols-2 md:grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)] ${GAPS}`}
-        >
-            <div
-                className={`w-full min-w-0 max-w-full col-span-1 flex flex-col md:col-span-2 md:grid md:grid-cols-[2fr_3fr] ${GAPS}`}
-            >
-                <Properties
-                    testId="record-properties"
-                    properties={[
-                        { name: "Name", value: node.name },
-                        { name: "Status", value: node.status, warn: !nodeHealthy(node) },
-                        { name: "Roles", value: node.roles },
-                        { name: "Platform", value: node.platform },
-                        { name: "Architecture", value: node.architecture },
-                        { name: "TLD", value: node.tld },
-                        { name: "WireGuard IP", value: node.wireguard_ip },
-                        {
-                            name: "SSH",
-                            // Over WireGuard, as Orbit itself connects. A managed node closes its public port 22.
-                            value: `${node.user}@${node.wireguard_ip ?? node.public_ssh_host}:${node.wireguard_ip == null ? node.public_ssh_port : 22}`,
-                        },
-                    ]}
-                />
-                <NodeMetricsPanel node={node} />
-            </div>
-            <Pane
-                name="instances"
-                order={1}
-                title="Instances on this node"
-                className="w-full col-span-1 min-h-[160px] max-h-[40vh] md:col-span-2 md:max-h-none"
-                columns={columns}
-                rows={instancesForNode(fleet, node.name)}
-                rowId={(i) => String(i.id)}
-                warn={(i) => !instanceHealthy(i)}
-                target={(row) => ({ kind: "instances", row })}
-            />
-            <Pane
-                name="processes"
-                order={2}
-                title="Node processes"
-                className="w-full min-h-[160px] max-h-[40vh] md:max-h-none"
-                columns={processColumns}
-                rows={processesFor(fleet, "node", node.id)}
-                rowId={(p) => String(p.id)}
-                warn={(p) => !processHealthy(p)}
-                target={(row) => ({ kind: "processes", row })}
-            />
-            <NodeFirewall
-                fleet={fleet}
-                node={node}
-                className="w-full min-h-[160px] max-h-[40vh] md:max-h-none"
-            />
-        </div>
-    );
-}
 
 function ProjectPage({ fleet, project }: { fleet: Fleet; project: Project }) {
     const columns = useMemo(() => instanceColumns(fleet, "node"), [fleet]);
@@ -442,64 +175,19 @@ function InstancePage({ fleet, instance }: { fleet: Fleet; instance: Instance })
 
     return (
         <div className={`flex h-full min-h-0 min-w-0 flex-row ${GAPS}`}>
-            <Frame
-                title="Menu"
+            <SectionMenu
                 label="Instance navigation"
-                className="w-[16ch] min-h-0 shrink-0 self-stretch"
-            >
-                <div
-                    role="tablist"
-                    aria-label="Instance sections"
-                    aria-orientation="vertical"
-                    className="flex flex-col gap-1"
-                >
-                    {sections.map((section, index) => (
-                        <button
-                            key={section}
-                            id={`instance-${instance.id}-${section}-tab`}
-                            data-testid={
-                                section === "overview" ? "instance-overview" : "instance-tasks"
-                            }
-                            role="tab"
-                            type="button"
-                            aria-selected={tab === section}
-                            aria-controls={`instance-${instance.id}-${section}-panel`}
-                            tabIndex={tab === section ? 0 : -1}
-                            className="row nav-row text-left focus-visible:outline-2 focus-visible:outline-cyan"
-                            style={{ gridTemplateColumns: "1fr auto" }}
-                            data-link=""
-                            data-selected={tab === section ? "" : undefined}
-                            data-focused=""
-                            onClick={() => setRequestedTab(section)}
-                            onKeyDown={(event) => {
-                                if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key))
-                                    return;
-                                event.preventDefault();
-                                event.stopPropagation();
-                                const next =
-                                    event.key === "Home"
-                                        ? 0
-                                        : event.key === "End"
-                                          ? sections.length - 1
-                                          : sections.length === 1
-                                            ? 0
-                                            : 1 - index;
-                                const nextSection = sections[next];
-                                if (nextSection === undefined) return;
-                                setRequestedTab(nextSection);
-                                event.currentTarget.parentElement
-                                    ?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
-                                    [next]?.focus();
-                            }}
-                        >
-                            <span>{section === "overview" ? "Overview" : "Tasks"}</span>
-                            {section === "tasks" && taskCount > 0 && (
-                                <span className="font-normal">{taskCount}</span>
-                            )}
-                        </button>
-                    ))}
-                </div>
-            </Frame>
+                ariaLabel="Instance sections"
+                idPrefix={`instance-${instance.id}`}
+                items={sections.map((section) => ({
+                    id: section,
+                    label: section === "overview" ? "Overview" : "Tasks",
+                    testId: section === "overview" ? "instance-overview" : "instance-tasks",
+                    count: section === "tasks" ? taskCount : undefined,
+                }))}
+                selected={tab}
+                onSelect={setRequestedTab}
+            />
             {sections.map((section) => (
                 <div
                     key={section}
@@ -815,17 +503,6 @@ export function RecordPage() {
         }
 
         switch (section) {
-            case "nodes": {
-                const node = find(fleet.nodes);
-
-                return (
-                    node && (
-                        <RecordLayout kind="nodes" row={node}>
-                            <NodePage fleet={fleet} node={node} />
-                        </RecordLayout>
-                    )
-                );
-            }
             case "projects": {
                 const project = find(fleet.projects);
 

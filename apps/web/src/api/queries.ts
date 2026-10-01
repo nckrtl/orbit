@@ -23,6 +23,7 @@ import type {
     QuotaProvider,
     Schedule,
     TasksStatus,
+    Tool,
 } from "./types";
 
 /** How often views without record-change events reload, such as the task board and log panes. */
@@ -160,6 +161,14 @@ export const processLogsQuery = (id: number) =>
         queryFn: async () =>
             logLines((await get<{ logs?: string }>(`/api/v1/processes/${id}/logs`)).logs),
         refetchInterval: 10_000,
+        retry: false,
+    });
+
+/** Stored tools for one Node. The list is the database, so it does not wait on SSH or a live scan. */
+export const toolsQuery = (nodeId: number) =>
+    queryOptions({
+        queryKey: ["tools", nodeId],
+        queryFn: () => get<Tool[]>(`/api/v1/tools?node_id=${nodeId}`),
         retry: false,
     });
 

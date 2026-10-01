@@ -111,7 +111,7 @@ describe("schedule health", () => {
 describe("the fixture fleet", () => {
     it("counts each section and what needs a look in it", () => {
         expect(counts(fleet)).toEqual({
-            nodes: [3, 1],
+            nodes: [4, 1],
             projects: [3, 0],
             instances: [4, 1],
             processes: [4, 1],

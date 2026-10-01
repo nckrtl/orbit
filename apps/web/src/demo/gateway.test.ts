@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 import type { Activity } from "../api/activities";
 import { api, GatewayError, get, setTransport } from "../api/client";
-import type { Process } from "../api/types";
+import type { Process, Tool } from "../api/types";
 import { createDemoGateway } from "./gateway";
 
 let gateway: ReturnType<typeof createDemoGateway>;
@@ -80,5 +80,24 @@ describe("the demo Gateway", () => {
             body: undefined,
         });
         expect(await get("/api/v1/nodes/2/firewall-rules")).toHaveLength(1);
+    });
+
+    it("returns every stored tool for the node, including failed rows", async () => {
+        const stored = await get<Tool[]>("/api/v1/tools?node_id=3");
+        const healthy = await get<Tool[]>("/api/v1/tools?node_id=2");
+
+        expect(stored.map((tool) => [tool.package, tool.status])).toEqual([
+            ["nginx", "failed"],
+            ["gh", "installed"],
+        ]);
+        expect(stored.find((tool) => tool.package === "nginx")).toMatchObject({
+            manager: "apt",
+            installed_version: null,
+            failed_operation: "install",
+            error_code: "tool.manager_failed",
+        });
+        expect(healthy.map((tool) => tool.package)).toEqual(["jq", "ripgrep", "vite-plus"]);
+        await expect(get("/api/v1/tools")).rejects.toMatchObject({ status: 422 });
+        expect(await get<Tool[]>("/api/v1/tools?node_id=4")).toHaveLength(11);
     });
 });

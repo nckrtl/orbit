@@ -16,6 +16,7 @@ export type DeployStep = { phase: string; name: string; timeout_seconds: number 
 export type Process = Schema<"Process">;
 export type Schedule = Schema<"Schedule">;
 export type FirewallRule = Schema<"FirewallRule">;
+export type Tool = Schema<"Tool">;
 export type Database = Schema<"DatabaseConnection">;
 export type DatabaseUser = Schema<"DatabaseUser">;
 export type Deployment = Schema<"InstanceDeployment">;
