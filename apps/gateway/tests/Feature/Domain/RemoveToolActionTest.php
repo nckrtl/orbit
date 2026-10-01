@@ -8,6 +8,7 @@ use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolNodeEligibility;
+use App\Domain\Tools\ToolObjectStatus;
 use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolOperationException;
 use App\Domain\Tools\ToolOutcome;
@@ -102,6 +103,10 @@ describe(RemoveToolAction::class, function (): void {
 
         expect($result->outcome)
             ->toBe(ToolOutcome::Applied)
+            ->and($result->status)
+            ->toBe(ToolObjectStatus::Removed)
+            ->and($result->tool->status)
+            ->toBe(ToolStatus::Failed)
             ->and($result->tool->id)
             ->toBe($tool->id)
             ->and($manager->calls)
@@ -126,6 +131,10 @@ describe(RemoveToolAction::class, function (): void {
 
         expect($result->outcome)
             ->toBe(ToolOutcome::Applied)
+            ->and($result->status)
+            ->toBe(ToolObjectStatus::Removed)
+            ->and($result->tool->status)
+            ->toBe(ToolStatus::Failed)
             ->and($result->tool->id)
             ->toBe($tool->id)
             ->and($manager->calls)
@@ -185,6 +194,10 @@ describe(RemoveToolAction::class, function (): void {
 
         expect($result->outcome)
             ->toBe(ToolOutcome::Applied)
+            ->and($result->status)
+            ->toBe(ToolObjectStatus::Removed)
+            ->and($result->tool->status)
+            ->toBe(ToolStatus::Installed)
             ->and($result->tool->id)
             ->toBe($tool->id)
             ->and($manager->calls)
@@ -248,6 +261,12 @@ describe(RemoveToolAction::class, function (): void {
 
         expect($result->outcome)
             ->toBe(ToolOutcome::Applied)
+            ->and($result->status)
+            ->toBe(ToolObjectStatus::Removed)
+            ->and($result->tool->status)
+            ->toBe(ToolStatus::Installed)
+            ->and($result->tool->failed_operation)
+            ->toBeNull()
             ->and($manager->calls)
             ->toBe(['installedVersion', 'planRemoval', 'remove', 'installedVersion'])
             ->and(Tool::query()->find($tool->id))
@@ -278,6 +297,9 @@ describe(RemoveToolAction::class, function (): void {
         $result = $action->execute($stored);
 
         expect($result->outcome)->toBe(ToolOutcome::Applied)
+            ->and($result->status)->toBe(ToolObjectStatus::Removed)
+            ->and($result->tool->status)->toBe(ToolStatus::Failed)
+            ->and($result->tool->error_code)->toBe('tool.manager_unavailable')
             ->and(Tool::query()->find($tool->id))->toBeNull();
     })->with([
         'absent scope' => ['manager-absent'],
@@ -371,15 +393,19 @@ describe(RemoveToolAction::class, function (): void {
         [$action, $manager, $lock] = removal_tool_action();
         $manager->installedVersions = [null];
 
-        $action->execute($tool);
+        $result = $action->execute($tool);
 
-        expect($lock->arguments)->toBe([[
-            'nodeId' => $tool->node_id,
-            'manager' => ToolManagerName::Apt,
-            'package' => 'jq',
-            'operation' => ToolOperation::Remove,
-            'versionConstraint' => '^2.4',
-        ]]);
+        expect($result->status)
+            ->toBe(ToolObjectStatus::Removed)
+            ->and($result->tool->status)
+            ->toBe(ToolStatus::Installed)
+            ->and($lock->arguments)->toBe([[
+                'nodeId' => $tool->node_id,
+                'manager' => ToolManagerName::Apt,
+                'package' => 'jq',
+                'operation' => ToolOperation::Remove,
+                'versionConstraint' => '^2.4',
+            ]]);
     });
 });
 

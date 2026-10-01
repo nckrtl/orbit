@@ -222,7 +222,7 @@ it('cancels an unreachable Node without pushing and the sweep retries removal', 
 
     expect($cancelled->status)->toBe(TaskGroupStatus::Cancelled)
         ->and($cancelled->taskable_id)->toBe($instanceId)
-        ->and($cancelled->assistance_requested)->toBeTrue()
+        ->and($cancelled->assistance_requested)->toBeFalse()
         ->and($cancelled->assistance_reason)->toBe(RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.')
         ->and($publisher->pushes)->toBe([])
         ->and($remover->calls)->toBe([])

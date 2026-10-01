@@ -78,7 +78,7 @@ describe(HomebrewToolManager::class, function (): void {
             ->toBe([['sudo', 'bash', '-seu', '--', 'orbit']])
             ->and($ssh->commands[0]->input)
             ->toContain(
-                'apt-get install --yes --no-install-recommends --no-remove -- build-essential procps curl file git ca-certificates',
+                'apt-get -o DPkg::Lock::Timeout=300 install --yes --no-install-recommends --no-remove -- build-essential procps curl file git ca-certificates',
             )
             ->toContain('https://github.com/Homebrew/brew')
             ->toContain('d79ef822ab8136e393ed5f86e2b56afc68d04874')

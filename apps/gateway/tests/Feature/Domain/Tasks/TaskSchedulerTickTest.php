@@ -814,7 +814,7 @@ it('withdraws its pull request assistance request when the pull request merges',
     $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'completed', 'assistance_requested' => false, 'assistance_reason' => null]);
 });
 
-it('keeps another cause of assistance when the pull request merges', function (): void {
+it('keeps another assistance reason without asking when the pull request merges', function (): void {
     $group = tick_settling_group();
     $group->update(['assistance_requested' => true, 'assistance_reason' => 'The operator asked to hold this group.']);
     mock(InstanceRemover::class)->shouldReceive('execute')->once()->andReturn(new InstanceRemoval);
@@ -827,7 +827,7 @@ it('keeps another cause of assistance when the pull request merges', function ()
 
     app(TaskScheduler::class)->tick();
 
-    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'completed', 'assistance_requested' => true, 'assistance_reason' => 'The operator asked to hold this group.']);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'completed', 'assistance_requested' => false, 'assistance_reason' => 'The operator asked to hold this group.']);
 });
 
 it('backs off a merged pull request cleanup and retries it on a later tick', function (): void {
@@ -932,7 +932,7 @@ it('uses backoff for publication and removal retries and retries a failed manual
 
     expect($publisher->pushes)->toBe([$group->id, $group->id])
         ->and($task->fresh()?->status)->toBe(TaskStatus::Completed)
-        ->and($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
         ->and($task->fresh()?->assistance_reason)->toBe($hold)
         ->and($group->fresh()?->assistance_requested)->toBeTrue()
         ->and($group->fresh()?->assistance_reason)->toBe($hold);
@@ -1049,7 +1049,7 @@ it('uses backoff for publication and removal retries and retries a failed manual
         ->and($settling->fresh()?->taskable_id)->toBeNull()
         ->and($settling->fresh()?->assistance_requested)->toBeFalse()
         ->and(Instance::query()->find($otherWorkspace->id))->toBeNull()
-        ->and($other->fresh()?->assistance_requested)->toBeTrue()
+        ->and($other->fresh()?->assistance_requested)->toBeFalse()
         ->and($other->fresh()?->assistance_reason)->toBe($hold)
         ->and(Instance::query()->find($workspace->id))->not->toBeNull();
 });
