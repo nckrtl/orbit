@@ -368,8 +368,8 @@ Each signal updates one row in `problem_fingerprints`. The fingerprint is unique
 | --- | --- |
 | `fingerprint` | Stable key, at most 255 characters |
 | `source` | `doctor`, `activity`, `log`, or `assist` |
-| `first_seen`, `last_seen` | Time of the first observation, and of the latest |
-| `occurrences` | How many observations were counted |
+| `first_seen`, `last_seen` | Signal time of the first accepted signal, and of the latest |
+| `occurrences` | How many 5-minute windows were counted, not how many log lines |
 | `evidence` | A small JSON sample |
 | `task_group_id` | Top-level task filed for this key, or null |
 | `muted_until` | Filing stays off until this time, or null |
@@ -377,7 +377,9 @@ Each signal updates one row in `problem_fingerprints`. The fingerprint is unique
 
 A key longer than 255 characters keeps the source prefix, then `#`, then the first 12 hex characters of the SHA-256 of the full key.
 
-The sample holds at most five request ids, five Activity ids, and five Activity paths. It holds one log excerpt of at most 500 characters, the latest Doctor expected and observed values, the latest Doctor summary, the assistance reason before normalization, the newest 20 observation times, and up to 200 open assistance task ids. The summary and the assistance reason are cut at 1,000 characters. The excerpt and an Activity error message pass through the Gateway log redactor before they are stored. Expected and observed stay the bounded Doctor values. The sample does not store a raw Doctor report.
+The sample holds at most five request ids, five Activity ids, and five Activity paths. It holds one log excerpt of at most 500 characters, the latest Doctor expected and observed values, the latest Doctor summary, the assistance reason before normalization, the newest 20 occurrences, and up to 200 open assistance task ids.
+
+Each occurrence stores the UTC time of the first signal in its 5-minute window and how many signals fell in that window. A log row also stores its app frame path as `source_path`, including when the fingerprint is shortened. The summary and the assistance reason are cut at 1,000 characters. The excerpt and an Activity error message pass through the Gateway log redactor before they are stored. Expected and observed stay the bounded Doctor values. The sample does not store a raw Doctor report.
 
 | Source | Key |
 | --- | --- |
@@ -403,24 +405,49 @@ A log record counts when its level is ERROR or higher, it names an exception cla
 
 An assistance reason is trimmed and lowercased. Each UUID, and each run of digits, becomes `#`. Whitespace collapses to one space. One open request on a task counts once. The same task counts again only after `assistance_requested` has cleared and a new request is stored.
 
+### Occurrence windows
+
+A signal that passes the source tests above increments `occurrences` only when that fingerprint has no counted signal in the same UTC block of 5 minutes. The block index is the signal's Unix time divided by 300, rounded down. A second signal in that block keeps the occurrence time already stored, adds one to that occurrence's signal count, and can still add request ids and the other bounded sample fields. It does not add an occurrence, and it does not raise `occurrences`. It does move `last_seen` to its own time.
+
+The signal time is the time on the signal, not the time the collector reads the source. A log record uses the bracketed timestamp at the start of its header, read in the Gateway application timezone. An Activity row uses its `created_at`. Doctor and assistance use the collector clock when it accepts the signal. The block uses that time in UTC.
+
+Readiness counts these occurrences and their times. It does not count log lines. Many log lines in one block are one occurrence. The sample keeps the newest 20.
+
 ### When a fingerprint is ready
 
-The tests below use only the current episode. That episode is the observation times stored on the row.
+The tests below use only the current episode. That episode is the occurrence history stored on the row: the time and the signal count of each 5-minute window.
 
 Doctor is ready after two of those times at least 10 minutes apart. A miss does not delete the row, and it does not reset the episode.
 
-Activity, the log, and assistance are ready when either test below is true for those same times.
+Activity, the log, and assistance are ready when either test below is true for those same times. The count in both tests is `occurrences`, the number of windows, not the number of log lines.
 
 | Test | Ready when |
 | --- | --- |
-| Burst | The count is 10 or more |
-| Spread | The count is 3 or more, and the times cover two UTC quarter hours or two UTC dates |
+| Burst | `occurrences` is 10 or more |
+| Spread | `occurrences` is 3 or more, and the occurrence times cover two UTC quarter hours or two UTC dates |
 
-A quarter hour is the UTC block of 15 minutes that contains the time. The block index is the Unix time divided by 900, rounded down.
+A quarter hour is the UTC block of 15 minutes that contains the time. The block index is the Unix time divided by 900, rounded down. Ten log lines in one 5-minute window do not meet the burst test.
 
-Filing a task clears those times after the brief is built. Hits while that task is still open start another episode. The filer clears that episode in the same write as `muted_until`, when the linked task ends. Only a hit after the task ended can make the key ready once the mute ends. A hit after the merge and before the deploy still counts, and the operator cancels that draft.
+Filing a task clears that occurrence history after the brief is built. Hits while that task is still open start another episode. The filer clears that episode in the same write as `muted_until`, when the linked task ends. Only a hit after the task ended can make the key ready once the mute ends. A hit after the merge and before the deploy still counts, and the operator cancels that draft.
 
 ### Suppression
+
+The collector and the filer honor two lists in [`apps/gateway/config/orbit.php`](https://github.com/nckrtl/orbit/blob/main/apps/gateway/config/orbit.php), in a `problems` array beside `tasks`.
+
+| Key | Match |
+| --- | --- |
+| `suppressed_fingerprints` | The whole fingerprint, exact and case-sensitive. Ships as an empty list |
+| `suppressed_path_prefixes` | The start of a source path. Ships with `app/Infrastructure/Tasks/T3/` |
+
+A log record's source path is the app frame path, the path before the colon in the fingerprint frame. An Activity source path is a path taken from `properties.path`. Doctor and assistance have no source path. A path prefix matches that source path, not the fingerprint string. An empty prefix matches nothing.
+
+The collector copies a log row's source path into the sample as `source_path`. The copy is independent of the fingerprint string. A key longer than 255 characters is shortened to the source prefix, `#`, and 12 hex characters, and that shortened key has no frame path. An accepted log signal writes `source_path` when the sample does not already have one, including a signal that stays in an open 5-minute window and does not increment `occurrences`.
+
+A listed fingerprint, or a source path that starts with a listed prefix, is suppressed. The collector does not count that signal, and it does not create or update a fingerprint row for it. It still advances that source's cursor past the signal.
+
+Each filer run reads the current lists. A row counted before a prefix was configured is still skipped when its stored fingerprint is listed, or when its stored `source_path` or an Activity path starts with a current prefix. For a log row with no `source_path`, the filer reads the frame path only when that path is still in the fingerprint.
+
+A shortened log fingerprint with no `source_path` has no recoverable frame path. The filer does not invent one from the hash. While `suppressed_path_prefixes` is non-empty, the filer skips that row and leaves it unchanged: no task, no mute, and no episode clear. A later accepted signal stores `source_path`, and a later run applies the current lists. An empty prefix list does not block filing. These lists are separate from the mute below, and both apply.
 
 The filer does not open another task for a key while `muted_until` has not passed. It also waits while the linked task has any status in this list: `backlog`, `todo`, `reserved`, `running`, `reviewing`, `settling`.
 
@@ -431,13 +458,13 @@ The filer does not open another task for a key while `muted_until` has not passe
 
 A deadline that is already stored stays as it is. A missing linked task uses the 7-day deadline, measured from the run that notices the gap. `failed` uses the same wait as `completed`, because that task never ran and must not take another slot in the same hour.
 
-Filing a new task clears `muted_until` and sets `filed_at`. It sets `occurrences` to 0 and clears `first_seen`, `last_seen`, and the observation times. It also clears the request ids, Activity ids, paths, and the log excerpt. Open assistance task ids stay, so a request that is still open is not counted again. The brief is built from the episode before that clear.
+Filing a new task clears `muted_until` and sets `filed_at`. It sets `occurrences` to 0 and clears `first_seen`, `last_seen`, and the occurrence history. It also clears the request ids, Activity ids, paths, the log excerpt, and `source_path`. Open assistance task ids stay, so a request that is still open is not counted again. The brief is built from the episode before that clear.
 
-The first time the filer writes `muted_until` for a `completed`, `failed`, `cancelled`, or missing task, that same write clears the episode again. It sets `occurrences` to 0 and clears `first_seen`, `last_seen`, the observation times, the request ids, Activity ids, paths, and the log excerpt. Open assistance task ids stay. A crash stores neither the deadline nor the clear.
+The first time the filer writes `muted_until` for a `completed`, `failed`, `cancelled`, or missing task, that same write clears the episode again. It sets `occurrences` to 0 and clears `first_seen`, `last_seen`, the occurrence history, the request ids, Activity ids, paths, the log excerpt, and `source_path`. Open assistance task ids stay. A crash stores neither the deadline nor the clear.
 
 ### What gets filed
 
-`problems:file` runs every hour. It files at most three new tasks per day, using the Gateway application timezone. It takes the highest `occurrences` first. Equal counts use the earlier `first_seen`, then the fingerprint string. Each run loads at most 50 ready, unsuppressed rows.
+`problems:file` runs every hour. It files at most three new tasks per day, using the Gateway application timezone. It takes the highest `occurrences` first. Equal counts use the earlier `first_seen`, then the fingerprint string. Each run loads at most 50 ready rows that are not muted, not tied to an open task, and not skipped by [Suppression](#suppression).
 
 The cap counts fingerprint rows whose `filed_at` falls on today's date in that timezone. An operator edit to the brief does not change the count. A missing Orbit Project files nothing.
 
@@ -445,30 +472,33 @@ The filer inserts the task and its subtasks, then updates the fingerprint, in on
 
 Each task belongs to the Project whose slug is `orbit`, and the task starts in `backlog`. The first line of the brief is `Filed by the outer loop.`
 
-The rest of the brief is seven sections, in this order: Symptom, Fingerprint, First seen, Last seen, Count, Evidence, and Suspected entry point. Times use UTC. Symptom is the Doctor summary, the redacted Activity error message, the redacted log message, or the assistance reason before normalization.
+The rest of the brief is eight sections, in this order: Symptom, Fingerprint, First seen, Last seen, Count, Occurrences, Evidence, and Suspected entry point. Times use UTC. Symptom is the Doctor summary, the redacted Activity error message, the redacted log message, or the assistance reason before normalization.
+
+Count is `occurrences`, the number of windows. Occurrences lists one line per window, oldest first, at most the newest 20. Each line is the first signal's time, formatted `YYYY-MM-DD HH:MM:SS UTC`, a space, and the signal count in that window, such as `2026-10-01 12:00:01 UTC 129`. Evidence includes a `Request ids:` line when the sample has any, and omits that line when none are known. The suspected entry point is its own section.
 
 | Section | Bound |
 | --- | --- |
 | Symptom | 1,000 characters, then `...` |
 | Fingerprint | 255 characters |
 | First seen, Last seen, Count | One line each |
+| Occurrences | The newest 20 windows, one line each |
 | Evidence | The sample caps. Expected and observed are cut at 200 characters |
 | Suspected entry point | 500 characters, then `...` |
 
-The finished brief is at most 8,000 characters. The Evidence heading is always present. When that section has no lines, it says `none`. If the brief is still longer, the filer drops Evidence lines until it fits, and the heading stays. `tasks:create` refuses a longer brief with `validation.failed`. If create still fails, the filer skips that row and leaves `filed_at` unset. The row does not count toward the cap. The filer continues with the next row. Each subtask brief copies the cut symptom and stays under 8,000 characters.
+The finished brief is at most 8,000 characters. The Evidence and Occurrences headings are always present. When either section has no lines, it says `none`. If the brief is still longer, the filer drops Evidence lines until it fits, and both headings stay. The occurrence lines stay. `tasks:create` refuses a longer brief with `validation.failed`. If create still fails, the filer skips that row and leaves `filed_at` unset. The row does not count toward the cap. The filer continues with the next row. Each subtask brief copies the cut symptom and stays under 8,000 characters.
 
 | Source | Title | Suspected entry point |
 | --- | --- | --- |
 | Doctor | `Doctor {code} on {type} {id}` | Resource type, id, and code |
 | Activity | `{command} failed with {error_code}` | The command name |
-| Log | `{exception class} at {frame}` | The app frame |
+| Log | `{exception class} at {frame}` | The app frame, or the stored `source_path` when the key is shortened |
 | Assistance | The normalized reason | The open task ids in the sample |
 
 A title longer than 160 characters is cut to 157 characters plus `...`.
 
 The task has two subtasks. The docs subtask is first. Its deliverable id is `docs`, its type is `review`, and the description says the owning page matches the fix, or that no page changes. The operator can replace that deliverable while the task is in Backlog.
 
-The second subtask reproduces the failure and then fixes it. Its deliverable id is `test` and its type is `command`, with `fails_on_base` set to true. There is no `test` deliverable type. The filer uses the placeholder command `vendor/bin/pest`, the directory `apps/gateway`, and the path `apps/gateway/tests/Feature/OrbitProblemReproTest.php`. The operator replaces the command, the directory, and the paths with the real test before moving the task to Todo. [Prepare a task in Backlog](#prepare-a-task-in-backlog) is that edit.
+The second subtask reproduces the failure and then fixes it. Its deliverable id is `test` and its type is `review`. There is no `test` deliverable type. The description is `Replace this deliverable with a scoped fails_on_base command before moving the task to Todo.` The deliverable has no `command`, `directory`, `fails_on_base`, or `paths` field. The filer never writes a whole-suite command, including `vendor/bin/pest` with no test file. The operator replaces that review with a `command` deliverable for one scoped test, sets `fails_on_base` to true, and names the test files in `paths`, before moving the task to Todo. [Prepare a task in Backlog](#prepare-a-task-in-backlog) is that edit.
 
 ### Collection
 
@@ -485,7 +515,7 @@ Doctor runs through `RunDoctorAction` for every Node and every family. A peer ac
 
 The first collector run sets the Activity cursor to the current maximum id, and the log offset to the end of the current file. It does not count those past rows. The log file is `storage/logs/laravel.log` when that path is a regular file. Otherwise it is the newest `storage/logs/laravel-*.log`. The collector finishes unread bytes in a rotated file before it switches.
 
-Each source commits its fingerprint updates and its cursor in one database transaction. For Activity that cursor is the last id. For the log it is the path, inode, and offset. For Doctor it is the resume key. For assistance it is the open task ids. A crash rolls that source back, so the same rows are not counted twice.
+Each source commits its fingerprint updates and its cursor in one database transaction. For Activity that cursor is the last id. For the log it is the path, inode, and offset. For Doctor it is the resume key. For assistance it is the open task ids. A crash rolls that source back, so the same rows are not counted twice. The collector applies [Suppression](#suppression) and the [occurrence window](#occurrence-windows) before it increments `occurrences`.
 
 A failure in one source does not skip the others. The same exception class for one command is reported at most once an hour. The command still exits nonzero when any source failed.
 
@@ -539,7 +569,7 @@ When the implementer cannot start, the subtask and the task become `failed`, and
 
 ## Shared Instance
 
-The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives in the Node's apps root like any development Instance.
+The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives in the Node's apps root like any development Instance. Like any new development Instance, it gets a [dependency copy](/domains/applications#dependency-copy) from the Project's `default` Instance on the same Node.
 
 | Project setting | New workspace |
 | --- | --- |
@@ -944,6 +974,8 @@ These Gateway environment keys configure the extension.
 | `TYPESAFE_API_KEY` | The key for Jev calls |
 | `TYPESAFE_URL`, `TYPESAFE_MODEL` | The TypeSafe endpoint, default `https://api.typesafe.ai/v1`, and the classification model, default `jev-latest` |
 
+Problem suppression is not an environment key. The two lists live in `apps/gateway/config/orbit.php` under `problems`, beside `tasks`. [Suppression](#suppression) defines the match.
+
 ## Project-owned task policy
 
 The engine knows the configured check, lifecycle steps, workspace routing, and typed deliverables. It does not select a task check, a fixup, or workspace routing by slug, package manager, manifest, or CI job name. A command may use any toolchain installed on the task Node. The rubric does not require a Composer script or inspect a manifest to judge the Project's check. It does not encode a docs-first workflow, an ADR rule, or a language or package manager, and it does not treat any Project slug as Orbit.
@@ -982,9 +1014,17 @@ A task needs an id before its branch `task-{id}` can hold the contract, and it m
 
 ### A person starts a filed problem
 
-Code can see that a failure came back. It cannot write the test that proves the bug. A model does not choose what to file. The thresholds are code. This serves [agents operate, humans steer](/mission#principles) and [deterministic first](/mission#principles). The [outer loop](#outer-loop) files a Backlog draft, and a person replaces the placeholder command before the task can run. Filing straight to Todo is rejected, because an agent would start on that placeholder.
+Code can see that a failure came back. It cannot write the test that proves the bug. A model does not choose what to file. The thresholds are code. This serves [agents operate, humans steer](/mission#principles) and [deterministic first](/mission#principles).
 
-A page on every server-class row is rejected. One command can fail dozens of times in an hour, and a Doctor finding from one run can be gone on the next. A Doctor fingerprint stays unfiled until two observations are at least 10 minutes apart. Ten hits of one Activity, log, or assistance key are enough to file, because those signals arrive in bursts. Three hits file only when they fall in two UTC quarter hours or on two UTC dates. Three isolated hits do not file.
+The [outer loop](#outer-loop) files a Backlog draft. The reproduce subtask carries a review placeholder, and a person replaces it with a scoped `fails_on_base` command before the task can run. The filer cannot know the right test, so it never writes a whole-suite command such as `vendor/bin/pest`. Filing straight to Todo is rejected, because an agent would start before a person names the test. A whole-suite command is rejected, because a green or red result would not prove this failure.
+
+A page on every server-class row is rejected. One command can fail dozens of times in an hour, and a Doctor finding from one run can be gone on the next. A Doctor fingerprint stays unfiled until two occurrences are at least 10 minutes apart.
+
+Ten occurrences of one Activity, log, or assistance key are enough to file. An occurrence is one 5-minute window, so the many lines of one burst count once and are not enough to file. Ten windows means the same failure came back across separate windows. Three occurrences file only when they fall in two UTC quarter hours or on two UTC dates. Three isolated occurrences do not file.
+
+Known noise stays in Gateway config, beside the Tasks settings, not in a hidden code list. The [suppression lists](#suppression) name exact fingerprints and source-path prefixes. A match is neither counted nor filed. The prefix list ships with `app/Infrastructure/Tasks/T3/`, so a log frame under that directory does not become a task. Keeping the list only in code is rejected, because an operator has to see it and extend it. The 14-day mute after a cancel stays. The list drops noise before a task exists. The mute waits after a person cancelled a draft.
+
+A shortened log key does not contain the frame path, so the sample keeps that path as `source_path`. Each filer run checks the current lists against the stored path, including a row counted before the prefix was configured. Filing a shortened row that has no stored path is rejected while a prefix is configured, because the filer cannot recover the path. The row stays in place until an accepted signal records it.
 
 The cap of three tasks a day stops a burst from filling the board. `filed_at` holds that count. Counting the cap from the brief is rejected, because the operator edits that brief on the filing day. Cancel is the person's mute, and it lasts 14 days. A completed or failed task waits 7 days. Refiling as soon as a task reaches `failed` is rejected, because that task never ran and the next hourly pass would file the same key again.
 

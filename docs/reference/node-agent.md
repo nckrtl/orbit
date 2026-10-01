@@ -356,7 +356,7 @@ Run `orbit node:add <node>` to repair the first four. `node:add` refuses a Node 
 
 ## Releases
 
-A tag named `agent-v{version}` releases the agent. The version must equal the one in `apps/agent/Cargo.toml`. The release job builds static musl binaries and publishes them as a GitHub release of that tag. Create the tag with the GitHub CLI on a commit that is already on GitHub:
+A tag named `agent-v{version}` releases the agent. The version must equal the one in `apps/agent/Cargo.toml`. The release job runs on `ubuntu-26.04`, builds static musl binaries, and publishes them as a GitHub release of that tag. Create the tag with the GitHub CLI on a commit that is already on GitHub:
 
 ```bash
 gh api repos/nckrtl/orbit/git/refs -f ref=refs/tags/agent-v{version} -f sha={commit}

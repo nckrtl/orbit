@@ -836,9 +836,11 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
                 "Role",
-                "Route"
+                "Route",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -1364,9 +1366,11 @@
             "concepts": [
                 "Deployment",
                 "Gateway",
+                "Instance",
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Subtask",
                 "Task",
                 "Task check",

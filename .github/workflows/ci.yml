@@ -16,7 +16,9 @@ concurrency:
 jobs:
   project:
     name: ${{ matrix.name }}
-    runs-on: ubuntu-latest
+    # The Gateway suite runs on the self-hosted runner on Sabre when ORBIT_SABRE_RUNNER is true.
+    # Pull requests from forks always use a GitHub-hosted runner, so outside code never runs on Sabre.
+    runs-on: ${{ matrix.directory == 'apps/gateway' && vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "sabre"]') || 'ubuntu-26.04' }}
     strategy:
       fail-fast: false
       matrix:
@@ -50,6 +52,8 @@ jobs:
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
+        env:
+          runner: ${{ runner.environment == 'self-hosted' && 'self-hosted' || 'github' }}
         with:
           php-version: '8.5'
           coverage: pcov
@@ -57,15 +61,19 @@ jobs:
           ini-values: zend.exception_ignore_args=0
 
       - name: Set up Homebrew
-        if: matrix.directory == 'apps/gateway'
+        if: matrix.directory == 'apps/gateway' && runner.environment == 'github-hosted'
         uses: Homebrew/actions/setup-homebrew@848c272c7bfe984a197bd4d16383f4c106ec61e6 # 2026.09.21.1
 
       - name: Install Gateway system dependencies
-        if: matrix.directory == 'apps/gateway'
+        if: matrix.directory == 'apps/gateway' && runner.environment == 'github-hosted'
+        timeout-minutes: 10
+        env:
+          # A mirror that stops answering fails the request after 30 seconds and is retried, instead of hanging the job.
+          APT_OPTIONS: -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
         run: |
           sudo rm -f /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/google-chrome.sources
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends --yes acl attr wireguard-tools
+          sudo apt-get $APT_OPTIONS update
+          sudo apt-get $APT_OPTIONS install --no-install-recommends --yes acl attr wireguard-tools
           brew install caddy openssl@3
           id -u caddy >/dev/null 2>&1 || sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin caddy
           echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
@@ -160,15 +168,11 @@ jobs:
 
       - name: Run affected tests
         if: github.event_name == 'pull_request'
-        run: vendor/bin/pest --parallel --processes=4 --tia --compact
+        run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --tia --compact
 
-      - name: Run full test suite
+      - name: Run full test suite and refresh Pest TIA graph
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-        run: vendor/bin/pest --parallel --processes=4 --no-tia --compact
-
-      - name: Refresh Pest TIA graph
-        if: github.event_name == 'push'
-        run: vendor/bin/pest --parallel --processes=4 --tia --fresh --compact
+        run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --tia --fresh --compact
 
       - name: Run architecture tests
         if: always() && github.event_name == 'pull_request'
@@ -183,7 +187,7 @@ jobs:
             *) exit 0 ;;
           esac
           for architecture_test in $architecture_tests; do
-            vendor/bin/pest --parallel --processes=4 --compact "$architecture_test"
+            vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --compact "$architecture_test"
           done
 
       - name: Save Pest TIA graph
@@ -195,7 +199,7 @@ jobs:
 
   api-reference:
     name: API reference
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - name: Check out repository
@@ -203,6 +207,8 @@ jobs:
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
+        env:
+          runner: ${{ runner.environment == 'self-hosted' && 'self-hosted' || 'github' }}
         with:
           php-version: '8.5'
           coverage: none
@@ -225,7 +231,7 @@ jobs:
 
   web:
     name: Web
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     defaults:
       run:
@@ -264,7 +270,7 @@ jobs:
 
   pi-server:
     name: Pi server
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     defaults:
       run:
@@ -293,7 +299,7 @@ jobs:
 
   agent-annotation:
     name: Agent annotation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     defaults:
       run:
@@ -325,7 +331,7 @@ jobs:
 
   agent:
     name: Rust agent
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     defaults:
       run:
         working-directory: apps/agent
@@ -354,7 +360,7 @@ jobs:
     name: Required checks
     if: always()
     needs: [project, api-reference, web, agent-annotation, pi-server, agent]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Require every project to pass
         env:

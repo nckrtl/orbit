@@ -71,6 +71,7 @@ final readonly class CreateInstanceAction
         private ?CommandDeadline $deadline = null,
         private ?InstanceDatabaseClonePlanner $clonePlanner = null,
         private ?CloneInstanceDatabaseAction $databaseClone = null,
+        private ?CopyInstanceDependenciesAction $dependencies = null,
     ) {}
 
     /** @return array{instance: Instance, created: bool} */
@@ -168,6 +169,8 @@ final readonly class CreateInstanceAction
                     }
 
                     if (! $wasActive || $resumesClone) {
+                        ($this->dependencies ?? app(CopyInstanceDependenciesAction::class))->execute($result);
+
                         if ($clonePlan instanceof InstanceDatabaseClonePlan) {
                             $this->cloneDatabase($result, $clonePlan);
                         }

@@ -42,7 +42,7 @@ A source connection that has no server returns `instance.database_clone_unsuppor
 
 ### SQLite
 
-The source file must be inside the `default` Instance's checkout. Orbit takes a consistent snapshot with SQLite's backup API and copies it to the same relative path in the new checkout, also on another Node, through the existing SQLite transfer between Nodes. It registers the copy as a `sqlite` connection owned by the Instance and attaches it under prefix `DB`. The test database is `:memory:`. Any other case returns `instance.database_clone_unsupported` before anything changes.
+The source file must be inside the `default` Instance's checkout. Orbit copies it to the same relative path in the new checkout. On the same Node, Orbit holds SQLite's write lock while it takes a reflink of the database file and its `-wal` file, so the copy shares data blocks with the source. Without block cloning, when a writer holds the lock for two seconds, or on another Node, Orbit takes a consistent snapshot with SQLite's backup API and copies it, between Nodes through the existing SQLite transfer. It registers the copy as a `sqlite` connection owned by the Instance and attaches it under prefix `DB`. The test database is `:memory:`. Any other case returns `instance.database_clone_unsupported` before anything changes.
 
 ### Test configuration
 
