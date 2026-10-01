@@ -53,7 +53,7 @@ Authorized reads return the commands. [Activity](/cli/activity) records no input
 
 ## Run setup
 
-`instance:create` runs the setup list after the Instance and its Route are active. Activation records `failed_step: setup` in the same transaction, so a Gateway interruption before or during setup cannot make an identical create retry report success without setup. Orbit clears the marker only after setup completes.
+`instance:create` runs the setup list after the Instance and its Route are active, and after the [database clone](/domains/applications#database-clone) when one applies. So setup steps such as migrations run against the Instance's own copy. Activation records `failed_step: setup` in the same transaction, so a Gateway interruption before or during setup cannot make an identical create retry report success without setup. Orbit clears the marker only after setup completes.
 
 Each command runs with `bash -eu` in the checkout, on the Instance's Node, as the Node's managed user. Commands read no input, and Orbit discards their output. When a step ends, for any reason, Orbit kills its process group, so background processes do not survive the step. Each run holds a lifecycle lock on the Instance. If another operation holds that lock during `instance:create`, Orbit keeps the active Instance and records `error_code: instance.lifecycle_busy`.
 

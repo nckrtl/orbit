@@ -59,6 +59,31 @@ Before each Linux install, the Gateway converges the manager: it installs the ma
 
 Update and removal use the same `tool.manager_unavailable` code when the macOS scope is absent or conflicting. The Tool stays `failed` for that operation, with its installed version kept, and the same command retries it. A probe that is not an absent or conflicting scope still returns `tool.version_probe_failed`, `tool.update_failed`, or `tool.remove_failed`. A manager stays installed after its last Tool is removed. No command removes a manager.
 
+### The dpkg lock
+
+On Linux, every apt command in the table passes `-o DPkg::Lock::Timeout=300`. On Ubuntu 26.04, apt 3.2.0 applies that timeout only while it takes the dpkg frontend lock and the dpkg admin lock. Those locks are `/var/lib/dpkg/lock-frontend` and `/var/lib/dpkg/lock`. `apt-get install` and `apt-get remove` take them, so they wait up to 300 seconds. The `apt` manager's update is `apt-get install`, so it waits too. A daily upgrade, such as `apt-daily-upgrade`, can hold one of those locks. Install and remove wait for that upgrade to release the lock instead of failing at once.
+
+Caddy and PHP package installation pass this same option. Prerequisite `apt-get update` passes it and does not use it. Update takes the lists lock, `/var/lib/apt/lists/lock`, and fails at once when that lock is busy.
+
+| Caller | Command | Lock wait |
+| --- | --- | --- |
+| `brew` prerequisites | `apt-get update` | None. The lists lock fails at once. |
+| `brew` prerequisites | `apt-get install` of `build-essential`, `procps`, `curl`, `file`, `git`, and `ca-certificates` | Up to 300 seconds on the dpkg locks. |
+| `composer` prerequisites | `apt-get update` | None. The lists lock fails at once. |
+| `composer` prerequisites | `apt-get install` of `composer`, `git`, and `unzip` | Up to 300 seconds on the dpkg locks. |
+| `apt` install and update | `apt-get install` | Up to 300 seconds on the dpkg locks. |
+| `apt` remove | `apt-get remove` | Up to 300 seconds on the dpkg locks. |
+
+Version probes, `apt-cache policy`, and the removal plan `apt-get --simulate remove` do not pass the option and do not wait.
+
+When a dpkg frontend or admin lock is still held after 300 seconds, install or remove exits with an error and changes no package. That covers a `brew` or `composer` prerequisite install, and the `apt` manager's install, update, and remove. A prerequisite `apt-get update` does not reach this timeout. A busy lists lock makes that update fail at once.
+
+Either failure on `tool:install` returns `tool.manager_provision_failed` (HTTP 502). The manager stays `failed` at step `materialize` with error code `node.tool_manager_materialization_failed`, and Orbit creates no Tool. Retry the install.
+
+A `composer` prerequisite failure during `app-dev` or `app-prod` convergence leaves the manager `failed` at the same step and error code. The role or `node:add` reports `node.tool_manager_materialization_failed` in `details.error_code`. [Role operations on one Node](/reference/node-provisioning#role-operations-on-one-node) describes how a failed role reports its step.
+
+An `apt` install, update, or remove returns `tool.install_failed`, `tool.update_failed`, or `tool.remove_failed` (HTTP 502). The Tool stays `failed`. Update and removal keep the recorded version. Retry the same command.
+
 ## Discover installed packages
 
 `GET /api/v1/tool-inventory?node_id=<id>` is `tool:scan`. The CLI command is `orbit tool:scan --node=<id>`. The only input is `node_id`, a strict integer of an existing Node. Any other query or body field fails with `validation.failed` (HTTP 422). This operation is not a script API.
@@ -160,7 +185,7 @@ Success returns the same Tool object as install, update, and remove. `status` is
 | `manager` | string | The manager name. |
 | `package` | string | The package name. |
 | `version_constraint` | string or null | The stored SemVer range, or null. |
-| `status` | string | `installing`, `installed`, `updating`, `removing`, or `failed`. Adoption success is `installed`. |
+| `status` | string | `installing`, `installed`, `updating`, `removing`, `failed`, or `removed`. `removed` is response-only and is never stored, so list and show never return it. Adoption success is `installed`. |
 | `installed_version` | string or null | The live version recorded at creation. It may be non-SemVer when unconstrained. |
 | `failed_operation` | string or null | `install`, `update`, or `remove` after a failed mutation. Null on adoption success. |
 | `error_code` | string or null | The last mutation error, or null. |
@@ -277,7 +302,7 @@ An unsupported installed cask stays in discovery with `adoption` `unsupported` a
 
 ## Remove a Tool
 
-`tool:remove` removes an `installed` or `failed` Tool. Success uses outcome `applied`.
+`tool:remove` removes an `installed` or `failed` Tool. Every success returns the Tool object with `status` `removed` and `outcome` `applied`. This covers an actual removal, a package that was already absent, and a failed Tool with no probed version. `removed` appears only in that response. It is never stored, so list and show never return it.
 
 The Gateway first reads the installed version. For `apt`, it then plans the removal with `apt-get --simulate remove` and refuses a plan that removes any other package, with `tool.removal_plan_unsafe`. It removes only the recorded package and never runs an autoremove. After the removal, it reads the version again. A Tool whose package is gone is deleted.
 
@@ -285,9 +310,9 @@ The Gateway first reads the installed version. For `apt`, it then plans the remo
 
 | Condition | Result | Tool record |
 | --- | --- | --- |
-| The package is already absent | Success, with no manager command | Deleted |
-| The Tool failed with `tool.version_probe_failed` and never recorded a version | Success, with no probe | Deleted |
-| The removal succeeds and the package is gone | Success | Deleted |
+| The package is already absent | Success, `status` `removed` and `outcome` `applied`, with no manager command | Deleted |
+| The Tool failed with `tool.version_probe_failed` and never recorded a version | Success, `status` `removed` and `outcome` `applied`, with no probe | Deleted |
+| The removal succeeds and the package is gone | Success, `status` `removed` and `outcome` `applied` | Deleted |
 | The version probe fails on a Tool with a known package | `tool.version_probe_failed` | Kept as `failed` |
 | The macOS scope is absent or conflicting | `tool.manager_unavailable` | Kept as `failed` |
 | The removal fails or the package stays | `tool.remove_failed` | Kept as `failed` |
@@ -300,7 +325,7 @@ Every Tool success body and every Tool error `details.outcome` uses one of these
 
 | Outcome | Success operations | Meaning |
 | --- | --- | --- |
-| `applied` | install, update, remove, adopt | A mutation changed the package, or adopt created a Tool without changing the host. |
+| `applied` | install, update, remove, adopt | A mutation changed the package, adopt created a Tool without changing the host, or remove deleted the Tool. Every remove success uses `applied`. |
 | `unchanged` | install, update, adopt | The requested intent already held. |
 | `blocked_by_constraint` | update | The candidate is outside the stored constraint. Update leaves the Tool installed. Install records `failed` and installs nothing. |
 | `constraint_invalid` | none | The constraint is not a SemVer range. |
@@ -326,6 +351,8 @@ No other `details` keys are returned.
 ## Locks
 
 Each mutation locks its Tool and its manager's scope on the Node. A busy lock fails at once with `tool.operation_locked`. `brew` and `brew-cask` share the Homebrew prefix lock. Scan does not take either lock. [Per-Node locks](/reference/node-provisioning#per-node-locks) lists every lock and its term.
+
+`tool.operation_locked` means Orbit's lock is busy. It does not mean a dpkg lock is busy. [The dpkg lock](#the-dpkg-lock) says which apt commands wait for one.
 
 ## Check removal with Doctor
 

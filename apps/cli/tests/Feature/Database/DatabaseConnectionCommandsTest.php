@@ -245,33 +245,26 @@ it('destroys a connection after --force', function (): void {
         ->toBeInstanceOf(DestroyDatabaseConnectionRequest::class);
 });
 
-it('creates a managed MySQL user through the Process-scoped request and hides the password', function (): void {
-    $mockClient = database_cli_mock(CreateDatabaseUserRequest::class, [
-        ...database_cli_gateway_data(),
-        'node_id' => 8,
-        'host' => '10.44.0.80',
-        'port' => 3307,
-    ], status: 201);
+it('adds a user through the connection-scoped request and hides the password', function (): void {
+    $user = [
+        'id' => 2,
+        'database_connection_id' => 4,
+        'username' => 'reporting',
+        'privileges' => 'SELECT ON `app`.*',
+        'created_by' => 'gateway',
+        'created_at' => '2026-01-01T00:00:00+00:00',
+    ];
+    $mockClient = database_cli_mock(CreateDatabaseUserRequest::class, $user, status: 201);
 
     $this
         ->artisan('database:user:create', [
             'slug' => 'app',
-            '--process' => '12',
-            '--database' => 'app',
-            '--username' => 'app',
+            '--username' => 'reporting',
             '--password' => DATABASE_CLI_SECRET,
+            '--read-only' => true,
             '--json' => true,
         ])
-        ->expectsOutput(json_encode(
-            [
-                ...database_cli_gateway_data(),
-                'node_id' => 8,
-                'host' => '10.44.0.80',
-                'port' => 3307,
-                'request_id' => database_cli_request_id(),
-            ],
-            JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
-        ))
+        ->expectsOutput(json_encode([...$user, 'request_id' => database_cli_request_id()], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
         ->doesntExpectOutputToContain(DATABASE_CLI_SECRET)
         ->assertExitCode(0);
 
@@ -280,14 +273,42 @@ it('creates a managed MySQL user through the Process-scoped request and hides th
     expect($request)
         ->toBeInstanceOf(CreateDatabaseUserRequest::class)
         ->and($request?->resolveEndpoint())
-        ->toBe('/api/v1/processes/12/database-users')
+        ->toBe('/api/v1/database-connections/app/users')
         ->and($request?->body()->all())
         ->toBe([
-            'slug' => 'app',
-            'database' => 'app',
-            'username' => 'app',
+            'username' => 'reporting',
             'password' => DATABASE_CLI_SECRET,
+            'read_only' => true,
         ]);
+});
+
+it('creates a database on a server with only the slug, the server, and the Instance', function (): void {
+    $mockClient = database_cli_mock(CreateDatabaseConnectionRequest::class, [
+        ...database_cli_gateway_data(),
+        'slug' => 'dlf-leden',
+        'database' => 'dlf_leden',
+        'server' => 'beast-mysql',
+        'owner_instance_id' => 60,
+        'test_database' => 'dlf_leden_test',
+    ], status: 201);
+
+    $this
+        ->artisan('database:create', ['slug' => 'dlf-leden', '--server' => 'beast-mysql', '--instance' => '60', '--json' => true])
+        ->expectsOutputToContain('"test_database":"dlf_leden_test"')
+        ->assertExitCode(0);
+
+    expect($mockClient->getLastRequest()?->body()->all())
+        ->toBe(['slug' => 'dlf-leden', 'server' => 'beast-mysql', 'instance_id' => 60]);
+});
+
+it('refuses --instance without --server before it contacts the Gateway', function (): void {
+    $mockClient = MockClient::global([]);
+
+    [$exit, $output] = database_cli_display('database:create', ['slug' => 'app', '--driver' => 'mysql', '--instance' => '60', '--json' => true]);
+
+    expect($exit)->toBe(1)
+        ->and($output)->toContain('database.server_required')
+        ->and($mockClient->getLastPendingRequest())->toBeNull();
 });
 
 it('queries a registered connection and sends the write flag only when asked', function (): void {
@@ -600,6 +621,9 @@ function database_cli_gateway_data(): array
         'path' => null,
         'username' => 'app',
         'has_password' => true,
+        'server' => null,
+        'owner_instance_id' => null,
+        'test_database' => null,
     ];
 }
 

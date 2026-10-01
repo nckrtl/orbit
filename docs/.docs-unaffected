@@ -87,3 +87,26 @@ docs/reference/php-runtime.md: Production source reads pass the Project's source
 docs/reference/tools.md: The service provider only binds the GitHub CLI token source; Tool behavior does not change.
 docs/reference/app-dev-runtime-hibernation.md: The config/orbit.php change adds only outer-loop suppression lists, documented in /reference/tasks#suppression. Hibernation settings, idle detection, and wake behavior are unchanged.
 docs/reference/environment-variables.md: The problems key in config/orbit.php holds Gateway suppression lists, not an environment variable. The change adds no env() keys and does not alter Instance environment import, storage, or synchronization; /reference/tasks#suppression owns these settings.
+docs/reference/api-reference.md: bin/docs-openapi only gains the new database server operations and the database:create body variants; the API reference workflow does not change.
+docs/reference/cli-ux.md: New recorded CLI outputs for database servers and users follow the existing CLI design standard unchanged.
+docs/reference/gateway-response-fixtures.md: New and re-recorded database fixtures follow the existing fixture workflow unchanged.
+docs/reference/incus-topologies.md: The sample fixture script creates the e2e MySQL user with docker exec instead of the removed --process form; the topology contents stay the same.
+docs/reference/mcp.mdx: The new database server tools follow their generated contracts; the MCP page lists no per-tool fields.
+docs/reference/tools.md: The service provider only binds the database server admin and clone services; Tool behavior does not change.
+docs/reference/topology-snapshot.md: The prepared-state manifest only lists the new source files; the snapshot workflow does not change.
+docs/reference/web-app.md: The web API types are regenerated for the new database endpoints; no web screen changes.
+docs/cli/extension.mdx: The extension-switch migration only moves Gateway extension keys. Ended-task assistance does not change the extension commands.
+docs/reference/agent-annotation.md: The existing annotations migration that also touches tasks stores annotation delivery. Ended-task assistance does not change annotations.
+docs/reference/assigned-vite-ports.md: The existing vite port assignment migration allocates ports. Ended-task assistance does not change port assignment.
+docs/reference/database-connections.md: The existing database connection migrations store connections, targets, and users. Ended-task assistance does not change database connections.
+docs/reference/development-node-exclusions.md: The existing project node exclusion migration records registration refusals. Ended-task assistance does not change exclusions.
+docs/reference/environment-variables.md: The existing environment and domain-rename migrations change Instance and Project columns. Ended-task assistance does not change environment variables.
+docs/reference/instance-dependency-contracts.md: The existing dependency inventory migration stores scan results. Ended-task assistance does not change dependency contracts.
+docs/reference/instance-setup.md: The existing project lifecycle step migration stores setup configuration. Ended-task assistance does not change setup steps.
+docs/reference/node-agent.md: The existing nodes migration drops the agent secret exemption. Ended-task assistance does not change the Node agent.
+docs/reference/processes-and-schedules.md: The existing process and schedule migrations store runtime records. Ended-task assistance does not change processes or schedules.
+docs/reference/projects.md: The existing Project rename and task-workspace routing migrations change Project columns. Ended-task assistance does not change Project records.
+docs/reference/routes.md: The existing route and workspace migrations store routing records. Ended-task assistance does not change Routes.
+docs/reference/schedules.md: The existing schedule migrations store timer records. Ended-task assistance does not change Schedules.
+docs/reference/tools.md: The existing tool and tool-manager migrations store package records. Ended-task assistance does not change Tools.
+unowned: Unchanged migration files in the planned migrations directory have no covers owner and no model page. The extractor lists those surfaces and raises no error because this branch adds or removes none of them. Ended-task assistance does not add a page for them.

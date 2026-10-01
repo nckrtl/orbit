@@ -62,6 +62,9 @@ it('round-trips mysql connection CRUD, encrypts the password, and redacts it fro
         'path',
         'username',
         'has_password',
+        'server',
+        'owner_instance_id',
+        'test_database',
     ]);
 
     $raw = DB::table('database_connections')->where('slug', 'app')->sole();

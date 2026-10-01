@@ -63,6 +63,30 @@ it('creates and atomically replaces a complete protected environment file', func
     }
 });
 
+it('writes .env.testing next to .env with the same protection and leaves .env alone', function (): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
+    $directory = writer_environment_directory();
+    file_put_contents("{$directory}/.env", "APP_ENV=\"local\"\n");
+    chmod("{$directory}/.env", 0600);
+
+    try {
+        $access = writer_environment_access(new WriterLocalSshExecutor(new NativeProcessRunner));
+        $written = $access->writeTesting(writer_environment_context($directory), "APP_ENV=\"testing\"\n");
+        $repeated = $access->writeTesting(writer_environment_context($directory), "APP_ENV=\"testing\"\n");
+
+        expect($written->changed)->toBeTrue()
+            ->and($repeated->changed)->toBeFalse()
+            ->and(file_get_contents("{$directory}/.env.testing"))->toBe("APP_ENV=\"testing\"\n")
+            ->and(fileperms("{$directory}/.env.testing") & 0777)->toBe(0600)
+            ->and(file_get_contents("{$directory}/.env"))->toBe("APP_ENV=\"local\"\n");
+    } finally {
+        writer_remove_directory($directory);
+    }
+});
+
 it('retains file identity for an identical protected repeat and repairs mode drift', function (): void {
     if (LinuxHost::delegate($this)) {
         return;
@@ -137,7 +161,7 @@ it('preserves the destination and unrelated candidates on confirmed writer failu
         '(_ for _ in ()).throw(OSError())',
     ],
     'atomic rename' => [
-        'os.replace(candidate_name, ".env", src_dir_fd=current, dst_dir_fd=current)',
+        'os.replace(candidate_name, target_name, src_dir_fd=current, dst_dir_fd=current)',
         '(_ for _ in ()).throw(OSError())',
     ],
 ]);
@@ -297,7 +321,7 @@ it('keeps supplied bytes and raw remote output out of diagnostics and trace argu
         $access = writer_environment_access(new WriterLocalSshExecutor(
             new NativeProcessRunner,
             [
-                'os.replace(candidate_name, ".env", src_dir_fd=current, dst_dir_fd=current)' => '(_ for _ in ()).throw(OSError())',
+                'os.replace(candidate_name, target_name, src_dir_fd=current, dst_dir_fd=current)' => '(_ for _ in ()).throw(OSError())',
             ],
         ));
 

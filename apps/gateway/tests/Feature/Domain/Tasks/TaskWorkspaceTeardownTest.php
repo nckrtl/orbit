@@ -113,7 +113,7 @@ it('keeps the source and record when teardown fails and a retry removes only the
 
     expect($completed->status)->toBe(TaskGroupStatus::Completed)
         ->and($completed->taskable_id)->toBe($world['workspace']->id)
-        ->and($completed->assistance_requested)->toBeTrue()
+        ->and($completed->assistance_requested)->toBeFalse()
         ->and($completed->assistance_reason)->toBe('Workspace removal failed: Teardown step failed.')
         ->and($world['workspace']->fresh()?->status)->toBe(InstanceState::SourceResolved)
         ->and($world['harness']->source->finalized)->toBe([])
@@ -143,7 +143,7 @@ it('keeps a swept workspace when teardown fails and retries only that workspace 
 
     expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0)
         ->and($world['group']->fresh()?->status)->toBe(TaskGroupStatus::Cancelled)
-        ->and($world['group']->fresh()?->assistance_requested)->toBeTrue()
+        ->and($world['group']->fresh()?->assistance_requested)->toBeFalse()
         ->and($world['group']->fresh()?->assistance_reason)->toBe('Workspace removal failed: Teardown step failed.')
         ->and($world['workspace']->fresh()?->status)->toBe(InstanceState::SourceResolved)
         ->and($world['harness']->source->finalized)->toBe([])
@@ -197,7 +197,7 @@ it('refuses speculative deletion and skips teardown when the source cannot be in
 
     $fresh = $world['group']->fresh();
     expect($fresh?->status)->toBe(TaskGroupStatus::Cancelled)
-        ->and($fresh?->assistance_requested)->toBeTrue()
+        ->and($fresh?->assistance_requested)->toBeFalse()
         ->and($fresh?->assistance_reason)->toBe('Workspace removal failed: The checkout is missing.')
         ->and($world['harness']->transport->inputs)->toBe([])
         ->and($world['harness']->source->finalized)->toBe([])

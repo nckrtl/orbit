@@ -28,6 +28,12 @@ final readonly class AptToolManager implements SupportsToolAdoption, ToolManager
 
     private const string PLANNED_PACKAGE_PATTERN = '/\ARemv\s+([a-z0-9][a-z0-9+.-]*(?::[a-z0-9][a-z0-9-]*)?)(?:\s|$)/D';
 
+    /**
+     * Wait for another apt process to release the dpkg locks. Apt applies this
+     * only to those locks, and 300 seconds stays inside the 900 second tool command budget.
+     */
+    private const string DPKG_LOCK_TIMEOUT = 'DPkg::Lock::Timeout=300';
+
     private const array REMOVED_STATUSES = [
         'deinstall ok config-files',
         'deinstall ok not-installed',
@@ -276,7 +282,7 @@ final readonly class AptToolManager implements SupportsToolAdoption, ToolManager
             node: $node,
             package: $package,
             step: 'install',
-            arguments: ['sudo', 'apt-get', 'install', '--yes', '--no-install-recommends', '--', $package],
+            arguments: ['sudo', 'apt-get', '-o', self::DPKG_LOCK_TIMEOUT, 'install', '--yes', '--no-install-recommends', '--', $package],
         );
     }
 
@@ -286,7 +292,7 @@ final readonly class AptToolManager implements SupportsToolAdoption, ToolManager
             node: $node,
             package: $package,
             step: 'update',
-            arguments: ['sudo', 'apt-get', 'install', '--yes', '--no-install-recommends', '--', $package],
+            arguments: ['sudo', 'apt-get', '-o', self::DPKG_LOCK_TIMEOUT, 'install', '--yes', '--no-install-recommends', '--', $package],
         );
     }
 
@@ -333,7 +339,7 @@ final readonly class AptToolManager implements SupportsToolAdoption, ToolManager
             node: $node,
             package: $package,
             step: 'remove',
-            arguments: ['sudo', 'apt-get', 'remove', '--yes', '--', $package],
+            arguments: ['sudo', 'apt-get', '-o', self::DPKG_LOCK_TIMEOUT, 'remove', '--yes', '--', $package],
         );
     }
 
