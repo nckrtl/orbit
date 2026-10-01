@@ -41,7 +41,7 @@ use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\DatabaseConnections\DatabaseInspectionExecutor;
-use App\Domain\DatabaseConnections\ManagedMysqlUserProvisioner;
+use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\Doctor\CaddyBuildInspector;
 use App\Domain\Doctor\CustomProxyRouteInspector;
 use App\Domain\Doctor\GatewayVpnStateInspector;
@@ -70,6 +70,7 @@ use App\Domain\Hibernation\HibernationWakeFailureStore;
 use App\Domain\Hibernation\InstanceCheckoutInspector;
 use App\Domain\Hibernation\InstanceRuntimeReadiness;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
+use App\Domain\Instances\DatabaseClone\InstanceSqliteCloner;
 use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
@@ -81,6 +82,7 @@ use App\Domain\Instances\Environment\InstanceEnvironmentSynchronizer;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
 use App\Domain\Instances\Environment\InstanceRouteEnvironmentSynchronizer;
+use App\Domain\Instances\Environment\InstanceTestEnvironmentWriter;
 use App\Domain\Instances\InstanceCloneCandidateInspector;
 use App\Domain\Instances\InstanceDestinationGuard;
 use App\Domain\Instances\InstanceRemover;
@@ -210,7 +212,7 @@ use App\Infrastructure\Certificates\OpenSslGatewayCertificateValidator;
 use App\Infrastructure\Certificates\OpenSslLeafCertificateSigner;
 use App\Infrastructure\Clusters\NativeClusterRouterOperationLock;
 use App\Infrastructure\DatabaseConnections\RegisteredDatabaseInspectionExecutor;
-use App\Infrastructure\DatabaseConnections\RemoteManagedMysqlUserProvisioner;
+use App\Infrastructure\DatabaseServers\RemoteDatabaseServerAdmin;
 use App\Infrastructure\Doctor\NativeCaddyBuildInspector;
 use App\Infrastructure\Doctor\NativeCustomProxyRouteInspector;
 use App\Infrastructure\Doctor\NativeGatewayVpnStateInspector;
@@ -261,6 +263,7 @@ use App\Infrastructure\Instances\RemoteInstanceDestinationGuard;
 use App\Infrastructure\Instances\RemoteInstanceEnvironmentAccess;
 use App\Infrastructure\Instances\RemoteInstanceLogReader;
 use App\Infrastructure\Instances\RemoteInstanceQueueReader;
+use App\Infrastructure\Instances\RemoteInstanceSqliteCloner;
 use App\Infrastructure\Instances\RemoteInstanceSqliteSeeder;
 use App\Infrastructure\Instances\RemoteInstanceTransferSource;
 use App\Infrastructure\Instances\RemoteProductionDeployment;
@@ -380,6 +383,8 @@ final class ApplicationServiceProvider extends ServiceProvider
         InstanceCloneCandidateInspector::class => RemoteInstanceCloneCandidateInspector::class,
         InstanceEnvironmentReader::class => RemoteInstanceEnvironmentAccess::class,
         InstanceEnvironmentWriter::class => RemoteInstanceEnvironmentAccess::class,
+        InstanceTestEnvironmentWriter::class => RemoteInstanceEnvironmentAccess::class,
+        InstanceSqliteCloner::class => RemoteInstanceSqliteCloner::class,
         InstanceOperationPreflight::class => RemoteInstanceEnvironmentAccess::class,
         InstanceSqliteSeeder::class => RemoteInstanceSqliteSeeder::class,
         InstanceTransferSource::class => RemoteInstanceTransferSource::class,
@@ -461,7 +466,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         RoleBaselineConverger::class => NativeRoleBaselineConverger::class,
         GatewayPrivateDnsRoute::class => GatewayRoleBaseline::class,
         NodeAgentRuntime::class => NodeAgentSshExecutor::class,
-        ManagedMysqlUserProvisioner::class => RemoteManagedMysqlUserProvisioner::class,
+        DatabaseServerAdmin::class => RemoteDatabaseServerAdmin::class,
         ProcessRuntimeManager::class => RemoteProcessRuntimeManager::class,
         ProcessRuntimeStatusIndex::class => PrometheusProcessRuntimeStatusIndex::class,
         AgentStateView::class => CacheAgentStateView::class,

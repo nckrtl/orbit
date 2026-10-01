@@ -1,11 +1,11 @@
 ---
 title: "database"
-description: "Register, inspect, update, and destroy the mysql, pgsql, sqlite, and redis connections that Instances can attach, and create a MySQL user through a Node Process."
+description: "Run MySQL servers, create databases on them, and register, inspect, update, and destroy the mysql, pgsql, sqlite, and redis connections that Instances can attach."
 covers:
   - apps/cli/app/Commands/Database/**
 ---
 
-A Database connection is a Gateway record with an encrypted password. The `database` family manages the records and inspects a registered database. It never starts or stops a database. A shared database server runs as a Docker [Node Process](/cli/process), and the optional [Database role](/reference/database-role) prepares Docker for it.
+A Database connection is a Gateway record with an encrypted password. The `database` family manages the records and inspects a registered database. `database:server` runs a MySQL server as a Docker Node Process and keeps its root password in the Gateway. [Database servers](/reference/database-servers) describes the servers.
 
 [Database connections](/reference/database-connections) describes the driver fields, the API, inspection, and the keys that an attachment writes. Attach a connection to an Instance with [`instance:database:add`](/cli/instance#orbit-instancedatabaseadd).
 
@@ -13,12 +13,16 @@ A Database connection is a Gateway record with an encrypted password. The `datab
 
 | Command | Result |
 | --- | --- |
-| [`database:create`](#orbit-databasecreate) | Create one connection record. |
+| [`database:create`](#orbit-databasecreate) | Register an existing database, or create one on a server. |
 | [`database:list`](#orbit-databaselist) | List registered connections. |
 | [`database:show`](#orbit-databaseshow) | Show one connection. |
 | [`database:update`](#orbit-databaseupdate) | Replace the supplied fields on one connection. |
-| [`database:user:create`](#orbit-databaseusercreate) | Create a MySQL user and database through a Node Docker Process, then register or refresh the connection. |
-| [`database:user:list`](#orbit-databaseuserlist) | List the recorded users for a connection. |
+| [`database:server:create`](#orbit-databaseservercreate) | Run a MySQL server as a Docker Node Process. |
+| [`database:server:list`](#orbit-databaseserverlist) | List the servers. |
+| [`database:server:show`](#orbit-databaseservershow) | Show one server. |
+| [`database:server:destroy`](#orbit-databaseserverdestroy) | Remove a server that no connection uses. |
+| [`database:user:create`](#orbit-databaseusercreate) | Add a user to a database on a server. |
+| [`database:user:list`](#orbit-databaseuserlist) | List the users Orbit created for a connection. |
 | [`database:destroy`](#orbit-databasedestroy) | Destroy one connection record. |
 | [`database:query`](#orbit-databasequery) | Run one SQL statement against a registered connection. |
 | [`database:tables`](#orbit-databasetables) | List tables on a registered connection. |
@@ -29,10 +33,11 @@ Every command accepts `--json`, and every result includes the request ID. No out
 
 ## orbit database:create
 
-Create one connection with a unique slug. The Gateway encrypts the password before it writes the row.
+Register an existing database, or create a new one on a [Database server](/reference/database-servers#create-a-database-on-a-server). The Gateway encrypts the password before it writes the row.
 
 ```bash
 orbit database:create <slug> --driver=DRIVER [options]
+orbit database:create <slug> --server=SERVER [--instance=INSTANCE]
 ```
 
 | Argument | Required | Meaning |
@@ -49,6 +54,8 @@ orbit database:create <slug> --driver=DRIVER [options]
 | `--path=PATH` | Unix absolute sqlite path of at most 1024 characters. |
 | `--username=USER` | Username. Required for mysql and pgsql. Optional for redis; omit it when the server has none. |
 | `--password=SECRET` | Password. Required for mysql and pgsql. Optional for redis. |
+| `--server=SERVER` | Server slug. Creates a MySQL database and user on that server. Excludes every other option except `--instance`. |
+| `--instance=INSTANCE` | Numeric Instance ID. With `--server`, attaches the new database to the Instance under prefix `DB`, creates its test database, and makes the Instance its owner. |
 
 | Driver | Required fields | Optional fields |
 | --- | --- | --- |
@@ -62,6 +69,7 @@ orbit database:create app --driver=mysql --host=db.example.test --database=app -
 orbit database:create local --driver=sqlite --path=/var/lib/app/database.sqlite
 orbit database:create postgres --driver=pgsql --node=beast --host=127.0.0.1 --database=app --username=app --password=secret
 orbit database:create cache --driver=redis --host=127.0.0.1 --database=0
+orbit database:create dlf-leden --server=beast-mysql --instance=60
 ```
 
 The Gateway answers `validation.failed` when a mysql, pgsql, or redis record includes `--path`, when a sqlite record includes `--host`, `--port`, or `--database`, when a redis record omits `--host`, or when the request includes an unsupported field. A duplicate slug returns `database.slug_conflict` and leaves the existing record unchanged.
@@ -114,12 +122,12 @@ orbit database:update app --node=
 
 Updating a record does not rewrite the keys already stored on attached Instances. Run `instance:database:add` again with the same prefix to re-project them, then `env:sync` to install them.
 
-## orbit database:user:create
+## orbit database:server:create
 
-Create a MySQL user and database through an existing Node-targeted Docker MySQL Process, then register or refresh the connection.
+Run a MySQL server as a Docker Node Process. Orbit generates the root password and keeps it only in the Gateway.
 
 ```bash
-orbit database:user:create <slug> --process=ID --database=NAME --username=USER --password=SECRET
+orbit database:server:create <slug> --node=NODE [--tag=TAG] [--port=PORT] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -128,34 +136,77 @@ orbit database:user:create <slug> --process=ID --database=NAME --username=USER -
 
 | Option | Meaning |
 | --- | --- |
-| `--process=ID` | Numeric Process ID of a Node-targeted Docker MySQL Process. |
-| `--database=NAME` | Database name. A 1-32 character identifier. |
-| `--username=USER` | Username. A 1-32 character identifier. |
-| `--password=SECRET` | Password for the created user. |
+| `--node=NODE` | Numeric Node ID or Node name. Required. |
+| `--tag=TAG` | MySQL image tag. The image is `mysql:<tag>`. Defaults to `8.4`. |
+| `--port=PORT` | Port to publish on the Node's WireGuard address. Defaults to `3306`. |
 
 ```bash
-orbit database:user:create app --process=12 --database=app --username=app --password=secret
+orbit database:server:create beast-mysql --node=beast
 ```
 
-The Process must be a Docker Node Process with a `mysql` or `mysql-server` image, a published container port `3306`, and `MYSQL_ROOT_PASSWORD` in its environment. A slug that already names a mysql connection is refreshed. [Database connections](/reference/database-connections#create-a-managed-mysql-user) lists the checks and error codes.
+[Database servers](/reference/database-servers#create-a-server) describes the steps, retry, and errors.
+
+## orbit database:server:list
+
+List the servers with their slug, Node, tag, port, status, and number of databases.
+
+```bash
+orbit database:server:list [--json]
+```
+
+## orbit database:server:show
+
+Show one server and the databases on it.
+
+```bash
+orbit database:server:show <slug> [--json]
+```
+
+## orbit database:server:destroy
+
+Remove a server. The Gateway refuses with `database.server_in_use` while a connection points to it. It keeps the data volume.
+
+```bash
+orbit database:server:destroy <slug> [--force] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--force` | Confirm without prompting. Interactive confirmation defaults to No. A JSON or non-interactive call without `--force` returns `database.confirmation_required`. |
+
+## orbit database:user:create
+
+Add a user to a database on a [server](/reference/database-servers#add-a-user), for example a read-only user in production.
+
+```bash
+orbit database:user:create <slug> --username=USER --password=SECRET [--read-only] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `slug` | yes | Connection slug of a database on a server. |
+
+| Option | Meaning |
+| --- | --- |
+| `--username=USER` | Username. A 1-32 character identifier. |
+| `--password=SECRET` | Password for the new user. |
+| `--read-only` | Grant only `SELECT`. Without it, the user gets all privileges on the database. |
+
+```bash
+orbit database:user:create dlf-leden --username=reporting --password=secret --read-only
+```
+
+A connection without a server returns `database.server_required`. The user of a connection on the same server returns `database.name_conflict`. Creating the same user again sets its password and privileges.
 
 ## orbit database:user:list
 
-List the users the Gateway recorded for a connection. `database:user:create` records one row per username, each with its granted privileges and who created it.
+List the users Orbit created for a connection, each with its privileges and who created it.
 
 ```bash
 orbit database:user:list <slug> [--json]
 ```
 
-| Argument | Required | Meaning |
-| --- | --- | --- |
-| `slug` | yes | Connection slug. |
-
 The table shows Username, Privileges, Created by, and Created. `Created by` is the calling Node's name, since the Gateway authorizes every command as a Node.
-
-```bash
-orbit database:user:list app
-```
 
 ## orbit database:destroy
 
@@ -178,7 +229,7 @@ orbit database:destroy app --force
 ```
 
 <Warning>
-The Gateway answers `database.connection_attached` while any Instance still attaches the connection. Remove those attachments with `instance:database:remove` first.
+The Gateway answers `database.connection_attached` while any Instance still attaches the connection. Remove those attachments with `instance:database:remove` first. Destroying the record of a database on a server also drops that database and its user.
 </Warning>
 
 ## orbit database:query
@@ -259,5 +310,5 @@ orbit database:describe app users
 ## Related
 
 - [`instance:database:add`](/cli/instance#orbit-instancedatabaseadd) and [`instance:database:remove`](/cli/instance#orbit-instancedatabaseremove) attach and detach a connection on one Instance.
-- [`process`](/cli/process) creates the Docker Node Process that runs a shared database server. `database:user:create` uses that Process to create a MySQL user and database.
+- [Database servers](/reference/database-servers) explains how a server keeps its root password.
 - [`doctor --family=database_connection`](/cli/doctor) reports missing, unhealthy, or mismatched attachments.

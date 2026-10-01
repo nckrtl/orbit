@@ -1,0 +1,39 @@
+Creating database...
+
+┌  Create database
+│
+├  ● Created database
+│
+└  Created database.
+
+
+┌  Database [dlf_leden] created on [beast-mysql].
+│
+├  ID                  1
+│
+├  Slug                dlf-leden
+│
+├  Driver              mysql
+│
+├  Node ID             2
+│
+├  Host                10.44.0.80
+│
+├  Port                3306
+│
+├  Database            dlf_leden
+│
+├  Path                —
+│
+├  Username            dlf_main
+│
+├  Password            stored
+│
+├  Server              beast-mysql
+│
+├  Owner Instance ID   1
+│
+├  Test database       dlf_leden_test
+│
+└  Request ID          0198e15c-bf97-7c23-8f1f-61b8fe67a844
+

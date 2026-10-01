@@ -13,8 +13,11 @@ use App\Domain\Instances\Environment\InstanceEnvironmentRouteDomain;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\Environment\InstanceEnvironmentSynchronizer;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
+use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
 use App\Domain\Instances\Environment\InstanceRouteEnvironmentSynchronizer;
+use App\Domain\Instances\Environment\InstanceTestEnvironment;
+use App\Domain\Instances\Environment\InstanceTestEnvironmentWriter;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 
@@ -27,6 +30,8 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
         private InstanceOperationPreflight $preflight,
         private InstanceEnvironmentRenderer $renderer,
         private InstanceEnvironmentWriter $writer,
+        private ?InstanceTestEnvironment $testing = null,
+        private ?InstanceTestEnvironmentWriter $testingWriter = null,
     ) {}
 
     public function execute(Instance $instance): InstanceEnvironmentResult
@@ -61,8 +66,25 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
         $this->preflight->assertEnvironmentWritable($context, $requiredCapacity);
         $snapshot = $this->store->synchronizationSnapshot($context);
         $contents = $this->renderer->render($context, $snapshot->values());
-        $result = $this->writer->write($context, $contents);
+        $changed = $this->confirmed($this->writer->write($context, $contents));
+        $testing = ($this->testing ?? app(InstanceTestEnvironment::class))->values($context->instanceId, $snapshot->values());
 
+        if ($testing !== null) {
+            $testingContents = $this->renderer->render($context, $testing);
+            $writer = $this->testingWriter ?? app(InstanceTestEnvironmentWriter::class);
+            $changed = $this->confirmed($writer->writeTesting($context, $testingContents)) || $changed;
+        }
+
+        return new InstanceEnvironmentResult(
+            instanceId: $context->instanceId,
+            operation: 'sync',
+            changed: $changed,
+            keyCount: $snapshot->keyCount(),
+        );
+    }
+
+    private function confirmed(InstanceEnvironmentWriteResult $result): bool
+    {
         if (! $result->confirmed || ! is_bool($result->changed)) {
             throw new ResourceOperationException(
                 errorCode: 'env.sync_unconfirmed',
@@ -71,11 +93,6 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
             );
         }
 
-        return new InstanceEnvironmentResult(
-            instanceId: $context->instanceId,
-            operation: 'sync',
-            changed: $result->changed,
-            keyCount: $snapshot->keyCount(),
-        );
+        return $result->changed;
     }
 }

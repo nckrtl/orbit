@@ -18,6 +18,10 @@ use Orbit\Sdk\Requests\DatabaseConnections\RemoveInstanceDatabaseRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ShowDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ShowDatabaseSchemaRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\UpdateDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseServers\CreateDatabaseServerRequest;
+use Orbit\Sdk\Requests\DatabaseServers\DestroyDatabaseServerRequest;
+use Orbit\Sdk\Requests\DatabaseServers\ListDatabaseServersRequest;
+use Orbit\Sdk\Requests\DatabaseServers\ShowDatabaseServerRequest;
 use Orbit\Sdk\Requests\Deployments\CreateInstanceDeployStepRequest;
 use Orbit\Sdk\Requests\Deployments\DeployInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\DestroyInstanceDeployStepRequest;
@@ -220,6 +224,12 @@ describe('repository guidance bootstrap', function (): void {
             DescribeDatabaseTableRequest::class,
             ListDatabaseUsersRequest::class,
         ];
+        $databaseServerRequests = [
+            ListDatabaseServersRequest::class,
+            ShowDatabaseServerRequest::class,
+            CreateDatabaseServerRequest::class,
+            DestroyDatabaseServerRequest::class,
+        ];
         $gitHubRequests = [
             InstallGitHubAppRequest::class,
             ShowGitHubAppRequest::class,
@@ -282,7 +292,7 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Extensions\\DisableExtensionRequest',
         ];
         $proxycliSwitchRequests = [SetupProxyCliRequest::class, TeardownProxyCliRequest::class];
-        $expectedOperationCount = count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($gitHubRequests) + count($proxycliRequests) + count($taskRequests) + count($logRequests);
+        $expectedOperationCount = count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($gitHubRequests) + count($proxycliRequests) + count($taskRequests) + count($logRequests);
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest',
@@ -424,6 +434,13 @@ describe('repository guidance bootstrap', function (): void {
         )))
             ->toHaveCount(count($databaseRequests))
             ->toEqualCanonicalizing($databaseRequests);
+
+        expect(array_values(array_filter(
+            $requestClasses,
+            static fn (string $class): bool => str_starts_with($class, 'Orbit\\Sdk\\Requests\\DatabaseServers\\'),
+        )))
+            ->toHaveCount(count($databaseServerRequests))
+            ->toEqualCanonicalizing($databaseServerRequests);
 
         expect(array_values(array_filter(
             $requestClasses,
