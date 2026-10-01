@@ -5,11 +5,11 @@ covers:
   - "apps/gateway/app/{Domain,Infrastructure}/Tasks/**"
   - "apps/gateway/app/Actions/Tasks/**"
   - "apps/gateway/app/Http/Requests/Tasks/**"
-  - "apps/gateway/app/Http/Controllers/Api/{TasksController,TaskGroupsController,AgentThreadsController}.php"
+  - "apps/gateway/app/Http/Controllers/Api/{TasksController,TaskGroupsController,AgentThreadsController,TaskQuestionsController}.php"
   - "apps/gateway/app/Console/Commands/{TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand}.php"
-  - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
+  - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "apps/gateway/resources/tasks/**"
-  - "apps/gateway/database/migrations/*_{convert_test_deliverables_to_commands,add_continuation_source_to_tasks,create_problem_fingerprints,add_assistance_kind_to_tasks}.php"
+  - "apps/gateway/database/migrations/*_{convert_test_deliverables_to_commands,add_continuation_source_to_tasks,create_problem_fingerprints,add_assistance_kind_to_tasks,create_task_questions}.php"
 ---
 
 # Tasks
@@ -493,7 +493,7 @@ Before each turn, the Gateway installs that command, writes `.git/orbit/turn.jso
 | Reviewer | `approved`, `changes_requested`, `blocked` |
 | Reviewer in a consult | `answered`, `blocked` |
 
-The command refuses an outcome of the other role, an empty summary, a repeated flag, and an unknown argument. `blocked` needs `--question="One specific question"`. An implementer's question goes to its reviewer first, and a reviewer's question goes to the operator. `answered` is valid only in a consult. The command refuses `--question` with any other outcome.
+The command refuses an outcome of the other role, an empty summary, a repeated flag, and an unknown argument. `blocked` needs `--question="One specific question"`. An implementer's question goes to its reviewer first, and a reviewer's question goes to the operator. `answered` is valid only in a consult. The command refuses `--question` with any other outcome. A reviewer's `answered` and `blocked` also need `--cause=CAUSE`, one of the [question causes](#questions). The command refuses `--cause` on every other turn.
 
 The approval of the subtask that opens the pull request also needs `--pr-summary`, at least one `--pr-change`, and at least one `--pr-breaking`, or `--pr-breaking=none`. `none` cannot be combined with another `--pr-breaking`. The command refuses the three pull request flags on every other turn. On success it writes the turn receipt to `.git/orbit/receipt.json` atomically. A second call overwrites that file. The command stays in place.
 
@@ -532,6 +532,32 @@ When an implementer hands off `blocked`, Orbit sends the summary and the questio
 The reviewer answers from the brief, the ADRs, the documentation, the code, and the task history. It hands off `answered` with the answer as its summary, and Orbit sends that answer to the implementer, which continues the same attempt. A question about scope, priorities, access, cost, or a resource that only the operator controls cannot be answered from the contract. The reviewer then hands off `blocked` with one question for the operator, and the subtask asks for direction.
 
 Orbit consults the reviewer at most twice in one implementer attempt. A third `blocked` in that attempt asks for direction at once. Its question is the implementer's question, and its reason includes both earlier answers.
+
+#### Questions
+
+Orbit stores one question record for each consult and each direction request. A subtask should be specific enough that an implementer builds it in one go, so every question marks a brief, a contract, or a scope that left something open. The records let the operator count those questions and trace each one to its brief.
+
+| Field | Meaning |
+| --- | --- |
+| `id`, `task_id`, `subtask_id`, `attempt` | The record, and where the question was asked |
+| `asked_by` | `implementer`, `reviewer`, or `operator` |
+| `question` | The one question, from `--question` or the comment body |
+| `status` | `open` while the reviewer consults, `escalated` while the operator answers, then `answered` |
+| `answered_by`, `answer` | `reviewer` or `operator`, and the answer |
+| `cause` | Why the question arose, given by the reviewer |
+| `asked_at`, `escalated_at`, `answered_at` | When each step happened |
+
+The reviewer gives one cause with `--cause` on each `answered` and `blocked` turn.
+
+| Cause | Meaning |
+| --- | --- |
+| `brief_unclear` | The brief or its deliverables allow more than one reading |
+| `contract_gap` | The ADRs and the documentation do not decide it |
+| `scope` | The work needs something outside the subtask, or the subtask is too large |
+| `environment` | A resource, an access grant, or infrastructure that the implementer cannot control |
+| `missed_contract` | The brief or the contract already answers it |
+
+An escalated question keeps the reviewer's cause until the reviewer relays the operator's answer. The relay sets the final cause, because only then does the reviewer know the answer. [`tasks:question:list`](/cli/tasks#orbit-tasksquestionlist) lists questions across tasks.
 
 ### Assistance and resolution
 
@@ -746,6 +772,7 @@ Settle stores the task's metrics. Showing an active task refreshes them.
 | `tokens` | task | The sum of subtask `tokens` and every started reviewer thread |
 | `lines_added`, `lines_deleted`, `line_diff` | task | The whole branch against the Project default branch |
 | `duration_ms` | task | From `started_at` to now while active, or to settle |
+| `questions`, `escalations` | both | The [questions](#questions) asked in the subtask or the task, and how many of them reached the operator |
 
 A failed read keeps the stored value. While a task is active, a missing value stays unknown, not zero. Settle stores an unknown task value as 0. Settle writes the task row from the table above: its tokens add every started reviewer thread to the subtask tokens, and its line diff is the whole branch against the Project default branch. Showing an active task refreshes those values. The board reads that row.
 
@@ -779,7 +806,9 @@ Null means the driver did not report the field, or the split is partial. A repor
 
 ## Web task board
 
-**Tasks** in the web navigation shows every task on a board with Backlog, Todo, In progress, and Done lanes. In progress holds `reserved`, `running`, `reviewing`, and `settling` tasks. Done holds `completed`, `failed`, and `cancelled` tasks with their outcome visible. Each card shows the Project code and the task id, such as `ORB-13`, its line counts, its status, and its duration. A task page shows the brief, the metrics, a board of its subtasks, and an Agents section. A subtask page shows that subtask's implementer and reviewer. The board is read-only. The [web app](/reference/web-app#live-tasks) keeps it current from task events.
+**Tasks** in the web navigation shows every task on a board with Backlog, Todo, In progress, and Done lanes. In progress holds `reserved`, `running`, `reviewing`, and `settling` tasks. Done holds `completed`, `failed`, and `cancelled` tasks with their outcome visible. Each card shows the Project code and the task id, such as `ORB-13`, its line counts, its status, and its duration.
+
+A card for a task that asks for direction says `Needs your direction`. A card for a task that asks because of a failure says `Needs attention`. A task page shows the brief, the metrics, a board of its subtasks, and an Agents section. When the task asks for direction, its page shows the question first. A subtask page shows that subtask's implementer and reviewer. The board is read-only. The [web app](/reference/web-app#live-tasks) keeps it current from task events.
 
 ## Agent viewer
 
@@ -793,7 +822,7 @@ The Gateway posts signed events to Coder when `ORBIT_CODER_WEBHOOK_URL` and `ORB
 
 | Event | When | Body adds |
 | --- | --- | --- |
-| `task_group.settled` | A task with `notify_coder` first reaches `settling` with a pull request | `tokens`, `line_diff`, `duration_ms`, `pull_request_url` |
+| `task_group.settled` | A task with `notify_coder` first reaches `settling` with a pull request | `tokens`, `line_diff`, `duration_ms`, `questions`, `escalations`, `pull_request_url` |
 | `task_group.assistance_requested` | A task or subtask starts asking for assistance | `kind`, `question`, `reason` |
 | `task_group.escalated` | A thread stays unobservable past the grace period | `reason`, `confidence`, `thread_id`, `observation` |
 

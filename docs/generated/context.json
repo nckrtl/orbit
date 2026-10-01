@@ -781,6 +781,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Access grant",
                 "Gateway",
                 "Project",
                 "Subtask",

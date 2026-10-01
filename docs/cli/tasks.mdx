@@ -26,9 +26,10 @@ A task is one feature. A subtask is one ordered child of that task, and a subtas
 | [`tasks:subtask:cancel`](#orbit-taskssubtaskcancel) | Cancel a Todo or running subtask. |
 | [`tasks:comment:create`](#orbit-taskscommentcreate) | Ask for assistance on a subtask or resolve a request. |
 | [`tasks:comment:list`](#orbit-taskscommentlist) | List a subtask's comments. |
+| [`tasks:question:list`](#orbit-tasksquestionlist) | List the questions agents asked, across tasks. |
 | [`tasks:agents`](#orbit-tasksagents) | List a task's agent threads. |
 
-Every command accepts `--json`. JSON output is the Gateway record with `request_id` beside its fields. A list holds its records under `task_groups`, `comments`, or `agents`.
+Every command accepts `--json`. JSON output is the Gateway record with `request_id` beside its fields. A list holds its records under `task_groups`, `comments`, `questions`, or `agents`.
 
 `tasks:list` and `tasks:show` accept any authorized peer. `tasks:update` and the `tasks:subtask:*` commands need access to the Node that holds the task's Instance, or to the Gateway for a task without one. The other commands need Gateway access: run them on the Gateway, or on a Node with an access grant to the Gateway. Other callers receive `node_access.required`. While the extension is off, every command except enable, disable, and status fails with `extension.disabled`.
 
@@ -275,6 +276,23 @@ orbit tasks:comment:list [group] [subtask] [--json]
 ```
 
 Human output prints one header line for each comment, with its time, type, author, review attempt, and commit when present. The full body follows, indented by two spaces.
+
+## orbit tasks:question:list
+
+List the questions that implementers and reviewers asked, newest first, across every task you can read. Each question marks a subtask that its brief did not fully decide.
+
+```bash
+orbit tasks:question:list [--project=ID] [--cause=CAUSE] [--status=STATUS] [--since=DATE] [--json]
+```
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `--project=ID` | every Project | Only questions from this Project's tasks. |
+| `--cause=CAUSE` | every cause | `brief_unclear`, `contract_gap`, `scope`, `environment`, or `missed_contract`. |
+| `--status=STATUS` | every status | `open`, `escalated`, or `answered`. |
+| `--since=DATE` | no limit | Only questions asked on or after this ISO 8601 date or time. |
+
+Human output prints one header line for each question, with its time, task and subtask reference, asker, status, and cause. The question and the answer follow, each indented by two spaces. An empty list says `No questions match.` JSON holds the records under `questions`. The [tasks reference](/reference/tasks#questions) defines each field and cause.
 
 ## orbit tasks:agents
 
