@@ -216,7 +216,7 @@ it('checks Instances with the active provisioning step inside and beyond the stu
 
 it('reports a settled task workspace in a later lifecycle state as lifecycle drift', function (): void {
     $node = instance_probe_node();
-    $instance = instance_probe_task_workspace(instance_probe_orbit_app(), $node, InstanceState::Active);
+    $instance = instance_probe_task_workspace(instance_probe_orbit_app(), $node, InstanceState::Active, false);
     $instance->update(['provisioning_step' => null]);
 
     $report = new InstanceDoctorProbe(instance_probe_healthy_inspector())->inspect(instance_probe_context($node));
@@ -365,7 +365,7 @@ it('reports only stuck provisioning instead of inspecting an unsettled Instance'
 
 it('accepts source_resolved for a task workspace that is not visitable', function (): void {
     $node = instance_probe_node();
-    instance_probe_task_workspace(instance_probe_orbit_app(), $node, InstanceState::SourceResolved);
+    instance_probe_task_workspace(instance_probe_orbit_app(), $node, InstanceState::SourceResolved, false);
 
     $report = new InstanceDoctorProbe(instance_probe_healthy_inspector())->inspect(instance_probe_context($node));
 
@@ -374,7 +374,7 @@ it('accepts source_resolved for a task workspace that is not visitable', functio
 
 it('reports a task workspace that is not visitable and stuck before source resolution', function (InstanceState $status): void {
     $node = instance_probe_node();
-    $instance = instance_probe_task_workspace(instance_probe_orbit_app(), $node, $status);
+    $instance = instance_probe_task_workspace(instance_probe_orbit_app(), $node, $status, false);
     DB::table('instances')->where('id', $instance->id)
         ->update(['updated_at' => now()->subMinutes(InstanceDoctorProbe::StuckProvisioningMinutes + 1)]);
 
@@ -393,7 +393,7 @@ it('reports a task workspace that is not visitable and stuck before source resol
 it('expects active for a visitable task workspace and for an Instance outside a task', function (Project $project, bool $taskWorkspace): void {
     $node = instance_probe_node();
     $instance = $taskWorkspace
-        ? instance_probe_task_workspace($project, $node, InstanceState::SourceResolved)
+        ? instance_probe_task_workspace($project, $node, InstanceState::SourceResolved, true)
         : instance_probe_instance($project, $node, InstanceState::SourceResolved);
     DB::table('instances')->where('id', $instance->id)
         ->update(['updated_at' => now()->subMinutes(InstanceDoctorProbe::StuckProvisioningMinutes + 1)]);
@@ -409,6 +409,60 @@ it('expects active for a visitable task workspace and for an Instance outside a 
     'visitable task workspace' => [fn (): Project => instance_probe_app(), true],
     'Orbit Instance outside a task' => [fn (): Project => instance_probe_orbit_app(), false],
 ]);
+
+it('keeps the recorded workspace mode healthy after a rename and a routing change', function (string $slug, bool $recorded, bool $setting): void {
+    $node = instance_probe_node();
+    $project = Project::query()->create([
+        'name' => $slug,
+        'slug' => $slug,
+        'repository_url' => "https://github.com/acme/{$slug}.git",
+        'default_branch' => 'main',
+        'root' => 'public',
+        'task_workspace_routed' => $setting,
+    ]);
+    $instance = instance_probe_task_workspace(
+        $project,
+        $node,
+        $recorded ? InstanceState::Active : InstanceState::SourceResolved,
+        $recorded,
+    );
+    if ($recorded) {
+        $instance->update(['provisioning_step' => null]);
+    }
+    $project->update([
+        'slug' => $slug === 'orbit' ? 'renamed-shop' : 'orbit',
+        'task_workspace_routed' => ! $setting,
+    ]);
+    DB::table('instances')->where('id', $instance->id)
+        ->update(['updated_at' => now()->subMinutes(InstanceDoctorProbe::StuckProvisioningMinutes + 1)]);
+
+    $report = new InstanceDoctorProbe(instance_probe_healthy_inspector())->inspect(instance_probe_context($node));
+
+    expect($report->issues)->toBe([])
+        ->and($instance->fresh()->task_workspace_routed)->toBe($recorded)
+        ->and($project->fresh()->slug)->not->toBe($slug);
+})->with([
+    'orbit recorded unrouted while the setting is routed' => ['orbit', false, true],
+    'shop recorded routed while the setting is unrouted' => ['shop', true, false],
+    'orbit recorded routed while the setting is unrouted' => ['orbit', true, false],
+    'shop recorded unrouted while the setting is routed' => ['shop', false, true],
+]);
+
+it('keeps an ordinary Instance on the active lifecycle when the Project is unrouted', function (): void {
+    $node = instance_probe_node();
+    $project = instance_probe_app();
+    $project->update(['slug' => 'orbit', 'task_workspace_routed' => false]);
+    $instance = instance_probe_instance($project, $node, InstanceState::SourceResolved);
+    DB::table('instances')->where('id', $instance->id)
+        ->update(['updated_at' => now()->subMinutes(InstanceDoctorProbe::StuckProvisioningMinutes + 1)]);
+
+    $report = new InstanceDoctorProbe(instance_probe_healthy_inspector())->inspect(instance_probe_context($node));
+
+    expect($report->issues)->toHaveCount(1)
+        ->and($report->issues[0]->code)->toBe('instance.provisioning_stuck')
+        ->and($report->issues[0]->expected)->toBe('active')
+        ->and($instance->fresh()->task_workspace_routed)->toBeNull();
+});
 
 it('keeps an annotated active Orbit Instance healthy after the annotation resolves', function (): void {
     $node = instance_probe_node();
@@ -1000,7 +1054,7 @@ function instance_probe_task_workspace_for_removal(): Instance
     return $instance->fresh()->load(['project', 'node', 'tasks', 'routes.targets']);
 }
 
-function instance_probe_task_workspace(Project $project, Node $node, InstanceState $status): Instance
+function instance_probe_task_workspace(Project $project, Node $node, InstanceState $status, ?bool $routed = null): Instance
 {
     $group = Task::topLevel()->create([
         'project_id' => $project->id,
@@ -1009,7 +1063,11 @@ function instance_probe_task_workspace(Project $project, Node $node, InstanceSta
         'status' => 'running',
     ]);
     $instance = instance_probe_instance($project, $node, $status);
-    $instance->update(['name' => TaskWorkspaceName::for($group), 'branch_override' => TaskWorkspaceName::for($group)]);
+    $attributes = ['name' => TaskWorkspaceName::for($group), 'branch_override' => TaskWorkspaceName::for($group)];
+    if (is_bool($routed)) {
+        $attributes['task_workspace_routed'] = $routed;
+    }
+    $instance->update($attributes);
     $group->taskable()->associate($instance);
     $group->save();
 

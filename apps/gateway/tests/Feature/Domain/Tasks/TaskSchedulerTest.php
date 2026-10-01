@@ -285,7 +285,9 @@ it('starts a group when provisioning assigns an instance under both ceilings', f
 
         public function provision(InstanceProvisionIntent $intent): ?Instance
         {
-            expect($intent->visitable)->toBeFalse();
+            expect($intent->visitable)->toBeTrue()
+                ->and($intent->group->project->slug)->toBe('orbit')
+                ->and($intent->group->project->task_workspace_routed)->toBeTrue();
 
             return $this->instance;
         }
@@ -534,9 +536,9 @@ it('returns a provisioned group to todo on its Instance when the Node is already
         ->and($queued->fresh()?->reviewer_agent_thread_id)->toBeNull();
 });
 
-it('advances a claimed Orbit group to running when the real provisioner and T3 spawner succeed', function (): void {
+it('advances a claimed unrouted group to running when the real provisioner and T3 spawner succeed', function (): void {
     $project = scheduler_app('orbit');
-    $project->update(['root' => 'public']);
+    $project->update(['root' => 'public', 'task_workspace_routed' => false]);
     $node = scheduler_node('real-wire', '10.44.0.94');
     $node->update(['user' => 'orbit', 'tld' => 'test', 'settings' => ['apps' => ['path' => '/srv/orbit/apps']]]);
     $node->roles()->create([
@@ -608,6 +610,7 @@ it('advances a claimed Orbit group to running when the real provisioner and T3 s
         ->and($claimed?->taskable_id)->not->toBeNull()
         ->and($claimed?->taskable)->toBeInstanceOf(Instance::class)
         ->and($claimed?->taskable?->status)->toBe(InstanceState::SourceResolved)
+        ->and($claimed?->taskable?->task_workspace_routed)->toBeFalse()
         ->and($claimed?->taskable?->routes()->count())->toBe(0)
         ->and($claimed?->reviewer_agent_thread_id)->toBeNull()
         ->and($claimed?->tasks->first()?->status)->toBe(TaskStatus::Running)

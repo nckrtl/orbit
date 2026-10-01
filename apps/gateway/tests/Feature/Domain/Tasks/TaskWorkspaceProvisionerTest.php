@@ -197,6 +197,7 @@ it('creates a non-visitable Orbit checkout without activating a Route', function
         ->and($instance?->branch_override)->toBe(TaskWorkspaceName::for($group))
         ->and($instance?->branch)->toBe(TaskWorkspaceName::for($group))
         ->and($instance?->status)->toBe(InstanceState::SourceResolved)
+        ->and($instance?->task_workspace_routed)->toBeFalse()
         ->and($instance?->routes()->count())->toBe(0)
         ->and($fakes->source->calls)->toBe(['prepare', 'inspect-prepared', 'resolve', 'inspect-prepared', 'inspect-resolved'])
         ->and($fakes->development->reserves)->toBe(0)
@@ -214,6 +215,7 @@ it('activates a visitable workspace through the development provisioner', functi
     expect($instance?->node_id)->toBe($node->id)
         ->and($instance?->root)->toBe('public')
         ->and($instance?->status)->toBe(InstanceState::SourceResolved)
+        ->and($instance?->task_workspace_routed)->toBeTrue()
         ->and($fakes->development->reserves)->toBe(1)
         ->and($fakes->development->completes)->toBe(1);
 });
