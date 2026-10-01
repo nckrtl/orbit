@@ -5,3 +5,5 @@ __pycache__/
 /.loop/
 **/.orbit-tia/
 /.orbit-artifacts/
+/docs/generated/*
+!/docs/generated/context.json
