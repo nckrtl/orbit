@@ -870,8 +870,13 @@ def resolve_route_ternaries(value, route_name):
 
 
 def tokens_for(value, route_name=None):
+    """Laravel rule strings, plus strictBoolean and strictTrue, which accept only a JSON boolean."""
     v = strip_closures(resolve_route_ternaries(value, route_name))
     toks = []
+    # These closures are not Laravel rule names. strip_closures leaves the call in place, and without
+    # this the field falls through to string, so every value the tool schema allows is rejected.
+    if re.search(r'\bstrict(?:Boolean|True)\s*\(', value):
+        toks.append(('rule', 'boolean'))
     for m in re.finditer(r'Rule::enum\((\w+)::class\)', v):
         toks.append(('enum', m.group(1)))
     for m in re.finditer(r'Rule::in\(\[(.*?)\]\)', v, re.S):

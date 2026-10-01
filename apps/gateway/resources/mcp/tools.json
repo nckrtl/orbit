@@ -580,7 +580,7 @@
             "description": "Numeric Node ID."
           },
           "force": {
-            "type": "string",
+            "type": "boolean",
             "description": "Skip the destructive confirmation prompt"
           }
         },
@@ -647,7 +647,7 @@
             "description": "Numeric Cluster ID."
           },
           "force": {
-            "type": "string",
+            "type": "boolean",
             "description": "Skip the destructive confirmation prompt"
           }
         },
@@ -2191,7 +2191,7 @@
             "description": "Numeric Instance ID."
           },
           "force": {
-            "type": "string",
+            "type": "boolean",
             "description": "Delete dirty or unpublished source after identity checks"
           }
         },
@@ -2947,11 +2947,11 @@
         "type": "object",
         "properties": {
           "force": {
-            "type": "string",
+            "type": "boolean",
             "description": "Skip confirmation"
           },
           "purge_data": {
-            "type": "string",
+            "type": "boolean",
             "description": "Delete Metrics data"
           }
         },
@@ -3408,11 +3408,11 @@
             "description": "Numeric Node ID."
           },
           "force": {
-            "type": "string",
+            "type": "boolean",
             "description": "Skip the destructive confirmation prompt"
           },
           "offline": {
-            "type": "string",
+            "type": "boolean",
             "description": "Shed roles and remove a node Orbit cannot reach"
           }
         },
@@ -3578,7 +3578,7 @@
             "description": "Role name"
           },
           "force": {
-            "type": "string",
+            "type": "boolean",
             "description": "Confirm the role transfer"
           },
           "from": {
@@ -3632,15 +3632,15 @@
             "description": "Role name"
           },
           "force": {
-            "type": "string",
+            "type": "boolean",
             "description": "Confirm destructive role removal and dependent cleanup"
           },
           "purge_data": {
-            "type": "string",
+            "type": "boolean",
             "description": "Request supported role-owned data cleanup"
           },
           "offline": {
-            "type": "string",
+            "type": "boolean",
             "description": "Remove the role from a node Orbit cannot reach"
           }
         },

@@ -86,3 +86,4 @@ docs/reference/mcp.mdx: The instance-register tool follows its regenerated contr
 docs/reference/php-runtime.md: Production source reads pass the Project's source access through the shared read access; the PHP runtime does not change.
 docs/reference/tools.md: The service provider only binds the GitHub CLI token source; Tool behavior does not change.
 docs/cli/extension.mdx: Served tool schema types stay on /reference/mcp. Enabling or disabling an extension does not change.
+docs/reference/web-app.md: The TypeScript schema is already documented as generated from OpenAPI. Boolean request fields stay on /reference/api-reference and /reference/mcp.
