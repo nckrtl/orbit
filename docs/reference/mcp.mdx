@@ -33,7 +33,7 @@ The caller is the Node whose WireGuard address the connection comes from. There 
 
 ## Tools
 
-A tool's name is the operation ID in the [API reference](/api/overview), `<family>-<verb>`, such as `node-list`, `instance-show`, or `process-restart`. Its input is one object with the operation's path parameters, query parameters, and JSON body fields. An input the API validates as a boolean is a JSON `boolean` in the tool schema. The caller sends that value as a JSON boolean. A served schema keeps empty objects as objects. The server puts each value where the operation expects it. A `GET` tool is marked read-only, and a `DELETE` tool is marked destructive.
+A tool's name is the operation ID in the [API reference](/api/overview), `<family>-<verb>`, such as `node-list`, `instance-show`, or `process-restart`. Its input is one object with the operation's path parameters, query parameters, and JSON body fields. An input the API validates as a boolean is a JSON `boolean` in the tool schema. The caller sends that value as a JSON boolean. The Gateway serves each tool's input schema exactly as `bin/mcp-tools` generated it in `resources/mcp/tools.json`, with empty schemas encoded as JSON objects (`{}`), not lists (`[]`). The server puts each value where the operation expects it. A `GET` tool is marked read-only, and a `DELETE` tool is marked destructive.
 
 `tool-scan` reads the enrolled account's Homebrew formulae, casks, and Vite+ global packages for one Node. Its only input is `node_id`. The call does not create a Tool row.
 

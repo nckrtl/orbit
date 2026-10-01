@@ -99,7 +99,7 @@ docs/reference/mcp.mdx: The new database server tools follow their generated con
 docs/reference/tools.md: The service provider only binds the database server admin and clone services; Tool behavior does not change.
 docs/reference/topology-snapshot.md: The prepared-state manifest only lists the new source files; the snapshot workflow does not change.
 docs/reference/web-app.md: The web API types are regenerated for the new database endpoints; no web screen changes. Boolean request fields stay on /reference/api-reference and /reference/mcp.
-docs/cli/extension.mdx: Served tool schema types stay on /reference/mcp. The extension-switch migration only moves Gateway extension keys. Neither tool schema types nor ended-task assistance change the extension commands.
+docs/cli/extension.mdx: Serving tool input schemas exactly as generated is documented in /reference/mcp; it does not change extension switches, tool visibility, or disabled-tool errors.
 docs/reference/agent-annotation.md: The existing annotations migration that also touches tasks stores annotation delivery. Ended-task assistance does not change annotations.
 docs/reference/assigned-vite-ports.md: The existing vite port assignment migration allocates ports. Ended-task assistance does not change port assignment.
 docs/reference/database-connections.md: The existing database connection migrations store connections, targets, and users. Ended-task assistance does not change database connections.
