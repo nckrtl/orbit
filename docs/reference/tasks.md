@@ -760,6 +760,10 @@ Before Orbit commits the approval that opens the pull request, Jev checks the ch
 
 ### Settling
 
+For Orbit's own task pull requests, a Tasks engine subtask approval publishes that subtask's commit. It is not the final review of the whole pull request, and it does not merge. The [final DevOps review](/reference/implementation-loop#final-review-of-an-orbit-task-pull-request) submits a formal GitHub approval for the exact head commit.
+
+When the maintainer has delegated review and merge, the reviewer verifies that approval and that `Required checks` succeeded on that head, then merges that commit through the maintainer's GitHub CLI profile. A plain comment alone does not satisfy the gate. This repository workflow runs outside the generic Tasks engine. The Gateway does not merge the pull request and does not read GitHub review feedback. It only watches pull request state, conflicts, and CI.
+
 Each tick reads the pull request of every `settling` task through the GitHub App.
 
 | Pull request | Result |
