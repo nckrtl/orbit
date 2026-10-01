@@ -20,6 +20,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         private AgentDriverRegistry $drivers,
         private TaskReviewPacketBuilder $packets,
         private TaskWorkspaceMcp $mcp,
+        private TaskTurnFetchNotice $fetchNotice = new TaskTurnFetchNotice,
     ) {}
 
     public function spawnReviewer(Task $task): ?int
@@ -95,7 +96,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
             throw new AgentDriverException('Reviewer conversation is unavailable.');
         }
         try {
-            $this->drivers->get($thread->driver)->send($thread, $this->reviewPacket($task, true, $thread->id));
+            $this->drivers->get($thread->driver)->send($thread, $this->fetchNotice->apply($this->reviewPacket($task, true, $thread->id)));
         } catch (AgentDriverException) {
             // ADR 0169: a continued thread that cannot take a turn is replaced by a fresh thread and a full packet.
             $replacement = $this->openReviewer($task);
@@ -232,6 +233,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
 
     private function startPending(AgentThread $thread, string $title, string $prompt): ?int
     {
+        $prompt = $this->fetchNotice->apply($prompt);
         $group = Task::topLevel()->with('taskable')->find($thread->task_group_id);
         $instance = $group?->taskable;
         if (! $group instanceof Task || ! $instance instanceof Instance) {
