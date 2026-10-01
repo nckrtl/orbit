@@ -39,7 +39,8 @@ orbit project:create <slug> <type> <repository> [options]
 | `--name=NAME` | the slug | Display name. |
 | `--default-branch=BRANCH` | the remote default | Stored default branch. The Gateway verifies that an explicit branch exists. |
 | `--root=PATH` | `.` for `laravel-package` and `node-package`; `public` otherwise | Normalized repository-relative root that Instances inherit. `.` means the repository root. |
-| `--task-check=COMMAND` | `composer check` for `laravel-app` and `laravel-package`; none otherwise | Command that task baselines and handoffs run in the workspace. See [Project check](/reference/tasks#project-check). |
+| `--task-check=COMMAND` | none | Command that task baselines and handoffs run in the workspace. See [Project check](/reference/tasks#project-check). |
+| `--task-workspace-routed=true\|false` | true | Whether new task workspaces get a Route. See [Task workspace routing](/reference/projects#task-workspace-routing). |
 
 ```bash
 orbit project:create acme laravel-app git@github.com:acme/site.git
@@ -59,7 +60,7 @@ orbit project:list [--json]
 
 ## orbit project:show
 
-Show one Project with its source defaults, task check, and excluded Nodes. Null `default_branch` or root values mean the source defaults are incomplete, and new Instance creation fails with `project.source_defaults_incomplete` until they exist. A null task check means tasks run no check command. Human output also lists the Project's Instances with ID, name, environment, Node, domain, and status. In a terminal, selecting an Instance opens `instance:show`.
+Show one Project with its source defaults, task check, task workspace routing, and excluded Nodes. Human detail output labels the boolean `Task workspace routed`; JSON uses `task_workspace_routed`. Null `default_branch` or root values mean the source defaults are incomplete, and new Instance creation fails with `project.source_defaults_incomplete` until they exist. A null task check means tasks run no check command. Human output also lists the Project's Instances with ID, name, environment, Node, domain, and status. In a terminal, selecting an Instance opens `instance:show`.
 
 ```bash
 orbit project:show <project> [--json]
@@ -67,10 +68,10 @@ orbit project:show <project> [--json]
 
 ## orbit project:update
 
-Change a Project's type, source defaults, or task check. Omitted fields stay unchanged. The Gateway reconciles affected development sources, checkouts, Routes, inherited web roots, and runtimes before publishing the change. It does not start a production deployment. See [Update a Project](/reference/projects#update-a-project) for validation, rollback, and retry behavior.
+Change a Project's type, source defaults, task check, or task workspace routing. Omitted fields stay unchanged. The Gateway reconciles affected development sources, checkouts, Routes, inherited web roots, and runtimes before publishing the change. It does not start a production deployment. See [Update a Project](/reference/projects#update-a-project) for validation, rollback, and retry behavior.
 
 ```bash
-orbit project:update <project> [--type=TYPE] [--slug=SLUG] [--repository=URL] [--default-branch=BRANCH] [--root=PATH] [--task-check=COMMAND] [--clear-task-check]
+orbit project:update <project> [--type=TYPE] [--slug=SLUG] [--repository=URL] [--default-branch=BRANCH] [--root=PATH] [--task-check=COMMAND] [--clear-task-check] [--task-workspace-routed=true|false]
 ```
 
 | Option | Meaning |
@@ -82,6 +83,7 @@ orbit project:update <project> [--type=TYPE] [--slug=SLUG] [--repository=URL] [-
 | `--root=PATH` | New normalized repository-relative root for Instances without an override. Package types may use `.`. |
 | `--task-check=COMMAND` | New command that task baselines and handoffs run. A type change does not change it. |
 | `--clear-task-check` | Remove the task check so tasks run no check command. Combining it with `--task-check` fails with `project.task_check_conflict`. |
+| `--task-workspace-routed=true\|false` | Change routing for future task workspaces. Invalid values return `project.task_workspace_routed_invalid` before a request. Existing workspaces keep their mode. |
 
 ## orbit project:destroy
 

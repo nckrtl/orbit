@@ -582,3 +582,68 @@ it('cleans stale base archive directories without registering worktrees or remov
         ->and(is_dir($gitDir.'/orbit/bases/notes'))->toBeTrue()
         ->and(substr_count((string) (new Process(['git', 'worktree', 'list'], $checkout))->mustRun()->getOutput(), "\n"))->toBe(1);
 });
+
+/**
+ * @return array<string, mixed>
+ */
+function omitted_command_check_result(string $resultPath): array
+{
+    for ($attempt = 0; $attempt < 100; $attempt++) {
+        if (is_file($resultPath)) {
+            $decoded = json_decode((string) file_get_contents($resultPath), true);
+            if (is_array($decoded) && array_key_exists('finished_at', $decoded)) {
+                return $decoded;
+            }
+        }
+        usleep(50_000);
+    }
+
+    throw new RuntimeException('The check did not finish.');
+}
+
+it('runs no project command when start and run omit the command file, and still checks the tree and deliverables', function (): void {
+    $checkout = check_runner_checkout('touch composer-check-ran');
+    $script = test()->directory.'/helper/check';
+    File::ensureDirectoryExists(dirname($script));
+    File::copy(resource_path('tasks/check'), $script);
+    $deliverables = test()->directory.'/deliverables.json';
+    file_put_contents($deliverables, json_encode([
+        'start' => null,
+        'commands' => [['id' => 'hello', 'command' => 'touch deliverable-ran', 'directory' => '.']],
+    ], JSON_THROW_ON_ERROR));
+    $resultPath = dirname($script).'/check.json';
+    $logPath = dirname($script).'/check.log';
+    $snapshot = json_decode((new Process(['python3', $script, 'snapshot', $checkout]))->mustRun()->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+    expect($snapshot)->toBeArray();
+
+    (new Process(['python3', $script, 'run', $checkout, $snapshot['head'], $snapshot['tree'], '-', $deliverables]))->mustRun();
+    $ran = json_decode((string) file_get_contents($resultPath), true, flags: JSON_THROW_ON_ERROR);
+    $ranLog = (string) file_get_contents($logPath);
+
+    expect($ran['exit_code'])->toBe(0)
+        ->and($ran['failed_step'])->toBeNull()
+        ->and($ran['head_before'])->toBe($snapshot['head'])
+        ->and($ran['tree_before'])->toBe($snapshot['tree'])
+        ->and($ran['tree_after'])->not->toBe($snapshot['tree'])
+        ->and($ran['changed_paths'])->toBe(['deliverable-ran'])
+        ->and($ran['deliverables']['commands']['hello']['exit_code'])->toBe(0)
+        ->and($ranLog)->not->toContain('composer check')
+        ->and(is_file($checkout.'/composer-check-ran'))->toBeFalse()
+        ->and(is_file($checkout.'/deliverable-ran'))->toBeTrue();
+
+    File::delete([$resultPath, $logPath, $checkout.'/deliverable-ran']);
+    (new Process(['python3', $script, 'start', $checkout, '-', $deliverables]))->mustRun();
+    $started = omitted_command_check_result($resultPath);
+    $startedLog = (string) file_get_contents($logPath);
+
+    expect($started['exit_code'])->toBe(0)
+        ->and($started['failed_step'])->toBeNull()
+        ->and($started['head_before'])->not->toBe('')
+        ->and($started['tree_before'])->not->toBe('')
+        ->and($started['tree_after'])->not->toBe($started['tree_before'])
+        ->and($started['changed_paths'])->toBe(['deliverable-ran'])
+        ->and($started['deliverables']['commands']['hello']['exit_code'])->toBe(0)
+        ->and($startedLog)->not->toContain('composer check')
+        ->and(is_file($checkout.'/composer-check-ran'))->toBeFalse()
+        ->and(is_file($checkout.'/deliverable-ran'))->toBeTrue();
+});

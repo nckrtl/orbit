@@ -5,12 +5,15 @@ declare(strict_types=1);
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
+use Orbit\Sdk\Requests\Tools\AdoptToolRequest;
 use Orbit\Sdk\Requests\Tools\InstallToolRequest;
 use Orbit\Sdk\Requests\Tools\ListToolManagersRequest;
 use Orbit\Sdk\Requests\Tools\ListToolsRequest;
 use Orbit\Sdk\Requests\Tools\RemoveToolRequest;
+use Orbit\Sdk\Requests\Tools\ScanToolInventoryRequest;
 use Orbit\Sdk\Requests\Tools\ShowToolRequest;
 use Orbit\Sdk\Requests\Tools\UpdateToolRequest;
+use Orbit\Sdk\Responses\Tools\ToolInventoryResponse;
 use Orbit\Sdk\Responses\Tools\ToolManagersResponse;
 use Orbit\Sdk\Responses\Tools\ToolResponse;
 use Orbit\Sdk\Responses\Tools\ToolsResponse;
@@ -20,7 +23,7 @@ use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
 describe('tool requests', function (): void {
-    it('uses the exact six Tool methods, endpoints, and queries', function (
+    it('uses the exact Tool methods, endpoints, and queries', function (
         GatewayRequest $request,
         Method $method,
         string $endpoint,
@@ -39,9 +42,16 @@ describe('tool requests', function (): void {
             '/api/v1/tool-managers',
             ['node_id' => 12],
         ],
+        'inventory scan' => [
+            new ScanToolInventoryRequest(12),
+            Method::GET,
+            '/api/v1/tool-inventory',
+            ['node_id' => 12],
+        ],
         'tool list' => [new ListToolsRequest(12), Method::GET, '/api/v1/tools', ['node_id' => 12]],
         'show' => [new ShowToolRequest(41), Method::GET, '/api/v1/tools/41', []],
         'install' => [new InstallToolRequest(12, 'vp', '@openai/codex'), Method::POST, '/api/v1/tools', []],
+        'adopt' => [new AdoptToolRequest(2, 'apt', 'jq'), Method::POST, '/api/v1/tools/adopt', []],
         'update' => [new UpdateToolRequest(41), Method::POST, '/api/v1/tools/41/update', []],
         'remove' => [new RemoveToolRequest(41), Method::DELETE, '/api/v1/tools/41', []],
     ]);
@@ -69,7 +79,30 @@ describe('tool requests', function (): void {
             ]);
     });
 
-    it('keeps update and remove requests bodyless', function (GatewayRequest $request): void {
+    it('transports adoption identity exactly and omits only a null constraint', function (): void {
+        expect(new AdoptToolRequest(2, 'apt', 'jq')->body()->all())
+            ->toBe([
+                'node_id' => 2,
+                'manager' => 'apt',
+                'package' => 'jq',
+            ])
+            ->and(new AdoptToolRequest(2, 'brew-cask', 'docker', '^4.0')->body()->all())
+            ->toBe([
+                'node_id' => 2,
+                'manager' => 'brew-cask',
+                'package' => 'docker',
+                'version_constraint' => '^4.0',
+            ])
+            ->and(new AdoptToolRequest(2, 'brew', 'wireguard-tools', '')->body()->all())
+            ->toBe([
+                'node_id' => 2,
+                'manager' => 'brew',
+                'package' => 'wireguard-tools',
+                'version_constraint' => '',
+            ]);
+    });
+
+    it('keeps read and removal requests bodyless', function (GatewayRequest $request): void {
         $mockClient = new MockClient([MockResponse::make(['data' => []])]);
         $connector = new GatewayConnector('https://10.44.0.1');
         $connector->withMockClient($mockClient);
@@ -84,6 +117,7 @@ describe('tool requests', function (): void {
                 (string) $pendingRequest?->createPsrRequest()->getBody(),
             )->toBeEmpty();
     })->with([
+        'scan' => [new ScanToolInventoryRequest(12)],
         'update' => [new UpdateToolRequest(41)],
         'remove' => [new RemoveToolRequest(41)],
     ]);
@@ -139,6 +173,72 @@ describe('tool requests', function (): void {
             GatewayApiException::class,
         ],
         'tool malformed member' => [new ListToolsRequest(12), [['id' => '41']], InvalidArgumentException::class],
+        'inventory list envelope' => [new ScanToolInventoryRequest(12), [], GatewayApiException::class],
+        'inventory scalar envelope' => [new ScanToolInventoryRequest(12), 'invalid', GatewayApiException::class],
+        'inventory manager scalar' => [new ScanToolInventoryRequest(12), tool_inventory_request_data(['managers' => ['invalid']]), GatewayApiException::class],
+        'inventory package scalar' => [
+            new ScanToolInventoryRequest(12),
+            tool_inventory_request_data(['managers' => [[
+                'manager' => 'brew',
+                'scan_state' => 'complete',
+                'packages' => ['ripgrep'],
+            ]]]),
+            GatewayApiException::class,
+        ],
+        'inventory malformed package' => [
+            new ScanToolInventoryRequest(12),
+            tool_inventory_request_data(['managers' => [[
+                'manager' => 'brew',
+                'scan_state' => 'complete',
+                'packages' => [[
+                    'manager' => 'brew',
+                    'package' => 'ripgrep',
+                    'package_kind' => 'formula',
+                    'installed_version' => '14.1.1',
+                    'dependency' => 'yes',
+                    'registered' => false,
+                    'tool_id' => null,
+                    'adoption' => 'supported',
+                    'adoption_block' => null,
+                ]],
+            ]]]),
+            InvalidArgumentException::class,
+        ],
+    ]);
+
+    it('preserves recorded authorization and node-eligibility scan errors', function (string $fixture): void {
+        $recorded = tool_scan_error_fixture($fixture);
+        $error = $recorded['body']['error'];
+        $mockClient = new MockClient([
+            ScanToolInventoryRequest::class => MockResponse::make($recorded['body'], $recorded['status']),
+        ]);
+        $connector = new GatewayConnector('https://10.44.0.1');
+        $connector->withMockClient($mockClient);
+
+        try {
+            $connector->send(new ScanToolInventoryRequest(12))->dto();
+            $this->fail('Expected GatewayApiException.');
+        } catch (GatewayApiException $exception) {
+            expect($exception->errorCode())
+                ->toBe($error['code'])
+                ->and($exception->getMessage())
+                ->toBe($error['message'])
+                ->and($exception->details())
+                ->toBe($error['details'])
+                ->and($exception->details())
+                ->not->toHaveKey('id');
+
+            if ($error['code'] === 'node_access.required') {
+                expect($exception->details()['consumer_node'])
+                    ->toBe(['id' => 3, 'name' => 'scan-consumer'])
+                    ->and($exception->details()['serving_node'])
+                    ->toBe(['id' => 2, 'name' => 'scan-target']);
+            }
+        }
+    })->with([
+        'access required' => ['access-required'],
+        'inactive node' => ['node-inactive'],
+        'unmanaged node' => ['node-unmanaged'],
     ]);
 
     it('preserves a persisted tool id from a version-probe install failure', function (): void {
@@ -179,6 +279,89 @@ describe('tool requests', function (): void {
                 ->toBe($requestId);
         }
     });
+
+    it('replays recorded adoption results without rewriting their intent', function (string $fixture): void {
+        $recorded = tool_adopt_fixture($fixture);
+        $data = $recorded['body']['data'];
+        $request = new AdoptToolRequest(
+            $data['node_id'],
+            $data['manager'],
+            $data['package'],
+            $data['version_constraint'],
+        );
+        $mockClient = new MockClient([
+            AdoptToolRequest::class => MockResponse::make($recorded['body'], $recorded['status']),
+        ]);
+        $connector = new GatewayConnector('https://10.44.0.1');
+        $connector->withMockClient($mockClient);
+
+        $response = $connector->send($request)->dto();
+
+        expect($response)
+            ->toBeInstanceOf(ToolResponse::class)
+            ->and($response->toArray())
+            ->toBe([...$data, 'request_id' => $recorded['body']['meta']['request_id']])
+            ->and($mockClient->getLastPendingRequest()?->body()?->all())
+            ->toBe(array_filter([
+                'node_id' => $data['node_id'],
+                'manager' => $data['manager'],
+                'package' => $data['package'],
+                'version_constraint' => $data['version_constraint'],
+            ], static fn (mixed $value): bool => $value !== null));
+    })->with([
+        'created' => ['adopted'],
+        'same intent' => ['unchanged'],
+        'repaired failure' => ['repaired'],
+    ]);
+
+    it('replays recorded adoption refusals with their details', function (string $fixture): void {
+        $recorded = tool_adopt_fixture($fixture);
+        $error = $recorded['body']['error'];
+        $request = new AdoptToolRequest(9, 'brew-cask', 'docker', '^4');
+        $mockClient = new MockClient([
+            AdoptToolRequest::class => MockResponse::make($recorded['body'], $recorded['status']),
+        ]);
+        $connector = new GatewayConnector('https://10.44.0.1');
+        $connector->withMockClient($mockClient);
+
+        try {
+            $connector->send($request)->dto();
+            $this->fail('Expected GatewayApiException.');
+        } catch (GatewayApiException $exception) {
+            expect($exception->errorCode())
+                ->toBe($error['code'])
+                ->and($exception->getMessage())
+                ->toBe($error['message'])
+                ->and($exception->details())
+                ->toBe($error['details'])
+                ->and($mockClient->getLastPendingRequest()?->body()?->all())
+                ->toBe([
+                    'node_id' => 9,
+                    'manager' => 'brew-cask',
+                    'package' => 'docker',
+                    'version_constraint' => '^4',
+                ]);
+        }
+    })->with([
+        'absent' => ['absent'],
+        'access required' => ['access-required'],
+        'constraint conflict' => ['constraint-conflict'],
+        'constraint drift' => ['constraint-drift'],
+        'constraint invalid' => ['constraint-invalid'],
+        'constraint violated' => ['constraint-violated'],
+        'dependency' => ['dependency'],
+        'manager unavailable' => ['manager-unavailable'],
+        'manager unsupported' => ['manager-unsupported'],
+        'inactive node' => ['node-inactive'],
+        'unmanaged node' => ['node-unmanaged'],
+        'operation locked' => ['operation-locked'],
+        'package invalid' => ['package-invalid'],
+        'protected' => ['protected'],
+        'state invalid' => ['state-invalid'],
+        'validation failed' => ['validation-failed'],
+        'version probe failed' => ['version-probe-failed'],
+        'version unparseable' => ['version-unparseable'],
+    ]);
 });
 
 /**
@@ -210,6 +393,15 @@ function tool_transport_cases(string $requestId): array
             'status' => 200,
         ],
         [
+            'request' => new ScanToolInventoryRequest(12),
+            'response' => [
+                'data' => tool_inventory_request_data(),
+                'meta' => ['request_id' => $requestId],
+            ],
+            'response_class' => ToolInventoryResponse::class,
+            'status' => 200,
+        ],
+        [
             'request' => new ListToolsRequest(12),
             'response' => ['data' => [$tool], 'meta' => ['request_id' => $requestId]],
             'response_class' => ToolsResponse::class,
@@ -223,6 +415,12 @@ function tool_transport_cases(string $requestId): array
         ],
         [
             'request' => new InstallToolRequest(12, 'vp', '@openai/codex', '^0.150'),
+            'response' => ['data' => $tool, 'meta' => ['request_id' => $requestId]],
+            'response_class' => ToolResponse::class,
+            'status' => 201,
+        ],
+        [
+            'request' => new AdoptToolRequest(2, 'apt', 'jq', '^1.0'),
             'response' => ['data' => $tool, 'meta' => ['request_id' => $requestId]],
             'response_class' => ToolResponse::class,
             'status' => 201,
@@ -262,4 +460,68 @@ function tool_request_gateway_data(): array
 function tool_request_id(): string
 {
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
+}
+
+/** @return array{status: int, body: array<string, mixed>} */
+function tool_adopt_fixture(string $name): array
+{
+    $path = dirname(__DIR__, 4)."/fixtures/tools/tool-adopt/{$name}.json";
+    $fixture = json_decode((string) file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+    if (! is_array($fixture) || ! is_array($fixture['body'] ?? null) || ! is_int($fixture['status'] ?? null)) {
+        throw new RuntimeException("Tool adoption fixture {$name} is unreadable.");
+    }
+
+    /** @var array{status: int, body: array<string, mixed>} $fixture */
+    return $fixture;
+}
+
+/** @return array{status: int, body: array{error: array{code: string, message: string, details: array<string, mixed>}}} */
+function tool_scan_error_fixture(string $name): array
+{
+    $path = dirname(__DIR__, 4)."/fixtures/tools/tool-scan/{$name}.json";
+    $fixture = json_decode((string) file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
+    if (! is_array($fixture) || ! is_array($fixture['body']['error'] ?? null)) {
+        throw new RuntimeException("Tool scan fixture {$name} is unreadable.");
+    }
+
+    /** @var array{status: int, body: array{error: array{code: string, message: string, details: array<string, mixed>}}} $fixture */
+    return $fixture;
+}
+
+/** @param array<string, mixed> $overrides
+ * @return array<string, mixed>
+ */
+function tool_inventory_request_data(array $overrides = []): array
+{
+    return array_replace([
+        'node_id' => 12,
+        'observed_at' => '2026-04-26T12:00:00+00:00',
+        'managers' => [
+            [
+                'manager' => 'brew',
+                'scan_state' => 'complete',
+                'packages' => [[
+                    'manager' => 'brew',
+                    'package' => 'ripgrep',
+                    'package_kind' => 'formula',
+                    'installed_version' => '14.1.1',
+                    'dependency' => false,
+                    'registered' => true,
+                    'tool_id' => 2,
+                    'adoption' => 'supported',
+                    'adoption_block' => null,
+                ]],
+            ],
+            [
+                'manager' => 'brew-cask',
+                'scan_state' => 'unsupported',
+                'packages' => [],
+            ],
+            [
+                'manager' => 'vp',
+                'scan_state' => 'absent',
+                'packages' => [],
+            ],
+        ],
+    ], $overrides);
 }

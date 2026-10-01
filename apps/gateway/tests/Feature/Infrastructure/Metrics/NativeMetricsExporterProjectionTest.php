@@ -160,3 +160,19 @@ function metricsExporterProjectionNode(string $name, string $status = 'active'):
         'wireguard_ip' => '10.44.0.'.(Node::query()->count() + 20),
     ]);
 }
+
+it('does not select a managed mac for the Linux exporter', function (): void {
+    $metrics = metricsExporterProjectionNode('metrics');
+    $metrics->roles()->create(['role' => 'metrics', 'status' => 'active']);
+    $mac = metricsExporterProjectionNode('mini');
+    $mac->update(['platform' => 'macos']);
+    $preferences = app(ExporterPreferenceRepository::class);
+    $preferences->put($mac->id, ExporterPreference::Enabled);
+    $projection = new NativeMetricsExporterProjection(new ExporterSelector, $preferences);
+
+    expect(array_map(
+        static fn (MetricsExporterProjectionItem $item): string => $item->node->name,
+        $projection->for($metrics),
+    ))->not->toContain('mini')
+        ->and($projection->forNode($metrics, $mac))->toBeNull();
+});

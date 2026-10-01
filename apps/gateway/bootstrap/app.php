@@ -311,6 +311,10 @@ return Application::configure(basePath: dirname(__DIR__))
                     $details['id'] = $exception->toolId;
                 }
 
+                if ($exception->adoptionBlock !== null) {
+                    $details['adoption_block'] = $exception->adoptionBlock;
+                }
+
                 return response()
                     ->json([
                         'error' => [

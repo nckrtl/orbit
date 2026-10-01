@@ -20,7 +20,7 @@ A Process is one long-running systemd service or Docker container that Orbit man
 
 An Instance Process serves one Instance. The Gateway derives its Node, user, and default working directory from the Instance. [Instance removal](/reference/instance-removal) removes it.
 
-A Node Process serves the Node itself, for example a shared Docker database. It runs as the Node's managed user, with `/home/{user}` as its default working directory. It reads no Instance environment file. The Node must be an active Linux Node with a WireGuard address. A Node Process stays when an Instance is removed. The Gateway refuses to remove a Node that still owns a Process with `node.has_processes`. [Offline removal](/reference/node-provisioning#remove-a-node) of an unreachable Node deletes its Process records without remote cleanup.
+A Node Process serves the Node itself, for example a shared Docker database. It runs as the Node's managed user, with `/home/{user}` as its default working directory. It reads no Instance environment file. The Node must be an active Linux Node with a WireGuard address. macOS returns `process.platform_unsupported` (HTTP 422) before SSH. A Node Process stays when an Instance is removed. The Gateway refuses to remove a Node that still owns a Process with `node.has_processes`. [Offline removal](/reference/node-provisioning#remove-a-node) of an unreachable Node deletes its Process records without remote cleanup.
 
 `process:create` and `process:list` take exactly one owner: `--instance`, `--node`, or `--project` for a definition. The API sends `target_type` as `instance` or `node` with a positive `target_id`. Start, stop, restart, logs, and destroy take the Process ID and use that record's owner.
 

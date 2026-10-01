@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Doctor\InstalledPackageInventory;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\NodeStateInspector;
 use App\Domain\Doctor\ScheduleInspectionData;
@@ -16,6 +17,7 @@ use App\Models\Schedule;
 use Illuminate\Routing\Route as IlluminateRoute;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Testing\TestResponse;
+use Tests\Support\UnsupportedPackageInventory;
 use Tests\TestCase;
 
 describe('Doctor API', function (): void {
@@ -48,6 +50,7 @@ describe('Doctor API', function (): void {
                 'checks' => 1,
                 'drift' => 0,
                 'unverifiable' => 0,
+                'informational' => 0,
             ]);
     });
 
@@ -309,6 +312,7 @@ function bind_doctor_api_inspector(NodeInspectionData $inspection): DoctorApiNod
     $inspector = new DoctorApiNodeStateInspector($inspection);
     app()->instance(NodeStateInspector::class, $inspector);
     app()->instance(ScheduleStateInspector::class, new DoctorApiScheduleStateInspector);
+    app()->instance(InstalledPackageInventory::class, new UnsupportedPackageInventory);
 
     return $inspector;
 }

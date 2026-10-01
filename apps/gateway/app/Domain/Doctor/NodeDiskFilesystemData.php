@@ -10,7 +10,7 @@ final readonly class NodeDiskFilesystemData
         public string $location,
         public int $availableKiB,
         public int $sizeKiB,
-        /** Null when the filesystem does not report inode totals (for example, Btrfs). */
+        /** Null when the filesystem does not report inode totals, including Btrfs and APFS. */
         public ?int $freeInodes,
         public ?int $totalInodes,
     ) {}

@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\SemverVersionNormalizer;
+use App\Domain\Tools\ToolAdoptionFact;
+use App\Domain\Tools\ToolInventoryPackage;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
@@ -48,6 +50,8 @@ describe(VpToolManager::class, function (): void {
         'removing app role' => [vp_tool_node('linux', [['app-prod', 'removing']]), true],
         'gateway only' => [vp_tool_node('linux', [['gateway', 'active']]), true],
         'roleless' => [vp_tool_node('linux', []), true],
+        'macOS roleless' => [vp_tool_node('macos', []), true],
+        'macOS with an app role' => [vp_tool_node('macos', [['app-dev', 'active']]), true],
         'non-linux app role' => [vp_tool_node('darwin', [['app-dev', 'active']]), false],
     ]);
 
@@ -70,6 +74,24 @@ describe(VpToolManager::class, function (): void {
         expect($node->relationLoaded('roles'))->toBeFalse();
         expect($manager->supportsNode($node))->toBeFalse();
         expect($node->relationLoaded('roles'))->toBeFalse();
+
+        $mac = Node::query()->create([
+            'name' => 'vp-real-macos-node',
+            'status' => 'active',
+            'platform' => 'macos',
+            'public_ssh_host' => '127.0.0.2',
+            'user' => 'mini',
+            'wireguard_ip' => '10.44.10.11',
+        ]);
+        $mac->roles()->create([
+            'role' => RoleName::AppDev,
+            'status' => LifecycleStatus::Active,
+        ]);
+        $mac = Node::query()->whereKey($mac->id)->sole();
+
+        expect($mac->relationLoaded('roles'))->toBeFalse();
+        expect($manager->supportsNode($mac))->toBeTrue();
+        expect($mac->relationLoaded('roles'))->toBeFalse();
     });
 
     it('accepts only strict VP package coordinates', function (string $package, bool $valid): void {
@@ -431,6 +453,139 @@ describe(VpToolManager::class, function (): void {
             ['/usr/local/bin/vp', 'remove', '-g', 'typescript'],
         ]);
     });
+
+    it('verifies the enrolled macOS Vite+ scope without installing a second one', function (): void {
+        [$manager, $ssh] = vp_tool_manager([
+            vp_result("/Users/mini/.vite-plus/bin/vp\n"),
+        ]);
+
+        $manager->materialize(vp_tool_node('macos', [], 'mini'));
+
+        $program = $ssh->commands[0]->input;
+        expect($ssh->arguments())->toBe([['/bin/bash', '-su', '--', 'mini']])
+            ->and($ssh->connections[0]->user)->toBe('mini')
+            ->and($program)->toContain('/usr/bin/dscacheutil')
+            ->and($program)->toContain('/.vite-plus')
+            ->and($program)->toContain('/.local/share/vite-plus')
+            ->and($program)->not->toContain('getent')
+            ->and($program)->not->toContain('stat -c')
+            ->and($program)->not->toContain('/home/')
+            ->and($program)->not->toContain('systemd')
+            ->and($program)->not->toContain('curl')
+            ->and($program)->not->toContain('/usr/local/bin')
+            ->and($program)->not->toContain('/opt/orbit');
+
+        $script = tempnam(sys_get_temp_dir(), 'orbit-mac-vp-');
+        file_put_contents($script, $program);
+
+        try {
+            exec('bash -n '.escapeshellarg($script).' 2>&1', $syntaxOutput, $syntaxStatus);
+            expect($syntaxStatus)->toBe(0);
+        } finally {
+            unlink($script);
+        }
+    });
+
+    it('reports a missing or conflicting macOS Vite+ scope without raw output', function (int $exitCode, string $step): void {
+        [$manager] = vp_tool_manager([
+            vp_result('secret scope', exitCode: $exitCode, stderr: 'secret stat'),
+        ]);
+
+        expect(fn () => $manager->materialize(vp_tool_node('macos', [], 'mini')))
+            ->toThrow(function (ToolManagerException $exception) use ($step): void {
+                expect($exception->step)->toBe($step)
+                    ->and($exception->result?->stdout)->toBeEmpty()
+                    ->and($exception->result?->stderr)->toBeEmpty()
+                    ->and($exception->getMessage())->not->toContain('secret');
+            });
+    })->with([
+        'absent' => [42, 'manager-absent'],
+        'conflicting store' => [43, 'manager-conflict'],
+        'unreadable probe' => [1, 'manager-probe'],
+    ]);
+
+    it('uses the enrolled macOS Vite+ binary for one global package', function (): void {
+        $binary = '/Users/mini/.local/share/vite-plus/bin/vp';
+        $scope = vp_result($binary."\n");
+        $list = (string) file_get_contents(dirname(__DIR__, 3).'/Fixtures/Tools/vp-list-g.json');
+        [$manager, $ssh] = vp_tool_manager([
+            $scope,
+            vp_result("vp v0.2.6\n"),
+            $scope,
+            vp_result('"0.150.0"'."\n"),
+            $scope,
+            vp_result($list),
+            $scope,
+            vp_result($list),
+            $scope,
+            vp_result(),
+            $scope,
+            vp_result(),
+            $scope,
+            vp_result('dry run'),
+            $scope,
+            vp_result(),
+        ]);
+        $node = vp_tool_node('macos', [], 'mini');
+
+        expect($manager->managerVersion($node))->toBe('vp v0.2.6')
+            ->and($manager->candidateVersion($node, '@openai/codex', ToolOperation::Install))->toBe('0.150.0')
+            ->and($manager->installedVersion($node, '@openai/codex'))->toBe('0.150.0')
+            ->and($manager->installedVersion($node, 'pnpm'))->toBe('10.15.1');
+        $manager->install($node, '@openai/codex');
+        $manager->update($node, '@openai/codex');
+        expect($manager->planRemoval($node, '@openai/codex')->packages)->toBe(['@openai/codex']);
+        $manager->remove($node, '@openai/codex');
+
+        expect($ssh->arguments())->toBe([
+            ['/bin/bash', '-su', '--', 'mini'],
+            [$binary, '--version'],
+            ['/bin/bash', '-su', '--', 'mini'],
+            [$binary, 'info', '@openai/codex', 'version', '--json'],
+            ['/bin/bash', '-su', '--', 'mini'],
+            [$binary, 'list', '-g', '@openai/codex', '--json'],
+            ['/bin/bash', '-su', '--', 'mini'],
+            [$binary, 'list', '-g', 'pnpm', '--json'],
+            ['/bin/bash', '-su', '--', 'mini'],
+            [$binary, 'install', '-g', '@openai/codex', '--node', 'lts'],
+            ['/bin/bash', '-su', '--', 'mini'],
+            [$binary, 'update', '-g', '@openai/codex', '--reinstall-node-mismatch'],
+            ['/bin/bash', '-su', '--', 'mini'],
+            [$binary, 'remove', '-g', '--dry-run', '@openai/codex'],
+            ['/bin/bash', '-su', '--', 'mini'],
+            [$binary, 'remove', '-g', '@openai/codex'],
+        ]);
+    });
+
+    it('reads scoped package names and versions from Vite+ global list fixtures', function (): void {
+        $human = (string) file_get_contents(dirname(__DIR__, 3).'/Fixtures/Tools/vp-list-g.txt');
+        $json = json_decode((string) file_get_contents(dirname(__DIR__, 3).'/Fixtures/Tools/vp-list-g.json'), true);
+
+        expect($human)->toContain('Package')
+            ->and($human)->toContain('Node version')
+            ->and($human)->toContain('Binaries')
+            ->and($human)->toMatch('/@[a-z0-9._~-]+\/[a-z0-9._~-]+@\d+\.\d+\.\d+/');
+        expect($json)->toBeArray();
+        $names = array_column($json, 'name');
+        $versions = array_column($json, 'version');
+        expect($names)->toContain('@openai/codex')
+            ->and($names)->toContain('@anthropic-ai/claude-code')
+            ->and($versions)->toContain('0.150.0')
+            ->and($versions)->toContain('1.0.24');
+    });
+
+    it('protects the Vite+ pnpm root without installing it', function (): void {
+        [$manager, $ssh] = vp_tool_manager([
+            vp_result("/opt/orbit/vite-plus/bin/vp\n"),
+            vp_result("[{\"name\":\"pnpm\",\"version\":\"10.15.1\"}]\n"),
+        ]);
+
+        expect($manager->inspectForAdoption(vp_tool_node('linux', []), 'pnpm'))
+            ->toEqual(new ToolAdoptionFact('10.15.1', ToolInventoryPackage::BLOCK_PROTECTED))
+            ->and(json_encode($ssh->arguments()))
+            ->not->toContain('install')
+            ->not->toContain('curl');
+    });
 });
 
 /**
@@ -458,14 +613,14 @@ function vp_tool_manager(array $results): array
 /**
  * @param  list<array{0: 'gateway'|'vpn'|'app-dev'|'app-prod', 1: 'provisioning'|'active'|'failed'|'removing'}>  $roles
  */
-function vp_tool_node(string $platform = 'linux', array $roles = [['app-dev', 'active']]): Node
+function vp_tool_node(string $platform = 'linux', array $roles = [['app-dev', 'active']], string $user = 'orbit'): Node
 {
     $node = new Node([
         'name' => 'vp-tool-node',
         'status' => 'active',
         'platform' => $platform,
         'public_ssh_host' => '127.0.0.1',
-        'user' => 'orbit',
+        'user' => $user,
         'wireguard_ip' => '10.8.0.43',
     ]);
 

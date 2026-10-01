@@ -1,0 +1,9 @@
+Adding Node...
+
+┌  Add Node
+│
+├  ● Adding Node
+│
+└  Operation failed.
+
+Node platform [macos] does not support service roles.

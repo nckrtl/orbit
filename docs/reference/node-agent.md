@@ -14,13 +14,13 @@ covers:
 
 # Node agent
 
-`orbit-agent` is a small Rust program on every managed Node. It reports that it runs, the state of the Node's Orbit Processes, and the Git state of the Node's task checkouts. While someone watches a log live, it also reads that log and sends the lines to the Gateway. The web app shows these reports live, and the Gateway keeps a [view](#gateway-view) of them to skip repeated SSH reads.
+`orbit-agent` is a small Rust program on every managed Linux Node. It reports that it runs, the state of the Node's Orbit Processes, and the Git state of the Node's task checkouts. While someone watches a log live, it also reads that log and sends the lines to the Gateway. The web app shows these reports live, and the Gateway keeps a [view](#gateway-view) of them to skip repeated SSH reads.
 
 The agent only observes. It runs no command, changes nothing on the Node, and listens on no port. Every change to a Node still runs over SSH.
 
 ## Where it runs
 
-The Gateway installs the agent only on Nodes that it manages: active Linux Nodes with a WireGuard address and a pinned SSH host key. Only a Node inside this managed-Node boundary runs the agent and holds an agent secret. [Exporter selection](/reference/metrics#exporter-selection) uses the same boundary. The agent needs no role. A Node that the Gateway does not manage over SSH runs no agent.
+The Gateway installs the agent only on active managed Linux Nodes with a WireGuard address and a pinned SSH host key. macOS tool-only Nodes need no agent and hold no agent secret. An install or repair aimed at macOS returns `node.agent_unsupported` (HTTP 422) before SSH. Only a Node inside the Linux agent boundary runs the agent and holds an agent secret. [Exporter selection](/reference/metrics#exporter-selection) uses the same boundary. The agent needs no role. A Node that the Gateway does not manage over SSH runs no agent.
 
 ## What it observes
 
@@ -207,7 +207,7 @@ The subscriber runs next to PHP-FPM on the Gateway machine.
 | Unit | `/etc/systemd/system/orbit-agent-view.service`, with `Restart=always` and `RestartSec=2` |
 | Installed by | `orbit:bootstrap` and `orbit:gateway-web` |
 | Connection | One WebSocket to Reverb for all Nodes, verifying `reverb.orbit` against the Orbit root CA |
-| Channels | `presence-node.{id}` and `presence-node-logs.{id}` for every managed Node |
+| Channels | `presence-node.{id}` and `presence-node-logs.{id}` for every managed Linux Node |
 | Member | `gateway.{socket id}`, with `user_info` `{ "kind": "gateway" }`, signed with the Reverb app secret |
 
 A new member makes every agent on the channel send a complete snapshot. So when a channel owes a snapshot for 5 seconds, the subscriber leaves and joins it again. A channel owes one while agent events arrive without a complete snapshot, or after the agent's `sequence` goes back without a membership change. The subscriber asks each channel at most once every 5 seconds and keeps what it knows until the snapshot arrives.
@@ -333,7 +333,7 @@ Online [`node:remove`](/reference/node-provisioning#remove-a-node) stops and dis
 
 ## Doctor
 
-Doctor checks the agent in the `node` family on every managed Node.
+Doctor checks the agent in the `node` family on every managed Linux Node.
 
 | Issue code | Meaning |
 | --- | --- |

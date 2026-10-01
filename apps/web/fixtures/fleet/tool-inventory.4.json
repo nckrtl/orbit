@@ -1,0 +1,210 @@
+{
+    "schema": 1,
+    "route": "GET /api/v1/tool-inventory",
+    "status": 200,
+    "body": {
+        "data": {
+            "node_id": 4,
+            "observed_at": "2026-04-26T12:00:00+00:00",
+            "managers": [
+                {
+                    "manager": "brew",
+                    "scan_state": "complete",
+                    "packages": [
+                        {
+                            "manager": "brew",
+                            "package": "bat",
+                            "package_kind": "formula",
+                            "installed_version": "0.24.0",
+                            "dependency": false,
+                            "registered": true,
+                            "tool_id": 9,
+                            "adoption": "supported",
+                            "adoption_block": null
+                        },
+                        {
+                            "manager": "brew",
+                            "package": "delta",
+                            "package_kind": "formula",
+                            "installed_version": "0.18.2",
+                            "dependency": false,
+                            "registered": false,
+                            "tool_id": null,
+                            "adoption": "supported",
+                            "adoption_block": null
+                        },
+                        {
+                            "manager": "brew",
+                            "package": "eza",
+                            "package_kind": "formula",
+                            "installed_version": "0.20.0",
+                            "dependency": false,
+                            "registered": true,
+                            "tool_id": 10,
+                            "adoption": "supported",
+                            "adoption_block": null
+                        },
+                        {
+                            "manager": "brew",
+                            "package": "fd",
+                            "package_kind": "formula",
+                            "installed_version": "10.2.0",
+                            "dependency": false,
+                            "registered": true,
+                            "tool_id": 8,
+                            "adoption": "supported",
+                            "adoption_block": null
+                        },
+                        {
+                            "manager": "brew",
+                            "package": "ghost",
+                            "package_kind": "formula",
+                            "installed_version": "1.0.0",
+                            "dependency": false,
+                            "registered": false,
+                            "tool_id": null,
+                            "adoption": "supported",
+                            "adoption_block": null
+                        },
+                        {
+                            "manager": "brew",
+                            "package": "jq",
+                            "package_kind": "formula",
+                            "installed_version": "1.8.0",
+                            "dependency": false,
+                            "registered": true,
+                            "tool_id": 6,
+                            "adoption": "supported",
+                            "adoption_block": null
+                        },
+                        {
+                            "manager": "brew",
+                            "package": "openssl@3",
+                            "package_kind": "formula",
+                            "installed_version": "3.4.1",
+                            "dependency": true,
+                            "registered": false,
+                            "tool_id": null,
+                            "adoption": "unsupported",
+                            "adoption_block": "dependency"
+                        },
+                        {
+                            "manager": "brew",
+                            "package": "ripgrep",
+                            "package_kind": "formula",
+                            "installed_version": "14.1.1",
+                            "dependency": false,
+                            "registered": true,
+                            "tool_id": 7,
+                            "adoption": "supported",
+                            "adoption_block": null
+                        },
+                        {
+                            "manager": "brew",
+                            "package": "visual-studio-code",
+                            "package_kind": "formula",
+                            "installed_version": "1.96.0",
+                            "dependency": false,
+                            "registered": false,
+                            "tool_id": null,
+                            "adoption": "supported",
+                            "adoption_block": null
+                        },
+                        {
+                            "manager": "brew",
+                            "package": "wireguard-tools",
+                            "package_kind": "formula",
+                            "installed_version": "1.0.20210917",
+                            "dependency": false,
+                            "registered": false,
+                            "tool_id": null,
+                            "adoption": "unsupported",
+                            "adoption_block": "protected"
+                        }
+                    ]
+                },
+                {
+                    "manager": "brew-cask",
+                    "scan_state": "complete",
+                    "packages": [
+                        {
+                            "manager": "brew-cask",
+                            "package": "docker",
+                            "package_kind": "cask",
+                            "installed_version": "4.39.0",
+                            "dependency": false,
+                            "registered": false,
+                            "tool_id": null,
+                            "adoption": "unsupported",
+                            "adoption_block": "authorization_required"
+                        },
+                        {
+                            "manager": "brew-cask",
+                            "package": "font-hack",
+                            "package_kind": "cask",
+                            "installed_version": "3.003",
+                            "dependency": false,
+                            "registered": false,
+                            "tool_id": null,
+                            "adoption": "unsupported",
+                            "adoption_block": "unsupported_artifact"
+                        },
+                        {
+                            "manager": "brew-cask",
+                            "package": "visual-studio-code",
+                            "package_kind": "cask",
+                            "installed_version": "1.97.0",
+                            "dependency": false,
+                            "registered": true,
+                            "tool_id": 14,
+                            "adoption": "supported",
+                            "adoption_block": null
+                        }
+                    ]
+                },
+                {
+                    "manager": "vp",
+                    "scan_state": "complete",
+                    "packages": [
+                        {
+                            "manager": "vp",
+                            "package": "pnpm",
+                            "package_kind": "global",
+                            "installed_version": "10.15.1",
+                            "dependency": false,
+                            "registered": false,
+                            "tool_id": null,
+                            "adoption": "unsupported",
+                            "adoption_block": "protected"
+                        },
+                        {
+                            "manager": "vp",
+                            "package": "typescript",
+                            "package_kind": "global",
+                            "installed_version": null,
+                            "dependency": false,
+                            "registered": false,
+                            "tool_id": null,
+                            "adoption": "unsupported",
+                            "adoption_block": "version_unreadable"
+                        },
+                        {
+                            "manager": "vp",
+                            "package": "vite-plus",
+                            "package_kind": "global",
+                            "installed_version": "0.2.8",
+                            "dependency": false,
+                            "registered": true,
+                            "tool_id": 16,
+                            "adoption": "supported",
+                            "adoption_block": null
+                        }
+                    ]
+                }
+            ]
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

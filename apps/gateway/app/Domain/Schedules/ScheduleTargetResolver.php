@@ -201,9 +201,16 @@ final readonly class ScheduleTargetResolver
 
     private function assertNode(Node $node, bool $requireActive): void
     {
+        if ($node->platform !== 'linux') {
+            throw new ResourceOperationException(
+                'schedule.platform_unsupported',
+                'Schedules require a Linux node.',
+                422,
+            );
+        }
+
         if (
-            $node->platform !== 'linux'
-            || ($requireActive && $node->status !== LifecycleStatus::Active)
+            ($requireActive && $node->status !== LifecycleStatus::Active)
             || ! is_string($node->wireguard_ip)
             || $node->wireguard_ip === ''
         ) {

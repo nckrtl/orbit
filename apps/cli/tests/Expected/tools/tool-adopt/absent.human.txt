@@ -1,0 +1,11 @@
+Adopting Tool...
+
+┌  Adopt Tool
+│
+├  ● Adopting Tool
+│
+└  Operation failed.
+
+The package is not installed.
+step: adopt
+outcome: manager_failed

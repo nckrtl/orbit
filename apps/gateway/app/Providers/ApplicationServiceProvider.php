@@ -45,6 +45,7 @@ use App\Domain\DatabaseConnections\ManagedMysqlUserProvisioner;
 use App\Domain\Doctor\CaddyBuildInspector;
 use App\Domain\Doctor\CustomProxyRouteInspector;
 use App\Domain\Doctor\GatewayVpnStateInspector;
+use App\Domain\Doctor\InstalledPackageInventory;
 use App\Domain\Doctor\InstanceStateInspector;
 use App\Domain\Doctor\NodeStateInspector;
 use App\Domain\Doctor\PrivateRouteProjectionInspector;
@@ -220,6 +221,7 @@ use App\Infrastructure\Doctor\NativeProjectStateInspector;
 use App\Infrastructure\Doctor\NativePublicRouteEdgeInspector;
 use App\Infrastructure\Doctor\NativeRoleStateInspector;
 use App\Infrastructure\Doctor\NativeScheduleStateInspector;
+use App\Infrastructure\Doctor\SharedInstalledPackageInventory;
 use App\Infrastructure\Doctor\SshNodeStateInspector;
 use App\Infrastructure\Files\NativeAtomicSymlinkPublisher;
 use App\Infrastructure\Files\ProtectedFileWriter;
@@ -339,11 +341,13 @@ use App\Infrastructure\Ssh\SshHostKeyScanner;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tools\AptToolManager;
 use App\Infrastructure\Tools\ComposerToolManager;
+use App\Infrastructure\Tools\HomebrewCaskToolManager;
 use App\Infrastructure\Tools\HomebrewToolManager;
 use App\Infrastructure\Tools\NativeToolInspector;
 use App\Infrastructure\Tools\NativeToolManagerMaterializer;
 use App\Infrastructure\Tools\NativeToolManagerScopeLock;
 use App\Infrastructure\Tools\NativeToolOperationLock;
+use App\Infrastructure\Tools\ToolCommandBudget;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Infrastructure\WebSocket\NativeWebSocketCredentialManager;
 use App\Infrastructure\WebSocket\NativeWebSocketPublicationManager;
@@ -445,6 +449,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         NodeConverger::class => NativeNodeConverger::class,
         NodeStorageRootPreparer::class => RemoteNodeStorageRootPreparer::class,
         NodeReachabilityProbe::class => SshNodeReachabilityProbe::class,
+        InstalledPackageInventory::class => SharedInstalledPackageInventory::class,
         NodeStateInspector::class => SshNodeStateInspector::class,
         NodeMetricsReader::class => GrafanaPrometheusNodeMetricsReader::class,
         ProcessStateInspector::class => NativeProcessStateInspector::class,
@@ -715,6 +720,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         );
         $this->app->singleton(PrivateDnsManager::class, static fn (): PrivateDnsManager => app(DnsmasqPrivateDnsManager::class));
         $this->app->singleton(CommandDeadline::class);
+        $this->app->singleton(ToolCommandBudget::class);
         $this->app->scoped(MetricsReconcileDeferral::class);
         $this->app->singleton(
             ToolManagerRegistry::class,
@@ -723,6 +729,7 @@ final class ApplicationServiceProvider extends ServiceProvider
                 app(VpToolManager::class),
                 app(ComposerToolManager::class),
                 app(HomebrewToolManager::class),
+                app(HomebrewCaskToolManager::class),
             ]),
         );
         $this->app->singleton(

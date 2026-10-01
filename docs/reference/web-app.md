@@ -12,7 +12,9 @@ covers:
 
 # Web app
 
-The web app is Orbit's live view of the fleet. It is a static single-page app that reads the Gateway API and follows [realtime events](/reference/events). Its TypeScript API schema is generated from the Gateway OpenAPI document (`docs/openapi.json`) with `bun run types` in `apps/web`. Request-field comments in that schema follow the OpenAPI document, including argument and option text that [API reference generation](/reference/api-reference) reads from the CLI command classes. Regenerate the schema after an OpenAPI change and commit it with the app. The Gateway serves it from its own origin.
+The web app is Orbit's live view of the fleet. It is a static single-page app that reads the Gateway API and follows [realtime events](/reference/events). Its TypeScript API schema is generated from the Gateway OpenAPI document (`docs/openapi.json`) with `bun run types` in `apps/web`. Request-field comments in that schema follow the OpenAPI document, including argument and option text that [API reference generation](/reference/api-reference) reads from the CLI command classes. Regenerate the schema after an OpenAPI change and commit it with the app.
+
+The Project schema includes `task_workspace_routed`, which describes routing for new task workspaces; an existing workspace keeps its recorded mode. The Gateway serves it from its own origin.
 
 Extension navigation follows the Gateway's enabled set: each page and its route depend only on their own extension. Tasks pages need only the `tasks` extension. The Quota page needs only `proxycli`, and it shows provider quota whenever `proxycli` is enabled and its collector is configured, whether or not Tasks is enabled. Tasks and ProxyCLI links and routes are absent while their extension is disabled. The Gateway API remains authoritative, so a stale direct request still receives `extension.disabled` rather than granting access.
 
@@ -38,6 +40,30 @@ A path without a file returns the release's `index.html`, and the app's router s
 
 The app connects to Reverb at the URL that `GET /api/v1/realtime` returns.
 
+## Node detail pages
+
+A Node detail page has the same section menu pattern as an Instance: Overview, Tools, and Firewall where supported. Overview holds identity, roles, metrics when supported, Instances, and Node Processes. Firewall has its own page section on Linux, with the existing operator rules, Orbit rules, live rules, and missing-state comparisons. macOS tool support does not enable firewall management.
+
+The menu chooses the URL. Overview is `/nodes/<id>`. Tools is `/nodes/<id>/tools`. Firewall is `/nodes/<id>/firewall` on Linux. On a narrow screen the menu is one row, so the list keeps the width of the page. A macOS Firewall URL returns to Overview and does not request Linux firewall rules.
+
+### Tools
+
+Tools always shows every registered Tool for that Node, including failed tools and records on an unreachable machine. Managed rows show manager, package, recorded version, observed version, version constraint, status, and failures. On a narrow screen, the observed version, the constraint, and the failure wrap onto a second line so a phone still shows them, and Update and Remove sit on that line.
+
+The recorded version is the last operation's result. A live scan supplies the observed version beside it: a newer install, `absent` when a completed scan did not see the package, `not scanned` when that manager is outside the inventory, and `unavailable` when no observation is loaded.
+
+A separate detected-unmanaged group shows installed Homebrew formulae, casks, and Vite+ globals from `GET /api/v1/tool-inventory` (`tool:scan`). It labels package kind, observed version, dependency status, and the support reason. A null scan version, including a non-SemVer formula revision or cask version, is shown as `unreadable`. A formula and a cask that share a name stay on separate rows. Discoveries are informational and do not affect Node health.
+
+The page shows inspection time and status and has an explicit Refresh action. Refresh sends only another inventory read. An active Node is read when the section opens. An unreachable Node does not start that read, and Refresh stays disabled so it cannot start one later. The inspection says no scan was started, and the registered rows stay.
+
+A failed refresh keeps the last observation and marks it stale, or says the inspection is unavailable when there was none. Neither case is shown as an empty healthy inventory. A manager that is `incomplete`, `absent`, `unsupported`, or `conflicting` is named, and its empty package array is not an inventory.
+
+Each supported unregistered package has an Adopt action. Unsupported packages, including dependencies and unsupported casks, show the block reason and have no enabled Adopt action. Adopt opens an ownership form that names the Node, manager, and package, and asks before it sends `POST /api/v1/tools/adopt`. The optional constraint is omitted when the field is empty. The Gateway rechecks the live installation before creating intent. A revalidation error stays on that form.
+
+Success refreshes registered Tools and drops only that package from the unmanaged group. It does not install or update the package. Update sends `POST /api/v1/tools/<id>/update` with an empty object and shows whether the Tool changed, stayed current, or was blocked by its constraint. Remove asks before it sends `DELETE /api/v1/tools/<id>`. The question names the package, the manager, the Node, and that the package is uninstalled and the record deleted. A failed removal stays on that question and leaves the row. No scan, refresh, or page load adopts or updates a package.
+
+Phone navigation and actions remain reachable without compressing the package list beside a full desktop sidebar. The [web verification](/reference/web-verification#node-tools-review) covers phone and desktop layouts, successful adoption, and offline or failed scan states.
+
 ## Live Node and Process state
 
 The app subscribes to `presence-node.{id}` for every active Node, next to the `orbit` channel. The [Node agent](/reference/node-agent) publishes there.
@@ -48,7 +74,7 @@ The app subscribes to `presence-node.{id}` for every active Node, next to the `o
 | Lost: the agent left, or sent nothing for 15 seconds | offline | The value from the Process list |
 | Not seen since the page subscribed | Prometheus `up` | The value from the Process list |
 
-A Node without an [agent](/reference/node-agent#where-it-runs) always uses the last row. An example is a [Node without roles](/reference/node-provisioning#nodes-without-roles) that has no pinned SSH host key.
+A Node without an [agent](/reference/node-agent#where-it-runs) always uses the last row. A macOS tool-only Node has no agent or Metrics exporter in this slice; the page shows unavailable live telemetry rather than treating that absence as a failed Linux service. An example is a [Node without roles](/reference/node-provisioning#nodes-without-roles) that has no pinned SSH host key.
 
 CPU and memory come from [`process.usage`](/reference/events#process-usage) events. The app writes each sample into its cached Process list. While realtime is live, it reloads the Process list only when no sample arrived for 60 seconds.
 
@@ -119,7 +145,7 @@ These views have no event. A view with an interval polls while the tab is visibl
 | View | Interval |
 | --- | --- |
 | Database users, on a database page | 15 seconds |
-| Live UFW rules, on a Node page | 15 seconds |
+| Live UFW rules, on a Linux Node's Firewall section | 15 seconds |
 | Process logs, Instance logs, queue, and analytics | 10 seconds |
 | Node metrics from Grafana | 10 seconds |
 | Quota (`proxycli`) status and provider pools | 60 seconds |

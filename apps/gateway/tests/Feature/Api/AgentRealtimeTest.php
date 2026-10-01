@@ -52,6 +52,13 @@ describe('agent realtime endpoints', function (): void {
         $this->getJson('/api/v1/agent/realtime')->assertForbidden()->assertJsonPath('error.code', 'agent.node_ineligible');
     });
 
+    it('does not subscribe a managed mac to the Linux agent', function (): void {
+        $this->node->update(['platform' => 'macos']);
+
+        expect(app(ManagedNodeEligibility::class)->allows($this->node->fresh()))->toBeFalse();
+        $this->getJson('/api/v1/agent/realtime')->assertForbidden()->assertJsonPath('error.code', 'agent.node_ineligible');
+    });
+
     it('returns null connection values when websocket is not active', function (): void {
         $this->getJson('/api/v1/agent/realtime')->assertOk()
             ->assertJsonPath('data.url', null)->assertJsonPath('data.address', null)->assertJsonPath('data.key', null);

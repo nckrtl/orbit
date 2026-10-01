@@ -443,7 +443,8 @@
                 "Route",
                 "Schedule",
                 "Task",
-                "Task check"
+                "Task check",
+                "Task workspace"
             ],
             "governing_adrs": []
         },
@@ -693,32 +694,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0178-run-project-agnostic-tasks-without-a-planner.md",
-            "title": "ADR 0178: Run project-agnostic Tasks without a planner",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/gateway",
-                "apps/web",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Deliverable",
-                "Extension",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Project",
-                "Role",
-                "Task",
-                "Task check"
-            ],
-            "governing_adrs": [
-                "0178"
-            ]
-        },
-        {
             "path": "docs/decisions/0182-start-tasks-from-project-task-definitions.md",
             "title": "ADR 0182: Start tasks from Project task definitions",
             "kind": "decision",
@@ -744,7 +719,6 @@
                 "Turn receipt"
             ],
             "governing_adrs": [
-                "0178",
                 "0182"
             ]
         },
@@ -792,7 +766,6 @@
             "governing_adrs": [
                 "0097",
                 "0175",
-                "0178",
                 "0182"
             ]
         },
@@ -960,7 +933,8 @@
                 "Route",
                 "Subtask",
                 "Task",
-                "Task definition"
+                "Task definition",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -1176,6 +1150,7 @@
                 "Role",
                 "Route",
                 "Task",
+                "Task workspace",
                 "Tool"
             ],
             "governing_adrs": []
@@ -1200,7 +1175,9 @@
                 "Process",
                 "Project",
                 "Role",
-                "Route"
+                "Route",
+                "Task",
+                "Task workspace"
             ],
             "governing_adrs": []
         },
@@ -1264,13 +1241,15 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Doctor",
                 "Extension",
                 "Gateway",
                 "Node",
                 "Project",
                 "Route",
                 "Subtask",
-                "Task"
+                "Task",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -1524,14 +1503,17 @@
             ],
             "concepts": [
                 "Activity",
+                "Deployment",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Route",
                 "Task",
-                "Task check"
+                "Task check",
+                "Task workspace"
             ],
             "governing_adrs": []
         },
@@ -1642,7 +1624,8 @@
                 "Project",
                 "Role",
                 "Subtask",
-                "Task"
+                "Task",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -1809,6 +1792,7 @@
                 "Schedule",
                 "Task",
                 "Task check",
+                "Task workspace",
                 "Tool"
             ],
             "governing_adrs": []
@@ -1992,7 +1976,8 @@
                 "Schedule",
                 "Subtask",
                 "Task",
-                "Task definition"
+                "Task definition",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -2055,7 +2040,8 @@
                 "Route",
                 "Schedule",
                 "Task",
-                "Task workspace"
+                "Task workspace",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -2127,6 +2113,7 @@
             "concepts": [
                 "Gateway",
                 "Node",
+                "Node agent",
                 "Role"
             ],
             "governing_adrs": []

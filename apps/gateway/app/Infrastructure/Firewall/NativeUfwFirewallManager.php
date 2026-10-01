@@ -361,6 +361,7 @@ final readonly class NativeUfwFirewallManager implements FirewallManager
                 step: 'platform',
                 errorCode: 'firewall.platform_unsupported',
                 message: 'Firewall rules require a Linux node.',
+                status: 422,
             );
         }
 

@@ -11,7 +11,7 @@ final readonly class ToolNodeEligibility
     public function allows(Node $node): bool
     {
         return
-            $node->platform === 'linux'
+            ($node->platform === 'linux' || $node->platform === 'macos')
             && is_string($node->wireguard_ip)
             && $node->wireguard_ip !== ''
             && is_string($node->ssh_host_fingerprint)

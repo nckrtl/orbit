@@ -14,6 +14,10 @@ covers:
 
 This page tells a contributor how a Gateway response change reaches the CLI tests. A fixture is one recorded Gateway response under `packages/php-sdk/fixtures/<family>/<command>/<case>.json`. The Gateway test suite records it and the [API reference](/api/overview) validates it. The CLI test suite replays it through a Saloon mock and compares the complete command output with a stored expectation.
 
+Tool scan and adoption fixtures distinguish formula, cask, and Vite+ global identities, registered and informational packages, dependencies, unsupported artifacts, per-manager scan states, inspection time, and failed scans. Scan fixtures also record authorization and unmanaged-node refusals. Adoption fixtures record a created Tool, the same intent, a repaired failure, constraint conflicts and violations, a busy scope, a missing or unsupported package, and authorization failure. The CLI replays those responses for `tool:adopt`.
+
+Doctor fixtures include informational-only healthy reports and mixed reports with drift or unverifiable findings. Node fixtures include an enrolled Mac with empty roles. Web fixtures preserve registered Tools while a live inventory request fails.
+
 ## Record a fixture
 
 A Gateway fixture test sends a request with deterministic data and calls `record_fixture()` from `apps/gateway/tests/Support/ResponseFixtures.php` with the fixture name, the SDK request class that sends the route, and the route.
@@ -66,6 +70,10 @@ The change cycle is: change the Gateway, re-record the fixtures, review the fixt
 ## Web app fixtures
 
 The web app's demo mode and its tests run against the files under `apps/web/fixtures/fleet`. These files use the same format without a request class. They are written by hand as one coherent fleet, because a recorded fixture covers one route and the web app needs records that refer to each other. `bin/api-fixtures --check` validates them together with the recorded fixtures.
+
+The demo fleet has one tool inventory for each active Node. Node 1 is an empty Linux read: `brew` completed with no packages, `brew-cask` unsupported, and `vp` absent. Node 2 is a partial Linux read: `brew` incomplete, `brew-cask` unsupported, and `vp` conflicting, so none of those empty arrays is an inventory. Node 3 is unreachable and has no inventory fixture; the demo refuses a scan with `tool.node_inactive`.
+
+Node 4 is the macOS read: registered packages with a newer observed version, the `openssl@3` dependency, unsupported casks, a formula and a cask both named `visual-studio-code`, and `ghost`, which the demo lists as supported and then refuses on adopt. The demo adopt, update, and remove handlers change only that in-memory fleet.
 
 ## Families with fixtures
 

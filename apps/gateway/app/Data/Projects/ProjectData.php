@@ -22,7 +22,8 @@ final class ProjectData extends Data
         public string $repositoryUrl,
         public ?string $defaultBranch,
         public ?string $root,
-        public ?string $taskCheck = null,
+        public ?string $taskCheck,
+        public bool $taskWorkspaceRouted,
     ) {}
 
     public static function fromModel(Project $project): self
@@ -37,6 +38,7 @@ final class ProjectData extends Data
             defaultBranch: $project->default_branch,
             root: $project->root,
             taskCheck: $project->taskCheckCommand(),
+            taskWorkspaceRouted: $project->task_workspace_routed,
         );
     }
 }

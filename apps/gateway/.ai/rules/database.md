@@ -13,5 +13,7 @@ SQLite under `$ORBIT_HOME` is the Gateway's central store. Use explicit migratio
 
 Tool rows store managed intent, not observed host inventory.
 The tool identity is node, manager, and package. Keep managers as protected
-node prerequisites. Do not scan migrations to adopt existing packages or
-create rows for private bootstrap prerequisites.
+node prerequisites. Migrations must not scan the host or adopt packages, and
+must not create rows for private bootstrap prerequisites. Explicit adoption is
+a Tool operation, not a migration, and it stores one selected package rather
+than an inventory.

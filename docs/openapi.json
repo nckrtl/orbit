@@ -9988,9 +9988,10 @@
                   "platform": {
                     "type": "string",
                     "enum": [
-                      "linux"
+                      "linux",
+                      "macos"
                     ],
-                    "description": "Node platform (linux only)"
+                    "description": "linux for Ubuntu service Nodes, or macos for tools on an existing account; no default account or address"
                   },
                   "architecture": {
                     "type": [
@@ -10015,11 +10016,11 @@
                   },
                   "user": {
                     "type": "string",
-                    "description": "Bootstrap SSH user; defaults to root for a new node and to the managed user for an existing node"
+                    "description": "Bootstrap SSH user; root for a new Linux node, the managed user for an existing one; macOS requires the account"
                   },
                   "orbit_user": {
                     "type": "string",
-                    "description": "Orbit-managed system user; defaults to orbit for a new node"
+                    "description": "Managed user; Linux defaults to orbit, and macOS requires the same existing account as user"
                   },
                   "roles": {
                     "type": "array",
@@ -10051,7 +10052,7 @@
                       "string",
                       "null"
                     ],
-                    "description": "Stable WireGuard IP address"
+                    "description": "Stable WireGuard address; Linux allocates when omitted. macOS requires the existing one and does not replace it"
                   },
                   "lan_ip": {
                     "type": [
@@ -14087,7 +14088,11 @@
                       "null"
                     ],
                     "maxLength": 4096,
-                    "description": "Task check command; defaults to composer check for Laravel types and none otherwise"
+                    "description": "Task check command. Omitted stores none"
+                  },
+                  "task_workspace_routed": {
+                    "type": "boolean",
+                    "description": "Whether new task workspaces get a Route (true or false)"
                   }
                 },
                 "required": [
@@ -14436,6 +14441,10 @@
                     ],
                     "maxLength": 4096,
                     "description": "New task check command for task baselines and handoffs"
+                  },
+                  "task_workspace_routed": {
+                    "type": "boolean",
+                    "description": "Change routing for future task workspaces (true or false)"
                   }
                 },
                 "additionalProperties": false
@@ -22375,6 +22384,103 @@
         ]
       }
     },
+    "/api/v1/tool-inventory": {
+      "get": {
+        "operationId": "tool-scan",
+        "summary": "Scan installed packages",
+        "tags": [
+          "Tools"
+        ],
+        "parameters": [
+          {
+            "name": "node_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "description": "Reads installed Homebrew formulae, casks, and Vite+ global packages for the enrolled account. The response reports each manager scan state, safe package facts, dependency and adoption support, and the UTC inspection time. It stores nothing, creates no Tool row, takes no manager lock, and does not install or refresh a manager. A failed read is `incomplete`, never an empty `complete` inventory. `absent` means the scope is not installed. `unsupported` means this platform does not offer the manager.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ToolInventory"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No Node matches `node_id` (`http.404`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The Node is not active (`tool.node_inactive`) or is not Gateway-managed (`tool.node_unmanaged`). `error.details.step` is `scan`, `error.details.outcome` is `manager_failed`, and there is no Tool id. A manager that is absent, unsupported, conflicting, or incomplete does not fail the request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The query is not the one strict integer `node_id`, or the body is not empty (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/tool-inventory?node_id=7\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ScanToolInventoryRequest(nodeId: 7))->dto();\n"
+          }
+        ]
+      }
+    },
     "/api/v1/tool-managers": {
       "get": {
         "operationId": "tool-manager-list",
@@ -22646,6 +22752,143 @@
             "lang": "php",
             "label": "PHP SDK",
             "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tools\\InstallToolRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new InstallToolRequest(nodeId: 7, manager: 'vp', package: '@openai/codex'))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/tools/adopt": {
+      "post": {
+        "operationId": "tool-adopt",
+        "summary": "Adopt a Tool",
+        "tags": [
+          "Tools"
+        ],
+        "description": "Records Orbit ownership of one supported installed package. Send the Node, manager, package, and optional SemVer constraint. The call installs, updates, removes, and repins nothing. The same intent returns unchanged. A different constraint, a busy scope, a missing or unsupported package, or missing Node access leaves the host unchanged. `error.details.step` is `adopt`. `error.details.id` is present only when a Tool row already exists. `tool.adoption_unsupported` also includes `error.details.adoption_block`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "node_id": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "manager": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "description": "Tool manager name"
+                  },
+                  "package": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "description": "Manager-native package coordinate"
+                  },
+                  "version_constraint": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 255
+                  }
+                },
+                "required": [
+                  "node_id",
+                  "manager",
+                  "package"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Tool"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "The request succeeded; an exact retry returned the existing record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Tool"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/tools/adopt\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"node_id\": 7, \"manager\": \"vp\", \"package\": \"@openai/codex\", \"version_constraint\": \"^0.150\"}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tools\\AdoptToolRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new AdoptToolRequest(nodeId: 7, manager: 'vp', package: '@openai/codex'))->dto();\n"
           }
         ]
       }
@@ -23317,6 +23560,7 @@
           "kind": {
             "type": "string",
             "enum": [
+              "informational",
               "drift",
               "unverifiable"
             ]
@@ -23326,6 +23570,7 @@
           },
           "resource_id": {
             "type": [
+              "integer",
               "string",
               "null"
             ]
@@ -23341,12 +23586,14 @@
           },
           "expected": {
             "type": [
+              "boolean",
               "string",
               "null"
             ]
           },
           "observed": {
             "type": [
+              "boolean",
               "string",
               "null"
             ]
@@ -23960,6 +24207,9 @@
               "string",
               "null"
             ]
+          },
+          "task_workspace_routed": {
+            "type": "boolean"
           }
         }
       },
@@ -25611,6 +25861,93 @@
             ]
           },
           "assistance_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ToolInventory": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "integer"
+          },
+          "observed_at": {
+            "type": "string"
+          },
+          "managers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ToolInventoryManager"
+            }
+          }
+        }
+      },
+      "ToolInventoryManager": {
+        "type": "object",
+        "properties": {
+          "manager": {
+            "type": "string"
+          },
+          "scan_state": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "absent",
+              "unsupported",
+              "incomplete",
+              "conflicting"
+            ]
+          },
+          "packages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ToolInventoryPackage"
+            }
+          }
+        }
+      },
+      "ToolInventoryPackage": {
+        "type": "object",
+        "properties": {
+          "manager": {
+            "type": "string"
+          },
+          "package": {
+            "type": "string"
+          },
+          "package_kind": {
+            "type": "string",
+            "enum": [
+              "formula",
+              "cask",
+              "global"
+            ]
+          },
+          "installed_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dependency": {
+            "type": "boolean"
+          },
+          "registered": {
+            "type": "boolean"
+          },
+          "tool_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "adoption": {
+            "type": "string"
+          },
+          "adoption_block": {
             "type": [
               "string",
               "null"

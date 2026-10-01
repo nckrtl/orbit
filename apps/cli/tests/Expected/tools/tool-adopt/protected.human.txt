@@ -1,0 +1,12 @@
+Adopting Tool...
+
+┌  Adopt Tool
+│
+├  ● Adopting Tool
+│
+└  Operation failed.
+
+The package cannot be adopted.
+step: adopt
+outcome: manager_failed
+adoption_block: protected

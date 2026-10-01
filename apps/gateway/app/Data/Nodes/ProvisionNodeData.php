@@ -31,5 +31,6 @@ final class ProvisionNodeData extends Data
         public ?string $lanIp = null,
         public bool $settingsProvided = false,
         public ?NodeSettingsData $settings = null,
+        public bool $platformProvided = false,
     ) {}
 }

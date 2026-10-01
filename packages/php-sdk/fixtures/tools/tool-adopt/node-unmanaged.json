@@ -1,0 +1,16 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tools\\AdoptToolRequest",
+    "route": "POST /api/v1/tools/adopt",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "tool.node_unmanaged",
+            "message": "Tools can be adopted only on a Gateway-managed node.",
+            "details": {
+                "step": "adopt",
+                "outcome": "manager_failed"
+            }
+        }
+    }
+}

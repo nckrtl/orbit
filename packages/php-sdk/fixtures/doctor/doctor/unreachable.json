@@ -1,0 +1,48 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Doctor\\RunDoctorRequest",
+    "route": "POST /api/v1/doctor",
+    "status": 200,
+    "body": {
+        "data": {
+            "healthy": false,
+            "nodes": [
+                {
+                    "node_id": 2,
+                    "node_name": "linux-node",
+                    "healthy": false,
+                    "families": [
+                        {
+                            "family": "tool",
+                            "status": "unverifiable",
+                            "checked": 1,
+                            "issues": [
+                                {
+                                    "code": "tool.node_unreachable",
+                                    "kind": "unverifiable",
+                                    "resource_type": "tool",
+                                    "resource_id": null,
+                                    "resource_name": null,
+                                    "summary": "Tool node is unreachable.",
+                                    "expected": null,
+                                    "observed": "unreachable"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ],
+            "summary": {
+                "nodes": 1,
+                "families": 1,
+                "checks": 1,
+                "drift": 0,
+                "unverifiable": 1,
+                "informational": 0
+            }
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

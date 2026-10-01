@@ -64,6 +64,7 @@ final readonly class AddNodeRoleAction
         ?AnalyticsRoleSettings $analytics = null,
     ): array {
         $this->guardActiveNode($node);
+        $this->guardSupportedPlatform($node);
         $this->guardAnalyticsStorage($node, $role, $analytics);
 
         if (! $this->registry->definition($role)->mutable) {
@@ -163,6 +164,7 @@ final readonly class AddNodeRoleAction
     public function executeDuringProvisioning(Node $node, RoleName $role): NodeRole
     {
         $this->guardProvisioningNode($node);
+        $this->guardSupportedPlatform($node);
         if (! $this->registry->definition($role)->assignableDuringProvisioning) {
             throw new RoleAssignmentException("Role [{$role->value}] cannot be assigned during provisioning.");
         }
@@ -334,6 +336,19 @@ final readonly class AddNodeRoleAction
     private function analyticsSettings(): AnalyticsRoleSettingsRepository
     {
         return $this->analyticsSettings ?? app(AnalyticsRoleSettingsRepository::class);
+    }
+
+    private function guardSupportedPlatform(Node $node): void
+    {
+        if ($node->platform === 'linux') {
+            return;
+        }
+
+        throw new ResourceOperationException(
+            errorCode: 'node.platform_unsupported',
+            message: "Node platform [{$node->platform}] does not support roles.",
+            status: 422,
+        );
     }
 
     private function guardActiveNode(Node $node): void

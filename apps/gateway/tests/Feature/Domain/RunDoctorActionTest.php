@@ -7,7 +7,9 @@ use App\Data\Doctor\DoctorFamilyReportData;
 use App\Data\Doctor\DoctorNodeReportData;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Doctor\DoctorFamily;
+use App\Domain\Doctor\DoctorFamilyStatus;
 use App\Domain\Doctor\DoctorInspectionException;
+use App\Domain\Doctor\InstalledPackageInventory;
 use App\Domain\Doctor\InstanceInspectionData;
 use App\Domain\Doctor\InstanceStateInspector;
 use App\Domain\Doctor\NodeInspectionData;
@@ -21,14 +23,25 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Doctor\SharedInstalledPackageInventory;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
+use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\Tool;
+use App\Models\ToolManagerRecord;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Facades\DB;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
+use Symfony\Component\Process\Process;
+use Tests\Support\UnsupportedPackageInventory;
 
 describe('RunDoctorAction', function (): void {
     it('returns a healthy empty report without inspecting nodes', function (): void {
@@ -48,6 +61,7 @@ describe('RunDoctorAction', function (): void {
                 'checks' => 0,
                 'drift' => 0,
                 'unverifiable' => 0,
+                'informational' => 0,
             ])
             ->and($inspector->nodeIds)
             ->toBe([]);
@@ -278,6 +292,7 @@ describe('RunDoctorAction', function (): void {
                 'checks' => 1,
                 'drift' => 0,
                 'unverifiable' => 1,
+                'informational' => 0,
             ]);
     });
 
@@ -370,6 +385,58 @@ describe('RunDoctorAction', function (): void {
             ->and($route->refresh()->publication)
             ->toBe(RoutePublication::Public);
     });
+
+    it('returns the other families when package inventory times out', function (): void {
+        $consumer = run_doctor_node('consumer');
+        $node = run_doctor_node('inventory-timeout');
+        $consumer->accessibleNodes()->attach($node->id);
+        bind_run_doctor_inspector();
+        $ssh = new class implements SshExecutor
+        {
+            public int $calls = 0;
+
+            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+            {
+                $this->calls++;
+                $process = new Process(['true']);
+                $process->setTimeout(30);
+
+                throw new ProcessTimedOutException($process, ProcessTimedOutException::TYPE_GENERAL);
+            }
+        };
+        app()->instance(SshExecutor::class, $ssh);
+        app()->instance(InstalledPackageInventory::class, app(SharedInstalledPackageInventory::class));
+        $toolsBefore = Tool::query()->count();
+        $managersBefore = ToolManagerRecord::query()->count();
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $report = app(RunDoctorAction::class)->execute($consumer, $node->id, [
+            DoctorFamily::Node,
+            DoctorFamily::Tool,
+        ]);
+        $families = $report->nodes[0]->families;
+
+        expect($report->nodes)->toHaveCount(1)
+            ->and($report->healthy)->toBeFalse()
+            ->and($report->summary['nodes'])->toBe(1)
+            ->and($report->summary['families'])->toBe(2)
+            ->and($report->summary['unverifiable'])->toBe(1)
+            ->and($families[0]->family)->toBe(DoctorFamily::Node)
+            ->and($families[0]->status)->toBe(DoctorFamilyStatus::Healthy)
+            ->and($families[1]->family)->toBe(DoctorFamily::Tool)
+            ->and($families[1]->status)->toBe(DoctorFamilyStatus::Unverifiable)
+            ->and($families[1]->checked)->toBe(0)
+            ->and($families[1]->issues)->toHaveCount(1)
+            ->and($families[1]->issues[0]->code)->toBe('tool.inspection_failed')
+            ->and($families[1]->issues[0]->resourceId)->toBeNull()
+            ->and($ssh->calls)->toBe(1)
+            ->and(Tool::query()->count())->toBe($toolsBefore)
+            ->and(ToolManagerRecord::query()->count())->toBe($managersBefore);
+        foreach (DB::getQueryLog() as $query) {
+            expect(strtolower((string) $query['query']))->not->toMatch('/\b(insert|update|delete|replace)\b/');
+        }
+    });
 });
 
 function run_doctor_node(string $name): Node
@@ -397,6 +464,7 @@ function bind_run_doctor_inspector(
         $inspection ?? new NodeInspectionData(true, 'linux', 'x86_64', true),
     );
     app()->instance(NodeStateInspector::class, $inspector);
+    app()->instance(InstalledPackageInventory::class, new UnsupportedPackageInventory);
 
     return $inspector;
 }

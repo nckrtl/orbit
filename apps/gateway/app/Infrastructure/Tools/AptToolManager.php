@@ -4,16 +4,21 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Tools;
 
+use App\Domain\Nodes\RoleName;
 use App\Domain\Tools\DebianVersionNormalizer;
+use App\Domain\Tools\SupportsToolAdoption;
+use App\Domain\Tools\ToolAdoptionFact;
+use App\Domain\Tools\ToolInventoryPackage;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolRemovalPlan;
+use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 
-final readonly class AptToolManager implements ToolManager
+final readonly class AptToolManager implements SupportsToolAdoption, ToolManager
 {
     private const int MAX_PACKAGE_LENGTH = 128;
 
@@ -33,6 +38,7 @@ final readonly class AptToolManager implements ToolManager
     public function __construct(
         private RemoteToolCommandRunner $commands,
         private DebianVersionNormalizer $versions,
+        private ?NodeBootstrapPackageCatalog $packages = null,
     ) {}
 
     public function name(): ToolManagerName
@@ -211,6 +217,57 @@ final readonly class AptToolManager implements ToolManager
     public function normalizeVersion(string $rawVersion): ?string
     {
         return $this->versions->normalize($rawVersion);
+    }
+
+    public function inspectForAdoption(Node $node, string $package): ToolAdoptionFact
+    {
+        $this->guardPackage($package);
+
+        if (! $this->supportsNode($node)) {
+            throw new ToolManagerException(
+                step: 'node',
+                message: 'APT tools require a Linux node.',
+            );
+        }
+
+        try {
+            $this->managerVersion($node);
+        } catch (ToolManagerException $exception) {
+            throw new ToolManagerException(
+                step: 'manager-absent',
+                message: 'The APT manager is not available.',
+                result: $exception->result,
+                previous: $exception,
+            );
+        }
+
+        $version = $this->installedVersion($node, $package);
+
+        if ($version === null) {
+            return new ToolAdoptionFact(null, null);
+        }
+
+        if (in_array($package, $this->protectedPackages($node), true)) {
+            return new ToolAdoptionFact($version, ToolInventoryPackage::BLOCK_PROTECTED);
+        }
+
+        return new ToolAdoptionFact($version, null);
+    }
+
+    /** @return list<string> */
+    private function protectedPackages(Node $node): array
+    {
+        $catalog = $this->packages ?? new NodeBootstrapPackageCatalog;
+        $names = $catalog->forNode($node);
+
+        foreach (RoleName::cases() as $role) {
+            $names = [...$names, ...$catalog->forRole($node, $role)];
+        }
+
+        $names[] = 'openssh-server';
+        $names[] = 'wireguard-tools';
+
+        return array_values(array_unique($names));
     }
 
     public function install(Node $node, string $package): void

@@ -27,7 +27,9 @@ The Gateway is private and reachable only over WireGuard. Public traffic enters 
 
 ## Nodes and roles
 
-A Node is an Ubuntu 26.04 machine. Its roles decide its work, and Orbit installs and manages only what those roles need. Services run natively under systemd. Container Processes and the `metrics` role's Prometheus and Grafana run in Docker.
+A Node is a machine in the WireGuard fleet. Ubuntu 26.04 Nodes run Orbit service roles. macOS Nodes support selected tools through their existing SSH account and package managers, with no service roles. Tools do not require a role. [Node provisioning](/reference/node-provisioning#macos-nodes) describes macOS enrollment.
+
+On Ubuntu, services run natively under systemd. Container Processes and the `metrics` role's Prometheus and Grafana run in Docker. macOS tool support does not enable these runtimes.
 
 | Role | Work |
 | --- | --- |

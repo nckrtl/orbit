@@ -21,6 +21,7 @@ use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
+use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestDescription;
@@ -53,6 +54,7 @@ use App\Models\InstanceRemoval;
 use App\Models\JevDecision;
 use App\Models\Node;
 use App\Models\Project;
+use App\Models\ProjectLifecycleStep;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
@@ -133,11 +135,11 @@ function tick_checked_thread(string $status): array
     ]];
 }
 
-function tick_workspace(bool $definesCheckScript = true, ?string $branch = null): void
+function tick_workspace(?string $branch = null): void
 {
-    app()->instance(TaskWorkspaceStateReader::class, new readonly class($definesCheckScript, $branch) implements TaskWorkspaceStateReader
+    app()->instance(TaskWorkspaceStateReader::class, new readonly class($branch) implements TaskWorkspaceStateReader
     {
-        public function __construct(private bool $definesCheckScript, private ?string $branch) {}
+        public function __construct(private ?string $branch) {}
 
         public function headCommit(Instance $instance): ?string
         {
@@ -147,11 +149,6 @@ function tick_workspace(bool $definesCheckScript = true, ?string $branch = null)
         public function currentBranch(Instance $instance): ?string
         {
             return $this->branch;
-        }
-
-        public function definesComposerCheckScript(Instance $instance): bool
-        {
-            return $this->definesCheckScript;
         }
     });
 }
@@ -495,7 +492,7 @@ it('resumes a settling group without a pull request and opens the pull request w
 
     expect($signer->messages)->toBe(["Models\n\nChecked the feature."])
         ->and($publishing->publisher->pushes)->toBe([$group->id])
-        ->and($publishing->publisher->bodies)->toBe([TaskPullRequestDescription::render(new TaskTurnPullRequest('Adds tick routing.', ['Tasks store their records.'], []), 1)])
+        ->and($publishing->publisher->bodies)->toBe([TaskPullRequestDescription::render(new TaskTurnPullRequest('Adds tick routing.', ['Tasks store their records.'], []), 1, $group->project->taskCheckCommand())])
         ->and($group->fresh()?->pr_url)->toBe('https://github.com/acme/orbit/pull/42')
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
         ->and($task->fresh()?->status)->toBe(TaskStatus::Completed);
@@ -1115,7 +1112,7 @@ it('appends one conflict fixup with a merge brief and returns the group to runni
         ->and($fixup->brief)->toBe('Merge origin/main into the task branch and resolve the conflicts. Do not rebase and do not force-push.')
         ->and($fixup->status)->toBe(TaskStatus::Running)
         ->and($fixup->deliverables)->toBe([[
-            'id' => 'composer-check', 'type' => 'command', 'description' => 'Run composer check',
+            'id' => 'project-check', 'type' => 'command', 'description' => 'Run the Project task check',
             'command' => 'composer check', 'directory' => '.',
         ]])
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
@@ -1142,7 +1139,7 @@ it('appends one check fixup naming the failed check and its url', function (): v
         ->and($fixup->brief)->toBe('Check Custom failed: https://github.com/acme/orbit/runs/9. Do not rebase and do not force-push.')
         ->and($fixup->status)->toBe(TaskStatus::Running)
         ->and($fixup->deliverables)->toBe([[
-            'id' => 'composer-check', 'type' => 'command', 'description' => 'Run composer check',
+            'id' => 'project-check', 'type' => 'command', 'description' => 'Run the Project task check',
             'command' => 'composer check', 'directory' => '.',
         ]])
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
@@ -1150,9 +1147,9 @@ it('appends one check fixup naming the failed check and its url', function (): v
         ->and($agents->spawned)->toBe([$fixup->id]);
 });
 
-it('appends an orbit check fixup with the reproduction command', function (): void {
+it('runs make check for a fixup on a non-Orbit Project and on orbit', function (string $slug): void {
     $group = tick_settling_group();
-    $group->project->update(['slug' => 'orbit']);
+    $group->project->update(['slug' => $slug, 'task_check' => 'make check']);
     $agents = tick_running_agents();
     tick_watch_pulls([tick_open_pull()], ['abc123' => [[
         'name' => 'Rust agent', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/9',
@@ -1162,18 +1159,93 @@ it('appends an orbit check fixup with the reproduction command', function (): vo
 
     $fixup = Task::query()->where('fixup_problem', 'check:Rust agent')->sole();
     expect($fixup->brief)->toBe('Check Rust agent failed: https://github.com/acme/orbit/runs/9. Do not rebase and do not force-push.')
-        ->and($fixup->deliverables)->toBe([
-            [
-                'id' => 'composer-check', 'type' => 'command', 'description' => 'Run composer check',
-                'command' => 'composer check', 'directory' => '.',
-            ],
-            [
-                'id' => 'reproduce-check', 'type' => 'command', 'description' => 'Reproduce Rust agent',
-                'command' => 'cargo fmt --all -- --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked',
-                'directory' => 'apps/agent',
-            ],
-        ])
+        ->and($fixup->deliverables)->toBe([[
+            'id' => 'project-check', 'type' => 'command', 'description' => 'Run the Project task check',
+            'command' => 'make check', 'directory' => '.',
+        ]])
         ->and($agents->spawned)->toBe([$fixup->id]);
+})->with([
+    'another project' => ['shop'],
+    'orbit' => ['orbit'],
+]);
+
+it('asks the reviewer to confirm a conflict fixup when the Project has no check', function (): void {
+    $group = tick_settling_group();
+    $group->project->update(['slug' => 'shop', 'task_check' => null]);
+    tick_running_agents();
+    tick_watch_pulls([
+        tick_open_pull(['mergeable' => false, 'mergeable_state' => 'dirty']),
+    ], ['abc123' => [[
+        'name' => 'Rust agent', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/9',
+    ]]]);
+
+    app(TaskScheduler::class)->tick();
+
+    $fixup = Task::query()->where('fixup_problem', 'conflict:main')->sole();
+    expect($fixup->deliverables)->toBe([[
+        'id' => 'fixup-review', 'type' => 'review',
+        'description' => 'Confirm the conflict or failed check is resolved from the available evidence.',
+    ]])
+        ->and(Task::query()->where('fixup_problem', 'like', 'check:%')->exists())->toBeFalse();
+});
+
+it('asks the reviewer to confirm a check fixup when the Project has no check', function (): void {
+    $group = tick_settling_group();
+    $group->project->update(['slug' => 'orbit', 'task_check' => null]);
+    tick_running_agents();
+    tick_watch_pulls([tick_open_pull()], ['abc123' => [[
+        'name' => 'Gateway', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/9',
+    ]]]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect(Task::query()->where('fixup_problem', 'check:Gateway')->sole()->deliverables)->toBe([[
+        'id' => 'fixup-review', 'type' => 'review',
+        'description' => 'Confirm the conflict or failed check is resolved from the available evidence.',
+    ]]);
+});
+
+it('keeps a fixup deliverable after the Project check changes', function (): void {
+    $group = tick_settling_group();
+    $group->project->update(['task_check' => 'make check']);
+    tick_running_agents();
+    $failed = ['name' => 'Custom', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/9'];
+    tick_watch_pulls([
+        tick_open_pull(),
+        tick_open_pull(['head' => ['sha' => 'def456']]),
+    ], [
+        'abc123' => [$failed],
+        'def456' => [$failed],
+    ]);
+
+    app(TaskScheduler::class)->tick();
+
+    $fixup = Task::query()->where('fixup_problem', 'check:Custom')->sole();
+    $recorded = [[
+        'id' => 'project-check', 'type' => 'command', 'description' => 'Run the Project task check',
+        'command' => 'make check', 'directory' => '.',
+    ]];
+    expect($fixup->deliverables)->toBe($recorded);
+
+    $fixup->update(['status' => TaskStatus::Completed]);
+    TaskComment::query()->create([
+        'task_group_id' => $group->id, 'task_id' => $fixup->id, 'type' => 'approved', 'body' => 'Approved.',
+        'author' => 'reviewer', 'review_attempt' => 1, 'commit_sha' => str_repeat('d', 40), 'posted_at' => now(),
+    ]);
+    $group->refresh();
+    $group->update(['status' => TaskGroupStatus::Settling]);
+    $group->project->update(['task_check' => 'npm test']);
+
+    app(TaskScheduler::class)->tick();
+
+    $next = Task::query()->where('fixup_problem', 'check:Custom')->orderByDesc('position')->first();
+    expect($fixup->fresh()?->deliverables)->toBe($recorded)
+        ->and($next?->id)->not->toBe($fixup->id)
+        ->and($next?->fixup_head_sha)->toBe('def456')
+        ->and($next?->deliverables)->toBe([[
+            'id' => 'project-check', 'type' => 'command', 'description' => 'Run the Project task check',
+            'command' => 'npm test', 'directory' => '.',
+        ]]);
 });
 
 it('appends a check fixup without a url when the run has none', function (): void {
@@ -1255,7 +1327,7 @@ it('appends a conflict fixup when a different-cased problem is already at the ca
         ->and($agents->fetched)->toBe(['main']);
 });
 
-it('appends a reproducible check fixup before another failed check', function (): void {
+it('appends the next failed check in GitHub order after the conflict cap', function (): void {
     $group = tick_settling_group();
     $group->project->update(['slug' => 'orbit']);
     tick_spent_fixup($group, 'conflict:main');
@@ -1268,10 +1340,12 @@ it('appends a reproducible check fixup before another failed check', function ()
 
     app(TaskScheduler::class)->tick();
 
-    $fixup = Task::query()->where('fixup_problem', 'check:Gateway')->sole();
-    expect($fixup->deliverables[1]['command'] ?? null)->toBe('composer check')
-        ->and($fixup->deliverables[1]['directory'] ?? null)->toBe('apps/gateway')
-        ->and(Task::query()->where('fixup_problem', 'check:Custom')->exists())->toBeFalse()
+    $fixup = Task::query()->where('fixup_problem', 'check:Custom')->sole();
+    expect($fixup->deliverables)->toBe([[
+        'id' => 'project-check', 'type' => 'command', 'description' => 'Run the Project task check',
+        'command' => 'composer check', 'directory' => '.',
+    ]])
+        ->and(Task::query()->where('fixup_problem', 'check:Gateway')->exists())->toBeFalse()
         ->and($agents->fetched)->toBe([])
         ->and($agents->spawned)->toBe([$fixup->id]);
 });
@@ -1929,43 +2003,12 @@ it('advances the current subtask when Jev marks it done', function (): void {
         ->and($spawner->spawned)->toBe(1);
 });
 
-it('hands off only when Orbit can run the workspace check script', function (bool $definesCheckScript, TaskStatus $status, string $taskCheck = 'composer check'): void {
-    $group = tick_group();
-    $group->project->update(['task_check' => $taskCheck]);
-    $task = $group->tasks->sole();
-    app(TaskExtensionState::class)->enable();
-    tick_workspace($definesCheckScript);
-    app()->instance(T3Dispatcher::class, tick_dispatcher());
-    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
-    {
-        public function snapshot(Node $node, string $threadId): ?array
-        {
-            return tick_checked_thread('done');
-        }
-    });
-
-    app(TaskScheduler::class)->tick();
-    app(TaskScheduler::class)->tick();
-
-    expect($task->fresh()?->status)->toBe($status);
-    $commands = app(T3Dispatcher::class)->commands;
-    if ($status === TaskStatus::Running) {
-        expect($commands[0]['message']['text'])->toContain('does not define a check script, so Orbit cannot run composer check')
-            ->and(app(TaskCheckRunner::class)->starts)->toBe(0);
-    }
-})->with([
-    'project check script' => [true, TaskStatus::Reviewing],
-    'missing check script' => [false, TaskStatus::Running],
-    'composer check with arguments after cd' => [false, TaskStatus::Running, 'cd app && composer check --no-ansi'],
-    'longer composer command' => [false, TaskStatus::Reviewing, 'composer check-platform-reqs'],
-]);
-
 it('hands off with the Project task check, and runs no command when the Project has none', function (?string $taskCheck): void {
     $group = tick_group();
     $group->project->update(['task_check' => $taskCheck]);
     $task = $group->tasks->sole();
     app(TaskExtensionState::class)->enable();
-    tick_workspace(false);
+    tick_workspace();
     app()->instance(T3Dispatcher::class, tick_dispatcher());
     app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
     {
@@ -3672,7 +3715,7 @@ it('does not apply a receipt from the thread named by a stale turn file', functi
     {
         public function __construct(private int $acting) {}
 
-        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void {}
+        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?string $context = null): void {}
 
         public function read(Instance $instance, ?int $actingThreadId = null): ?TaskTurnReceipt
         {
@@ -3707,7 +3750,7 @@ it('does not apply an unbound legacy receipt and reissues the bound turn command
         /** @var list<int|null> */
         public array $preparedThreads = [];
 
-        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void
+        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?string $context = null): void
         {
             $this->preparedThreads[] = $threadId;
             $this->legacy = false;
@@ -3747,7 +3790,7 @@ it('applies a receipt that names the acting reviewer', function (): void {
     {
         public function __construct(private int $acting) {}
 
-        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void {}
+        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?string $context = null): void {}
 
         public function read(Instance $instance, ?int $actingThreadId = null): ?TaskTurnReceipt
         {
@@ -4018,7 +4061,7 @@ it('commits the last approved subtask, opens the pull request with the reviewer 
     $approval = $task->comments()->sole();
     expect($signer->messages)->toBe(["Models\n\nChecked the feature."])
         ->and($publishing->publisher->pushes)->toBe([$group->id])
-        ->and($publishing->publisher->bodies)->toBe([TaskPullRequestDescription::render(new TaskTurnPullRequest('Adds tick routing.', ['Tasks store their records.'], []), 1)])
+        ->and($publishing->publisher->bodies)->toBe([TaskPullRequestDescription::render(new TaskTurnPullRequest('Adds tick routing.', ['Tasks store their records.'], []), 1, $group->project->taskCheckCommand())])
         ->and($approval->pull_request)->toBe(['summary' => 'Adds tick routing.', 'changes' => ['Tasks store their records.'], 'breaking' => []])
         ->and($publishing->coverage->approvalCommentId)->toBe($approval->id)
         ->and($publishing->coverage->approvalChanges)->toBe(['Tasks store their records.'])
@@ -4038,7 +4081,7 @@ it('counts only the delivered subtasks in the pull request description', functio
     app(TaskScheduler::class)->tick();
 
     expect($signer->messages)->toHaveCount(1)
-        ->and($publishing->publisher->bodies)->toBe([TaskPullRequestDescription::render(new TaskTurnPullRequest('Adds tick routing.', ['Tasks store their records.'], []), 2)]);
+        ->and($publishing->publisher->bodies)->toBe([TaskPullRequestDescription::render(new TaskTurnPullRequest('Adds tick routing.', ['Tasks store their records.'], []), 2, $group->project->taskCheckCommand())]);
 });
 
 it('reminds the reviewer when the approval of the last subtask has no pull request fields', function (): void {
@@ -4755,3 +4798,175 @@ describe('subtask deliverables at handoff', function (): void {
             ->and(TaskCheck::query()->sole()->changed_paths)->toBe(['app']);
     });
 });
+
+it('project baseline setup only', function (): void {
+    $spawner = new class implements AgentSpawner
+    {
+        /** @var list<string> */
+        public array $events = [];
+
+        public function spawnReviewer(Task $task): ?int
+        {
+            $this->events[] = 'reviewer';
+
+            return null;
+        }
+
+        public function spawnImplementer(Task $task): ?int
+        {
+            $this->events[] = 'implementer:'.$task->position;
+
+            return test_agent_thread($task->parent, 'implementer-'.$task->position, $task)->id;
+        }
+
+        public function requestReview(Task $task): void
+        {
+            $this->events[] = 'review:'.$task->position;
+        }
+    };
+    app()->instance(AgentSpawner::class, $spawner);
+    app(TaskExtensionState::class)->enable();
+
+    $composer = tick_baseline_group('baseline-composer', 'composer check', [
+        ['name' => 'Warm cache', 'command' => 'echo warm', 'timeout_seconds' => 30, 'position' => 2],
+        ['name' => 'Install', 'command' => 'composer install --no-interaction', 'timeout_seconds' => 900, 'position' => 1],
+    ], '10.51.0.1');
+    ProjectLifecycleStep::query()->create([
+        'project_id' => $composer->project_id,
+        'phase' => 'teardown',
+        'name' => 'Remove bridge',
+        'command' => 'echo teardown',
+        'timeout_seconds' => 60,
+        'position' => 1,
+    ]);
+    $javascript = tick_baseline_group('baseline-javascript', 'vp run check', [
+        ['name' => 'Install packages', 'command' => 'vp install --frozen-lockfile', 'timeout_seconds' => 120, 'position' => 1],
+    ], '10.51.0.2');
+    $unset = tick_baseline_group('baseline-unset-check', null, [
+        ['name' => 'Prepare', 'command' => 'echo prepare', 'timeout_seconds' => 45, 'position' => 1],
+    ], '10.51.0.3');
+    $checks = new FakeTaskCheckRunner;
+    app()->instance(TaskCheckRunner::class, $checks);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($checks->commands)->toBe(['composer check', 'vp run check', null])
+        ->and($checks->setups)->toBe([
+            [
+                ['name' => 'Install', 'command' => 'composer install --no-interaction', 'timeout_seconds' => 900],
+                ['name' => 'Warm cache', 'command' => 'echo warm', 'timeout_seconds' => 30],
+            ],
+            [
+                ['name' => 'Install packages', 'command' => 'vp install --frozen-lockfile', 'timeout_seconds' => 120],
+            ],
+            [
+                ['name' => 'Prepare', 'command' => 'echo prepare', 'timeout_seconds' => 45],
+            ],
+        ])
+        ->and($spawner->events)->toBe([]);
+
+    $composer->update(['status' => TaskGroupStatus::Completed]);
+    $javascript->update(['status' => TaskGroupStatus::Completed]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($unset->fresh()?->assistance_requested)->toBeFalse()
+        ->and($unset->tasks()->value('implementer_agent_thread_id'))->not->toBeNull()
+        ->and($spawner->events)->toBe(['implementer:1']);
+
+    $unset->update(['status' => TaskGroupStatus::Completed]);
+    $failedSetup = tick_baseline_group('baseline-setup-failed', 'composer check', [
+        ['name' => 'Install', 'command' => 'composer install --no-interaction', 'timeout_seconds' => 600, 'position' => 1],
+    ], '10.51.0.4');
+    $setupOutput = "setup blew up\n";
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner([
+        TaskCheckReading::finished(7, str_repeat('a', 40), str_repeat('b', 40), [], $setupOutput, null, str_repeat('b', 40), 'Install'),
+    ]));
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    $failedTaskId = $failedSetup->tasks()->value('id');
+    expect($failedSetup->fresh()?->assistance_requested)->toBeTrue()
+        ->and($failedSetup->fresh()?->assistance_reason)->toBe('The Project setup step "Install" failed with exit code 7 on a fresh checkout of task-'.$failedSetup->id.', before any agent started. Fix the setup or the branch, then cancel and create the group again. The task\'s check shows the output.')
+        ->and(TaskCheck::query()->where('task_id', $failedTaskId)->sole()->output)->toBe($setupOutput)
+        ->and($failedSetup->tasks()->value('implementer_agent_thread_id'))->toBeNull()
+        ->and($spawner->events)->toBe(['implementer:1']);
+
+    $failedSetup->update(['status' => TaskGroupStatus::Completed]);
+    $ordinary = tick_baseline_group('baseline-ordinary-failure', 'composer check', [], '10.51.0.5');
+    $ordinaryOutput = "sh: 1: vendor/bin/pest: not found\nsh: 1: node_modules/.bin/vite: not found\n";
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner([
+        TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], $ordinaryOutput, null, str_repeat('b', 40), null),
+    ]));
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    $reason = $ordinary->fresh()?->assistance_reason;
+    expect($ordinary->fresh()?->assistance_requested)->toBeTrue()
+        ->and($reason)->toBe('The Project baseline check failed with exit code 1 on a fresh checkout of task-'.$ordinary->id.', before any agent started. Fix the configured check or the branch, then cancel and create the group again. The task\'s check shows the output.')
+        ->and($reason)->not->toContain('Project dependencies appear to be missing')
+        ->and($reason)->not->toContain('Composer dependency installation failed')
+        ->and($reason)->not->toContain('JavaScript dependency installation failed')
+        ->and(TaskCheck::query()->where('task_id', $ordinary->tasks()->value('id'))->sole()->output)->toBe($ordinaryOutput)
+        ->and($spawner->events)->toBe(['implementer:1']);
+});
+
+/**
+ * A fresh running task whose baseline has not started.
+ *
+ * @param  list<array{name: string, command: string, timeout_seconds: int, position: int}>  $steps
+ */
+function tick_baseline_group(string $slug, ?string $taskCheck, array $steps, string $ip): Task
+{
+    $project = Project::query()->create([
+        'name' => $slug,
+        'slug' => $slug,
+        'repository_url' => "git@example.test:{$slug}.git",
+        'default_branch' => 'main',
+        'task_check' => $taskCheck,
+    ]);
+    $node = Node::query()->create([
+        'name' => $slug.'-node',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => $ip,
+        'wireguard_ip' => $ip,
+    ]);
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => $slug,
+        'checkout_path' => '/tmp/tasks-'.$slug,
+        'status' => 'source_resolved',
+    ]);
+    $group = Task::topLevel()->create([
+        'project_id' => $project->id,
+        'title' => $slug,
+        'brief' => 'Baseline setup only.',
+        'status' => TaskGroupStatus::Running,
+        'execution_mode' => TaskExecutionMode::Managed,
+    ]);
+    $group->taskable()->associate($instance);
+    $group->save();
+    Task::query()->create([
+        'parent_id' => $group->id,
+        'position' => 1,
+        'title' => 'First',
+        'brief' => 'First subtask',
+        'status' => TaskStatus::Running,
+    ]);
+    foreach ($steps as $step) {
+        ProjectLifecycleStep::query()->create([
+            'project_id' => $project->id,
+            'phase' => 'setup',
+            'name' => $step['name'],
+            'command' => $step['command'],
+            'timeout_seconds' => $step['timeout_seconds'],
+            'position' => $step['position'],
+        ]);
+    }
+
+    return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
+}

@@ -98,8 +98,12 @@ final class NodeOutput
         array $retainedOnNode,
         ?string $followUp,
     ): string {
-        if ($degradation === null || $mode->machine) {
+        if ($mode->machine) {
             return '';
+        }
+
+        if ($degradation === null) {
+            return self::retainedList($renderer, $retainedOnNode);
         }
 
         $warning = "Warning: Node [{$nodeName}] was ".self::degradationDescription($degradation)
@@ -121,6 +125,26 @@ final class NodeOutput
         }
 
         return $output;
+    }
+
+    /**
+     * @param  list<string>  $retainedOnNode
+     */
+    private static function retainedList(HumanRenderer $renderer, array $retainedOnNode): string
+    {
+        if ($retainedOnNode === []) {
+            return '';
+        }
+
+        return $renderer->properties([
+            [
+                'title' => 'Left on the node:',
+                'items' => array_map(
+                    static fn (string $item): array => ['label' => $item, 'fields' => []],
+                    $retainedOnNode,
+                ),
+            ],
+        ]);
     }
 
     private static function degradationDescription(string $degradation): string

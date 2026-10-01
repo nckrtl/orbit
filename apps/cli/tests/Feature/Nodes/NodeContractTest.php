@@ -58,6 +58,55 @@ describe('node contract', function () use ($addArguments): void {
         run_contract('nodes/node-add/created', 'node:add', [...$addArguments, '--json' => true], 'nodes/node-add/created.json', 0);
     });
 
+    it('renders an enrolled mac and its removal', function (): void {
+        $arguments = [
+            'name' => 'mini',
+            'host' => '192.0.2.40',
+            '--platform' => 'macos',
+            '--user' => 'mini',
+            '--orbit-user' => 'mini',
+            '--wireguard-ip' => '10.44.0.40',
+            '--host-key-fingerprint' => 'SHA256:'.str_repeat('M', 43),
+        ];
+        run_contract('nodes/node-add/macos-enrolled', 'node:add', $arguments, 'nodes/node-add/macos-enrolled.human.txt', 0);
+        run_contract('nodes/node-add/macos-enrolled', 'node:add', [...$arguments, '--json' => true], 'nodes/node-add/macos-enrolled.json', 0);
+
+        $removal = ['node' => '2', '--force' => true];
+        run_contract(['nodes/node-show/default', 'nodes/node-remove/macos-removed'], 'node:remove', $removal, 'nodes/node-remove/macos-removed.human.txt', 0);
+        run_contract(['nodes/node-show/default', 'nodes/node-remove/macos-removed'], 'node:remove', [...$removal, '--json' => true], 'nodes/node-remove/macos-removed.json', 0);
+    });
+
+    it('renders macOS enrollment refusals', function (): void {
+        $fingerprint = 'SHA256:'.str_repeat('M', 43);
+        $base = [
+            'name' => 'mini',
+            'host' => '192.0.2.40',
+            '--platform' => 'macos',
+            '--wireguard-ip' => '10.44.0.40',
+            '--host-key-fingerprint' => $fingerprint,
+        ];
+        $account = [...$base, '--user' => 'mini', '--orbit-user' => 'mini'];
+
+        run_contract('nodes/node-add/macos-account-required', 'node:add', $base, 'nodes/node-add/macos-account-required.human.txt', 1);
+        run_contract('nodes/node-add/macos-account-required', 'node:add', [...$base, '--json' => true], 'nodes/node-add/macos-account-required.json', 1);
+
+        $mismatch = [...$base, '--user' => 'mini', '--orbit-user' => 'other'];
+        run_contract('nodes/node-add/macos-account-mismatch', 'node:add', $mismatch, 'nodes/node-add/macos-account-mismatch.human.txt', 1);
+        run_contract('nodes/node-add/macos-account-mismatch', 'node:add', [...$mismatch, '--json' => true], 'nodes/node-add/macos-account-mismatch.json', 1);
+
+        $role = [...$account, '--role' => ['app-dev']];
+        run_contract('nodes/node-add/macos-role-unsupported', 'node:add', $role, 'nodes/node-add/macos-role-unsupported.human.txt', 1);
+        run_contract('nodes/node-add/macos-role-unsupported', 'node:add', [...$role, '--json' => true], 'nodes/node-add/macos-role-unsupported.json', 1);
+
+        $settings = [...$account, '--dns-server' => '10.0.0.2'];
+        run_contract('nodes/node-add/macos-settings-unsupported', 'node:add', $settings, 'nodes/node-add/macos-settings-unsupported.human.txt', 1);
+        run_contract('nodes/node-add/macos-settings-unsupported', 'node:add', [...$settings, '--json' => true], 'nodes/node-add/macos-settings-unsupported.json', 1);
+
+        $wireguard = array_diff_key($account, ['--wireguard-ip' => null]);
+        run_contract('nodes/node-add/macos-wireguard-required', 'node:add', $wireguard, 'nodes/node-add/macos-wireguard-required.human.txt', 1);
+        run_contract('nodes/node-add/macos-wireguard-required', 'node:add', [...$wireguard, '--json' => true], 'nodes/node-add/macos-wireguard-required.json', 1);
+    });
+
     it('renders the node:add refusals', function () use ($addArguments): void {
         $withoutTld = array_diff_key($addArguments, ['--tld' => null]);
         run_contract('nodes/node-add/tld-required', 'node:add', $withoutTld, 'nodes/node-add/tld-required.human.txt', 1);

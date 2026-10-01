@@ -1,0 +1,1 @@
+{"error":{"code":"node.platform_unsupported","message":"macOS enrollment does not change Cluster, DNS, tunnel, or storage settings.","request_id":null}}

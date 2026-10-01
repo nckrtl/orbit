@@ -74,6 +74,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $copy_mode
  * @property int|null $source_instance_id
  * @property Carbon|null $runtime_definitions_captured_at
+ * @property bool|null $task_workspace_routed
  * @property InstanceState $status
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -161,6 +162,7 @@ final class Instance extends Model
         'creation',
         'copy_mode',
         'source_instance_id',
+        'task_workspace_routed',
     ];
 
     public const string MorphAlias = 'instance';
@@ -406,6 +408,7 @@ final class Instance extends Model
             'registration_completed_at' => 'immutable_datetime',
             'runtime_definitions_captured_at' => 'immutable_datetime',
             'source_is_laravel' => 'boolean',
+            'task_workspace_routed' => 'boolean',
             'status' => InstanceState::class,
         ];
     }

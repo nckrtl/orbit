@@ -26,7 +26,7 @@ final readonly class RemoteTaskTurnReceipts implements TaskTurnReceipts
 
     public function __construct(private DevelopmentSshExecutor $ssh) {}
 
-    public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void
+    public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?string $context = null): void
     {
         $script = file_get_contents(resource_path('tasks/turn'));
         if ($script === false) {
@@ -51,7 +51,11 @@ final readonly class RemoteTaskTurnReceipts implements TaskTurnReceipts
             $turnFields['thread'] = $threadId;
         }
         $turn = json_encode($turnFields, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-        $this->run($instance, [], "script='".base64_encode($script)."'\nturn='".base64_encode($turn)."'\n".<<<'BASH'
+        $prefix = "script='".base64_encode($script)."'\nturn='".base64_encode($turn)."'\n";
+        if ($context !== null) {
+            $prefix .= "context='".base64_encode($context)."'\nwrite_context=1\n";
+        }
+        $this->run($instance, [], $prefix.<<<'BASH'
             install -d -m 0755 -- "$dir"
             rm -f -- "$dir/receipt.json"
             printf '%s' "$script" | base64 -d > "$dir/turn.new"
@@ -60,6 +64,10 @@ final readonly class RemoteTaskTurnReceipts implements TaskTurnReceipts
             printf '%s' "$turn" | base64 -d > "$dir/turn.json.new"
             printf '\n' >> "$dir/turn.json.new"
             mv -f -- "$dir/turn.json.new" "$dir/turn.json"
+            if [ "${write_context:-}" = 1 ]; then
+                printf '%s' "$context" | base64 -d > "$dir/context.md.new"
+                mv -fT -- "$dir/context.md.new" "$dir/context.md"
+            fi
             rm -f -- "$dir/run" "$dir/run.json"
             BASH);
     }

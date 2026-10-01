@@ -1,0 +1,12 @@
+Adopting Tool...
+
+┌  Adopt Tool
+│
+├  ● Adopting Tool
+│
+└  Operation failed.
+
+The tool is not in a state that adoption can repair.
+id: 1
+step: adopt
+outcome: manager_failed

@@ -41,7 +41,7 @@ it("shows the Gateway's refusal, then creates the node and opens it", async () =
     await userEvent.fill(field("TLD for its domains"), "spare.test");
     await page.getByRole("button", { name: "Create node" }).click();
 
-    await expect.poll(app.url).toBe("/nodes/4");
+    await expect.poll(app.url).toBe("/nodes/5");
     await expect.element(footer()).toHaveTextContent("Node [spare] is active.");
     expect(app.gateway.requests.findLast((request) => request.method === "POST")?.body).toEqual({
         name: "spare",

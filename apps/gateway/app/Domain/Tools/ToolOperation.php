@@ -9,4 +9,5 @@ enum ToolOperation: string
     case Install = 'install';
     case Update = 'update';
     case Remove = 'remove';
+    case Adopt = 'adopt';
 }
