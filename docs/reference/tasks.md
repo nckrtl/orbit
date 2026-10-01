@@ -486,6 +486,8 @@ An agent ends each turn with the command `.git/orbit/turn`:
 
 Before each turn, the Gateway installs that command, writes `.git/orbit/turn.json` with the role, the deliverables, and the acting thread's Orbit id, and removes any earlier turn receipt. `ID` is that Orbit thread id. Git never tracks `.git/orbit/`. The command and the [task check](#project-check) both need `python3` on the Node. `.git/orbit/turn.json` is the turn input. It is not the receipt.
 
+Before each review turn, opening or continued, the Gateway also writes `.git/orbit/context.md` in that directory. The file holds the full task brief, the subtask brief, the deliverables, the earlier approval bodies, and the held resolution. It is the same file on every driver. The [review packet](#review-packet) names it in every cut note. The file replaces the `tasks-show` and `tasks-comment-list` references.
+
 | Role | Outcomes |
 | --- | --- |
 | Implementer | `ready_for_review`, `blocked` |
@@ -597,18 +599,20 @@ The opening turn is a review packet of at most 16,000 characters, about 4,000 to
 | Part | Cap | When it does not fit |
 | --- | --- | --- |
 | Retrieval block | 1,000, reserved first | Never cut |
-| Held resolution | 2,000 | The end is cut. `tasks-comment-list` returns it |
-| Task brief | 2,000 | The end is cut. `tasks-show` returns it |
-| Subtask brief | 2,000 | The end is cut. `tasks-show` returns it |
-| Deliverables | 2,000 | One line each, at most 240 characters, with the description cut to 160 |
-| Earlier approvals | 1,500 | One line each, at most 200 characters. The oldest lines drop |
-| Diff stat | 1,500 | A summary line with every file, insertion, and deletion, then paths until the cap |
-| Handoff result | 2,000 | One line per command the check ran, with the command cut to 160 characters. `.git/orbit/check.log` holds the rest |
-| Diff body | The rest, and at most 16,384 bytes | Cut from the end |
+| Held resolution | 2,000 | The end is cut. `.git/orbit/context.md` holds the full resolution |
+| Task brief | 2,000 | The end is cut. `.git/orbit/context.md` holds the full brief |
+| Subtask brief | 2,000 | The end is cut. `.git/orbit/context.md` holds the full brief |
+| Deliverables | 2,000 | One line each, at most 240 characters, with the description cut to 160. `.git/orbit/context.md` holds every field |
+| Earlier approvals | 1,500 | One line each, at most 200 characters. The oldest lines drop. `.git/orbit/context.md` holds each approval body |
+| Diff stat | 1,500 | A summary line with every file, insertion, and deletion, then paths until the cap. The stat command prints the rest. The cut note names `.git/orbit/context.md` |
+| Handoff result | 2,000 | One line per command the check ran, with the command cut to 160 characters. `.git/orbit/check.log` holds the rest. The cut note names `.git/orbit/context.md` |
+| Diff body | The rest, and at most 16,384 bytes | Cut from the end. The diff command prints the rest. The cut note names `.git/orbit/context.md` |
 
-Dropped lines leave one line that says how many were omitted. The diff and the stat replace bytes that are not valid UTF-8. The packet does not name a feature contract. A continued turn keeps the review rules, the subtask brief, the new diff stat, the new handoff result, the diff body, the retrieval block, and the closing instructions. It leaves out the task brief, the deliverables, the earlier approvals, and the held resolution.
+Before each review turn, opening or continued, Orbit writes `.git/orbit/context.md` with the full task brief, subtask brief, deliverables, earlier approval bodies, and held resolution. Every cut note names that file. The file replaces the `tasks-show` and `tasks-comment-list` references, and it works on every driver.
 
-The retrieval commands print what the caps cut, including untracked files, without updating the index. The packet puts the subtask's start commit in place of `START`:
+Dropped lines leave one line that says how many were omitted. The diff and the stat replace bytes that are not valid UTF-8. The packet does not name a feature contract. A continued turn keeps the review rules, the subtask brief, the new diff stat, the new handoff result, the diff body, the retrieval block, and the closing instructions. It leaves out the task brief, the deliverables, the earlier approvals, and the held resolution. `.git/orbit/context.md` still holds those parts.
+
+The retrieval commands print the diff the caps cut, including untracked files, without updating the index. The packet puts the subtask's start commit in place of `START`:
 
 ```bash
 git diff --stat START; git ls-files --others --exclude-standard -z | while IFS= read -r -d '' path; do git diff --no-index --stat -- /dev/null "$path" || true; done
@@ -891,7 +895,7 @@ If any working thread paused a subtask, an operator who talks to the reviewer wo
 
 ### A fresh reviewer for each subtask
 
-A long-lived reviewer would carry the context of every earlier review into each new one, and that inherited context would be most of its tokens. A fresh thread with a capped packet reviews only this subtask, and the retrieval commands print what the caps cut. A re-review continues the same thread, so the reviewer keeps its own findings.
+A long-lived reviewer would carry the context of every earlier review into each new one, and that inherited context would be most of its tokens. A fresh thread with a capped packet reviews only this subtask. The retrieval commands print the diff the caps cut, and every cut note names `.git/orbit/context.md`, which holds the full task brief, subtask brief, deliverables, earlier approval bodies, and held resolution. The file is in the workspace, so it works on every driver. A re-review continues the same thread, so the reviewer keeps its own findings.
 
 ### The reviewer does not edit
 
