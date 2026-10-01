@@ -727,20 +727,25 @@ prove_helper() {
 echo "candidate ${candidate}"
 echo "label ${label}"
 echo "topology ${topology} on branch ${branch}"
-status_text=$(bin/e2e-topology status "$topology")
+status_text=$(bin/e2e-topology status "$topology" 2>&1)
 echo "$status_text"
 if [[ $status_text != *discovery* ]]; then
     echo "acquiring ${topology}"
     bin/e2e-topology acquire "$topology" .
-    status_text=$(bin/e2e-topology status "$topology")
+    status_text=$(bin/e2e-topology status "$topology" 2>&1)
     echo "$status_text"
 fi
 assert_contains "$status_text" "discovery " "topology was not acquired"
 attempt=${status_text##*discovery }
 attempt=${attempt%%$'\n'*}
-evidence_line=${status_text%%$'\n'*}
-evidence_worktree=${evidence_line#*bridge worktree }
-evidence_worktree=${evidence_worktree%% of *}
+evidence_worktree=
+while IFS= read -r evidence_line; do
+    if [[ $evidence_line == *'bridge worktree '* ]]; then
+        evidence_worktree=${evidence_line#*bridge worktree }
+        evidence_worktree=${evidence_worktree%% of *}
+        break
+    fi
+done <<<"$status_text"
 if [[ ! -d $evidence_worktree ]]; then
     echo "could not find the bridge worktree for the evidence log in topology status" >&2
     exit 1
