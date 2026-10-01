@@ -549,7 +549,7 @@ When Orbit starts a fresh reviewer for a subtask whose earlier reviewer answered
 
 #### Questions
 
-Orbit stores one question record for each consult and each direction request. A consult the reviewer escalates is that same record moving from `open` to `escalated`, not a second row. A subtask should be specific enough that an implementer builds it in one go, so every question marks a brief, a contract, or a scope that left something open. The records let the operator count those questions and trace each one to its brief.
+Orbit stores one question record in `task_questions` for each consult and each direction request. A consult the reviewer escalates is that same record moving from `open` to `escalated`, not a second row. A subtask should be specific enough that an implementer builds it in one go, so every question marks a brief, a contract, or a scope that left something open. The records let the operator count those questions and trace each one to its brief.
 
 | Field | Meaning |
 | --- | --- |
@@ -589,7 +589,7 @@ A subtask that asks for assistance keeps its status and its Node slot. The flag,
 
 #### Direction requests
 
-Every assistance request has a kind.
+Every assistance request has a kind, `direction` or `failure`. The task and the subtask store `assistance_kind` and `assistance_question` beside `assistance_requested` and `assistance_reason`.
 
 | Kind | Cause | Question |
 | --- | --- | --- |
@@ -988,9 +988,23 @@ A command that only passes on the fixed code does not prove it covers the bug. S
 
 An agent can repair a named list of failures in one turn, so the first failure gets one reminder that names every failed item. A second failure asks for assistance, because unlimited reminders hide a stuck subtask. A blocked agent must ask one specific question, because a vague block costs the operator a round trip.
 
-A blocked implementer asks its reviewer before the operator, because the reviewer reads the same contract and can answer most questions from it. The consult limit stops an implementer and a reviewer from passing one question back and forth.
+### Questions go through the reviewer
 
-Assistance has a kind, so the operator finds the questions that need a person among failures that the operator only has to fix. A `blocked` status was rejected: the subtask would have to remember whether to return to `running` or `reviewing`, and every status filter and board lane would change. The operator's answer goes through the reviewer, so the reviewer translates it into the contract and later reviews the work under the same direction. [ADR 0187](/decisions/0187-ask-the-reviewer-before-the-operator) records this decision while it is built.
+[Agents operate, humans steer](/mission#principles): the reviewer resolves what the contract already decides, and the operator gives direction that no agent can give. A blocked implementer asks its reviewer before the operator, because the reviewer reads the same brief, documentation, code, and task history. Asking the operator about every block was rejected because it makes a person repeat answers already in the contract. A consult costs one reviewer turn, but keeps those questions away from the operator.
+
+The two-consult limit stops an implementer and a reviewer from passing one question back and forth without end. An unlimited consult loop would hide a question that needs a person's decision. The third block goes to the operator with both earlier answers, so the operator can see what did not resolve it.
+
+The operator's answer goes through the reviewer, so the reviewer translates it into the contract and later reviews the work under the same direction. Sending that answer straight to the implementer was rejected because the reviewer would judge work done under direction it had not seen. The reviewer can therefore start before the implementer's first review handoff, and the later review keeps the consult in its context.
+
+Assistance has a kind, so the operator finds the questions that need a person among failures that the operator only has to fix. A `blocked` status was rejected: the subtask would have to remember whether to return to `running` or `reviewing`, and every status filter, transition, and board lane would change. A kind marks the request without adding a lifecycle step.
+
+The existing `task_group.assistance_requested` webhook carries the kind and question. A separate `task_group.direction_requested` event was rejected because receivers would need a second subscription for the same assistance flag. Waiting on another task or pull request is not a third assistance kind: a dependency wait that resumes on its own is a separate feature. The operator answers through the CLI, MCP, or API; a web answer box is outside this feature.
+
+### Questions are records, not parsed comments
+
+Each consult and direction request has a record with its answer and cause, while comments keep the conversation. Questions kept only in comment bodies would need free-text parsing before the operator could count them, group them by cause, or trace them to a brief. The records and the `questions` and `escalations` counts show where briefs, contracts, and subtask scopes need attention.
+
+The reviewer chooses a cause from a fixed list when it hands off, because it already holds the contract and the answer. Asking a model to infer the cause later was rejected: the handoff has the evidence, and a fixed list avoids another model call and its cost. A cause stays empty until that reviewer receipt, so an open, escalated, or migrated question does not claim a diagnosis nobody has made.
 
 ### Only the acting thread pauses a subtask
 

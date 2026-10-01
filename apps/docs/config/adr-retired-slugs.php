@@ -180,4 +180,5 @@ return [
     '0179' => ['0179-gate-all-extension-surfaces-with-one-gateway-switch'],
     '0180' => ['0180-absorb-built-decisions-into-the-docs'],
     '0181' => ['0181-name-the-domain-project-and-instance-everywhere'],
+    '0187' => ['0187-ask-the-reviewer-before-the-operator'],
 ];

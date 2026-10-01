@@ -562,8 +562,7 @@
               "decisions/0175-docs-impact-check-in-orbit-repo",
               "decisions/0176-file-repro-first-bug-groups",
               "decisions/0178-run-project-agnostic-tasks-without-a-planner",
-              "decisions/0182-start-tasks-from-project-task-definitions",
-              "decisions/0187-ask-the-reviewer-before-the-operator"
+              "decisions/0182-start-tasks-from-project-task-definitions"
             ]
           }
         ]
@@ -1305,6 +1304,10 @@
     {
       "source": "/decisions/0181-name-the-domain-project-and-instance-everywhere",
       "destination": "/reference/projects#project-and-instance"
+    },
+    {
+      "source": "/decisions/0187-ask-the-reviewer-before-the-operator",
+      "destination": "/reference/tasks#questions-go-through-the-reviewer"
     },
     {
       "source": "/decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop",

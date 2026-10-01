@@ -771,31 +771,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0187-ask-the-reviewer-before-the-operator.md",
-            "title": "ADR 0187: Ask the reviewer before the operator",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/gateway",
-                "apps/web",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Access grant",
-                "Gateway",
-                "Project",
-                "Route",
-                "Subtask",
-                "Task",
-                "Turn receipt"
-            ],
-            "governing_adrs": [
-                "0182",
-                "0187"
-            ]
-        },
-        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -841,8 +816,7 @@
                 "0175",
                 "0176",
                 "0178",
-                "0182",
-                "0187"
+                "0182"
             ]
         },
         {
@@ -1945,8 +1919,7 @@
             ],
             "governing_adrs": [
                 "0176",
-                "0182",
-                "0187"
+                "0182"
             ]
         },
         {
