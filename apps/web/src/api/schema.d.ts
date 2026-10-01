@@ -3579,6 +3579,7 @@ export interface components {
             error_code?: string | null;
             cpu?: number | null;
             memory_bytes?: number | null;
+            user?: string | null;
         };
         ProjectRuntimeDefinition: {
             id?: string;
@@ -10634,6 +10635,8 @@ export interface operations {
                     name: string;
                     /** @description Process preset: vp-dev, agentation-mcp, or antigravity-watch */
                     preset?: string;
+                    /** @description Existing non-root account for a Node systemd Process */
+                    user?: string;
                     /**
                      * @description systemd or docker
                      * @enum {string}

@@ -26,6 +26,7 @@ use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Processes\ProcessTargetType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Processes\SshProcessUserResolver;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
@@ -68,6 +69,9 @@ final readonly class AddProcessAction
     /** @return array{process: Process, created: bool} */
     public function execute(#[SensitiveParameter] AddProcessData $data): array
     {
+        if ($data->user !== null && ($data->targetType !== ProcessTargetType::Node || $data->runtime !== ProcessRuntime::Systemd || $data->preset !== null)) {
+            throw new ResourceOperationException('process.option_invalid', 'The user option requires a Node systemd Process without a preset.');
+        }
         $this->targets->resolve($data->targetType, $data->targetId);
         $ownerIds = $data->targetType === ProcessTargetType::Instance ? [$data->targetId] : [];
 
@@ -150,6 +154,13 @@ final readonly class AddProcessAction
                     ->findOrFail($data->targetId),
             ),
         };
+        if ($data->user !== null) {
+            $target = new ProcessTarget(
+                node: $target->node,
+                user: $data->user,
+                checkoutPath: app(SshProcessUserResolver::class)->home($target->node, $data->user),
+            );
+        }
         if ($data->preset !== null) {
             $this->assertPresetAdmission($data, $target);
         }

@@ -18,6 +18,8 @@ Tool scan and adoption fixtures distinguish formula, cask, and Vite+ global iden
 
 Doctor fixtures include informational-only healthy reports and mixed reports with drift or unverifiable findings. Node fixtures include an enrolled Mac with empty roles. Web fixtures preserve registered Tools while a live inventory request fails.
 
+Process response fixtures include `user`, which is null when the Process uses its derived account. When an explicit account is selected, the response includes that name both in `user` and in `runtime_config.user`; see [Node accounts](/reference/processes-and-schedules#node-account).
+
 ## Record a fixture
 
 A Gateway fixture test sends a request with deterministic data and calls `record_fixture()` from `apps/gateway/tests/Support/ResponseFixtures.php` with the fixture name, the SDK request class that sends the route, and the route.

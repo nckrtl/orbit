@@ -96,7 +96,7 @@ orbit process:create pi-server \
   --start
 ```
 
-`--user` is the [Process user](/reference/processes-and-schedules#owners). The default working directory is the managed home, which `orbit-worker` cannot use, so the command sets `--working-directory`. Add `--command=--allow-provider=cliproxyapi` when the Node uses CLIProxyAPI. The `pi` driver accepts the Node once this Process is active with desired state `running`. `GET /capabilities` lists the signed-in models. Select Pi for implementers with `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER=pi` on the Gateway.
+`--user` is the [Process user](/reference/processes-and-schedules#owners). The default working directory is the selected account's home. The command sets `--working-directory` explicitly to make the install path clear. Add `--command=--allow-provider=cliproxyapi` when the Node uses CLIProxyAPI. The `pi` driver accepts the Node once this Process is active with desired state `running`. `GET /capabilities` lists the signed-in models. Select Pi for implementers with `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER=pi` on the Gateway.
 
 ## Limits
 

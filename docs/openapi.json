@@ -12732,6 +12732,12 @@
                     "type": "string",
                     "description": "Process preset: vp-dev, agentation-mcp, or antigravity-watch"
                   },
+                  "user": {
+                    "type": "string",
+                    "pattern": "^[a-z_][a-z0-9_-]{0,31}$",
+                    "maxLength": 32,
+                    "description": "Existing non-root account for a Node systemd Process"
+                  },
                   "runtime": {
                     "type": "string",
                     "enum": [
@@ -24892,6 +24898,12 @@
           "memory_bytes": {
             "type": [
               "integer",
+              "null"
+            ]
+          },
+          "user": {
+            "type": [
+              "string",
               "null"
             ]
           }

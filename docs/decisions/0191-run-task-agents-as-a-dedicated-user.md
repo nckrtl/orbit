@@ -36,7 +36,7 @@ A Node systemd Process accepts `user`. The CLI flag is `--user`. The API field a
 
 Instance Processes, Docker Processes, presets, and Project definitions reject `user`. The CLI returns `process.option_invalid` and sends no request. A name that fails the pattern returns `process.user_invalid` and sends no request. The API returns HTTP 422 and names the field `user`.
 
-The default working directory stays `/home/{managed user}`. It does not follow `user`. The `pi-server` Process sets `--working-directory=/home/orbit-worker`. JSON for a Process includes `user`, and it is null when the Process uses the derived account. A missing account does not fail create. Start fails with `process.start_failed`.
+The Gateway checks the named account over SSH with `getent passwd`. It refuses `root` and accounts with UID zero. An absent account or an invalid account home fails create with `process.user_unavailable`. The default working directory is the named account's home. An explicit working directory overrides that default. When `user` is omitted, the default stays `/home/{managed user}`. JSON for a Process includes `user`, and it is null when the Process uses the derived account. The user is stored in `runtime_config` and is part of identity matching.
 
 ### Workspace ACL
 

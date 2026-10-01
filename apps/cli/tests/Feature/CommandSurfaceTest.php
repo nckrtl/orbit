@@ -767,6 +767,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'command' => [],
                 'image' => null,
                 'working-directory' => null,
+                'user' => null,
                 'environment' => [],
                 'port' => [],
                 'volume' => [],

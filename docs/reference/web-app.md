@@ -16,6 +16,8 @@ The web app is Orbit's live view of the fleet. It is a static single-page app th
 
 The Project schema includes `task_workspace_routed`, which describes routing for new task workspaces; an existing workspace keeps its recorded mode. The Gateway serves it from its own origin.
 
+The generated Process schema includes nullable `user`, the explicitly selected account or null for the derived account. Process create accepts `user` only for a Node systemd Process without a preset. [Processes and schedules](/reference/processes-and-schedules#node-account) owns the account validation and working-directory defaults.
+
 Extension navigation follows the Gateway's enabled set: each page and its route depend only on their own extension. Tasks pages need only the `tasks` extension. The Quota page needs only `proxycli`, and it shows provider quota whenever `proxycli` is enabled and its collector is configured, whether or not Tasks is enabled. Tasks and ProxyCLI links and routes are absent while their extension is disabled. The Gateway API remains authoritative, so a stale direct request still receives `extension.disabled` rather than granting access.
 
 The Route create request type distinguishes an app Route with `instance_id` from a custom proxy Route with `node_id` and an upstream or Process; it has no app Route creation form with `project_id` or a targetless scope.

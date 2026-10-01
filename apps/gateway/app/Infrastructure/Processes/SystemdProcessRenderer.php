@@ -6,6 +6,7 @@ namespace App\Infrastructure\Processes;
 
 use App\Domain\AppDev\AgentationEndpoint;
 use App\Domain\AppDev\DevelopmentServerEndpoint;
+use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Processes\AgentationMcpPreset;
 use App\Domain\Processes\AntigravityWatchPreset;
@@ -43,6 +44,10 @@ final readonly class SystemdProcessRenderer
     public function render(Process $process, ProcessTarget $target, ?ManagedUserAccount $managedAccount = null): string
     {
         $runtimeConfig = $this->runtimeConfig($process);
+        $user = $runtimeConfig['user'] ?? $target->user;
+        if (! is_string($user) || ! LinuxUserName::isValid($user) || (array_key_exists('user', $runtimeConfig) && ($user === 'root' || $target->instance !== null || isset($runtimeConfig['preset'])))) {
+            throw new InvalidArgumentException('A Process user must name a non-root account for a Node systemd Process without a preset.');
+        }
         $command = $this->stringList($runtimeConfig['command'] ?? null);
         $environmentFile = $process->isVpDev() ? $target->environmentFile : ($runtimeConfig['environment_file'] ?? null);
 
@@ -78,7 +83,7 @@ final readonly class SystemdProcessRenderer
             '',
             '[Service]',
             'Type=simple',
-            "User={$target->user}",
+            "User={$user}",
             'WorkingDirectory='.$this->escapeDirectivePath($process->working_directory),
             'Environment=PATH=/usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin',
             'Environment=NODE_USE_SYSTEM_CA=1',

@@ -22,6 +22,7 @@ final readonly class ProcessSpecification
                 'environment_file' => $target->environmentFile,
                 ...($data->environment === [] ? [] : ['environment' => $data->environment]),
                 ...($data->preset === null ? [] : ['preset' => $data->preset]),
+                ...($data->user === null ? [] : ['user' => $data->user]),
             ]
             : [
                 'image' => $data->image,
