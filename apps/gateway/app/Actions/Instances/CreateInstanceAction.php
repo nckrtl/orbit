@@ -679,8 +679,28 @@ final readonly class CreateInstanceAction
 
         $reserved = $instance->fresh();
 
-        if ($reserved instanceof Instance && $reserved->status === InstanceState::Reserved) {
-            $this->releaseCopyReservations($reserved);
+        if (! $reserved instanceof Instance || $reserved->status !== InstanceState::Reserved) {
+            return;
+        }
+
+        // Creating the row does not keep it. Another request may hold this Instance
+        // lock and be inside a copy while the row is still reserved. Take the lock
+        // again, and keep the row when that request still owns it.
+        try {
+            ($this->environmentOperations ?? app(InstanceEnvironmentOperationLock::class))->run(
+                [$reserved->id],
+                function () use ($reserved): void {
+                    $current = $reserved->fresh();
+
+                    if ($current instanceof Instance && $current->status === InstanceState::Reserved) {
+                        $this->releaseCopyReservations($current);
+                    }
+                },
+            );
+        } catch (ResourceOperationException $exception) {
+            if ($exception->errorCode !== 'env.operation_busy') {
+                throw $exception;
+            }
         }
     }
 

@@ -3613,6 +3613,124 @@ describe('development instance copies', function (): void {
             new Filesystem()->deleteDirectory($directory);
         }
     });
+
+    it('keeps a reserved row while another request holds its lock through a long copy', function (): void {
+        $source = copy_development_source();
+        $copier = bind_development_copier();
+        $this->source->resolution = new DevelopmentSourceResolution('feature', $copier->head);
+        $directory = sys_get_temp_dir().'/orbit-copy-owner-'.bin2hex(random_bytes(4));
+        mkdir($directory, 0700, true);
+        $now = 0.0;
+        $clock = static function () use (&$now): float {
+            return $now;
+        };
+        $wait = static function () use (&$now): void {
+            $now += 1000;
+        };
+        $native = new NativeInstanceEnvironmentOperationLock($directory, new CommandDeadline($clock), $clock, $wait);
+        app()->instance(InstanceEnvironmentOperationLock::class, new class($native, $directory) implements InstanceEnvironmentOperationLock
+        {
+            public function __construct(
+                private InstanceEnvironmentOperationLock $inner,
+                private string $directory,
+            ) {}
+
+            public function run(array $instanceIds, Closure $operation): mixed
+            {
+                $ids = $this->directory.'/ids';
+
+                if (! is_file($ids)) {
+                    file_put_contents($ids, implode(',', $instanceIds));
+                    $deadline = microtime(true) + 5;
+
+                    while (! is_file($this->directory.'/locked') && microtime(true) < $deadline) {
+                        usleep(20_000);
+                    }
+                }
+
+                return $this->inner->run($instanceIds, $operation);
+            }
+        });
+        app()->instance(AppDevSourceOperationLock::class, new NativeAppDevSourceOperationLock($directory));
+        $script = $directory.'/hold.php';
+        file_put_contents($script, <<<'PHP'
+            <?php
+            [$directory] = array_slice($argv, 1);
+            $deadline = time() + 20;
+            while (! is_file($directory.'/ids') && time() < $deadline) {
+                usleep(20_000);
+            }
+            if (! is_file($directory.'/ids')) {
+                exit(1);
+            }
+            $ids = array_values(array_map(intval(...), explode(',', (string) file_get_contents($directory.'/ids'))));
+            sort($ids, SORT_NUMERIC);
+            $handles = [];
+            foreach ($ids as $id) {
+                $handle = fopen($directory.'/app-instance-'.$id.'.lock', 'c+');
+                if ($handle === false || ! flock($handle, LOCK_EX)) {
+                    exit(1);
+                }
+                $handles[] = $handle;
+            }
+            file_put_contents($directory.'/ownership', implode(',', $ids)."\n");
+            file_put_contents($directory.'/locked', "copying\n");
+            $deadline = time() + 20;
+            while (! is_file($directory.'/release') && time() < $deadline) {
+                usleep(20_000);
+            }
+            PHP);
+        $holder = new Process([PHP_BINARY, $script, $directory]);
+        $holder->start();
+        $keptId = null;
+
+        try {
+            expect(fn () => app(CreateInstanceAction::class)->execute(new CreateInstanceData(
+                projectId: $this->orbitApp->id,
+                nodeId: $this->node->id,
+                name: 'feature',
+                root: null,
+                domain: null,
+                branch: null,
+                sourceInstanceId: $source->id,
+            )))->toThrow(fn (ResourceOperationException $exception) => $exception->errorCode === 'env.operation_busy');
+            $kept = Instance::query()->where('name', 'feature')->first();
+            expect($kept)->not->toBeNull()
+                ->and($kept->status)->toBe(InstanceState::Reserved)
+                ->and(is_file($directory.'/ownership'))->toBeTrue();
+            $keptId = $kept->id;
+            expect(file_get_contents($directory.'/ownership'))->toContain((string) $keptId);
+            file_put_contents($directory.'/release', "go\n");
+            $holder->wait();
+            expect($holder->getExitCode())->toBe(0);
+            $copier->duringCopy = function (mixed $ignored, Instance $target) use ($keptId): void {
+                expect($target->id)->toBe($keptId)
+                    ->and($target->refresh()->status)->toBe(InstanceState::Reserved);
+            };
+            $result = app(CreateInstanceAction::class)->execute(new CreateInstanceData(
+                projectId: $this->orbitApp->id,
+                nodeId: $this->node->id,
+                name: 'feature',
+                root: null,
+                domain: null,
+                branch: null,
+                sourceInstanceId: $source->id,
+            ));
+
+            expect($result['instance']->id)->toBe($keptId)
+                ->and($copier->copies)->toBe(1)
+                ->and(Instance::query()->whereKey($keptId)->exists())->toBeTrue()
+                ->and(file_get_contents($directory.'/ownership'))->toContain((string) $keptId);
+        } finally {
+            if (! is_file($directory.'/release')) {
+                file_put_contents($directory.'/release', "go\n");
+            }
+            if ($holder->isRunning()) {
+                $holder->wait();
+            }
+            new Filesystem()->deleteDirectory($directory);
+        }
+    });
 });
 
 function copy_development_source(): Instance

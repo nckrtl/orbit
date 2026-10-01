@@ -15,8 +15,11 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Instances\DevelopmentInstanceCopyIsolationProgram;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceCheckoutCopier;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
@@ -483,7 +486,7 @@ it('snapshots SQLite from the live source, rewrites names, and resets runtime fi
     }
 });
 
-it('does not reset or rewrite through a parent symlink for a client or workspace copy', function (): void {
+it('refuses a parent symlink that does not land inside the copy', function (): void {
     $root = sys_get_temp_dir().'/orbit-copy-parent-link-'.bin2hex(random_bytes(4));
     $source = $root.'/source';
     $dest = $root.'/dest';
@@ -517,19 +520,130 @@ it('does not reset or rewrite through a parent symlink for a client or workspace
             'python3', '-c', DevelopmentInstanceCopyIsolationProgram::script(),
             'prepare', $source, $dest, 'default.acme.test', 'feature.acme.test',
         ]);
-        $process->mustRun();
+        $process->run();
 
-        expect(trim($process->getOutput()))->toBe('ready');
+        expect($process->getExitCode())->not->toBe(0)
+            ->and($process->getErrorOutput())->toContain('failed');
 
         foreach ($before as $path => $contents) {
             expect(is_file($path))->toBeTrue()
                 ->and(file_get_contents($path))->toBe($contents);
         }
 
-        expect(readlink($dest.'/storage/framework'))->toBe($dest.'/storage/framework')
-            ->and(readlink($dest.'/bootstrap'))->toBe($dest.'/bootstrap')
-            ->and(readlink($dest.'/public'))->toBe($dest.'/public')
-            ->and(is_link($dest.'/storage/logs') || is_dir($dest.'/storage/logs'))->toBeTrue();
+        expect(readlink($dest.'/storage/framework'))->toBe($source.'/storage/framework')
+            ->and(readlink($dest.'/bootstrap'))->toBe($source.'/bootstrap')
+            ->and(readlink($dest.'/public'))->toBe($source.'/public');
+    } finally {
+        new Process(['rm', '-rf', $root])->run();
+    }
+});
+
+it('rewrites an early and a late source path in a file larger than 8 MiB', function (): void {
+    $root = sys_get_temp_dir().'/orbit-copy-large-'.bin2hex(random_bytes(4));
+    $source = $root.'/source';
+    $dest = $root.'/dest';
+    $padding = str_repeat('x', (8 * 1024 * 1024) + 10);
+    $early = $source."\n".$padding.'TAIL';
+    $late = $padding.'https://default.acme.test/late'."\n".$source."\nEND";
+
+    try {
+        mkdir($source.'/bootstrap/cache', 0777, true);
+        file_put_contents($source.'/bootstrap/cache/early.php', $early);
+        file_put_contents($source.'/bootstrap/cache/late.php', $late);
+        $copied = new Process(['cp', '-a', $source, $dest]);
+        $copied->mustRun();
+
+        $process = new Process([
+            'python3', '-c', DevelopmentInstanceCopyIsolationProgram::script(),
+            'prepare', $source, $dest, 'default.acme.test', 'feature.acme.test',
+        ]);
+        $process->mustRun();
+
+        $expectedEarly = $dest."\n".$padding.'TAIL';
+        $expectedLate = $padding.'https://feature.acme.test/late'."\n".$dest."\nEND";
+
+        expect(trim($process->getOutput()))->toBe('ready')
+            ->and(strlen($early))->toBeGreaterThan(8 * 1024 * 1024)
+            ->and(strlen($late))->toBeGreaterThan(8 * 1024 * 1024)
+            ->and(file_get_contents($dest.'/bootstrap/cache/early.php'))->toBe($expectedEarly)
+            ->and(file_get_contents($dest.'/bootstrap/cache/late.php'))->toBe($expectedLate)
+            ->and(file_get_contents($source.'/bootstrap/cache/early.php'))->toBe($early)
+            ->and(file_get_contents($source.'/bootstrap/cache/late.php'))->toBe($late);
+    } finally {
+        new Process(['rm', '-rf', $root])->run();
+    }
+});
+
+it('isolates hot, cache, and config behind a contained source symlink for both copy paths', function (): void {
+    $root = sys_get_temp_dir().'/orbit-copy-contained-'.bin2hex(random_bytes(4));
+    $apps = $root.'/apps';
+    $sourcePath = $apps.'/acme/default';
+    $destPath = $apps.'/acme/feature';
+    $head = str_repeat('b', 40);
+
+    try {
+        copy_contained_source($sourcePath);
+        $preserved = copy_contained_source_bytes($sourcePath);
+        $node = Node::query()->create([
+            'name' => 'copy-node',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'tld' => 'test',
+            'public_ssh_host' => '192.0.2.60',
+            'wireguard_ip' => '10.44.0.60',
+            'user' => 'orbit',
+            'settings' => ['apps' => ['path' => $apps]],
+        ]);
+        $project = Project::query()->create([
+            'name' => 'Acme',
+            'slug' => 'acme',
+            'repository_url' => 'https://github.com/acme/site.git',
+            'default_branch' => 'main',
+            'root' => 'public',
+        ]);
+        $source = Instance::query()->create([
+            'project_id' => $project->id,
+            'node_id' => $node->id,
+            'name' => 'default',
+            'source_layout' => InstanceSourceLayout::Checkout,
+            'checkout_path' => $sourcePath,
+            'branch' => 'main',
+            'starting_commit' => $head,
+            'status' => InstanceState::Active,
+        ]);
+        $target = Instance::query()->create([
+            'project_id' => $project->id,
+            'node_id' => $node->id,
+            'name' => 'feature',
+            'source_layout' => InstanceSourceLayout::Checkout,
+            'checkout_path' => $destPath,
+            'branch_override' => 'feature',
+            'status' => InstanceState::Reserved,
+        ]);
+        $source = $source->refresh();
+        $target = $target->refresh();
+        $copier = copy_checkout_copier(new CopyTreeSshExecutor($head));
+
+        foreach (['copy', 'workspace'] as $path) {
+            if ($path === 'copy') {
+                $copier->copy($source, $target, 'feature', $head, 'instance.path_taken');
+            } else {
+                $copier->copyOntoFetchedTip($source, $target, 'feature', 'main', $head, 'instance.path_taken');
+            }
+
+            expect(copy_contained_source_bytes($sourcePath))->toBe($preserved)
+                ->and(is_file($destPath.'/web/public/hot'))->toBeFalse()
+                ->and(is_file($destPath.'/web/storage/framework/cache/data/payload.php'))->toBeFalse()
+                ->and(is_file($destPath.'/web/storage/framework/sessions/state'))->toBeFalse()
+                ->and(is_file($destPath.'/web/storage/framework/views/home.php'))->toBeFalse()
+                ->and(readlink($destPath.'/public'))->toBe($destPath.'/web/public')
+                ->and(readlink($destPath.'/bootstrap'))->toBe($destPath.'/web/bootstrap')
+                ->and(readlink($destPath.'/storage/framework'))->toBe($destPath.'/web/storage/framework')
+                ->and(file_get_contents($destPath.'/web/bootstrap/cache/config.php'))->toContain($destPath.'/database/database.sqlite')
+                ->and(file_get_contents($destPath.'/web/bootstrap/cache/config.php'))->not->toContain($sourcePath.'/database/database.sqlite')
+                ->and(file_get_contents($destPath.'/.env'))->toContain($destPath.'/database/database.sqlite')
+                ->and(readlink($sourcePath.'/public'))->toBe($sourcePath.'/web/public');
+        }
     } finally {
         new Process(['rm', '-rf', $root])->run();
     }
@@ -861,4 +975,86 @@ function copy_git_env(): array
         'GIT_COMMITTER_NAME' => 'Orbit',
         'GIT_COMMITTER_EMAIL' => 'orbit@example.test',
     ];
+}
+
+function copy_contained_source(string $source): void
+{
+    foreach ([
+        $source.'/web/public',
+        $source.'/web/bootstrap/cache',
+        $source.'/web/storage/framework/cache/data',
+        $source.'/web/storage/framework/sessions',
+        $source.'/web/storage/framework/views',
+        $source.'/storage',
+    ] as $directory) {
+        mkdir($directory, 0777, true);
+    }
+
+    file_put_contents($source.'/web/public/hot', 'http://127.0.0.1:5173');
+    file_put_contents($source.'/web/bootstrap/cache/config.php', "<?php return ['path' => '{$source}/database/database.sqlite'];\n");
+    file_put_contents($source.'/web/storage/framework/cache/data/payload.php', 'payload '.$source);
+    file_put_contents($source.'/web/storage/framework/sessions/state', 'session');
+    file_put_contents($source.'/web/storage/framework/views/home.php', 'view');
+    file_put_contents($source.'/.env', "DB_DATABASE={$source}/database/database.sqlite\n");
+    symlink($source.'/web/public', $source.'/public');
+    symlink($source.'/web/bootstrap', $source.'/bootstrap');
+    symlink($source.'/web/storage/framework', $source.'/storage/framework');
+}
+
+/** @return array<string, string> */
+function copy_contained_source_bytes(string $source): array
+{
+    $paths = [
+        $source.'/web/public/hot',
+        $source.'/web/bootstrap/cache/config.php',
+        $source.'/web/storage/framework/cache/data/payload.php',
+        $source.'/web/storage/framework/sessions/state',
+        $source.'/web/storage/framework/views/home.php',
+        $source.'/.env',
+    ];
+    $bytes = [];
+
+    foreach ($paths as $path) {
+        $bytes[$path] = (string) file_get_contents($path);
+    }
+
+    return $bytes;
+}
+
+/**
+ * Runs placement, cp, and the isolation program locally. Branch scripts are stubbed.
+ */
+final class CopyTreeSshExecutor implements SshExecutor
+{
+    public function __construct(private string $head) {}
+
+    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+    {
+        $input = $command->protectedInput instanceof ProtectedInput
+            ? stream_get_contents($command->protectedInput->stream())
+            : $command->input;
+        $script = is_string($input) ? $input : '';
+        $arguments = $command->arguments;
+
+        if (
+            $arguments[0] === 'python3'
+            || ($arguments[0] === 'bash' && (str_contains($script, 'marker_matches') || str_contains($script, 'keep_marker') || in_array('cp', $arguments, true)))
+        ) {
+            $process = new Process($arguments, null, null, $script === '' ? null : $script);
+            $process->setTimeout(120);
+            $process->run();
+
+            return new CommandResult((int) $process->getExitCode(), $process->getOutput(), $process->getErrorOutput(), 1, false);
+        }
+
+        if ($arguments[0] === 'sync') {
+            return new CommandResult(0, '', '', 1, false);
+        }
+
+        if ($arguments[0] === 'bash' && str_contains($script, 'git -C')) {
+            return new CommandResult(0, "ready\n{$this->head}\n", '', 1, false);
+        }
+
+        return new CommandResult(1, '', 'unexpected copy command', 1, false);
+    }
 }

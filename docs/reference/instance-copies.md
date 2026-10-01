@@ -101,7 +101,7 @@ An identical request for a complete copy returns that Instance and does not copy
 4. Take the Node source lock after those environment locks.
 5. Re-check [eligibility](#source-eligibility) under those locks.
 
-A failed environment lock removes a reservation made by this request. The response is `env.operation_busy`. A changed Instance set returns `instance.lifecycle_busy` and removes that new reservation. An ineligible source removes that new reservation too. A reserved row from an earlier attempt stays. A create retry and a removal take the environment locks before the Node source lock.
+A failed environment lock returns `env.operation_busy`. It removes a reservation made by this request only after this request locks that Instance again and the row is still reserved. Another request may already be copying that row. The row stays while that lock is held. A changed Instance set returns `instance.lifecycle_busy` and removes that new reservation. An ineligible source removes that new reservation too. A reserved row from an earlier attempt stays. A create retry and a removal take the environment locks before the Node source lock.
 
 6. Inspect the destination against the ownership rule below.
 7. Write the ownership marker for this Instance id.
@@ -161,7 +161,7 @@ The new checkout is the source tree after the reset, rewrite, and SQLite snapsho
 
 ## What the copy resets
 
-These paths are deleted in the new checkout only. A symlink is removed as a symlink and is not followed. A symlink among the ancestors of one of these paths is not followed either. Reset and the bootstrap cache rewrite leave that link, and every file it names, untouched. The same rule applies to `public/hot` and to `node_modules/.vite` and `node_modules/.cache`.
+These paths are deleted in the new checkout only. A symlink is removed as a symlink and is not followed. The Gateway does not open a symlink ancestor. When that link retargets inside the new checkout, reset and the bootstrap cache rewrite use the contained directory. A link that lands outside the new checkout fails the copy. The source checkout is not modified. The same rule applies to `public/hot` and to `node_modules/.vite` and `node_modules/.cache`.
 
 | Path | What is deleted |
 | --- | --- |
@@ -189,7 +189,7 @@ Each snapshot reads the source Instance's file at that relative path. It does no
 
 ## Values that name the source
 
-The copied `.env` stays. The Gateway also copies stored environment rows. It then rewrites both, and every file under `bootstrap/cache`:
+The copied `.env` stays. The Gateway also copies stored environment rows. It then rewrites both, and every file under `bootstrap/cache`. Each rewritten file is read to the end. A file larger than 64 MiB fails the copy instead of being truncated. The rewrite replaces:
 
 - A matched source checkout path becomes the target checkout path.
 - A matched source domain becomes the target domain.
@@ -290,7 +290,7 @@ The [create refusals](/domains/applications#create-a-development-instance) still
 | `instance.copy_failed` | 409 | The copy, snapshot, rewrite, or completion step failed. |
 | `instance.placement_conflict` | 409 | The retry changes the copy identity. |
 | `instance.lifecycle_busy` | 409 | Another request holds this Instance's lifecycle lock, or the copy's environment lock set changed. |
-| `env.operation_busy` | 409 | Another environment operation holds one of the Project Instances on the Node. A reservation this request just made is removed. |
+| `env.operation_busy` | 409 | Another environment operation holds one of the Project Instances on the Node. A new reservation is removed only when its own lock is free and the row is still reserved. |
 | `instance.candidate_required` | 409 | The Node has the active `app-prod` role. |
 
 A failure after the copy starts removes the row when cleanup finishes. A busy lifecycle during setup leaves the active row in place. A `reserved` row remains only when the request stops before that cleanup. Cleanup uses the [removal path](#copy-steps) above. An unmanaged directory at the destination is never deleted.
