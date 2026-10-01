@@ -256,8 +256,8 @@ if ($cmd === "clear-pr") {
 }
 if ($cmd === "prepare-cleanup") {
     $allowed = [
-        "orb155-noncomposer" => "github.com/octocat/hello-world",
-        "orb155-null" => "github.com/octocat/spoon-knife",
+        "orb155-noncomposer" => "github.com/octocat/Hello-World",
+        "orb155-null" => "github.com/octocat/Spoon-Knife",
         "orb155-routed" => "github.com/laravel/quickstart-basic",
     ];
     $ids = [];
@@ -432,8 +432,8 @@ verify_fixtures() {
             return strtolower($host)."/".rtrim($path, "/");
         };
         $expected = [
-            "orb155-noncomposer" => ["type" => "node-package", "identity" => "github.com/octocat/hello-world"],
-            "orb155-null" => ["type" => "node-package", "identity" => "github.com/octocat/spoon-knife"],
+            "orb155-noncomposer" => ["type" => "node-package", "identity" => "github.com/octocat/Hello-World"],
+            "orb155-null" => ["type" => "node-package", "identity" => "github.com/octocat/Spoon-Knife"],
             "orb155-routed" => ["type" => "laravel-app", "identity" => "github.com/laravel/quickstart-basic"],
         ];
         $owner = [];
