@@ -1,20 +1,20 @@
 ---
 title: "Database connections"
-description: "The Gateway-owned registry of mysql, pgsql, sqlite, and redis connections and how an operator attaches one to an Instance."
+description: "The Gateway-owned registry of mysql, pgsql, sqlite, and redis connections, the databases that Instances own, their test databases, and how an operator attaches a connection to an Instance."
 covers:
   - apps/gateway/app/Actions/DatabaseConnections/**
   - apps/gateway/app/Domain/DatabaseConnections/**
   - apps/gateway/app/Infrastructure/DatabaseConnections/**
-  - apps/gateway/app/Http/Controllers/Api/{DatabaseConnectionsController,DatabaseConnectionAttachmentsController,DatabaseUsersController}.php
+  - apps/gateway/app/Http/Controllers/Api/{DatabaseConnectionsController,DatabaseConnectionAttachmentsController}.php
   - apps/gateway/app/Http/Requests/DatabaseConnections/**
-  - apps/gateway/app/Models/{DatabaseConnection,DatabaseConnectionTarget,DatabaseUser}.php
-  - apps/cli/app/Commands/Internal/InternalDatabaseLocalCommand.php
-  - apps/cli/app/Services/Database/**
+  - apps/gateway/app/Models/{DatabaseConnection,DatabaseConnectionTarget}.php
+  - apps/cli/app/{Commands/Internal/InternalDatabaseLocalCommand.php,Services/Database/**}
+  - apps/gateway/app/{Actions/Instances/CloneInstanceDatabaseAction.php,Domain/Instances/DatabaseClone/**,Infrastructure/Instances/RemoteInstanceSqliteCloner.php}
 ---
 
 # Database connections
 
-A Database connection is a Gateway record that describes one database: its driver, where it is, and how to log in. The Gateway stores the password encrypted. You can inspect a registered database, create a MySQL user through a Docker Process, and attach a connection to an Instance. The registry never starts or stops a database. A shared database server runs as a Docker [Node Process](/reference/processes-and-schedules#owners). [`database`](/cli/database) lists the commands.
+A Database connection is a Gateway record that describes one database: its driver, where it is, and how to log in. The Gateway stores the password encrypted. You can register an existing database, create one on a [Database server](/reference/database-servers), inspect it, and attach it to an Instance. The registry never starts or stops a database. [`database`](/cli/database) lists the commands.
 
 ## Drivers and fields
 
@@ -31,7 +31,7 @@ Each record has a unique slug: lowercase words joined by hyphens, at most 63 cha
 
 `node_id` links the record to a Node. The Node needs no `database` role. SQLite inspection needs this link, and it lets an Instance on the same Node reach a Docker Process locally.
 
-Responses contain `id`, `slug`, `driver`, `node_id`, `host`, `port`, `database`, `path`, `username`, and `has_password`. Show also returns `users_count`. No response, Activity entry, or error contains a password.
+Responses contain `id`, `slug`, `driver`, `node_id`, `host`, `port`, `database`, `path`, `username`, `has_password`, `server`, `owner_instance_id`, and `test_database`. Show also returns `users_count`. `server` is the slug of the [Database server](/reference/database-servers) that holds the database, or null. `owner_instance_id` names the Instance that owns the database, or null. No response, Activity entry, or error contains a password.
 
 ## API
 
@@ -40,11 +40,12 @@ The registry routes need an access grant to the Gateway Node. A duplicate slug r
 | Method | Path | Result |
 | --- | --- | --- |
 | `GET` | `/api/v1/database-connections` | List the records, ordered by slug. |
-| `POST` | `/api/v1/database-connections` | Create one record. |
+| `POST` | `/api/v1/database-connections` | Register an existing database, or create one on a server with `server`. |
 | `GET` | `/api/v1/database-connections/{slug}` | Show one record. |
 | `PATCH` | `/api/v1/database-connections/{slug}` | Change the given fields. A `node_id` of null removes the Node link. |
-| `DELETE` | `/api/v1/database-connections/{slug}` | Delete the record. `database.connection_attached` (409) while an Instance still uses it. |
-| `GET` | `/api/v1/database-connections/{slug}/users` | List the users that `database:user:create` recorded. |
+| `DELETE` | `/api/v1/database-connections/{slug}` | Delete the record. `database.connection_attached` (409) while an Instance still uses it. A database on a server is dropped with its record. |
+| `GET` | `/api/v1/database-connections/{slug}/users` | List the users that Orbit created for the connection. |
+| `POST` | `/api/v1/database-connections/{slug}/users` | Add a user through the connection's [server](/reference/database-servers#add-a-user). |
 | `POST` | `/api/v1/database-connections/{slug}/query` | Run one SQL statement. |
 | `GET` | `/api/v1/database-connections/{slug}/tables` | List the tables. |
 | `GET` | `/api/v1/database-connections/{slug}/schema` | List the columns of every table. |
@@ -76,24 +77,34 @@ A read-only request opens the file read-only. The Node must be active, with a Wi
 
 An unknown table returns `database.table_missing` (404). A failed query on the database or the Node returns `database.query_failed` (502).
 
-## Create a managed MySQL user
+## Create a database on a server
 
-`POST /api/v1/processes/{process}/database-users` creates a MySQL database and user through a running Docker Process, and then creates or refreshes the connection record. It takes `slug`, `database`, `username`, and `password`. The database and user names are identifiers of 1 to 32 characters. The route needs an access grant to the Process's Node.
-
-The Process must be a Node Process with the Docker runtime and a `mysql` or `mysql-server` image. It must publish container port `3306` and store `MYSQL_ROOT_PASSWORD` in its environment. The SQL creates the database and user when they are missing, sets the password, and grants all privileges on that database from any host.
-
-The record gets driver `mysql`, the Node's WireGuard address as host, the published host port as port, and the Process's Node as `node_id`. A new record returns 201. An existing `mysql` record with the same slug is refreshed and returns 200.
+`POST /api/v1/database-connections` with `slug`, `server`, and an optional `instance_id` creates a MySQL database and user on that [Database server](/reference/database-servers#create-a-database-on-a-server). `server` excludes `driver`, `node_id`, `host`, `port`, `database`, `username`, `password`, and `path`, and `instance_id` needs `server`. The Gateway returns 201 with the new record.
 
 | Code | HTTP | Meaning |
 | --- | --- | --- |
-| `database.process_not_node` | 422 | The Process belongs to an Instance. |
-| `database.process_not_docker` | 422 | The Process is not Docker. |
-| `database.process_not_mysql` | 422 | The image is not MySQL, or container port `3306` is not published. |
-| `database.root_password_missing` | 422 | The Process environment has no `MYSQL_ROOT_PASSWORD`. |
-| `database.user_create_failed` | 502 | The Process could not create the user. |
-| `database.slug_conflict` | 409 | The slug names a connection with another driver. |
+| `database.server_missing` | 404 | No server has that slug. |
+| `database.server_inactive` | 409 | The server is not active yet. |
+| `database.slug_conflict` | 409 | Another connection has the slug. |
+| `database.name_conflict` | 409 | The server already has a database or user with the derived name. |
+| `database.server_command_failed` | 502 | The server could not create the database or user. |
 
-The Gateway records one row for each user of a connection: `username`, `privileges`, `created_by` (the calling Node's name), and `created_at`. Creating the same user again updates its row.
+## Owned databases
+
+An Instance owns a database that Orbit created for it: by `database:create --server --instance`, or by the [clone](/domains/applications#database-clone) that `instance:create` runs. The record keeps the owner in `owner_instance_id`. A clone that cannot run returns `instance.database_clone_unsupported`, and a copy that fails returns `instance.database_clone_failed`. [Database clone](/domains/applications#database-clone) describes both.
+
+[`instance:destroy`](/reference/instance-removal#owned-databases) drops each database the Instance owns, with its test databases and user, and deletes the record. Deleting the record of a database on a server drops the database the same way. Orbit never drops a database that it only registered.
+
+## Test databases
+
+An owned database has a test database of the same kind, named in `test_database`.
+
+| Driver | Test database |
+| --- | --- |
+| `mysql` | `<name>_test` on the same server. The user also gets every database whose name starts with `<name>_test`, so Laravel's parallel testing can create `<name>_test_test_1` and the rest. |
+| `sqlite` | `:memory:` |
+
+For an Instance that owns its `DB` database, [synchronization](/reference/environment-variables#synchronize) also writes `.env.testing`. It holds the same values as `.env`, with `APP_ENV=testing` and the `DB_*` keys pointing to the test database. Laravel loads `.env.testing` when `APP_ENV` is `testing`, which a Laravel `phpunit.xml` sets. A `phpunit.xml` entry with `force="true"` for a `DB_*` key still overrides it, so remove such entries to use the test database.
 
 ## Add a connection on an Instance
 
@@ -134,7 +145,11 @@ These reasons explain the design. Check them before you propose a change.
 
 ### A registry, not a database manager
 
-The registry records how to reach a database. Node Processes run database servers, and the `database` role only prepares Docker. So a connection works for an external host too, and deleting a record never touches data.
+The registry records how to reach a database, so a connection works for an external host too. Orbit changes data only for a database it created on a [Database server](/reference/database-servers): it creates that database, clones into it, and drops it with its owner. Deleting the record of a registered database never touches data.
+
+### Tests get their own database
+
+A test run with `RefreshDatabase` empties the database it uses. A separate test database of the same kind keeps an Instance's data safe, and `.env.testing` lets Laravel use it without a change in each repository. Making each repository read a `DB_TEST_*` key was rejected, because every repository would need that change first.
 
 ### One PDO path for every SQL driver
 

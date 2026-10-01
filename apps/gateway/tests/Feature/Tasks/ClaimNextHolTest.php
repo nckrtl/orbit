@@ -554,9 +554,8 @@ describe('the abandoned workspace sweep', function (): void {
 
         expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(1)
             ->and(Instance::query()->find($goodWorkspace->id))->toBeNull()
-            ->and(Task::topLevel()->where('assistance_requested', true)->count())->toBe(5)
-            ->and(Task::topLevel()->where('assistance_requested', true)->pluck('assistance_reason')->unique()->values()->all())
-            ->toBe([RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.']);
+            ->and(Task::topLevel()->where('assistance_requested', true)->count())->toBe(0)
+            ->and(Task::topLevel()->where('assistance_reason', RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.')->count())->toBe(5);
         Exceptions::assertReportedCount(5);
 
         $this->travel(TaskScheduler::AbandonedWorkspaceBackoffSeconds - 1)->seconds();

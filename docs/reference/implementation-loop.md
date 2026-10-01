@@ -120,7 +120,9 @@ Root `composer check` runs `bin/review-check`. It checks the working tree as it 
 4. When the candidate changes `apps/web`, `docs/openapi.json`, or `apps/pi-server`, it adds the matching checks, as [Web and Pi server checks](#web-and-pi-server-checks) describes.
 5. Last, when the candidate changes test sources, it runs `bin/check-classification-fakes` on them.
 
-For each Composer project, the gate runs `composer validate --strict`, `composer check`, and `composer test:affected`. Each affected-test run records into its own copy of the project graph. When the candidate changes the project, the gate then runs the project's architecture tests. When `test:affected` passed, the gate looks for changed test files that TIA did not select. It lists the tests of each such file and runs the file without TIA. A file without tests fails.
+For each Composer project, the gate runs `composer validate --strict`, `composer check`, and `composer test:affected`. Each affected-test run records into its own copy of the project graph. That copy keeps only the `main` baseline. The gate selects tests for every change since `main`, whatever local `composer test:affected` runs happened earlier. Local runs are unchanged. Each one still writes its branch baseline into the project's own graph, and the gate leaves that graph unchanged.
+
+When the candidate changes the project, the gate runs that project's architecture tests. When that project has changed and `test:affected` selects no tests, the gate runs its full suite with `--no-tia` instead of only warning. A project with changed source files but no selected tests is this case. When `test:affected` passed, the gate looks for changed test files that TIA did not select. It lists the tests of each such file and runs the file without TIA. A file without tests fails.
 
 #### Web and Pi server checks
 
@@ -142,7 +144,7 @@ Each failure names the file and line.
 
 #### Receipt
 
-The gate writes a receipt, `result.json`, and one log per command in a new `review-*` directory under `orbit-checks/<HEAD>/` in the Git common directory. The receipt passes only when at least one command ran, every command passed, and the commit and the working tree did not change during the run. It records a warning when `test:affected` selected no tests in a project that the candidate changes.
+The gate writes a receipt, `result.json`, and one log per command in a new `review-*` directory under `orbit-checks/<HEAD>/` in the Git common directory. The receipt passes only when at least one command ran, every command passed, and the commit and the working tree did not change during the run. When `test:affected` selects no tests for a changed project, the full suite with `--no-tia` is one of those commands. A warning does not replace that run.
 
 ### Gateway test databases
 
@@ -285,9 +287,15 @@ A change to the web app or the Pi server could pass the gate and then fail a req
 
 A green gate must mean that every selected check ran. Skipping a check when its tool is absent would pass a workspace that happens to lack `bun` or `git`.
 
+### The gate selects against main
+
+A local `composer test:affected` run writes a branch baseline into the project's graph. Keeping that baseline in the gate's run copy is a rejected alternative. The gate would then compare the candidate with the last local run. Changes since `main` that the local run already covered then select no tests. The gate keeps only the `main` baseline in its run copy, so it selects tests for every change since `main`. Local runs are unchanged and still write the project's own graph.
+
+Passing on a warning is a rejected alternative when a change selects no tests. The gate runs the project's full suite with `--no-tia` instead. Changed source files with no selected tests take this path.
+
 ### A changed test must run
 
-Test-impact analysis can select no tests for a changed test file. Reporting that only as a warning is a rejected alternative, because an edited test that Pest does not discover gives false confidence. So the gate runs the file by path and fails when Pest finds no tests in it.
+Test-impact analysis can omit a changed test file even when it selects other tests. Reporting that miss only as a warning is a rejected alternative, because an edited test that Pest does not discover gives false confidence. The gate runs that file by path and fails when Pest finds no tests in it. When the selection is empty and source files changed, the gate also runs the full suite with `--no-tia`. That full suite does not replace this per-file run.
 
 ### Repeated findings become checks
 

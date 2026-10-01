@@ -243,7 +243,10 @@ pub fn read_checkout(entry: &WatchEntry) -> Result<(WorkspaceState, GitDirs), gi
         head: head.map(|oid| oid.to_string()),
         dirty: dirty(&repo),
         commits: head.and_then(|head| commits(&repo, head, entry.start.as_deref()?)),
-        diff: head.and_then(|head| diff_counts(&repo, &entry.base, head)),
+        // The fetched base, because a merge of origin/{base} leaves the local base branch behind.
+        diff: head.and_then(|head| {
+            diff_counts(&repo, &format!("refs/remotes/origin/{}", entry.base), head)
+        }),
     };
     Ok((state, dirs))
 }
@@ -593,7 +596,7 @@ mod tests {
     }
 
     /// main: a.txt, b.txt, r.txt. task-1: edits a, adds c, a 1.2 MiB file, a submodule, deletes b, renames r.
-    /// main then moves on with d.txt, which the three-dot diff leaves out.
+    /// origin/main then moves on with d.txt, which the three-dot diff leaves out. Local main stays at root.
     fn task_repo(dir: &TempDir) -> (Repository, Oid, Oid) {
         let repo = init(&dir.path("repo"));
         let root = commit(
@@ -643,7 +646,7 @@ mod tests {
         commit_index(&repo, &mut index, "task two");
         std::fs::create_dir_all(workdir.join("sub")).unwrap();
         let head = commit(&repo, &[("b.txt", None)], "task three");
-        // main moves on without checking it out.
+        // origin/main moves on without checking it out.
         let mut main_index = git2::Index::new().unwrap();
         main_index.read_tree(&root_commit.tree().unwrap()).unwrap();
         let blob = repo.blob(b"d\n").unwrap();
@@ -667,7 +670,7 @@ mod tests {
             .find_tree(main_index.write_tree_to(&repo).unwrap())
             .unwrap();
         repo.commit(
-            Some("refs/heads/main"),
+            Some("refs/remotes/origin/main"),
             &sig(),
             &sig(),
             "main moves",
@@ -839,6 +842,40 @@ mod tests {
     }
 
     #[test]
+    fn a_merged_base_stays_out_of_the_diff() {
+        let dir = TempDir::new("merged");
+        let (repo, root, head) = task_repo(&dir);
+        let path = repo.workdir().unwrap().to_path_buf();
+        let (before, _) = read_checkout(&entry(&path, "main", Some(root))).unwrap();
+        let fetched = repo
+            .find_reference("refs/remotes/origin/main")
+            .unwrap()
+            .peel_to_commit()
+            .unwrap();
+        let mut index = repo.index().unwrap();
+        index
+            .read_tree(&repo.find_commit(head).unwrap().tree().unwrap())
+            .unwrap();
+        std::fs::write(path.join("d.txt"), "d\n").unwrap();
+        index.add_path(Path::new("d.txt")).unwrap();
+        index.write().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let task = repo.find_commit(head).unwrap();
+        repo.commit(
+            Some("HEAD"),
+            &sig(),
+            &sig(),
+            "merge origin/main",
+            &tree,
+            &[&task, &fetched],
+        )
+        .unwrap();
+        // Local main still points at root, as in a task checkout that only fetches.
+        let (after, _) = read_checkout(&entry(&path, "main", Some(root))).unwrap();
+        assert_eq!(after.diff, before.diff);
+    }
+
+    #[test]
     fn diff_counts_match_numstat_for_text_files_and_the_commit_cap() {
         let dir = TempDir::new("numstat");
         let repo = init(&dir.path("repo"));
@@ -938,7 +975,7 @@ mod tests {
     #[test]
     fn fingerprint_changes_with_head_and_refs() {
         let dir = TempDir::new("fingerprint");
-        let (repo, _, _) = task_repo(&dir);
+        let (repo, root, head) = task_repo(&dir);
         let path = repo.workdir().unwrap().to_path_buf();
         let (_, dirs) = read_checkout(&entry(&path, "main", None)).unwrap();
         let first = fingerprint(&dirs, "main");
@@ -952,15 +989,14 @@ mod tests {
         let third = fingerprint(&dirs, "main");
         assert_ne!(second, third);
         assert_eq!(third.head_ref.as_deref(), Some("refs/heads/main"));
-        let main = repo.head().unwrap().peel_to_commit().unwrap();
-        repo.reference(
-            "refs/heads/main",
-            main.parent_id(0).unwrap_or(main.id()),
-            true,
-            "move",
-        )
-        .unwrap();
-        assert_ne!(third, fingerprint(&dirs, "main"));
+        repo.reference("refs/heads/main", head, true, "move")
+            .unwrap();
+        let fourth = fingerprint(&dirs, "main");
+        assert_ne!(third, fourth);
+        // A fetch moves the base the diff counts against.
+        repo.reference("refs/remotes/origin/main", root, true, "fetch")
+            .unwrap();
+        assert_ne!(fourth, fingerprint(&dirs, "main"));
         // A base that cannot name a ref file is skipped, not joined.
         assert_eq!(fingerprint(&dirs, "../../x").files.len(), 4);
     }

@@ -55,7 +55,7 @@ describe('database connection requests', function (): void {
         'list' => [new ListDatabaseConnectionsRequest, Method::GET, '/api/v1/database-connections'],
         'show' => [new ShowDatabaseConnectionRequest('app'), Method::GET, '/api/v1/database-connections/app'],
         'create' => [new CreateDatabaseConnectionRequest('app', 'mysql'), Method::POST, '/api/v1/database-connections'],
-        'user-create' => [new CreateDatabaseUserRequest(12, 'app', 'app', 'app', 'secret'), Method::POST, '/api/v1/processes/12/database-users'],
+        'user-create' => [new CreateDatabaseUserRequest('app', 'reporting', 'secret'), Method::POST, '/api/v1/database-connections/app/users'],
         'update' => [new UpdateDatabaseConnectionRequest('app'), Method::PATCH, '/api/v1/database-connections/app'],
         'destroy' => [new DestroyDatabaseConnectionRequest('app'), Method::DELETE, '/api/v1/database-connections/app'],
         'add' => [new AddInstanceDatabaseRequest(12, 'app'), Method::PUT, '/api/v1/instances/12/database-connections/app'],
@@ -71,19 +71,51 @@ describe('database connection requests', function (): void {
             ->toBe('/api/v1/database-connections/app-db');
     });
 
-    it('sends the managed user payload on the Process path', function (): void {
+    it('sends the user payload on the connection path', function (): void {
         expect(new CreateDatabaseUserRequest(
-            processId: 12,
             slug: 'app',
-            database: 'app',
-            username: 'app',
+            username: 'reporting',
             password: DATABASE_CONNECTION_SDK_SECRET,
+            readOnly: true,
         )->body()->all())
             ->toBe([
-                'slug' => 'app',
-                'database' => 'app',
-                'username' => 'app',
+                'username' => 'reporting',
                 'password' => DATABASE_CONNECTION_SDK_SECRET,
+                'read_only' => true,
+            ]);
+    });
+
+    it('sends only the slug, the server, and the Instance for a database on a server', function (): void {
+        expect(new CreateDatabaseConnectionRequest(slug: 'dlf-leden', server: 'beast-mysql', instanceId: 60)->body()->all())
+            ->toBe(['slug' => 'dlf-leden', 'server' => 'beast-mysql', 'instance_id' => 60])
+            ->and(new CreateDatabaseConnectionRequest(slug: 'reporting', server: 'beast-mysql')->body()->all())
+            ->toBe(['slug' => 'reporting', 'server' => 'beast-mysql']);
+    });
+
+    it('maps the server fields of a connection', function (): void {
+        $response = DatabaseConnectionResponse::fromGatewayData([
+            'id' => 1,
+            'slug' => 'dlf-leden',
+            'driver' => 'mysql',
+            'node_id' => 2,
+            'host' => '10.44.0.80',
+            'port' => 3306,
+            'database' => 'dlf_leden',
+            'path' => null,
+            'username' => 'dlf_main',
+            'has_password' => true,
+            'server' => 'beast-mysql',
+            'owner_instance_id' => 60,
+            'test_database' => 'dlf_leden_test',
+        ], 'request-1');
+
+        expect($response->server)->toBe('beast-mysql')
+            ->and($response->ownerInstanceId)->toBe(60)
+            ->and($response->testDatabase)->toBe('dlf_leden_test')
+            ->and($response->toArray())->toMatchArray([
+                'server' => 'beast-mysql',
+                'owner_instance_id' => 60,
+                'test_database' => 'dlf_leden_test',
             ]);
     });
 
@@ -375,5 +407,8 @@ function database_connection_sdk_data(): array
         'path' => null,
         'username' => 'app',
         'has_password' => true,
+        'server' => null,
+        'owner_instance_id' => null,
+        'test_database' => null,
     ];
 }

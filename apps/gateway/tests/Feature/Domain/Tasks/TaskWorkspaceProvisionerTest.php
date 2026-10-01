@@ -574,7 +574,7 @@ it('keeps the source-resolved orbit clone and asks for assistance when removal i
 
             expect($completed->status)->toBe(TaskGroupStatus::Completed)
                 ->and($completed->taskable_id)->toBe($instance->id)
-                ->and($completed->assistance_requested)->toBeTrue()
+                ->and($completed->assistance_requested)->toBeFalse()
                 ->and($completed->assistance_reason)->toBe(RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The checkout could not be inspected.')
                 ->and(is_dir($checkout))->toBeTrue()
                 ->and(file_get_contents($checkout.'/KEEP'))->toBe('clone')

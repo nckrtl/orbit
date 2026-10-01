@@ -5,7 +5,8 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Requests\DatabaseConnections;
 
 use Orbit\Sdk\GatewayRequest;
-use Orbit\Sdk\Responses\DatabaseConnections\DatabaseConnectionResponse;
+use Orbit\Sdk\Responses\DatabaseConnections\CreatedDatabaseUserResponse;
+use Orbit\Sdk\Responses\DatabaseConnections\DatabaseUserResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
@@ -20,32 +21,33 @@ final class CreateDatabaseUserRequest extends GatewayRequest implements HasBody
     protected Method $method = Method::POST;
 
     public function __construct(
-        private readonly int $processId,
         private readonly string $slug,
-        private readonly string $database,
         private readonly string $username,
         #[SensitiveParameter]
         private readonly string $password,
+        private readonly bool $readOnly = false,
     ) {}
 
     public function resolveEndpoint(): string
     {
-        return '/api/v1/processes/'.$this->processId.'/database-users';
+        return '/api/v1/database-connections/'.rawurlencode($this->slug).'/users';
     }
 
-    public function createDtoFromResponse(#[SensitiveParameter] Response $response): DatabaseConnectionResponse
+    public function createDtoFromResponse(#[SensitiveParameter] Response $response): CreatedDatabaseUserResponse
     {
-        return DatabaseConnectionResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
+        return new CreatedDatabaseUserResponse(
+            DatabaseUserResponse::fromGatewayData($this->unwrapData($response)),
+            $this->successRequestId($response),
+        );
     }
 
-    /** @return array<string, string> */
+    /** @return array{username: string, password: string, read_only: bool} */
     protected function defaultBody(): array
     {
         return [
-            'slug' => $this->slug,
-            'database' => $this->database,
             'username' => $this->username,
             'password' => $this->password,
+            'read_only' => $this->readOnly,
         ];
     }
 }

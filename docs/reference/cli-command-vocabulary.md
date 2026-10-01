@@ -38,8 +38,9 @@ Use `create` and `destroy` when the Gateway owns the resource lifecycle. Use `ad
 | `project` | `create`, `update`, and `destroy` | A [Project](/reference/projects) record |
 | `cluster` | `create` and `destroy` | A Cluster record |
 | `cluster:node` | `add` and `remove` | A [Node](/reference/node-provisioning) in a Cluster |
-| `database` | `create` and `destroy` | A [Database connection](/reference/database-connections) record |
-| `database:user` | `create` | A MySQL user and database on a Node Docker Process, then a connection record |
+| `database` | `create` and `destroy` | A [Database connection](/reference/database-connections) record, and with `--server` the database itself |
+| `database:server` | `create` and `destroy` | A [Database server](/reference/database-servers) and its Docker Node Process |
+| `database:user` | `create` | A MySQL user on a database that lives on a [Database server](/reference/database-servers#add-a-user) |
 | `gateway` | `add` and `remove` | A Gateway profile in the CLI configuration |
 | `github:app` | `install` and `destroy` | The Gateway's [GitHub App](/reference/github-app) |
 | `instance` | `create` and `destroy` | An Instance |
