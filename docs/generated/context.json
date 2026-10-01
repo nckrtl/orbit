@@ -723,6 +723,24 @@
             ]
         },
         {
+            "path": "docs/decisions/0192-stop-a-group-whose-pull-request-ended.md",
+            "title": "ADR 0192: Stop a group whose pull request ended",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Process",
+                "Subtask",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0192"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -766,7 +784,8 @@
             "governing_adrs": [
                 "0097",
                 "0175",
-                "0182"
+                "0182",
+                "0192"
             ]
         },
         {
@@ -1888,7 +1907,8 @@
                 "Turn receipt"
             ],
             "governing_adrs": [
-                "0182"
+                "0182",
+                "0192"
             ]
         },
         {
