@@ -738,7 +738,8 @@ fi
 assert_contains "$status_text" "discovery " "topology was not acquired"
 attempt=${status_text##*discovery }
 attempt=${attempt%%$'\n'*}
-evidence_worktree=${status_text#*bridge worktree }
+evidence_line=${status_text%%$'\n'*}
+evidence_worktree=${evidence_line#*bridge worktree }
 evidence_worktree=${evidence_worktree%% of *}
 if [[ ! -d $evidence_worktree ]]; then
     echo "could not find the bridge worktree for the evidence log in topology status" >&2
