@@ -12,7 +12,9 @@ use App\Models\Activity;
 use App\Models\ProblemCollectorState;
 use App\Models\ProblemFingerprint;
 use App\Models\Task;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -145,10 +147,12 @@ final readonly class ProblemCollector
                     $observation['error_message'] = $message;
                 }
 
+                $createdAt = $row->getAttribute('created_at');
                 $this->record(
                     $this->fingerprint(ProblemSource::Activity, $row->command.'|'.$this->activityCode($row)),
                     ProblemSource::Activity,
                     $observation,
+                    $createdAt instanceof CarbonInterface ? $createdAt : null,
                 );
             }
 
@@ -213,6 +217,7 @@ final readonly class ProblemCollector
                     $this->fingerprint(ProblemSource::Log, $signal->exceptionClass.'|'.$signal->frame),
                     ProblemSource::Log,
                     $observation,
+                    $this->logRecordedAt($signal->recordedAt),
                 );
             }
 
@@ -436,11 +441,20 @@ final readonly class ProblemCollector
         return $source->value.'#'.substr(hash('sha256', $key), 0, 12);
     }
 
-    /** @param array<string, mixed> $observation */
-    private function record(string $fingerprint, ProblemSource $source, array $observation): void
+    /**
+     * The bracketed log header is written in the Gateway application timezone.
+     */
+    private function logRecordedAt(string $recordedAt): Carbon
     {
-        $seenAt = now()->utc();
-        $observation['at'] = $seenAt->format('Y-m-d\TH:i:s.u\Z');
+        $timezone = config('app.timezone');
+
+        return Carbon::parse($recordedAt, is_string($timezone) && $timezone !== '' ? $timezone : 'UTC');
+    }
+
+    /** @param array<string, mixed> $observation */
+    private function record(string $fingerprint, ProblemSource $source, array $observation, ?CarbonInterface $seenAt = null): void
+    {
+        $seenAt = Carbon::parse($seenAt ?? now())->utc();
         $row = ProblemFingerprint::query()->where('fingerprint', $fingerprint)->lockForUpdate()->first();
 
         if (! $row instanceof ProblemFingerprint) {
@@ -452,12 +466,163 @@ final readonly class ProblemCollector
             ]);
         }
 
+        $evidence = $row->evidence;
+        $occurrences = $row->occurrences;
+        $settled = $this->evidence->legacyEpisode($evidence, $source);
+
+        if ($settled !== null) {
+            $evidence = $settled['evidence'];
+            $occurrences = $settled['occurrences'];
+
+            if ($settled['reset_seen']) {
+                $row->first_seen = null;
+                $row->last_seen = null;
+            }
+        }
+
+        $times = $this->observationTimes($evidence);
+        $counts = $this->observationCounts($evidence, count($times));
+        $blocks = $this->countedBlocks($evidence, $times);
+        $block = intdiv($seenAt->getTimestamp(), 300);
+
+        if (! in_array($block, $blocks, true)) {
+            $blocks[] = $block;
+            $occurrences++;
+            $times[] = $seenAt->format('Y-m-d\TH:i:s.u\Z');
+            $counts[] = 1;
+            [$times, $counts] = $this->trimSample($times, $counts);
+        } else {
+            $index = $this->sampleIndex($times, $block);
+
+            if ($index !== null) {
+                $counts[$index]++;
+            }
+        }
+
         $row->source = $source;
-        $row->occurrences++;
+        $row->occurrences = $occurrences;
         $row->first_seen ??= $seenAt;
         $row->last_seen = $seenAt;
-        $row->evidence = $this->evidence->apply($row->evidence, $observation);
+        $stored = $this->evidence->apply($evidence, $observation);
+        $stored['observation_times'] = $times;
+        $stored['observation_counts'] = $counts;
+        $stored['counted_blocks'] = $blocks;
+        $row->evidence = $stored;
         $row->save();
+    }
+
+    /**
+     * @param  array<string, mixed>  $evidence
+     * @return list<string>
+     */
+    private function observationTimes(array $evidence): array
+    {
+        $times = $evidence['observation_times'] ?? null;
+
+        if (! is_array($times)) {
+            return [];
+        }
+
+        $parsed = [];
+
+        foreach ($times as $time) {
+            if (is_string($time) && $time !== '') {
+                $parsed[] = $time;
+            }
+        }
+
+        return $parsed;
+    }
+
+    /**
+     * @param  array<string, mixed>  $evidence
+     * @return list<int>
+     */
+    private function observationCounts(array $evidence, int $windows): array
+    {
+        $counts = array_slice($this->evidence->ints($evidence['observation_counts'] ?? null), 0, $windows);
+
+        while (count($counts) < $windows) {
+            $counts[] = 1;
+        }
+
+        return $counts;
+    }
+
+    /**
+     * The display sample keeps the newest 20 windows. counted_blocks keeps every window in the episode,
+     * including one the sample has dropped, so a late signal in that block is not counted again.
+     *
+     * @param  array<string, mixed>  $evidence
+     * @param  list<string>  $times
+     * @return list<int>
+     */
+    private function countedBlocks(array $evidence, array $times): array
+    {
+        if (array_key_exists('counted_blocks', $evidence)) {
+            return $this->evidence->ints($evidence['counted_blocks']);
+        }
+
+        $blocks = [];
+
+        foreach ($times as $time) {
+            $stamp = $this->unixTime($time);
+
+            if ($stamp === null) {
+                continue;
+            }
+
+            $block = intdiv($stamp, 300);
+
+            if (! in_array($block, $blocks, true)) {
+                $blocks[] = $block;
+            }
+        }
+
+        return $blocks;
+    }
+
+    /** @param list<string> $times */
+    private function sampleIndex(array $times, int $block): ?int
+    {
+        foreach ($times as $index => $time) {
+            $stamp = $this->unixTime($time);
+
+            if ($stamp !== null && intdiv($stamp, 300) === $block) {
+                return $index;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  list<string>  $times
+     * @param  list<int>  $counts
+     * @return array{0: list<string>, 1: list<int>}
+     */
+    private function trimSample(array $times, array $counts): array
+    {
+        $order = array_keys($times);
+        usort($order, fn (int $left, int $right): int => ($this->unixTime($times[$left]) ?? 0) <=> ($this->unixTime($times[$right]) ?? 0));
+        $trimmedTimes = [];
+        $trimmedCounts = [];
+
+        foreach (array_slice($order, -20) as $index) {
+            $trimmedTimes[] = $times[$index];
+            $trimmedCounts[] = $counts[$index] ?? 1;
+        }
+
+        return [$trimmedTimes, $trimmedCounts];
+    }
+
+    private function unixTime(string $time): ?int
+    {
+        try {
+            return Carbon::parse($time)->utc()->getTimestamp();
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     private function lockedState(): ProblemCollectorState

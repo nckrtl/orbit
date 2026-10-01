@@ -42,6 +42,11 @@ final readonly class ProblemFiler
     public function file(): array
     {
         $failures = $this->suppressEnded();
+
+        foreach ($this->settleLegacyEpisodes() as $exception) {
+            $failures[] = $exception;
+        }
+
         $project = Project::query()->where('slug', 'orbit')->first();
 
         if (! $project instanceof Project) {
@@ -82,6 +87,66 @@ final readonly class ProblemFiler
         }
 
         return $failures;
+    }
+
+    /** @return list<Throwable> */
+    private function settleLegacyEpisodes(): array
+    {
+        $failures = [];
+
+        ProblemFingerprint::query()
+            ->where(function (Builder $query): void {
+                $query->where('occurrences', '>', 0)
+                    ->orWhereNotNull('evidence->observation_times');
+            })
+            ->whereNull('evidence->observation_counts')
+            ->whereNull('evidence->counted_blocks')
+            ->chunkById(100, function ($rows) use (&$failures): void {
+                foreach ($rows as $row) {
+                    try {
+                        $this->settleOne($row->id);
+                    } catch (Throwable $exception) {
+                        $failures[] = $exception;
+                    }
+                }
+            });
+
+        return $failures;
+    }
+
+    /**
+     * Rewrites a pre-window episode in place. The linked task and the mute stay as they are.
+     */
+    private function settleOne(int $id): void
+    {
+        DB::transaction(function () use ($id): void {
+            $row = ProblemFingerprint::query()->lockForUpdate()->find($id);
+
+            if (! $row instanceof ProblemFingerprint) {
+                return;
+            }
+
+            $this->rewriteLegacy($row);
+        });
+    }
+
+    private function rewriteLegacy(ProblemFingerprint $row): void
+    {
+        $settled = $this->evidence->legacyEpisode($row->evidence, $row->source);
+
+        if ($settled === null) {
+            return;
+        }
+
+        $row->occurrences = $settled['occurrences'];
+        $row->evidence = $settled['evidence'];
+
+        if ($settled['reset_seen']) {
+            $row->first_seen = null;
+            $row->last_seen = null;
+        }
+
+        $row->save();
     }
 
     /**
@@ -158,7 +223,13 @@ final readonly class ProblemFiler
             DB::transaction(function () use ($row, $project): void {
                 $locked = ProblemFingerprint::query()->lockForUpdate()->find($row->id);
 
-                if (! $locked instanceof ProblemFingerprint || ! $this->canFile($locked)) {
+                if (! $locked instanceof ProblemFingerprint) {
+                    return;
+                }
+
+                $this->rewriteLegacy($locked);
+
+                if (! $this->canFile($locked)) {
                     return;
                 }
 
@@ -201,17 +272,26 @@ final readonly class ProblemFiler
 
     private function isReady(ProblemFingerprint $row): bool
     {
-        $stamps = $this->stamps($this->strings($row->evidence['observation_times'] ?? null));
+        $occurrences = $row->occurrences;
+        $evidence = $row->evidence;
+        $settled = $this->evidence->legacyEpisode($evidence, $row->source);
+
+        if ($settled !== null) {
+            $occurrences = $settled['occurrences'];
+            $evidence = $settled['evidence'];
+        }
+
+        $stamps = $this->stamps($this->strings($evidence['observation_times'] ?? null));
 
         if ($row->source === ProblemSource::Doctor) {
             return $this->tenMinutesApart($stamps);
         }
 
-        if ($row->occurrences >= 10) {
+        if ($occurrences >= 10) {
             return true;
         }
 
-        if ($row->occurrences < 3) {
+        if ($occurrences < 3) {
             return false;
         }
 
@@ -605,6 +685,8 @@ final readonly class ProblemFiler
         $evidence = $row->evidence;
         unset(
             $evidence['observation_times'],
+            $evidence['observation_counts'],
+            $evidence['counted_blocks'],
             $evidence['request_ids'],
             $evidence['activity_ids'],
             $evidence['paths'],
