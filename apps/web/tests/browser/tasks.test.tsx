@@ -114,6 +114,120 @@ it("groups every status, opens details, and keeps unsuccessful outcomes visible"
     await expect.element(pane("Todo")).toBeVisible();
 });
 
+it("distinguishes direction requests from failures on task and subtask cards", async () => {
+    const direction = {
+        ...group(1, "running"),
+        assistance_requested: true,
+        assistance_kind: "direction" as const,
+        assistance_question: "Should discount codes combine with sale prices?",
+    };
+    const failure = {
+        ...group(2, "reviewing"),
+        assistance_requested: true,
+        assistance_kind: "failure" as const,
+        assistance_reason: "The check failed.",
+    };
+    const resolved = {
+        ...direction,
+        id: 3,
+        title: "Resolved request",
+        assistance_requested: false,
+    };
+    direction.tasks = [
+        { ...direction.tasks[0]!, assistance_requested: true, assistance_kind: "direction" },
+        {
+            ...direction.tasks[0]!,
+            id: 2,
+            title: "Failed check",
+            assistance_requested: true,
+            assistance_kind: "failure",
+        },
+    ];
+    const app = await openTasks(async (_, path) => ({
+        status: 200,
+        payload: {
+            data: path === "/api/v1/task-groups" ? [direction, failure, resolved] : direction,
+        },
+    }));
+    const card = (title: string) =>
+        page.getByRole("link", { name: `Open task: ${title}`, exact: true });
+    await expect.element(card(direction.title)).toHaveTextContent("Needs your direction");
+    await expect.element(card(direction.title)).not.toHaveTextContent("Needs attention");
+    await expect.element(card(failure.title)).toHaveTextContent("Needs attention");
+    await expect.element(card(failure.title)).not.toHaveTextContent("Needs your direction");
+    await expect.element(card(resolved.title)).not.toHaveTextContent("Needs your direction");
+    await app.router.navigate({ to: "/tasks/$id", params: { id: "1" } });
+    await expect
+        .element(pane("Todo").getByRole("link", { name: "Open subtask: First step" }))
+        .toHaveTextContent("Needs your direction");
+    await expect
+        .element(pane("Todo").getByRole("link", { name: "Open subtask: Failed check" }))
+        .toHaveTextContent("Needs attention");
+});
+
+it("leads a direction request with its question and shows question and escalation counts", async () => {
+    const task = {
+        ...group(1, "running"),
+        assistance_requested: true,
+        assistance_kind: "direction" as const,
+        assistance_question: "Should discount codes combine with sale prices?",
+        questions: 4,
+        escalations: 2,
+    };
+    task.tasks[0] = { ...task.tasks[0]!, questions: 3, escalations: 1 };
+    const app = await openTasks(async (_, path) => ({
+        status: 200,
+        payload: { data: path === "/api/v1/task-groups" ? [task] : task },
+    }));
+    await app.router.navigate({ to: "/tasks/$id", params: { id: "1" } });
+    await expect.element(pane("Needs your direction")).toHaveTextContent(task.assistance_question);
+    const content = document.querySelector('[aria-label="Needs your direction"]')!.parentElement!;
+    const frames = [...content.querySelectorAll("section.frame")];
+    expect(frames[0]?.getAttribute("aria-label")).toBe("Needs your direction");
+    expect(frames.indexOf(document.querySelector('[aria-label="Task"]')!)).toBeGreaterThan(0);
+    expect(frames.indexOf(document.querySelector('[aria-label="Description"]')!)).toBeGreaterThan(
+        0,
+    );
+    await expect.element(pane("Task").getByTitle("4", { exact: true })).toBeVisible();
+    await expect.element(pane("Task")).toHaveTextContent(/Questions\s*4/);
+    await expect.element(pane("Task")).toHaveTextContent(/Escalations\s*2/);
+    // Visibility assertions alone do not detect rows clipped by a scrolling frame body.
+    const properties = document.querySelector('[aria-label="Task"] .frame-body')!;
+    expect(properties.scrollHeight).toBeLessThanOrEqual(properties.clientHeight);
+    const bodyBounds = properties.getBoundingClientRect();
+    for (const row of properties.querySelectorAll(".row")) {
+        const bounds = row.getBoundingClientRect();
+        expect(bounds.top).toBeGreaterThanOrEqual(bodyBounds.top);
+        expect(bounds.bottom).toBeLessThanOrEqual(bodyBounds.bottom);
+    }
+    await pane("Todo").getByRole("link").click();
+    await expect.element(pane("Task")).toHaveTextContent(/Questions\s*3/);
+    await expect.element(pane("Task")).toHaveTextContent(/Escalations\s*1/);
+    expect(document.querySelector('[aria-label="Needs your direction"]')).toBeNull();
+});
+
+it.each(["failure", "direction"] as const)(
+    "does not lead with a stale question for %s without an open direction request",
+    async (kind) => {
+        const task = {
+            ...group(1, "running"),
+            assistance_requested: kind === "failure",
+            assistance_kind: kind,
+            assistance_question: "This old question must not lead the page.",
+        };
+        const app = await openTasks(async (_, path) => ({
+            status: 200,
+            payload: { data: path === "/api/v1/task-groups" ? [task] : task },
+        }));
+        await app.router.navigate({ to: "/tasks/$id", params: { id: "1" } });
+        await expect.element(pane("Task")).toBeVisible();
+        expect(document.querySelector('[aria-label="Needs your direction"]')).toBeNull();
+        expect(document.body.textContent).not.toContain(task.assistance_question);
+        await expect.element(pane("Task")).toHaveTextContent(/Questions\s*0/);
+        await expect.element(pane("Task")).toHaveTextContent(/Escalations\s*0/);
+    },
+);
+
 it("shows empty columns only after a successful response", async () => {
     await openTasks(async () => ({ status: 200, payload: { data: [] } }));
     expect(screenText()).toContain("Tasks │ 0");

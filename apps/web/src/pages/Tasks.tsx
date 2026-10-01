@@ -18,6 +18,8 @@ import {
     isActiveTaskGroup,
     liveDurationMs,
     taskColumn,
+    taskAssistanceLabel,
+    taskDirectionQuestion,
     taskGroupQuery,
     taskGroupsQuery,
     tasksForInstance,
@@ -156,6 +158,8 @@ function taskProperties(
         },
         ...lineDiffProperty(detail),
         { name: "Duration", value: formatDurationMs(durationMs) },
+        { name: "Questions", value: detail.questions },
+        { name: "Escalations", value: detail.escalations },
     ];
 }
 
@@ -247,6 +251,7 @@ function KanbanCardBody({
     durationMs?: number | null;
     progress?: { completed: number; total: number };
 }) {
+    const assistance = taskAssistanceLabel(task);
     return (
         <>
             <div
@@ -256,6 +261,13 @@ function KanbanCardBody({
                 <CardDiff task={task} />
             </div>
             <h2 className="break-words font-bold">{task.title}</h2>
+            {assistance !== null && (
+                <p
+                    className={`mt-[6px] break-words ${task.assistance_kind === "direction" ? "text-cyan" : "text-red"}`}
+                >
+                    {assistance}
+                </p>
+            )}
             <CardFooter task={task} durationMs={durationMs} progress={progress} />
         </>
     );
@@ -310,7 +322,7 @@ export function TasksBoard({ instanceId }: { instanceId?: number } = {}) {
                                 title={column}
                                 topRight={tasks.length}
                                 bodyClassName="space-y-[var(--panel-padding)]"
-                                className="min-h-[160px]"
+                                className="min-h-[80px] lg:min-h-[160px]"
                             >
                                 {tasks.length === 0 && (
                                     <p className="text-dim">
@@ -378,6 +390,7 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
     const project = projects.data?.find((item) => item.id === task?.project_id);
     const detail =
         subtaskId === undefined ? task : task?.tasks.find((item) => String(item.id) === subtaskId);
+    const question = detail === undefined ? null : taskDirectionQuestion(detail);
     // The group's duration counts forward every second while it is active. A subtask's duration is
     // the value the Gateway stored when it last refreshed the group.
     const countsForward =
@@ -421,7 +434,17 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
             )}
             {task && detail && (
                 <>
-                    <div className="grid min-w-0 shrink-0 grid-cols-1 gap-[var(--panel-gap)] lg:min-h-0 lg:flex-1 lg:basis-0 lg:grid-cols-2 lg:grid-rows-[minmax(0,1fr)]">
+                    {question !== null && (
+                        <Frame title="Needs your direction" className="min-w-0 shrink-0">
+                            <p className="selectable whitespace-pre-wrap [overflow-wrap:anywhere] text-cyan">
+                                {question}
+                            </p>
+                            <p className="mt-[8px] text-dim">
+                                Answer through the CLI, MCP, or API. This board is read-only.
+                            </p>
+                        </Frame>
+                    )}
+                    <div className="grid min-w-0 shrink-0 grid-cols-1 gap-[var(--panel-gap)] lg:grid-cols-2">
                         <Properties
                             title="Task"
                             className="min-h-0"

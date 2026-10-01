@@ -14,6 +14,8 @@ import {
     isActiveTaskGroup,
     liveDurationMs,
     taskColumn,
+    taskAssistanceLabel,
+    taskDirectionQuestion,
     type Task,
     type TaskGroup,
 } from "./tasks";
@@ -31,6 +33,26 @@ it.each([
 ] as const)("places %s in %s", (status: Task["status"] | "backlog" | "settling", column) => {
     expect(taskColumn(status)).toBe(column);
 });
+
+it.each([
+    [true, "direction", "Needs your direction", "Which discount policy should checkout use?"],
+    [true, "failure", "Needs attention", null],
+    [true, null, "Needs attention", null],
+    [false, "direction", null, null],
+    [false, "failure", null, null],
+    [false, null, null, null],
+] as const)(
+    "marks assistance requested=%s kind=%s and exposes only an open direction question",
+    (requested, kind, label, question) => {
+        const assistance = {
+            assistance_requested: requested,
+            assistance_kind: kind,
+            assistance_question: "Which discount policy should checkout use?",
+        };
+        expect(taskAssistanceLabel(assistance)).toBe(label);
+        expect(taskDirectionQuestion(assistance)).toBe(question);
+    },
+);
 
 it("formats tokens and line diffs with grouping", () => {
     expect(formatTokens(null)).toBeNull();

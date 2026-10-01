@@ -17,6 +17,21 @@ export type TaskColumn = "Backlog" | "Todo" | "In progress" | "Done";
 export type TaskCheck = components["schemas"]["TaskCheck"];
 export type TaskComment = Required<components["schemas"]["TaskComment"]>;
 
+type Assistance = Pick<Task, "assistance_requested" | "assistance_kind" | "assistance_question">;
+
+/** Only open assistance requests get a mark; a missing kind is a legacy failure. */
+export function taskAssistanceLabel(task: Assistance): string | null {
+    if (!task.assistance_requested) return null;
+    return task.assistance_kind === "direction" ? "Needs your direction" : "Needs attention";
+}
+
+/** A resolved request must not keep leading the page with its old question. */
+export function taskDirectionQuestion(task: Assistance): string | null {
+    return task.assistance_requested && task.assistance_kind === "direction"
+        ? task.assistance_question
+        : null;
+}
+
 export function taskIdentity(id: number, projectCode?: string): string {
     return projectCode ? `${projectCode}-${id}` : `#${id}`;
 }
