@@ -842,7 +842,7 @@ A failed read keeps the stored value. While a task is active, a missing value st
 
 ### Tokens and line diff
 
-The task's line counts come from the Node agent's [task workspace](/reference/node-agent#task-workspaces) state while the Gateway's view of that Node is fresh. Otherwise, and when the agent's diff is truncated, they come from `git diff --shortstat {default branch}...HEAD` over SSH. When the agent reports a new commit or new counts, the Gateway stores the counts and broadcasts `task_group.updated`.
+The task's line counts come from the Node agent's [task workspace](/reference/node-agent#task-workspaces) state while the Gateway's view of that Node is fresh. Otherwise, and when the agent's diff is truncated, they come from `git diff --shortstat origin/{default branch}...HEAD` over SSH. Both count against the fetched `origin/{default branch}`, so a merge of the default branch into the task branch adds no lines. When the agent reports a new commit or new counts, the Gateway stores the counts and broadcasts `task_group.updated`.
 
 For T3, a thread's `tokens` is its largest `totalProcessedTokens`, or else `usedTokens`, and its line counts come from T3 checkpoints. For Pi, `tokens` is the session usage `total`.
 
