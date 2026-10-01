@@ -1,0 +1,47 @@
+{
+    "base": "4240070b4a8c19dd4c8d54c4774e7d3ec9a11367",
+    "paths": [
+        "apps/gateway/app/Domain/Tasks/TaskAgentSpawner.php",
+        "apps/gateway/app/Domain/Tasks/TaskReviewPacket.php",
+        "apps/gateway/app/Infrastructure/Tasks/RemoteTaskTurnReceipts.php",
+        "docs/generated/docs-build.txt",
+        "docs/generated/docs-impact.json",
+        "docs/reference/tasks.md"
+    ],
+    "impacted_pages": [
+        {
+            "page": "docs/reference/tasks.md",
+            "reasons": [
+                "covers: apps/gateway/app/{Domain,Infrastructure}/Tasks/** matches apps/gateway/app/Domain/Tasks/TaskAgentSpawner.php",
+                "covers: apps/gateway/app/{Domain,Infrastructure}/Tasks/** matches apps/gateway/app/Domain/Tasks/TaskReviewPacket.php",
+                "covers: apps/gateway/app/{Domain,Infrastructure}/Tasks/** matches apps/gateway/app/Infrastructure/Tasks/RemoteTaskTurnReceipts.php"
+            ]
+        }
+    ],
+    "surfaces": [
+        {
+            "path": "apps/gateway/app/Domain/Tasks/TaskAgentSpawner.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/tasks.md",
+            "reason": "covers: apps/gateway/app/{Domain,Infrastructure}/Tasks/** matches apps/gateway/app/Domain/Tasks/TaskAgentSpawner.php",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/app/Domain/Tasks/TaskReviewPacket.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/tasks.md",
+            "reason": "covers: apps/gateway/app/{Domain,Infrastructure}/Tasks/** matches apps/gateway/app/Domain/Tasks/TaskReviewPacket.php",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/app/Infrastructure/Tasks/RemoteTaskTurnReceipts.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/tasks.md",
+            "reason": "covers: apps/gateway/app/{Domain,Infrastructure}/Tasks/** matches apps/gateway/app/Infrastructure/Tasks/RemoteTaskTurnReceipts.php",
+            "generator_status": null
+        }
+    ],
+    "surfaces_handled_by_generator": [],
+    "errors": [],
+    "verdict": "docs_required"
+}

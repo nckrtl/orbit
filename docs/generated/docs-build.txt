@@ -1,0 +1,5 @@
+Wrote docs/generated/context.json.
+
+git status --short docs/generated/context.json:
+git diff --stat 4240070b4a8c19dd4c8d54c4774e7d3ec9a11367 -- docs/generated/context.json:
+working tree diff for docs/generated/context.json: (empty means unchanged)
