@@ -58,8 +58,7 @@ it('reports the stored origin, not the URL an insteadOf rule rewrites it to', fu
 
         $facts = new NativeGitRegistrationDiscovery()->inspect($directory);
 
-        expect($facts?->repositoryUrl)->toBe('https://example.test/acme/site.git')
-            ->and($facts?->slug)->toBe('site');
+        expect($facts?->repositoryUrl)->toBe('https://example.test/acme/site.git');
     } finally {
         $files->deleteDirectory($directory);
     }

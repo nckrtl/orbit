@@ -46,12 +46,6 @@ beforeEach(function (): void {
             $this->facts = new GitRegistrationFacts(
                 path: '/work/acme',
                 repositoryUrl: 'git@github.com:acme/acme.git',
-                slug: 'acme',
-                defaultBranch: 'main',
-                branch: 'main',
-                root: 'public',
-                layout: 'checkout',
-                commit: str_repeat(string: 'a', times: 40),
             );
         }
 
@@ -110,12 +104,6 @@ describe('instance:register', function (): void {
         $this->registrationGit->facts = new GitRegistrationFacts(
             path: '/work/legacy-default',
             repositoryUrl: 'https://github.com/laravel/laravel.git',
-            slug: 'laravel',
-            defaultBranch: 'master',
-            branch: '13.x',
-            root: 'public',
-            layout: 'checkout',
-            commit: str_repeat(string: 'a', times: 40),
         );
         $mockClient = MockClient::global([
             RegisterInstanceRequest::class => registration_mock_response(),
@@ -135,7 +123,7 @@ describe('instance:register', function (): void {
         ]);
     });
 
-    it('transports explicit creation values when Project lookup is not selected', function (): void {
+    it('transports a root override for the existing Project', function (): void {
         $mockClient = MockClient::global([
             RegisterInstanceRequest::class => registration_mock_response(),
         ]);
@@ -143,9 +131,6 @@ describe('instance:register', function (): void {
         $this
             ->artisan('instance:register', [
                 '--yes' => true,
-                '--project-name' => 'Confirmed',
-                '--project-slug' => 'confirmed',
-                '--default-branch' => 'trunk',
                 '--root' => 'web',
                 '--no-interaction' => true,
                 '--json' => true,
@@ -155,48 +140,27 @@ describe('instance:register', function (): void {
 
         expect($mockClient->getLastRequest()?->body()->all())->toBe([
             'source_path' => '/work/acme',
-            'project_name' => 'Confirmed',
-            'project_slug' => 'confirmed',
-            'default_branch' => 'trunk',
             'root' => 'web',
         ]);
     });
 
-    it('refuses unresolved Project values with one JSON error document without a prompt or request', function (array $parameters): void {
-        $facts = $this->registrationGit->facts;
-        assert(
-            $facts instanceof GitRegistrationFacts,
-            description: 'The registration fixture starts with discovered Git facts.',
-        );
-        $this->registrationGit->facts = new GitRegistrationFacts(
-            path: $facts->path,
-            repositoryUrl: $facts->repositoryUrl,
-            slug: $facts->slug,
-            defaultBranch: null,
-            branch: $facts->branch,
-            root: null,
-            layout: $facts->layout,
-            commit: $facts->commit,
-        );
-        $mockClient = MockClient::global();
-
-        $exitCode = Artisan::call('instance:register', $parameters);
-        $output = trim(Artisan::output());
-
-        expect($exitCode)->toBe(1);
-        expect($output)->not->toContain("\n", 'Source:', 'Default branch', 'Transfer this source to Orbit ownership?');
-        expect(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe([
-            'error' => [
-                'code' => 'instance.registration_values_unresolved',
-                'message' => 'Non-interactive registration requires unresolved Project values as options.',
-                'request_id' => null,
-            ],
+    it('renders the Gateway refusal when no Project owns the repository', function (): void {
+        MockClient::global([
+            RegisterInstanceRequest::class => MockResponse::make([
+                'error' => [
+                    'code' => 'instance.project_missing',
+                    'message' => 'No Project owns repository [git@github.com:acme/acme.git]. Create it with `orbit project:create` first.',
+                    'request_id' => 'request-id',
+                ],
+            ], 422),
         ]);
-        expect($mockClient->getLastPendingRequest())->toBeNull();
-    })->with([
-        'JSON on an interactive terminal' => [['--json' => true]],
-        'JSON without interaction' => [['--json' => true, '--no-interaction' => true]],
-    ]);
+
+        $exitCode = Artisan::call('instance:register', ['--yes' => true, '--no-interaction' => true, '--json' => true]);
+
+        expect($exitCode)->toBe(1)
+            ->and(json_decode(trim(Artisan::output()), associative: true, flags: JSON_THROW_ON_ERROR)['error']['code'])
+            ->toBe('instance.project_missing');
+    });
 
     it('transports include worktrees and omits inferred values for a selected Project', function (): void {
         $mockClient = MockClient::global([
@@ -251,12 +215,6 @@ describe('credential-bearing registration origins', function (): void {
         $this->registrationGit->facts = new GitRegistrationFacts(
             path: '/work/acme',
             repositoryUrl: "https://{$userinfo}@example.test/acme.git",
-            slug: 'acme',
-            defaultBranch: 'main',
-            branch: 'main',
-            root: 'public',
-            layout: 'checkout',
-            commit: str_repeat(string: 'a', times: 40),
         );
         $mockClient = MockClient::global();
 

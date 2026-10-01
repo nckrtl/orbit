@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Clusters\ClusterState;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
@@ -129,14 +130,14 @@ describe('app creation', function (): void {
         {
             public int $calls = 0;
 
-            public function resolve(string $repository): string
+            public function resolve(string $repository, ProjectSourceAccess $source): string
             {
                 $this->calls++;
 
                 return 'main';
             }
 
-            public function verify(string $repository, string $branch): void
+            public function verify(string $repository, string $branch, ProjectSourceAccess $source): void
             {
                 $this->calls++;
             }

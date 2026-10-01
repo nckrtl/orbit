@@ -23,9 +23,10 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
 
     public function preflightRepository(array $checkouts, string $currentUrl, string $proposedUrl): void
     {
-        $read = $this->access->for($proposedUrl);
+        $read = null;
 
         foreach ($this->uniqueCheckouts($checkouts) as $checkout) {
+            $read ??= $this->access->for($proposedUrl, $checkout->loadMissing('project')->project->source_access);
             $this->run(
                 $checkout,
                 [$checkout->checkout_path, $currentUrl, $proposedUrl],
@@ -133,7 +134,10 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
                 BASH,
             'app-update-default-branch-preflight',
             'project.source_switch_failed',
-            read: $this->access->for($instance->loadMissing('project')->project->repository_url),
+            read: $this->access->for(
+                $instance->loadMissing('project')->project->repository_url,
+                $instance->project->source_access,
+            ),
         );
     }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Projects;
 
+use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
 
 final readonly class UpdateProjectData
@@ -22,6 +23,8 @@ final readonly class UpdateProjectData
         public ?string $code = null,
         public bool $taskCheckProvided = false,
         public ?string $taskCheck = null,
+        public bool $sourceAccessProvided = false,
+        public ?ProjectSourceAccess $sourceAccess = null,
         public bool $taskWorkspaceRoutedProvided = false,
         public bool $taskWorkspaceRouted = true,
     ) {}
@@ -35,6 +38,7 @@ final readonly class UpdateProjectData
             || $this->defaultBranchProvided
             || $this->rootProvided
             || $this->taskCheckProvided
+            || $this->sourceAccessProvided
             || $this->taskWorkspaceRoutedProvided;
     }
 
@@ -56,6 +60,7 @@ final readonly class UpdateProjectData
             'default_branch' => $this->defaultBranchProvided ? $this->defaultBranch : null,
             'root' => $this->rootProvided ? $this->root : null,
             'task_check' => $this->taskCheckProvided ? $this->taskCheck : null,
+            'source_access' => $this->sourceAccessProvided ? $this->sourceAccess?->value : null,
             'task_workspace_routed' => $this->taskWorkspaceRoutedProvided ? $this->taskWorkspaceRouted : null,
             'provided' => [
                 $this->typeProvided,
@@ -64,6 +69,7 @@ final readonly class UpdateProjectData
                 $this->defaultBranchProvided,
                 $this->rootProvided,
                 $this->taskCheckProvided,
+                $this->sourceAccessProvided,
                 $this->taskWorkspaceRoutedProvided,
             ],
         ], JSON_THROW_ON_ERROR));

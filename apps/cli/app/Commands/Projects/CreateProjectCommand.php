@@ -21,6 +21,7 @@ final class CreateProjectCommand extends GatewayCommand
         {type : Project type (monorepo, laravel-app, laravel-package, or node-package)}
         {repository : Git repository URL}
         {--name= : Optional display name}
+        {--source-access= : How Orbit reads a private github.com repository: github_app (default) or gh_cli}
         {--default-branch= : Stored default branch; resolve the remote default when omitted}
         {--root= : Repository-relative root; defaults to . for package types and public otherwise}
         {--task-check= : Task check command. Omitted stores none}
@@ -88,6 +89,15 @@ final class CreateProjectCommand extends GatewayCommand
             );
         }
 
+        $sourceAccess = $this->stringOption('source-access');
+
+        if ($sourceAccess !== null && ! in_array($sourceAccess, ['github_app', 'gh_cli'], true)) {
+            return $this->renderGatewayFailure(
+                'project.source_access_invalid',
+                'Source access must be github_app or gh_cli.',
+            );
+        }
+
         $root = $this->stringOption('root') ?? $this->defaultRoot($type);
         $taskCheck = $this->stringOption('task-check');
 
@@ -106,6 +116,7 @@ final class CreateProjectCommand extends GatewayCommand
                 defaultBranch: $this->stringOption('default-branch'),
                 taskCheck: $taskCheck,
                 taskCheckProvided: $taskCheck !== null,
+                sourceAccess: $sourceAccess,
                 taskWorkspaceRouted: $taskWorkspaceRouted['value'],
             ),
             ProjectResponse::class,

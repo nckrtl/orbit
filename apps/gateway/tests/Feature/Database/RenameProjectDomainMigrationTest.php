@@ -46,12 +46,15 @@ function rename_migration_rows(): object
         'public_ssh_host' => '10.44.0.77',
         'wireguard_ip' => '10.44.0.77',
     ]);
-    $project = Project::query()->create([
+    $project = new Project([
         'name' => 'Rename',
         'slug' => 'rename',
         'repository_url' => 'https://example.test/rename.git',
         'default_branch' => 'main',
     ]);
+    // The schema at the rename migration has no source_access column yet.
+    $project->offsetUnset('source_access');
+    $project->save();
     $instance = Instance::query()->create([
         'project_id' => $project->id,
         'node_id' => $node->id,

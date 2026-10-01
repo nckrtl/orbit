@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\GitHub\GitHubCliToken;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceRemovalStep;
@@ -15,10 +16,12 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\Nodes\Storage\ProtectedPathCatalog;
+use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceLifecycle;
@@ -156,6 +159,84 @@ it('creates independent clones from an existing remote branch and the exact fetc
         ->and(dirname($existing->checkout_path))
         ->toBe(dirname($fallback->checkout_path));
 });
+
+it('clones a gh_cli Project with the Gateway GitHub CLI token only on protected input', function (?string $token): void {
+    app()->instance(GitHubCliToken::class, new readonly class($token) implements GitHubCliToken
+    {
+        public function __construct(private ?string $token) {}
+
+        public function token(): string
+        {
+            return $this->token ?? throw new ResourceOperationException('github.cli_unauthenticated', 'No login.');
+        }
+    });
+    $recorder = new class implements SshExecutor
+    {
+        /** @var list<RemoteCommand> */
+        public array $commands = [];
+
+        public ?string $protectedInput = null;
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $this->commands[] = $command;
+            $stream = $command->protectedInput?->stream();
+            $this->protectedInput = is_resource($stream) ? (string) stream_get_contents($stream) : null;
+
+            return new CommandResult(0, '', '', 1, false);
+        }
+    };
+    $keys = new class implements SshKeyProvider
+    {
+        public function privateKeyPath(): string
+        {
+            return '/tmp/orbit-test-key';
+        }
+
+        public function publicKey(): string
+        {
+            return 'ssh-ed25519 test';
+        }
+    };
+    $knownHosts = new class implements KnownHostsStore
+    {
+        public function path(): string
+        {
+            return '/tmp/orbit-test-known-hosts';
+        }
+
+        public function put(string $host, int $port, HostKey $key): void {}
+    };
+    $source = new RemoteDevelopmentInstanceSourceLifecycle(
+        new DevelopmentSshExecutor($recorder, $keys, $knownHosts),
+        $this->accounts,
+        $this->boundary,
+        app(RepositoryReadAccess::class),
+    );
+    $this->orbitApp->update([
+        'repository_url' => 'git@github.com:acme/private.git',
+        'source_access' => ProjectSourceAccess::GhCli,
+    ]);
+    $instance = orb76_source_instance($this->orbitApp->refresh(), $this->node, $this->appsRoot, 'horizon');
+
+    if ($token === null) {
+        expect(fn () => $source->prepare($instance, false))
+            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('github.cli_unauthenticated'))
+            ->and($recorder->commands)->toBe([]);
+
+        return;
+    }
+
+    $source->prepare($instance, false);
+
+    expect($recorder->commands)->toHaveCount(1)
+        ->and($recorder->commands[0]->input)->toBeNull()
+        ->and(implode(' ', $recorder->commands[0]->arguments))->not->toContain($token)
+        ->and($recorder->protectedInput)->toContain(base64_encode("x-access-token:{$token}"), 'git_read git clone');
+})->with([
+    'logged in' => ['gho_sentinel000000000000000000'],
+    'not logged in' => [null],
+]);
 
 it('uses the Project default branch for the reserved default identity', function (): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'default');

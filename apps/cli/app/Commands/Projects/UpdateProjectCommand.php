@@ -21,6 +21,7 @@ final class UpdateProjectCommand extends GatewayCommand
         {--type= : New Project type}
         {--slug= : New Project slug}
         {--repository= : New repository access URL}
+        {--source-access= : How Orbit reads a private github.com repository: github_app or gh_cli}
         {--default-branch= : New stored default branch}
         {--root= : New repository-relative root; package types may use .}
         {--task-check= : New task check command for task baselines and handoffs}
@@ -44,6 +45,7 @@ final class UpdateProjectCommand extends GatewayCommand
         $type = $this->stringOption('type');
         $slug = $this->stringOption('slug');
         $repositoryUrl = $this->stringOption('repository');
+        $sourceAccess = $this->stringOption('source-access');
         $defaultBranch = $this->stringOption('default-branch');
         $root = $this->stringOption('root');
         $taskCheck = $this->stringOption('task-check');
@@ -70,6 +72,13 @@ final class UpdateProjectCommand extends GatewayCommand
             );
         }
 
+        if ($sourceAccess !== null && ! in_array($sourceAccess, ['github_app', 'gh_cli'], true)) {
+            return $this->renderGatewayFailure(
+                'project.source_access_invalid',
+                'Source access must be github_app or gh_cli.',
+            );
+        }
+
         if ($taskCheck !== null && $clearTaskCheck) {
             return $this->renderGatewayFailure('project.task_check_conflict', 'Choose either --task-check or --clear-task-check.');
         }
@@ -87,7 +96,7 @@ final class UpdateProjectCommand extends GatewayCommand
             );
         }
 
-        if ($type === null && $slug === null && $repositoryUrl === null && $defaultBranch === null && $root === null && $taskCheck === null && ! $clearTaskCheck && $taskWorkspaceRouted['value'] === null) {
+        if ($type === null && $slug === null && $repositoryUrl === null && $sourceAccess === null && $defaultBranch === null && $root === null && $taskCheck === null && ! $clearTaskCheck && $taskWorkspaceRouted['value'] === null) {
             return $this->renderGatewayFailure(
                 'project.update_required',
                 'Provide at least one Project update.',
@@ -111,6 +120,7 @@ final class UpdateProjectCommand extends GatewayCommand
                 root: $root,
                 taskCheck: $clearTaskCheck ? null : $taskCheck,
                 taskCheckProvided: $clearTaskCheck || $taskCheck !== null,
+                sourceAccess: $sourceAccess,
                 taskWorkspaceRouted: $taskWorkspaceRouted['value'],
             ),
             ProjectResponse::class,

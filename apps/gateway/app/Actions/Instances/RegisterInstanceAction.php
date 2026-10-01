@@ -4,14 +4,9 @@ declare(strict_types=1);
 
 namespace App\Actions\Instances;
 
-use App\Actions\Projects\CreateProjectAction;
-use App\Data\Instances\InstanceData;
 use App\Data\Instances\RegisterInstanceData;
-use App\Data\Projects\CreateProjectData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
-use App\Domain\Broadcasting\RecordEventBroadcaster;
-use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\InstanceDestinationGuard;
@@ -26,13 +21,10 @@ use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Projects\DevelopmentNodeExclusion;
-use App\Domain\Projects\ProjectTypeClassifier;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\SourceControl\GitBranchName;
-use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Domain\SourceControl\ProjectRoot;
 use App\Models\Instance;
 use App\Models\Node;
@@ -46,7 +38,6 @@ final readonly class RegisterInstanceAction
 {
     public function __construct(
         private RegistrationSourceManager $sources,
-        private CreateProjectAction $createProject,
         private ManagedUserAccountResolver $accounts,
         private StorageRootResolver $storageRoots,
         private NodeSettingsNormalizer $nodeSettings,
@@ -56,22 +47,13 @@ final readonly class RegisterInstanceAction
         private DevelopmentProjectionOperationLock $projectionLock,
         private DevelopmentInstanceProvisioner $provisioner,
         private DevelopmentInstanceConfigurator $configuration,
-        private ?RecordEventBroadcaster $broadcaster = null,
         private ?RunInstanceSetupAction $setup = null,
     ) {}
 
-    /** @return array{project: Project, primary: Instance, instances: list<Instance>, created: bool} */
+    /** @return array{project: Project, primary: Instance, instances: list<Instance>} */
     public function execute(Node $caller, RegisterInstanceData $data): array
     {
         $result = $this->performRegistration($caller, $data);
-
-        if ($result['created']) {
-            ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
-                RecordEventType::InstanceCreated,
-                $result['primary']->id,
-                InstanceData::fromModel($result['primary'])->toArray(),
-            );
-        }
 
         if ($data->runSetup && ! $result['primary']->placedOnAppProd()) {
             ($this->setup ?? app(RunInstanceSetupAction::class))->execute($result['primary']);
@@ -80,7 +62,7 @@ final readonly class RegisterInstanceAction
         return $result;
     }
 
-    /** @return array{project: Project, primary: Instance, instances: list<Instance>, created: bool} */
+    /** @return array{project: Project, primary: Instance, instances: list<Instance>} */
     private function performRegistration(Node $caller, RegisterInstanceData $data): array
     {
         $this->assertPlacement($caller);
@@ -118,7 +100,7 @@ final readonly class RegisterInstanceAction
             $primaryFacts = $retainedPrimary instanceof Instance
                 ? $facts[0]
                 : $this->primaryFacts($facts, $data->sourcePath);
-            [$project, $projectCreated] = $this->resolveProject($primaryFacts, $data);
+            $project = $this->resolveProject($primaryFacts, $data);
             $this->preflightSources($caller, $project, $facts, $retainedPrimary, $data->sourcePath);
             [$members, $instances] = $this->projectionLock->run(function () use (
                 $caller,
@@ -126,7 +108,6 @@ final readonly class RegisterInstanceAction
                 $facts,
                 $primaryFacts,
                 $data,
-                $projectCreated,
             ): array {
                 $members = $this->reserveMembers($caller, $project, $facts, $primaryFacts, $data);
 
@@ -156,9 +137,7 @@ final readonly class RegisterInstanceAction
 
                     throw new ResourceOperationException(
                         errorCode: 'instance.registration_incomplete',
-                        message: $projectCreated
-                            ? "Project [{$project->slug}] was retained; Instance registration is incomplete and can be retried."
-                            : 'Instance registration is incomplete and can be retried.',
+                        message: 'Instance registration is incomplete and can be retried.',
                         status: 502,
                         previous: $exception,
                     );
@@ -178,7 +157,6 @@ final readonly class RegisterInstanceAction
                 'project' => $project->refresh(),
                 'primary' => $primary,
                 'instances' => $instances,
-                'created' => $projectCreated,
             ];
         });
     }
@@ -514,8 +492,11 @@ final readonly class RegisterInstanceAction
         );
     }
 
-    /** @return array{Project, bool} */
-    private function resolveProject(RegistrationSourceFacts $facts, RegisterInstanceData $data): array
+    /**
+     * Registration adopts a checkout only for an existing Project
+     * ([Projects](/reference/projects#registration-needs-a-project)).
+     */
+    private function resolveProject(RegistrationSourceFacts $facts, RegisterInstanceData $data): Project
     {
         $byRepository = Project::query()
             ->where('repository_identity', $facts->repositoryIdentity)
@@ -524,7 +505,7 @@ final readonly class RegisterInstanceAction
         if ($byRepository->count() > 1) {
             throw $this->conflict(
                 'project.repository_identity_conflict',
-                'Several Apps own the requested repository identity.',
+                'Several Projects own the requested repository identity.',
             );
         }
 
@@ -534,7 +515,7 @@ final readonly class RegisterInstanceAction
         if ($explicit instanceof Project && $explicit->repository_identity !== $facts->repositoryIdentity) {
             throw $this->conflict(
                 'project.repository_identity_conflict',
-                'The selected App owns a different repository identity.',
+                'The selected Project owns a different repository identity.',
             );
         }
 
@@ -544,81 +525,21 @@ final readonly class RegisterInstanceAction
 
         $project = $explicit ?? $resolved;
 
-        if ($project instanceof Project) {
-            $this->assertExistingProjectInput($project, $data);
-            $root = $data->root ?? $project->root;
-
-            if (! is_string($root) || ! ProjectRoot::isValid($root, $project->type)) {
-                throw new ResourceOperationException('project.root_invalid', 'The Project root is invalid.', 422);
-            }
-
-            return [$project, false];
-        }
-
-        $slug = $data->projectSlug ?? $facts->inferredSlug;
-        $defaultBranch = $data->defaultBranch ?? $facts->defaultBranch;
-        $root = $data->root ?? $facts->inferredRoot;
-
-        if ($slug !== $facts->inferredSlug) {
-            throw $this->conflict(
-                'project.slug_conflict',
-                'The confirmed Project slug conflicts with verified repository evidence.',
-            );
-        }
-
-        if ($facts->defaultBranch !== null && $defaultBranch !== $facts->defaultBranch) {
-            throw $this->conflict(
-                'project.default_branch_conflict',
-                'The confirmed default branch conflicts with verified repository evidence.',
-            );
-        }
-
-        if ($facts->inferredRoot !== null && $root !== $facts->inferredRoot) {
-            throw $this->conflict('project.root_conflict', 'The confirmed root conflicts with verified Laravel evidence.');
-        }
-
-        if ($defaultBranch === null || $root === null) {
+        if (! $project instanceof Project) {
             throw new ResourceOperationException(
-                'instance.registration_values_unresolved',
-                'Project default branch and root must be confirmed before registration.',
+                'instance.project_missing',
+                "No Project owns repository [{$facts->repositoryUrl}]. Create it with `orbit project:create` first.",
                 422,
             );
         }
 
-        $type = new ProjectTypeClassifier()->classify([
-            'slug' => $slug,
-            'repository_identity' => GitRepositoryIdentity::derive($facts->repositoryUrl),
-            'root' => $root,
-            'has_production_php' => false,
-        ]);
-        if (! ProjectRoot::isValid($root, $type)) {
+        $root = $data->root ?? $project->root;
+
+        if (! is_string($root) || ! ProjectRoot::isValid($root, $project->type)) {
             throw new ResourceOperationException('project.root_invalid', 'The Project root is invalid.', 422);
         }
 
-        $result = $this->createProject->execute(new CreateProjectData(
-            name: $data->projectName ?? $slug,
-            slug: $slug,
-            type: $type,
-            repositoryUrl: $facts->repositoryUrl,
-            defaultBranch: GitBranchName::validate($defaultBranch),
-            root: ProjectRoot::validate($root, $type),
-        ));
-
-        return [$result['project'], $result['created']];
-    }
-
-    private function assertExistingProjectInput(Project $project, RegisterInstanceData $data): void
-    {
-        if (
-            $data->projectSlug !== null
-            && $data->projectSlug !== $project->slug
-            || $data->projectName !== null
-            && $data->projectName !== $project->name
-            || $data->defaultBranch !== null
-            && $data->defaultBranch !== $project->default_branch
-        ) {
-            throw $this->conflict('project.identity_conflict', 'Confirmed Project values conflict with the existing Project.');
-        }
+        return $project;
     }
 
     /**

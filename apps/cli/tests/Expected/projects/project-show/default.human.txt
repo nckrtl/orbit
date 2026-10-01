@@ -11,6 +11,8 @@ Fetching Instances...
 │
 ├  Repository              https://github.com/acme/site.git
 │
+├  Source access           github_app
+│
 ├  Default branch          —
 │
 ├  Web root                —

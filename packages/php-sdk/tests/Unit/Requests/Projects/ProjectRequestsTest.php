@@ -222,6 +222,30 @@ describe('project requests', function (): void {
             ->and(ProjectResponse::fromGatewayData(['id' => 4], 'request-id')->taskCheck)->toBeNull();
     });
 
+    it('transports source access on create and update only when given', function (): void {
+        $create = static fn (?string $sourceAccess): CreateProjectRequest => new CreateProjectRequest(
+            slug: 'leden',
+            repositoryUrl: 'git@github.com:acme/leden.git',
+            root: 'public',
+            sourceAccess: $sourceAccess,
+        );
+
+        expect($create(null)->body()->all())->not->toHaveKey('source_access')
+            ->and($create('gh_cli')->body()->all())->toMatchArray(['source_access' => 'gh_cli'])
+            ->and(new UpdateProjectRequest(projectId: 14, defaultBranch: 'main', sourceAccess: 'gh_cli')->body()->all())
+            ->toBe(['source_access' => 'gh_cli', 'default_branch' => 'main'])
+            ->and(new UpdateProjectRequest(projectId: 14, defaultBranch: 'main')->body()->all())
+            ->not->toHaveKey('source_access');
+    });
+
+    it('reads source access from a Project response', function (): void {
+        $response = ProjectResponse::fromGatewayData(['id' => 14, 'source_access' => 'gh_cli'], 'request-id');
+
+        expect($response->sourceAccess)->toBe('gh_cli')
+            ->and($response->toArray()['source_access'])->toBe('gh_cli')
+            ->and(ProjectResponse::fromGatewayData(['id' => 4], 'request-id')->sourceAccess)->toBe('github_app');
+    });
+
     it('serializes task workspace routing as true, false, or omitted', function (): void {
         $create = static fn (?bool $routed): CreateProjectRequest => new CreateProjectRequest(
             slug: 'kit',
@@ -286,6 +310,7 @@ function project_gateway_data(): array
         'slug' => 'orbit-docs',
         'type' => 'laravel-app',
         'repository_url' => 'git@github.com:nckrtl/orbit-docs.git',
+        'source_access' => 'github_app',
         'default_branch' => 'main',
         'root' => 'public',
         'task_check' => 'composer check',

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\InstanceRemover;
+use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\InstanceProvisioning;
@@ -533,6 +534,19 @@ it('stores the configured implementer and reviewer drivers on a new group', func
         ->assertCreated();
 
     $this->assertDatabaseHas('tasks', ['title' => 'Mixed', 'parent_id' => null, 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 't3']);
+});
+
+it('refuses a task for a Project that reads through the GitHub CLI before storing it', function (): void {
+    tasks_gateway();
+    enable_tasks();
+    $project = tasks_app();
+    $project->update(['source_access' => ProjectSourceAccess::GhCli]);
+
+    $this->postJson('/api/v1/task-groups', ['project_id' => $project->id, 'title' => 'Refused', 'brief' => 'No App'])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'tasks.github_app_required');
+
+    $this->assertDatabaseMissing('tasks', ['title' => 'Refused']);
 });
 
 it('rejects an unregistered configured driver with 409 before storing a group', function (string $role): void {

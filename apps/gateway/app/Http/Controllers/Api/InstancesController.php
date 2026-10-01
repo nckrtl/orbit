@@ -76,7 +76,6 @@ final class InstancesController extends Controller
                 )->toArray(),
                 'meta' => $this->meta($request),
             ],
-            $result['created'] ? 201 : 200,
         );
     }
 
