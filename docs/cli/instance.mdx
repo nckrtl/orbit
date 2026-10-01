@@ -102,13 +102,13 @@ orbit instance:create 4 7 default
 orbit instance:create 4 7 feature-one --branch=release --domain=feature.example.test
 ```
 
-An identical retry resumes an incomplete creation. A retry that changes the root or `--branch` returns `instance.placement_conflict`. A copy retry must also repeat `--from`.
+An identical retry resumes an incomplete creation. A retry that changes the root or `--branch` returns `instance.placement_conflict`. A copy retry must also repeat `--from`. A `reserved` copy recopies through its ownership marker. A `checkout_prepared` or `source_resolved` copy resumes in place when the checkout is still present.
 
 <Note>
 The Instance becomes active once Orbit has prepared the source, PHP runtime, Laravel URL, and Route. Setup runs after that. A successful response means every setup step succeeded. An empty setup list counts as success. The application can still fail for other reasons.
 </Note>
 
-A failed setup step removes the new Instance after the teardown steps run. See [Instance setup and teardown](/reference/instance-setup#run-setup). A failed copy uses that same removal for an owned checkout, including the PHP-FPM pool and Route projection. See [Instance copies](/reference/instance-copies#copy-steps).
+A failed setup step removes the new Instance after the teardown steps run. See [Instance setup and teardown](/reference/instance-setup#run-setup). A failed copy removes an owned checkout. After setup has started, that removal is the same rollback, including the PHP-FPM pool and the Route projection. Before that, removal does not invent a pool or a projection. See [Instance copies](/reference/instance-copies#copy-steps).
 
 ### Copy with --from
 

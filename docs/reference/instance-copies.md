@@ -117,9 +117,11 @@ The source repository is not modified. The copied `.git` directory is the new re
 
 Completion is the same path as a repository create: source profile, Laravel `APP_URL` including cached config, Route publication, and activation. The copied repository must pass the same prepared-checkout inspection. The origin URL stays the URL from the source.
 
-A failure after the copy starts uses the same removal `instance:create` already uses after a failed setup step. Teardown runs when setup has started. Forced removal then drops the checkout, the PHP-FPM pool, the Route, and the Route projection. Before activation, removal deletes the checkout only when the marker was written before that directory and still names this exact path, and it deletes the marker with the row. A failure before completion has reserved a pool or Route deletes the owned checkout and the row, and does not invent a pool or a projection to remove.
+After setup has started, a failure uses the same removal as any other `instance:create`. Teardown runs, then forced removal drops the checkout, the PHP-FPM pool, the Route, and the Route projection. Before activation, removal deletes the checkout only when the marker was written before that directory and still names this exact path, and it deletes the marker with the row. It does not invent a pool or a Route projection that completion has not reserved.
 
-An identical retry returns the Instance when it is active and setup succeeded. When another request still holds the Instance lifecycle lock, including during setup, the retry returns `instance.lifecycle_busy` and does not remove the row. When the row is incomplete and that lock is free, the retry removes it through the same removal path, then copies again.
+An identical retry returns the Instance when it is active and setup succeeded. An active Instance whose setup did not finish returns `instance.setup_step_failed` and does not copy again. Use `instance:setup`. A setup or teardown step that finds the lifecycle busy returns `instance.lifecycle_busy` and leaves that active row in place.
+
+A `reserved` row whose marker names this path stays in place when the request stops before cleanup. The next identical request clears the owned partial tree, keeps the marker, and copies again. A row already at `checkout_prepared` or `source_resolved` resumes from that state when the checkout is still present. It does not delete that checkout and copy it again. When cleanup has removed the row, the next identical request starts a new copy.
 
 The copy uses the same request deadline as `instance:create`. A deadline is a failure: the owned partial target is removed through that same path, and the response is `command.deadline_exceeded`. The remote `cp` runs under `timeout` for the remaining budget plus a short backstop, and its process group id is recorded beside the ownership marker. When the deadline or a lost connection cuts the local SSH client, cleanup signals that process group before it deletes the partial checkout, so the remote copy does not keep writing.
 
@@ -284,13 +286,14 @@ The [create refusals](/domains/applications#create-a-development-instance) still
 | `instance.lifecycle_busy` | 409 | Another request holds this Instance's lifecycle lock. |
 | `instance.candidate_required` | 409 | The Node has the active `app-prod` role. |
 
-A failure after the copy starts does not leave the row reserved, unless the lifecycle lock is still held. Cleanup uses the [removal path](#copy-steps) above. An unmanaged directory at the destination is never deleted.
+A failure after the copy starts removes the row when cleanup finishes. A busy lifecycle during setup leaves the active row in place. A `reserved` row remains only when the request stops before that cleanup. Cleanup uses the [removal path](#copy-steps) above. An unmanaged directory at the destination is never deleted.
 
 ## Limits
 
 A copy stays on one Node. The source checkout is not modified.
 
 - Reflink is attempted first. A plain copy runs only after `EOPNOTSUPP`, `EXDEV`, `EAGAIN`, or `EINVAL`.
+- Orbit does not convert a Node disk and does not change `zfs_bclone_wait_dirty`. The [errno table](#copy-mode) is the fallback list.
 - The Node source lock covers the copy. The dependency prune takes that same lock before it deletes `vendor` or `node_modules`.
 - Setup runs. A copied `vendor` or `node_modules` makes the matching step cheap.
 - The source is not stopped. SQLite consistency comes from snapshots.
@@ -303,11 +306,25 @@ These reasons explain the design. Check them before you propose a change.
 
 ### One create command
 
-`instance:clone` builds a production home from committed source. A development copy keeps the working tree. Using clone for both would make the dirty-source rule and the production Node rule depend on a flag. So `--from` is an input of `instance:create`.
+`instance:clone` builds a production home from committed source. A development copy keeps the working tree. Using clone for both would make the dirty-source rule and the production Node rule depend on a flag. So `--from` is an input of `instance:create`. There is no `instance:copy` command. `copy_mode` records `reflink` or `full` on this command. It is not a second command, and `instance:clone` stays the only production path.
 
 ### Report the path that ran
 
-`--reflink=auto` can copy some files by reflink and the rest in full, and still exit 0. Callers cannot see which happened. `cp -a --reflink=always` either clones every file or fails. `EOPNOTSUPP`, `EXDEV`, `EAGAIN`, and `EINVAL` are the failures that mean a plain copy is the right second attempt. Other failures are not a fallback. `sync -f` on the apps root runs first so a dirty ZFS block is less likely to return `EAGAIN`.
+`--reflink=auto` can copy some files by reflink and the rest in full, and still exit 0. Callers cannot see which happened. `cp -a --reflink=always` either clones every file or fails. `EOPNOTSUPP`, `EXDEV`, `EAGAIN`, and `EINVAL` are the failures that mean a plain copy is the right second attempt. Other failures are not a fallback. A filesystem that returns one of those four still gets the plain copy. Orbit does not refuse that filesystem and does not convert the disk.
+
+A temporary probe file is not used. On ZFS 2.2 and 2.3, `zfs_bclone_wait_dirty` defaults to 0, so a clone of a newly written file can fail while a clone of clean checkout files succeeds. ZFS 2.4 defaults that parameter to 1. Orbit does not change it. `sync -f` on the apps root runs first so a dirty ZFS block is less likely to return `EAGAIN`.
+
+### A separate directory
+
+An overlay mount would stop being the plain directory Doctor inspects. Hardlinks would let a write in the copy change the source. The new checkout is its own directory: a reflink when `FICLONE` succeeds, and a plain copy when it does not.
+
+### A new branch at the source HEAD
+
+Keeping the source branch name would put the copy and the source on one branch. The Instance name is a new branch at the source `HEAD`. A local or remote-tracking ref of that name at another commit is refused, so the copy does not move a published branch. The source repository is not modified.
+
+### The workspace does not follow the source HEAD
+
+A task workspace fetches `origin` in the new checkout. When `origin/task-{id}` exists, the workspace checks it out. Otherwise it points `task-{id}` at the fetched default branch tip. It never uses the source `HEAD`, because unpublished commits on `default` would become the task base. Untracked files that are not ignored are removed, because the task signer runs `git add -A`. Ignored files, including `vendor` and `node_modules`, stay.
 
 ### A cold tree is not a warm tree
 
@@ -319,4 +336,20 @@ The copy exists so `vendor` and `node_modules` are already present. The cold mar
 
 ### Snapshots, not a quiet source
 
-The source pool stays up, and an awake app can write SQLite during the copy. Replacing the copied database with a snapshot gives the new Instance one consistent file. Stopping the source to get that file was rejected.
+The source pool stays up, and an awake app can write SQLite during the copy. Replacing the copied database with a snapshot gives the new Instance one consistent file. Stopping the source to get that file was rejected. Leaving the reflinked database, `-wal`, and `-shm` files in place was rejected for the same reason: a write during the copy can tear them.
+
+### Owned trees only
+
+Deleting every directory found at the destination would remove an unmanaged checkout. A repository create does not do that, and a copy does not either. The marker is written before the destination and names that path. Removal deletes the tree only when the marker still names it.
+
+### File-only keys stay
+
+Syncing stored keys and dropping `.env` would lose a key that exists only in the file. The copy keeps the file and imports those keys, so a later sync still has them.
+
+### Setup still runs
+
+The create path runs the Project setup list after the copy. Skipping the list would leave a copied Instance on a different path from a repository create. Installed dependencies make the matching steps cheap.
+
+### Not the clone candidate
+
+`clone_candidate_id` records the production clone candidate. A development copy stores `source_instance_id` instead. Deleting the source sets that id to null. `creation` and `copy_mode` stay.
