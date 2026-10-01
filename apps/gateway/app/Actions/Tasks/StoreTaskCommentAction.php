@@ -11,6 +11,8 @@ use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskTurnFetcher;
+use App\Domain\Tasks\TaskTurnFetchNotice;
 use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Task;
@@ -21,7 +23,12 @@ use Illuminate\Support\Str;
 
 final readonly class StoreTaskCommentAction
 {
-    public function __construct(private AgentDriverRegistry $drivers, private CoderSettleNotifier $notifier) {}
+    public function __construct(
+        private AgentDriverRegistry $drivers,
+        private CoderSettleNotifier $notifier,
+        private TaskTurnFetcher $turnFetcher,
+        private TaskTurnFetchNotice $fetchNotice,
+    ) {}
 
     /** @param array<string, mixed> $payload */
     public function execute(Task $task, array $payload): TaskComment
@@ -62,7 +69,8 @@ final readonly class StoreTaskCommentAction
                     if ($thread === null) {
                         throw new AgentDriverException('Blocked AgentThread is unavailable.');
                     }
-                    $this->drivers->get($thread->driver)->send($thread, $comment->body);
+                    $this->turnFetcher->beforeTurn($task->parent()->with(['project', 'taskable'])->firstOrFail());
+                    $this->drivers->get($thread->driver)->send($thread, $this->fetchNotice->apply($comment->body));
                     $this->recordResolutionDelivered($task, $comment, $reviewing);
                 }
             } catch (AgentDriverException) {

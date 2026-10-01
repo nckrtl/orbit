@@ -25,7 +25,7 @@ use Throwable;
 /**
  * Fetches `origin/{base}` with the pull request token. `{base}` is one argument. The fetch updates
  * the remote-tracking ref and does not check out or rebase the task branch (ADR 0164).
- * `fastForward` catches the workspace up with `origin/task-{group id}` only when it is strictly behind.
+ * `fastForward` uses the refs already fetched for the turn and moves only a strictly behind workspace.
  * `fetchForTurn` fetches the default branch, `task-{id}`, and a different pull request base with the
  * read token and `--no-tags`. It updates remote-tracking refs and does not move HEAD.
  */
@@ -61,41 +61,30 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
     public function fastForward(Task $group, bool $missingRefOk = false): void
     {
         $group->loadMissing(['project', 'taskable']);
-        $repository = GitHubRepository::fromOrigin((string) $group->project->repository_url);
         $instance = $group->taskable;
-        if (! $repository instanceof GitHubRepository || ! $instance instanceof Instance || $instance->checkout_path === '') {
+        if (! $instance instanceof Instance || $instance->checkout_path === '') {
             throw new TaskPullRequestException('The task branch could not be fetched.');
         }
 
-        try {
-            $token = $this->access->token($repository);
-        } catch (GitHubApiException $exception) {
-            throw new TaskPullRequestException('The task branch could not be fetched.', previous: $exception);
-        }
-
         $instance->loadMissing('node');
-        // The remote-tracking ref may be replaced; the workspace only moves by a fast-forward merge.
-        // A missing task branch is left alone when the caller allows it, and is still a failure otherwise.
-        $script = GitReadScript::for(GitReadEnvironment::forGitHubToken($token), <<<'BASH'
+        // The turn fetch has already updated this ref. This step is local and needs no token.
+        $script = <<<'BASH'
             checkout=$1
             branch=$2
-            if [ "${3:-}" = "missing-ok" ]; then
-                status=0
-                git_read git -C "$checkout" ls-remote --exit-code --heads origin "$branch" >/dev/null || status=$?
-                if [ "$status" -eq 2 ]; then
-                    exit 0
-                fi
-                if [ "$status" -ne 0 ]; then
-                    exit "$status"
-                fi
+            status=0
+            git -C "$checkout" show-ref --verify --quiet "refs/remotes/origin/$branch" || status=$?
+            if [ "$status" -eq 1 ] && [ "${3:-}" = "missing-ok" ]; then
+                exit 0
             fi
-            git_read git -C "$checkout" fetch --quiet origin "+refs/heads/$branch:refs/remotes/origin/$branch"
+            if [ "$status" -ne 0 ]; then
+                exit "$status"
+            fi
             head=$(git -C "$checkout" rev-parse HEAD)
             remote=$(git -C "$checkout" rev-parse "refs/remotes/origin/$branch")
             if [ "$head" != "$remote" ] && git -C "$checkout" merge-base --is-ancestor "$head" "$remote"; then
                 git -C "$checkout" merge --ff-only --quiet "$remote"
             fi
-            BASH);
+            BASH;
         $arguments = ['bash', '-seu', '--', $instance->checkout_path, 'task-'.$group->id];
         if ($missingRefOk) {
             $arguments[] = 'missing-ok';
@@ -103,8 +92,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         try {
             $this->ssh->execute($instance->node, new RemoteCommand(
                 arguments: $arguments,
-                input: $script->input,
-                protectedInput: $script->protectedInput,
+                input: $script,
             ), 'task-branch-sync', 'tasks.fetch_failed');
         } catch (RuntimeConvergenceException $exception) {
             throw new TaskPullRequestException('The task branch could not be fetched.', previous: $exception);
@@ -203,6 +191,9 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
                 refspecs+=("+refs/heads/${pull_base}:refs/remotes/origin/${pull_base}")
             fi
             git_read git -C "$checkout" fetch --no-tags --quiet origin "${refspecs[@]}"
+            if [ "$status" -eq 2 ]; then
+                git -C "$checkout" update-ref -d "refs/remotes/origin/$task_branch"
+            fi
             BASH);
         try {
             $this->ssh->execute($instance->node, new RemoteCommand(

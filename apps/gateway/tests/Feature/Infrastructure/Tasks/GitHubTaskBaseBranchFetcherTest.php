@@ -163,31 +163,37 @@ it('fast-forwards a workspace that is strictly behind the task branch and leaves
         fetcher_git($checkout, ['commit', '--quiet', '--allow-empty', '-m', 'Local']);
     }
     $before = fetcher_git($checkout, ['rev-parse', 'HEAD']);
+    fetcher_git($checkout, ['push', '--quiet', 'origin', $approved.':refs/heads/main']);
+    $fetcher = fetcher(new LocalShellSshExecutor);
+    $fetcher->fetchForTurn($group);
+    // Preparation must use the fetched refs, even if the remote is no longer reachable.
+    fetcher_git($checkout, ['remote', 'set-url', 'origin', $root.'/unreachable.git']);
 
-    fetcher(new LocalShellSshExecutor)->fastForward($group, missingRefOk: $case === 'behind-missing-ok');
+    $fetcher->fastForward($group, missingRefOk: $case === 'behind-missing-ok');
 
     expect(fetcher_git($checkout, ['rev-parse', 'HEAD']))->toBe(in_array($case, ['behind', 'behind-missing-ok'], true) ? $remote : $before)
         ->and(fetcher_git($checkout, ['rev-parse', 'refs/remotes/origin/'.$branch]))->toBe($remote)
         ->and(fetcher_git($checkout, ['rev-parse', '--abbrev-ref', 'HEAD']))->toBe('task-7');
 })->with(['behind', 'behind-missing-ok', 'level', 'ahead', 'diverged']);
 
-it('fast-forwards with the task branch as one argument, the token only on standard input, and never forces the workspace', function (): void {
+it('fast-forwards the already-fetched task branch without a token, another fetch, or forcing the workspace', function (): void {
     $transport = new AppDevFakeSshExecutor;
     $group = fetcher_group('/srv/orbit/apps/shop/task-7');
 
     fetcher($transport)->fastForward($group);
 
     $command = $transport->commands[0];
-    $script = (string) stream_get_contents($command->protectedInput?->stream());
+    $script = (string) $command->input;
     expect($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'task-'.$group->id])
-        ->and($command->input)->toBeNull()
-        ->and($script)->toContain(base64_encode('x-access-token:ghs_fetch'))
+        ->and($command->protectedInput)->toBeNull()
+        ->and($script)->not->toContain('fetch', 'ls-remote', 'token')
         ->and($script)->toContain('merge --ff-only')
         ->and($script)->not->toContain('reset')
         ->and($script)->not->toContain('push');
+    Http::assertNothingSent();
 });
 
-it('reports one failure when the task branch fetch fails', function (): void {
+it('reports one failure when fast-forwarding the task branch fails', function (): void {
     $transport = new AppDevFakeSshExecutor([new CommandResult(128, '', 'fatal: not found', 1, false)]);
 
     expect(fn () => fetcher($transport)->fastForward(fetcher_group('/srv/orbit/apps/shop/task-7')))
@@ -201,9 +207,9 @@ it('passes missing-ok when a missing task branch should not fail the resume', fu
 
     fetcher($transport)->fastForward($group, missingRefOk: true);
 
-    $script = (string) stream_get_contents($transport->commands[0]->protectedInput?->stream());
+    $script = (string) $transport->commands[0]->input;
     expect($transport->commands[0]->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'task-'.$group->id, 'missing-ok'])
-        ->and($script)->toContain('ls-remote --exit-code --heads origin "$branch"')
+        ->and($script)->toContain('show-ref --verify --quiet "refs/remotes/origin/$branch"')
         ->and($script)->toContain('missing-ok');
 });
 
@@ -258,7 +264,7 @@ it('asks for a different pull request base as its own refspec and keeps the writ
         ->and($script)->toContain('--no-tags');
 });
 
-it('updates remote-tracking refs and does not move HEAD when the task branch or a tag is missing', function (bool $taskBranch): void {
+it('updates remote-tracking refs and does not move HEAD when the task branch or a tag is missing', function (bool $taskBranch, bool $staleRef): void {
     $root = TestOrbitHome::scratch('orbit-turn-fetch');
     $checkout = $root.'/checkout';
     (new Process(['git', 'init', '--quiet', '--bare', $root.'/origin.git']))->mustRun();
@@ -284,6 +290,8 @@ it('updates remote-tracking refs and does not move HEAD when the task branch or 
     fetcher_git($checkout, ['update-ref', '-d', 'refs/remotes/origin/main']);
     if ($taskBranch) {
         fetcher_git($checkout, ['update-ref', '-d', 'refs/remotes/origin/'.$branch]);
+    } elseif ($staleRef) {
+        fetcher_git($checkout, ['update-ref', 'refs/remotes/origin/'.$branch, $main]);
     }
 
     fetcher(new LocalShellSshExecutor)->fetchForTurn($group->fresh() ?? $group);
@@ -299,10 +307,15 @@ it('updates remote-tracking refs and does not move HEAD when the task branch or 
         expect(fetcher_git($checkout, ['rev-parse', 'refs/remotes/origin/'.$branch]))->toBe($remoteTask);
     } else {
         expect($missingTask->getExitCode())->not->toBe(0);
+        expect(fn () => fetcher(new LocalShellSshExecutor)->fastForward($group))
+            ->toThrow(TaskPullRequestException::class, 'The task branch could not be fetched.');
+        fetcher(new LocalShellSshExecutor)->fastForward($group, missingRefOk: true);
+        expect(fetcher_git($checkout, ['rev-parse', 'HEAD']))->toBe($local);
     }
 })->with([
-    'missing task branch' => false,
-    'task branch present' => true,
+    'missing task branch' => [false, false],
+    'deleted task branch with a stale tracking ref' => [false, true],
+    'task branch present' => [true, false],
 ]);
 
 it('refreshes the default branch when only a nested branch shares the task name', function (): void {

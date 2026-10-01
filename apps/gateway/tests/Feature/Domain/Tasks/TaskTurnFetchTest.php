@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentSpawner;
@@ -103,7 +104,7 @@ function turn_fetch_driver(object $fetcher): FakeAgentDriver
     return $driver;
 }
 
-it('fetches before an opening implementer turn and still sends that turn when the fetch fails', function (): void {
+it('tells the agent Orbit fetches before each turn and not to fetch or push even when the opening fetch fails', function (): void {
     [, , $instance, $group] = turn_fetch_group('turn-fetch-open');
     Task::query()->create([
         'parent_id' => $group->id,
@@ -130,7 +131,8 @@ it('fetches before an opening implementer turn and still sends that turn when th
     $task = $group->tasks()->first();
     expect($fetcher->order)->toBe(['fetch', 'turn'])
         ->and($driver->calls[0]['operation'] ?? null)->toBe('create')
-        ->and($driver->calls[0]['prompt'] ?? '')->toContain('The fetch of origin failed. origin/* may be stale.')
+        ->and($driver->calls[0]['prompt'] ?? '')->toStartWith("The fetch of origin failed. origin/* may be stale.\n\n")
+        ->and($driver->calls[0]['prompt'] ?? '')->toContain('Orbit fetches origin before every agent turn. Do not fetch or push. Orbit publishes the approved commit itself.')
         ->and($driver->calls[0]['prompt'] ?? '')->toContain('Start the implementer.')
         ->and($task?->status)->toBe(TaskStatus::Running)
         ->and($task?->fresh()?->status)->not->toBe(TaskStatus::Failed)
@@ -139,7 +141,7 @@ it('fetches before an opening implementer turn and still sends that turn when th
         ->and($task?->implementer_agent_thread_id)->not->toBeNull();
 });
 
-it('fetches before a continued reviewer turn', function (): void {
+it('tells the agent not to fetch or push in opening and continued reviewer turns', function (bool $continued): void {
     [, $node, , $group] = turn_fetch_group('turn-fetch-review', TaskGroupStatus::Running->value);
     $task = Task::query()->create([
         'parent_id' => $group->id,
@@ -149,30 +151,103 @@ it('fetches before a continued reviewer turn', function (): void {
         'status' => TaskStatus::Running,
         'subtask_start_commit' => str_repeat('a', 40),
     ]);
+    if ($continued) {
+        $thread = AgentThread::query()->create([
+            'task_group_id' => $group->id,
+            'task_id' => $task->id,
+            'node_id' => $node->id,
+            'driver' => 't3',
+            'runtime_key' => 'node:'.$node->id,
+            'external_id' => 'reviewer-thread',
+            'role' => 'reviewer',
+            'model' => 'claude-opus-5',
+            'effort' => 'high',
+        ]);
+        $group->update(['reviewer_agent_thread_id' => $thread->id]);
+    }
+    $fetcher = turn_fetch_fetcher();
+    $driver = turn_fetch_driver($fetcher);
+
+    app(TaskScheduler::class)->settleImplementer($task->fresh() ?? $task);
+
+    $message = $driver->calls[0][$continued ? 'message' : 'prompt'] ?? '';
+    expect($fetcher->order)->toBe(['fetch', 'turn'])
+        ->and($driver->calls[0]['operation'] ?? null)->toBe($continued ? 'send' : 'create')
+        ->and($message)->toContain('Review subtask #'.$task->id.': Continued review')
+        ->and($message)->toContain('Orbit fetches origin before every agent turn. Do not fetch or push. Orbit publishes the approved commit itself.')
+        ->and($message)->not->toContain('The fetch of origin failed. origin/* may be stale.')
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Reviewing);
+})->with(['opening' => false, 'continued' => true]);
+
+it('fetches before an operator resolution is sent and still delivers it if the fetch fails', function (TaskStatus $status, bool $fail): void {
+    [, $node, , $group] = turn_fetch_group('turn-fetch-resolution', TaskGroupStatus::Running->value);
+    $group->update(['assistance_requested' => true, 'assistance_reason' => 'Access is missing.']);
+    $task = Task::query()->create([
+        'parent_id' => $group->id,
+        'position' => 1,
+        'title' => 'Blocked',
+        'brief' => 'Continue after access is restored.',
+        'status' => $status,
+        'assistance_requested' => true,
+        'assistance_reason' => 'Access is missing.',
+    ]);
+    $role = $status === TaskStatus::Reviewing ? 'reviewer' : 'implementer';
     $thread = AgentThread::query()->create([
         'task_group_id' => $group->id,
         'task_id' => $task->id,
         'node_id' => $node->id,
         'driver' => 't3',
         'runtime_key' => 'node:'.$node->id,
-        'external_id' => 'reviewer-thread',
-        'role' => 'reviewer',
+        'external_id' => $role.'-thread',
+        'role' => $role,
         'model' => 'claude-opus-5',
         'effort' => 'high',
     ]);
-    $group->update(['reviewer_agent_thread_id' => $thread->id]);
+    if ($status === TaskStatus::Reviewing) {
+        $group->update(['reviewer_agent_thread_id' => $thread->id]);
+    } else {
+        $task->update(['implementer_agent_thread_id' => $thread->id]);
+    }
+    $fetcher = turn_fetch_fetcher(fail: $fail);
+    $driver = turn_fetch_driver($fetcher);
+
+    $comment = app(StoreTaskCommentAction::class)->execute($task, [
+        'type' => 'resolution', 'body' => 'Access has been restored.', 'author' => 'operator',
+    ]);
+
+    $prefix = $fail ? "The fetch of origin failed. origin/* may be stale.\n\n" : '';
+    expect($fetcher->order)->toBe(['fetch', 'turn'])
+        ->and($driver->calls[0]['thread'] ?? null)->toBe($thread->external_id)
+        ->and($driver->calls[0]['message'] ?? null)->toBe($prefix.'Access has been restored.')
+        ->and($task->fresh()?->resolution_delivered_comment_id)->toBe($comment->id)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and($comment->body)->toBe('Access has been restored.');
+})->with([
+    'implementer success' => [TaskStatus::Running, false],
+    'implementer failure' => [TaskStatus::Running, true],
+    'reviewer success' => [TaskStatus::Reviewing, false],
+    'reviewer failure' => [TaskStatus::Reviewing, true],
+]);
+
+it('does not fetch for a resolution that does not start a turn', function (): void {
+    [, , , $group] = turn_fetch_group('turn-fetch-unused-resolution', TaskGroupStatus::Running->value);
+    $task = Task::query()->create([
+        'parent_id' => $group->id, 'position' => 1, 'title' => 'Not blocked',
+        'brief' => 'Continue working.', 'status' => TaskStatus::Running,
+    ]);
     $fetcher = turn_fetch_fetcher();
     $driver = turn_fetch_driver($fetcher);
 
-    app(TaskScheduler::class)->settleImplementer($task->fresh() ?? $task);
+    $comment = app(StoreTaskCommentAction::class)->execute($task, [
+        'type' => 'resolution', 'body' => 'Access has been restored.', 'author' => 'operator',
+    ]);
 
-    expect($fetcher->order)->toBe(['fetch', 'turn'])
-        ->and($driver->calls[0]['operation'] ?? null)->toBe('send')
-        ->and($driver->calls[0]['message'] ?? '')->toContain('Review subtask #'.$task->id.': Continued review')
-        ->and($driver->calls[0]['message'] ?? '')->not->toContain('The fetch of origin failed. origin/* may be stale.')
-        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
-        ->and($task->fresh()?->assistance_requested)->toBeFalse()
-        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Reviewing);
+    expect($fetcher->order)->toBe([])
+        ->and($driver->calls)->toBe([])
+        ->and($comment->body)->toBe('Access has been restored.');
 });
 
 it('fetches before a restarted turn and still sends it when the fetch fails', function (): void {

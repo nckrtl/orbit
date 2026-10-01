@@ -6,7 +6,7 @@ namespace App\Domain\Tasks;
 
 /**
  * Remembers whether the fetch before the current turn failed, so that turn's message can say so.
- * The scheduler clears it at the start of each fetch. One notice is shared for the process.
+ * The turn fetcher clears it at the start of each fetch. One notice is shared for the process.
  */
 final class TaskTurnFetchNotice
 {
