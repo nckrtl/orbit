@@ -99,6 +99,7 @@ it('installs the turn command outside the tracked tree and reads the receipt it 
     expect($written->getExitCode())->toBe(0)
         ->and($written->getOutput())->toBe("Orbit recorded the turn receipt (ready_for_review). End your turn now.\n")
         ->and(is_executable($checkout.'/.git/orbit/turn'))->toBeTrue()
+        ->and(fileperms($checkout.'/.git/orbit') & 0777)->toBe(0775)
         ->and(is_file($checkout.'/.git/orbit/run'))->toBeFalse()
         ->and(is_file($checkout.'/.git/orbit/run.json'))->toBeFalse()
         ->and(json_decode((string) file_get_contents($checkout.'/.git/orbit/turn.json'), true))->toBe(['role' => 'implementer', 'final' => false, 'deliverables' => []])

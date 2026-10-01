@@ -133,6 +133,7 @@ it('runs composer check detached and reports running, then the exit code and out
     $first = $runner->read($instance, $process);
     $reading = check_runner_wait($runner, $instance, $process);
 
+    expect(fileperms($checkout.'/.git/orbit') & 0777)->toBe(0775);
     expect($process->pid)->toBeGreaterThan(1)
         ->and($process->head)->toBe(trim((new Process(['git', 'rev-parse', 'HEAD'], $checkout))->mustRun()->getOutput()))
         ->and($first->state)->toBe('running')
@@ -227,8 +228,11 @@ it('reads the same working tree as the check without touching the index', functi
 
     $process = $runner->start($instance, 'echo ok');
     $runner->cancel($instance, $process);
+    chmod($checkout.'/.git/orbit', 0755);
     $snapshot = $runner->snapshot($instance);
+    clearstatcache();
 
+    expect(fileperms($checkout.'/.git/orbit') & 0777)->toBe(0775);
     expect($snapshot->head)->toBe($process->head)
         ->and($snapshot->tree)->toBe($process->tree)
         ->and($snapshot->parent)->toBeNull()

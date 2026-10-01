@@ -56,6 +56,7 @@ return [
         'provider' => env('ORBIT_PI_PROVIDER'),
     ],
     'tasks' => [
+        'worker_user' => env('ORBIT_TASKS_WORKER_USER'),
         'implementer_agent_driver' => env('ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER', 't3'),
         'reviewer_agent_driver' => env('ORBIT_TASKS_REVIEWER_AGENT_DRIVER', 't3'),
         // Models for new groups. Unset keeps TaskAgentDefaults.

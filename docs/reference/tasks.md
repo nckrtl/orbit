@@ -538,7 +538,11 @@ When the implementer cannot start, the subtask and the task become `failed`, and
 
 The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives in the Node's apps root like any development Instance.
 
-The checkout directory stays owned by the Node's managed user and group. When `orbit-worker` exists, prepare and inspect grant that user and the managed user `rwX` on the whole checkout, including `.git`. Git creates `index.lock` in that directory. The checkout root stays writable, so this grant does not keep Git configuration. Git 2.55 also refuses the tree because the owner is the managed user. Prepare adds the absolute path to `safe.directory` in `orbit-worker`'s global Git config. [Checkout access](/reference/instance-setup#checkout-access) states both. The grant does not cover either user's home. [ADR 0191](/decisions/0191-run-task-agents-as-a-dedicated-user) is the contract.
+The checkout directory stays owned by the Node's managed user and group. `ORBIT_TASKS_WORKER_USER` selects the worker account, normally `orbit-worker`. When it is unset or that account is absent, prepare leaves checkout access unchanged. Otherwise, prepare and inspect grant both users `rwX` access and default ACLs on the checkout, including `.git`.
+
+Default ACLs are installed before worker write access, so a partial grant cannot expose a directory without inheritance. Files the worker creates inherit the managed user's access, so removal can delete them without changing the checkout owner. Inspection repairs ACLs on entries the managed user owns. Entries the worker owns keep the ACLs they inherited. The grant does not cover either user's home.
+
+`.git/orbit` is mode `0775`. `.git/config` and `.git/hooks` are read-only for the worker, but the writable checkout root means that protection is not a trust boundary. Git creates `index.lock` in `.git`. Git 2.55 also refuses the tree because the owner is the managed user. Prepare adds the absolute path to `safe.directory` in `orbit-worker`'s global Git config. [Checkout access](/reference/instance-setup#checkout-access) states both. [ADR 0191](/decisions/0191-run-task-agents-as-a-dedicated-user) is the contract.
 
 | Project setting | New workspace |
 | --- | --- |
@@ -936,6 +940,7 @@ These Gateway environment keys configure the extension.
 
 | Environment key | Meaning |
 | --- | --- |
+| `ORBIT_TASKS_WORKER_USER` | The worker account granted checkout ACLs. Unset leaves checkout access unchanged during rollout |
 | `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER`, `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` | The drivers of new tasks. Default `t3` |
 | `ORBIT_TASKS_IMPLEMENTER_MODEL`, `ORBIT_TASKS_REVIEWER_MODEL` | The models of new tasks. Defaults `gpt-5.6-luna` and `claude-opus-5` |
 | `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` | The wait before one escalation for an observation outage. Default `120` |

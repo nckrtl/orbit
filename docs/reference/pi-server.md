@@ -108,7 +108,9 @@ An agent is a process of the Pi server and shares its user. It can read `/home/o
 
 ## Roll out orbit-worker on beast
 
-beast is the Node that runs Pi for Orbit's tasks, and task agents there run `incus`. Use the same cutover on any Node that already runs `pi-server` as the managed user. Deploy the Gateway that grants the workspace ACL, runs checks and teardown as `orbit-worker`, and isolates token-bearing `git` before this cutover. An agent cannot write a checkout until the ACL exists, and a check cannot start until the account exists.
+beast is the Node that runs Pi for Orbit's tasks, and task agents there run `incus`. Use the same cutover on any Node that already runs `pi-server` as the managed user. Deploy the Gateway that grants the workspace ACL, runs checks and teardown as `orbit-worker`, and isolates token-bearing `git` before this cutover.
+
+Set `ORBIT_TASKS_WORKER_USER=orbit-worker` on the Gateway to enable checkout ACLs. A Node without that account keeps its existing checkout access during rollout. An agent cannot write a checkout until the ACL exists, and a check cannot start until the account exists.
 
 Follow [Roll out a new binary](#roll-out-a-new-binary) until no Pi session you will restart is `working`. Leave the scheduler stopped, and stop the `pi-server` Process. Confirm no `pi-server` process remains.
 

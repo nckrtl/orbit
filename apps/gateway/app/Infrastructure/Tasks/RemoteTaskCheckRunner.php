@@ -36,7 +36,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         $verify = $deliverables === null ? '' : json_encode($deliverables, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $checkCommand = base64_encode($command ?? '');
         $data = $this->run($instance, [], "script='".base64_encode($script)."'\nsetup='".base64_encode($steps)."'\ndeliverables='".base64_encode($verify)."'\ncheck_command='{$checkCommand}'\n".<<<'BASH'
-            install -d -m 0755 -- "$dir"
+            install -d -m 0775 -- "$dir"
             printf '%s' "$script" | base64 -d > "$dir/check.new"
             chmod 0755 "$dir/check.new"
             mv -f -- "$dir/check.new" "$dir/check"
@@ -90,7 +90,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
             throw new TaskCheckException('The check script is missing from the Gateway.');
         }
         $data = $this->run($instance, [], "script='".base64_encode($script)."'\n".<<<'BASH'
-            install -d -m 0755 -- "$dir"
+            install -d -m 0775 -- "$dir"
             printf '%s' "$script" | base64 -d > "$dir/check.new"
             chmod 0755 "$dir/check.new"
             mv -f -- "$dir/check.new" "$dir/check"

@@ -1,4 +1,6 @@
+import { execFileSync } from "node:child_process";
 import {
+    chmodSync,
     mkdtempSync,
     mkdirSync,
     readdirSync,
@@ -8,7 +10,7 @@ import {
     symlinkSync,
     writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import { delimiter, join, sep } from "node:path";
 import { fauxAssistantMessage, fauxToolCall, type JsonObject } from "@earendil-works/pi-ai";
 import {
@@ -155,9 +157,9 @@ describe("stored file", () => {
         expect(saved.path).not.toBe(again.path);
         expect(readFileSync(saved.path, "utf-8")).toBe(first);
         expect(readFileSync(again.path, "utf-8")).toBe(second);
-        expect(statSync(saved.path).mode & 0o777).toBe(0o600);
-        expect(statSync(directory).mode & 0o777).toBe(0o700);
-        expect(statSync(join(cwd, ".git", "orbit")).mode & 0o777).toBe(0o700);
+        expect(statSync(saved.path).mode & 0o777).toBe(0o660);
+        expect(statSync(directory).mode & 0o777).toBe(0o770);
+        expect(statSync(join(cwd, ".git", "orbit")).mode & 0o777).toBe(0o775);
         for (const name of readdirSync(directory)) {
             expect(name.includes("/")).toBe(false);
             expect(name.startsWith("bash-ses_sion-")).toBe(true);
@@ -165,6 +167,74 @@ describe("stored file", () => {
         }
         expect(saved.text).toContain(saved.path);
         expect(saved.text).not.toContain(first);
+    });
+
+    it("keeps existing shared directory modes and creates group-writable output", () => {
+        const cwd = workspace();
+        const orbit = join(cwd, ".git", "orbit");
+        const directory = join(orbit, "tool-output");
+        mkdirSync(directory, { recursive: true });
+        chmodSync(orbit, 0o775);
+        chmodSync(directory, 0o770);
+        const umask = process.umask(0o007);
+        try {
+            const result = offloadToolOutput({
+                cwd,
+                toolName: "bash",
+                sessionId: "shared",
+                toolCallId: "output",
+                text: "x".repeat(OUTPUT_LIMIT_BYTES + 1),
+                preview: "tail",
+                previewLines: 40,
+            });
+
+            expect(result.kind).toBe("notice");
+            if (result.kind !== "notice") {
+                throw new Error("Expected shared output to be saved");
+            }
+            expect(statSync(orbit).mode & 0o777).toBe(0o775);
+            expect(statSync(directory).mode & 0o777).toBe(0o770);
+            expect(statSync(result.path).mode & 0o777).toBe(0o660);
+        } finally {
+            process.umask(umask);
+        }
+    });
+
+    it("writes as the worker under a Node-owned Orbit directory without closing inherited ACLs", () => {
+        const cwd = workspace();
+        const orbit = join(cwd, ".git", "orbit");
+        mkdirSync(orbit, { recursive: true });
+        chmodSync(cwd, 0o755);
+        chmodSync(join(cwd, ".git"), 0o755);
+        chmodSync(orbit, 0o775);
+        execFileSync("setfacl", [
+            "-m",
+            `u:nobody:rwx,d:u:nobody:rwx,d:u:${userInfo().username}:rwx`,
+            "--",
+            orbit,
+        ]);
+        const script = `
+            import { offloadToolOutput } from ${JSON.stringify(new URL("../src/tool-output.ts", import.meta.url).pathname)};
+            const result = offloadToolOutput({
+                cwd: ${JSON.stringify(cwd)}, toolName: "read", sessionId: "worker", toolCallId: "acl",
+                text: "x".repeat(8193), preview: "head", previewLines: 20,
+            });
+            if (result.kind !== "notice") throw new Error(JSON.stringify(result));
+            console.log(result.path);
+        `;
+
+        const path = execFileSync("sudo", ["-n", "-u", "nobody", "--", "bun", "--eval", script], {
+            encoding: "utf-8",
+        }).trim();
+
+        expect(statSync(orbit).uid).toBe(userInfo().uid);
+        expect(statSync(orbit).mode & 0o777).toBe(0o775);
+        expect(statSync(join(orbit, "tool-output")).mode & 0o777).toBe(0o770);
+        expect(statSync(path).uid).toBe(65534);
+        expect(statSync(path).mode & 0o777).toBe(0o660);
+        expect(readFileSync(path, "utf-8")).toBe("x".repeat(8193));
+        writeFileSync(path, "Node can also write\n");
+        expect(readFileSync(path, "utf-8")).toBe("Node can also write\n");
     });
 
     it("returns the full text and writes nothing when .git is missing, a file, or a symlink", () => {
@@ -431,10 +501,13 @@ describe("read and bash tools", () => {
             undefined,
             undefined as never,
         );
-        const abortSettled = expect(aborted).rejects.toThrow(/not saved: .*\nCommand aborted$/);
+        const abortSettled = aborted.catch((error: unknown) => error);
         await new Promise((resolve) => setTimeout(resolve, 200));
         controller.abort();
-        await abortSettled;
+        const abortError = await abortSettled;
+        expect(() => {
+            throw abortError;
+        }).toThrow(/not saved: .*\nCommand aborted$/);
         const timeout = await run(
             bash,
             { command: "cat large.txt; sleep 30", timeout: 1 },

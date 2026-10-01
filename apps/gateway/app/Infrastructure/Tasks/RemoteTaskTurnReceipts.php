@@ -56,7 +56,7 @@ final readonly class RemoteTaskTurnReceipts implements TaskTurnReceipts
             $prefix .= "context='".base64_encode($context)."'\nwrite_context=1\n";
         }
         $this->run($instance, [], $prefix.<<<'BASH'
-            install -d -m 0755 -- "$dir"
+            install -d -m 0775 -- "$dir"
             rm -f -- "$dir/receipt.json"
             printf '%s' "$script" | base64 -d > "$dir/turn.new"
             chmod 0755 "$dir/turn.new"
