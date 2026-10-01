@@ -109,6 +109,17 @@ function sqlite_cloner(SqliteClonerLocalSsh $ssh): RemoteInstanceSqliteCloner
     );
 }
 
+/** Whether `cp` can clone a file inside the directory, the same block cloning the program uses. */
+function sqlite_cloner_can_reflink(string $directory): bool
+{
+    file_put_contents("{$directory}/reflink-probe", 'probe');
+    $result = (new NativeProcessRunner)->run(new ProcessInvocation(['cp', '--reflink=always', "{$directory}/reflink-probe", "{$directory}/reflink-probe-copy"]));
+    @unlink("{$directory}/reflink-probe");
+    @unlink("{$directory}/reflink-probe-copy");
+
+    return $result->succeeded();
+}
+
 function sqlite_cloner_rows(string $path): array
 {
     return (new PDO("sqlite:{$path}"))->query('SELECT name FROM users')->fetchAll(PDO::FETCH_COLUMN);
@@ -126,6 +137,25 @@ describe('RemoteInstanceSqliteCloner', function (): void {
             ->and(glob("{$this->root}/feature/database/.orbit-sqlite-*") ?: [])->toBe([])
             ->and(array_column($ssh->commands, 0))->toBe(['local'])
             ->and($ssh->hosts)->toBe(['10.44.0.11']);
+    });
+
+    it('copies writes that are still in the WAL, by reflink where the filesystem can clone and by snapshot otherwise', function (): void {
+        $source = "{$this->root}/default/database/database.sqlite";
+        $writer = new PDO("sqlite:{$source}");
+        $writer->exec('PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;');
+        $writer->exec("INSERT INTO users VALUES ('grace')");
+        $ssh = new SqliteClonerLocalSsh;
+        $target = sqlite_cloner_instance($this->project, $this->sourceNode, 'feature', "{$this->root}/feature");
+
+        expect(filesize("{$source}-wal"))->toBeGreaterThan(0);
+
+        sqlite_cloner($ssh)->copy($this->default, $source, $target, "{$this->root}/feature/database/database.sqlite");
+
+        expect(sqlite_cloner_rows("{$this->root}/feature/database/database.sqlite"))->toBe(['ada', 'grace'])
+            ->and(json_decode($ssh->outputs[0], true)['copy'])->toBe(sqlite_cloner_can_reflink("{$this->root}/feature") ? 'reflink' : 'snapshot')
+            ->and(glob("{$this->root}/feature/database/.orbit-sqlite-*") ?: [])->toBe([]);
+
+        $writer = null;
     });
 
     it('moves the snapshot through the Gateway to another Node and removes the source snapshot', function (): void {
@@ -177,14 +207,20 @@ final class SqliteClonerLocalSsh implements SshExecutor
     /** @var list<string> */
     public array $hosts = [];
 
+    /** @var list<string> */
+    public array $outputs = [];
+
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
         $this->hosts[] = $connection->host;
         $this->commands[] = array_slice($command->arguments, 3);
 
-        return (new NativeProcessRunner)->run(new ProcessInvocation(
+        $result = (new NativeProcessRunner)->run(new ProcessInvocation(
             arguments: $command->arguments,
             maxOutputBytes: $command->maxOutputBytes,
         ));
+        $this->outputs[] = $result->stdout;
+
+        return $result;
     }
 }

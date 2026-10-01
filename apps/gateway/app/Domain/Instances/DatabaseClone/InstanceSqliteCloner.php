@@ -7,8 +7,10 @@ namespace App\Domain\Instances\DatabaseClone;
 use App\Models\Instance;
 
 /**
- * Copies a SQLite database between development checkouts with SQLite's backup API, on one Node
- * or between Nodes. A failure throws `instance.database_clone_failed`.
+ * Copies a SQLite database between development checkouts, on one Node or between Nodes. On one
+ * Node the copy is a reflink taken under SQLite's write lock where the filesystem supports block
+ * cloning, and otherwise a snapshot with SQLite's backup API. A failure throws
+ * `instance.database_clone_failed`.
  */
 interface InstanceSqliteCloner
 {

@@ -538,7 +538,7 @@ When the implementer cannot start, the subtask and the task become `failed`, and
 
 ## Shared Instance
 
-The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives in the Node's apps root like any development Instance.
+The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives in the Node's apps root like any development Instance. Like any new development Instance, it gets a [dependency copy](/domains/applications#dependency-copy) from the Project's `default` Instance on the same Node.
 
 | Project setting | New workspace |
 | --- | --- |

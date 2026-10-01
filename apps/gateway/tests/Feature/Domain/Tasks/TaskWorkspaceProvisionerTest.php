@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
+use App\Domain\Instances\DependencyCopy\InstanceDependencyCopier;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
 use App\Domain\Instances\DevelopmentSourceResolution;
@@ -172,6 +173,28 @@ function bind_task_workspace_fakes(): object
 
     return (object) ['source' => $source, 'development' => $development];
 }
+
+it('copies the dependencies of the default Instance on the same Node into a new workspace', function (): void {
+    $project = provisioner_app('acme');
+    $node = provisioner_node('acme-dev', '10.44.0.111');
+    Instance::query()->create([
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => 'default',
+        'checkout_path' => '/srv/orbit/apps/acme/default',
+        'branch' => 'main',
+        'starting_commit' => str_repeat('b', 40),
+        'provisioning_step' => 'active',
+        'status' => InstanceState::Active,
+    ]);
+    $group = provisioner_group($project, 'Copied');
+    bind_task_workspace_fakes();
+
+    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
+
+    expect($instance?->status)->toBe(InstanceState::SourceResolved)
+        ->and(app(InstanceDependencyCopier::class)->copies)->toBe([['source' => 'default', 'target' => TaskWorkspaceName::for($group)]]);
+});
 
 it('leaves a group reserved when no app-dev Node can take the workspace', function (): void {
     $project = provisioner_app('lonely');

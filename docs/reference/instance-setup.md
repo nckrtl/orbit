@@ -3,9 +3,9 @@ title: "Instance setup and teardown"
 description: "How a Project stores named setup and teardown commands, and when Orbit runs them for a development Instance."
 covers:
   - apps/gateway/app/Domain/Projects/{LifecyclePhase,LifecycleStep,ProjectLifecycleRunner,ProjectLifecycleStepStore}.php
-  - apps/gateway/app/Actions/*/{Create*InstanceAction,RegisterInstanceAction,RunInstanceSetupAction}.php
-  - apps/gateway/app/Infrastructure/{*/NativeDevelopment*Provisioner,Instances/{RemoteDevelopmentInstanceConfigurator,RemoteDevelopmentInstanceSourceLifecycle,RemoteRegistrationSourceManager,RemoteInstanceDestinationGuard},AppDev/DevelopmentSshExecutor,AppProd/ProductionSshExecutor}.php
-  - apps/gateway/app/Domain/Instances/{DevelopmentInstanceProvisioner,InstanceSourceProfileGuard}.php
+  - apps/gateway/app/Actions/*/{Create*InstanceAction,CopyInstanceDependenciesAction,RegisterInstanceAction,RunInstanceSetupAction}.php
+  - apps/gateway/app/Infrastructure/{*/NativeDevelopment*Provisioner,Instances/{RemoteDevelopmentInstanceConfigurator,RemoteDevelopmentInstanceSourceLifecycle,RemoteRegistrationSourceManager,RemoteInstanceDestinationGuard,RemoteInstanceDependencyCopier},AppDev/DevelopmentSshExecutor,AppProd/ProductionSshExecutor}.php
+  - apps/gateway/app/Domain/Instances/{DevelopmentInstanceProvisioner,InstanceSourceProfileGuard,DependencyCopy/InstanceDependencyCopier}.php
   - apps/gateway/app/Http/Controllers/Api/ProjectLifecycleStepsController.php
   - apps/gateway/app/Models/ProjectLifecycleStep.php
   - apps/gateway/resources/instances/lifecycle.py
@@ -53,7 +53,7 @@ Authorized reads return the commands. [Activity](/cli/activity) records no input
 
 ## Run setup
 
-`instance:create` runs the setup list after the Instance and its Route are active, and after the [database clone](/domains/applications#database-clone) when one applies. So setup steps such as migrations run against the Instance's own copy. Activation records `failed_step: setup` in the same transaction, so a Gateway interruption before or during setup cannot make an identical create retry report success without setup. Orbit clears the marker only after setup completes.
+`instance:create` runs the setup list after the Instance and its Route are active, and after the [dependency copy](/domains/applications#dependency-copy) and the [database clone](/domains/applications#database-clone) when they apply. So setup steps such as migrations run against the Instance's own copy. When the dependency copy fails, Orbit logs `instance.dependency_copy_failed` in the Gateway log, and the setup steps install the dependencies in full. Activation records `failed_step: setup` in the same transaction, so a Gateway interruption before or during setup cannot make an identical create retry report success without setup. Orbit clears the marker only after setup completes.
 
 Each command runs with `bash -eu` in the checkout, on the Instance's Node, as the Node's managed user. Commands read no input, and Orbit discards their output. When a step ends, for any reason, Orbit kills its process group, so background processes do not survive the step. Each run holds a lifecycle lock on the Instance. If another operation holds that lock during `instance:create`, Orbit keeps the active Instance and records `error_code: instance.lifecycle_busy`.
 
