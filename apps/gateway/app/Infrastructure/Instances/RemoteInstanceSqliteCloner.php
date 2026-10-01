@@ -20,15 +20,22 @@ use Throwable;
 
 /**
  * Runs a small Python program as the Node's managed user, who owns development checkouts. The
- * program refuses a path outside the checkout or a path through a symlink. Between Nodes, the
- * Gateway moves the snapshot with the protected SQLite transfer and checks its size and digest.
+ * program refuses a path outside the checkout or a path through a symlink. On one Node it takes a
+ * reflink of the database and its WAL while it holds SQLite's write lock. It falls back to a backup
+ * snapshot when the filesystem cannot clone, or when a writer keeps the lock for two seconds. Between Nodes, the Gateway moves the snapshot
+ * with the protected SQLite transfer and checks its size and digest.
  */
 final readonly class RemoteInstanceSqliteCloner implements InstanceSqliteCloner
 {
     public const string Program = <<<'PYTHON'
-        import hashlib, json, os, sqlite3, stat, sys, tempfile, urllib.parse
+        import fcntl, hashlib, json, os, sqlite3, stat, sys, tempfile, urllib.parse
+
+        FICLONE = 0x40049409
 
         class BoundaryError(Exception):
+            pass
+
+        class UseSnapshot(Exception):
             pass
 
         def normalized(path):
@@ -95,8 +102,65 @@ final readonly class RemoteInstanceSqliteCloner implements InstanceSqliteCloner
                     pass
                 raise
 
-        def report(path, mode):
-            print(json.dumps({"bytes": os.lstat(path).st_size, "sha256": digest(path), "mode": mode}))
+        def clone(source, directory):
+            descriptor, temporary = tempfile.mkstemp(prefix=".orbit-sqlite-", dir=directory)
+            try:
+                with open(source, "rb") as origin:
+                    fcntl.ioctl(descriptor, FICLONE, origin.fileno())
+            except OSError:
+                os.close(descriptor)
+                os.unlink(temporary)
+                raise UseSnapshot
+            os.close(descriptor)
+            return temporary
+
+        def reflinked(source, directory):
+            wal = source + "-wal"
+            try:
+                metadata = os.lstat(wal)
+            except FileNotFoundError:
+                metadata = None
+            if metadata is not None and not stat.S_ISREG(metadata.st_mode):
+                raise BoundaryError
+            # An unlocked clone proves these filesystems can clone before any writer has to wait.
+            os.unlink(clone(source, directory))
+            origin = sqlite3.connect("file:" + urllib.parse.quote(source) + "?mode=rw", uri=True, isolation_level=None, timeout=2)
+            try:
+                try:
+                    origin.execute("BEGIN IMMEDIATE")
+                except sqlite3.OperationalError:
+                    raise UseSnapshot
+                try:
+                    database = clone(source, directory)
+                    try:
+                        log = clone(wal, directory) if os.path.lexists(wal) else None
+                    except BaseException:
+                        os.unlink(database)
+                        raise
+                finally:
+                    origin.execute("ROLLBACK")
+            finally:
+                origin.close()
+            return database, log
+
+        def place(temporary, log, target, mode):
+            os.chmod(temporary, mode)
+            try:
+                os.unlink(target + "-shm")
+            except FileNotFoundError:
+                pass
+            if log is None:
+                try:
+                    os.unlink(target + "-wal")
+                except FileNotFoundError:
+                    pass
+            else:
+                os.chmod(log, mode)
+                os.replace(log, target + "-wal")
+            os.replace(temporary, target)
+
+        def report(path, mode, copy):
+            print(json.dumps({"bytes": os.lstat(path).st_size, "sha256": digest(path), "mode": mode, "copy": copy}))
 
         try:
             operation = sys.argv[1]
@@ -106,10 +170,14 @@ final readonly class RemoteInstanceSqliteCloner implements InstanceSqliteCloner
                 inside(target_checkout, target)
                 walk(target_checkout)
                 walk(os.path.dirname(target), create_below=target_checkout)
-                temporary = snapshot(source, os.path.dirname(target))
-                os.chmod(temporary, stat.S_IMODE(metadata.st_mode))
-                os.replace(temporary, target)
-                report(target, stat.S_IMODE(metadata.st_mode))
+                try:
+                    temporary, log = reflinked(source, os.path.dirname(target))
+                    copy = "reflink"
+                except UseSnapshot:
+                    temporary, log = snapshot(source, os.path.dirname(target)), None
+                    copy = "snapshot"
+                place(temporary, log, target, stat.S_IMODE(metadata.st_mode))
+                report(target, stat.S_IMODE(metadata.st_mode), copy)
             elif operation == "export":
                 checkout, source, directory = sys.argv[2:5]
                 metadata = source_file(checkout, source)
@@ -118,7 +186,7 @@ final readonly class RemoteInstanceSqliteCloner implements InstanceSqliteCloner
                 os.mkdir(normalized(directory), 0o700)
                 temporary = snapshot(source, directory)
                 os.replace(temporary, os.path.join(directory, "snapshot.sqlite"))
-                report(os.path.join(directory, "snapshot.sqlite"), stat.S_IMODE(metadata.st_mode))
+                report(os.path.join(directory, "snapshot.sqlite"), stat.S_IMODE(metadata.st_mode), "snapshot")
             elif operation == "prepare":
                 target_checkout, target = sys.argv[2:4]
                 inside(target_checkout, target)

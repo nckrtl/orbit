@@ -71,6 +71,7 @@ use App\Domain\Hibernation\InstanceCheckoutInspector;
 use App\Domain\Hibernation\InstanceRuntimeReadiness;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Instances\DatabaseClone\InstanceSqliteCloner;
+use App\Domain\Instances\DependencyCopy\InstanceDependencyCopier;
 use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
@@ -259,6 +260,7 @@ use App\Infrastructure\Instances\RemoteDevelopmentInstanceConfigurator;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceLifecycle;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceRemoval;
 use App\Infrastructure\Instances\RemoteInstanceCloneCandidateInspector;
+use App\Infrastructure\Instances\RemoteInstanceDependencyCopier;
 use App\Infrastructure\Instances\RemoteInstanceDestinationGuard;
 use App\Infrastructure\Instances\RemoteInstanceEnvironmentAccess;
 use App\Infrastructure\Instances\RemoteInstanceLogReader;
@@ -385,6 +387,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         InstanceEnvironmentWriter::class => RemoteInstanceEnvironmentAccess::class,
         InstanceTestEnvironmentWriter::class => RemoteInstanceEnvironmentAccess::class,
         InstanceSqliteCloner::class => RemoteInstanceSqliteCloner::class,
+        InstanceDependencyCopier::class => RemoteInstanceDependencyCopier::class,
         InstanceOperationPreflight::class => RemoteInstanceEnvironmentAccess::class,
         InstanceSqliteSeeder::class => RemoteInstanceSqliteSeeder::class,
         InstanceTransferSource::class => RemoteInstanceTransferSource::class,

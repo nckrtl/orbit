@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Tasks;
 
+use App\Actions\Instances\CopyInstanceDependenciesAction;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
@@ -48,6 +49,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         private DevelopmentInstanceProvisioner $development,
         private TaskConcurrencyGuard $ceilings,
         private AgentDriverRegistry $drivers,
+        private ?CopyInstanceDependenciesAction $dependencies = null,
     ) {}
 
     public function provision(InstanceProvisionIntent $intent): ?Instance
@@ -134,6 +136,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             $instance->node_id,
             function () use ($instance, $visitable): Instance {
                 $resolved = $this->prepareSource($instance);
+                ($this->dependencies ?? app(CopyInstanceDependenciesAction::class))->execute($resolved);
 
                 if (! $visitable) {
                     return $resolved;
