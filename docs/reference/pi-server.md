@@ -112,11 +112,13 @@ beast is the Node that runs Pi for Orbit's tasks, and task agents there run `inc
 
 Follow [Roll out a new binary](#roll-out-a-new-binary) until no Pi session you will restart is `working`. Leave the scheduler stopped, and stop the `pi-server` Process. Confirm no `pi-server` process remains. Create the account with [Host setup](#host-setup), and on beast add `orbit-worker` to `incus-admin`. Install the binary, token, and provider sign-in under `/home/orbit-worker`.
 
-Apply the ACL to each existing development checkout as the managed user. The example uses `orbit`. Substitute the managed user when the name differs:
+Apply the ACL to each existing development checkout as the managed user. The command is the same recursive grant prepare uses, including `.git`, because `git commit` creates `index.lock` in that directory. The example uses `orbit`. Substitute the managed user when the name differs:
 
 ```bash
 setfacl -R -m u:orbit-worker:rwX,u:orbit:rwX -m d:u:orbit-worker:rwX,d:u:orbit:rwX -- /srv/orbit/apps/PROJECT/CHECKOUT
 ```
+
+Copy primary-checkout registrations before any task teardown runs as `orbit-worker`. [Primary registration](/reference/instance-setup#primary-registration) is the procedure. A registration left only in the managed user's home is invisible to the helper, and the helper then leaves the bridge in place.
 
 Confirm a private directory of the managed home, such as `.ssh`, is mode `0700`. When the apps root is inside that home, set the home to `0711`. When the apps root is outside it, set the home to `0700`.
 
@@ -124,15 +126,21 @@ Confirm a private directory of the managed home, such as `.ssh`, is mode `0700`.
 
 The default session directory is `<agent dir>/orbit-sessions`. For the managed user that is `/home/orbit/.pi/agent/orbit-sessions`. The new Process uses `/home/orbit-worker/.pi/agent/orbit-sessions`. The server does not move the files. Each session is one `<id>.orbit.json` record and one `<timestamp>_<id>.jsonl` transcript. The Gateway's `external_id` is that `<id>`.
 
+Save the Process and the Gateway token before destroy. The Process is already stopped. `orbit process:show pi-server --json` is the spec. Record its user, command, working directory, and token-file path, and record the Gateway `ORBIT_PI_TOKEN`. Leave the old token file in place. Do not change `ORBIT_PI_TOKEN` until the session copy has been checked.
+
 Copy while `pi-server` is stopped. On the same filesystem, copy the `*.orbit.json` and `*.jsonl` files into `/home/orbit-worker/.pi/agent/orbit-sessions.migrate`. Leave every other file behind. Set the directory to mode `0700` and the files to mode `0600`, owned by `orbit-worker:orbit-worker`. When the destination `orbit-sessions` already contains a file, stop and do not merge over it.
 
 Rename the staging directory to `orbit-sessions` only after the copy is complete. A rename on the same filesystem is one replacement. When the copy is interrupted, delete the staging directory and copy again. The source directory stays in place.
 
-Verify before the scheduler starts. From [`tasks:agents`](/cli/tasks#orbit-tasksagents), take each `pi` thread whose task is not completed or cancelled, and skip an `external_id` that starts with `pending:`. For every other id, the destination has exactly one `<id>.orbit.json` and exactly one file ending in `_<id>.jsonl`. Each file's size and SHA-256 match the source. A missing id, a second transcript, or a checksum mismatch stops the cutover.
+Check the copy before the Process is destroyed. From [`tasks:agents`](/cli/tasks#orbit-tasksagents), take each `pi` thread whose task is not completed or cancelled, and skip an `external_id` that starts with `pending:`. For every other id, the destination has exactly one `<id>.orbit.json` and exactly one file ending in `_<id>.jsonl`. Each file's size and SHA-256 match the source. A missing id, a second transcript, or a checksum mismatch stops the cutover.
 
-Rollback leaves the source directory as the recovery copy. Remove the new destination, do not start the `orbit-worker` Process, and start the old Process as the managed user again.
+When the copy or a checksum fails, delete the staging directory and leave the source. Start the stopped Process. It still exists. `ORBIT_PI_TOKEN` is still the saved value. `GET /sessions/{external_id}` for one id already stored on that server returns the session. Start the scheduler only after that read. This rollback is available only before destroy.
 
-Destroy the old `pi-server` Process and create it again with `--user=orbit-worker` and the paths under `/home/orbit-worker`. Create has no update. Start it only after the session check matches. `GET /sessions/{external_id}` for one verified id returns the session, not `session_not_found`. Confirm a session can create a file in a task workspace, and `orbit-worker` cannot read `/home/orbit/.ssh`. Start the scheduler again with [`process:start`](/cli/process#orbit-processstart). Keep the old session directory until that session read succeeds. Deleting the old binary, the old token, and the old session directory is a separate step after that read.
+When the copy matches, destroy the old Process and create it again with `--user=orbit-worker` and the paths under `/home/orbit-worker`. Create has no update. Set `ORBIT_PI_TOKEN` to the token in `/home/orbit-worker/.pi/agent/orbit-token`, then start the new Process. Do not start the scheduler yet.
+
+`GET /sessions/{external_id}` for every id checked above returns the session, not `session_not_found` and not an authentication failure. Start the scheduler with [`process:start`](/cli/process#orbit-processstart) only after those reads. Confirm a session can create a file in a task workspace, and `orbit-worker` cannot read `/home/orbit/.ssh`. Keep the old session directory and the old token file until those reads succeed. Deleting the old binary, the old token, and the old session directory is a separate step after that.
+
+After the old Process has been destroyed, start does not bring it back. Stop the new Process, restore `ORBIT_PI_TOKEN` to the saved value, and create the old Process again from the saved spec, including its user, command, and token file. That Process reads the old session directory. Do not start the scheduler until `GET /sessions/{external_id}` succeeds against it. A Gateway token that still names the new file fails authentication against the old server.
 
 ## Agent tools
 

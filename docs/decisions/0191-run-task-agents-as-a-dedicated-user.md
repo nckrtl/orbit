@@ -18,7 +18,7 @@ Principle: this decision serves [security fits the real threat model](/mission#p
 
 The Pi server runs on the Node as a systemd Process, and its sessions are the task agents. The managed user is the account that SSHs in, owns development checkouts, and runs `git` with a GitHub token in its environment. Git 2.55 executes `core.alternateRefsCommand` from the shell during fetch, and that child inherits `GIT_CONFIG_VALUE_0`, the `Authorization` header. Hooks and `fsmonitor` are the same class of program. Running the agent as the managed user would hand it the token. The [GitHub App reference](/reference/github-app#what-the-app-does-not-cover) describes the enforced boundary.
 
-The managed home also holds SSH keys. When the Pi server runs as `orbit-worker`, the provider sign-in moves to that user's home. The [node agent](/reference/node-agent#reading-git) already reads task checkouts with libgit2, which starts no hook, filter, or `fsmonitor` program. Gateway `git` follows the same rule for hooks and `fsmonitor`.
+The managed home also holds SSH keys. When the Pi server runs as `orbit-worker`, the provider sign-in moves to that user's home. The [node agent](/reference/node-agent#reading-git) already reads task checkouts with libgit2, which starts no program. Token-bearing Gateway `git` does not use the checkout as its git directory.
 
 ## Decision
 
@@ -42,19 +42,27 @@ The default working directory stays `/home/{managed user}`. It does not follow `
 
 Development checkouts stay owned by the managed user and group. Removal's ownership check reads that directory and its parent, not each file inside it.
 
-When `id orbit-worker` succeeds, prepare and inspect grant `orbit-worker` and the managed user `rwX` on the work tree. `rwX` grants execute on directories and on files that already have execute. Group write and other write stay off. The same ACL covers `.git/objects`, `.git/refs`, `.git/logs`, and `.git/orbit`, including as the default ACL on those directories. It does not cover the `.git` directory itself, `.git/config`, or `.git/hooks`, so the agent cannot replace Git configuration or hooks. The Gateway creates `.git/orbit` while it prepares the checkout. The ACL is not applied to the apps root or to the managed home. When the account is absent, prepare sets no ACL and succeeds. When `setfacl` fails, prepare fails with `instance.clone_failed` and inspect fails with `instance.source_identity_invalid`. Neither records a new checkout.
+When `id orbit-worker` succeeds, prepare and inspect run `setfacl -R` on the checkout, including `.git`. The access ACL and the default ACL each name `orbit-worker` and the managed user with `rwX`. `rwX` grants execute on directories and on files that already have execute. Group write and other write stay off. The Gateway creates `.git/orbit` during prepare. The ACL is not applied to the apps root or to either home. When the account is absent, prepare sets no ACL and succeeds. When `setfacl` fails, prepare fails with `instance.clone_failed` and inspect fails with `instance.source_identity_invalid`. Neither records a new checkout.
+
+`git add`, `git checkout`, and `git commit` create `index.lock` in the `.git` directory and rename it to `index`. They also create `HEAD.lock`, `packed-refs.lock`, `ORIG_HEAD`, `FETCH_HEAD`, and `COMMIT_EDITMSG` there. A grant that skips the `.git` directory fails those commands. The checkout root is writable, so `orbit-worker` can rename `.git` and replace it. Leaving `.git/config` or `.git/hooks` out of the ACL does not keep those files. The ACL is not the trust boundary.
+
+The managed user writes under `.git/orbit` only when `.git` and `.git/orbit` are directories owned by that user and are not symbolic links. A replaced `.git` fails that write, and the task asks for assistance. The managed user does not follow a symlink in that tree. Token-bearing `git` uses the private git directory and does not read the checkout's `.git`.
 
 Files either user creates stay readable and deletable by the other user through the default ACL. Tool-output directories are mode `0770` and tool-output files are mode `0660`, so the ACL mask stays open. The server does not chmod a directory to `0700` or a file to `0600`, and it does not chmod a directory it does not own. A symlink is still refused.
 
 ### Checks
 
-The task check, its status and cancel, the workspace snapshot, and baseline setup commands run as `orbit-worker`. The Gateway still connects as the managed user, writes `.git/orbit/check` as that user, and starts the process with `sudo -n -u orbit-worker -H`. The check command runs in a login shell at the workspace root.
+The task check, its status and cancel, the workspace snapshot, and baseline setup commands run as `orbit-worker`. The Gateway still connects as the managed user. It writes `.git/orbit/check` as that user only when `.git` and `.git/orbit` are directories that user owns and not symbolic links, and it starts the process with `sudo -n -u orbit-worker -H`. The check command runs in a login shell at the workspace root.
 
 When the account is missing, the check does not start. The task asks for assistance with the reason `The Node has no orbit-worker user.` When sudo cannot switch, the reason is `The managed user cannot run commands as orbit-worker.`
 
 Create-time `instance:setup` stays the managed user. Task workspaces do not use that path. That setup runs before any agent has written the checkout.
 
 Task teardown runs as `orbit-worker`. Its command is `/usr/local/lib/orbit/e2e-task-cleanup`, owned by root, mode `0755`. `orbit-worker` can execute that file and cannot write it. A teardown command inside the checkout, or on a path `orbit-worker` can write, also runs as `orbit-worker`. The managed user does not run it.
+
+The helper and `bin/e2e-clone-bridge` read the invoking user's registry, then `/var/lib/orbit/e2e-primary-checkouts/`. That directory is root-owned and mode `0755`. `orbit-worker` can read its symlinks and cannot replace them. Before teardown runs as `orbit-worker`, copy each symlink from the managed user's `$HOME/.local/state/orbit/e2e-primary-checkouts/` into that directory. Do not change the primary's owner.
+
+A primary is accepted when its owner is the invoking user, or the owner of the invoking checkout. The second case is a primary the managed user registered. A missing registration still exits without changes. A copied registration must not take that path. A primary owned by neither user stays ignored. [Primary registration](/reference/instance-setup#primary-registration) is the procedure.
 
 Privileged removal is separate. After teardown returns, the managed user deletes the tree, checks directory ownership, and removes routes. That path runs no program from the checkout.
 
@@ -92,7 +100,7 @@ An agent is a process of the Pi server and shares its user. It can read the serv
 - Keep the agent as the managed user and rely on the prompt. The agent can read the home and can install a hook that runs as that user with the token.
 - One Unix user per task. Each account needs its own Pi sign-in, and the Node runs one Pi server Process per task.
 - Run the Pi server as root and drop to `orbit-worker` inside each session. A fault in that path is root. The Process `user` is the drop.
-- Deny the agent write access to all of `.git`. Tool output and commits write under `.git/objects`, `.git/refs`, and `.git/orbit`. Configuration and hooks stay unwritable.
+- Leave `.git` unwritable, or omit `.git/config` and `.git/hooks`. `git commit` cannot create `index.lock`, and a writable checkout root can rename `.git` anyway. Trust is who runs the program.
 - Clear only hooks and `fsmonitor`. Git 2.55 executes `core.alternateRefsCommand` during fetch, and that program inherits the token. The private git directory is the isolation.
 - Store the token in a credential helper on the Node. The helper remains after the command, and the agent can call it.
 - A user namespace that makes the agent the owner of the tree. Every checkout needs a second mount. The ACL keeps one tree both users can edit.
@@ -104,12 +112,13 @@ An agent is a process of the Pi server and shares its user. It can read the serv
 - `orbit-worker` on beast is in `incus-admin`, so the home boundary there is policy.
 - Agents can read the Pi server token and the provider sign-in.
 - Token-bearing `git` uses a private git directory. Checkout programs, including filters and teardown, run as `orbit-worker`.
-- The Pi cutover copies `<id>.orbit.json` and `*_<id>.jsonl` into the new session directory and checks each open thread's `external_id` before the scheduler starts. The server does not migrate those files.
+- The Pi cutover copies `<id>.orbit.json` and `*_<id>.jsonl` into the new session directory and checks each open thread's `external_id` before the scheduler starts. The server does not migrate those files. Rollback before destroy starts the stopped Process. Rollback after destroy recreates it from the saved spec and restores `ORBIT_PI_TOKEN`.
+- Existing primary-checkout registrations are copied to `/var/lib/orbit/e2e-primary-checkouts/` before teardown runs as `orbit-worker`.
 - The unit file is mode `0644`. `User=` is not a secret.
 
 ## Affects
 
-- Components: apps/gateway, apps/cli, packages/php-sdk
+- Components: apps/gateway, apps/cli, apps/e2e, packages/php-sdk
 - ADRs: none
 - Detail: [Pi server](/reference/pi-server#install-on-a-node), [Tasks](/reference/tasks#shared-instance), [GitHub App](/reference/github-app#what-the-app-does-not-cover), [Processes and schedules](/reference/processes-and-schedules#owners)
-- Verify: Process `user` tests for the resolver, the systemd unit, the API, the CLI, and `CreateProcessRequest`; source lifecycle ACL tests; removal ownership tests; check runner and turn receipt tests; `GitReadEnvironment` preamble tests; `apps/pi-server/tests/tool-output.test.ts`
+- Verify: Process `user` tests for the resolver, the systemd unit, the API, the CLI, and `CreateProcessRequest`; source lifecycle ACL tests; removal ownership tests; check runner and turn receipt tests; `GitReadEnvironment` preamble tests; `apps/pi-server/tests/tool-output.test.ts`; `bin/e2e-task-cleanup` and `bin/e2e-clone-bridge` tests for a shared registration whose primary is owned by the checkout owner

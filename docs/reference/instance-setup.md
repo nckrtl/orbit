@@ -55,9 +55,11 @@ Authorized reads return the commands. [Activity](/cli/activity) records no input
 
 The Gateway prepares a development checkout as the Node's managed user. The checkout directory stays owned by that user and group. Production releases are unchanged.
 
-When the Linux account `orbit-worker` exists, prepare and inspect grant that user and the managed user `rwX` on the work tree and on `.git/objects`, `.git/refs`, `.git/logs`, and `.git/orbit`. Execute is granted on directories and on files that already have it. Group write and other write stay off. The ACL does not cover the `.git` directory, `.git/config`, or `.git/hooks`, so the agent cannot replace Git configuration or hooks. The Gateway creates `.git/orbit` during prepare.
+When the Linux account `orbit-worker` exists, prepare and inspect run `setfacl -R` on the checkout, including `.git`. The access ACL and the default ACL each name `orbit-worker` and the managed user with `rwX`. Execute is granted on directories and on files that already have it. Group write and other write stay off. The Gateway creates `.git/orbit` during prepare. The same command is the [beast checkout grant](/reference/pi-server#roll-out-orbit-worker-on-beast).
 
-The ACL is not applied to the apps root or to either home. New files in the granted directories stay readable and deletable by the other user. When the account does not exist, prepare sets no ACL and succeeds. When `setfacl` fails, prepare fails with `instance.clone_failed` and inspect fails with `instance.source_identity_invalid`. Neither records a new checkout.
+`git add`, `git checkout`, and `git commit` create `index.lock` in `.git` and rename it to `index`. They also create `HEAD.lock`, `packed-refs.lock`, `ORIG_HEAD`, `FETCH_HEAD`, and `COMMIT_EDITMSG` there. The `.git` directory has to be writable. The checkout root is writable too, so `orbit-worker` can rename `.git` and replace it. An ACL that skips `.git/config` or `.git/hooks` does not keep those files.
+
+The ACL is not applied to the apps root or to either home. New files in the checkout stay readable and deletable by the other user. When the account does not exist, prepare sets no ACL and succeeds. When `setfacl` fails, prepare fails with `instance.clone_failed` and inspect fails with `instance.source_identity_invalid`. Neither records a new checkout. The managed user writes under `.git/orbit` only when `.git` and `.git/orbit` are directories it owns and not symbolic links.
 
 [Tasks](/reference/tasks#shared-instance) uses this ACL so task agents can write the workspace. [Host setup](/reference/pi-server#host-setup) creates the account. [Instance removal](/reference/instance-removal#checks-before-removal) still requires the managed user to own the directory.
 
@@ -184,15 +186,56 @@ ssh MANAGED_USER@NODE 'sha256sum "$HOME/.local/lib/orbit/e2e-task-cleanup"'
 git show "$rev:bin/e2e-task-cleanup" | sha256sum
 ```
 
-A match means the replacement finished. Publish that file to the path task teardown runs. `orbit-worker` must be able to execute it and must not be able to write it:
+A match means the home copy finished. It does not prove the root path. Publish by staging in the root directory, checking that stage, and renaming onto the live path. `orbit-worker` must be able to execute the live file and must not be able to write it. `install` onto the live path was rejected: an interrupted `install` can replace a valid helper with a short file.
 
 ```bash
-ssh MANAGED_USER@NODE 'sudo install -d -o root -g root -m 0755 -- /usr/local/lib/orbit && sudo install -o root -g root -m 0755 -- "$HOME/.local/lib/orbit/e2e-task-cleanup" /usr/local/lib/orbit/e2e-task-cleanup'
+ssh MANAGED_USER@NODE "sudo env EXPECTED=$expected bash -eu -c '
+install -d -o root -g root -m 0755 -- /usr/local/lib/orbit
+dir=/usr/local/lib/orbit
+stage=\$dir/e2e-task-cleanup.stage
+dest=\$dir/e2e-task-cleanup
+rm -f -- \"\$stage\"
+trap \"rm -f -- \\\"\$stage\\\"\" EXIT INT TERM HUP
+cat > \"\$stage\"
+test -s \"\$stage\"
+digest=\$(sha256sum \"\$stage\" | awk \"{print \\\$1}\")
+test \"\$digest\" = \"\$EXPECTED\"
+chown root:root -- \"\$stage\"
+chmod 0755 -- \"\$stage\"
+mv -f -- \"\$stage\" \"\$dest\"
+trap - EXIT'" < "$blob"
 ```
 
-A missing destination or a different digest means the previous helper is still there, or no helper was installed yet. Remove a leftover `$HOME/.local/lib/orbit/e2e-task-cleanup.stage` and run the install again. The stage is not the file the teardown step runs. A missing file, a different digest, or a command that names a missing file is not a completed handoff. Keep the old Gateway until the readback matches on every eligible Node.
+The stage and the live file are in one directory, so `mv` is one replacement. A failed digest check does not run `mv`. The trap removes the stage. The previous live helper stays in place.
+
+If the client loses the response, do not delete the live path and do not treat the home digest as success. Read the live file back and compare it with the reviewed blob:
+
+```bash
+ssh MANAGED_USER@NODE 'sudo sha256sum /usr/local/lib/orbit/e2e-task-cleanup'
+git show "$rev:bin/e2e-task-cleanup" | sha256sum
+```
+
+A match on that live path means the publication finished. A missing live file, a different live digest, or a leftover `/usr/local/lib/orbit/e2e-task-cleanup.stage` is not a completed handoff. Remove the leftover stage and run the publication again. A missing home file is the same for the home copy: remove `$HOME/.local/lib/orbit/e2e-task-cleanup.stage` and run that install again. Keep the old Gateway until the live-path readback matches on every eligible Node.
 
 The helper returns success without changing anything for an ordinary checkout. For a task checkout it removes only that task's matching bridge, unused bridge branch, and staging ref. It preserves the checkout and its own Git identity. See [Task workspace clones](/reference/incus-topologies#task-workspace-clones) for ownership and retry rules. Clones created before deployment use this installed copy too. The helper and the old Gateway hook may coexist during the handoff because both are idempotent.
+
+### Primary registration
+
+The installed helper and `bin/e2e-clone-bridge` look up the primary in three places, in order. First is `$XDG_STATE_HOME/orbit/e2e-primary-checkouts/{origin key}` when `XDG_STATE_HOME` is set. Second is `$HOME/.local/state/orbit/e2e-primary-checkouts/{origin key}`. Third is `/var/lib/orbit/e2e-primary-checkouts/{origin key}`.
+
+The third directory is root-owned and mode `0755`. `orbit-worker` can read the symlinks and cannot replace them. The primary's owner must be the invoking user, or the owner of the invoking checkout. A primary owned by neither user is ignored. A missing registration exits successfully and changes nothing. That success is only for a checkout with no primary. A registration copied to the shared directory must be found.
+
+Copy the managed user's links before task teardown runs as `orbit-worker`. Do not change the owner of the primary checkout. On the same filesystem, copy into a staging directory, check every link, and rename the directory into place. When `/var/lib/orbit/e2e-primary-checkouts` already exists, stop and do not merge over it.
+
+```bash
+src=$HOME/.local/state/orbit/e2e-primary-checkouts
+sudo install -d -o root -g root -m 0755 -- /var/lib/orbit/e2e-primary-checkouts.migrate
+if [ -d "$src" ]; then
+  find "$src" -maxdepth 1 -type l -exec sudo cp -P {} /var/lib/orbit/e2e-primary-checkouts.migrate/ \;
+fi
+```
+
+For each staged link, `readlink` equals the source link, and the target directory exists. A broken link is not copied. `sudo mv` the staging directory to `/var/lib/orbit/e2e-primary-checkouts` only after that check. A rename on the same filesystem is one replacement. When the copy is interrupted, delete the staging directory and copy again. The source directory stays in place.
 
 ### Record teardown
 

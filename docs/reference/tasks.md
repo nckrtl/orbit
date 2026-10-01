@@ -538,7 +538,7 @@ When the implementer cannot start, the subtask and the task become `failed`, and
 
 The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives in the Node's apps root like any development Instance.
 
-The checkout directory stays owned by the Node's managed user and group. When `orbit-worker` exists, prepare and inspect grant that user write on the work tree and on `.git/objects`, `.git/refs`, `.git/logs`, and `.git/orbit`, not on `.git/config` or `.git/hooks`. [Checkout access](/reference/instance-setup#checkout-access) states the ACL. The grant does not cover either user's home. [ADR 0191](/decisions/0191-run-task-agents-as-a-dedicated-user) is the contract.
+The checkout directory stays owned by the Node's managed user and group. When `orbit-worker` exists, prepare and inspect grant that user and the managed user `rwX` on the whole checkout, including `.git`. Git creates `index.lock` in that directory. The checkout root stays writable, so this grant does not keep Git configuration. [Checkout access](/reference/instance-setup#checkout-access) states the ACL. The grant does not cover either user's home. [ADR 0191](/decisions/0191-run-task-agents-as-a-dedicated-user) is the contract.
 
 | Project setting | New workspace |
 | --- | --- |
@@ -669,7 +669,7 @@ Each Project stores one task check command in `task_check`. Orbit runs it on the
 
 The Gateway installs `.git/orbit/check` and starts it over SSH as a detached process group. The check records HEAD and a hash of the whole working tree, uncommitted and untracked files included, without touching the Git index. It runs the command in a login shell at the workspace root, writes the output to `.git/orbit/check.log`, and writes `.git/orbit/check.json` when the command ends. The subtask stays `running` while the check runs. There is no time limit.
 
-The check process runs as `orbit-worker`. The Gateway connects as the managed user, writes `.git/orbit/check` as that user, and starts the process with `sudo -n -u orbit-worker -H`. Status, cancel, and the workspace snapshot use the same account, because the process belongs to it. `git` inside the check passes `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=`. Baseline setup commands run in that process. When the account is missing, the check does not start and the task asks for assistance with the reason `The Node has no orbit-worker user.` When sudo cannot switch, the reason is `The managed user cannot run commands as orbit-worker.` [Host setup](/reference/pi-server#host-setup) creates the account.
+The check process runs as `orbit-worker`. The Gateway connects as the managed user and writes `.git/orbit/check` as that user only when `.git` and `.git/orbit` are directories that user owns and not symbolic links. It starts the process with `sudo -n -u orbit-worker -H`. Status, cancel, and the workspace snapshot use the same account, because the process belongs to it. `git` inside the check passes `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=`. Baseline setup commands run in that process. When the account is missing, the check does not start and the task asks for assistance with the reason `The Node has no orbit-worker user.` When sudo cannot switch, the reason is `The managed user cannot run commands as orbit-worker.` [Host setup](/reference/pi-server#host-setup) creates the account.
 
 | Check state | Result |
 | --- | --- |
