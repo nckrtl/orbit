@@ -12,5 +12,6 @@ final readonly class ToolActionResult
         public Tool $tool,
         public ToolOutcome $outcome,
         public bool $created = false,
+        public ?ToolObjectStatus $status = null,
     ) {}
 }

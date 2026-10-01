@@ -40,7 +40,7 @@ final readonly class StoreTaskCommentAction
 
             if ($type === TaskCommentType::AssistanceRequested) {
                 $task->update(['assistance_requested' => true, 'assistance_reason' => $comment->body]);
-                $task->parent()->update(['assistance_requested' => true, 'assistance_reason' => $comment->body]);
+                $task->parent()->first()?->update(['assistance_requested' => true, 'assistance_reason' => $comment->body]);
                 $this->log($task, $comment, 'assistance requested');
             }
             if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && $task->assistance_requested) {

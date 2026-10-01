@@ -103,7 +103,7 @@ final class ToolsController extends Controller
         $this->setToolActivity($result->tool, ToolOperation::Remove, $result->outcome);
 
         return response()->json([
-            'data' => ToolData::fromModel($result->tool, $result->outcome)->toArray(),
+            'data' => ToolData::fromModel($result->tool, $result->outcome, $result->status)->toArray(),
             'meta' => $this->meta($request),
         ]);
     }

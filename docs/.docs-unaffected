@@ -85,5 +85,19 @@ docs/reference/instance-removal.md: The published-commit check reads through the
 docs/reference/mcp.mdx: The instance-register tool follows its regenerated contract; the MCP page lists no per-tool fields.
 docs/reference/php-runtime.md: Production source reads pass the Project's source access through the shared read access; the PHP runtime does not change.
 docs/reference/tools.md: The service provider only binds the GitHub CLI token source; Tool behavior does not change.
-docs/cli/extension.mdx: Served tool schema types stay on /reference/mcp. Enabling or disabling an extension does not change.
+docs/cli/extension.mdx: Served tool schema types stay on /reference/mcp. The extension-switch migration only moves Gateway extension keys. Neither tool schema types nor ended-task assistance change the extension commands.
 docs/reference/web-app.md: The TypeScript schema is already documented as generated from OpenAPI. Boolean request fields stay on /reference/api-reference and /reference/mcp.
+docs/reference/agent-annotation.md: The existing annotations migration that also touches tasks stores annotation delivery. Ended-task assistance does not change annotations.
+docs/reference/assigned-vite-ports.md: The existing vite port assignment migration allocates ports. Ended-task assistance does not change port assignment.
+docs/reference/database-connections.md: The existing database connection migrations store connections, targets, and users. Ended-task assistance does not change database connections.
+docs/reference/development-node-exclusions.md: The existing project node exclusion migration records registration refusals. Ended-task assistance does not change exclusions.
+docs/reference/environment-variables.md: The existing environment and domain-rename migrations change Instance and Project columns. Ended-task assistance does not change environment variables.
+docs/reference/instance-dependency-contracts.md: The existing dependency inventory migration stores scan results. Ended-task assistance does not change dependency contracts.
+docs/reference/instance-setup.md: The existing project lifecycle step migration stores setup configuration. Ended-task assistance does not change setup steps.
+docs/reference/node-agent.md: The existing nodes migration drops the agent secret exemption. Ended-task assistance does not change the Node agent.
+docs/reference/processes-and-schedules.md: The existing process and schedule migrations store runtime records. Ended-task assistance does not change processes or schedules.
+docs/reference/projects.md: The existing Project rename and task-workspace routing migrations change Project columns. Ended-task assistance does not change Project records.
+docs/reference/routes.md: The existing route and workspace migrations store routing records. Ended-task assistance does not change Routes.
+docs/reference/schedules.md: The existing schedule migrations store timer records. Ended-task assistance does not change Schedules.
+docs/reference/tools.md: The existing tool and tool-manager migrations store package records. Ended-task assistance does not change Tools.
+unowned: Unchanged migration files in the planned migrations directory have no covers owner and no model page. The extractor lists those surfaces and raises no error because this branch adds or removes none of them. Ended-task assistance does not add a page for them.
