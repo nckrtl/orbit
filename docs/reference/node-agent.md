@@ -65,7 +65,7 @@ The agent accepts only a normalized absolute path of at most 4,096 bytes that op
 
 The agent reads Git with libgit2 in its own process, which runs no hooks, filters, or `fsmonitor` programs. The checkouts belong to `orbit` and the agent runs as `root`, so the agent turns off libgit2's owner check.
 
-Every 2 seconds, the agent checks the size, time, and inode of `HEAD`, `index`, `packed-refs`, the current branch ref, and the base ref. When one changed, it reads the checkout again. It also reads every checkout every 30 seconds, because an edit to a working file changes none of those files.
+Every 2 seconds, the agent checks the size, time, and inode of `HEAD`, `index`, `packed-refs`, the current branch ref, the local base ref, and `origin/base`. When one changed, it reads the checkout again. It also reads every checkout every 30 seconds, because an edit to a working file changes none of those files.
 
 | Field | Meaning |
 | --- | --- |
@@ -74,7 +74,7 @@ Every 2 seconds, the agent checks the size, time, and inode of `HEAD`, `index`, 
 | `head` | The full `HEAD` commit, or null in an empty repository. |
 | `dirty` | `true` when the index or working tree differs from `HEAD`, untracked files included. Null when the agent cannot read the working tree. |
 | `commits` | Commits reachable from `HEAD` but not from `start`, at most 1,000. Null without `start`. |
-| `diff` | `{ files, added, removed, truncated }` as `git diff --numstat base...HEAD` counts it. Null when `base` does not resolve. |
+| `diff` | `{ files, added, removed, truncated }` as `git diff --numstat origin/base...HEAD` counts it. Null when `origin/base` does not resolve. |
 
 | Limit | Value |
 | --- | --- |
