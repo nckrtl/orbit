@@ -559,7 +559,6 @@
             "pages": [
               "decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
               "decisions/0175-docs-impact-check-in-orbit-repo",
-              "decisions/0176-file-repro-first-bug-groups",
               "decisions/0178-run-project-agnostic-tasks-without-a-planner",
               "decisions/0182-start-tasks-from-project-task-definitions"
             ]
@@ -1331,6 +1330,10 @@
     {
       "source": "/decisions/0174-match-the-task-gate-to-ci-and-repeated-findings",
       "destination": "/reference/implementation-loop#the-candidate-gate"
+    },
+    {
+      "source": "/decisions/0176-file-repro-first-bug-groups",
+      "destination": "/reference/tasks#outer-loop"
     },
     {
       "source": "/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension",
