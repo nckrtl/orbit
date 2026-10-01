@@ -78,6 +78,16 @@ Each Composer project job checks out the branch by name with full history, so Pe
 
 Hosted jobs run on `ubuntu-26.04`, the Ubuntu release that Nodes run, so tests use the same uutils coreutils as a Node.
 
+### Self-hosted Gateway runner
+
+When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job runs on the self-hosted runner on Sabre, with the labels `self-hosted` and `sabre`. Pushes, manual dispatches, and pull requests from branches in this repository use it. A pull request from a fork always uses a GitHub-hosted runner, so code from outside the repository never runs on Sabre. Set the variable to anything else to move the job back to GitHub-hosted runners.
+
+On Sabre the job skips the Homebrew and system package steps, because Sabre already has PHP 8.5 with PCOV, Caddy, `acl`, `attr`, and `wireguard-tools`. Pest runs 6 processes there instead of 4.
+
+Sabre has no Orbit role and serves no Instance. Two runner services, `sabre-1` and `sabre-2`, run as the `github-runner` user, so a pull request run and a `main` run do not wait for each other. That user has passwordless `sudo`, because the PHP setup step installs packages.
+
+The `github-runner-egress` systemd unit loads an nftables rule that rejects traffic from `github-runner` to private addresses: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, and `100.64.0.0/10`. Orbit trusts WireGuard source addresses, so this rule keeps a job from reaching the Gateway or another Node as Sabre. DNS still works through the local resolver. A command that a job runs with `sudo` runs as root, and the rule does not cover it. So the runner accepts only code from this repository.
+
 Docs-lint also checks the ADR lifecycle. A row in the decisions overview's lower table has no file with its recorded slug, and a redirect exists from that exact path. ADRs from 0180 onward have an `In progress.` Status and a `Principle:` line. A lower number follows those rules only when that lower table does not list its number. The open gaps are 0007 and 0020. The committed allowlist of older live ADRs can only shrink. The [contributor guide](/contributor-guide#checks-that-need-no-network) explains these checks.
 
 Each Composer project job caches three sets of files in GitHub Actions cache.

@@ -1366,9 +1366,11 @@
             "concepts": [
                 "Deployment",
                 "Gateway",
+                "Instance",
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Subtask",
                 "Task",
                 "Task check",
