@@ -67,6 +67,13 @@ return [
         'coder_webhook_url' => env('ORBIT_CODER_WEBHOOK_URL'),
         'coder_webhook_secret' => env('ORBIT_CODER_WEBHOOK_SECRET'),
     ],
+    // The outer loop neither counts nor files a listed fingerprint or a source path under a prefix.
+    'problems' => [
+        'suppressed_fingerprints' => [],
+        'suppressed_path_prefixes' => [
+            'app/Infrastructure/Tasks/T3/',
+        ],
+    ],
     'hibernation' => [
         'idle_seconds' => max(1, (int) env('ORBIT_HIBERNATION_IDLE_SECONDS', 3600)),
         'sweep_seconds' => max(60, (int) env('ORBIT_HIBERNATION_SWEEP_SECONDS', 600)),
