@@ -36,6 +36,7 @@ use App\Domain\Tasks\TaskSettleMetrics;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskTurnFetchNotice;
 use App\Domain\Tasks\TaskTurnInstructions;
 use App\Domain\Tasks\TaskTurnPullRequest;
 use App\Domain\Tasks\TaskTurnReceipt;
@@ -703,6 +704,8 @@ function tick_running_agents(bool $fetchFails = false, bool $fastForwardFails = 
                 throw new TaskPullRequestException('The task branch could not be fetched.');
             }
         }
+
+        public function fetchForTurn(Task $group): void {}
     };
     app()->instance(AgentSpawner::class, $agents);
     app()->instance(TaskBaseBranchFetcher::class, $agents);
@@ -2223,7 +2226,7 @@ it('resumes a Pi implementer restarted during the turn instead of asking for ass
         ->and($task->parent->fresh()?->assistance_requested)->toBeFalse()
         ->and($notifier->called)->toBeFalse()
         ->and($sent)->toBeInstanceOf(Request::class)
-        ->and($sent['text'])->toBe('Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the turn command.')
+        ->and($sent['text'])->toBe(TaskTurnFetchNotice::Failed."\n\n".TaskScheduler::PiServerRestartContinue)
         ->and($sent['key'])->not->toBe('turn-key-1')
         ->and($sent['key'])->toBeUuid()
         ->and($fresh?->pi_restart_resumes)->toBe(1)
@@ -2471,7 +2474,7 @@ it('does not send an implementer Pi resume to the reviewer', function (): void {
         ->and($messages)->toHaveCount(2)
         ->and($messages[1]['session'])->toBe('reviewer-thread')
         ->and($messages[1]['key'])->toBe($reviewerKey)
-        ->and($messages[1]['text'])->toBe('Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the turn command.')
+        ->and($messages[1]['text'])->toBe(TaskTurnFetchNotice::Failed."\n\n".TaskScheduler::PiServerRestartContinue)
         ->and(collect($messages)->where('session', 'reviewer-thread')->pluck('key')->all())->not->toContain($implementerKey);
 
     $review->turnId = (string) $reviewerKey;
@@ -2683,7 +2686,7 @@ it('resumes a T3 reviewer whose provider session did not survive a server restar
         ->and($starts[0]['commandId'])->toBe($fresh?->pi_restart_key)
         ->and($starts[0]['commandId'])->toBe($starts[1]['commandId'])
         ->and($starts[0]['message']['messageId'])->toBe($starts[0]['commandId'])
-        ->and($starts[0]['message']['text'])->toBe(TaskScheduler::PiServerRestartContinue)
+        ->and($starts[0]['message']['text'])->toBe(TaskTurnFetchNotice::Failed."\n\n".TaskScheduler::PiServerRestartContinue)
         ->and($starts[0]['threadId'])->toBe('reviewer-thread')
         ->and($fresh?->assistance_requested)->toBeFalse()
         ->and($fresh?->pi_restart_resumes)->toBe(1)
@@ -2971,7 +2974,7 @@ it('reminds an implementer that ends a turn without a receipt once, then asks fo
 
     $reminder = $dispatcher->commands[0]['message']['text'];
     expect($dispatcher->commands)->toHaveCount(1)
-        ->and($reminder)->toBe('Orbit could not confirm the brief is complete. No turn receipt was found. '.TaskTurnInstructions::implementer(check: $group->project->taskCheckCommand(), threadId: $task->implementer_agent_thread_id))
+        ->and($reminder)->toBe(TaskTurnFetchNotice::Failed."\n\n".'Orbit could not confirm the brief is complete. No turn receipt was found. '.TaskTurnInstructions::implementer(check: $group->project->taskCheckCommand(), threadId: $task->implementer_agent_thread_id))
         ->and($receipts->prepared)->toBe(['implementer'])
         ->and($group->fresh()?->assistance_requested)->toBeFalse();
 
@@ -3880,7 +3883,7 @@ it('does not commit an approval while the workspace is on another branch', funct
     $dispatcher = app(T3Dispatcher::class);
     expect($signer->messages)->toBe([])
         ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
-        ->and($dispatcher->commands[0]['message']['text'])->toBe('Orbit could not confirm the review is complete. The workspace branch is not task-'.$group->id.'. Switch back to it. '.TaskTurnInstructions::reviewer(threadId: $group->reviewer_agent_thread_id));
+        ->and($dispatcher->commands[0]['message']['text'])->toBe(TaskTurnFetchNotice::Failed."\n\n".'Orbit could not confirm the review is complete. The workspace branch is not task-'.$group->id.'. Switch back to it. '.TaskTurnInstructions::reviewer(threadId: $group->reviewer_agent_thread_id));
 
     app(TaskScheduler::class)->tick();
 
@@ -3904,7 +3907,7 @@ it('reminds a reviewer that ends a turn without a receipt once, then asks for as
 
     app(TaskScheduler::class)->tick();
 
-    expect(app(T3Dispatcher::class)->commands[0]['message']['text'])->toBe('Orbit could not confirm the review is complete. No turn receipt was found. '.TaskTurnInstructions::reviewer(threadId: $group->reviewer_agent_thread_id))
+    expect(app(T3Dispatcher::class)->commands[0]['message']['text'])->toBe(TaskTurnFetchNotice::Failed."\n\n".'Orbit could not confirm the review is complete. No turn receipt was found. '.TaskTurnInstructions::reviewer(threadId: $group->reviewer_agent_thread_id))
         ->and($receipts->prepared)->toBe(['reviewer']);
 
     app(TaskScheduler::class)->tick();
@@ -4090,7 +4093,7 @@ it('reminds the reviewer when the approval of the last subtask has no pull reque
 
     app(TaskScheduler::class)->tick();
 
-    expect(app(T3Dispatcher::class)->commands[0]['message']['text'])->toBe('Orbit could not confirm the review is complete. The approval of the last subtask needs --pr-summary, --pr-change, and --pr-breaking. '.TaskTurnInstructions::reviewer(final: true, threadId: $group->reviewer_agent_thread_id))
+    expect(app(T3Dispatcher::class)->commands[0]['message']['text'])->toBe(TaskTurnFetchNotice::Failed."\n\n".'Orbit could not confirm the review is complete. The approval of the last subtask needs --pr-summary, --pr-change, and --pr-breaking. '.TaskTurnInstructions::reviewer(final: true, threadId: $group->reviewer_agent_thread_id))
         ->and($publishing->coverage->calls)->toBe(0)
         ->and($signer->messages)->toBe([]);
 });

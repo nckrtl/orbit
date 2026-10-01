@@ -21,6 +21,7 @@ use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
+use App\Domain\Tasks\TaskTurnFetchNotice;
 use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceMcp;
@@ -88,6 +89,7 @@ final class TasksServiceProvider extends ServiceProvider
         $this->app->bind(TaskReviewPacketBuilder::class, fn (Application $app): TaskReviewPacketBuilder => new TaskReviewPacketBuilder($app->make(TaskReviewDiff::class)));
         $this->app->singleton(TaskBroadcasts::class);
         $this->app->singleton(OpenApiTaskActions::class);
+        $this->app->singleton(TaskTurnFetchNotice::class);
     }
 
     public function boot(): void

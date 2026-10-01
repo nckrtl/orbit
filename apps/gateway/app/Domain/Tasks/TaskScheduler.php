@@ -117,6 +117,7 @@ final readonly class TaskScheduler
         private TaskBaseBranchFetcher $bases,
         private ArchiveFinishedTaskThreads $archives,
         private TaskReviewPacketBuilder $reviewPackets,
+        private TaskTurnFetchNotice $fetchNotice,
     ) {}
 
     /**
@@ -1025,6 +1026,7 @@ final readonly class TaskScheduler
         if (! $instance instanceof Instance) {
             throw new TaskTurnReceiptException('The task workspace is unavailable.');
         }
+        $this->fetchBeforeTurn($group);
         $context = $role === TaskThreadRole::Reviewer ? $this->reviewPackets->reviewContext($task) : null;
         $this->receipts->prepare($instance, $role, $role === TaskThreadRole::Reviewer && $task->opensPullRequest(), $task->deliverableList(), $threadId, $context);
     }
@@ -1212,6 +1214,24 @@ final readonly class TaskScheduler
             && $stored !== $current;
     }
 
+    /**
+     * Fetches before the turn is sent. A failure is logged and the turn still starts. It must not
+     * escape: an exception from the opening turn's prepareTurn fails the subtask.
+     */
+    private function fetchBeforeTurn(Task $group): void
+    {
+        $this->fetchNotice->clear();
+        try {
+            $this->bases->fetchForTurn($group);
+        } catch (Throwable $exception) {
+            $this->fetchNotice->fail();
+            Log::warning(TaskTurnFetchNotice::Failed.' The turn will continue.', [
+                'task_group_id' => $group->id,
+                'reason' => $exception->getMessage(),
+            ]);
+        }
+    }
+
     /** Pi uses its restart error. T3 0.0.42 uses the orphaned-session error, or the continuation failure. */
     private function isServerRestartError(string $driver, ?string $error): bool
     {
@@ -1224,6 +1244,7 @@ final readonly class TaskScheduler
 
     private function sendPiRestartResume(Task $task, Task $group, TaskThreadObservation $acting, string $key): void
     {
+        $this->fetchBeforeTurn($group);
         try {
             $this->actor->resumeInterruptedTurn($group, $acting, self::PiServerRestartContinue, $key);
         } catch (AgentDriverException $exception) {

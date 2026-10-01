@@ -26,4 +26,13 @@ interface TaskBaseBranchFetcher
      * @throws TaskPullRequestException
      */
     public function fastForward(Task $group, bool $missingRefOk = false): void;
+
+    /**
+     * Fetches the Project default branch, `task-{group id}`, and the pull request base when it differs,
+     * before an agent turn. Uses the read token and `--no-tags`. A missing task branch is not a failure.
+     * Updates remote-tracking refs only and does not move HEAD.
+     *
+     * @throws TaskPullRequestException
+     */
+    public function fetchForTurn(Task $group): void;
 }

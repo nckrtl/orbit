@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace App\Infrastructure\Tasks;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
+use App\Domain\GitHub\RepositoryReadAccess;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskPullRequestException;
@@ -17,16 +20,21 @@ use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use App\Models\Task;
+use Throwable;
 
 /**
  * Fetches `origin/{base}` with the pull request token. `{base}` is one argument. The fetch updates
  * the remote-tracking ref and does not check out or rebase the task branch (ADR 0164).
  * `fastForward` catches the workspace up with `origin/task-{group id}` only when it is strictly behind.
+ * `fetchForTurn` fetches the default branch, `task-{id}`, and a different pull request base with the
+ * read token and `--no-tags`. It updates remote-tracking refs and does not move HEAD.
  */
 final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetcher
 {
     public function __construct(
         private RepositoryPullRequestAccess $access,
+        private RepositoryReadAccess $reads,
+        private GitHubApi $github,
         private DevelopmentSshExecutor $ssh,
     ) {}
 
@@ -100,6 +108,110 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
             ), 'task-branch-sync', 'tasks.fetch_failed');
         } catch (RuntimeConvergenceException $exception) {
             throw new TaskPullRequestException('The task branch could not be fetched.', previous: $exception);
+        }
+    }
+
+    public function fetchForTurn(Task $group): void
+    {
+        try {
+            $this->fetchTurnRefs($group);
+        } catch (TaskPullRequestException $exception) {
+            throw $exception;
+        } catch (Throwable $exception) {
+            throw new TaskPullRequestException('The workspace refs could not be fetched.', previous: $exception);
+        }
+    }
+
+    /**
+     * @throws TaskPullRequestException
+     */
+    private function fetchTurnRefs(Task $group): void
+    {
+        $group->loadMissing(['project', 'taskable']);
+        $repository = GitHubRepository::fromOrigin((string) $group->project->repository_url);
+        $instance = $group->taskable;
+        $default = $group->project->default_branch;
+        if (! $repository instanceof GitHubRepository || ! $instance instanceof Instance || $instance->checkout_path === ''
+            || ! is_string($default) || ! GitBranchName::isValid($default)) {
+            throw new TaskPullRequestException('The workspace refs could not be fetched.');
+        }
+        $taskBranch = 'task-'.$group->id;
+        if (! GitBranchName::isValid($taskBranch)) {
+            throw new TaskPullRequestException('The workspace refs could not be fetched.');
+        }
+
+        try {
+            $environment = $this->reads->for((string) $group->project->repository_url, $group->project->source_access);
+        } catch (ResourceOperationException $exception) {
+            throw new TaskPullRequestException('The workspace refs could not be fetched.', previous: $exception);
+        }
+
+        $this->fetchRefs($instance, $environment, $default, $taskBranch, $this->pullRequestBase($group, $repository, $default, $taskBranch));
+    }
+
+    /**
+     * The pull request base when the turn should fetch it, or null when it is absent or already included.
+     * The base name is read on the Gateway. The git fetch itself uses the read token.
+     *
+     * @throws TaskPullRequestException
+     */
+    private function pullRequestBase(Task $group, GitHubRepository $repository, string $default, string $taskBranch): ?string
+    {
+        if (! is_string($group->pr_url) || $group->pr_url === '') {
+            return null;
+        }
+        $number = $repository->pullRequestNumber($group->pr_url);
+        if ($number === null) {
+            throw new TaskPullRequestException('The workspace refs could not be fetched.');
+        }
+
+        try {
+            $base = $this->github->pullRequest($this->access->token($repository), $repository, $number)->baseRef;
+        } catch (GitHubApiException $exception) {
+            throw new TaskPullRequestException('The workspace refs could not be fetched.', previous: $exception);
+        }
+        if (! is_string($base) || $base === '' || $base === $default || $base === $taskBranch) {
+            return null;
+        }
+        if (! GitBranchName::isValid($base)) {
+            throw new TaskPullRequestException('The workspace refs could not be fetched.');
+        }
+
+        return $base;
+    }
+
+    private function fetchRefs(Instance $instance, GitReadEnvironment $environment, string $default, string $taskBranch, ?string $pullBase): void
+    {
+        $instance->loadMissing('node');
+        // A missing task branch is not a failure. The full ref avoids a suffix such as archive/task-{id}.
+        // The other refs are still fetched, and HEAD stays put.
+        $script = GitReadScript::for($environment, <<<'BASH'
+            checkout=$1
+            default_branch=$2
+            task_branch=$3
+            pull_base=$4
+            status=0
+            git_read git -C "$checkout" ls-remote --exit-code --heads origin "refs/heads/$task_branch" >/dev/null || status=$?
+            if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then
+                exit "$status"
+            fi
+            refspecs=("+refs/heads/${default_branch}:refs/remotes/origin/${default_branch}")
+            if [ "$status" -eq 0 ]; then
+                refspecs+=("+refs/heads/${task_branch}:refs/remotes/origin/${task_branch}")
+            fi
+            if [ -n "$pull_base" ]; then
+                refspecs+=("+refs/heads/${pull_base}:refs/remotes/origin/${pull_base}")
+            fi
+            git_read git -C "$checkout" fetch --no-tags --quiet origin "${refspecs[@]}"
+            BASH);
+        try {
+            $this->ssh->execute($instance->node, new RemoteCommand(
+                arguments: ['bash', '-seu', '--', $instance->checkout_path, $default, $taskBranch, $pullBase ?? ''],
+                input: $script->input,
+                protectedInput: $script->protectedInput,
+            ), 'task-turn-fetch', 'tasks.fetch_failed');
+        } catch (RuntimeConvergenceException $exception) {
+            throw new TaskPullRequestException('The workspace refs could not be fetched.', previous: $exception);
         }
     }
 
