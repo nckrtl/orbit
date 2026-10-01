@@ -76,7 +76,7 @@ Subtask statuses are `todo`, `running`, `reviewing`, `completed`, `failed`, and 
 
 ## Tasks and subtasks
 
-List and show accept any authorized peer. Update and the subtask create, update, and destroy operations are served by the Node that holds the task's workspace, or by the Gateway for a task without one. The other operations require Gateway access.
+List, show, and `tasks:question:list` accept any authorized peer. Update and the subtask create, update, and destroy operations are served by the Node that holds the task's workspace, or by the Gateway for a task without one. The other operations require Gateway access.
 
 | Operation | Route | Access |
 | --- | --- | --- |
@@ -495,8 +495,11 @@ Before each turn, the Gateway installs that command, writes `.git/orbit/turn.jso
 | Implementer | `ready_for_review`, `blocked` |
 | Reviewer | `approved`, `changes_requested`, `blocked` |
 | Reviewer in a consult | `answered`, `blocked` |
+| Reviewer in a relay | `answered`, `blocked` |
 
-The command refuses an outcome of the other role, an empty summary, a repeated flag, and an unknown argument. `blocked` needs `--question="One specific question"`. An implementer's question goes to its reviewer first, and a reviewer's question goes to the operator. `answered` is valid only in a consult. The command refuses `--question` with any other outcome. A reviewer's `answered` and `blocked` also need `--cause=CAUSE`, one of the [question causes](#questions). The command refuses `--cause` on every other turn.
+The command refuses an outcome of the other role, an empty summary, a repeated flag, and an unknown argument. `blocked` needs `--question="One specific question"`. An implementer's question goes to its reviewer first, and a reviewer's question goes to the operator. The command refuses `--question` with any outcome other than `blocked`.
+
+`answered` is valid in a consult and in a relay. A relay is not a consult. A reviewer's `answered` and `blocked`, in a consult or a relay, need `--cause=CAUSE`, one of the [question causes](#questions). The command refuses `--cause` on every other turn. A blocked relay creates no question record. The same direction record stays `escalated`, its `question` becomes the reviewer's `--question`, and its `cause` becomes that turn's `--cause`. The subtask keeps asking for direction.
 
 The approval of the subtask that opens the pull request also needs `--pr-summary`, at least one `--pr-change`, and at least one `--pr-breaking`, or `--pr-breaking=none`. `none` cannot be combined with another `--pr-breaking`. The command refuses the three pull request flags on every other turn. On success it writes the turn receipt to `.git/orbit/receipt.json` atomically. A second call overwrites that file. The command stays in place.
 
@@ -534,7 +537,7 @@ When an implementer hands off `blocked`, Orbit sends the summary and the questio
 
 The reviewer answers from the brief, the ADRs, the documentation, the code, and the task history. It hands off `answered` with the answer as its summary, and Orbit sends that answer to the implementer, which continues the same attempt. A question about scope, priorities, access, money, or a resource that only the operator controls cannot be answered from the contract. The reviewer then hands off `blocked` with one question for the operator, and the subtask asks for direction.
 
-Orbit consults the reviewer at most twice in one implementer attempt. A third `blocked` in that attempt asks for direction at once. Its question is the implementer's question, and its reason includes both earlier answers.
+Orbit consults the reviewer at most twice in one implementer attempt. The limit counts the consult records whose `attempt` is the subtask's current `completion_attempt`. A third `blocked` in that attempt asks for direction at once. Its question is the implementer's question, and its reason includes both earlier answers.
 
 #### Questions
 
@@ -564,7 +567,11 @@ A consult the reviewer escalates keeps `asked_by` `implementer`. Its `question` 
 
 A reviewer's `blocked` during a review creates an `escalated` record with `asked_by` `reviewer`. A third implementer block in one attempt creates an `escalated` record with `asked_by` `implementer`, the implementer's question, and no cause yet. Its assistance reason includes both earlier answers. An operator's `assistance_requested` comment creates an `escalated` record with `asked_by` `operator`, the comment body as its question, and no cause yet.
 
-When the reviewer answers a consult, that record becomes `answered` with `answered_by` `reviewer`, the summary as the answer, and the `--cause`. The relay of an operator's answer sets the direction record to `answered` with `answered_by` `operator` and the resolution body as the answer. It sets `cause` from the reviewer's `--cause` on that relay turn, which does not count toward the consult limit. An escalated question that already has the reviewer's cause keeps it until the relay replaces it.
+When the reviewer answers a consult, that record becomes `answered` with `answered_by` `reviewer`, the summary as the answer, and the `--cause`. A relay while the subtask is `running` and its reviewer has started sets the direction record to `answered` with `answered_by` `operator` and the resolution body as the answer. It sets `cause` from that turn's `--cause`. That turn does not count toward the consult limit. The other two direction routes in [Resolve a request](#resolve-a-request) mark the record `answered` when Orbit delivers the resolution, and they leave the stored cause unchanged.
+
+Each record change is keyed to the stored comment that caused it, a turn receipt or an operator `assistance_requested` comment. Orbit writes that change in one transaction with `assistance_requested`, `assistance_kind`, and `assistance_question` on the subtask and the task. A tick that applies the same comment again creates no second record and does not count a second consult.
+
+The consult limit counts consult records for the current `completion_attempt`. A consult record is the row created when an implementer's `blocked` receipt starts a consult. A relay, a third block, a reviewer's `blocked` during a review, and an operator comment are not consult records.
 
 [`tasks:question:list`](/cli/tasks#orbit-tasksquestionlist) is `GET /api/v1/task-questions`. Any authorized peer can call it. The filters are `project_id`, `cause`, `status`, and `since`. `since` is an ISO 8601 date or time, and the list holds questions asked at or after it, newest first.
 
@@ -585,15 +592,29 @@ The task takes the kind and the question of the subtask that asks. While a task 
 
 #### Migrate open requests
 
-Existing open requests are migrated. A reason that starts with `The implementer is blocked: ` or `The reviewer is blocked: ` becomes `direction`. `assistance_question` is the stored question: the text after the last `Question: ` in that reason, or the text after the prefix when `Question: ` is absent. The migration writes one `escalated` question record for that request, with that question, no cause, and `asked_by` taken from the prefix. Every other open request becomes `failure` and gets no question record. Closed requests get no records, so `questions` and `escalations` start with this change.
+`create_task_questions` creates the empty `task_questions` table. `add_assistance_kind_to_tasks` runs after it and writes the rows.
+
+The migration classifies each open subtask row. It does not read the task row's reason, because that reason repeats the subtask. A reason that starts with `The implementer is blocked: ` or `The reviewer is blocked: ` becomes `direction` on that subtask. `assistance_question` is the stored question: the text after the last `Question: ` in that reason, or the text after the prefix when `Question: ` is absent. Every other open subtask becomes `failure` with a null question.
+
+It writes one `escalated` question record for each `direction` subtask and none for a `failure` subtask or for the task row. The task row receives only that subtask's `assistance_kind` and `assistance_question`. When more than one subtask asks, a `direction` subtask supplies the task row, and a `failure` subtask does not replace it.
+
+The record's `task_id` is the parent task id and its `subtask_id` is the asking subtask id. `asked_by` comes from the prefix. `attempt` is the subtask's `completion_attempt` for the implementer prefix and its `review_attempt` for the reviewer prefix. The rows do not store the original ask time, so `asked_at` and `escalated_at` are both the time `add_assistance_kind_to_tasks` runs, and `answered_at` is null. The cause is null. Closed requests get no records, so `questions` and `escalations` start with this change.
 
 #### Resolve a request
 
-A `resolution` comment with a non-empty body resumes a subtask that asks for assistance. On a direction request, Orbit sends the body to the subtask's reviewer. When the reviewer asked during a review, it continues that review. Otherwise it turns the answer into instructions for the implementer with an `answered` turn, which does not count toward the consult limit.
+A `resolution` comment with a non-empty body resumes a subtask that asks for assistance. On a direction request, the route depends on the subtask.
 
-On a failure, Orbit sends the body to the blocked thread at once: the implementer while the subtask is `running`, and that subtask's reviewer while it is `reviewing`. In both cases Orbit then clears the flag on the subtask and the task, clears the communication failures, and starts a new attempt. A resolution to a reviewer that asked during a review counts as that reviewer's next review request.
+When the subtask is `running` and its reviewer has started, Orbit sends the resolution to that reviewer as a relay. The relay is not a consult. An `answered` relay follows the [turn receipt](#turn-receipt) and does not count toward the consult limit. A `blocked` relay keeps the same record `escalated`.
 
-When the subtask has no started reviewer yet, Orbit clears the flag and holds the resolution. The next tick starts a fresh reviewer whose opening packet includes it. A failed send keeps the subtask flagged. A resolution posted while nothing is asked is stored and not sent. Every comment stays as history. An assistance request, a delivered resolution, a held resolution, and a failed delivery each also write an Activity entry with the comment's author as the actor.
+When the subtask is `reviewing`, Orbit does not send an `answered` turn to the implementer. This covers a reviewer who asked during the review, and an operator `assistance_requested` comment posted during the review. Orbit delivers the resolution to the reviewer and continues that review. The delivery counts as that reviewer's next review request. It marks the question `answered`, with `answered_by` `operator` and the resolution body as the answer. The cause already stored stays, including the cause from the reviewer's `blocked` turn.
+
+When the subtask is `running` and no reviewer has started, Orbit does not send a relay. An operator `assistance_requested` comment before any consult takes this route. Orbit holds the resolution. The next tick starts a fresh reviewer whose opening packet includes it. Delivering that packet marks the question `answered`, with `answered_by` `operator` and the resolution body as the answer. `cause` stays empty.
+
+Each direction route clears the assistance flag on the subtask and the task in the same transaction as that question update. A failed send keeps the flag set and leaves the record unchanged.
+
+On a failure, Orbit sends the body to the blocked thread at once: the implementer while the subtask is `running`, and that subtask's reviewer while it is `reviewing`. In both cases Orbit then clears the flag on the subtask and the task, clears the communication failures, and starts a new attempt. When a failure resolution must reach a reviewer and none has started, Orbit clears the flag and holds the resolution. The next tick starts a fresh reviewer whose opening packet includes it.
+
+A resolution posted while nothing is asked is stored and not sent. Every comment stays as history. An assistance request, a delivered resolution, a held resolution, and a failed delivery each also write an Activity entry with the comment's author as the actor.
 
 ### Recover a Pi server restart
 

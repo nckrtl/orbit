@@ -33,9 +33,11 @@ A consult turn has two outcomes:
 
 The reviewer answers only from the brief, the ADRs, the documentation, the code, and the task history. A question about scope, priorities, access, money, or a resource that only the operator controls is the reviewer's `blocked`.
 
-Orbit consults the reviewer at most twice in one implementer attempt. A third `blocked` in that attempt becomes a direction request at once. Its question is the implementer's question, and its reason includes both earlier answers.
+Orbit consults the reviewer at most twice in one implementer attempt. The limit counts the consult records whose `attempt` is the subtask's current `completion_attempt`. A third `blocked` in that attempt becomes a direction request at once. Its question is the implementer's question, and its reason includes both earlier answers. A consult record is the row created when an implementer's `blocked` receipt starts a consult. A relay, a third block, a reviewer's `blocked` during a review, and an operator comment are not consult records.
 
 A reviewer's own `blocked` during a review is a direction request, as before.
+
+A relay accepts `answered` and `blocked`, and it needs `--cause`. It is not a consult. A blocked relay keeps the same record `escalated`, sets `question` and `cause` from that turn, and creates no second record.
 
 ### Record every question
 
@@ -65,7 +67,11 @@ A consult the reviewer escalates is the same record moving from `open` to `escal
 
 A reviewer's `blocked` during a review creates an `escalated` record with `asked_by` `reviewer`. A third implementer block in one attempt creates an `escalated` record with `asked_by` `implementer`, the implementer's question, and no cause yet. An operator's `assistance_requested` comment creates an `escalated` record with `asked_by` `operator`, the comment body as its question, and no cause yet.
 
-When the reviewer answers a consult, that record becomes `answered` with `answered_by` `reviewer`, the summary as the answer, and the `--cause`. The relay of an operator's answer sets the direction record to `answered` with `answered_by` `operator` and the resolution body as the answer. It sets `cause` from the reviewer's `--cause` on that relay turn, which does not count toward the consult limit. An escalated question that already has the reviewer's cause keeps it until the relay replaces it.
+When the reviewer answers a consult, that record becomes `answered` with `answered_by` `reviewer`, the summary as the answer, and the `--cause`. A relay while the subtask is `running` and its reviewer has started sets the direction record to `answered` with `answered_by` `operator` and the resolution body as the answer. It sets `cause` from that turn's `--cause`. That turn does not count toward the consult limit.
+
+When the subtask is `reviewing`, Orbit delivers the resolution to the reviewer and continues that review. There is no `answered` turn. Delivery marks the record `answered`, with `answered_by` `operator` and the resolution body as the answer. The cause already stored stays, including the cause from the reviewer's `blocked` turn. When the subtask is `running` and no reviewer has started, Orbit holds the resolution and the next tick starts a fresh reviewer whose opening packet includes it. That path is not a relay. Delivering the packet marks the record `answered` in the same way, and `cause` stays empty.
+
+Each record change is keyed to the stored comment that caused it, a turn receipt or an operator `assistance_requested` comment. Orbit writes that change in one transaction with `assistance_requested`, `assistance_kind`, and `assistance_question` on the subtask and the task. A tick that applies the same comment again creates no second record and does not count a second consult.
 
 Each subtask and task stores `questions` and `escalations` in its [settle metrics](/reference/tasks#settle-metrics). A subtask's `questions` counts its records, and its `escalations` counts records with `escalated_at` set, including a record whose status is now `answered`. A task's counts are the sums of its subtasks. `tasks:question:list` is `GET /api/v1/task-questions`. It lists questions across tasks, filtered by Project, cause, status, and time, so the operator can analyze which briefs caused them. The Coder `task_group.settled` webhook adds both counts.
 
@@ -82,7 +88,7 @@ The task takes the kind and question of the subtask that asks. While a task asks
 
 ### Answer a direction request
 
-An operator answers with a `resolution` comment, as today. On a direction request, Orbit sends the resolution to the subtask's reviewer. The reviewer turns it into instructions for the implementer with an `answered` turn. That relay does not count toward the consult limit. When the reviewer asked during a review, it continues that review instead.
+An operator answers with a `resolution` comment, as today. On a direction request, a `running` subtask whose reviewer has started gets a relay. A `reviewing` subtask continues that review, with no `answered` turn to the implementer. A `running` subtask with no reviewer yet holds the resolution for the reviewer's opening packet. [Resolve a request](/reference/tasks#resolve-a-request) states the record update for each route.
 
 ### Show and notify
 
@@ -107,7 +113,9 @@ An operator answers with a `resolution` comment, as today. On a direction reques
 - Every question has a record, an answer, and a cause. The operator can count questions per task, Project, and cause, and read the brief that caused each one.
 - A consult costs one reviewer turn before an operator sees a block.
 - The reviewer of a subtask can start before the first handoff. The review that follows keeps the consult in its context.
-- Existing open requests are migrated. A reason that starts with `The implementer is blocked: ` or `The reviewer is blocked: ` becomes `direction`. `assistance_question` is the stored question: the text after the last `Question: ` in that reason, or the text after the prefix when `Question: ` is absent. The migration writes one `escalated` question record for that request, with that question, no cause, and `asked_by` taken from the prefix. Every other open request becomes `failure` and gets no question record. Closed requests get no records, so `questions` and `escalations` start with this change.
+- `create_task_questions` creates the empty `task_questions` table. `add_assistance_kind_to_tasks` runs after it and writes the rows. The migration classifies each open subtask row and does not read the task row's reason, because that reason repeats the subtask. A reason that starts with `The implementer is blocked: ` or `The reviewer is blocked: ` becomes `direction` on that subtask. `assistance_question` is the stored question: the text after the last `Question: ` in that reason, or the text after the prefix when `Question: ` is absent. Every other open subtask becomes `failure` with a null question.
+- One `escalated` question record is written for each `direction` subtask, and none for a `failure` subtask or for the task row. The task row receives only that subtask's kind and question. When more than one subtask asks, a `direction` subtask supplies the task row, and a `failure` subtask does not replace it.
+- The record's `task_id` is the parent task id and its `subtask_id` is the asking subtask id. `asked_by` comes from the prefix. `attempt` is `completion_attempt` for the implementer prefix and `review_attempt` for the reviewer prefix. `asked_at` and `escalated_at` are both the time that migration runs, `answered_at` is null, and the cause is null. Closed requests get no records, so `questions` and `escalations` start with this change.
 - A web answer box for direction requests is not part of this decision. The operator answers through the CLI, MCP, or the API.
 
 ## Affects
