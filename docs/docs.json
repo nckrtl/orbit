@@ -559,7 +559,6 @@
             "pages": [
               "decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
               "decisions/0175-docs-impact-check-in-orbit-repo",
-              "decisions/0178-run-project-agnostic-tasks-without-a-planner",
               "decisions/0182-start-tasks-from-project-task-definitions"
             ]
           }
@@ -1294,6 +1293,10 @@
     {
       "source": "/decisions/0173-record-and-label-jev-decisions",
       "destination": "/reference/tasks#jev-decision-records"
+    },
+    {
+      "source": "/decisions/0178-run-project-agnostic-tasks-without-a-planner",
+      "destination": "/reference/tasks#project-owned-task-policy"
     },
     {
       "source": "/decisions/0179-gate-all-extension-surfaces-with-one-gateway-switch",

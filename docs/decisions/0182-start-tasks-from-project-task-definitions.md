@@ -172,9 +172,9 @@ The web app lists definitions on the Tasks page and on each Project page, and dr
 
 The Tasks board shows scheduled tasks in Backlog with their `scheduled_at`.
 
-### Changes to ADR 0178
+### Changes to project-owned task policy
 
-A Project's task policy lives in its task definitions in the Gateway, not in a repository skill. The `orbit-tasks` skill keeps only guidance for an agent that writes briefs and deliverables. Orbit's feature work becomes the "Build a feature" definition described above, starting in `backlog`, where the ADE fills in the parameters.
+This amends [project-owned task policy](/reference/tasks#project-owned-task-policy). A Project's task policy lives in its task definitions in the Gateway, not in a repository skill. The `orbit-tasks` skill keeps only guidance for an agent that writes briefs and deliverables. Orbit's feature work becomes the "Build a feature" definition described above, starting in `backlog`, where the ADE fills in the parameters.
 
 ### Slices
 
@@ -231,6 +231,6 @@ The definition has an `app` parameter and the schedule `0 3 * * 1` with that App
 ## Affects
 
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/web
-- ADRs: amends [0178](/decisions/0178-run-project-agnostic-tasks-without-a-planner)
+- ADRs: amends [project-owned task policy](/reference/tasks#project-owned-task-policy)
 - Detail: [Tasks](/reference/tasks), [proxycli](/reference/proxycli), [Web app](/reference/web-app), [Tasks CLI](/cli/tasks), [Concepts](/concepts)
 - Verify: slice 1: the migration test on a copy of the task tables and the existing task suite on the one model; slice 2: tests for each validation rule and definition operation, the proxycli models route, CLI and SDK fixtures, and web screenshots; slice 3: tests for starting now, `scheduled_at`, the upcoming task, the three schedule rules, and parameters; slices 4 to 6: tests for each kind and its outcomes and the `decide` threshold, and an Incus proof of the maintenance example, including the `skipped` path and a forced rollback

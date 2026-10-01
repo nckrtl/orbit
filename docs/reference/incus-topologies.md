@@ -291,6 +291,10 @@ The harness records an `exec` only when you give it a label. Most commands are e
 
 The harness expects every topology to belong to a linked worktree of the primary checkout. The bridge gives a clone that shape. Teaching the harness to accept clones is a rejected alternative, because it changes about ten identity checks and the guest mount evidence. Mirroring with `rsync --delete` is also rejected, because it deletes the files that the harness and the guests keep in the mount. Finding the primary through the main cache store is rejected, because topologies would then depend on published test caches.
 
+### Cleanup stays with the Project
+
+The bridge layout belongs to this repository, so the Orbit Project's teardown runs the installed helper. Putting that removal in the Gateway was rejected, because the engine would then know one repository's worktrees. A failed cleanup exits nonzero and teardown keeps the checkout for retry. The helper does not release the topology.
+
 ### Scenarios stay outside delivery
 
 Scenarios are regression evidence for one commit, and they run on demand. They never gate review or merge. A cold scenario proves that Orbit builds from the unchanged base image, so it installs nothing before construction.

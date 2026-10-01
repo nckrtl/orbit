@@ -186,9 +186,11 @@ Each deliverable has an `id`, a `type`, a `description`, and the fields of its t
 
 A field of another type is refused with HTTP 422 `validation.failed`. The error names the field path, such as `deliverables.0.path`. The `fails_on_base` and `paths` errors also name the deliverable's `id`. Only a `file` deliverable's `path` accepts a glob: `*` matches in one directory, `**` matches across directories, and `?` matches one character. `paths` is not a glob.
 
-There is no `test` deliverable type. A migration converts stored `test` deliverables in tasks that are not completed, failed, or cancelled, and it leaves `task_check` unchanged. Each stored `test` deliverable names a Pest file and a test-name substring, so the migration runs `vendor/bin/pest` from that project directory with the file, a case-sensitive filter for the name, and `--colors=never`.
+There is no `test` deliverable type. A migration converts stored `test` deliverables in tasks that are not completed, failed, or cancelled, and it leaves `task_check` unchanged. Each stored `test` deliverable names a Pest file and a test-name substring. The migration normalizes the project and file paths, then runs `vendor/bin/pest` from that project directory with the file and `--colors=never`. The name match is a case-sensitive substring, and regex characters in the name are escaped so they stay literal.
 
-It carries over `fails_on_base`. When the base run is on, `paths` lists the workspace-relative test file. The migration also adds a `file` deliverable with `change: any` for that file. The command and the file stay together, and each id stays unique and at most 64 characters. When the converted list would exceed five deliverables, the extra pairs go on continuation subtasks placed directly after the source subtask. A continuation uses the source subtask's start commit for its diff and its base run, including when the source subtask has committed its fixes.
+It carries over `fails_on_base`. When the base run is on, `paths` lists the workspace-relative test file. The migration also adds a `file` deliverable with `change: any` for that file. The command and the file stay together, and each id stays unique and at most 64 characters.
+
+When the converted list would exceed five deliverables, the extra pairs go on continuation subtasks placed directly after the source subtask. The migration writes each source task and the continuation rows it adds in one database transaction. A continuation uses the source subtask's start commit for its diff and its base run, including when the source subtask has committed its fixes.
 
 A subtask's diff runs from its start commit to the working tree that the check sees, uncommitted and untracked files included. Deleted and ignored files never match. Orbit records the start commit when the subtask starts, before the implementer's first turn. When that read fails, the next tick tries again until the first turn starts. After that, the start commit stays empty, and the diff uses a fallback base: the previous subtask's approved commit, or the workspace starting commit for the first subtask.
 
@@ -687,9 +689,21 @@ These Gateway environment keys configure the extension.
 
 ## Project-owned task policy
 
-The engine knows the configured check, lifecycle steps, workspace routing, and typed deliverables. It does not select a task check, a fixup, or workspace routing by slug, package manager, manifest, or CI job name. A command may use any toolchain installed on the task Node. The rubric does not require a Composer script or inspect a manifest to judge the Project's check.
+The engine knows the configured check, lifecycle steps, workspace routing, and typed deliverables. It does not select a task check, a fixup, or workspace routing by slug, package manager, manifest, or CI job name. A command may use any toolchain installed on the task Node. The rubric does not require a Composer script or inspect a manifest to judge the Project's check. It does not encode a docs-first workflow, an ADR rule, or a language or package manager, and it does not treat any Project slug as Orbit.
+
+### No planner
+
+Task create accepts no planner. There is no `plan` field, no planner thread, and no stored planner state. An external ADE plans and steers the work. Orbit runs the assigned work.
+
+### Routing and cleanup
+
+[Task workspace routing](/reference/projects#task-workspace-routing) decides whether a new workspace is visitable. It defaults to routed, and a change applies only to a workspace Orbit creates afterward. An unrouted workspace stays healthy in `source_resolved`. Orbit-specific cleanup, including a task bridge worktree, is a Project teardown step. The engine has no bridge cleanup hook. [Configure Orbit's task policy](/reference/instance-setup#configure-orbits-task-policy) records Orbit's check, setup, and installed helper. [Task workspace clones](/reference/incus-topologies#task-workspace-clones) defines that helper's ownership checks.
+
+### The base-run limit
 
 The base run is the exception that remains. It copies only installed `vendor` and `node_modules` directories into the start-commit archive, as [Prove a command fails on the start commit](#prove-a-command-fails-on-the-start-commit) describes. A Project whose command needs other installed dependencies cannot treat that base failure as a reproduction.
+
+### No implicit task check
 
 New Projects have no task check until one is configured, regardless of type. Existing stored checks remain unchanged. Shared instructions, reminders, the check runner, and pull request descriptions name only an explicit Project check; none supplies a fallback. Without a check, Orbit still verifies the tree and deliverables and requires review.
 
@@ -700,6 +714,8 @@ These reasons explain the design. Check them before you propose a change.
 ### An optional, generic extension
 
 Tasks is an extension, so an operator can switch it off without a Gateway downgrade. The engine knows tasks, subtasks, deliverables, one task check, and a lifecycle. Each Project's own policy and task check decide how it plans and verifies work. Inferring policy from a slug, manifest, or CI job name would create a second hidden contract in the Gateway, so those choices belong to the Project. The ADE plans, because planning needs the conversation with you. A web form to create tasks would be a second path beside MCP and the API.
+
+Three alternatives were rejected. Selecting one Project's behavior by its slug would keep a second task policy in the Gateway. Inferring that policy from repository files would hide it in the engine instead of the Project's skill and task check. A compatibility path for a planner thread was rejected, because you plan with an external ADE and the engine keeps no planner state.
 
 Shared prompts stay free of Project policy. They do not name a feature contract or an Orbit lease rule. The repository's instructions and `orbit-tasks` skill carry that policy.
 

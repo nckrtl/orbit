@@ -155,3 +155,7 @@ Registration adopts a checkout that is usually set up already. Running setup on 
 ### Teardown failure stops removal
 
 Teardown is the operator's cleanup. Removal continues only after that cleanup succeeds.
+
+### The Project removes its own bridge
+
+Orbit's task bridge is this repository's cleanup, so the Orbit Project runs `bin/e2e-task-cleanup` as a teardown step. A Gateway hook for that bridge was rejected, because another Project would inherit Orbit's worktree layout. The installed helper, not the Gateway, performs the ownership checks in [Task workspace clones](/reference/incus-topologies#task-workspace-clones).
