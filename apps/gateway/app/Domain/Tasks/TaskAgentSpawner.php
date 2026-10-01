@@ -205,16 +205,18 @@ final readonly class TaskAgentSpawner implements AgentSpawner
             return;
         }
         $task = is_numeric($thread->task_id) ? Task::query()->find((int) $thread->task_id) : null;
+        $context = $role === TaskThreadRole::Reviewer && $task instanceof Task ? $this->packets->reviewContext($task) : null;
         app(TaskTurnReceipts::class)->prepare(
             $instance,
             $role,
             $role === TaskThreadRole::Reviewer && $task instanceof Task && $task->opensPullRequest(),
             $task instanceof Task ? $task->deliverableList() : [],
             $thread->id,
+            $context,
         );
     }
 
-    /** Installs the turn file, and removes the reserved row when that install fails so the replacement does not start. */
+    /** Installs the turn file and the reviewer context, and removes the reserved row when that install fails so the replacement does not start. */
     private function installReceipt(AgentThread $thread): void
     {
         try {

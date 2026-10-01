@@ -452,7 +452,7 @@ it('does not start a replacement reviewer when the turn file cannot be written',
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->instance(TaskTurnReceipts::class, new class implements TaskTurnReceipts
     {
-        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void
+        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?string $context = null): void
         {
             throw new TaskTurnReceiptException('The turn file could not be written.');
         }
@@ -487,7 +487,7 @@ it('deletes a reserved reviewer when preparing the turn throws', function (): vo
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->instance(TaskTurnReceipts::class, new class implements TaskTurnReceipts
     {
-        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void
+        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?string $context = null): void
         {
             throw new RuntimeException('The turn file could not be written.');
         }

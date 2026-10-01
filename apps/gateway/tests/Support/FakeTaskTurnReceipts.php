@@ -46,10 +46,14 @@ final class FakeTaskTurnReceipts implements TaskTurnReceipts
     /** @var list<list<string>> the deliverable IDs written into each prepared turn */
     public array $turnDeliverables = [];
 
-    public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null): void
+    /** @var list<string|null> the review context written with each prepared turn, or null when that turn has none */
+    public array $contexts = [];
+
+    public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?string $context = null): void
     {
         $this->prepared[] = $role->value.($final ? ':final' : '');
         $this->turnDeliverables[] = array_map(static fn (TaskDeliverable $deliverable): string => $deliverable->id, $deliverables);
+        $this->contexts[] = $context;
     }
 
     public function read(Instance $instance, ?int $actingThreadId = null): ?TaskTurnReceipt

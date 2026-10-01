@@ -120,6 +120,7 @@ final readonly class TaskScheduler
         private RemoveTaskWorkspaceAction $workspaces,
         private TaskBaseBranchFetcher $bases,
         private ArchiveFinishedTaskThreads $archives,
+        private TaskReviewPacketBuilder $reviewPackets,
     ) {}
 
     /**
@@ -1030,7 +1031,8 @@ final readonly class TaskScheduler
         if (! $instance instanceof Instance) {
             throw new TaskTurnReceiptException('The task workspace is unavailable.');
         }
-        $this->receipts->prepare($instance, $role, $role === TaskThreadRole::Reviewer && $task->opensPullRequest(), $task->deliverableList(), $threadId);
+        $context = $role === TaskThreadRole::Reviewer ? $this->reviewPackets->reviewContext($task) : null;
+        $this->receipts->prepare($instance, $role, $role === TaskThreadRole::Reviewer && $task->opensPullRequest(), $task->deliverableList(), $threadId, $context);
     }
 
     private function waitingItem(TaskThreadObservation $thread): ?TaskRubricItem
