@@ -2,7 +2,7 @@
 title: "Tasks"
 description: "How the optional Gateway Tasks extension runs tasks and stores each Project's task definitions. It covers the model, definition fields, validation, the lifecycle, typed deliverables, the task check, agent threads, review, the pull request, fixups, metrics, cleanup, and the outer loop that files recurring problems."
 covers:
-  - "apps/gateway/app/{Domain,Infrastructure}/Tasks/**"
+  - "apps/gateway/app/{Domain/{Tasks,Problems},Infrastructure/Tasks}/**"
   - "apps/gateway/app/Actions/Tasks/**"
   - "apps/gateway/app/Http/Requests/Tasks/**"
   - "apps/gateway/app/Http/Controllers/Api/{TasksController,TaskGroupsController,TaskDefinitionsController,AgentThreadsController}.php"
@@ -348,7 +348,7 @@ When the workspace starting commit is 40 or 64 hexadecimal characters, both prom
 
 ## Outer loop
 
-The Gateway files a Backlog task when the same production problem keeps returning. An operator edits that task and moves it to Todo. The scheduler does not claim it before that move. [ADR 0176](/decisions/0176-file-repro-first-bug-groups) records this loop.
+The Gateway files a Backlog task when the same production problem keeps returning. An operator edits that task and moves it to Todo. The scheduler does not claim it before that move.
 
 The loop reads Doctor, Activity, the Gateway log, and assistance reasons. It does not read the `schedules` table. It does not wait for an external alert manager.
 
@@ -960,11 +960,27 @@ A task needs an id before its branch `task-{id}` can hold the contract, and it m
 
 ### A person starts a filed problem
 
-Code can see that a failure came back. It cannot write the test that proves the bug. So the [outer loop](#outer-loop) files a Backlog draft, and a person replaces the placeholder command before the task can run.
+Code can see that a failure came back. It cannot write the test that proves the bug. A model does not choose what to file. The thresholds are code. This serves [agents operate, humans steer](/mission#principles) and [deterministic first](/mission#principles). The [outer loop](#outer-loop) files a Backlog draft, and a person replaces the placeholder command before the task can run. Filing straight to Todo is rejected, because an agent would start on that placeholder.
 
-A Doctor blip from one run stays a fingerprint until a second run sees it again. Those two times are at least 10 minutes apart. Ten hits of one Activity or log key are enough to file. Those signals arrive in bursts, so the loop does not wait for a second quarter hour. Three isolated hits do not file.
+A page on every server-class row is rejected. One command can fail dozens of times in an hour, and a Doctor finding from one run can be gone on the next. A Doctor fingerprint stays unfiled until two observations are at least 10 minutes apart. Ten hits of one Activity, log, or assistance key are enough to file, because those signals arrive in bursts. Three hits file only when they fall in two UTC quarter hours or on two UTC dates. Three isolated hits do not file.
 
-The cap of three tasks a day stops a burst from filling the board. `filed_at` holds that count, so an edit to the brief cannot change it. Cancel is the person's mute, and it lasts 14 days. A completed or failed task waits 7 days. That same write clears the hits collected while the task was open. When the wait ends, only a hit after the task ended can make the key ready. A hit after the merge and before the deploy can still file a draft, and the operator cancels it.
+The cap of three tasks a day stops a burst from filling the board. `filed_at` holds that count. Counting the cap from the brief is rejected, because the operator edits that brief on the filing day. Cancel is the person's mute, and it lasts 14 days. A completed or failed task waits 7 days. Refiling as soon as a task reaches `failed` is rejected, because that task never ran and the next hourly pass would file the same key again.
+
+The mute write also clears the hits collected while the task was open. Keeping that episode in the ready test is rejected, because the old counts would file the same key when the wait ends, with no new failure.
+
+Clearing the episode only when the task is filed is also rejected, because hits while it sits in Backlog, Todo, or Settling would pass the ready test when the mute ends. When the wait ends, only a hit after the task ended can make the key ready. A hit after the merge and before the deploy can still file a draft, and the operator cancels it.
+
+### The signals the Gateway already has
+
+The loop reads Doctor, Activity, the Gateway log, and assistance reasons. Waiting for schedule rows or an alert manager is rejected. The `schedules` table is empty, and no alert manager is configured.
+
+### One fingerprint per problem
+
+The Activity key is the command and the error code. Putting the resource id in that key is rejected, because the id lives only in `properties.path` and the same failure would split into one task per resource. Merging a log error with its Activity row is also rejected. The keys differ, and a log error with no Activity row would disappear.
+
+### A small sample, and no past rows on the first run
+
+The sample keeps bounded Doctor values and a short redacted log excerpt. Storing raw Doctor reports or full traces is rejected, because that output exposes paths and credentials. [Doctor](/cli/doctor#no-stored-reports) keeps no raw report for the caller. Counting past Activity and log rows on the first run is rejected, because those rows would take the daily cap on the day the loop starts. The first run records its cursors at the end of the current data.
 
 ### The Gateway claims, not the Nodes
 

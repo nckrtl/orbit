@@ -123,7 +123,7 @@ final readonly class AdrLifecycle
             // Adopted numbers below 0180 stay on the shrinking allowlist, even when an
             // older slug of that number is retired (the 0114 Tasks and Incus records).
             // Every other retired number is closed. A gap that was never adopted and is
-            // not in Retired decisions (0007, 0020, and 0176) follows the 0180+ rules.
+            // not in Retired decisions (0007 and 0020) follows the 0180+ rules.
             if ((int) $number < 180 && in_array($number, self::ADOPTION_NUMBERS, true)) {
                 if (! in_array($number, $allowed, true)) {
                     $findings[] = $this->error($path, "Unretired legacy ADR {$number} is not in the allowlist.");
