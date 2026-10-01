@@ -87,3 +87,5 @@ docs/reference/php-runtime.md: Production source reads pass the Project's source
 docs/reference/tools.md: The service provider only binds the GitHub CLI token source; Tool behavior does not change.
 docs/reference/environment-variables.md: Instance .env behavior is unchanged. Gateway task-agent settings stay in /reference/tasks, including Pi-only drivers and the T3 settings annotations use.
 docs/reference/app-dev-runtime-hibernation.md: Hibernation timing is unchanged. Task agents run on Pi; that contract is in /reference/tasks.
+docs/reference/cli-ux.md: Task command snapshots now show gpt-5.6-luna as the reviewer model. Input, consent, and presentation rules on this page are unchanged.
+docs/reference/gateway-response-fixtures.md: Recorded task fixtures now store gpt-5.6-luna as the reviewer model. Fixture recording and replay on this page are unchanged.

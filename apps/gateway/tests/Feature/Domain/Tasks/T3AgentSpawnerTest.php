@@ -199,6 +199,7 @@ it('posts T3 model options as id and value JSON objects', function (): void {
         'http://10.44.0.110:3773/api/orchestration/dispatch' => Http::response(['sequence' => 1]),
     ]);
     $group = t3_spawner_group();
+    $group->update(['reviewer_model' => 'claude-opus-5']);
     $threadId = (new TaskAgentSpawner(test_t3_registry(app(HttpT3Dispatcher::class)), app(TaskReviewPacketBuilder::class), app(TaskWorkspaceMcp::class)))->spawnReviewer($group->tasks->first());
 
     expect($threadId)->not->toBeNull();
@@ -751,7 +752,7 @@ it('uses high effort for a reviewer follow-up when a legacy effort is absent', f
 
     $command = $dispatcher->commands[array_key_last($dispatcher->commands)];
     expect($command['type'])->toBe('thread.turn.start')
-        ->and($command['modelSelection']['options'])->toBe([['id' => 'effort', 'value' => 'high']]);
+        ->and($command['modelSelection']['options'])->toBe([['id' => 'reasoningEffort', 'value' => 'high']]);
 });
 
 it('lists the deliverables for the implementer and names the review deliverables the approval must confirm', function (): void {
