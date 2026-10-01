@@ -17,7 +17,6 @@ use App\Support\Console\PromptAborted;
 use App\Support\Console\TerminalText;
 use App\Support\GatewayFailureRenderer;
 use Laravel\Prompts\ConfirmPrompt;
-use Laravel\Prompts\TextPrompt;
 use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
 use Orbit\Sdk\Responses\Instances\InstanceRegistrationResponse;
 
@@ -28,18 +27,15 @@ final class RegisterInstanceCommand extends GatewayCommand
         {--path= : Existing Git checkout or worktree; defaults to the current directory}
         {--include-worktrees : Adopt the checkout and every linked worktree}
         {--project= : Existing numeric Project ID}
-        {--project-name= : Confirmed Project display name}
-        {--project-slug= : Confirmed Project slug}
-        {--default-branch= : Confirmed Project default branch}
         {--name= : Optional non-default Instance name}
-        {--root= : Confirmed Project root or existing-Project root override}
+        {--root= : Relative web-root override for this Instance}
         {--domain= : Optional explicit Route domain}
         {--yes : Confirm source ownership transfer without prompting}
         {--setup : Run the Project setup steps after adoption}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Adopt the current Git source as a managed Instance.';
+    protected $description = 'Adopt the current Git source as a managed Instance of an existing Project.';
 
     public function handle(
         GitRegistrationDiscovery $git,
@@ -69,11 +65,7 @@ final class RegisterInstanceCommand extends GatewayCommand
             );
         }
 
-        try {
-            $values = $this->confirmedValues($facts);
-        } catch (PromptAborted|ConsoleInterrupted) {
-            return $this->renderGatewayFailure('instance.registration_cancelled', 'Registration was cancelled.');
-        }
+        $values = $this->requestedValues();
 
         if ($values === null) {
             return self::FAILURE;
@@ -95,9 +87,6 @@ final class RegisterInstanceCommand extends GatewayCommand
                 sourcePath: $facts->path,
                 includeWorktrees: $this->option('include-worktrees') === true,
                 projectId: $values['projectId'],
-                projectName: $values['projectName'],
-                projectSlug: $values['projectSlug'],
-                defaultBranch: $values['defaultBranch'],
                 instanceName: $this->stringOption('name'),
                 root: $values['root'],
                 domain: $this->stringOption('domain'),
@@ -136,9 +125,12 @@ final class RegisterInstanceCommand extends GatewayCommand
     }
 
     /**
-     * @return array{projectId: ?int, projectName: ?string, projectSlug: ?string, defaultBranch: ?string, root: ?string}|null
+     * Registration adopts a source for an existing Project only, so the CLI sends no Project values
+     * ([Projects](/reference/projects#registration-needs-a-project)).
+     *
+     * @return array{projectId: ?int, root: ?string}|null
      */
-    private function confirmedValues(GitRegistrationFacts $facts): ?array
+    private function requestedValues(): ?array
     {
         $projectId = $this->stringOption('project');
         $projectIdValue = $projectId === null ? null : filter_var($projectId, FILTER_VALIDATE_INT, ['options' => [
@@ -151,109 +143,17 @@ final class RegisterInstanceCommand extends GatewayCommand
             return null;
         }
 
-        $selectedProject = is_int($projectIdValue);
-        $projectValues = $selectedProject ? $this->explicitProjectValues() : $this->inferredProjectValues();
-        $errors = [];
-        if ($projectValues['branch'] !== null && self::branchError($projectValues['branch']) !== null) {
-            $errors['default_branch'] = ['The default branch is not a valid Git branch name.'];
-        }
-        if ($projectValues['root'] !== null && self::rootError($projectValues['root']) !== null) {
-            $errors['root'] = ['The root must be a normalized relative web path.'];
-        }
-        if ($errors !== []) {
-            GatewayFailureRenderer::write($this, 'validation.failed', 'The request data is invalid.', details: $errors);
+        $root = $this->stringOption('root');
 
-            return null;
-        }
-        $name = $this->stringOption('project-name');
-        $nonInteractive = ! $this->consoleMode()->mayPrompt;
-
-        if ($nonInteractive) {
-            if (
-                ! $selectedProject
-                && (($projectValues['branch'] ?? $facts->defaultBranch) === null
-                || ($projectValues['root'] ?? $facts->root) === null)
-            ) {
-                $this->renderGatewayFailure(
-                    'instance.registration_values_unresolved',
-                    'Non-interactive registration requires unresolved Project values as options.',
-                );
-
-                return null;
-            }
-
-            return [
-                'projectId' => is_int($projectIdValue) ? $projectIdValue : null,
-                'projectName' => $name,
-                'projectSlug' => $projectValues['slug'],
-                'defaultBranch' => $projectValues['branch'],
-                'root' => $projectValues['root'],
-            ];
-        }
-
-        return $this->confirmInteractiveValues(
-            $facts,
-            is_int($projectIdValue) ? $projectIdValue : null,
-            $name,
-            $projectValues,
-        );
-    }
-
-    /**
-     * @param  array{slug: ?string, branch: ?string, root: ?string}  $projectValues
-     * @return array{projectId: ?int, projectName: ?string, projectSlug: ?string, defaultBranch: ?string, root: ?string}|null
-     */
-    private function confirmInteractiveValues(
-        GitRegistrationFacts $facts,
-        ?int $projectId,
-        ?string $name,
-        array $projectValues,
-    ): ?array {
-        $slug = $projectValues['slug'] ?? $facts->slug;
-        $branch = $projectValues['branch'] ?? $facts->defaultBranch;
-        $root = $projectValues['root'] ?? $facts->root;
-        $selectedProject = $projectId !== null;
-
-        ConsoleWriter::write($this->output, $this->humanRenderer()->detail('Source: '.$facts->path, [
-            'Repository' => $facts->repositoryUrl,
-            'Project slug' => $slug,
-            'Default branch' => $branch ?? $facts->defaultBranch ?? 'unresolved',
-            'Web root' => $root ?? $facts->root ?? 'unresolved',
-        ]));
-        if (! $selectedProject && $branch === null) {
-
-            $branchAnswer = $this->commandPrompts()->run(fn (): TextPrompt => new TextPrompt(
-                'Default branch', required: true, validate: self::branchError(...),
-            ));
-            $branch = is_string($branchAnswer) ? $branchAnswer : null;
-            $projectValues['branch'] = $branch;
-        }
-
-        if (! $selectedProject && $root === null) {
-
-            $rootAnswer = $this->commandPrompts()->run(fn (): TextPrompt => new TextPrompt(
-                'Web root', required: true, validate: self::rootError(...),
-            ));
-            $root = is_string($rootAnswer) ? $rootAnswer : null;
-            $projectValues['root'] = $root;
-        }
-
-        if (! $selectedProject && (! is_string($branch) || $branch === '' || ! is_string($root) || $root === '')) {
-            $this->renderGatewayFailure(
-                'instance.registration_values_unresolved',
-                'Required Project values remain unresolved.',
-            );
+        if ($root !== null && self::rootError($root) !== null) {
+            GatewayFailureRenderer::write($this, 'validation.failed', 'The request data is invalid.', details: [
+                'root' => ['The root must be a normalized relative web path.'],
+            ]);
 
             return null;
         }
 
-        return [
-            'projectId' => $projectId,
-            'projectName' => $name,
-            'projectSlug' => $projectValues['slug'],
-            'defaultBranch' => $projectValues['branch'],
-            'root' => $projectValues['root'],
-        ];
+        return ['projectId' => is_int($projectIdValue) ? $projectIdValue : null, 'root' => $root];
     }
 
     private function confirmOwnership(GitRegistrationFacts $facts): bool
@@ -282,42 +182,11 @@ final class RegisterInstanceCommand extends GatewayCommand
         return false;
     }
 
-    private static function branchError(string $branch): ?string
-    {
-        $invalid = $branch === '' || strlen($branch) > 255 || $branch === 'HEAD' || str_starts_with($branch, '-')
-            || str_contains($branch, '..') || str_contains($branch, '@{') || str_ends_with($branch, '.')
-            || preg_match('//u', $branch) !== 1
-            || preg_match('/[\\x00-\\x20\\x7F~^:?*\\[\\\\\\\\]/', $branch) === 1
-            || ! array_all(explode('/', $branch), static fn (string $part): bool => $part !== '' && ! str_starts_with($part, '.') && ! str_ends_with($part, '.lock'));
-
-        return $invalid ? 'Enter a valid Git branch name.' : null;
-    }
-
     private static function rootError(string $root): ?string
     {
         $valid = $root !== '' && strlen($root) <= 255 && array_all(explode('/', $root),
             static fn (string $part): bool => $part !== '' && $part !== '.' && $part !== '..' && preg_match('/\\A[A-Za-z0-9._-]+\\z/D', $part) === 1);
 
         return $valid ? null : 'Enter a normalized relative web path.';
-    }
-
-    /** @return array{slug: ?string, branch: ?string, root: ?string} */
-    private function explicitProjectValues(): array
-    {
-        return [
-            'slug' => $this->stringOption('project-slug'),
-            'branch' => $this->stringOption('default-branch'),
-            'root' => $this->stringOption('root'),
-        ];
-    }
-
-    /** @return array{slug: ?string, branch: ?string, root: ?string} */
-    private function inferredProjectValues(): array
-    {
-        return [
-            'slug' => $this->stringOption('project-slug'),
-            'branch' => $this->stringOption('default-branch'),
-            'root' => $this->stringOption('root'),
-        ];
     }
 }

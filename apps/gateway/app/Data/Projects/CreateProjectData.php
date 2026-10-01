@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Projects;
 
+use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
 
 final readonly class CreateProjectData
@@ -18,6 +19,7 @@ final readonly class CreateProjectData
         public ?string $code = null,
         public bool $taskCheckProvided = false,
         public ?string $taskCheck = null,
+        public ProjectSourceAccess $sourceAccess = ProjectSourceAccess::GitHubApp,
     ) {}
 
     /**

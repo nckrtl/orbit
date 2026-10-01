@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\Projects\ProjectCode;
+use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
 use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Support\ValidatedData;
@@ -21,6 +22,7 @@ use SensitiveParameter;
  * @property ProjectType $type
  * @property string $repository_url
  * @property string $repository_identity
+ * @property ProjectSourceAccess $source_access
  * @property string|null $default_branch
  * @property string|null $root
  * @property string|null $task_check
@@ -32,11 +34,12 @@ final class Project extends Model
     #[\Override]
     protected $attributes = [
         'type' => 'laravel-app',
+        'source_access' => 'github_app',
     ];
 
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'default_branch', 'root', 'task_check'];
+    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check'];
 
     /** @var list<string> */
     #[\Override]
@@ -124,6 +127,7 @@ final class Project extends Model
     {
         return [
             'type' => ProjectType::class,
+            'source_access' => ProjectSourceAccess::class,
         ];
     }
 }

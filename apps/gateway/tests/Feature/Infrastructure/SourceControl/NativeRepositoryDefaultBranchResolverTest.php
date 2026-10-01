@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Domain\GitHub\GitHubCliToken;
 use App\Domain\GitHub\RepositoryReadAccess;
+use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
@@ -51,7 +53,7 @@ afterEach(function (): void {
 it('resolves a real bare repository default and observes a later remote default change', function (): void {
     $resolver = new NativeRepositoryDefaultBranchResolver(new NativeProcessRunner, app(RepositoryReadAccess::class));
 
-    expect($resolver->resolve($this->bareRepository))->toBe('main');
+    expect($resolver->resolve($this->bareRepository, ProjectSourceAccess::GitHubApp))->toBe('main');
 
     $changed = new NativeProcessRunner()->run(new ProcessInvocation([
         'git',
@@ -63,15 +65,15 @@ it('resolves a real bare repository default and observes a later remote default 
     ]));
     expect($changed->succeeded())->toBeTrue();
 
-    expect($resolver->resolve($this->bareRepository))->toBe('stable');
+    expect($resolver->resolve($this->bareRepository, ProjectSourceAccess::GitHubApp))->toBe('stable');
 });
 
 it('verifies a real explicit branch and rejects a missing one', function (): void {
     $resolver = new NativeRepositoryDefaultBranchResolver(new NativeProcessRunner, app(RepositoryReadAccess::class));
 
-    $resolver->verify($this->bareRepository, 'stable');
+    $resolver->verify($this->bareRepository, 'stable', ProjectSourceAccess::GitHubApp);
 
-    expect(fn () => $resolver->verify($this->bareRepository, 'missing'))
+    expect(fn () => $resolver->verify($this->bareRepository, 'missing', ProjectSourceAccess::GitHubApp))
         ->toThrow(ResourceOperationException::class, 'could not be determined or verified');
 });
 
@@ -87,8 +89,8 @@ it('resolves and verifies when the process directory has unavailable worktree me
     try {
         $resolver = new NativeRepositoryDefaultBranchResolver(new NativeProcessRunner, app(RepositoryReadAccess::class));
 
-        expect($resolver->resolve($this->bareRepository))->toBe('main');
-        $resolver->verify($this->bareRepository, 'stable');
+        expect($resolver->resolve($this->bareRepository, ProjectSourceAccess::GitHubApp))->toBe('main');
+        $resolver->verify($this->bareRepository, 'stable', ProjectSourceAccess::GitHubApp);
     } finally {
         chdir($originalDirectory);
     }
@@ -98,7 +100,7 @@ it('resolves and verifies a real branch using valid Git punctuation and Unicode'
     $branch = 'release/été+hotfix@2026';
     $resolver = new NativeRepositoryDefaultBranchResolver(new NativeProcessRunner, app(RepositoryReadAccess::class));
 
-    $resolver->verify($this->bareRepository, $branch);
+    $resolver->verify($this->bareRepository, $branch, ProjectSourceAccess::GitHubApp);
     $changed = new NativeProcessRunner()->run(new ProcessInvocation([
         'git',
         '-C',
@@ -108,7 +110,7 @@ it('resolves and verifies a real branch using valid Git punctuation and Unicode'
         "refs/heads/{$branch}",
     ]));
 
-    expect($changed->succeeded())->toBeTrue()->and($resolver->resolve($this->bareRepository))->toBe($branch);
+    expect($changed->succeeded())->toBeTrue()->and($resolver->resolve($this->bareRepository, ProjectSourceAccess::GitHubApp))->toBe($branch);
 });
 
 it('maps malformed symbolic HEAD to the stable branch error', function (): void {
@@ -123,7 +125,7 @@ it('maps malformed symbolic HEAD to the stable branch error', function (): void 
     expect($changed->succeeded())->toBeTrue();
 
     expect(fn (): string => new NativeRepositoryDefaultBranchResolver(new NativeProcessRunner, app(RepositoryReadAccess::class))
-        ->resolve($this->bareRepository))
+        ->resolve($this->bareRepository, ProjectSourceAccess::GitHubApp))
         ->toThrow(ResourceOperationException::class, 'could not be determined or verified');
 });
 
@@ -132,7 +134,7 @@ it('maps an inaccessible repository to the stable branch error', function (): vo
 
     expect(
         fn (): string => new NativeRepositoryDefaultBranchResolver(new NativeProcessRunner, app(RepositoryReadAccess::class))
-            ->resolve($missingRepository),
+            ->resolve($missingRepository, ProjectSourceAccess::GitHubApp),
     )
         ->toThrow(ResourceOperationException::class, 'could not be determined or verified');
 });
@@ -154,9 +156,9 @@ it('maps thrown process timeouts from resolution and verification to the stable 
     };
     $resolver = new NativeRepositoryDefaultBranchResolver($processes, app(RepositoryReadAccess::class));
 
-    expect(fn (): string => $resolver->resolve('https://example.test/private-sentinel.git'))
+    expect(fn (): string => $resolver->resolve('https://example.test/private-sentinel.git', ProjectSourceAccess::GitHubApp))
         ->toThrow(ResourceOperationException::class, 'could not be determined or verified')
-        ->and(fn () => $resolver->verify('https://example.test/private-sentinel.git', 'main'))
+        ->and(fn () => $resolver->verify('https://example.test/private-sentinel.git', 'main', ProjectSourceAccess::GitHubApp))
         ->toThrow(ResourceOperationException::class, 'could not be determined or verified');
 });
 
@@ -183,7 +185,7 @@ it('uses bounded argv-only Git calls and redacts timeout, error, and malformed o
     $resolver = new NativeRepositoryDefaultBranchResolver($processes, app(RepositoryReadAccess::class));
 
     try {
-        $resolver->resolve($repository);
+        $resolver->resolve($repository, ProjectSourceAccess::GitHubApp);
         test()->fail('Expected branch resolution to fail.');
     } catch (ResourceOperationException $exception) {
         expect($exception->errorCode)
@@ -215,12 +217,73 @@ it('names the GitHub App as a possible cause when a github.com repository cannot
     };
     $resolver = new NativeRepositoryDefaultBranchResolver($processes, app(RepositoryReadAccess::class));
 
-    expect(fn (): string => $resolver->resolve('https://github.com/acme/private'))
-        ->toThrow(ResourceOperationException::class, "needs the Gateway's GitHub App installed");
+    expect(fn (): string => $resolver->resolve('https://github.com/acme/private', ProjectSourceAccess::GitHubApp))
+        ->toThrow(ResourceOperationException::class, "needs the Gateway's GitHub App installed on the account that owns it, or GitHub CLI source access");
 
     try {
-        $resolver->resolve('https://example.test/private.git');
+        $resolver->resolve('https://example.test/private.git', ProjectSourceAccess::GitHubApp);
     } catch (ResourceOperationException $exception) {
         expect($exception->getMessage())->not->toContain('GitHub App');
     }
+});
+
+it('reads a gh_cli repository with the GitHub CLI token and names the login when the read fails', function (): void {
+    app()->instance(GitHubCliToken::class, new class implements GitHubCliToken
+    {
+        public function token(): string
+        {
+            return 'gho_sentinel000000000000000000';
+        }
+    });
+    $processes = new class implements ProcessRunner
+    {
+        /** @var list<ProcessInvocation> */
+        public array $invocations = [];
+
+        public function run(ProcessInvocation $invocation): CommandResult
+        {
+            $this->invocations[] = $invocation;
+
+            return new CommandResult(128, '', 'fatal: repository not found', 1, false);
+        }
+    };
+    $resolver = new NativeRepositoryDefaultBranchResolver($processes, app(RepositoryReadAccess::class));
+
+    try {
+        $resolver->resolve('git@github.com:acme/private.git', ProjectSourceAccess::GhCli);
+        test()->fail('Expected branch resolution to fail.');
+    } catch (ResourceOperationException $exception) {
+        expect($exception->errorCode)->toBe('project.default_branch_unavailable')
+            ->and($exception->getMessage())->toContain('GitHub CLI login')
+            ->not->toContain('GitHub App', 'gho_sentinel');
+    }
+
+    expect($processes->invocations[0]->environment['GIT_CONFIG_VALUE_0'])
+        ->toBe('Authorization: Basic '.base64_encode('x-access-token:gho_sentinel000000000000000000'));
+});
+
+it('fails with the GitHub CLI error before running git when the Gateway has no gh login', function (): void {
+    app()->instance(GitHubCliToken::class, new class implements GitHubCliToken
+    {
+        public function token(): string
+        {
+            throw new ResourceOperationException('github.cli_unauthenticated', 'No login.');
+        }
+    });
+    $processes = new class implements ProcessRunner
+    {
+        public int $runs = 0;
+
+        public function run(ProcessInvocation $invocation): CommandResult
+        {
+            $this->runs++;
+
+            return new CommandResult(0, '', '', 1, false);
+        }
+    };
+    $resolver = new NativeRepositoryDefaultBranchResolver($processes, app(RepositoryReadAccess::class));
+
+    expect(fn () => $resolver->verify('https://github.com/acme/private', 'main', ProjectSourceAccess::GhCli))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('github.cli_unauthenticated'))
+        ->and($processes->runs)->toBe(0);
 });

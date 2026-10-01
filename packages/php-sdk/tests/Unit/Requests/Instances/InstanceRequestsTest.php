@@ -206,8 +206,6 @@ describe('Instance requests', function (): void {
             sourcePath: '/work/orbit-docs',
             includeWorktrees: true,
             projectId: 3,
-            projectName: 'Orbit Docs',
-            projectSlug: 'orbit-docs',
             instanceName: 'preview',
             root: 'web',
         );
@@ -222,8 +220,6 @@ describe('Instance requests', function (): void {
                 'source_path' => '/work/orbit-docs',
                 'include_worktrees' => true,
                 'project_id' => 3,
-                'project_name' => 'Orbit Docs',
-                'project_slug' => 'orbit-docs',
                 'instance_name' => 'preview',
                 'root' => 'web',
             ])

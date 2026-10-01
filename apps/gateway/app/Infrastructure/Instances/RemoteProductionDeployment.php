@@ -44,7 +44,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         $name = ($this->releaseName)();
         $this->assertReleaseName($name);
 
-        $script = GitReadScript::for($this->access->for($repository), <<<'BASH'
+        $script = GitReadScript::for($this->access->for($repository, $instance->loadMissing('project')->project->source_access), <<<'BASH'
                     repository=$1
                     user=$2
                     home=$3

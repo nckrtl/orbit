@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Http\Requests\Projects;
 
 use App\Data\Projects\CreateProjectData;
+use App\Domain\GitHub\GitHubRepository;
+use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
@@ -31,6 +33,7 @@ final class StoreProjectRequest extends FormRequest
                 Rule::enum(ProjectType::class),
             ],
             'repository_url' => ['required', 'string', 'max:2048'],
+            'source_access' => ['sometimes', 'string', Rule::enum(ProjectSourceAccess::class)],
             'default_branch' => ['sometimes', 'string', 'max:255'],
             'root' => ['required', 'string', 'max:255'],
             'task_check' => ['sometimes', 'nullable', 'string', 'max:4096'],
@@ -43,7 +46,7 @@ final class StoreProjectRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['code', 'name', 'slug', 'type', 'repository_url', 'default_branch', 'root', 'task_check'],
+                ['code', 'name', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -67,6 +70,13 @@ final class StoreProjectRequest extends FormRequest
                 );
             }
 
+            if (
+                $this->input('source_access') === ProjectSourceAccess::GhCli->value
+                && ! GitHubRepository::fromOrigin($repository) instanceof GitHubRepository
+            ) {
+                $validator->errors()->add('source_access', 'GitHub CLI source access needs a github.com repository URL.');
+            }
+
             $this->validateSourceDefaults($validator);
         }];
     }
@@ -86,6 +96,8 @@ final class StoreProjectRequest extends FormRequest
             root: is_string($validated['root'] ?? null) ? $validated['root'] : '',
             taskCheckProvided: array_key_exists('task_check', $validated),
             taskCheck: is_string($validated['task_check'] ?? null) ? $validated['task_check'] : null,
+            sourceAccess: ProjectSourceAccess::tryFrom(is_string($validated['source_access'] ?? null) ? $validated['source_access'] : '')
+                ?? ProjectSourceAccess::GitHubApp,
         );
     }
 

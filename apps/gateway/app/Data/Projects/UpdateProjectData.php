@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Projects;
 
+use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
 
 final readonly class UpdateProjectData
@@ -22,6 +23,8 @@ final readonly class UpdateProjectData
         public ?string $code = null,
         public bool $taskCheckProvided = false,
         public ?string $taskCheck = null,
+        public bool $sourceAccessProvided = false,
+        public ?ProjectSourceAccess $sourceAccess = null,
     ) {}
 
     public function hasChanges(): bool
@@ -32,7 +35,8 @@ final readonly class UpdateProjectData
             || $this->repositoryUrlProvided
             || $this->defaultBranchProvided
             || $this->rootProvided
-            || $this->taskCheckProvided;
+            || $this->taskCheckProvided
+            || $this->sourceAccessProvided;
     }
 
     public function hasReconcilableChanges(): bool
@@ -53,6 +57,7 @@ final readonly class UpdateProjectData
             'default_branch' => $this->defaultBranchProvided ? $this->defaultBranch : null,
             'root' => $this->rootProvided ? $this->root : null,
             'task_check' => $this->taskCheckProvided ? $this->taskCheck : null,
+            'source_access' => $this->sourceAccessProvided ? $this->sourceAccess?->value : null,
             'provided' => [
                 $this->typeProvided,
                 $this->slugProvided,
@@ -60,6 +65,7 @@ final readonly class UpdateProjectData
                 $this->defaultBranchProvided,
                 $this->rootProvided,
                 $this->taskCheckProvided,
+                $this->sourceAccessProvided,
             ],
         ], JSON_THROW_ON_ERROR));
     }

@@ -28,6 +28,7 @@ final class UpdateProjectRequest extends GatewayRequest implements HasBody
         private readonly ?string $root = null,
         private readonly ?string $taskCheck = null,
         private readonly bool $taskCheckProvided = false,
+        private readonly ?string $sourceAccess = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -48,6 +49,7 @@ final class UpdateProjectRequest extends GatewayRequest implements HasBody
                 'type' => $this->type,
                 'slug' => $this->slug,
                 'repository_url' => $this->repositoryUrl,
+                'source_access' => $this->sourceAccess,
                 'default_branch' => $this->defaultBranch,
                 'root' => $this->root,
                 ...($this->taskCheckProvided ? ['task_check' => $this->taskCheck] : []),

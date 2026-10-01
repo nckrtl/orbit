@@ -65,3 +65,15 @@ docs/reference/gateway-response-fixtures.md: Task definition fixtures follow the
 docs/reference/web-verification.md: The feature map adds the task definition route and its controls. Web verification commands, the map schema, and the demo server are unchanged.
 docs/solutions/doctor-incus-proof.md: Guest convergence reuses the evidence-log redactor. The Doctor proof procedure on this page is unchanged.
 docs/cli/doctor.mdx: The caller-facing Doctor report is unchanged. The fleet inspection used by the outer loop is documented in /reference/tasks.
+docs/reference/deployments.md: Production deployments read the repository through the shared read access; the page names no credential source and stays correct for gh_cli Projects.
+docs/reference/development-node-exclusions.md: Registration still refuses an excluded Node with instance.node_excluded; requiring an existing Project does not change exclusions.
+docs/reference/instance-setup.md: Registration setup behavior is unchanged; only Project creation leaves registration.
+docs/reference/cli-command-vocabulary.md: The command surface test only lists the new --source-access option and the removed registration options; the vocabulary gains no verb or noun.
+docs/reference/cli-ux.md: Recorded CLI outputs gain the source access field; the CLI design standard does not change.
+docs/reference/environment-variables.md: The HOME match is the Gateway user's home for the GitHub CLI, not an Instance environment variable.
+docs/reference/gateway-response-fixtures.md: Recorded Project fixtures gain the source access field; the fixture workflow does not change.
+docs/reference/instance-cloning.md: Clone candidate reads pass the Project's source access through the shared read access; cloning rules do not change.
+docs/reference/instance-removal.md: The published-commit check reads through the shared read access with the Project's source access; removal checks do not change.
+docs/reference/mcp.mdx: The instance-register tool follows its regenerated contract; the MCP page lists no per-tool fields.
+docs/reference/php-runtime.md: Production source reads pass the Project's source access through the shared read access; the PHP runtime does not change.
+docs/reference/tools.md: The service provider only binds the GitHub CLI token source; Tool behavior does not change.

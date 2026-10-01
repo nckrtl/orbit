@@ -89,6 +89,34 @@ describe('project:create', function (): void {
             ->toMatchArray(['type' => 'node-package', 'root' => '.']);
     });
 
+    it('creates a Project that reads through the GitHub CLI', function (): void {
+        $mockClient = MockClient::global([
+            CreateProjectRequest::class => app_mock_response(201),
+        ]);
+
+        $this->artisan('project:create', [
+            'slug' => 'leden',
+            'type' => 'laravel-app',
+            'repository' => 'git@github.com:acme/leden.git',
+            '--source-access' => 'gh_cli',
+        ])->assertExitCode(0);
+
+        expect($mockClient->getLastRequest()?->body()->all())->toMatchArray(['source_access' => 'gh_cli']);
+    });
+
+    it('refuses an unknown source access before contacting the Gateway', function (string $command, array $arguments): void {
+        $mockClient = MockClient::global();
+
+        $this->artisan($command, [...$arguments, '--source-access' => 'token', '--json' => true])
+            ->expectsOutputToContain('project.source_access_invalid')
+            ->assertExitCode(1);
+
+        expect($mockClient->getLastPendingRequest())->toBeNull();
+    })->with([
+        'create' => ['project:create', ['slug' => 'leden', 'type' => 'laravel-app', 'repository' => 'git@github.com:acme/leden.git']],
+        'update' => ['project:update', ['project' => '14']],
+    ]);
+
     it('defaults the root by Project type when --root is omitted', function (string $type, string $root): void {
         $mockClient = MockClient::global([
             CreateProjectRequest::class => app_mock_response(201),
@@ -510,6 +538,19 @@ describe('project:update', function (): void {
 
     });
 
+    it('switches a Project to the GitHub CLI with its default branch in one update', function (): void {
+        $mockClient = MockClient::global([UpdateProjectRequest::class => app_mock_response()]);
+
+        $this->artisan('project:update', [
+            'project' => '14',
+            '--source-access' => 'gh_cli',
+            '--default-branch' => 'main',
+        ])->assertExitCode(0);
+
+        expect($mockClient->getLastRequest()?->body()->all())
+            ->toBe(['source_access' => 'gh_cli', 'default_branch' => 'main']);
+    });
+
     it('refuses --task-check with --clear-task-check before contacting the Gateway', function (): void {
         $mockClient = MockClient::global([UpdateProjectRequest::class => app_mock_response()]);
 
@@ -627,6 +668,7 @@ function app_payload(): array
         'slug' => 'orbit',
         'type' => 'laravel-app',
         'repository_url' => 'git@github.com:nckrtl/orbit.git',
+        'source_access' => 'github_app',
         'default_branch' => 'main',
         'root' => 'public',
         'task_check' => 'composer check',

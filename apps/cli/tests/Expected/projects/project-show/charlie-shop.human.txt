@@ -11,6 +11,8 @@ Fetching Instances...
 │
 ├  Repository       git@github.com:charlie/shop.git
 │
+├  Source access    github_app
+│
 ├  Default branch   release
 │
 ├  Web root         web/public

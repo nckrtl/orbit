@@ -2303,7 +2303,7 @@
       "name": "instance-register",
       "extension": null,
       "title": "Register an Instance",
-      "description": "Adopt the current Git source as a managed Instance.",
+      "description": "Adopt the current Git source as a managed Instance of an existing Project.",
       "method": "POST",
       "path": "/api/v1/instances/register",
       "path_inputs": [],
@@ -2324,22 +2324,6 @@
           "project_id": {
             "type": "integer"
           },
-          "project_name": {
-            "type": "string",
-            "maxLength": 255,
-            "description": "Confirmed Project display name"
-          },
-          "project_slug": {
-            "type": "string",
-            "pattern": "^[A-Za-z0-9_-]+$",
-            "maxLength": 63,
-            "description": "Confirmed Project slug"
-          },
-          "default_branch": {
-            "type": "string",
-            "maxLength": 255,
-            "description": "Confirmed Project default branch"
-          },
           "instance_name": {
             "type": "string",
             "maxLength": 63
@@ -2347,7 +2331,7 @@
           "root": {
             "type": "string",
             "maxLength": 255,
-            "description": "Confirmed Project root or existing-Project root override"
+            "description": "Relative web-root override for this Instance"
           },
           "domain": {
             "type": "string",
@@ -4085,6 +4069,14 @@
             "type": "string",
             "maxLength": 2048
           },
+          "source_access": {
+            "type": "string",
+            "enum": [
+              "github_app",
+              "gh_cli"
+            ],
+            "description": "How Orbit reads a private github.com repository: github_app (default) or gh_cli"
+          },
           "default_branch": {
             "type": "string",
             "maxLength": 255,
@@ -4937,6 +4929,14 @@
           "repository_url": {
             "type": "string",
             "maxLength": 2048
+          },
+          "source_access": {
+            "type": "string",
+            "enum": [
+              "github_app",
+              "gh_cli"
+            ],
+            "description": "How Orbit reads a private github.com repository: github_app or gh_cli"
           },
           "default_branch": {
             "type": "string",

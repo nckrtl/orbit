@@ -31,7 +31,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
     public function prepare(Instance $instance, bool $allowExisting): void
     {
         $context = $this->context($instance);
-        $script = GitReadScript::for($this->access->for($context['repository']), self::preparedRepositoryGuard().<<<'BASH'
+        $script = GitReadScript::for($this->access->for($context['repository'], $instance->project->source_access), self::preparedRepositoryGuard().<<<'BASH'
                     repository=$1
                     checkout=$2
                     allowed_root=$3
@@ -93,7 +93,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
     {
         $context = $this->context($instance);
         $defaultBranch = $this->defaultBranch($instance);
-        $script = GitReadScript::for($this->access->for($context['repository']), self::preparedRepositoryGuard().<<<'BASH'
+        $script = GitReadScript::for($this->access->for($context['repository'], $instance->project->source_access), self::preparedRepositoryGuard().<<<'BASH'
                     repository=$1
                     checkout=$2
                     allowed_root=$3

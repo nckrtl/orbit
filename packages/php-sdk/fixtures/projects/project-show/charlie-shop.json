@@ -11,6 +11,7 @@
             "code": "CHA",
             "type": "laravel-app",
             "repository_url": "git@github.com:charlie/shop.git",
+            "source_access": "github_app",
             "default_branch": "release",
             "root": "web/public",
             "task_check": null,

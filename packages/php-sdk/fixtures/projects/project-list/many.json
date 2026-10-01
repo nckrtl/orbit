@@ -12,6 +12,7 @@
                 "code": "ACM",
                 "type": "laravel-app",
                 "repository_url": "https://github.com/example/acme.git",
+                "source_access": "github_app",
                 "default_branch": "release",
                 "root": "web/public",
                 "task_check": null
@@ -23,6 +24,7 @@
                 "code": "BRA",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/bravo-docs.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
                 "task_check": null
@@ -34,6 +36,7 @@
                 "code": "CHA",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/charlie-shop.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
                 "task_check": null
@@ -45,6 +48,7 @@
                 "code": "DEL",
                 "type": "laravel-app",
                 "repository_url": "https://github.com/example/delta-api.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
                 "task_check": null
@@ -56,6 +60,7 @@
                 "code": "ECH",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/echo-mail.git",
+                "source_access": "github_app",
                 "default_branch": "release",
                 "root": "public",
                 "task_check": null
@@ -67,6 +72,7 @@
                 "code": "FOX",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/foxtrot-crm.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "web/public",
                 "task_check": null
@@ -78,6 +84,7 @@
                 "code": "GOL",
                 "type": "laravel-app",
                 "repository_url": "https://github.com/example/golf-billing.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
                 "task_check": null
@@ -89,6 +96,7 @@
                 "code": "HOT",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/hotel-booking.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
                 "task_check": null
@@ -100,6 +108,7 @@
                 "code": "IND",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/india-search.git",
+                "source_access": "github_app",
                 "default_branch": "release",
                 "root": "public",
                 "task_check": null
@@ -111,6 +120,7 @@
                 "code": "JUL",
                 "type": "laravel-app",
                 "repository_url": "https://github.com/example/juliet-chat.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
                 "task_check": null
@@ -122,6 +132,7 @@
                 "code": "KIL",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/kilo-metrics.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "web/public",
                 "task_check": null
@@ -133,6 +144,7 @@
                 "code": "LIM",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/lima-auth.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
                 "task_check": null
@@ -144,6 +156,7 @@
                 "code": "MIK",
                 "type": "laravel-app",
                 "repository_url": "https://github.com/example/mike-media.git",
+                "source_access": "github_app",
                 "default_branch": "release",
                 "root": "public",
                 "task_check": null
@@ -155,6 +168,7 @@
                 "code": "NOV",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/november-news.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
                 "task_check": null
@@ -166,6 +180,7 @@
                 "code": "OSC",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/oscar-orders.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
                 "task_check": null
@@ -177,6 +192,7 @@
                 "code": "PAP",
                 "type": "laravel-app",
                 "repository_url": "https://github.com/example/papa-payments.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "web/public",
                 "task_check": null
@@ -188,6 +204,7 @@
                 "code": "QUE",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/quebec-queue.git",
+                "source_access": "github_app",
                 "default_branch": "release",
                 "root": "public",
                 "task_check": null
@@ -199,6 +216,7 @@
                 "code": "ROM",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/romeo-reports.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
                 "task_check": null
@@ -210,6 +228,7 @@
                 "code": "SIE",
                 "type": "laravel-app",
                 "repository_url": "https://github.com/example/sierra-store.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
                 "task_check": null
@@ -221,6 +240,7 @@
                 "code": "TAN",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/tango-tickets.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
                 "task_check": null
@@ -232,6 +252,7 @@
                 "code": "UNI",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/uniform-uploads.git",
+                "source_access": "github_app",
                 "default_branch": "release",
                 "root": "web/public",
                 "task_check": null
@@ -243,6 +264,7 @@
                 "code": "VIC",
                 "type": "laravel-app",
                 "repository_url": "https://github.com/example/victor-video.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
                 "task_check": null
@@ -254,6 +276,7 @@
                 "code": "WHI",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/whiskey-wiki.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
                 "task_check": null
@@ -265,6 +288,7 @@
                 "code": "XRA",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/x-ray-export.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
                 "task_check": null

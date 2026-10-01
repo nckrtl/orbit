@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Http\Requests\Projects;
 
 use App\Data\Projects\UpdateProjectData;
+use App\Domain\GitHub\GitHubRepository;
+use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
@@ -27,6 +29,7 @@ final class UpdateProjectRequest extends FormRequest
             'type' => ['sometimes', 'required', 'string', Rule::enum(ProjectType::class)],
             'slug' => ['sometimes', 'required', 'string', 'alpha_dash:ascii', 'max:63'],
             'repository_url' => ['sometimes', 'required', 'string', 'max:2048'],
+            'source_access' => ['sometimes', 'required', 'string', Rule::enum(ProjectSourceAccess::class)],
             'default_branch' => ['sometimes', 'required', 'string', 'max:255'],
             'root' => ['sometimes', 'required', 'string', 'max:255'],
             'task_check' => ['sometimes', 'nullable', 'string', 'max:4096'],
@@ -39,7 +42,7 @@ final class UpdateProjectRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['code', 'type', 'slug', 'repository_url', 'default_branch', 'root', 'task_check'],
+                ['code', 'type', 'slug', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -55,6 +58,7 @@ final class UpdateProjectRequest extends FormRequest
                 && ! $this->exists('type')
                 && ! $this->exists('slug')
                 && ! $this->exists('repository_url')
+                && ! $this->exists('source_access')
                 && ! $this->exists('default_branch')
                 && ! $this->exists('root')
                 && ! $this->exists('task_check')
@@ -70,6 +74,8 @@ final class UpdateProjectRequest extends FormRequest
                     'The repository URL must be a valid HTTPS or SSH Git origin.',
                 );
             }
+
+            $this->validateSourceAccess($validator);
 
             $branch = $this->input('default_branch');
 
@@ -109,6 +115,33 @@ final class UpdateProjectRequest extends FormRequest
             root: is_string($validated['root'] ?? null) ? $validated['root'] : null,
             taskCheckProvided: array_key_exists('task_check', $validated),
             taskCheck: is_string($validated['task_check'] ?? null) ? $validated['task_check'] : null,
+            sourceAccessProvided: array_key_exists('source_access', $validated),
+            sourceAccess: is_string($validated['source_access'] ?? null) ? ProjectSourceAccess::tryFrom($validated['source_access']) : null,
         );
+    }
+
+    /**
+     * GitHub CLI source access needs a `github.com` URL, so neither a source access change nor a
+     * repository change may leave a `gh_cli` Project on another host.
+     */
+    private function validateSourceAccess(Validator $validator): void
+    {
+        $project = $this->route('project');
+        $sentAccess = $this->input('source_access');
+        $access = is_string($sentAccess)
+            ? ProjectSourceAccess::tryFrom($sentAccess)
+            : ($project instanceof Project ? $project->source_access : null);
+        $sentRepository = $this->input('repository_url');
+        $repository = is_string($sentRepository)
+            ? $sentRepository
+            : ($project instanceof Project ? $project->repository_url : null);
+
+        if (
+            $access === ProjectSourceAccess::GhCli
+            && is_string($repository)
+            && ! GitHubRepository::fromOrigin($repository) instanceof GitHubRepository
+        ) {
+            $validator->errors()->add('source_access', 'GitHub CLI source access needs a github.com repository URL.');
+        }
     }
 }
