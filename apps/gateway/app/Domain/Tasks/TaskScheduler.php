@@ -54,12 +54,6 @@ final readonly class TaskScheduler
     /** The Pi server reports this when it restarted while a turn was still active (ADR 0116, ADR 0167). */
     public const string PiServerRestartError = 'The Pi server restarted during the turn.';
 
-    /** T3 0.0.42 reports this when a provider session does not survive a server restart and continuation is off. */
-    public const string T3ServerRestartError = 'Provider session did not survive a server restart. Send a new message to continue.';
-
-    /** T3 0.0.42 reports this when restart continuation was on and the continue itself failed. */
-    public const string T3ServerRestartContinuationError = 'Could not continue this thread after the server restart. Send a new message to continue.';
-
     /** One continue, on the same thread, after that restart. It does not ask for assistance. */
     public const string PiServerRestartContinue = 'Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the turn command.';
 
@@ -115,7 +109,7 @@ final readonly class TaskScheduler
         private TaskBroadcasts $broadcasts,
         private RemoveTaskWorkspaceAction $workspaces,
         private TaskBaseBranchFetcher $bases,
-        private ArchiveFinishedTaskThreads $archives,
+        private PrunePendingTaskThreads $pendingThreads,
         private TaskReviewPacketBuilder $reviewPackets,
     ) {}
 
@@ -270,7 +264,7 @@ final readonly class TaskScheduler
             }
         }
 
-        $this->archives->run();
+        $this->pendingThreads->run();
 
         return $decisions;
     }
@@ -1138,7 +1132,7 @@ final readonly class TaskScheduler
     }
 
     /**
-     * Resumes a Pi or T3 turn that failed only because the server restarted (ADR 0167).
+     * Resumes a Pi turn that failed only because the server restarted (ADR 0167).
      *
      * @return 'handled'|'assist'|'skip' handled owns the tick, assist asks for assistance, skip keeps today's failure path
      */
@@ -1156,20 +1150,9 @@ final readonly class TaskScheduler
             && $acting->turnId === $task->pi_restart_source_turn_id
             && is_string($task->pi_restart_key)
             && $task->pi_restart_key !== '') {
-            if ($this->t3AcceptedResume($record, $acting, $task->pi_restart_key)) {
-                if (! $this->t3SessionRevisionChanged($task, $acting)) {
-                    // The stored session.updatedAt is unchanged. This is the error from before the
-                    // command. The message clock and the node clock are not compared (ADR 0167).
-                    return 'handled';
-                }
-                // session.updatedAt differs from the revision stored with this reservation. T3 wrote
-                // a new session error before latestTurn changed. Repeating the command id starts no turn.
-                $task->update(['pi_restart_reservation' => self::PiRestartAccepted]);
-            } else {
-                $this->sendPiRestartResume($task, $group, $acting, $task->pi_restart_key);
+            $this->sendPiRestartResume($task, $group, $acting, $task->pi_restart_key);
 
-                return 'handled';
-            }
+            return 'handled';
         }
         if ((int) $task->pi_restart_resumes >= self::PiServerRestartResumeLimit) {
             return 'assist';
@@ -1181,45 +1164,16 @@ final readonly class TaskScheduler
             'pi_restart_thread_id' => $acting->threadId,
             'pi_restart_source_turn_id' => $acting->turnId,
             'pi_restart_reservation' => self::PiRestartPending,
-            'pi_restart_session_revision' => $acting->sessionUpdatedAt === '' ? null : $acting->sessionUpdatedAt,
         ]);
         $this->sendPiRestartResume($task, $group, $acting, $key);
 
         return 'handled';
     }
 
-    /** T3 persisted the reserved message. That write happens before the session leaves its previous error. */
-    private function t3AcceptedResume(AgentThread $record, TaskThreadObservation $acting, string $key): bool
-    {
-        return $record->driver === 't3' && array_any(
-            $acting->recentMessages,
-            fn (array $message): bool => $message['id'] === $key,
-        );
-    }
-
-    /**
-     * The reservation stores the exact session.updatedAt seen when it was reserved.
-     * A different non-empty value is a new session write. Ordering it against the message time is
-     * not evidence: that time is the Gateway clock, and session.updatedAt is the node clock.
-     */
-    private function t3SessionRevisionChanged(Task $task, TaskThreadObservation $acting): bool
-    {
-        $stored = $task->pi_restart_session_revision;
-        $current = $acting->sessionUpdatedAt;
-
-        return is_string($stored) && $stored !== ''
-            && is_string($current) && $current !== ''
-            && $stored !== $current;
-    }
-
-    /** Pi uses its restart error. T3 0.0.42 uses the orphaned-session error, or the continuation failure. */
+    /** Only Pi restart failures can resume a task-agent turn. */
     private function isServerRestartError(string $driver, ?string $error): bool
     {
-        return match ($driver) {
-            'pi' => $error === self::PiServerRestartError,
-            't3' => in_array($error, [self::T3ServerRestartError, self::T3ServerRestartContinuationError], true),
-            default => false,
-        };
+        return $driver === 'pi' && $error === self::PiServerRestartError;
     }
 
     private function sendPiRestartResume(Task $task, Task $group, TaskThreadObservation $acting, string $key): void

@@ -9,12 +9,12 @@ use App\Domain\Tasks\TaskSessionObserver;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
-use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
+use Tests\Support\AgentSnapshotReader;
 
 function observer_group(): Task
 {
@@ -41,6 +41,7 @@ function observer_group(): Task
         'starting_commit' => str_repeat('a', 40),
     ]);
     $group = Task::topLevel()->create([
+        'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
         'title' => 'Observe idle sessions',
         'brief' => 'Route idle implementer threads.',
@@ -66,9 +67,9 @@ function observer_group(): Task
 /**
  * @param  array<string, array<string, mixed>>  $snapshots
  */
-function observer_reader(array $snapshots): T3ThreadReader
+function observer_reader(array $snapshots): AgentSnapshotReader
 {
-    return new class($snapshots) implements T3ThreadReader
+    return new class($snapshots) implements AgentSnapshotReader
     {
         /** @param array<string, array<string, mixed>> $snapshots */
         public function __construct(private array $snapshots) {}
@@ -140,18 +141,13 @@ it('marks an idle implementer observation with the last turn text', function ():
         ->and($implementer?->prUrl)->toBe('https://github.com/nckrtl/orbit/pull/21');
 });
 
-it('reads a pending user-input request id from subscribeThread activities', function (): void {
+it('reads a pending user-input request id from the agent observation', function (): void {
     $group = observer_group();
     $reader = observer_reader([
         'implementer-thread' => [
             'thread' => [
-                'sess' => ['state' => 'waiting'],
-                'activities' => [
-                    [
-                        'kind' => 'user-input',
-                        'payload' => ['requestId' => 'input-req-77'],
-                    ],
-                ],
+                'session' => ['status' => 'waiting'],
+                'pendingUserInputs' => [['requestId' => 'input-req-77']],
             ],
         ],
         'reviewer-thread' => [
@@ -246,7 +242,7 @@ it('checks sessions attached to every task even after finding an active session'
         'status' => TaskStatus::Running,
     ]);
     test_agent_thread($group, 'second-task-session', $task);
-    $reader = new class implements T3ThreadReader
+    $reader = new class implements AgentSnapshotReader
     {
         /** @var list<string> */
         public array $requested = [];

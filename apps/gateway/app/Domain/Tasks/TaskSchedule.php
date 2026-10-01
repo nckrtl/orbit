@@ -14,10 +14,6 @@ final readonly class TaskSchedule
         $schedule->command('tasks:tick')
             ->everyTenSeconds()
             ->when($enabled);
-        $schedule->command('tasks:collect-t3-metrics')
-            ->everyTenSeconds()
-            ->withoutOverlapping()
-            ->when($enabled);
         $schedule->command('problems:collect')
             ->everyTenMinutes()
             ->withoutOverlapping(15)

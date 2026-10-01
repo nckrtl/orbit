@@ -32,16 +32,9 @@ final readonly class AgentThreadObserver
         if ($observation->state !== null) {
             $values['state'] = $observation->state;
             $values['error'] = $observation->error;
-            $values['t3_metrics_observed_activity_version'] = $thread->t3_metrics_activity_version;
-        }
-        $partialMetrics = ($observation->metricsCheckpoint['t3_metrics_partial'] ?? false) === true;
-        $tokens = $observation->tokens;
-        $durableTokens = $observation->metricsCheckpoint['t3_observed_total_processed_tokens'] ?? null;
-        if (is_int($durableTokens) && ($tokens === null || $tokens < $durableTokens)) {
-            $tokens = $durableTokens;
         }
         foreach ([
-            'tokens' => $tokens,
+            'tokens' => $observation->tokens,
             'input_tokens' => $observation->inputTokens,
             'cached_input_tokens' => $observation->cachedInputTokens,
             'output_tokens' => $observation->outputTokens,
@@ -50,12 +43,9 @@ final readonly class AgentThreadObserver
             'lines_added' => $observation->linesAdded,
             'lines_deleted' => $observation->linesDeleted,
         ] as $key => $value) {
-            if ($value !== null || ($partialMetrics && in_array($key, ['input_tokens', 'cached_input_tokens', 'output_tokens', 'model_calls', 'peak_context_tokens'], true))) {
+            if ($value !== null) {
                 $values[$key] = $value;
             }
-        }
-        if ($observation->metricsCheckpoint !== null) {
-            $values = [...$values, ...$observation->metricsCheckpoint];
         }
 
         return $this->persist($thread, $values);
@@ -68,17 +58,7 @@ final readonly class AgentThreadObserver
         $before = [$thread->state, $thread->error, $thread->observation_error];
         $query = AgentThread::query()
             ->whereKey($thread->id)
-            ->where('observation_version', $version)
-            ->where('t3_metrics_activity_version', $thread->t3_metrics_activity_version)
-            ->whereDoesntHave('sendLeases', static fn ($leases) => $leases->where('expires_at', '>', now()));
-        if (array_key_exists('t3_event_sequence', $values)) {
-            $sequence = $thread->t3_event_sequence;
-            if ($sequence === null) {
-                $query->whereNull('t3_event_sequence');
-            } else {
-                $query->where('t3_event_sequence', $sequence);
-            }
-        }
+            ->where('observation_version', $version);
         $updated = $query->update([
             ...$values, 'observation_version' => $version + 1,
         ]);

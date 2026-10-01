@@ -408,10 +408,10 @@ function routing_mode_node(string $name): Node
         'status' => LifecycleStatus::Active,
     ]);
     $node->processes()->create([
-        'name' => 't3-code',
+        'name' => 'pi-server',
         'runtime' => ProcessRuntime::Systemd,
         'working_directory' => '/home/orbit',
-        'runtime_config' => ['command' => ['/home/orbit/.local/bin/t3', 'serve', "--host=10.44.1.{$octet}", '--port=3773', '--no-browser']],
+        'runtime_config' => ['command' => ['/home/orbit/.local/bin/pi-server', 'serve', "--host=10.44.1.{$octet}", '--port=3774']],
         'restart_policy' => 'always',
         'keep_alive' => true,
         'desired_state' => DesiredProcessState::Running,
@@ -424,6 +424,7 @@ function routing_mode_node(string $name): Node
 function routing_mode_group(Project $project): Task
 {
     $group = Task::topLevel()->create([
+        'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
         'title' => 'Route the workspace',
         'brief' => 'Route the workspace from the Project setting.',

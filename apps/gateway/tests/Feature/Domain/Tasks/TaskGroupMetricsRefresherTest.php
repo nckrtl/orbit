@@ -11,12 +11,16 @@ use App\Domain\Tasks\TaskGroupMetricsRefresher;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
-use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
+use Tests\Support\AgentSnapshotReader;
+
+beforeEach(function (): void {
+    test_bind_snapshot_driver();
+});
 
 function metrics_running_group(): Task
 {
@@ -41,6 +45,7 @@ function metrics_running_group(): Task
         'status' => 'source_resolved',
     ]);
     $group = Task::topLevel()->create([
+        'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
         'title' => 'Live metrics',
         'brief' => 'Show session totals.',
@@ -63,10 +68,10 @@ function metrics_running_group(): Task
     return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
 }
 
-it('fills subtask session metrics from T3 and the group line diff from git', function (): void {
+it('fills subtask session metrics from agent observations and the group line diff from git', function (): void {
     $this->travelTo('2026-09-21 10:00:05');
     $group = metrics_running_group();
-    $threads = new class implements T3ThreadReader
+    $threads = new class implements AgentSnapshotReader
     {
         public function snapshot(Node $node, string $threadId): ?array
         {
@@ -140,7 +145,7 @@ it('does not observe a reserved reviewer row', function (): void {
         'model' => 'reviewer',
         'effort' => 'high',
     ]);
-    $threads = new class implements T3ThreadReader
+    $threads = new class implements AgentSnapshotReader
     {
         /** @var list<string> */
         public array $seen = [];
@@ -163,13 +168,13 @@ it('does not observe a reserved reviewer row', function (): void {
         ->and($threads->seen)->not->toContain(TaskAgentSpawner::PendingPrefix.'reserved-reviewer');
 });
 
-it('keeps stored thread metrics when T3 refuses the snapshot', function (): void {
+it('keeps stored thread metrics when the agent refuses the snapshot', function (): void {
     $group = metrics_running_group();
     $group->tokens = 90;
     $group->line_diff = 11;
     $group->save();
     $group->tasks->first()?->update(['tokens' => 90, 'line_diff' => 4]);
-    $threads = new class implements T3ThreadReader
+    $threads = new class implements AgentSnapshotReader
     {
         public function snapshot(Node $node, string $threadId): ?array
         {
@@ -206,7 +211,7 @@ it('refreshes an active group when it is shown', function (): void {
     $this->travelTo('2026-09-21 10:00:05');
     $group = metrics_running_group();
     app(TaskExtensionState::class)->enable();
-    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    app()->instance(AgentSnapshotReader::class, new class implements AgentSnapshotReader
     {
         public function snapshot(Node $node, string $threadId): ?array
         {
@@ -248,13 +253,13 @@ it('refreshes an active group when it is shown', function (): void {
         ->and($shown->tasks->first()?->line_diff)->toBe(2);
 });
 
-it('does not query T3 for a finished group', function (): void {
+it('does not query the agent for a finished group', function (): void {
     $group = metrics_running_group();
     $group->status = TaskGroupStatus::Completed;
     $group->tokens = 12;
     $group->line_diff = 3;
     $group->save();
-    $threads = new class implements T3ThreadReader
+    $threads = new class implements AgentSnapshotReader
     {
         public bool $queried = false;
 

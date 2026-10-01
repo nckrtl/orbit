@@ -69,10 +69,10 @@ function provisioner_node(string $name, string $ip): Node
     ]);
 
     $node->processes()->create([
-        'name' => 't3-code',
+        'name' => 'pi-server',
         'runtime' => ProcessRuntime::Systemd,
         'working_directory' => '/home/orbit',
-        'runtime_config' => ['command' => ['/home/orbit/.local/bin/t3', 'serve', "--host={$ip}", '--port=3773', '--no-browser']],
+        'runtime_config' => ['command' => ['/home/orbit/.local/bin/pi-server', 'serve', "--host={$ip}", '--port=3774']],
         'restart_policy' => 'always',
         'keep_alive' => true,
         'desired_state' => DesiredProcessState::Running,
@@ -85,6 +85,7 @@ function provisioner_node(string $name, string $ip): Node
 function provisioner_group(Project $project, string $title = 'Workspace'): Task
 {
     $group = Task::topLevel()->create([
+        'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
         'title' => $title,
         'brief' => "{$title} brief",
@@ -302,11 +303,11 @@ it('skips an excluded app-dev Node before choosing the least loaded node', funct
     expect($instance?->node_id)->toBe($allowed->id);
 });
 
-it('skips a non-T3 app-dev Node even when it has the lower id', function (): void {
+it('skips a non-Pi app-dev Node even when it has the lower id', function (): void {
     $project = provisioner_app('placement');
-    $incapable = provisioner_node('no-t3', '10.44.0.110');
+    $incapable = provisioner_node('no-pi', '10.44.0.110');
     $incapable->processes()->delete();
-    $capable = provisioner_node('with-t3', '10.44.0.111');
+    $capable = provisioner_node('with-pi', '10.44.0.111');
     $group = provisioner_group($project);
     bind_task_workspace_fakes();
 
@@ -318,9 +319,9 @@ it('skips a non-T3 app-dev Node even when it has the lower id', function (): voi
 
 it('reports a capacity wait without creating a workspace when every capable Node is full', function (bool $otherNodeHasRoom): void {
     $project = provisioner_app('full');
-    $incapable = provisioner_node('no-t3', '10.44.0.110');
+    $incapable = provisioner_node('no-pi', '10.44.0.110');
     $incapable->processes()->delete();
-    $capable = provisioner_node('full-t3', '10.44.0.111');
+    $capable = provisioner_node('full-pi', '10.44.0.111');
     foreach ($otherNodeHasRoom ? [$capable] : [$capable, $incapable] as $node) {
         $occupied = Instance::query()->create([
             'project_id' => $project->id,
@@ -347,42 +348,31 @@ it('reports a capacity wait without creating a workspace when every capable Node
     'the whole fleet is full' => [false],
 ]);
 
-it('places a group only on a Node that allows both its implementer and reviewer drivers', function (): void {
-    $project = provisioner_app('mixed');
+it('places Pi roles on a Node with Pi rather than one with only T3', function (): void {
+    $project = provisioner_app('pi-placement');
     $t3Only = provisioner_node('t3-only', '10.44.0.113');
-    $both = provisioner_node('t3-and-pi', '10.44.0.114');
-    $both->processes()->create([
-        'name' => 'pi-server',
-        'runtime' => ProcessRuntime::Systemd,
-        'working_directory' => '/home/orbit',
-        'runtime_config' => ['command' => ['/home/orbit/.local/bin/pi-server']],
-        'restart_policy' => 'always',
-        'keep_alive' => true,
-        'desired_state' => DesiredProcessState::Running,
-        'status' => LifecycleStatus::Active,
-    ]);
+    $t3Only->processes()->update(['name' => 't3-code']);
+    $pi = provisioner_node('pi-only', '10.44.0.114');
     $group = provisioner_group($project);
-    $group->update(['implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 't3']);
     bind_task_workspace_fakes();
 
-    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group->fresh() ?? $group, false));
+    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
 
-    expect($instance?->node_id)->toBe($both->id);
+    expect($instance?->node_id)->toBe($pi->id);
     $this->assertDatabaseMissing('instances', ['node_id' => $t3Only->id]);
 });
 
 it('returns null when no Node allows the implementer driver', function (): void {
     $project = provisioner_app('no-pi');
-    provisioner_node('t3-only', '10.44.0.115');
+    provisioner_node('t3-only', '10.44.0.115')->processes()->update(['name' => 't3-code']);
     $group = provisioner_group($project);
-    $group->update(['implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 't3']);
     $fakes = bind_task_workspace_fakes();
 
     expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group->fresh() ?? $group, false)))->toBeNull()
         ->and($fakes->source->calls)->toBe([]);
 });
 
-it('returns null when the app-dev Node has no usable T3 process', function (string $reason): void {
+it('returns null when the app-dev Node has no usable Pi process', function (string $reason): void {
     $project = provisioner_app('unavailable');
     $node = provisioner_node('unavailable', '10.44.0.112');
     match ($reason) {
