@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\DatabaseConnections\DatabaseDriver;
+use App\Domain\Instances\DatabaseClone\DatabaseCloneStep;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -15,13 +16,19 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string $slug
  * @property DatabaseDriver $driver
  * @property int|null $node_id
+ * @property int|null $database_server_id
+ * @property int|null $owner_instance_id
+ * @property DatabaseCloneStep|null $clone_step
  * @property string|null $host
  * @property int|null $port
  * @property string|null $database
+ * @property string|null $test_database
  * @property string|null $path
  * @property string|null $username
  * @property string|null $password
  * @property-read Node|null $node
+ * @property-read DatabaseServer|null $server
+ * @property-read Instance|null $ownerInstance
  * @property-read Collection<int, DatabaseConnectionTarget> $targets
  * @property-read Collection<int, DatabaseUser> $users
  */
@@ -33,9 +40,13 @@ final class DatabaseConnection extends Model
         'slug',
         'driver',
         'node_id',
+        'database_server_id',
+        'owner_instance_id',
+        'clone_step',
         'host',
         'port',
         'database',
+        'test_database',
         'path',
         'username',
         'password',
@@ -64,6 +75,18 @@ final class DatabaseConnection extends Model
         return $this->belongsTo(Node::class);
     }
 
+    /** @return BelongsTo<DatabaseServer, $this> */
+    public function server(): BelongsTo
+    {
+        return $this->belongsTo(DatabaseServer::class, 'database_server_id');
+    }
+
+    /** @return BelongsTo<Instance, $this> */
+    public function ownerInstance(): BelongsTo
+    {
+        return $this->belongsTo(Instance::class, 'owner_instance_id');
+    }
+
     /** @return HasMany<DatabaseConnectionTarget, $this> */
     public function targets(): HasMany
     {
@@ -81,7 +104,10 @@ final class DatabaseConnection extends Model
     {
         return [
             'driver' => DatabaseDriver::class,
+            'clone_step' => DatabaseCloneStep::class,
             'port' => 'integer',
+            'database_server_id' => 'integer',
+            'owner_instance_id' => 'integer',
             'password' => 'encrypted',
         ];
     }

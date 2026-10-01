@@ -617,7 +617,8 @@ SUMMARIES = {
     'instance:database:add': 'Attach a Database connection', 'instance:database:remove': 'Detach a Database connection',
     'env:import': 'Import the environment file', 'env:sync': 'Synchronize the environment file', 'env:update': 'Update an environment value',
     'route:list': 'List Routes', 'route:show': 'Show a Route', 'route:create': 'Create a Route', 'route:update': 'Update a Route', 'route:destroy': 'Remove a Route', 'route:target:set': 'Set the Route target', 'route:target:unset': 'Clear the Route target',
-    'database:list': 'List Database connections', 'database:show': 'Show a Database connection', 'database:create': 'Create a Database connection', 'database:user:create': 'Create a managed MySQL user', 'database:update': 'Update a Database connection', 'database:destroy': 'Remove a Database connection',
+    'database:list': 'List Database connections', 'database:show': 'Show a Database connection', 'database:create': 'Create a Database connection', 'database:user:create': 'Add a database user', 'database:update': 'Update a Database connection', 'database:destroy': 'Remove a Database connection',
+    'database:server:list': 'List Database servers', 'database:server:show': 'Show a Database server', 'database:server:create': 'Create a Database server', 'database:server:destroy': 'Remove a Database server',
     'database:query': 'Query a Database connection', 'database:tables': 'List Database connection tables', 'database:schema': 'Show a Database connection schema', 'database:describe': 'Describe a Database table',
     'process:list': 'List Processes', 'process:create': 'Create a Process', 'process:start': 'Start a Process', 'process:stop': 'Stop a Process', 'process:restart': 'Restart a Process', 'process:logs': 'Read Process logs', 'instance:logs': 'Read Instance logs', 'instance:analytics:show': 'Show Instance analytics', 'instance:analytics:enable': 'Publish Instance tracking hosts', 'instance:analytics:disable': 'Remove Instance tracking hosts', 'instance:analytics:stats': 'Read Instance analytics stats', 'instance:queue': 'Read the Instance queue', 'process:destroy': 'Remove a Process',
     'schedule:list': 'List Schedules', 'schedule:show': 'Show a Schedule', 'schedule:create': 'Create a Schedule', 'schedule:run': 'Run a Schedule', 'schedule:logs': 'Read Schedule logs', 'schedule:enable': 'Enable a Schedule', 'schedule:destroy': 'Remove a Schedule', 'schedule:complete': 'Complete a Schedule run',
@@ -674,7 +675,11 @@ DESCRIPTIONS = {
     'analytics:credentials': 'Returns whether a Plausible Stats API key is stored. The key itself is never returned.',
     'analytics:credentials:set': 'Stores a Plausible Stats API key as a protected Gateway setting. The key is never returned.',
     'analytics:credentials:unset': 'Clears the stored Plausible Stats API key.',
-    'database:user:create': 'Creates a MySQL user and database through a Node-targeted Docker MySQL Process, then registers or refreshes the connection. The host is the Node WireGuard address and the port is the published host port for container port 3306. A slug that already names a mysql connection is refreshed. A pgsql or sqlite slug returns `database.slug_conflict`.',
+    'database:user:create': 'Adds a user to a database on a Database server, or sets the password and privileges of an existing one. `read_only` grants SELECT; otherwise the user gets all privileges on the database. A connection without a server returns `database.server_required`. The username of a connection on the server returns `database.name_conflict`.',
+    'database:create': 'Registers an existing database, or with `server` creates a MySQL database and user on that Database server. `server` excludes every connection field; `instance_id` makes that Instance the owner, creates the test database, and attaches the connection under prefix DB. The response never contains a password.',
+    'database:server:create': 'Runs a MySQL server as a Docker Node Process. The Gateway generates the root password, passes it to the container for the first start only, and then keeps it only encrypted. A retry of the same request continues from the first step that did not finish; another Node, tag, or port for an existing slug returns `database.server_slug_conflict`. No response contains the password.',
+    'database:server:destroy': 'Removes the Process and the record of a Database server that no connection uses. The data volume stays on the Node. A server that a connection points to returns `database.server_in_use`.',
+    'database:server:show': 'Shows one Database server with the connections of the databases on it.',
     'tasks:status': 'Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, and reason. The list is present while the extension is off.',
     'tasks:create': 'Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. `plan: true` on a `backlog` group provisions its Instance on an app-dev Node with access to itself and starts a T3 planner thread that becomes the reviewer (`tasks.plan_requires_backlog`, `tasks.planner_driver_unavailable`, `tasks.planner_node_unavailable`, `tasks.planner_unavailable`). Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `extension.disabled` while the extension is off.',
     'tasks:update': 'Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim; for a planning group Orbit first commits the workspace as `Plan: {title}` (`tasks.commit_failed`). Served by the Node that holds the group\'s Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.',
@@ -758,6 +763,7 @@ PARAM_SCHEMAS = {
     'step': ({'type': 'string', 'pattern': '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'}, 'Deploy step name.'),
     'key': ({'type': 'string', 'pattern': '^[A-Za-z_][A-Za-z0-9_]{0,254}$'}, 'Environment key.'),
     'database_connection': ({'type': 'string', 'pattern': '^[a-z0-9]+(?:-[a-z0-9]+)*$'}, 'Database connection slug.'),
+    'database_server': ({'type': 'string', 'pattern': '^[a-z0-9]+(?:-[a-z0-9]+)*$'}, 'Database server slug.'),
     'table': ({'type': 'string', 'pattern': '^[A-Za-z_][A-Za-z0-9_]*$', 'maxLength': 64}, 'Table name.'),
     'process_definition': ({'type': 'string'}, 'Process definition name, unique within the Project.'),
     'schedule_definition': ({'type': 'string'}, 'Schedule definition name, unique within the Project.'),
@@ -765,7 +771,7 @@ PARAM_SCHEMAS = {
 }
 TASK_DEFINITION_NAME = ({'type': 'string', 'pattern': '^[a-z0-9]+(?:-[a-z0-9]+)*$', 'maxLength': 63}, 'Task definition name, unique within the Project.')
 ENV_INSTANCE = ({'type': 'string'}, 'Positive Instance ID or the exact Route domain of the Instance.')
-EXAMPLE_PATH = {'node': 7, 'serving_node': 7, 'consumer_node': 3, 'cluster': 3, 'project': 4, 'instance': 12, 'candidate': 12, 'route': 9, 'activity': 481, 'tool': 41, 'workspace': 9, 'process': 41, 'session': 2, 'group': 1, 'extension': 'tasks', 'schedule': '9a1f0c2e-6b7d-4e5f-8a9b-0c1d2e3f4a5b', 'step': 'migrate', 'key': 'MAIL_MAILER', 'role': 'database', 'database_connection': 'app', 'table': 'users', 'process_definition': 'queue', 'schedule_definition': 'hourly-report', 'firewall_rule': 'office-postgres'}
+EXAMPLE_PATH = {'node': 7, 'serving_node': 7, 'consumer_node': 3, 'cluster': 3, 'project': 4, 'instance': 12, 'candidate': 12, 'route': 9, 'activity': 481, 'tool': 41, 'workspace': 9, 'process': 41, 'session': 2, 'group': 1, 'extension': 'tasks', 'schedule': '9a1f0c2e-6b7d-4e5f-8a9b-0c1d2e3f4a5b', 'step': 'migrate', 'key': 'MAIL_MAILER', 'role': 'database', 'database_connection': 'app', 'database_server': 'beast-mysql', 'table': 'users', 'process_definition': 'queue', 'schedule_definition': 'hourly-report', 'firewall_rule': 'office-postgres'}
 
 
 def openapi_path(route):
@@ -1181,7 +1187,7 @@ EXAMPLE_BY_NAME = {
     'publication': 'private', 'driver': 'mysql', 'host': 'db.example.test', 'port': 3306, 'database': 'app', 'username': 'app', 'password': 'secret', 'path': '/var/lib/app/database.sqlite', 'sql': 'SELECT id, email FROM users', 'table': 'users', 'prefix': 'DB',
     'runtime': 'systemd', 'command': ['/usr/bin/php', 'artisan', 'queue:work'], 'restart_policy': 'on-failure', 'keep_alive': True, 'start': True, 'image': 'postgres:18', 'working_directory': '/app',
     'calendar': 'daily', 'timeout_seconds': 3600, 'target_type': 'node', 'families': ['node', 'instance'], 'limit': 25, 'lines': 100,
-    'manager': 'vp', 'package': '@openai/codex', 'version_constraint': '^0.150',
+    'manager': 'vp', 'package': '@openai/codex', 'version_constraint': '^0.150', 'tag': '8.4',
     'php_version': '8.5', 'source_path': '/srv/orbit/apps/acme/main', 'environments': ['production'], 'phase': 'before_activation', 'release': '20260914T101500Z', 'value': 'log', 'status': 'success', 'state': 'active',
     'force': True, 'offline': False, 'replace': True, 'converge': False, 'purge_data': False, 'include_worktrees': False,
     'source': '10.6.0.0/24', 'protocol': 'tcp', 'instance_id': 4, 'sqlite_source_path': '/home/acme/database/database.sqlite', 'apps': {'path': '/srv/orbit/apps'}, 'settings': {'apps': {'path': '/srv/orbit/apps'}},
@@ -1448,6 +1454,10 @@ def data_schema_for(route):
             'access': ref('NodeAccessData'),
             'excluded_projects': {'type': 'array', 'items': ref('DevelopmentNodeExclusionData')},
         }}]}, False
+    if action == 'DatabaseServersController@show':
+        return {'allOf': [ref('DatabaseServerData'), {'type': 'object', 'properties': {
+            'databases': {'type': 'array', 'items': ref('DatabaseConnectionData')},
+        }}]}, False
     if action == 'ProjectsController@show':
         return {'allOf': [ref('ProjectData'), {'type': 'object', 'properties': {
             'excluded_nodes': {'type': 'array', 'items': ref('DevelopmentNodeExclusionData')},
@@ -1527,6 +1537,15 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
                 sch['properties']['publication']['enum'] = ['private']
                 sch['oneOf'] = [{'required': ['upstream']}, {'required': ['process_id']}]
                 body_schema = {'oneOf': [app_schema, sch]}
+                body_required = True
+            if route['name'] == 'database:create':
+                # StoreDatabaseConnectionRequest picks one of two rule sets: register an existing
+                # database, or create one on a Database server with `server`.
+                field_rules = (GW / 'app/Http/Requests/DatabaseConnections/DatabaseConnectionFieldRules.php').read_text()
+                register_schema, _ = rules_to_schema(block(field_rules, field_rules.find('function store(')), route['name'])
+                server_rules = block(field_rules, field_rules.find('function onServer(')).replace('$rules = [', 'return [', 1)
+                server_schema, _ = rules_to_schema(server_rules, route['name'])
+                body_schema = {'oneOf': [register_schema, server_schema]}
                 body_required = True
     elif route['method'] == 'GET' and sdkreq and sdkreq.get('query'):
         for k in re.findall(r"'([a-z_]+)'\s*=>", sdkreq['query']):

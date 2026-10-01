@@ -316,11 +316,11 @@ When the `vpn` and `gateway` roles share a machine, or no `gateway` role is acti
 
 `orbit node:remove <node> [--offline] [--force]` removes the Node record and its Gateway configuration. It does not clean the machine. [macOS removal](#removal) also skips the Linux agent and firewall steps and reports the retained user, package managers, and host tunnel.
 
-The Gateway refuses the removal until the Node is empty. Remove its Instances, Routes, Schedules, roles, Processes, and Orbit firewall rules first. Orbit never removes the caller's Node, the `gateway` Node, or the `vpn` Node.
+The Gateway refuses the removal until the Node is empty. Remove its Instances, Routes, Schedules, roles, Processes, [Database servers](/reference/database-servers#remove-a-server), and Orbit firewall rules first. Orbit never removes the caller's Node, the `gateway` Node, or the `vpn` Node.
 
 | Code | Condition |
 | --- | --- |
-| `node.has_instances`, `node.has_routes`, `schedule.target_in_use`, `node.has_roles`, `node.has_processes`, `node.has_firewall_rules` | The Node still owns that state. |
+| `node.has_instances`, `node.has_routes`, `schedule.target_in_use`, `node.has_roles`, `node.has_processes`, `node.has_firewall_rules`, `node.has_database_servers` | The Node still owns that state. |
 | `route.reconciliation_required` | An active Route depends on the Node. |
 | `node.self_removal_forbidden`, `node.gateway_removal_forbidden`, `node.vpn_removal_forbidden` | The Node is protected. |
 | `node.provisioning_busy` | Another lifecycle operation holds the Node name. |
