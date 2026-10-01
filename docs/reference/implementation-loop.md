@@ -70,6 +70,8 @@ GitHub CI runs on every pull request, on every push to `main`, and on manual dis
 | Rust agent | `cargo fmt`, `cargo clippy`, tests, and static builds for x86_64 and aarch64 |
 | Required checks | Passes only when every other job passes |
 
+On a pull request, each Composer project job runs the TIA-selected tests and the architecture tests. On a push to `main` or a manual dispatch, it runs the full suite once with `--tia --fresh`, which also records a new TIA graph, and saves that graph to the cache.
+
 On `main`, GitHub enforces three rules. The branch cannot be deleted, and it accepts no force pushes, with no bypass. A change to `main` also needs a passing `Required checks` status from GitHub Actions. The branch does not have to be up to date first, so the merge rules in [Merge and cleanup](#merge-and-cleanup) still check the merged result. GitHub requires no review.
 
 Repository admins bypass the status rule automatically, so the maintainer can push straight to `main`. The bypass also applies to `gh pr merge` from an admin account, with or without `--admin`. An admin who merges must first wait until `Required checks` passes on the pull request's head commit. The [contributor guide](/contributor-guide#3-implement-and-verify) describes how pull requests and pushes select tests.
