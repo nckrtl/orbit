@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Instances;
 
 use App\Actions\Annotations\CancelInstanceAnnotationTasksAction;
+use App\Actions\DatabaseConnections\DropOwnedDatabasesAction;
 use App\Actions\Processes\CascadeInstanceProcessesAction;
 use App\Actions\Schedules\CascadeInstanceSchedulesAction;
 use App\Data\Instances\InstanceData;
@@ -67,6 +68,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
         private ?CascadeInstanceSchedulesAction $schedules = null,
         private ?RecordEventBroadcaster $broadcaster = null,
         private ?ProjectLifecycleRunner $lifecycle = null,
+        private ?DropOwnedDatabasesAction $databases = null,
     ) {}
 
     public function execute(Instance $instance, bool $force, bool $runTeardown = true, bool $allowCascade = true): InstanceRemoval
@@ -895,6 +897,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
     {
         ($this->schedules ?? app(CascadeInstanceSchedulesAction::class))->execute($member->instance_id);
         $this->processes->execute($member->instance_id);
+        ($this->databases ?? app(DropOwnedDatabasesAction::class))->execute($member->instance_id);
 
         // A checkout that never became active, such as a task workspace, has no pool, site, or certificate to withdraw.
         if ($member->runtime_published) {

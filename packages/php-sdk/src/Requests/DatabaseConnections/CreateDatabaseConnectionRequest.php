@@ -21,7 +21,7 @@ final class CreateDatabaseConnectionRequest extends GatewayRequest implements Ha
 
     public function __construct(
         private readonly string $slug,
-        private readonly string $driver,
+        private readonly ?string $driver = null,
         private readonly ?int $nodeId = null,
         private readonly ?string $host = null,
         private readonly ?int $port = null,
@@ -31,6 +31,8 @@ final class CreateDatabaseConnectionRequest extends GatewayRequest implements Ha
         #[SensitiveParameter]
         private readonly ?string $password = null,
         private readonly bool $hasPassword = false,
+        private readonly ?string $server = null,
+        private readonly ?int $instanceId = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -46,10 +48,21 @@ final class CreateDatabaseConnectionRequest extends GatewayRequest implements Ha
     /** @return array<string, int|string|null> */
     protected function defaultBody(): array
     {
-        $body = [
-            'slug' => $this->slug,
-            'driver' => $this->driver,
-        ];
+        $body = ['slug' => $this->slug];
+
+        if ($this->server !== null) {
+            $body['server'] = $this->server;
+
+            if ($this->instanceId !== null) {
+                $body['instance_id'] = $this->instanceId;
+            }
+
+            return $body;
+        }
+
+        if ($this->driver !== null) {
+            $body['driver'] = $this->driver;
+        }
 
         if ($this->nodeId !== null) {
             $body['node_id'] = $this->nodeId;

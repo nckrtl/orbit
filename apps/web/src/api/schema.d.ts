@@ -343,7 +343,7 @@ export interface paths {
         put?: never;
         /**
          * Create a Database connection
-         * @description Create a Database connection through the Gateway.
+         * @description Registers an existing database, or with `server` creates a MySQL database and user on that Database server. `server` excludes every connection field; `instance_id` makes that Instance the owner, creates the test database, and attaches the connection under prefix DB. The response never contains a password.
          */
         post: operations["database-create"];
         delete?: never;
@@ -473,8 +473,60 @@ export interface paths {
          */
         get: operations["database-user-list"];
         put?: never;
-        post?: never;
+        /**
+         * Add a database user
+         * @description Adds a user to a database on a Database server, or sets the password and privileges of an existing one. `read_only` grants SELECT; otherwise the user gets all privileges on the database. A connection without a server returns `database.server_required`. The username of a connection on the server returns `database.name_conflict`.
+         */
+        post: operations["database-user-create"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/database-servers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Database servers
+         * @description List the Database servers.
+         */
+        get: operations["database-server-list"];
+        put?: never;
+        /**
+         * Create a Database server
+         * @description Runs a MySQL server as a Docker Node Process. The Gateway generates the root password, passes it to the container for the first start only, and then keeps it only encrypted. A retry of the same request continues from the first step that did not finish; another Node, tag, or port for an existing slug returns `database.server_slug_conflict`. No response contains the password.
+         */
+        post: operations["database-server-create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/database-servers/{database_server}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show a Database server
+         * @description Shows one Database server with the connections of the databases on it.
+         */
+        get: operations["database-server-show"];
+        put?: never;
+        post?: never;
+        /**
+         * Remove a Database server
+         * @description Removes the Process and the record of a Database server that no connection uses. The data volume stays on the Node. A server that a connection points to returns `database.server_in_use`.
+         */
+        delete: operations["database-server-destroy"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1872,26 +1924,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/processes/{process}/database-users": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Create a managed MySQL user
-         * @description Creates a MySQL user and database through a Node-targeted Docker MySQL Process, then registers or refreshes the connection. The host is the Node WireGuard address and the port is the published host port for container port 3306. A slug that already names a mysql connection is refreshed. A pgsql or sqlite slug returns `database.slug_conflict`.
-         */
-        post: operations["database-user-create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/processes/{process}/log-streams": {
         parameters: {
             query?: never;
@@ -3179,6 +3211,9 @@ export interface components {
             path?: string | null;
             username?: string | null;
             has_password?: boolean;
+            server?: string | null;
+            owner_instance_id?: number | null;
+            test_database?: string | null;
         };
         DatabaseUser: {
             id?: number;
@@ -3187,6 +3222,16 @@ export interface components {
             privileges?: string;
             created_by?: string | null;
             created_at?: string;
+        };
+        DatabaseServer: {
+            id?: number;
+            slug?: string;
+            node_id?: number;
+            process_id?: number | null;
+            tag?: string;
+            port?: number;
+            status?: string;
+            databases_count?: number;
         };
         InstanceDeployment: {
             id?: number;
@@ -5010,9 +5055,24 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    slug: string;
+                    /** @enum {string} */
+                    driver: "mysql" | "pgsql" | "sqlite" | "redis";
+                    node_id?: number | null;
+                    host?: string | null;
+                    port?: number | null;
+                    database?: string | null;
+                    path?: string | null;
+                    username?: string | null;
+                    password?: string | null;
+                } | {
+                    slug: string;
+                    server: string;
+                    instance_id?: number;
+                };
             };
         };
         responses: {
@@ -5504,6 +5564,296 @@ export interface operations {
             };
             /** @description No record matches the path parameters. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "database-user-create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Database connection slug. */
+                database_connection: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Username, a 1-32 character identifier */
+                    username: string;
+                    /** @description Password for the new user */
+                    password: string;
+                    /** @description Grant only SELECT on the database */
+                    read_only?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded; an exact retry returned the existing record. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DatabaseUser"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DatabaseUser"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "database-server-list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DatabaseServer"][];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "database-server-create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Database server slug */
+                    slug: string;
+                    node_id: number;
+                    /** @description MySQL image tag. Defaults to 8.4 */
+                    tag?: string;
+                    /** @description Port to publish on the Node WireGuard address. Defaults to 3306 */
+                    port?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded; an exact retry returned the existing record. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DatabaseServer"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DatabaseServer"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "database-server-show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Database server slug. */
+                database_server: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DatabaseServer"] & {
+                            databases?: components["schemas"]["DatabaseConnection"][];
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "database-server-destroy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Database server slug. */
+                database_server: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DatabaseServer"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10760,93 +11110,6 @@ export interface operations {
             };
             /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
             409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "database-user-create": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Numeric Process ID. */
-                process: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @description Database connection slug */
-                    slug: string;
-                    /** @description Database name to create */
-                    database: string;
-                    /** @description Username to create */
-                    username: string;
-                    /** @description Password for the created user */
-                    password: string;
-                };
-            };
-        };
-        responses: {
-            /** @description The request succeeded; an exact retry returned the existing record. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: components["schemas"]["DatabaseConnection"];
-                        meta: components["schemas"]["Meta"];
-                    };
-                };
-            };
-            /** @description Created. */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: components["schemas"]["DatabaseConnection"];
-                        meta: components["schemas"]["Meta"];
-                    };
-                };
-            };
-            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No record matches the path parameters. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
-            422: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -646,50 +646,73 @@ it('renders local validation failures through the exact json boundary', function
         'node.host_key_fingerprint_invalid',
         'Host key fingerprint must use SSH SHA256 format: SHA256 followed by 43 base64 characters.',
     ],
-    'database user process' => [
-        'database:user:create',
-        [
-            'slug' => 'app',
-            '--process' => 'validation-secret',
-            '--database' => 'app',
-            '--username' => 'app',
-            '--password' => 'secret',
-        ],
-        'database.process_invalid',
-        'Process ID must be a positive integer.',
-    ],
     'database user password' => [
         'database:user:create',
         [
             'slug' => 'app',
-            '--process' => '12',
-            '--database' => 'app',
             '--username' => 'app',
         ],
         'database.password_required',
-        'A managed MySQL user requires --password.',
-    ],
-    'database user database' => [
-        'database:user:create',
-        [
-            'slug' => 'app',
-            '--process' => '12',
-            '--username' => 'app',
-            '--password' => 'secret',
-        ],
-        'database.database_required',
-        'A managed MySQL user requires --database.',
+        'A database user requires --password.',
     ],
     'database user username' => [
         'database:user:create',
         [
             'slug' => 'app',
-            '--process' => '12',
-            '--database' => 'app',
             '--password' => 'secret',
         ],
         'database.username_required',
-        'A managed MySQL user requires --username.',
+        'A database user requires --username.',
+    ],
+    'database user username format' => [
+        'database:user:create',
+        [
+            'slug' => 'app',
+            '--username' => 'validation-secret',
+            '--password' => 'secret',
+        ],
+        'database.username_invalid',
+        'Username must be a 1-32 character identifier of letters, digits, and underscores.',
+    ],
+    'database server options' => [
+        'database:create',
+        [
+            'slug' => 'app',
+            '--server' => 'beast-mysql',
+            '--host' => 'validation-secret',
+        ],
+        'database.server_options_conflict',
+        'The --server option excludes --host. The Gateway derives the connection from the server.',
+    ],
+    'database server instance' => [
+        'database:create',
+        [
+            'slug' => 'app',
+            '--server' => 'beast-mysql',
+            '--instance' => 'validation-secret',
+        ],
+        'database.instance_invalid',
+        'Instance ID must be a positive integer.',
+    ],
+    'database server port' => [
+        'database:server:create',
+        [
+            'slug' => 'beast-mysql',
+            '--node' => '7',
+            '--port' => 'validation-secret',
+        ],
+        'database.port_invalid',
+        'Port must be an integer from 1 through 65535.',
+    ],
+    'database server tag' => [
+        'database:server:create',
+        [
+            'slug' => 'beast-mysql',
+            '--node' => '7',
+            '--tag' => 'validation secret',
+        ],
+        'database.server_tag_invalid',
+        'Tag must be a MySQL image tag such as 8.4.',
     ],
     'process target selection' => [
         'process:create',

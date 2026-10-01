@@ -73,7 +73,7 @@ The Gateway exposes these Process endpoints.
 | `POST /api/v1/processes` | Creates one Process. |
 | `POST /api/v1/processes/{process}/start`, `/stop`, `/restart` | Changes the runtime and stores the desired state: `running` after start and restart, `stopped` after stop. |
 | `GET /api/v1/processes/{process}/logs?lines=N` | A tail of 1 through 1,000 lines over SSH. See [Live logs](/reference/live-logs) to follow new lines. |
-| `DELETE /api/v1/processes/{process}` | Stops the Process, removes its unit or container, and deletes the record. |
+| `DELETE /api/v1/processes/{process}` | Stops the Process, removes its unit or container, and deletes the record. The Process of a [Database server](/reference/database-servers) is refused with `process.required_by_database_server` (409); remove the server instead. |
 
 Creating or starting an Instance Process needs an active Instance on an active Node. Creating or starting a Node Process needs an active managed Node. Otherwise the Gateway refuses with `process.target_inactive` before it changes anything. Removal can use the recorded placement of a failed or removing Instance while its Node is active.
 
