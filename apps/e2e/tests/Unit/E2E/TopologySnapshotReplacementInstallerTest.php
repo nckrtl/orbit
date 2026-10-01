@@ -569,7 +569,7 @@ final class ReplacementInstallerIncusFake
         ) {
             return Process::result(json_encode([
                 'shape' => 'instances',
-                'app_id' => 1,
+                'project_id' => 1,
                 'node_id' => 2,
                 'name' => 'e2e-dev',
                 'checkout_path' => '/srv/orbit/apps/e2e-dev',

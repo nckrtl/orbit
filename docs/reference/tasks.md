@@ -1,15 +1,15 @@
 ---
 title: "Tasks"
-description: "How the optional Gateway Tasks extension runs tasks: the model, the lifecycle, typed deliverables, the task check, agent threads, review, the pull request, fixups, metrics, and cleanup."
+description: "How the optional Gateway Tasks extension runs tasks and stores each Project's task definitions. It covers the model, definition fields, validation, the lifecycle, typed deliverables, the task check, agent threads, review, the pull request, fixups, metrics, cleanup, and the outer loop that files recurring problems."
 covers:
   - "apps/gateway/app/{Domain,Infrastructure}/Tasks/**"
   - "apps/gateway/app/Actions/Tasks/**"
   - "apps/gateway/app/Http/Requests/Tasks/**"
-  - "apps/gateway/app/Http/Controllers/Api/{TasksController,TaskGroupsController,AgentThreadsController}.php"
-  - "apps/gateway/app/Console/Commands/{TickTaskSessionsCommand,CollectT3MetricsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand}.php"
-  - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,AgentThread,JevDecision}.php"
+  - "apps/gateway/app/Http/Controllers/Api/{TasksController,TaskGroupsController,TaskDefinitionsController,AgentThreadsController}.php"
+  - "apps/gateway/app/Console/Commands/{TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand}.php"
+  - "apps/gateway/app/Models/{Task,TaskDefinition,TaskComment,TaskCheck,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "apps/gateway/resources/tasks/**"
-  - "apps/gateway/database/migrations/*_{convert_test_deliverables_to_commands,add_continuation_source_to_tasks}.php"
+  - "apps/gateway/database/migrations/*_{convert_test_deliverables_to_commands,add_continuation_source_to_tasks,create_task_definitions_table,create_problem_fingerprints}.php"
 ---
 
 # Tasks
@@ -22,7 +22,7 @@ Agents use the Tasks tools of the [MCP server](/reference/mcp). The [`tasks` CLI
 
 ## Extension switch and status
 
-Enable and disable the extension with `orbit extension:enable tasks` and `orbit extension:disable tasks`. Both need Gateway access. While the switch is off, the `tasks` commands, MCP tools, and web pages are hidden, except `tasks:status` and the `tasks-status` tool. Every other task operation refuses with HTTP 409 `extension.disabled` and changes nothing. Stored tasks and subtasks stay. [`extension`](/cli/extension) describes the switch.
+Enable and disable the extension with `orbit extension:enable tasks` and `orbit extension:disable tasks`. Both need Gateway access. While the switch is off, the `tasks` commands, MCP tools, and web pages are hidden, except `tasks:status` and the `tasks-status` tool. Every other task operation, including the [definition operations](#definition-operations), refuses with HTTP 409 `extension.disabled` and changes nothing. Stored tasks, subtasks, and task definitions stay. [`extension`](/cli/extension) describes the switch.
 
 `tasks:status` is an assistance and status view, not a switch. Its route returns `enabled` and `assistance`. `assistance` lists every task whose `assistance_requested` is true, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, and `assistance_reason`. A task that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its task unless the task itself is asking. The view remains available while tasks is disabled.
 
@@ -72,6 +72,113 @@ A task moves through these statuses from preparation to its end.
 | `cancelled` | An operator cancelled the task. |
 
 Subtask statuses are `todo`, `running`, `reviewing`, `completed`, `failed`, and `cancelled`. At most one subtask in a task runs at a time. The next `todo` subtask starts only after every earlier subtask has ended.
+
+## Task definitions
+
+A task definition belongs to one Project and is a Gateway record. It stores ordered subtask definitions, the routes on their outcomes, and the parameters it declares. The Gateway knows the kinds and the validation rules. It does not hard-code any Project's definitions. [ADR 0182](/decisions/0182-start-tasks-from-project-task-definitions#task-definitions) is the contract.
+
+Creating, replacing, or deleting a definition does not start a task. These operations do not create a task, a workspace, or a pull request. The repository `orbit-tasks` skill remains the guidance an agent reads while it works. A definition is the Project's stored plan, not a copy of that skill.
+
+The [web app](/reference/web-app#task-definitions) lists definitions on the Tasks page and on each Project page, and it draws one definition from the live API.
+
+### Fields
+
+A definition has these fields.
+
+| Field | Contract |
+| --- | --- |
+| `name` | Unique in the Project. 1 to 63 lowercase ASCII letters or digits, with hyphens only between them |
+| `title`, `brief` | The title and brief of a task from this definition. Either can include a declared parameter as `{parameter}` |
+| `parameters` | Required ordered list of parameters. At most 50. An empty list is valid |
+| `status` | `backlog` or `todo`: the status a task from this definition begins in |
+| `schedule` | Optional. A five-field cron expression in UTC, and at most 100 parameter values for that schedule |
+| `phases` | Optional ordered phases. At most 50. A phase groups subtasks for the drawing only |
+| `subtasks` | Ordered subtask definitions. At least one and at most 100 |
+
+A phase is `{key, title, brief, repeat}`. A stored schedule does not create a task.
+
+### Parameters
+
+Each parameter is `{name, type, required, default}`. `type` is `text`, `app`, or `subtasks`. The field is required, and an empty list is valid. Omitting it returns HTTP 422 `validation.failed`.
+
+A `{parameter}` in the title or brief names a parameter in `parameters`. Parameter names are unique, and a duplicate name is refused. The definition declares at most one parameter whose type is `subtasks`.
+
+A schedule value names a parameter the definition declares. The schedule includes a value for each required parameter.
+
+### Subtask definitions
+
+Each subtask definition has `key`, `title`, and `kind`. It may also have `brief`, `phase`, `deliverables`, and `routes`. `key` is unique in the definition. The names `complete` and `fail` are reserved for [route ends](#routes), so a subtask cannot use them. `deliverables` follow the [deliverables](#deliverables) contract. A `phase` is a key in `phases`. The subtasks of one phase sit next to each other.
+
+The kind adds fields and declares the outcomes a route may name.
+
+| Kind | Fields | Outcomes |
+| --- | --- | --- |
+| `agent` | Optional `implementer_model` and `reviewer_model` | `passed`, `skipped`, `failed` |
+| `check` | At least one `command` deliverable | `passed`, `skipped`, `failed` |
+| `merge` | None | `passed`, `skipped`, `failed` |
+| `action` | `operation` and `arguments`, with at most 50 arguments | `passed`, `failed` |
+| `decide` | `question`, `options`, `evidence`, and optional `min_probability` | One outcome for each option |
+
+An `action` `operation` is an OpenAPI operation marked `x-orbit-task-action: true`. Orbit marks `instance:deploy` and `instance:rollback`. The Gateway reads those names from the list `bin/mcp-tools` generates, and `bin/mcp-tools --check` keeps that list current. Marking another operation needs its own decision. A `decide` subtask's `evidence` names earlier subtasks by `key`. `min_probability` is from 0 to 1 and defaults to 0.8.
+
+A write refuses an empty `implementer_model` or `reviewer_model`. It does not check either name against the [ProxyCli model list](/reference/proxycli#models), because that list changes over time. When that list is available, the definition view reports a model that no driver can run. A model is known when ProxyCli offers it, or when it is a Claude model. T3 runs a Claude model on its own Claude subscription. A listed model whose provider no driver runs, such as `google`, is that finding. When the model list is missing, empty, or refused, the view says that the model list is unavailable and reports no driver findings.
+
+### Routes
+
+A subtask's `routes` map each declared outcome to one target. The target is the `key` of a later subtask, `complete`, or `fail`. `complete` and `fail` are reserved, so they are never subtask keys, and the Gateway and the drawing read every route the same way. A route cannot target the same subtask or an earlier subtask.
+
+An outcome with no route uses this default. A `decide` subtask has no defaults. Its routes name a target for every option.
+
+| Outcome | Default target |
+| --- | --- |
+| `passed` | The next subtask, or `complete` after the last subtask |
+| `skipped` | `complete` |
+| `failed` | `fail` |
+
+### Validation
+
+The Gateway validates a definition on every write. An invalid definition is not stored.
+
+| Rule | The write is refused when |
+| --- | --- |
+| Keys | A subtask key is duplicated, or it is the reserved name `complete` or `fail` |
+| Kind | The kind is unknown |
+| Fields | The kind does not declare a field, a field the kind requires is missing, or a model name is empty |
+| Route outcome | A route names an outcome the kind does not declare |
+| Route target | A route names an unknown key, the same subtask, or an earlier subtask |
+| Decide routes | A `decide` subtask has no route for an option |
+| Reachability | No path from the first subtask reaches a subtask |
+| Phases | A subtask `phase` is not in `phases`, or one phase's subtasks are not adjacent |
+| Phase keys | A phase key is duplicated |
+| Action | The `operation` is not marked as a task action |
+| Parameters | A `{parameter}` is not declared, a parameter name is duplicated, or more than one parameter has type `subtasks` |
+| Schedule names | A schedule value names an undeclared parameter |
+| Cron | The cron expression is not five valid fields |
+| Schedule values | The schedule omits a value for a required parameter |
+| Bounds | More than 100 subtasks, 50 parameters, 50 phases, 50 arguments on one subtask, or 100 schedule values |
+
+| Error | HTTP | When |
+| --- | --- | --- |
+| `tasks.definition_invalid` | 422 | The definition breaks a rule above. `details.rules` lists one `{rule, subtask}` for each failure |
+| `tasks.definition_exists` | 409 | The Project already uses the name |
+
+`rule` is `keys`, `kind`, `fields`, `route_outcome`, `route_target`, `decide_routes`, `reachability`, `phases`, `phase_keys`, `action`, `parameters`, `bounds`, `schedule_names`, `cron`, or `schedule_values`. `subtask` is the subtask key, or null when the rule concerns the whole definition. A `bounds` failure for one subtask's arguments names that subtask.
+
+### Definition operations
+
+Five operations read and write definitions. None of them starts a task.
+
+| Operation | Route | Access |
+| --- | --- | --- |
+| `tasks:definition:list` | `GET /api/v1/task-definitions` | Any authorized peer |
+| `tasks:definition:show` | `GET /api/v1/projects/{project}/task-definitions/{name}` | Any authorized peer |
+| `tasks:definition:create` | `POST /api/v1/projects/{project}/task-definitions` | Gateway |
+| `tasks:definition:update` | `PUT /api/v1/projects/{project}/task-definitions/{name}` | Gateway |
+| `tasks:definition:destroy` | `DELETE /api/v1/projects/{project}/task-definitions/{name}` | Gateway |
+
+List accepts an optional `project_id` filter. Update replaces the whole definition, so an agent reads it, changes it, and writes it back. The update body may omit `name`. The Gateway uses the name in the path. MCP does this, because the path argument is not repeated in the body. A body `name` that is present and different from the path is refused. Only Gateway access can write a definition, so a definition cannot grant a caller more authority than that caller already has.
+
+The [CLI commands](/cli/tasks#orbit-tasksdefinitionlist) for create and update take the definition as a JSON file. The [MCP tools](/reference/mcp) are generated from these operations. While the tasks extension is off, each operation refuses with HTTP 409 `extension.disabled` and changes nothing.
 
 ## Tasks and subtasks
 
@@ -239,9 +346,144 @@ The Gateway does not check the branch contents. When `origin/task-{id}` exists, 
 
 When the workspace starting commit is 40 or 64 hexadecimal characters, both prompts add `The task started at <sha>.` and `git diff --stat <sha>..HEAD`. The review packet places those lines after its stat and diff commands. The lines name no Project, branch, or policy. Any other value is left out.
 
+## Outer loop
+
+The Gateway files a Backlog task when the same production problem keeps returning. An operator edits that task and moves it to Todo. The scheduler does not claim it before that move. [ADR 0176](/decisions/0176-file-repro-first-bug-groups) records this loop.
+
+The loop reads Doctor, Activity, the Gateway log, and assistance reasons. It does not read the `schedules` table. It does not wait for an external alert manager.
+
+### Fingerprints
+
+Each signal updates one row in `problem_fingerprints`. The fingerprint is unique.
+
+| Column | Meaning |
+| --- | --- |
+| `fingerprint` | Stable key, at most 255 characters |
+| `source` | `doctor`, `activity`, `log`, or `assist` |
+| `first_seen`, `last_seen` | Time of the first observation, and of the latest |
+| `occurrences` | How many observations were counted |
+| `evidence` | A small JSON sample |
+| `task_group_id` | Top-level task filed for this key, or null |
+| `muted_until` | Filing stays off until this time, or null |
+| `filed_at` | When this episode was filed, or null. The operator cannot edit it |
+
+A key longer than 255 characters keeps the source prefix, then `#`, then the first 12 hex characters of the SHA-256 of the full key.
+
+The sample holds at most five request ids, five Activity ids, and five Activity paths. It holds one log excerpt of at most 500 characters, the latest Doctor expected and observed values, the latest Doctor summary, the assistance reason before normalization, the newest 20 observation times, and up to 200 open assistance task ids. The summary and the assistance reason are cut at 1,000 characters. The excerpt and an Activity error message pass through the Gateway log redactor before they are stored. Expected and observed stay the bounded Doctor values. The sample does not store a raw Doctor report.
+
+| Source | Key |
+| --- | --- |
+| Doctor | `doctor\|code\|resource_type\|resource_id` |
+| Activity | `activity\|command\|error_code` |
+| Log | `log\|exception class\|first app frame` |
+| Assistance | `assist\|normalized reason` |
+
+A null Doctor resource id uses `none`. An Activity row with a nonzero exit code and no error code uses `exit` as the error code segment. The resource id stays out of the Activity key. It lives only in `properties.path`, and that path is evidence.
+
+An Activity row counts only when it is server-class. A row is server-class in any of these cases:
+
+| Test | Example |
+| --- | --- |
+| The error code is `gateway.unhandled` or `activity.interrupted` | An unhandled Gateway error |
+| The error code ends in `_failed` or `.unavailable` | `instance.clone_failed` |
+| The error code is `http.` plus a status of 500 or more | `http.500` |
+| `exit_code` is nonzero | A command that exited 1 |
+
+`validation.failed`, `http.404`, `http.409`, and `http.422` do not count unless they also match a test above. A code that ends in `_failed` still counts when the HTTP status is below 500.
+
+A log record counts when its level is ERROR or higher, it names an exception class, and the trace has a frame under the Gateway `app/` directory. The frame in the key is that path relative to the Gateway root, a colon, and the function, with no line number. An `HttpExceptionInterface` whose status is below 500 is left out. `ValidationException` is left out. A trace with no app frame is left out. The excerpt keeps the `request_id` from the log context.
+
+An assistance reason is trimmed and lowercased. Each UUID, and each run of digits, becomes `#`. Whitespace collapses to one space. One open request on a task counts once. The same task counts again only after `assistance_requested` has cleared and a new request is stored.
+
+### When a fingerprint is ready
+
+The tests below use only the current episode. That episode is the observation times stored on the row.
+
+Doctor is ready after two of those times at least 10 minutes apart. A miss does not delete the row, and it does not reset the episode.
+
+Activity, the log, and assistance are ready when either test below is true for those same times.
+
+| Test | Ready when |
+| --- | --- |
+| Burst | The count is 10 or more |
+| Spread | The count is 3 or more, and the times cover two UTC quarter hours or two UTC dates |
+
+A quarter hour is the UTC block of 15 minutes that contains the time. The block index is the Unix time divided by 900, rounded down.
+
+Filing a task clears those times after the brief is built. Hits while that task is still open start another episode. The filer clears that episode in the same write as `muted_until`, when the linked task ends. Only a hit after the task ended can make the key ready once the mute ends. A hit after the merge and before the deploy still counts, and the operator cancels that draft.
+
+### Suppression
+
+The filer does not open another task for a key while `muted_until` has not passed. It also waits while the linked task has any status in this list: `backlog`, `todo`, `reserved`, `running`, `reviewing`, `settling`.
+
+| Linked task | Deadline written once, from `updated_at` |
+| --- | --- |
+| `completed` or `failed` | 7 days, only when `muted_until` is empty |
+| `cancelled` | 14 days, only when `muted_until` is empty |
+
+A deadline that is already stored stays as it is. A missing linked task uses the 7-day deadline, measured from the run that notices the gap. `failed` uses the same wait as `completed`, because that task never ran and must not take another slot in the same hour.
+
+Filing a new task clears `muted_until` and sets `filed_at`. It sets `occurrences` to 0 and clears `first_seen`, `last_seen`, and the observation times. It also clears the request ids, Activity ids, paths, and the log excerpt. Open assistance task ids stay, so a request that is still open is not counted again. The brief is built from the episode before that clear.
+
+The first time the filer writes `muted_until` for a `completed`, `failed`, `cancelled`, or missing task, that same write clears the episode again. It sets `occurrences` to 0 and clears `first_seen`, `last_seen`, the observation times, the request ids, Activity ids, paths, and the log excerpt. Open assistance task ids stay. A crash stores neither the deadline nor the clear.
+
+### What gets filed
+
+`problems:file` runs every hour. It files at most three new tasks per day, using the Gateway application timezone. It takes the highest `occurrences` first. Equal counts use the earlier `first_seen`, then the fingerprint string. Each run loads at most 50 ready, unsuppressed rows.
+
+The cap counts fingerprint rows whose `filed_at` falls on today's date in that timezone. An operator edit to the brief does not change the count. A missing Orbit Project files nothing.
+
+The filer inserts the task and its subtasks, then updates the fingerprint, in one database transaction. The update sets `task_group_id` and `filed_at`, clears `muted_until`, and resets the episode as [Suppression](#suppression) describes. A crash rolls every one of those writes back, so the next run does not file a duplicate.
+
+Each task belongs to the Project whose slug is `orbit`, and the task starts in `backlog`. The first line of the brief is `Filed by the outer loop.`
+
+The rest of the brief is seven sections, in this order: Symptom, Fingerprint, First seen, Last seen, Count, Evidence, and Suspected entry point. Times use UTC. Symptom is the Doctor summary, the redacted Activity error message, the redacted log message, or the assistance reason before normalization.
+
+| Section | Bound |
+| --- | --- |
+| Symptom | 1,000 characters, then `...` |
+| Fingerprint | 255 characters |
+| First seen, Last seen, Count | One line each |
+| Evidence | The sample caps. Expected and observed are cut at 200 characters |
+| Suspected entry point | 500 characters, then `...` |
+
+The finished brief is at most 8,000 characters. The Evidence heading is always present. When that section has no lines, it says `none`. If the brief is still longer, the filer drops Evidence lines until it fits, and the heading stays. `tasks:create` refuses a longer brief with `validation.failed`. If create still fails, the filer skips that row and leaves `filed_at` unset. The row does not count toward the cap. The filer continues with the next row. Each subtask brief copies the cut symptom and stays under 8,000 characters.
+
+| Source | Title | Suspected entry point |
+| --- | --- | --- |
+| Doctor | `Doctor {code} on {type} {id}` | Resource type, id, and code |
+| Activity | `{command} failed with {error_code}` | The command name |
+| Log | `{exception class} at {frame}` | The app frame |
+| Assistance | The normalized reason | The open task ids in the sample |
+
+A title longer than 160 characters is cut to 157 characters plus `...`.
+
+The task has two subtasks. The docs subtask is first. Its deliverable id is `docs`, its type is `review`, and the description says the owning page matches the fix, or that no page changes. The operator can replace that deliverable while the task is in Backlog.
+
+The second subtask reproduces the failure and then fixes it. Its deliverable id is `test` and its type is `command`, with `fails_on_base` set to true. There is no `test` deliverable type. The filer uses the placeholder command `vendor/bin/pest`, the directory `apps/gateway`, and the path `apps/gateway/tests/Feature/OrbitProblemReproTest.php`. The operator replaces the command, the directory, and the paths with the real test before moving the task to Todo. [Prepare a task in Backlog](#prepare-a-task-in-backlog) is that edit.
+
+### Collection
+
+`problems:collect` runs every 10 minutes. Both commands run only while the Tasks extension is enabled. `TaskSchedule` registers both. Each uses an overlap lock. The collector lock expires after 15 minutes, and the filer lock expires after 30 minutes.
+
+| Source | Bound per run |
+| --- | --- |
+| Doctor | 200 issues, then the next run resumes in fingerprint order |
+| Activity | 500 rows with `id` above the stored cursor |
+| Log | 1 MiB, stopping at the end of a whole record |
+| Assistance | 200 open rows |
+
+Doctor runs through `RunDoctorAction` for every Node and every family. A peer access grant does not drop Nodes from that fleet. One `problem_collector_state` row stores the Activity cursor, the log path, the file inode, the byte offset, and the Doctor resume key. A Doctor pass that handles fewer than 200 issues clears the resume key.
+
+The first collector run sets the Activity cursor to the current maximum id, and the log offset to the end of the current file. It does not count those past rows. The log file is `storage/logs/laravel.log` when that path is a regular file. Otherwise it is the newest `storage/logs/laravel-*.log`. The collector finishes unread bytes in a rotated file before it switches.
+
+Each source commits its fingerprint updates and its cursor in one database transaction. For Activity that cursor is the last id. For the log it is the path, inode, and offset. For Doctor it is the resume key. For assistance it is the open task ids. A crash rolls that source back, so the same rows are not counted twice.
+
+A failure in one source does not skip the others. The same exception class for one command is reported at most once an hour. The command still exits nonzero when any source failed.
+
 ## Scheduler
 
-The scheduler command `tasks:tick` does all work of the extension. The Gateway's Laravel schedule runs it and `tasks:collect-t3-metrics` every 10 seconds while the extension is enabled. The Gateway host must run `php artisan schedule:work`, or no task advances. One cache lock, held for up to 300 seconds, protects scheduled and manual ticks. A tick that finds the lock held does nothing.
+The scheduler command `tasks:tick` does all work of the extension. The Gateway's Laravel schedule runs it and `tasks:collect-t3-metrics` every 10 seconds, `problems:collect` every 10 minutes, and `problems:file` every hour, while the extension is enabled. The Gateway host must run `php artisan schedule:work`, or no task advances. One cache lock, held for up to 300 seconds, protects scheduled and manual ticks. A tick that finds the lock held does nothing.
 
 Each tick runs these steps in order:
 
@@ -619,6 +861,8 @@ Null means the driver did not report the field, or the split is partial. A repor
 
 **Tasks** in the web navigation shows every task on a board with Backlog, Todo, In progress, and Done lanes. In progress holds `reserved`, `running`, `reviewing`, and `settling` tasks. Done holds `completed`, `failed`, and `cancelled` tasks with their outcome visible. Each card shows the Project code and the task id, such as `ORB-13`, its line counts, its status, and its duration. A task page shows the brief, the metrics, a board of its subtasks, and an Agents section. A subtask page shows that subtask's implementer and reviewer. The board is read-only. The [web app](/reference/web-app#live-tasks) keeps it current from task events.
 
+The same Tasks page lists task definitions. Opening one draws it, and that drawing does not start a task.
+
 ## Agent viewer
 
 The Agents section lists every started thread of the task. `GET /api/v1/task-groups/{group}/agents` returns each thread with its driver, external id, state, observation time, errors, and metrics. `GET /api/v1/task-groups/{group}/agents/{session}/stream` streams the thread's normalized conversation to the browser. Both need Gateway access and an enabled extension. Runtime credentials stay in the Gateway.
@@ -710,6 +954,14 @@ Shared prompts stay free of Project policy. They do not name a feature contract 
 
 A task needs an id before its branch `task-{id}` can hold the contract, and it must not run while that contract is written. So a task starts in Backlog and runs only when someone moves it to Todo. A draft flag on a Todo task would give one lifecycle fact two fields.
 
+### A person starts a filed problem
+
+Code can see that a failure came back. It cannot write the test that proves the bug. So the [outer loop](#outer-loop) files a Backlog draft, and a person replaces the placeholder command before the task can run.
+
+A Doctor blip from one run stays a fingerprint until a second run sees it again. Those two times are at least 10 minutes apart. Ten hits of one Activity or log key are enough to file. Those signals arrive in bursts, so the loop does not wait for a second quarter hour. Three isolated hits do not file.
+
+The cap of three tasks a day stops a burst from filling the board. `filed_at` holds that count, so an edit to the brief cannot change it. Cancel is the person's mute, and it lasts 14 days. A completed or failed task waits 7 days. That same write clears the hits collected while the task was open. When the wait ends, only a hit after the task ended can make the key ready. A hit after the merge and before the deploy can still file a draft, and the operator cancels it.
+
 ### The Gateway claims, not the Nodes
 
 The Gateway already knows every Instance and Node, so it counts active tasks itself. Node-side polling would add a second loop and a second source of truth. A claim reserves the task first and provisions afterwards, so a slow checkout never holds a lock.
@@ -775,3 +1027,7 @@ The thread spent the tokens, so the split lives there. A total alone does not sh
 ### Jev only checks coverage
 
 Code decides every fact that code can check. Jev answers only whether the change list covers each subtask, because the reviewer writes that list and code cannot compare prose. Every call is stored with its input and later labeled by rule from the merged pull request, so the checks can be measured without a second model.
+
+### Definitions stay Project data
+
+The Gateway stays generic by storing each Project's plan as a task definition instead of as code. An operator or an agent can change that plan through the API. Kinds stay in code, because a kind is executable behavior, and definitions stay data. [ADR 0182](/decisions/0182-start-tasks-from-project-task-definitions#task-definitions) records the alternatives this rejects.

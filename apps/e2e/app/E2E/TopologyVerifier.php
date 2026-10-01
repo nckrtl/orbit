@@ -301,7 +301,15 @@ final readonly class TopologyVerifier
         ]);
         $result = $results['sample-app-state'] ?? null;
         if (! $result instanceof GuestCommandResult || ! $result->successful()) {
-            throw new RuntimeException('Failed to inspect the sample App convergence state.');
+            throw new RuntimeException($this->sampleStateFailure($appDevInstance, $result));
+        }
+
+        if (trim($result->stdout) === '') {
+            if ($nativeSamplesOnly) {
+                throw new RuntimeException('Declared replacement verification requires native AppInstance samples.');
+            }
+
+            return ['checkout_path' => null, 'production' => null];
         }
 
         try {
@@ -310,20 +318,13 @@ final readonly class TopologyVerifier
             throw new RuntimeException('Sample App convergence state is malformed.', 0, $exception);
         }
 
-        if ($state === ['shape' => 'workspaces']) {
-            if ($nativeSamplesOnly) {
-                throw new RuntimeException('Declared replacement verification requires native AppInstance samples.');
-            }
-
-            return ['checkout_path' => null, 'production' => null];
-        }
         $keys = array_keys(is_array($state) ? $state : []);
-        $baseKeys = ['shape', 'app_id', 'node_id', 'name', 'checkout_path', 'effective_root'];
+        $baseKeys = ['shape', 'project_id', 'node_id', 'name', 'checkout_path', 'effective_root'];
         if (
             ! is_array($state)
             || ! in_array($keys, [$baseKeys, [...$baseKeys, 'production']], true)
             || ($state['shape'] ?? null) !== 'instances'
-            || ! is_int($state['app_id'] ?? null)
+            || ! is_int($state['project_id'] ?? null)
             || ! is_int($state['node_id'] ?? null)
             || ($state['name'] ?? null) !== 'e2e-dev'
             || ! is_string($state['checkout_path'] ?? null)
@@ -339,6 +340,21 @@ final readonly class TopologyVerifier
         }
 
         return ['checkout_path' => $state['checkout_path'], 'production' => $production];
+    }
+
+    private function sampleStateFailure(string $instance, ?GuestCommandResult $result): string
+    {
+        $script = 'converge-sample-app.sh';
+        if (! $result instanceof GuestCommandResult) {
+            return 'Failed to inspect the sample App convergence state. '
+                ."Guest convergence script {$script} on {$instance} returned no result.";
+        }
+
+        return (new GuestFailureDetail)->append(
+            'Failed to inspect the sample App convergence state. '
+            ."Guest convergence script {$script} failed on {$instance} with exit code {$result->exitCode}.",
+            $result->stderr,
+        );
     }
 
     /**

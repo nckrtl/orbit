@@ -468,6 +468,11 @@
             "group": "Tasks",
             "openapi": "/openapi.json",
             "pages": [
+              "POST /api/v1/projects/{project}/task-definitions",
+              "DELETE /api/v1/projects/{project}/task-definitions/{name}",
+              "GET /api/v1/projects/{project}/task-definitions/{name}",
+              "PUT /api/v1/projects/{project}/task-definitions/{name}",
+              "GET /api/v1/task-definitions",
               "GET /api/v1/task-groups",
               "POST /api/v1/task-groups",
               "GET /api/v1/task-groups/{group}",
@@ -518,6 +523,7 @@
               "GET /api/v1/proxycli",
               "POST /api/v1/proxycli",
               "PATCH /api/v1/proxycli/accounts/{account}",
+              "GET /api/v1/proxycli/models",
               "GET /api/v1/proxycli/providers",
               "GET /api/v1/proxycli/providers/{provider}"
             ]
@@ -561,6 +567,7 @@
             "pages": [
               "decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
               "decisions/0175-docs-impact-check-in-orbit-repo",
+              "decisions/0176-file-repro-first-bug-groups",
               "decisions/0178-run-project-agnostic-tasks-without-a-planner",
               "decisions/0182-start-tasks-from-project-task-definitions"
             ]

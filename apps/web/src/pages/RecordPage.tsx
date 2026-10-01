@@ -1,6 +1,7 @@
 import { extensionsQuery } from "../api/extensions";
 import { taskGroupsQuery, tasksForInstance } from "../api/tasks";
 import { useTaskPoll } from "../realtime/polling";
+import { DefinitionPane } from "../definitions/definition-pane";
 import { TasksBoard } from "./Tasks";
 import { ProjectCodeEditor } from "../ui/ProjectCodeEditor";
 import { useQuery } from "@tanstack/react-query";
@@ -69,7 +70,7 @@ function ProjectPage({ fleet, project }: { fleet: Fleet; project: Project }) {
 
     return (
         <div
-            className={`w-full min-w-0 max-w-full flex flex-col md:grid md:h-full md:grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)] ${GAPS}`}
+            className={`w-full min-w-0 max-w-full flex flex-col md:grid md:h-full md:grid-rows-[auto_minmax(120px,0.8fr)_minmax(0,1fr)_minmax(0,1fr)] ${GAPS}`}
         >
             <Properties
                 testId="record-properties"
@@ -83,9 +84,14 @@ function ProjectPage({ fleet, project }: { fleet: Fleet; project: Project }) {
             >
                 <ProjectCodeEditor key={project.id} project={project} />
             </Properties>
+            <DefinitionPane
+                projectId={project.id}
+                order={1}
+                className="w-full min-h-[140px] max-h-[32vh] md:max-h-none"
+            />
             <Pane
                 name="instances"
-                order={1}
+                order={2}
                 title="Instances"
                 className="w-full min-h-[160px] max-h-[40vh] md:max-h-none"
                 columns={columns}
@@ -96,7 +102,7 @@ function ProjectPage({ fleet, project }: { fleet: Fleet; project: Project }) {
             />
             <Pane
                 name="schedules"
-                order={2}
+                order={3}
                 title="Schedules"
                 className="w-full min-h-[160px] max-h-[40vh] md:max-h-none"
                 columns={schedules}

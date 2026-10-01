@@ -633,3 +633,235 @@ body {
 .annotations-table tbody tr:last-child td {
     border-bottom: 0;
 }
+
+/* Task definition canvas. Cards are the subtasks; the engine's stages use the same card. */
+
+/* The phase hint hangs out of the canvas border. On a desktop the canvas fills the page, so the
+   page keeps room under that border or the hint is clipped. Stacked under the Subtask title, the
+   normal panel gap is too small for both hanging labels, so that layout keeps a line between them. */
+.definition-page {
+    padding-bottom: calc(var(--lh) / 2 + 6px);
+}
+
+.definition-layout {
+    row-gap: calc(var(--panel-gap) + var(--lh));
+}
+
+@media (min-width: 1024px) {
+    .definition-layout {
+        column-gap: var(--panel-gap);
+        row-gap: var(--panel-gap);
+    }
+}
+
+.definition-frame > .frame-edge {
+    z-index: 6;
+}
+
+.definition-frame-body {
+    padding: 0;
+    overflow: hidden;
+}
+
+.definition-canvas .react-flow {
+    --xy-background-color: transparent;
+    --xy-background-pattern-color: color-mix(in srgb, var(--line) 60%, transparent);
+    --xy-edge-stroke: var(--line);
+    font-family: inherit;
+}
+
+.definition-canvas .react-flow__controls-button {
+    width: 44px;
+    height: 44px;
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--line);
+    border-bottom: 0;
+    cursor: pointer;
+}
+
+.definition-canvas .react-flow__controls-button svg {
+    max-width: 18px;
+    max-height: 18px;
+}
+
+.definition-canvas .react-flow__controls-button:last-child {
+    border-bottom: 1px solid var(--line);
+}
+
+.definition-canvas .react-flow__controls.horizontal .react-flow__controls-button {
+    border-bottom: 1px solid var(--line);
+    border-right: 0;
+}
+
+.definition-canvas .react-flow__controls.horizontal .react-flow__controls-button:last-child {
+    border-right: 1px solid var(--line);
+}
+
+.definition-canvas .react-flow__controls-button:hover {
+    background: color-mix(in srgb, var(--bg) 88%, var(--fg));
+}
+
+.definition-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    padding: 6px var(--panel-padding);
+    border-radius: 2px;
+    border: 1px solid var(--line);
+    border-left: 2px solid var(--line);
+    background: color-mix(in srgb, var(--bg) 95%, var(--fg));
+    color: inherit;
+    font: inherit;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+    pointer-events: auto;
+}
+
+.definition-card:hover {
+    background: color-mix(in srgb, var(--bg) 91%, var(--fg));
+}
+
+.definition-card[data-selected] {
+    border-color: var(--selected-line);
+}
+
+.definition-card[data-stage] {
+    border-left-color: var(--yellow);
+}
+
+.definition-handle {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.definition-kind {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--dim);
+}
+
+.definition-kind[data-kind="agent"],
+.definition-kind[data-kind="decide"] {
+    color: var(--cyan);
+}
+
+.definition-kind[data-kind="stage"] {
+    color: var(--yellow);
+}
+
+.definition-kind[data-kind="phase"] {
+    color: var(--fg);
+}
+
+.definition-phase-card {
+    box-shadow:
+        3px 3px 0 -1px var(--bg),
+        3px 3px 0 0 var(--line),
+        6px 6px 0 -1px var(--bg),
+        6px 6px 0 0 var(--line);
+}
+
+.definition-phase-frame {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    border: 1px dashed var(--line);
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--bg) 97%, var(--fg));
+}
+
+.definition-phase-title {
+    position: absolute;
+    top: 0;
+    left: 8px;
+    display: inline-flex;
+    align-items: center;
+    box-sizing: border-box;
+    height: 44px;
+    min-width: 44px;
+    padding: 0 12px;
+    pointer-events: auto;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--fg);
+    cursor: pointer;
+}
+
+.definition-finding {
+    padding: 12px 1ch;
+}
+
+.definition-models,
+.definition-meta {
+    display: block;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.definition-models {
+    color: var(--cyan);
+}
+
+.definition-models[data-empty],
+.definition-meta {
+    color: var(--dim);
+}
+
+.definition-end {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--green);
+}
+
+.definition-end[data-end="fail"] {
+    color: var(--red);
+}
+
+.definition-canvas .react-flow__attribution {
+    background: transparent;
+    color: var(--dim);
+}
+
+.definition-canvas .react-flow__attribution a {
+    color: var(--dim);
+}
+
+.definition-canvas .react-flow__edgelabel-renderer {
+    z-index: 10;
+}
+
+.definition-lane-label {
+    position: absolute;
+    padding: 0 4px;
+    background: var(--bg);
+    color: var(--dim);
+    font-size: 11px;
+    line-height: 1.4;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+.definition-edge .react-flow__edge-text {
+    font-size: 11px;
+    fill: var(--dim);
+}
+
+.definition-edge .react-flow__edge-textbg {
+    fill: var(--bg);
+}

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Mcp;
 
 use App\Domain\Extensions\ExtensionStore;
+use App\Domain\Tasks\TaskDefinitionJson;
 use Illuminate\Validation\ValidationException;
 use JsonException;
 use Laravel\Mcp\Request;
@@ -44,12 +45,16 @@ final class ExtensionAwareExecuteTools extends ExecuteTools
 
         $definitions = ToolManifest::default()->definitions();
         $extensions = app(ExtensionStore::class);
+        $preservedCalls = $this->preservedCalls(request()->getContent());
         $results = [];
         $notifications = [];
         $maxOutputBytes = config('mcp.tool_search.max_output_bytes', 65_536);
         $maxOutputBytes = is_int($maxOutputBytes) ? max(256, $maxOutputBytes) : 65_536;
 
         foreach ($calls as $index => $call) {
+            if (is_array($call)) {
+                $call = $this->callKeepingObjects($call, $preservedCalls[$index] ?? null);
+            }
             $disabledExtension = null;
             foreach ($definitions as $definition) {
                 if ($call['name'] === $definition->name && $definition->extension !== null
@@ -150,5 +155,51 @@ final class ExtensionAwareExecuteTools extends ExecuteTools
         }
 
         return [...$notifications, $this->catalog->response(['ok' => true, 'results' => $results])];
+    }
+
+    /**
+     * Laravel MCP decodes the JSON-RPC body associatively, which turns `{}` into a list.
+     * Each catalog execute receives one call, so the synthetic request id cannot tell the calls apart.
+     * The matching raw call is the one at the same index.
+     *
+     * @return list<mixed>
+     */
+    private function preservedCalls(string $raw): array
+    {
+        $decoded = TaskDefinitionJson::decode($raw);
+        $params = is_array($decoded) ? ($decoded['params'] ?? null) : null;
+        $arguments = is_array($params) ? ($params['arguments'] ?? null) : null;
+        $calls = is_array($arguments) ? ($arguments['calls'] ?? null) : null;
+
+        return is_array($calls) && array_is_list($calls) ? $calls : [];
+    }
+
+    /**
+     * @param  array<mixed, mixed>  $call
+     * @return array<mixed, mixed>
+     */
+    private function callKeepingObjects(array $call, mixed $preserved): array
+    {
+        if (! is_array($preserved) || ($preserved['name'] ?? null) !== ($call['name'] ?? null)) {
+            return $call;
+        }
+
+        $arguments = $preserved['arguments'] ?? null;
+
+        if (! is_array($arguments) || array_is_list($arguments)) {
+            return $call;
+        }
+
+        $kept = [];
+
+        foreach ($arguments as $key => $value) {
+            if (is_string($key)) {
+                $kept[$key] = $value;
+            }
+        }
+
+        $call['arguments'] = $kept;
+
+        return $call;
     }
 }

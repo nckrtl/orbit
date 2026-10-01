@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vite-plus/test";
 import type { Activity } from "../api/activities";
 import { api, GatewayError, get, setTransport } from "../api/client";
 import type { Process, Tool, ToolInventory } from "../api/types";
+import { parseDefinitionList, type Definition } from "../definitions/definition";
 import { createDemoGateway } from "./gateway";
 
 let gateway: ReturnType<typeof createDemoGateway>;
@@ -69,6 +70,26 @@ describe("the demo Gateway", () => {
         );
         expect(end).toEqual([]);
         expect(first.length + second.length + third.length).toBeGreaterThanOrEqual(150);
+    });
+
+    it("serves task definitions from the fleet fixtures", async () => {
+        const listed = parseDefinitionList(await get<Definition[]>("/api/v1/task-definitions"));
+        const charlie = parseDefinitionList(
+            await get<Definition[]>("/api/v1/task-definitions?project_id=3"),
+        );
+        const maintenance = await get<Definition>(
+            "/api/v1/projects/3/task-definitions/maintenance",
+        );
+
+        expect(listed.map((row) => row.name).sort()).toEqual(["digest", "maintenance", "publish"]);
+        expect(charlie.map((row) => row.name)).toEqual(["maintenance"]);
+        expect(maintenance.schedule).toEqual({
+            cron: "0 3 * * 1",
+            values: { app: "charlie-shop" },
+        });
+        await expect(get("/api/v1/projects/3/task-definitions/missing")).rejects.toMatchObject({
+            status: 404,
+        });
     });
 
     it("records each request for a test to assert on", async () => {

@@ -35,6 +35,7 @@ These are the terms every part of Orbit shares. Each domain page defines the ter
 ## Tasks
 
 - **Task**: One feature or bug fix, delivered as one pull request. The Tasks board shows this top-level `tasks` row, which has no `parent_id`. See [Tasks](/reference/tasks).
+- **Task definition**: A Project's stored plan in the Gateway. Writing one does not start a task. See [Tasks](/reference/tasks#task-definitions).
 - **Subtask**: A child task with `parent_id` set to its task and with no children of its own. See [Tasks](/reference/tasks).
 - **Deliverable**: A checkable item that a subtask must produce, such as a file, a test, or a command that passes.
 - **Task check**: The command that a Project runs to verify every subtask handoff.

@@ -133,7 +133,7 @@ A sleeping development Instance is not drift. When the awake marker is absent, D
 The reference pages describe each family's comparison in more detail: [Schedules](/reference/schedules#inspect-schedule-drift), [Tools](/reference/tools#check-removal-with-doctor), [Database connections](/reference/database-connections#inspect-attachments-with-doctor), [Instance environment variables](/reference/environment-variables#inspect-the-projection-with-doctor), [custom proxy Routes](/reference/routes#custom-proxy-routes), [the Caddy release a role needs](/reference/node-provisioning#package-sources), and [Caddy build drift](/reference/caddy-configuration#check-a-node-with-doctor).
 
 <Warning>
-Doctor keeps no report history. The Gateway writes one ordinary Activity row for the request and stores no findings, so keep the returned report and request ID if you need them later.
+Doctor keeps no report history for the caller. The Gateway writes one ordinary Activity row for the request and stores no raw findings. The [outer loop](/reference/tasks#outer-loop) stores a bounded fingerprint of a recurring issue: its code, resource, and expected and observed values.
 </Warning>
 
 ## Why it works this way
@@ -154,7 +154,7 @@ A Linux Node with no Tools can be healthy while absent `brew` and `vp` scopes ar
 
 ### No stored reports
 
-Doctor keeps no reports, findings, or raw observations. The request's one Activity row is its only write. Stored raw output could expose paths, configuration, or credentials.
+Doctor keeps no reports, raw findings, or raw observations for the caller. The request's one Activity row is the only record of that request. Stored raw output exposes paths, configuration, or credentials. The [outer loop](/reference/tasks#outer-loop) stores the issue code, the resource, and the bounded expected and observed values. It does not store the raw report.
 
 ### One observation per Node
 

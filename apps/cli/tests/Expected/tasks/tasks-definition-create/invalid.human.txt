@@ -1,0 +1,10 @@
+Creating task definition...
+
+┌  Create task definition
+│
+├  ● Creating task definition
+│
+└  Operation failed.
+
+The task definition is invalid.
+rules: kind (docs)
