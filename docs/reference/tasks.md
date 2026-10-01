@@ -93,6 +93,7 @@ List and show accept any authorized peer. Update and the subtask create, update,
 | `tasks:check:cancel` | `POST /api/v1/task-groups/{group}/tasks/{task}/check/cancel` | Gateway |
 | `tasks:comment:create` | `POST /api/v1/task-groups/{group}/tasks/{task}/comments` | Gateway |
 | `tasks:comment:list` | `GET /api/v1/task-groups/{group}/tasks/{task}/comments` | Gateway |
+| `tasks:question:list` | `GET /api/v1/task-questions` | Any peer |
 | `tasks:agents` | `GET /api/v1/task-groups/{group}/agents` | Gateway |
 
 Each MCP tool name is the operation name with hyphens, such as `tasks-subtask-create`. The paths keep the `task-groups` segment. `{group}` is the top-level task id, and `{task}` is the subtask id.
@@ -475,7 +476,9 @@ Orbit archives a T3 thread after its work ends: a reviewer thread when its subta
 
 Each tick advances every `running` and `reviewing` subtask of a `running`, `reviewing`, or `settling` task. A subtask or task that asks for assistance is skipped until an operator resolves it. Only the publication of an already approved commit still retries.
 
-The **acting thread** is the subtask's implementer while the subtask is `running`, and that subtask's reviewer while it is `reviewing`. During a [consult](#consult-the-reviewer), the reviewer is the acting thread of a `running` subtask. While the acting thread is `working`, the tick skips the subtask. The other thread does not defer it. So an operator can talk to a reviewer while the implementer hands off. The scheduler never sends a turn to a `working` thread. It waits until that thread stops. An operator's [resolution](#assistance-and-resolution) is not a scheduler send, so it goes to the thread at once, whatever its state.
+The **acting thread** is the subtask's implementer while the subtask is `running`, and that subtask's reviewer while it is `reviewing`. During a [consult](#consult-the-reviewer), the reviewer is the acting thread of a `running` subtask. While the acting thread is `working`, the tick skips the subtask. The other thread does not defer it. So an operator can talk to a reviewer while the implementer hands off. The scheduler never sends a turn to a `working` thread. It waits until that thread stops.
+
+An operator's [resolution](#assistance-and-resolution) is not a scheduler send. On a failure it goes to the blocked thread at once, whatever its state. On a direction request it goes to the reviewer at once, and that reviewer's relay does not count toward the consult limit.
 
 ### Turn receipt
 
@@ -529,13 +532,13 @@ Each observation also reports whether the workspace has commits since its starti
 
 When an implementer hands off `blocked`, Orbit sends the summary and the question to the subtask's reviewer. Orbit starts that reviewer when the subtask has none yet, and the review that follows uses the same thread. The subtask stays `running`, and nobody is asked for assistance. This turn is a consult.
 
-The reviewer answers from the brief, the ADRs, the documentation, the code, and the task history. It hands off `answered` with the answer as its summary, and Orbit sends that answer to the implementer, which continues the same attempt. A question about scope, priorities, access, cost, or a resource that only the operator controls cannot be answered from the contract. The reviewer then hands off `blocked` with one question for the operator, and the subtask asks for direction.
+The reviewer answers from the brief, the ADRs, the documentation, the code, and the task history. It hands off `answered` with the answer as its summary, and Orbit sends that answer to the implementer, which continues the same attempt. A question about scope, priorities, access, money, or a resource that only the operator controls cannot be answered from the contract. The reviewer then hands off `blocked` with one question for the operator, and the subtask asks for direction.
 
 Orbit consults the reviewer at most twice in one implementer attempt. A third `blocked` in that attempt asks for direction at once. Its question is the implementer's question, and its reason includes both earlier answers.
 
 #### Questions
 
-Orbit stores one question record for each consult and each direction request. A subtask should be specific enough that an implementer builds it in one go, so every question marks a brief, a contract, or a scope that left something open. The records let the operator count those questions and trace each one to its brief.
+Orbit stores one question record for each consult and each direction request. A consult the reviewer escalates is that same record moving from `open` to `escalated`, not a second row. A subtask should be specific enough that an implementer builds it in one go, so every question marks a brief, a contract, or a scope that left something open. The records let the operator count those questions and trace each one to its brief.
 
 | Field | Meaning |
 | --- | --- |
@@ -544,7 +547,7 @@ Orbit stores one question record for each consult and each direction request. A 
 | `question` | The one question, from `--question` or the comment body |
 | `status` | `open` while the reviewer consults, `escalated` while the operator answers, then `answered` |
 | `answered_by`, `answer` | `reviewer` or `operator`, and the answer |
-| `cause` | Why the question arose, given by the reviewer |
+| `cause` | Why the question arose. The reviewer sets it with `--cause`, and it is empty until then |
 | `asked_at`, `escalated_at`, `answered_at` | When each step happened |
 
 The reviewer gives one cause with `--cause` on each `answered` and `blocked` turn.
@@ -557,7 +560,13 @@ The reviewer gives one cause with `--cause` on each `answered` and `blocked` tur
 | `environment` | A resource, an access grant, or infrastructure that the implementer cannot control |
 | `missed_contract` | The brief or the contract already answers it |
 
-An escalated question keeps the reviewer's cause until the reviewer relays the operator's answer. The relay sets the final cause, because only then does the reviewer know the answer. [`tasks:question:list`](/cli/tasks#orbit-tasksquestionlist) lists questions across tasks.
+A consult the reviewer escalates keeps `asked_by` `implementer`. Its `question` becomes the reviewer's `--question`, and its `cause` is that turn's `--cause`. `attempt` is the subtask's `completion_attempt` when the implementer asks, and its `review_attempt` when the reviewer asks during a review. An operator comment uses the attempt of the current phase: `review_attempt` while the subtask is `reviewing`, and `completion_attempt` otherwise.
+
+A reviewer's `blocked` during a review creates an `escalated` record with `asked_by` `reviewer`. A third implementer block in one attempt creates an `escalated` record with `asked_by` `implementer`, the implementer's question, and no cause yet. Its assistance reason includes both earlier answers. An operator's `assistance_requested` comment creates an `escalated` record with `asked_by` `operator`, the comment body as its question, and no cause yet.
+
+When the reviewer answers a consult, that record becomes `answered` with `answered_by` `reviewer`, the summary as the answer, and the `--cause`. The relay of an operator's answer sets the direction record to `answered` with `answered_by` `operator` and the resolution body as the answer. It sets `cause` from the reviewer's `--cause` on that relay turn, which does not count toward the consult limit. An escalated question that already has the reviewer's cause keeps it until the relay replaces it.
+
+[`tasks:question:list`](/cli/tasks#orbit-tasksquestionlist) is `GET /api/v1/task-questions`. Any authorized peer can call it. The filters are `project_id`, `cause`, `status`, and `since`. `since` is an ISO 8601 date or time, and the list holds questions asked at or after it, newest first.
 
 ### Assistance and resolution
 
@@ -570,9 +579,13 @@ Every assistance request has a kind.
 | Kind | Cause | Question |
 | --- | --- | --- |
 | `direction` | A reviewer's `blocked` in a consult or a review, a third implementer block in one attempt, or an operator's `assistance_requested` comment | The one question for the operator |
-| `failure` | Every other cause, such as a failed push, check, thread, or delivery | None |
+| `failure` | Every other cause, such as a failed push, check, thread, or webhook | Null |
 
-The task takes the kind and the question of the subtask that asks. While a task asks for direction, a later failure does not replace that request. `tasks:status` lists direction requests first in its table.
+The task takes the kind and the question of the subtask that asks. While a task asks for direction, a later failure does not replace that request. `tasks:status` lists direction requests first in its table. An unsure `decide` subtask still asks for assistance as `failure`. [ADR 0182](/decisions/0182-start-tasks-from-project-task-definitions) keeps that rule until it says otherwise.
+
+#### Migrate open requests
+
+Existing open requests are migrated. A reason that starts with `The implementer is blocked: ` or `The reviewer is blocked: ` becomes `direction`. `assistance_question` is the stored question: the text after the last `Question: ` in that reason, or the text after the prefix when `Question: ` is absent. The migration writes one `escalated` question record for that request, with that question, no cause, and `asked_by` taken from the prefix. Every other open request becomes `failure` and gets no question record. Closed requests get no records, so `questions` and `escalations` start with this change.
 
 #### Resolve a request
 
@@ -772,7 +785,7 @@ Settle stores the task's metrics. Showing an active task refreshes them.
 | `tokens` | task | The sum of subtask `tokens` and every started reviewer thread |
 | `lines_added`, `lines_deleted`, `line_diff` | task | The whole branch against the Project default branch |
 | `duration_ms` | task | From `started_at` to now while active, or to settle |
-| `questions`, `escalations` | both | The [questions](#questions) asked in the subtask or the task, and how many of them reached the operator |
+| `questions`, `escalations` | both | The [questions](#questions) asked on that record. `escalations` counts records with `escalated_at` set, including a record whose status is now `answered`. A task's counts are the sums of its subtasks |
 
 A failed read keeps the stored value. While a task is active, a missing value stays unknown, not zero. Settle stores an unknown task value as 0. Settle writes the task row from the table above: its tokens add every started reviewer thread to the subtask tokens, and its line diff is the whole branch against the Project default branch. Showing an active task refreshes those values. The board reads that row.
 

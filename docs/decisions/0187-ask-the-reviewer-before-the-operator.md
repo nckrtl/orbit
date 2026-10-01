@@ -48,7 +48,7 @@ A **question** is one record for each consult and each direction request. The `t
 | `question` | The one question, from `--question` or the comment body |
 | `status` | `open`, `answered`, or `escalated` while the operator answers |
 | `answered_by`, `answer` | `reviewer` or `operator`, and the answer |
-| `cause` | Why the question arose, set by the reviewer |
+| `cause` | Why the question arose. The reviewer sets it with `--cause`, and it is empty until then |
 | `asked_at`, `escalated_at`, `answered_at` | When each step happened |
 
 The reviewer gives the cause with `--cause` on every `answered` turn and every `blocked` turn. The cause is one of:
@@ -61,9 +61,13 @@ The reviewer gives the cause with `--cause` on every `answered` turn and every `
 | `environment` | A resource, an access grant, or infrastructure that the implementer cannot control |
 | `missed_contract` | The brief or the contract already answers it |
 
-The relay of an operator's answer sets the final cause, because only then does the reviewer know the answer. A question that the reviewer escalates keeps the reviewer's cause until the relay replaces it.
+A consult the reviewer escalates is the same record moving from `open` to `escalated`, not a second row. Its `question` becomes the reviewer's `--question`, and its `cause` is that turn's `--cause`. `attempt` is the subtask's `completion_attempt` when the implementer asks, and its `review_attempt` when the reviewer asks during a review. An operator comment uses the attempt of the current phase: `review_attempt` while the subtask is `reviewing`, and `completion_attempt` otherwise.
 
-Each subtask and task stores `questions` and `escalations` in its [settle metrics](/reference/tasks#settle-metrics). `escalations` counts the questions that reached the operator. `tasks:question:list` lists questions across tasks, filtered by Project, cause, status, and time, so the operator can analyze which briefs caused them. The Coder `task_group.settled` webhook adds both counts.
+A reviewer's `blocked` during a review creates an `escalated` record with `asked_by` `reviewer`. A third implementer block in one attempt creates an `escalated` record with `asked_by` `implementer`, the implementer's question, and no cause yet. An operator's `assistance_requested` comment creates an `escalated` record with `asked_by` `operator`, the comment body as its question, and no cause yet.
+
+When the reviewer answers a consult, that record becomes `answered` with `answered_by` `reviewer`, the summary as the answer, and the `--cause`. The relay of an operator's answer sets the direction record to `answered` with `answered_by` `operator` and the resolution body as the answer. It sets `cause` from the reviewer's `--cause` on that relay turn, which does not count toward the consult limit. An escalated question that already has the reviewer's cause keeps it until the relay replaces it.
+
+Each subtask and task stores `questions` and `escalations` in its [settle metrics](/reference/tasks#settle-metrics). A subtask's `questions` counts its records, and its `escalations` counts records with `escalated_at` set, including a record whose status is now `answered`. A task's counts are the sums of its subtasks. `tasks:question:list` is `GET /api/v1/task-questions`. It lists questions across tasks, filtered by Project, cause, status, and time, so the operator can analyze which briefs caused them. The Coder `task_group.settled` webhook adds both counts.
 
 ### Direction requests
 
@@ -103,7 +107,7 @@ An operator answers with a `resolution` comment, as today. On a direction reques
 - Every question has a record, an answer, and a cause. The operator can count questions per task, Project, and cause, and read the brief that caused each one.
 - A consult costs one reviewer turn before an operator sees a block.
 - The reviewer of a subtask can start before the first handoff. The review that follows keeps the consult in its context.
-- Existing open requests are migrated: a reason that starts with `The implementer is blocked: ` or `The reviewer is blocked: ` becomes `direction`, with the stored question, and gets an `escalated` question record without a cause. Every other open request becomes `failure`. Closed requests get no records, so the counts start with this change.
+- Existing open requests are migrated. A reason that starts with `The implementer is blocked: ` or `The reviewer is blocked: ` becomes `direction`. `assistance_question` is the stored question: the text after the last `Question: ` in that reason, or the text after the prefix when `Question: ` is absent. The migration writes one `escalated` question record for that request, with that question, no cause, and `asked_by` taken from the prefix. Every other open request becomes `failure` and gets no question record. Closed requests get no records, so `questions` and `escalations` start with this change.
 - A web answer box for direction requests is not part of this decision. The operator answers through the CLI, MCP, or the API.
 
 ## Affects

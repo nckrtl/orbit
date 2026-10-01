@@ -3,6 +3,8 @@ title: "tasks"
 description: "Create, prepare, inspect, cancel, and complete tasks, their subtasks, and their comments through the Gateway tasks extension."
 covers:
   - "apps/cli/app/Commands/Tasks/**"
+  - "packages/php-sdk/src/Requests/Tasks/**"
+  - "packages/php-sdk/src/Responses/Tasks/**"
 ---
 
 The `tasks` family runs the operations of the Gateway [tasks extension](/reference/tasks) from the command line. Agents usually use the [MCP server](/reference/mcp); the CLI offers the same operations when MCP is unavailable. Each command name equals its Gateway route name, and its MCP tool name uses hyphens instead of colons, so `tasks:subtask:create` is the MCP tool `tasks-subtask-create`. Two operations have no CLI command. Use the MCP tool `tasks-check-cancel` to stop a running task check. The agent thread stream, `GET /api/v1/task-groups/{group}/agents/{session}/stream`, serves the web app.
@@ -29,7 +31,7 @@ A task is one feature. A subtask is one ordered child of that task, and a subtas
 | [`tasks:question:list`](#orbit-tasksquestionlist) | List the questions agents asked, across tasks. |
 | [`tasks:agents`](#orbit-tasksagents) | List a task's agent threads. |
 
-Every command accepts `--json`. JSON output is the Gateway record with `request_id` beside its fields. A list holds its records under `task_groups`, `comments`, `questions`, or `agents`.
+Every command accepts `--json`. JSON output is the Gateway record with `request_id` beside its fields. A list holds its records under `task_groups`, `comments`, `questions`, or `agents`. The [PHP SDK](/api/php-sdk) task responses return those same records, including `assistance_kind` and `assistance_question` on a task and a subtask.
 
 `tasks:list` and `tasks:show` accept any authorized peer. `tasks:update` and the `tasks:subtask:*` commands need access to the Node that holds the task's Instance, or to the Gateway for a task without one. The other commands need Gateway access: run them on the Gateway, or on a Node with an access grant to the Gateway. Other callers receive `node_access.required`. While the extension is off, every command except enable, disable, and status fails with `extension.disabled`.
 
@@ -55,7 +57,7 @@ JSON returns `enabled` as `true` or `false`, and `assistance` as a list in ascen
 
 ## orbit tasks:list
 
-List tasks with their title, Project, status, and number of completed subtasks. A task that asks for direction shows its question. A task that asks because of a failure shows its reason.
+List tasks with their title, Project, status, and number of completed subtasks. A task that asks for direction shows its question. A task that asks because of a failure shows its reason. JSON includes `assistance_kind` and `assistance_question` on each task.
 
 ```bash
 orbit tasks:list [--project=ID] [--status=STATUS] [--json]
@@ -292,7 +294,9 @@ orbit tasks:question:list [--project=ID] [--cause=CAUSE] [--status=STATUS] [--si
 | `--status=STATUS` | every status | `open`, `escalated`, or `answered`. |
 | `--since=DATE` | no limit | Only questions asked on or after this ISO 8601 date or time. |
 
-Human output prints one header line for each question, with its time, task and subtask reference, asker, status, and cause. The question and the answer follow, each indented by two spaces. An empty list says `No questions match.` JSON holds the records under `questions`. The [tasks reference](/reference/tasks#questions) defines each field and cause.
+Human output prints one header line for each question, with its time, task and subtask reference, asker, status, and cause. The question and the answer follow, each indented by two spaces. An empty list says `No questions match.` JSON holds the records under `questions`. The [tasks reference](/reference/tasks#questions) defines each field, cause, and the relay that sets the final cause. The consult limit is two reviewer turns in one implementer attempt, and the relay does not count.
+
+Open requests that already exist are migrated as [Migrate open requests](/reference/tasks#migrate-open-requests) describes. A reason that starts with `The implementer is blocked: ` or `The reviewer is blocked: ` becomes `direction`. The stored question is the text after the last `Question: ` in that reason, or the text after the prefix when `Question: ` is absent. The migration writes one `escalated` question record with that question, no cause, and `asked_by` taken from the prefix. Every other open request becomes `failure` and gets no question record. Closed requests get no records, so the counts start with this change.
 
 ## orbit tasks:agents
 
