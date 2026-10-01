@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Infrastructure\Tools;
 
 use App\Domain\Tools\SemverVersionNormalizer;
+use App\Domain\Tools\SupportsToolAdoption;
+use App\Domain\Tools\ToolAdoptionFact;
+use App\Domain\Tools\ToolInventoryPackage;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
@@ -13,7 +16,7 @@ use App\Domain\Tools\ToolRemovalPlan;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 
-final readonly class VpToolManager implements ToolManager
+final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
 {
     private const string VP_BINARY = '/usr/local/bin/vp';
 
@@ -480,6 +483,24 @@ final readonly class VpToolManager implements ToolManager
     public function normalizeVersion(string $rawVersion): ?string
     {
         return $this->versions->normalize($rawVersion);
+    }
+
+    public function inspectForAdoption(Node $node, string $package): ToolAdoptionFact
+    {
+        $this->guardNode($node);
+        $this->guardPackage($package);
+        $this->existingBinary($node);
+        $version = $this->installedVersion($node, $package);
+
+        if ($version === null) {
+            return new ToolAdoptionFact(null, null);
+        }
+
+        if ($package === 'pnpm') {
+            return new ToolAdoptionFact($version, ToolInventoryPackage::BLOCK_PROTECTED);
+        }
+
+        return new ToolAdoptionFact($version, null);
     }
 
     public function install(Node $node, string $package): void

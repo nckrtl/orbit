@@ -6390,6 +6390,47 @@
       }
     },
     {
+      "name": "tool-adopt",
+      "extension": null,
+      "title": "tool:adopt",
+      "description": "tool:adopt",
+      "method": "POST",
+      "path": "/api/v1/tools/adopt",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "manager": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "package": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "version_constraint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node_id",
+          "manager",
+          "package"
+        ]
+      }
+    },
+    {
       "name": "tool-install",
       "extension": null,
       "title": "Install a Tool",

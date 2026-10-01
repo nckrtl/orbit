@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\SemverVersionNormalizer;
+use App\Domain\Tools\ToolAdoptionFact;
+use App\Domain\Tools\ToolInventoryPackage;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
@@ -651,6 +653,72 @@ describe(HomebrewToolManager::class, function (): void {
         'pinned Linux release is not required' => ['Homebrew 7.0.0', true],
         'developer describe line' => ['Homebrew 4.6.15-12-gabcdef', false],
     ]);
+
+    it('classifies a linux formula from a live read and does not refresh or mutate', function (): void {
+        $sha = str_repeat('a', 64);
+        [$manager, $ssh] = homebrew_tool_manager([
+            homebrew_result("/home/linuxbrew/.linuxbrew\n"),
+            homebrew_result("ripgrep 14.1.1\n"),
+            homebrew_result("x86_64\n"),
+            homebrew_result(adopt_formula_json($sha, true)),
+            homebrew_result("/home/linuxbrew/.linuxbrew\n"),
+            homebrew_result("openssl@3 3.0.0\n"),
+            homebrew_result("x86_64\n"),
+            homebrew_result(adopt_formula_json($sha, false, 'openssl@3')),
+        ]);
+        $node = homebrew_tool_node(role: null);
+
+        expect($manager->inspectForAdoption($node, 'ripgrep'))
+            ->toEqual(new ToolAdoptionFact('14.1.1', null))
+            ->and($manager->inspectForAdoption($node, 'openssl@3'))
+            ->toEqual(new ToolAdoptionFact('3.0.0', ToolInventoryPackage::BLOCK_DEPENDENCY));
+
+        expect(json_encode($ssh->arguments()))
+            ->not->toContain('HOMEBREW_FORCE_API_AUTO_UPDATE')
+            ->not->toContain('install')
+            ->not->toContain('upgrade')
+            ->not->toContain('uninstall')
+            ->not->toContain('fetch')
+            ->not->toContain('checkout');
+    });
+
+    it('refuses an absent or conflicting linux Homebrew scope before a package command', function (int $exitCode, string $step): void {
+        [$manager, $ssh] = homebrew_tool_manager([
+            homebrew_result(exitCode: $exitCode, stderr: 'secret prefix'),
+        ]);
+
+        expect(fn () => $manager->inspectForAdoption(homebrew_tool_node(role: null), 'ripgrep'))
+            ->toThrow(fn (ToolManagerException $exception) => expect($exception->step)->toBe($step)
+                ->and($exception->getMessage())->not->toContain('secret'));
+        expect($ssh->commands)->toHaveCount(1)
+            ->and($ssh->commands[0]->input)->not->toContain('git clone')
+            ->and($ssh->commands[0]->input)->not->toContain('checkout');
+    })->with([
+        'absent' => [42, 'manager-absent'],
+        'conflicting' => [43, 'manager-conflict'],
+    ]);
+
+    it('refreshes only the macOS bottle API while checking an installed formula', function (): void {
+        $sha = str_repeat('b', 64);
+        [$manager, $ssh] = homebrew_tool_manager([
+            homebrew_result("/opt/homebrew\n"),
+            homebrew_result("/opt/homebrew\n"),
+            homebrew_result("ripgrep 14.1.1\n"),
+            homebrew_result("/opt/homebrew\n"),
+            homebrew_result("27.0.1\n"),
+            homebrew_result(adopt_formula_json($sha, true, 'ripgrep', 'arm64_golden_gate')),
+        ]);
+
+        expect($manager->inspectForAdoption(homebrew_tool_node('macos', null, 'arm64', 'mini'), 'ripgrep'))
+            ->toEqual(new ToolAdoptionFact('14.1.1', null));
+
+        $info = $ssh->arguments()[5];
+        expect($info)->toContain('HOMEBREW_FORCE_API_AUTO_UPDATE=1')
+            ->and($info)->toContain('info')
+            ->and(json_encode($ssh->arguments()))->not->toContain('install')
+            ->not->toContain('upgrade')
+            ->not->toContain('uninstall');
+    });
 });
 
 /**
@@ -842,4 +910,32 @@ function homebrew_tool_known_hosts(): KnownHostsStore
 
         public function put(string $host, int $port, HostKey $key): void {}
     };
+}
+
+function adopt_formula_json(
+    string $sha,
+    bool $explicit,
+    string $name = 'ripgrep',
+    string $tag = 'x86_64_linux',
+): string {
+    return json_encode([
+        'formulae' => [[
+            'name' => $name,
+            'full_name' => $name,
+            'tap' => 'homebrew/core',
+            'versions' => ['stable' => '14.1.1', 'bottle' => true],
+            'bottle' => ['stable' => ['files' => [
+                $tag => [
+                    'url' => "https://ghcr.io/v2/homebrew/core/{$name}/blobs/sha256:{$sha}",
+                    'sha256' => $sha,
+                ],
+            ]]],
+            'disabled' => false,
+            'installed' => [[
+                'version' => $name === 'openssl@3' ? '3.0.0' : '14.1.1',
+                'installed_on_request' => $explicit,
+            ]],
+        ]],
+        'casks' => [],
+    ], JSON_THROW_ON_ERROR);
 }

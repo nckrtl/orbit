@@ -9,6 +9,8 @@ use App\Data\Tools\InstallToolData;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\HomebrewCaskDiscovery;
 use App\Domain\Tools\SemverVersionNormalizer;
+use App\Domain\Tools\ToolAdoptionFact;
+use App\Domain\Tools\ToolInventoryPackage;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
@@ -674,6 +676,38 @@ describe(HomebrewCaskToolManager::class, function (): void {
         expect(fn () => $manager->remove(cask_node(), 'font-hack'))
             ->toThrow(ToolManagerException::class, 'not an official Homebrew cask');
         expect(json_encode($ssh->arguments()))->not->toContain('uninstall');
+    });
+
+    it('adopts an official cask from live metadata and refuses one that needs authorization', function (): void {
+        [$manager, $ssh] = cask_manager([
+            cask_prefix(),
+            cask_prefix(),
+            cask_result("font-hack 3.003\n"),
+            cask_prefix(),
+            cask_product(),
+            cask_result(cask_metadata()),
+            cask_prefix(),
+            cask_prefix(),
+            cask_result("docker 4.39.0\n"),
+            cask_prefix(),
+            cask_product(),
+            cask_result(cask_metadata([
+                'token' => 'docker',
+                'artifacts' => [['pkg' => ['Docker.pkg']]],
+            ])),
+        ]);
+        $node = cask_node();
+
+        expect($manager->inspectForAdoption($node, 'font-hack'))
+            ->toEqual(new ToolAdoptionFact('3.003', null))
+            ->and($manager->inspectForAdoption($node, 'docker'))
+            ->toEqual(new ToolAdoptionFact('4.39.0', ToolInventoryPackage::BLOCK_AUTHORIZATION))
+            ->and(json_encode($ssh->arguments()))
+            ->not->toContain('HOMEBREW_FORCE_API_AUTO_UPDATE')
+            ->not->toContain('install')
+            ->not->toContain('upgrade')
+            ->not->toContain('uninstall')
+            ->not->toContain('--zap');
     });
 });
 

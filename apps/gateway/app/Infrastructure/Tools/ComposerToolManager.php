@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Infrastructure\Tools;
 
 use App\Domain\Tools\SemverVersionNormalizer;
+use App\Domain\Tools\SupportsToolAdoption;
+use App\Domain\Tools\ToolAdoptionFact;
+use App\Domain\Tools\ToolInventoryPackage;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
@@ -13,7 +16,7 @@ use App\Domain\Tools\ToolRemovalPlan;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 
-final readonly class ComposerToolManager implements ToolManager
+final readonly class ComposerToolManager implements SupportsToolAdoption, ToolManager
 {
     private const int MAX_PACKAGE_LENGTH = 255;
 
@@ -34,6 +37,62 @@ final readonly class ComposerToolManager implements ToolManager
         '--no-audit',
         '--with-all-dependencies',
     ];
+
+    /**
+     * Classifies Orbit's shared Composer scope. It does not install packages or create directories.
+     */
+    private const string ADOPTION_SCOPE = <<<'BASH'
+        managed_user=$1
+        passwd_entry=$(getent passwd -- "$managed_user")
+        test "$(printf '%s\n' "$passwd_entry" | wc -l)" -eq 1
+        managed_group=$(id -gn -- "$managed_user")
+        home=/opt/orbit/composer
+        manifest=$home/composer.json
+
+        if [ ! -x /usr/bin/composer ]; then
+            printf 'Orbit Composer is absent\n' >&2
+            exit 42
+        fi
+        if [ ! -e /opt/orbit ] && [ ! -L /opt/orbit ]; then
+            printf 'Orbit Composer is absent\n' >&2
+            exit 42
+        fi
+        if [ -L /opt/orbit ] || [ ! -d /opt/orbit ] || [ "$(stat -c '%U:%G' /opt/orbit)" != root:root ]; then
+            printf 'Orbit Composer directory conflict\n' >&2
+            exit 43
+        fi
+        if [ ! -e "$home" ] && [ ! -L "$home" ]; then
+            printf 'Orbit Composer is absent\n' >&2
+            exit 42
+        fi
+        if [ -L "$home" ] || [ ! -d "$home" ] || [ "$(stat -c '%U:%G' "$home")" != "$managed_user:$managed_group" ]; then
+            printf 'Orbit Composer directory conflict\n' >&2
+            exit 43
+        fi
+        if [ ! -e "$manifest" ] && [ ! -L "$manifest" ]; then
+            printf 'Orbit Composer is absent\n' >&2
+            exit 42
+        fi
+        if [ -L "$manifest" ] || [ ! -f "$manifest" ] || [ "$(stat -c '%U:%G' "$manifest")" != "$managed_user:$managed_group" ]; then
+            printf 'Orbit Composer manifest conflict\n' >&2
+            exit 43
+        fi
+
+        php -r '
+            $decoded = json_decode((string) file_get_contents("/opt/orbit/composer/composer.json"), true);
+            if (!is_array($decoded) || !array_key_exists("require", $decoded) || !is_array($decoded["require"])) {
+                fwrite(STDERR, "Orbit Composer manifest is unreadable\n");
+                exit(1);
+            }
+            foreach (array_keys($decoded["require"]) as $name) {
+                if (!is_string($name)) {
+                    fwrite(STDERR, "Orbit Composer manifest is unreadable\n");
+                    exit(1);
+                }
+                fwrite(STDOUT, $name . "\n");
+            }
+        '
+        BASH;
 
     public function __construct(
         private RemoteToolCommandRunner $commands,
@@ -168,6 +227,10 @@ final readonly class ComposerToolManager implements ToolManager
                 step: 'candidate-version',
                 message: 'Composer does not provide a removal candidate version.',
             ),
+            ToolOperation::Adopt => throw new ToolManagerException(
+                step: 'candidate-version',
+                message: 'Composer adoption does not select a candidate version.',
+            ),
         };
         $result = $this->commands->execute($node, $arguments);
 
@@ -212,6 +275,24 @@ final readonly class ComposerToolManager implements ToolManager
         $this->guardPackage($package);
 
         return $this->installedInventory($node)->versionFor($package);
+    }
+
+    public function inspectForAdoption(Node $node, string $package): ToolAdoptionFact
+    {
+        $this->guardPackage($package);
+        $this->guardSupportedNode($node);
+        $roots = $this->adoptionRoots($node);
+        $installed = $this->installedVersion($node, $package);
+
+        if ($installed === null) {
+            return new ToolAdoptionFact(null, null);
+        }
+
+        if (! in_array($package, $roots, true)) {
+            return new ToolAdoptionFact($installed, ToolInventoryPackage::BLOCK_DEPENDENCY);
+        }
+
+        return new ToolAdoptionFact($installed, null);
     }
 
     public function normalizeVersion(string $rawVersion): ?string
@@ -344,6 +425,74 @@ final readonly class ComposerToolManager implements ToolManager
                 .'\. Check the package spelling, your version constraint and that the package is available in a stability which matches your minimum-stability~',
                 $normalized,
             ) === 1;
+    }
+
+    /**
+     * Reads the shared Composer scope without installing packages or creating directories.
+     *
+     * @return list<string>
+     */
+    private function adoptionRoots(Node $node): array
+    {
+        $result = $this->commands->execute(
+            $node,
+            ['/bin/bash', '-seu', '--', $node->user],
+            self::ADOPTION_SCOPE,
+        );
+
+        if ($result->exitCode === 42) {
+            throw new ToolManagerException(
+                step: 'manager-absent',
+                message: 'The Composer global scope is absent.',
+                result: $result,
+            );
+        }
+
+        if ($result->exitCode === 43) {
+            throw new ToolManagerException(
+                step: 'manager-conflict',
+                message: 'The Composer global scope conflicts with Orbit ownership.',
+                result: $result,
+            );
+        }
+
+        $this->guardSuccessfulResult(
+            result: $result,
+            step: 'manager-probe',
+            message: 'The Composer global scope probe failed.',
+        );
+
+        $lines = preg_split('/\R/', rtrim($result->stdout, "\r\n"));
+
+        if ($lines === false) {
+            throw new ToolManagerException(
+                step: 'manager-probe',
+                message: 'The Composer global scope probe returned malformed output.',
+                result: $result,
+            );
+        }
+
+        if ($lines === ['']) {
+            return [];
+        }
+
+        $roots = [];
+
+        foreach ($lines as $line) {
+            if ($line === '' || ! $this->isSafeText($line)) {
+                throw new ToolManagerException(
+                    step: 'manager-probe',
+                    message: 'The Composer global scope probe returned malformed output.',
+                    result: $result,
+                );
+            }
+
+            if ($this->validatePackage($line)) {
+                $roots[] = $line;
+            }
+        }
+
+        return $roots;
     }
 
     /** @return non-empty-list<string> */

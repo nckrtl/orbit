@@ -513,6 +513,7 @@ Route::prefix('v1')->group(function (): void {
             ->whereNumber('tool')
             ->name('tool:show');
         Route::post('tools', [ToolsController::class, 'store'])->name('tool:install');
+        Route::post('tools/adopt', [ToolsController::class, 'adopt'])->name('tool:adopt');
         Route::post('tools/{tool}/update', [ToolsController::class, 'update'])
             ->whereNumber('tool')
             ->name('tool:update');

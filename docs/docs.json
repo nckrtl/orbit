@@ -275,6 +275,7 @@
               "GET /api/v1/tool-managers",
               "GET /api/v1/tools",
               "POST /api/v1/tools",
+              "POST /api/v1/tools/adopt",
               "DELETE /api/v1/tools/{tool}",
               "GET /api/v1/tools/{tool}",
               "POST /api/v1/tools/{tool}/update"

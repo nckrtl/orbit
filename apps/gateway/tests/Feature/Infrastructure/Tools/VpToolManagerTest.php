@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\SemverVersionNormalizer;
+use App\Domain\Tools\ToolAdoptionFact;
+use App\Domain\Tools\ToolInventoryPackage;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
@@ -570,6 +572,19 @@ describe(VpToolManager::class, function (): void {
             ->and($names)->toContain('@anthropic-ai/claude-code')
             ->and($versions)->toContain('0.150.0')
             ->and($versions)->toContain('1.0.24');
+    });
+
+    it('protects the Vite+ pnpm root without installing it', function (): void {
+        [$manager, $ssh] = vp_tool_manager([
+            vp_result("/opt/orbit/vite-plus/bin/vp\n"),
+            vp_result("[{\"name\":\"pnpm\",\"version\":\"10.15.1\"}]\n"),
+        ]);
+
+        expect($manager->inspectForAdoption(vp_tool_node('linux', []), 'pnpm'))
+            ->toEqual(new ToolAdoptionFact('10.15.1', ToolInventoryPackage::BLOCK_PROTECTED))
+            ->and(json_encode($ssh->arguments()))
+            ->not->toContain('install')
+            ->not->toContain('curl');
     });
 });
 

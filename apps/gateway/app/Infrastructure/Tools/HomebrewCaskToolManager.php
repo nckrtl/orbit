@@ -8,6 +8,8 @@ use App\Domain\Tools\HomebrewCaskAssessment;
 use App\Domain\Tools\HomebrewCaskDiscovery;
 use App\Domain\Tools\HomebrewPackageName;
 use App\Domain\Tools\SemverVersionNormalizer;
+use App\Domain\Tools\SupportsToolAdoption;
+use App\Domain\Tools\ToolAdoptionFact;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
@@ -23,7 +25,7 @@ use stdClass;
  * Official Homebrew casks on macOS. Names stay unqualified. The fixed coordinate is homebrew/cask/<token>.
  * Zap, autoremove, bulk upgrades, and Homebrew services are never run.
  */
-final readonly class HomebrewCaskToolManager implements ToolManager
+final readonly class HomebrewCaskToolManager implements SupportsToolAdoption, ToolManager
 {
     private const int MAX_RESULT_LENGTH = 131_072;
 
@@ -200,6 +202,39 @@ final readonly class HomebrewCaskToolManager implements ToolManager
     public function normalizeVersion(string $rawVersion): ?string
     {
         return $this->versions->normalize($rawVersion);
+    }
+
+    public function inspectForAdoption(Node $node, string $package): ToolAdoptionFact
+    {
+        $this->guardPackage($package);
+        $this->guardSupportedNode($node);
+        $this->mac->resolvePrefix($node);
+        $installed = $this->installedVersion($node, $package);
+
+        if ($installed === null) {
+            return new ToolAdoptionFact(null, null);
+        }
+
+        $metadata = $this->metadata($node, $package, false);
+
+        if ($metadata === null) {
+            return new ToolAdoptionFact($installed, HomebrewCaskDiscovery::BLOCK_SOURCE);
+        }
+
+        [$prefix, $bottleTag, $result] = $metadata;
+        $assessment = $this->assess(
+            $this->forBottleTag($this->soleCask($result), $bottleTag, $result, 'installed-version'),
+            $package,
+            $prefix,
+            $result,
+            'installed-version',
+        );
+
+        if (! $assessment->supported()) {
+            return new ToolAdoptionFact($installed, $assessment->discoveryBlock);
+        }
+
+        return new ToolAdoptionFact($installed, null);
     }
 
     public function install(Node $node, string $package): void
