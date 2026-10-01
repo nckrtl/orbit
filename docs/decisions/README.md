@@ -36,11 +36,11 @@ Most decisions are built in one task, so their ADR is retired in the same pull r
 
 ## Retired decisions
 
-The [overview](/decisions/overview#retired-decisions) lists all retired decisions. ADR 0190 is absorbed into the Tasks reference; its old path redirects to the section below.
+The [overview](/decisions/overview#retired-decisions) lists all retired decisions. ADR 0192 is absorbed into the Tasks reference; its old path redirects to the section below.
 
 | Record | Retired path | Now in |
 | --- | --- | --- |
-| 0190 | `/decisions/0190-run-task-agents-on-pi-only` | [Tasks: Task agents run on Pi](/reference/tasks#task-agents-run-on-pi) |
+| 0192 | `/decisions/0192-run-task-agents-on-pi-only` | [Tasks: Task agents run on Pi](/reference/tasks#task-agents-run-on-pi) |
 
 ## Record format
 
