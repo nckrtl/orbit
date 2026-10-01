@@ -104,7 +104,7 @@ describe(ComposerToolManager::class, function (): void {
         expect($ssh->arguments())
             ->toBe([['sudo', 'bash', '-seu', '--', 'orbit']])
             ->and($ssh->commands[0]->input)
-            ->toContain('apt-get install --yes --no-install-recommends --no-remove -- composer git unzip')
+            ->toContain('apt-get -o DPkg::Lock::Timeout=300 install --yes --no-install-recommends --no-remove -- composer git unzip')
             ->and($ssh->commands[0]->input)
             ->toContain('COMPOSER_HOME=/opt/orbit/composer');
     });

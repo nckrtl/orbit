@@ -261,6 +261,72 @@ describe('tool writes', function (): void {
         expect(Tool::query()->find($tool->id))->toBeNull();
     });
 
+    it('reports the removed status when the manager removes the package', function (): void {
+        $tool = $this->node
+            ->tools()
+            ->create([
+                'tool_manager_id' => $this->managerRecord->id,
+                'package' => 'jq',
+                'status' => ToolStatus::Installed,
+                'installed_version' => '1.0.0',
+            ]);
+        $this->toolManager->removalPlan = new ToolRemovalPlan(['jq']);
+        $this->toolManager->installedVersions = ['1.0.0', null];
+
+        $this
+            ->deleteJson('/api/v1/tools/'.$tool->id)
+            ->assertOk()
+            ->assertJsonPath('data.status', 'removed')
+            ->assertJsonPath('data.outcome', 'applied');
+
+        expect(Tool::query()->find($tool->id))->toBeNull()
+            ->and($this->toolManager->calls)->toBe(['installedVersion', 'planRemoval', 'remove', 'installedVersion']);
+    });
+
+    it('reports the removed status when the package is already absent', function (): void {
+        $tool = $this->node
+            ->tools()
+            ->create([
+                'tool_manager_id' => $this->managerRecord->id,
+                'package' => 'jq',
+                'status' => ToolStatus::Installed,
+                'installed_version' => '1.0.0',
+            ]);
+        $this->toolManager->installedVersions = [null];
+
+        $this
+            ->deleteJson('/api/v1/tools/'.$tool->id)
+            ->assertOk()
+            ->assertJsonPath('data.status', 'removed')
+            ->assertJsonPath('data.outcome', 'applied');
+
+        expect(Tool::query()->find($tool->id))->toBeNull()
+            ->and($this->toolManager->calls)->toBe(['installedVersion']);
+    });
+
+    it('reports the removed status when a failed tool never recorded a version', function (): void {
+        $tool = $this->node
+            ->tools()
+            ->create([
+                'tool_manager_id' => $this->managerRecord->id,
+                'package' => 'jq',
+                'status' => ToolStatus::Failed,
+                'installed_version' => null,
+                'failed_operation' => ToolOperation::Install,
+                'error_code' => 'tool.version_probe_failed',
+            ]);
+        $this->toolManager->installedVersions = [new ToolManagerException('installed', 'Probe failed.')];
+
+        $this
+            ->deleteJson('/api/v1/tools/'.$tool->id)
+            ->assertOk()
+            ->assertJsonPath('data.status', 'removed')
+            ->assertJsonPath('data.outcome', 'applied');
+
+        expect(Tool::query()->find($tool->id))->toBeNull()
+            ->and($this->toolManager->calls)->toBeEmpty();
+    });
+
     it('removes a failed version-probe tool without probing', function (ToolOperation $failedOperation): void {
         $tool = $this->node
             ->tools()

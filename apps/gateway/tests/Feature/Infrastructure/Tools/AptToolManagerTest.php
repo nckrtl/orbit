@@ -135,10 +135,10 @@ describe(AptToolManager::class, function (): void {
             ['apt-get', '--version'],
             ['apt-cache', 'policy', '--', 'jq'],
             ['dpkg-query', '--show', '--showformat=${Status}\n${Version}\n', '--', 'jq'],
-            ['sudo', 'apt-get', 'install', '--yes', '--no-install-recommends', '--', 'jq'],
-            ['sudo', 'apt-get', 'install', '--yes', '--no-install-recommends', '--', 'jq'],
+            ['sudo', 'apt-get', '-o', 'DPkg::Lock::Timeout=300', 'install', '--yes', '--no-install-recommends', '--', 'jq'],
+            ['sudo', 'apt-get', '-o', 'DPkg::Lock::Timeout=300', 'install', '--yes', '--no-install-recommends', '--', 'jq'],
             ['apt-get', '--simulate', 'remove', '--', 'jq'],
-            ['sudo', 'apt-get', 'remove', '--yes', '--', 'jq'],
+            ['sudo', 'apt-get', '-o', 'DPkg::Lock::Timeout=300', 'remove', '--yes', '--', 'jq'],
         ]);
         expect($ssh->arguments())
             ->each(static fn ($arguments) => $arguments->not->toContain('autoremove'));
@@ -326,12 +326,12 @@ describe(AptToolManager::class, function (): void {
     })->with([
         'install' => [
             static fn (AptToolManager $manager, Node $node) => $manager->install($node, 'jq'),
-            ['sudo', 'apt-get', 'install', '--yes', '--no-install-recommends', '--', 'jq'],
+            ['sudo', 'apt-get', '-o', 'DPkg::Lock::Timeout=300', 'install', '--yes', '--no-install-recommends', '--', 'jq'],
             'install',
         ],
         'update' => [
             static fn (AptToolManager $manager, Node $node) => $manager->update($node, 'jq'),
-            ['sudo', 'apt-get', 'install', '--yes', '--no-install-recommends', '--', 'jq'],
+            ['sudo', 'apt-get', '-o', 'DPkg::Lock::Timeout=300', 'install', '--yes', '--no-install-recommends', '--', 'jq'],
             'update',
         ],
         'removal plan' => [
@@ -341,7 +341,7 @@ describe(AptToolManager::class, function (): void {
         ],
         'remove' => [
             static fn (AptToolManager $manager, Node $node) => $manager->remove($node, 'jq'),
-            ['sudo', 'apt-get', 'remove', '--yes', '--', 'jq'],
+            ['sudo', 'apt-get', '-o', 'DPkg::Lock::Timeout=300', 'remove', '--yes', '--', 'jq'],
             'remove',
         ],
     ]);
@@ -387,7 +387,7 @@ describe(AptToolManager::class, function (): void {
         $manager->remove(apt_tool_node(), 'jq');
 
         expect($ssh->arguments())->toBe([
-            ['sudo', 'apt-get', 'remove', '--yes', '--', 'jq'],
+            ['sudo', 'apt-get', '-o', 'DPkg::Lock::Timeout=300', 'remove', '--yes', '--', 'jq'],
         ]);
     });
 

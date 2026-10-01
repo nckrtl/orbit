@@ -162,8 +162,8 @@ final readonly class HomebrewToolManager implements SupportsToolAdoption, ToolMa
             managed_group=$(id -gn -- "$managed_user")
 
             export DEBIAN_FRONTEND=noninteractive
-            apt-get update
-            apt-get install --yes --no-install-recommends --no-remove -- build-essential procps curl file git ca-certificates
+            apt-get -o DPkg::Lock::Timeout=300 update
+            apt-get -o DPkg::Lock::Timeout=300 install --yes --no-install-recommends --no-remove -- build-essential procps curl file git ca-certificates
 
             if { [ -e /home/linuxbrew ] || [ -L /home/linuxbrew ]; } \
                 && { [ -L /home/linuxbrew ] || [ ! -d /home/linuxbrew ] || [ "$(stat -c %U:%G /home/linuxbrew)" != root:root ]; }; then
