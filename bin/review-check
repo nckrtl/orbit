@@ -41,6 +41,9 @@ BASES = ('origin/main', 'main')
 NO_SELECTION = 'No affected tests found'
 FULL_SUITE = ('../../bin/pest-plain', 'vendor/bin/pest', '--no-tia',
               '--fail-on-empty-test-suite', '--compact', '--colors=never')
+# The whole-suite fallback runs in parallel: in one process the Gateway suite takes about 11 minutes.
+PARALLEL_FULL_SUITE = ('../../bin/pest-plain', 'vendor/bin/pest', '--parallel', '--processes=4', '--no-tia',
+                       '--fail-on-empty-test-suite', '--compact', '--colors=never')
 
 
 def git(root, *args):
@@ -272,7 +275,7 @@ def main():
                 check['selection_evidence_current'] = has_current_evidence
                 check['selection_artifact'] = str(run_tia_directory / 'affected.json')
                 if warning is not None:
-                    commands.append(FULL_SUITE)
+                    commands.append(PARALLEL_FULL_SUITE)
                 for test in changed_php_tests(paths):
                     if not test.startswith(project + '/'):
                         continue
