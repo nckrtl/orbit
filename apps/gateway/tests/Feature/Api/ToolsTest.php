@@ -440,11 +440,10 @@ describe('tool lifecycle failure contracts', function (): void {
         };
 
         [$status, $code, $outcome] = match ($case) {
-            'unsupported manager' => [422, 'tool.manager_unsupported', 'manager_failed'],
+            'unsupported manager', 'unsupported node' => [422, 'tool.manager_unsupported', 'manager_failed'],
             'invalid package' => [422, 'tool.package_invalid', 'manager_failed'],
             'invalid constraint' => [422, 'tool.constraint_invalid', 'constraint_invalid'],
             'inactive node' => [409, 'tool.node_inactive', 'manager_failed'],
-            default => [409, 'tool.manager_unavailable', 'manager_failed'],
         };
 
         assert_tools_api_error(

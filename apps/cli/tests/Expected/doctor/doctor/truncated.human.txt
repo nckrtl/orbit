@@ -1,0 +1,17 @@
+Verifying registered state...
+
+┌  Verify registered state
+│
+├  ● Verified registered state
+│
+└  Verified registered state.
+
+ ┌────────────┬────────┬──────────────┬─────────┬───────────┬─────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ │ NODE       │ FAMILY │ STATUS       │ CHECKED │ RESOURCE  │ FINDING                                                                                                 │
+ ├────────────┼────────┼──────────────┼─────────┼───────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ linux-node │ tool   │ unverifiable │ 0       │ tool brew │ tool.inventory_scan: Package inventory scan is not complete. (expected: complete, observed: incomplete) │
+ │ linux-node │ tool   │ unverifiable │ 0       │ tool vp   │ tool.inventory_scan: Package inventory scan is not complete. (expected: complete, observed: incomplete) │
+ └────────────┴────────┴──────────────┴─────────┴───────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+Nodes: 1, families: 1, checks: 0, drift: 0, unverifiable: 2, informational: 0
+Healthy: no
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

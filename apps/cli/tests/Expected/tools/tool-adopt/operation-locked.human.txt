@@ -1,0 +1,11 @@
+Adopting Tool...
+
+┌  Adopt Tool
+│
+├  ● Adopting Tool
+│
+└  Operation failed.
+
+A tool mutation for this package is already active.
+step: adopt
+outcome: manager_failed

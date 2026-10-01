@@ -14,7 +14,7 @@ final class DoctorReportData extends Data
 {
     /**
      * @param  list<DoctorNodeReportData>  $nodes
-     * @param  array{nodes: int, families: int, checks: int, drift: int, unverifiable: int}  $summary
+     * @param  array{nodes: int, families: int, checks: int, drift: int, unverifiable: int, informational: int}  $summary
      */
     public function __construct(
         public bool $healthy,
@@ -44,6 +44,10 @@ final class DoctorReportData extends Data
             'unverifiable' => array_sum(array_map(static fn (DoctorFamilyReportData $family): int => count(array_filter(
                 $family->issues,
                 static fn (DoctorIssueData $issue): bool => $issue->kind === DoctorIssueKind::Unverifiable,
+            )), $families)),
+            'informational' => array_sum(array_map(static fn (DoctorFamilyReportData $family): int => count(array_filter(
+                $family->issues,
+                static fn (DoctorIssueData $issue): bool => $issue->kind === DoctorIssueKind::Informational,
             )), $families)),
         ]);
     }

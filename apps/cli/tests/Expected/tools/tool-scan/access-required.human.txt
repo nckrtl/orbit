@@ -1,0 +1,9 @@
+Scanning installed packages...
+
+┌  Scan installed packages
+│
+├  ● Scanning installed packages
+│
+└  Operation failed.
+
+Node access is required.

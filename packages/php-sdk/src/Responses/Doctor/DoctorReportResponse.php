@@ -12,7 +12,7 @@ final readonly class DoctorReportResponse
 {
     /**
      * @param  list<DoctorNodeResponse>  $nodes
-     * @param  array{nodes:int,families:int,checks:int,drift:int,unverifiable:int}  $summary
+     * @param  array{nodes:int,families:int,checks:int,drift:int,unverifiable:int,informational:int}  $summary
      */
     private function __construct(
         public bool $healthy,
@@ -39,7 +39,7 @@ final readonly class DoctorReportResponse
         }
 
         $summary = [];
-        foreach (['nodes', 'families', 'checks', 'drift', 'unverifiable'] as $key) {
+        foreach (['nodes', 'families', 'checks', 'drift', 'unverifiable', 'informational'] as $key) {
             $value = $summaryData[$key] ?? null;
             if (! is_int($value) || $value < 0) {
                 throw new InvalidArgumentException('Invalid Doctor report response.');
@@ -68,7 +68,7 @@ final readonly class DoctorReportResponse
         );
     }
 
-    /** @return array{healthy:bool,nodes:list<array{node_id:int,node_name:string,healthy:bool,families:list<array{family:string,status:string,checked:int,issues:list<array{code:string,kind:string,resource_type:string,resource_id:int|string|null,resource_name:string|null,summary:string,expected:bool|string|null,observed:bool|string|null}>}>}>,summary:array{nodes:int,families:int,checks:int,drift:int,unverifiable:int},request_id:string} */
+    /** @return array{healthy:bool,nodes:list<array{node_id:int,node_name:string,healthy:bool,families:list<array{family:string,status:string,checked:int,issues:list<array{code:string,kind:string,resource_type:string,resource_id:int|string|null,resource_name:string|null,summary:string,expected:bool|string|null,observed:bool|string|null}>}>}>,summary:array{nodes:int,families:int,checks:int,drift:int,unverifiable:int,informational:int},request_id:string} */
     public function toArray(): array
     {
         return [

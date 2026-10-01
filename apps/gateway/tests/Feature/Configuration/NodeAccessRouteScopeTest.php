@@ -249,10 +249,12 @@ it('declares node access scope on every active-peer API route', function (): voi
         'tasks:subtask:destroy' => ServingNode::TaskGroupOwning,
         'tasks:subtask:update' => ServingNode::TaskGroupOwning,
         'tasks:update' => ServingNode::TaskGroupOwning,
+        'tool:adopt' => ServingNode::ToolOwning,
         'tool:install' => ServingNode::ToolOwning,
         'tool:list' => ServingNode::ToolOwning,
         'tool:manager:list' => ServingNode::ToolOwning,
         'tool:remove' => ServingNode::ToolOwning,
+        'tool:scan' => ServingNode::ToolOwning,
         'tool:show' => ServingNode::ToolOwning,
         'tool:update' => ServingNode::ToolOwning,
     ];
@@ -293,10 +295,12 @@ it('registers every Tool route with its exact HTTP contract', function (): void 
     ksort($actual);
 
     expect($actual)->toBe([
+        'tool:adopt' => ['POST', 'api/v1/tools/adopt'],
         'tool:install' => ['POST', 'api/v1/tools'],
         'tool:list' => ['GET', 'api/v1/tools'],
         'tool:manager:list' => ['GET', 'api/v1/tool-managers'],
         'tool:remove' => ['DELETE', 'api/v1/tools/{tool}'],
+        'tool:scan' => ['GET', 'api/v1/tool-inventory'],
         'tool:show' => ['GET', 'api/v1/tools/{tool}'],
         'tool:update' => ['POST', 'api/v1/tools/{tool}/update'],
     ]);

@@ -134,6 +134,7 @@ it('identifies the peer before resolving a route-bound resource', function (stri
     'instance' => '/api/v1/instances/999999',
     'process logs' => '/api/v1/processes/999999/logs',
     'activity' => '/api/v1/activities/999999',
+    'tool inventory' => '/api/v1/tool-inventory',
     'tool managers' => '/api/v1/tool-managers',
     'tools' => '/api/v1/tools',
     'tool show' => '/api/v1/tools/999999',
@@ -156,6 +157,7 @@ it('rejects unknown peers before any Tool route is resolved', function (string $
 
     expect(Tool::query()->count())->toBe($toolCount)->and(ToolManagerRecord::query()->count())->toBe($managerCount);
 })->with([
+    'inventory' => ['get', '/api/v1/tool-inventory?node_id=1'],
     'manager list' => ['get', '/api/v1/tool-managers?node_id=1'],
     'tool list' => ['get', '/api/v1/tools?node_id=1'],
     'show' => ['get', '/api/v1/tools/999999'],

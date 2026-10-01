@@ -26,7 +26,7 @@ Each project in the repository uses the stack in this table.
 
 ## Platform
 
-Nodes run Ubuntu 26.04. Orbit runs services natively under systemd: Caddy serves HTTP and HTTPS, PHP-FPM runs PHP from a pinned Sury apt source, and WireGuard carries the private network. Docker runs container Processes, such as shared databases and Plausible, and the `metrics` role's Prometheus and Grafana. Reverb on the `websocket` Node carries realtime events. Mintlify publishes this documentation.
+Service Nodes run Ubuntu 26.04. macOS Nodes support selected Homebrew formulae, casks, and Vite+ global tools through SSH, without service roles. macOS system updates and firewall management are outside this support. On Ubuntu, Orbit runs services natively under systemd: Caddy serves HTTP and HTTPS, PHP-FPM runs PHP from a pinned Sury apt source, and WireGuard carries the private network. Docker runs container Processes, such as shared databases and Plausible, and the `metrics` role's Prometheus and Grafana. Reverb on the `websocket` Node carries realtime events. Mintlify publishes this documentation.
 
 ## Checks
 

@@ -31,7 +31,7 @@ Never point a remote `install` from standard input at a live path. Remove any st
 
 ## Limits
 
-The problem affects only `/dev/stdin` sources. `install -d`, mode changes, and regular-file sources work. A numeric container identity, such as Grafana's `472`, also needs a separate `chown`, because `install -o` and `-g` refuse an identity without a `passwd` entry.
+The problem affects only `/dev/stdin` sources. `install -d`, mode changes, and regular-file sources work. A numeric container identity, such as Grafana's `472`, also needs a separate `chown`, because `install -o` and `-g` refuse an identity without a `passwd` entry. The Node agent uses this sequence only on Linux. A macOS install or repair returns `node.agent_unsupported` before SSH, and removal returns without a remote command.
 
 ## Verification
 

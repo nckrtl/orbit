@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Domain\Tools\SupportsToolAdoption;
+use App\Domain\Tools\ToolAdoptionFact;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolOperation;
@@ -11,7 +13,7 @@ use App\Domain\Tools\ToolRemovalPlan;
 use App\Models\Node;
 use Throwable;
 
-final class FakeToolManager implements ToolManager
+final class FakeToolManager implements SupportsToolAdoption, ToolManager
 {
     /** @var list<string|null|Throwable> */
     public array $installedVersions = [];
@@ -30,6 +32,10 @@ final class FakeToolManager implements ToolManager
     public bool $requiresAppRole = false;
 
     public bool $validPackage = true;
+
+    public ?ToolAdoptionFact $adoption = null;
+
+    public ?Throwable $adoptionFailure = null;
 
     public ToolRemovalPlan $removalPlan;
 
@@ -111,6 +117,17 @@ final class FakeToolManager implements ToolManager
     public function remove(Node $node, string $package): void
     {
         $this->failOrCall('remove');
+    }
+
+    public function inspectForAdoption(Node $node, string $package): ToolAdoptionFact
+    {
+        $this->calls[] = 'inspectForAdoption';
+
+        if ($this->adoptionFailure instanceof Throwable) {
+            throw $this->adoptionFailure;
+        }
+
+        return $this->adoption ?? new ToolAdoptionFact('1.2.3', null);
     }
 
     /** @param list<string|null|Throwable> $queue */

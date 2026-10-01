@@ -181,4 +181,7 @@ return [
     '0179' => ['0179-gate-all-extension-surfaces-with-one-gateway-switch'],
     '0180' => ['0180-absorb-built-decisions-into-the-docs'],
     '0181' => ['0181-name-the-domain-project-and-instance-everywhere'],
+    '0183' => ['0183-manage-macos-tools-without-service-roles'],
+    '0184' => ['0184-adopt-selected-tools-from-existing-managers'],
+    '0185' => ['0185-report-informational-tool-discoveries-in-doctor'],
 ];

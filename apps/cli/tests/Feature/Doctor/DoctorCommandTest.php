@@ -132,7 +132,7 @@ it('accepts the schedule filter and renders its received canonical position', fu
             doctor_cli_family(family: 'schedule', status: 'healthy', checked: 2, issues: []),
             doctor_cli_family(family: 'tool', status: 'healthy', checked: 3, issues: []),
         ])],
-        summary: ['nodes' => 1, 'families' => 3, 'checks' => 6, 'drift' => 0, 'unverifiable' => 0],
+        summary: ['nodes' => 1, 'families' => 3, 'checks' => 6, 'drift' => 0, 'unverifiable' => 0, 'informational' => 0],
     ));
 
     $exitCode = Artisan::call('doctor', ['--node' => '7', '--family' => ['schedule']]);
@@ -178,7 +178,7 @@ it('renders rich unhealthy reports in received order', function (): void {
                 nodeId: 11,
             ),
         ],
-        summary: ['nodes' => 2, 'families' => 3, 'checks' => 6, 'drift' => 2, 'unverifiable' => 1],
+        summary: ['nodes' => 2, 'families' => 3, 'checks' => 6, 'drift' => 2, 'unverifiable' => 1, 'informational' => 0],
     );
     doctor_cli_mock($data, $requestId);
 
@@ -193,7 +193,7 @@ it('renders rich unhealthy reports in received order', function (): void {
             '│ alpha │ instance │ drift        │ 3       │ instance primary │ instance.origin_mismatch: Origin differs. (expected: yes, observed: no)                    │',
             '│ alpha │ instance │ drift        │ 3       │ instance primary │ instance.checkout_missing: Checkout is missing. (expected: yes, observed: no)              │',
             '│ beta  │ firewall │ unverifiable │ 1       │ firewall primary │ firewall.status_unavailable: Firewall status is unavailable. (expected: yes, observed: no) │',
-            'Nodes: 2, families: 3, checks: 6, drift: 2, unverifiable: 1',
+            'Nodes: 2, families: 3, checks: 6, drift: 2, unverifiable: 1, informational: 0',
             'Healthy: no',
             "Request ID: {$requestId}",
         );
@@ -204,14 +204,14 @@ it('renders rich unhealthy reports in received order', function (): void {
 });
 
 it('shows the report summary counts in human output, matching the JSON field (F3)', function (): void {
-    // JSON already returns summary (nodes/families/checks/drift/unverifiable); human output
+    // JSON already returns summary (nodes/families/checks/drift/unverifiable/informational); human output
     // must not drop that field (the flow rule from ORB-358 F2).
     $data = doctor_cli_report(
         healthy: true,
         nodes: [doctor_cli_node('alpha', [
             doctor_cli_family(family: 'node', status: 'healthy', checked: 4, issues: []),
         ])],
-        summary: ['nodes' => 1, 'families' => 1, 'checks' => 4, 'drift' => 0, 'unverifiable' => 0],
+        summary: ['nodes' => 1, 'families' => 1, 'checks' => 4, 'drift' => 0, 'unverifiable' => 0, 'informational' => 0],
     );
     doctor_cli_mock($data);
 
@@ -219,7 +219,7 @@ it('shows the report summary counts in human output, matching the JSON field (F3
 
     expect($exitCode)->toBe(Command::SUCCESS)
         ->and(Artisan::output())
-        ->toContain('Nodes: 1, families: 1, checks: 4, drift: 0, unverifiable: 0', 'Healthy: yes');
+        ->toContain('Nodes: 1, families: 1, checks: 4, drift: 0, unverifiable: 0, informational: 0', 'Healthy: yes');
 });
 
 it('renders a completed unverifiable report instead of a gateway failure', function (): void {
@@ -236,7 +236,7 @@ it('renders a completed unverifiable report instead of a gateway failure', funct
                 ),
             ]),
         ])],
-        summary: ['nodes' => 1, 'families' => 1, 'checks' => 1, 'drift' => 0, 'unverifiable' => 1],
+        summary: ['nodes' => 1, 'families' => 1, 'checks' => 1, 'drift' => 0, 'unverifiable' => 1, 'informational' => 0],
     );
     doctor_cli_mock($data, $requestId);
 
@@ -283,7 +283,7 @@ it('distinguishes same-code findings across different resources by identity (F3)
                 ),
             ]),
         ])],
-        summary: ['nodes' => 1, 'families' => 1, 'checks' => 2, 'drift' => 0, 'unverifiable' => 1],
+        summary: ['nodes' => 1, 'families' => 1, 'checks' => 2, 'drift' => 0, 'unverifiable' => 1, 'informational' => 0],
     );
     doctor_cli_mock($data);
 
@@ -316,8 +316,8 @@ it('writes the exact one-line report json and follows its healthy state', functi
             ]),
         ])];
     $summary = $healthy
-        ? ['nodes' => 0, 'families' => 0, 'checks' => 0, 'drift' => 0, 'unverifiable' => 0]
-        : ['nodes' => 1, 'families' => 1, 'checks' => 1, 'drift' => 1, 'unverifiable' => 0];
+        ? ['nodes' => 0, 'families' => 0, 'checks' => 0, 'drift' => 0, 'unverifiable' => 0, 'informational' => 0]
+        : ['nodes' => 1, 'families' => 1, 'checks' => 1, 'drift' => 1, 'unverifiable' => 0, 'informational' => 0];
     $data = doctor_cli_report($healthy, $nodes, $summary);
     $expected = DoctorReportResponse::fromGatewayData($data, $requestId)->toArray();
     doctor_cli_mock($data, $requestId);
@@ -350,7 +350,7 @@ it('renders only SDK-redacted credential values from nested gateway data', funct
         nodes: [doctor_cli_node("token={$credential}", [
             doctor_cli_family(family: 'node', status: 'drift', checked: 1, issues: [$issue]),
         ])],
-        summary: ['nodes' => 1, 'families' => 1, 'checks' => 1, 'drift' => 1, 'unverifiable' => 0],
+        summary: ['nodes' => 1, 'families' => 1, 'checks' => 1, 'drift' => 1, 'unverifiable' => 0, 'informational' => 0],
     );
     doctor_cli_mock($data);
 
@@ -422,15 +422,15 @@ it('renders gateway API errors through the shared exact json failure envelope', 
 
 /**
  * @param  list<array{node_id:int,node_name:string,healthy:bool,families:list<array{family:string,status:string,checked:int,issues:list<array{code:string,kind:string,resource_type:string,resource_id:int|string|null,resource_name:string|null,summary:string,expected:bool|string|null,observed:bool|string|null}>}>}>  $nodes
- * @param  array{nodes:int,families:int,checks:int,drift:int,unverifiable:int}|null  $summary
- * @return array{healthy:bool,nodes:list<array{node_id:int,node_name:string,healthy:bool,families:list<array{family:string,status:string,checked:int,issues:list<array{code:string,kind:string,resource_type:string,resource_id:int|string|null,resource_name:string|null,summary:string,expected:bool|string|null,observed:bool|string|null}>}>}>,summary:array{nodes:int,families:int,checks:int,drift:int,unverifiable:int}}
+ * @param  array{nodes:int,families:int,checks:int,drift:int,unverifiable:int,informational:int}|null  $summary
+ * @return array{healthy:bool,nodes:list<array{node_id:int,node_name:string,healthy:bool,families:list<array{family:string,status:string,checked:int,issues:list<array{code:string,kind:string,resource_type:string,resource_id:int|string|null,resource_name:string|null,summary:string,expected:bool|string|null,observed:bool|string|null}>}>}>,summary:array{nodes:int,families:int,checks:int,drift:int,unverifiable:int,informational:int}}
  */
 function doctor_cli_report(bool $healthy, array $nodes = [], ?array $summary = null): array
 {
     return [
         'healthy' => $healthy,
         'nodes' => $nodes,
-        'summary' => $summary ?? ['nodes' => 0, 'families' => 0, 'checks' => 0, 'drift' => 0, 'unverifiable' => 0],
+        'summary' => $summary ?? ['nodes' => 0, 'families' => 0, 'checks' => 0, 'drift' => 0, 'unverifiable' => 0, 'informational' => 0],
     ];
 }
 
@@ -499,6 +499,89 @@ function doctor_cli_mock(array $data, ?string $requestId = null): MockClient
     ]);
 }
 
+it('exits 0 for informational discoveries and 1 when drift is also present', function (bool $healthy): void {
+    $discovery = doctor_cli_issue(
+        code: 'tool.package_unregistered',
+        summary: 'Installed package has no Tool row.',
+        kind: 'informational',
+        resourceType: 'tool',
+        resourceId: null,
+        resourceName: 'jq',
+        expected: 'brew',
+        observed: 'version=1.7.1;dependency=no;adoption=supported;block=none',
+    );
+    $issues = [$discovery];
+    if (! $healthy) {
+        array_unshift($issues, doctor_cli_issue(
+            code: 'tool.not_installed',
+            summary: 'Managed tool is not installed.',
+            resourceType: 'tool',
+            resourceId: 4,
+            resourceName: null,
+        ));
+    }
+    doctor_cli_mock(doctor_cli_report(
+        healthy: $healthy,
+        nodes: [doctor_cli_node('mini', [
+            doctor_cli_family('tool', $healthy ? 'healthy' : 'drift', $healthy ? 0 : 1, $issues),
+        ])],
+        summary: [
+            'nodes' => 1,
+            'families' => 1,
+            'checks' => $healthy ? 0 : 1,
+            'drift' => $healthy ? 0 : 1,
+            'unverifiable' => 0,
+            'informational' => 1,
+        ],
+    ));
+
+    $exitCode = Artisan::call('doctor', ['--family' => ['tool']]);
+    $output = Artisan::output();
+
+    expect($exitCode)->toBe($healthy ? Command::SUCCESS : Command::FAILURE)
+        ->and($output)->toContain('tool brew jq', 'informational: 1', $healthy ? 'Healthy: yes' : 'Healthy: no');
+    if (! $healthy) {
+        expect($output)->toContain('tool #4');
+    }
+})->with([
+    'informational only' => [true],
+    'mixed drift' => [false],
+]);
+
+it('exits 0 for an absent manager and 1 for an incomplete scan', function (string $observed, string $kind, string $status, bool $healthy): void {
+    doctor_cli_mock(doctor_cli_report(
+        healthy: $healthy,
+        nodes: [doctor_cli_node('linux', [
+            doctor_cli_family('tool', $status, 0, [
+                doctor_cli_issue(
+                    code: 'tool.inventory_scan',
+                    summary: 'Package inventory scan is not complete.',
+                    kind: $kind,
+                    resourceType: 'tool',
+                    resourceId: null,
+                    resourceName: 'brew',
+                    expected: 'complete',
+                    observed: $observed,
+                ),
+            ]),
+        ])],
+        summary: [
+            'nodes' => 1,
+            'families' => 1,
+            'checks' => 0,
+            'drift' => 0,
+            'unverifiable' => $healthy ? 0 : 1,
+            'informational' => $healthy ? 1 : 0,
+        ],
+    ));
+
+    expect(Artisan::call('doctor'))->toBe($healthy ? Command::SUCCESS : Command::FAILURE);
+    expect(Artisan::output())->toContain('tool brew', "observed: {$observed}", $healthy ? 'Healthy: yes' : 'Healthy: no');
+})->with([
+    'absent' => ['absent', 'informational', 'healthy', true],
+    'incomplete' => ['incomplete', 'unverifiable', 'unverifiable', false],
+]);
+
 function doctor_cli_request_id(): string
 {
     return '11111111-1111-4111-8111-111111111111';
@@ -527,7 +610,7 @@ function doctor_cli_pty_fixture(string $root, bool $healthy): array
                         doctor_cli_issue(code: 'instance.origin_mismatch', summary: 'Origin differs.'),
                     ]),
                 ])],
-                summary: ['nodes' => 1, 'families' => 1, 'checks' => 1, 'drift' => 1, 'unverifiable' => 0],
+                summary: ['nodes' => 1, 'families' => 1, 'checks' => 1, 'drift' => 1, 'unverifiable' => 0, 'informational' => 0],
             ),
         'meta' => ['request_id' => doctor_cli_request_id()],
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);

@@ -1,0 +1,18 @@
+Verifying registered state...
+
+┌  Verify registered state
+│
+├  ● Verified registered state
+│
+└  Verified registered state.
+
+ ┌────────────┬────────┬────────┬─────────┬───────────────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ │ NODE       │ FAMILY │ STATUS │ CHECKED │ RESOURCE          │ FINDING                                                                                                                                              │
+ ├────────────┼────────┼────────┼─────────┼───────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ linux-node │ tool   │ drift  │ 1       │ tool #1           │ tool.not_installed: Managed tool is not installed. (expected: yes, observed: no)                                                                     │
+ │ linux-node │ tool   │ drift  │ 1       │ tool vp           │ tool.inventory_scan: Package inventory scan is not complete. (expected: complete, observed: absent)                                                  │
+ │ linux-node │ tool   │ drift  │ 1       │ tool brew ripgrep │ tool.package_unregistered: Installed package has no Tool row. (expected: brew, observed: version=14.1.1;dependency=no;adoption=supported;block=none) │
+ └────────────┴────────┴────────┴─────────┴───────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+Nodes: 1, families: 1, checks: 1, drift: 1, unverifiable: 0, informational: 2
+Healthy: no
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

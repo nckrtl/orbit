@@ -1,0 +1,16 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tools\\AdoptToolRequest",
+    "route": "POST /api/v1/tools/adopt",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "tool.package_absent",
+            "message": "The package is not installed.",
+            "details": {
+                "step": "adopt",
+                "outcome": "manager_failed"
+            }
+        }
+    }
+}

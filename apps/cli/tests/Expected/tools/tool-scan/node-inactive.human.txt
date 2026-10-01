@@ -1,0 +1,11 @@
+Scanning installed packages...
+
+┌  Scan installed packages
+│
+├  ● Scanning installed packages
+│
+└  Operation failed.
+
+Tools can be scanned only on an active node.
+step: scan
+outcome: manager_failed

@@ -1,0 +1,1 @@
+{"error":{"code":"tool.node_inactive","message":"Tools can be adopted only on an active node.","details":{"step":"adopt","outcome":"manager_failed"},"request_id":null}}

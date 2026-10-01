@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Infrastructure\Tools;
 
 use App\Domain\Tools\SemverVersionNormalizer;
+use App\Domain\Tools\SupportsToolAdoption;
+use App\Domain\Tools\ToolAdoptionFact;
+use App\Domain\Tools\ToolInventoryPackage;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
@@ -13,7 +16,7 @@ use App\Domain\Tools\ToolRemovalPlan;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 
-final readonly class VpToolManager implements ToolManager
+final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
 {
     private const string VP_BINARY = '/usr/local/bin/vp';
 
@@ -22,6 +25,181 @@ final readonly class VpToolManager implements ToolManager
     private const int MAX_VERSION_LENGTH = 255;
 
     private const string PACKAGE_PATTERN = '/\A(?:[a-z0-9][a-z0-9._~-]*|@[a-z0-9][a-z0-9._~-]*\/[a-z0-9][a-z0-9._~-]*)\z/D';
+
+    private const int MAC_SCOPE_ABSENT = 42;
+
+    private const int MAC_SCOPE_CONFLICT = 43;
+
+    /**
+     * Verifies the enrolled account's existing Vite+ global scope.
+     * It does not install Vite+, publish launchers, or change the scope.
+     */
+    private const string MAC_SCOPE_SCRIPT = <<<'BASH'
+        account=$1
+        if [ -z "${account:-}" ]; then
+            printf 'Orbit Vite Plus account is missing\n' >&2
+            exit 1
+        fi
+        current=$(/usr/bin/id -un)
+        if [ "$current" != "$account" ]; then
+            printf 'Orbit Vite Plus account mismatch\n' >&2
+            exit 1
+        fi
+        home=$(/usr/bin/dscacheutil -q user -a name "$account" | /usr/bin/awk '/^dir: / { print substr($0, 6); exit }')
+        if [ -z "${home:-}" ] || [ ! -d "$home" ]; then
+            printf 'Orbit Vite Plus account home is unreadable\n' >&2
+            exit 1
+        fi
+        case "$home" in
+            *..*|*[!/A-Za-z0-9._-]*)
+                printf 'Orbit Vite Plus account home is unreadable\n' >&2
+                exit 1
+                ;;
+        esac
+
+        valid=
+        saw_conflict=0
+        consider() {
+            scope=$1
+            binary="$scope/bin/vp"
+            if [ ! -e "$scope" ] && [ ! -L "$scope" ]; then
+                return 0
+            fi
+            if [ -L "$scope" ] || [ ! -d "$scope" ]; then
+                saw_conflict=1
+                return 0
+            fi
+            owner=$(/usr/bin/stat -f '%Su' "$scope" 2>/dev/null || true)
+            if [ "$owner" != "$account" ]; then
+                saw_conflict=1
+                return 0
+            fi
+            if [ ! -x "$binary" ] && [ ! -L "$binary" ]; then
+                saw_conflict=1
+                return 0
+            fi
+            binary_owner=$(/usr/bin/stat -f '%Su' "$binary" 2>/dev/null || true)
+            if [ "$binary_owner" != "$account" ] || [ ! -x "$binary" ]; then
+                saw_conflict=1
+                return 0
+            fi
+            if [ -n "$valid" ]; then
+                saw_conflict=1
+                valid=
+                return 0
+            fi
+            valid=$binary
+        }
+
+        consider "$home/.vite-plus"
+        consider "$home/.local/share/vite-plus"
+
+        if [ -n "$valid" ] && [ "$saw_conflict" -eq 0 ]; then
+            printf '%s\n' "$valid"
+            exit 0
+        fi
+        if [ "$saw_conflict" -eq 1 ]; then
+            printf 'Orbit Vite Plus scope conflict\n' >&2
+            exit 43
+        fi
+        printf 'Orbit Vite Plus scope is absent\n' >&2
+        exit 42
+        BASH;
+
+    /**
+     * Verifies the enrolled account's existing Linux Vite+ global scope.
+     * The first existing store wins, in materialize order. A later store is not a conflict.
+     * It does not install Vite+, publish launchers, or change the scope.
+     */
+    private const string LINUX_SCOPE_SCRIPT = <<<'BASH'
+        account=$1
+        if [ -z "${account:-}" ]; then
+            printf 'Orbit Vite Plus account is missing\n' >&2
+            exit 1
+        fi
+        current=$(/usr/bin/id -un)
+        if [ "$current" != "$account" ]; then
+            printf 'Orbit Vite Plus account mismatch\n' >&2
+            exit 1
+        fi
+        passwd_entry=$(/usr/bin/getent passwd -- "$account" || true)
+        if [ -z "$passwd_entry" ]; then
+            printf 'Orbit Vite Plus account home is unreadable\n' >&2
+            exit 1
+        fi
+        line_count=$(printf '%s\n' "$passwd_entry" | /usr/bin/wc -l | /usr/bin/tr -d '[:space:]')
+        if [ "$line_count" != "1" ]; then
+            printf 'Orbit Vite Plus account home is unreadable\n' >&2
+            exit 1
+        fi
+        home=$(printf '%s\n' "$passwd_entry" | /usr/bin/cut -d: -f6)
+        group=$(/usr/bin/id -gn -- "$account" || true)
+        if [ -z "$home" ] || [ -z "$group" ] || [ ! -d "$home" ]; then
+            printf 'Orbit Vite Plus account home is unreadable\n' >&2
+            exit 1
+        fi
+        case "$home" in
+            /*) ;;
+            *)
+                printf 'Orbit Vite Plus account home is unreadable\n' >&2
+                exit 1
+                ;;
+        esac
+        case "$home" in
+            *..*|*[!/A-Za-z0-9._-]*)
+                printf 'Orbit Vite Plus account home is unreadable\n' >&2
+                exit 1
+                ;;
+        esac
+        if [ -e /opt/orbit ] || [ -L /opt/orbit ]; then
+            if [ -L /opt/orbit ] || [ ! -d /opt/orbit ]; then
+                printf 'Orbit Vite Plus scope conflict\n' >&2
+                exit 43
+            fi
+            orbit_owner=$(/usr/bin/stat -c '%U:%G' /opt/orbit 2>/dev/null || true)
+            if [ "$orbit_owner" != "root:root" ]; then
+                printf 'Orbit Vite Plus scope conflict\n' >&2
+                exit 43
+            fi
+        fi
+
+        consider() {
+            scope=$1
+            binary="$scope/bin/vp"
+            if [ ! -e "$scope" ] && [ ! -L "$scope" ]; then
+                return 0
+            fi
+            if [ -L "$scope" ] || [ ! -d "$scope" ]; then
+                printf 'Orbit Vite Plus scope conflict\n' >&2
+                exit 43
+            fi
+            owner=$(/usr/bin/stat -c '%U:%G' "$scope" 2>/dev/null || true)
+            if [ "$owner" != "$account:$group" ]; then
+                printf 'Orbit Vite Plus scope conflict\n' >&2
+                exit 43
+            fi
+            if [ ! -e "$binary" ] && [ ! -L "$binary" ]; then
+                printf 'Orbit Vite Plus scope conflict\n' >&2
+                exit 43
+            fi
+            binary_owner=$(/usr/bin/stat -c '%U:%G' "$binary" 2>/dev/null || true)
+            if [ "$binary_owner" != "$account:$group" ] || [ ! -x "$binary" ]; then
+                printf 'Orbit Vite Plus scope conflict\n' >&2
+                exit 43
+            fi
+            printf '%s\n' "$binary"
+            exit 0
+        }
+
+        consider /opt/orbit/vite-plus
+        consider "$home/.vite-plus"
+        consider "$home/.local/share/vite-plus"
+
+        printf 'Orbit Vite Plus scope is absent\n' >&2
+        exit 42
+        BASH;
+
+    private const int MAX_SCOPE_PROBE_BYTES = 4_096;
 
     public function __construct(
         private RemoteToolCommandRunner $commands,
@@ -35,7 +213,22 @@ final readonly class VpToolManager implements ToolManager
 
     public function supportsNode(Node $node): bool
     {
-        return $node->platform === 'linux';
+        return $node->platform === 'linux' || $node->platform === 'macos';
+    }
+
+    /**
+     * The enrolled account's existing Vite+ binary.
+     * The probe does not install Vite+, publish launchers, or change the scope.
+     *
+     * @throws ToolManagerException
+     */
+    public function existingBinary(Node $node): string
+    {
+        $this->guardNode($node);
+
+        return $node->platform === 'macos'
+            ? $this->resolveMacBinary($node)
+            : $this->resolveLinuxBinary($node);
     }
 
     public function validatePackage(string $package): bool
@@ -48,6 +241,12 @@ final readonly class VpToolManager implements ToolManager
     public function materialize(Node $node): void
     {
         $this->guardNode($node);
+
+        if ($node->platform === 'macos') {
+            $this->existingBinary($node);
+
+            return;
+        }
 
         $program = <<<'BASH'
             managed_user=$1
@@ -171,7 +370,7 @@ final readonly class VpToolManager implements ToolManager
     {
         $this->guardNode($node);
 
-        $result = $this->commands->execute($node, [self::VP_BINARY, '--version']);
+        $result = $this->commands->execute($node, $this->vpArguments($node, '--version'));
 
         $this->guardSuccessfulResult(
             result: $result,
@@ -198,7 +397,7 @@ final readonly class VpToolManager implements ToolManager
         $this->guardNode($node);
         $this->guardPackage($package);
 
-        $result = $this->commands->execute($node, $this->vpArguments('info', $package, 'version', '--json'));
+        $result = $this->commands->execute($node, $this->vpArguments($node, 'info', $package, 'version', '--json'));
 
         $this->guardSuccessfulResult(
             result: $result,
@@ -214,7 +413,7 @@ final readonly class VpToolManager implements ToolManager
         $this->guardNode($node);
         $this->guardPackage($package);
 
-        $result = $this->commands->execute($node, $this->vpArguments('list', '-g', $package, '--json'));
+        $result = $this->commands->execute($node, $this->vpArguments($node, 'list', '-g', $package, '--json'));
 
         $this->guardSuccessfulResult(
             result: $result,
@@ -286,13 +485,31 @@ final readonly class VpToolManager implements ToolManager
         return $this->versions->normalize($rawVersion);
     }
 
+    public function inspectForAdoption(Node $node, string $package): ToolAdoptionFact
+    {
+        $this->guardNode($node);
+        $this->guardPackage($package);
+        $this->existingBinary($node);
+        $version = $this->installedVersion($node, $package);
+
+        if ($version === null) {
+            return new ToolAdoptionFact(null, null);
+        }
+
+        if ($package === 'pnpm') {
+            return new ToolAdoptionFact($version, ToolInventoryPackage::BLOCK_PROTECTED);
+        }
+
+        return new ToolAdoptionFact($version, null);
+    }
+
     public function install(Node $node, string $package): void
     {
         $this->mutate(
             node: $node,
             package: $package,
             step: 'install',
-            arguments: $this->vpArguments('install', '-g', $package, '--node', 'lts'),
+            arguments: $this->vpArguments($node, 'install', '-g', $package, '--node', 'lts'),
         );
     }
 
@@ -302,7 +519,7 @@ final readonly class VpToolManager implements ToolManager
             node: $node,
             package: $package,
             step: 'update',
-            arguments: $this->vpArguments('update', '-g', $package, '--reinstall-node-mismatch'),
+            arguments: $this->vpArguments($node, 'update', '-g', $package, '--reinstall-node-mismatch'),
         );
     }
 
@@ -311,7 +528,7 @@ final readonly class VpToolManager implements ToolManager
         $this->guardNode($node);
         $this->guardPackage($package);
 
-        $result = $this->commands->execute($node, $this->vpArguments('remove', '-g', '--dry-run', $package));
+        $result = $this->commands->execute($node, $this->vpArguments($node, 'remove', '-g', '--dry-run', $package));
 
         $this->guardSuccessfulResult(
             result: $result,
@@ -328,7 +545,7 @@ final readonly class VpToolManager implements ToolManager
             node: $node,
             package: $package,
             step: 'remove',
-            arguments: $this->vpArguments('remove', '-g', $package),
+            arguments: $this->vpArguments($node, 'remove', '-g', $package),
         );
     }
 
@@ -408,11 +625,121 @@ final readonly class VpToolManager implements ToolManager
     }
 
     /** @return non-empty-list<string> */
-    private function vpArguments(string ...$arguments): array
+    private function vpArguments(Node $node, string ...$arguments): array
     {
+        $binary = $node->platform === 'macos'
+            ? $this->resolveMacBinary($node)
+            : self::VP_BINARY;
+
         return array_values([
-            self::VP_BINARY,
+            $binary,
             ...$arguments,
         ]);
+    }
+
+    private function resolveMacBinary(Node $node): string
+    {
+        $result = $this->commands->execute(
+            $node,
+            ['/bin/bash', '-su', '--', $node->user],
+            self::MAC_SCOPE_SCRIPT,
+            maxOutputBytes: self::MAX_SCOPE_PROBE_BYTES,
+        );
+
+        if ($result->exitCode === self::MAC_SCOPE_ABSENT) {
+            throw new ToolManagerException(
+                step: 'manager-absent',
+                message: 'The Vite+ global scope is absent for the enrolled account.',
+                result: $result,
+            );
+        }
+
+        if ($result->exitCode === self::MAC_SCOPE_CONFLICT) {
+            throw new ToolManagerException(
+                step: 'manager-conflict',
+                message: 'The Vite+ global scope conflicts with the enrolled account.',
+                result: $result,
+            );
+        }
+
+        $this->guardSuccessfulResult(
+            result: $result,
+            step: 'manager-probe',
+            message: 'The Vite+ global scope probe failed.',
+        );
+
+        $lines = preg_split('/\R/', rtrim($result->stdout, "\r\n"));
+        $binary = is_array($lines) ? ($lines[0] ?? '') : '';
+
+        if (! is_array($lines) || count($lines) !== 1 || ! $this->isSafeMacBinary($binary)) {
+            throw new ToolManagerException(
+                step: 'manager-probe',
+                message: 'The Vite+ global scope probe returned malformed output.',
+                result: $result,
+            );
+        }
+
+        return $binary;
+    }
+
+    private function isSafeMacBinary(string $binary): bool
+    {
+        return preg_match(
+            '/\A\/(?:[A-Za-z0-9._-]+\/)+(?:\.vite-plus|\.local\/share\/vite-plus)\/bin\/vp\z/D',
+            $binary,
+        ) === 1 && ! str_contains($binary, '..');
+    }
+
+    private function resolveLinuxBinary(Node $node): string
+    {
+        $result = $this->commands->execute(
+            $node,
+            ['/bin/bash', '-seu', '--', $node->user],
+            self::LINUX_SCOPE_SCRIPT,
+            maxOutputBytes: self::MAX_SCOPE_PROBE_BYTES,
+        );
+
+        if ($result->exitCode === self::MAC_SCOPE_ABSENT) {
+            throw new ToolManagerException(
+                step: 'manager-absent',
+                message: 'The Vite+ global scope is absent for the enrolled account.',
+                result: $result,
+            );
+        }
+
+        if ($result->exitCode === self::MAC_SCOPE_CONFLICT) {
+            throw new ToolManagerException(
+                step: 'manager-conflict',
+                message: 'The Vite+ global scope conflicts with the enrolled account.',
+                result: $result,
+            );
+        }
+
+        $this->guardSuccessfulResult(
+            result: $result,
+            step: 'manager-probe',
+            message: 'The Vite+ global scope probe failed.',
+        );
+
+        $lines = preg_split('/\R/', rtrim($result->stdout, "\r\n"));
+        $binary = is_array($lines) ? ($lines[0] ?? '') : '';
+
+        if (! is_array($lines) || count($lines) !== 1 || ! $this->isSafeLinuxBinary($binary)) {
+            throw new ToolManagerException(
+                step: 'manager-probe',
+                message: 'The Vite+ global scope probe returned malformed output.',
+                result: $result,
+            );
+        }
+
+        return $binary;
+    }
+
+    private function isSafeLinuxBinary(string $binary): bool
+    {
+        return preg_match(
+            '/\A(?:\/opt\/orbit\/vite-plus\/bin\/vp|\/(?:[A-Za-z0-9._-]+\/)+(?:\.vite-plus|\.local\/share\/vite-plus)\/bin\/vp)\z/D',
+            $binary,
+        ) === 1 && ! str_contains($binary, '..');
     }
 }

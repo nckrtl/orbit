@@ -75,8 +75,9 @@ is available.
 ./orbit doctor --family=firewall --json
 ```
 
-Doctor only verifies state and never repairs it. Exit status 1 means unhealthy,
-unverifiable, or a transport failure.
+Doctor only verifies state and never repairs it. Informational findings alone
+still exit 0. Exit status 1 means drift, an unverifiable finding, or a transport
+failure.
 
 ## Schedules
 
@@ -114,6 +115,8 @@ dependencies continue to use Composer.
 ## Tool Management
 
 ```bash
+./orbit tool:scan --node=12
+./orbit tool:adopt jq --node=12 --manager=apt --yes
 ./orbit tool:manager:list --node=12
 ./orbit tool:install @openai/codex --node=12 --manager=vp --constraint='^0.150'
 ./orbit tool:list --node=12
@@ -121,6 +124,11 @@ dependencies continue to use Composer.
 ./orbit tool:show 41
 ./orbit tool:remove 41
 ```
+
+`tool:scan` reads installed Homebrew and Vite+ packages for one Node. It does
+not install, adopt, or change a package. `tool:adopt` records ownership of one
+installed package and does not install or change it. Noninteractive calls pass
+`--yes`. Installation does not adopt an existing package.
 
 Use `vp` for npm-compatible global tools such as Codex and Claude Code. Use
 Composer for `vendor/package` tools and APT for Ubuntu packages. A constraint

@@ -105,7 +105,7 @@ it("shows no queue panel for an instance without Horizon", async () => {
 });
 
 it("lists live UFW on a node and keeps Orbit's own rules without actions", async () => {
-    const app = await openApp("/nodes/2");
+    const app = await openApp("/nodes/2/firewall");
     const managed = row("Firewall", "orbit:wireguard-members");
 
     await expect.element(managed).toHaveTextContent("any on orbit");
@@ -114,7 +114,7 @@ it("lists live UFW on a node and keeps Orbit's own rules without actions", async
 
     // A managed live rule opens nothing and offers no menu; an operator rule still does both.
     await managed.click();
-    expect(app.url()).toBe("/nodes/2");
+    expect(app.url()).toBe("/nodes/2/firewall");
     await managed.click({ button: "right" });
     await expect.element(page.getByRole("menuitem")).not.toBeInTheDocument();
 

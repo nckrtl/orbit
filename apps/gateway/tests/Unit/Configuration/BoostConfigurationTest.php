@@ -278,8 +278,9 @@ it('keeps generated scoped guidance complete and de-duplicated', function (): vo
             'stable error envelopes',
             'redact',
             'colon-delimited route names',
-            'Tool install input is limited to node_id, manager, package, and version_constraint.',
-            'Do not expose manager argv, scripts, repositories, environment variables, or options.',
+            'Tool install and adopt input is limited to node_id, manager, package, and version_constraint.',
+            'Tool scan input is the node_id query only.',
+            'Do not expose manager argv, scripts, repositories, environment variables, options,',
         );
     expect($infrastructureRules)
         ->toContain(
@@ -293,13 +294,13 @@ it('keeps generated scoped guidance complete and de-duplicated', function (): vo
             'exact candidate-origin checks',
             'Never use a Launchpad PPA',
             'The active Tool Manager registry contains the code-owned adapters apt, vp,',
-            'composer, and brew.',
+            'composer, brew, and brew-cask.',
             'Persisted identifiers that are absent from the active registry remain',
             'Use Vite+ global packages instead of exposing npm as a manager.',
             'Never persist or return raw manager stdout or stderr.',
             'APT removal must remove only the exact recorded package.',
             'Treat managers as protected, role-independent Node capabilities.',
-            'Materialize a missing manager on',
+            'Materialize a missing Linux manager on',
         );
     expect($infrastructureRules)
         ->toContain(

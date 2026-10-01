@@ -960,7 +960,8 @@
                 "Route",
                 "Subtask",
                 "Task",
-                "Task definition"
+                "Task definition",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -1264,13 +1265,15 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Doctor",
                 "Extension",
                 "Gateway",
                 "Node",
                 "Project",
                 "Route",
                 "Subtask",
-                "Task"
+                "Task",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -1618,7 +1621,8 @@
                 "Project",
                 "Role",
                 "Subtask",
-                "Task"
+                "Task",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -1968,7 +1972,8 @@
                 "Schedule",
                 "Subtask",
                 "Task",
-                "Task definition"
+                "Task definition",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -2031,7 +2036,8 @@
                 "Route",
                 "Schedule",
                 "Task",
-                "Task workspace"
+                "Task workspace",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -2103,6 +2109,7 @@
             "concepts": [
                 "Gateway",
                 "Node",
+                "Node agent",
                 "Role"
             ],
             "governing_adrs": []

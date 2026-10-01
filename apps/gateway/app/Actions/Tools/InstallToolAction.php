@@ -101,12 +101,12 @@ final readonly class InstallToolAction
 
         if (! $manager->supportsNode($node)) {
             throw $this->failure(
-                errorCode: 'tool.manager_unavailable',
+                errorCode: 'tool.manager_unsupported',
                 outcome: ToolOutcome::ManagerFailed,
-                status: 409,
+                status: 422,
                 data: $data,
                 manager: $managerName,
-                message: 'The tool manager is not available on this node.',
+                message: 'The requested tool manager is not supported.',
             );
         }
 
@@ -157,18 +157,35 @@ final readonly class InstallToolAction
 
         if (! $manager->supportsNode($node)) {
             throw $this->failure(
-                errorCode: 'tool.manager_unavailable',
+                errorCode: 'tool.manager_unsupported',
                 outcome: ToolOutcome::ManagerFailed,
-                status: 409,
+                status: 422,
                 data: $data,
                 manager: $managerName,
-                message: 'The tool manager is not available on this node.',
+                message: 'The requested tool manager is not supported.',
             );
         }
 
         try {
             $this->materializer->converge($node, $managerName);
         } catch (NodeProvisioningException $exception) {
+            $cause = $exception->getPrevious();
+
+            if (
+                $cause instanceof ToolManagerException
+                && in_array($cause->step, ['manager-absent', 'manager-conflict'], true)
+            ) {
+                throw $this->failure(
+                    errorCode: 'tool.manager_unavailable',
+                    outcome: ToolOutcome::ManagerFailed,
+                    status: 409,
+                    data: $data,
+                    manager: $managerName,
+                    message: 'The tool manager is not available on this node.',
+                    previous: $cause,
+                );
+            }
+
             throw $this->failure(
                 errorCode: 'tool.manager_provision_failed',
                 outcome: ToolOutcome::ManagerFailed,

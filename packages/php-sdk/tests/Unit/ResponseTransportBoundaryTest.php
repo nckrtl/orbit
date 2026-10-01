@@ -218,7 +218,7 @@ it('does not retain Doctor credentials in state or SDK trace arguments', functio
                 ]],
             ]],
         ]],
-        'summary' => ['nodes' => 1, 'families' => 1, 'checks' => 1, 'drift' => 1, 'unverifiable' => 0],
+        'summary' => ['nodes' => 1, 'families' => 1, 'checks' => 1, 'drift' => 1, 'unverifiable' => 0, 'informational' => 0],
     ];
     $response = DoctorReportResponse::fromGatewayData($data, '');
     $diagnostics = implode("\n", [

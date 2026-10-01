@@ -185,10 +185,12 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'schedule:show',
         'schedule:update',
         'tasks:status',
+        'tool:adopt',
         'tool:install',
         'tool:list',
         'tool:manager:list',
         'tool:remove',
+        'tool:scan',
         'tool:show',
         'tool:update',
     ]);
@@ -849,6 +851,10 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'timeout' => '3600',
             'json' => false,
         ]],
+        'tool:adopt' => [
+            ['package'],
+            ['node' => null, 'manager' => null, 'constraint' => null, 'yes' => false, 'json' => false],
+        ],
         'tool:install' => [
             ['package'],
             ['node' => null, 'manager' => null, 'constraint' => null, 'json' => false],
@@ -880,6 +886,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ]],
         'tasks:status' => [[], ['json' => false]],
         'tool:remove' => [['tool'], ['yes' => false, 'json' => false]],
+        'tool:scan' => [[], ['node' => null, 'json' => false]],
         'tool:show' => [['tool'], ['json' => false]],
         'tool:update' => [['tool'], ['json' => false]],
     ];
@@ -1208,6 +1215,10 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             '--command' => 'php artisan report:send',
         ], ...$profileMissing],
         'tasks:status' => [[], ...$profileMissing],
+        'tool:adopt' => [
+            ['package' => 'jq', '--node' => '1', '--manager' => 'apt'],
+            ...$profileMissing,
+        ],
         'tool:install' => [
             ['package' => 'curl', '--node' => '1', '--manager' => 'apt'],
             ...$profileMissing,
@@ -1215,6 +1226,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
         'tool:list' => [['--node' => '1'], ...$profileMissing],
         'tool:manager:list' => [['--node' => '1'], ...$profileMissing],
         'tool:remove' => [['tool' => '1'], ...$profileMissing],
+        'tool:scan' => [['--node' => '1'], ...$profileMissing],
         'tool:show' => [['tool' => '1'], ...$profileMissing],
         'tool:update' => [['tool' => '1'], ...$profileMissing],
     ];

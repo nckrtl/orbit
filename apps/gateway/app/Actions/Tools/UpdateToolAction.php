@@ -111,12 +111,12 @@ final readonly class UpdateToolAction
         try {
             $before = $manager->installedVersion($node, $current->package);
         } catch (ToolManagerException $exception) {
-            $failure = $this->managerFailure(
+            $failure = $this->scopedManagerFailure(
                 tool: $current,
+                exception: $exception,
                 errorCode: 'tool.version_probe_failed',
                 status: 502,
                 message: 'The installed tool version could not be determined.',
-                previous: $exception,
             );
             $this->markToolFailure($current, ToolOperation::Update, $failure);
             throw $failure;
@@ -175,13 +175,13 @@ final readonly class UpdateToolAction
                     ToolOperation::Update,
                 );
             } catch (ToolManagerException $exception) {
-                $failure = $this->managerFailure(
+                $failure = $this->scopedManagerFailure(
                     tool: $current,
+                    exception: $exception,
                     errorCode: 'tool.candidate_version_probe_failed',
                     status: 502,
                     message: 'The tool candidate version could not be determined.',
                     outcome: ToolOutcome::CandidateVersionUnavailable,
-                    previous: $exception,
                 );
                 $this->markToolFailure($current, ToolOperation::Update, $failure, $before);
                 throw $failure;
@@ -239,12 +239,12 @@ final readonly class UpdateToolAction
         try {
             $manager->update($node, $current->package);
         } catch (ToolManagerException $exception) {
-            $failure = $this->managerFailure(
+            $failure = $this->scopedManagerFailure(
                 tool: $current,
+                exception: $exception,
                 errorCode: 'tool.update_failed',
                 status: 502,
                 message: 'The tool update failed.',
-                previous: $exception,
             );
             $this->markToolFailure($current, ToolOperation::Update, $failure, $before);
             throw $failure;
@@ -263,12 +263,12 @@ final readonly class UpdateToolAction
         try {
             $after = $manager->installedVersion($node, $current->package);
         } catch (ToolManagerException $exception) {
-            $failure = $this->managerFailure(
+            $failure = $this->scopedManagerFailure(
                 tool: $current,
+                exception: $exception,
                 errorCode: 'tool.version_probe_failed',
                 status: 502,
                 message: 'The updated tool version could not be determined.',
-                previous: $exception,
             );
             $this->markToolFailure($current, ToolOperation::Update, $failure, $before);
             throw $failure;
@@ -364,10 +364,10 @@ final readonly class UpdateToolAction
         if (! $manager->supportsNode($node)) {
             throw $this->failure(
                 tool: $tool,
-                errorCode: 'tool.manager_unavailable',
+                errorCode: 'tool.manager_unsupported',
                 outcome: ToolOutcome::ManagerFailed,
-                status: 409,
-                message: 'The tool manager is not available on this node.',
+                status: 422,
+                message: 'The requested tool manager is not supported.',
             );
         }
 
@@ -435,6 +435,34 @@ final readonly class UpdateToolAction
     private function isSafeRawVersion(string $version): bool
     {
         return $version !== '' && strlen($version) <= 255 && preg_match('/[\x00-\x1F\x7F]/', $version) !== 1;
+    }
+
+    private function scopedManagerFailure(
+        Tool $tool,
+        ToolManagerException $exception,
+        string $errorCode,
+        int $status,
+        string $message,
+        ToolOutcome $outcome = ToolOutcome::ManagerFailed,
+    ): ToolOperationException {
+        if (in_array($exception->step, ['manager-absent', 'manager-conflict'], true)) {
+            return $this->managerFailure(
+                tool: $tool,
+                errorCode: 'tool.manager_unavailable',
+                status: 409,
+                message: 'The tool manager is not available on this node.',
+                previous: $exception,
+            );
+        }
+
+        return $this->managerFailure(
+            tool: $tool,
+            errorCode: $errorCode,
+            status: $status,
+            message: $message,
+            outcome: $outcome,
+            previous: $exception,
+        );
     }
 
     private function managerFailure(

@@ -271,9 +271,11 @@
             "group": "Tools",
             "openapi": "/openapi.json",
             "pages": [
+              "GET /api/v1/tool-inventory",
               "GET /api/v1/tool-managers",
               "GET /api/v1/tools",
               "POST /api/v1/tools",
+              "POST /api/v1/tools/adopt",
               "DELETE /api/v1/tools/{tool}",
               "GET /api/v1/tools/{tool}",
               "POST /api/v1/tools/{tool}/update"
@@ -1308,6 +1310,18 @@
     {
       "source": "/decisions/0181-name-the-domain-project-and-instance-everywhere",
       "destination": "/reference/projects#project-and-instance"
+    },
+    {
+      "source": "/decisions/0183-manage-macos-tools-without-service-roles",
+      "destination": "/reference/node-provisioning#a-mac-needs-no-service-role"
+    },
+    {
+      "source": "/decisions/0184-adopt-selected-tools-from-existing-managers",
+      "destination": "/reference/tools#selected-adoption"
+    },
+    {
+      "source": "/decisions/0185-report-informational-tool-discoveries-in-doctor",
+      "destination": "/cli/doctor#informational-findings-stay-healthy"
     },
     {
       "source": "/decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop",

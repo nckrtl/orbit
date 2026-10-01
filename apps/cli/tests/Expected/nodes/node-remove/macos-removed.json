@@ -1,0 +1,1 @@
+{"id":2,"name":"mini","removed":true,"wireguard_peer_removed":true,"dns_records_removed":true,"degradation":null,"roles_shed":[],"retained_on_node":["user","package-managers","host-wireguard"],"follow_up":null,"request_id":"0198e15c-bf97-7c23-8f1f-61b8fe67a844"}

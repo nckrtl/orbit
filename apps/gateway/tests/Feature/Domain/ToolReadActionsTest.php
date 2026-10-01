@@ -10,12 +10,13 @@ use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolStatus;
 use App\Infrastructure\Tools\AptToolManager;
 use App\Infrastructure\Tools\ComposerToolManager;
+use App\Infrastructure\Tools\HomebrewCaskToolManager;
 use App\Infrastructure\Tools\HomebrewToolManager;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Node;
 
 describe('closed tool registry', function (): void {
-    it('registers exactly APT, Homebrew, VP, and Composer managers', function (): void {
+    it('registers exactly APT, Homebrew formulae, Homebrew casks, VP, and Composer', function (): void {
         $registry = app(ToolManagerRegistry::class);
 
         expect($registry->find(ToolManagerName::Apt->value))
@@ -26,6 +27,8 @@ describe('closed tool registry', function (): void {
             ->toBeInstanceOf(ComposerToolManager::class)
             ->and($registry->find(ToolManagerName::Brew->value))
             ->toBeInstanceOf(HomebrewToolManager::class)
+            ->and($registry->find(ToolManagerName::BrewCask->value))
+            ->toBeInstanceOf(HomebrewCaskToolManager::class)
             ->and($registry->find('npm'))
             ->toBeNull();
     });

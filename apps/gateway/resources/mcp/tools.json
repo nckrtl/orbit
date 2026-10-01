@@ -3163,9 +3163,10 @@
           "platform": {
             "type": "string",
             "enum": [
-              "linux"
+              "linux",
+              "macos"
             ],
-            "description": "Node platform (linux only)"
+            "description": "linux for Ubuntu service Nodes, or macos for tools on an existing account; no default account or address"
           },
           "architecture": {
             "type": [
@@ -3190,11 +3191,11 @@
           },
           "user": {
             "type": "string",
-            "description": "Bootstrap SSH user; defaults to root for a new node and to the managed user for an existing node"
+            "description": "Bootstrap SSH user; root for a new Linux node, the managed user for an existing one; macOS requires the account"
           },
           "orbit_user": {
             "type": "string",
-            "description": "Orbit-managed system user; defaults to orbit for a new node"
+            "description": "Managed user; Linux defaults to orbit, and macOS requires the same existing account as user"
           },
           "roles": {
             "type": "array",
@@ -3226,7 +3227,7 @@
               "string",
               "null"
             ],
-            "description": "Stable WireGuard IP address"
+            "description": "Stable WireGuard address; Linux allocates when omitted. macOS requires the existing one and does not replace it"
           },
           "lan_ip": {
             "type": [
@@ -7023,6 +7024,49 @@
       }
     },
     {
+      "name": "tool-adopt",
+      "extension": null,
+      "title": "Adopt a Tool",
+      "description": "Records Orbit ownership of one supported installed package. Send the Node, manager, package, and optional SemVer constraint. The call installs, updates, removes, and repins nothing. The same intent returns unchanged. A different constraint, a busy scope, a missing or unsupported package, or missing Node access leaves the host unchanged. `error.details.step` is `adopt`. `error.details.id` is present only when a Tool row already exists. `tool.adoption_unsupported` also includes `error.details.adoption_block`.",
+      "method": "POST",
+      "path": "/api/v1/tools/adopt",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "manager": {
+            "type": "string",
+            "maxLength": 32,
+            "description": "Tool manager name"
+          },
+          "package": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "Manager-native package coordinate"
+          },
+          "version_constraint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node_id",
+          "manager",
+          "package"
+        ]
+      }
+    },
+    {
       "name": "tool-install",
       "extension": null,
       "title": "Install a Tool",
@@ -7141,6 +7185,32 @@
         "additionalProperties": false,
         "required": [
           "tool"
+        ]
+      }
+    },
+    {
+      "name": "tool-scan",
+      "extension": null,
+      "title": "Scan installed packages",
+      "description": "Reads installed Homebrew formulae, casks, and Vite+ global packages for the enrolled account. The response reports each manager scan state, safe package facts, dependency and adoption support, and the UTC inspection time. It stores nothing, creates no Tool row, takes no manager lock, and does not install or refresh a manager. A failed read is `incomplete`, never an empty `complete` inventory. `absent` means the scope is not installed. `unsupported` means this platform does not offer the manager.",
+      "method": "GET",
+      "path": "/api/v1/tool-inventory",
+      "path_inputs": [],
+      "query_inputs": [
+        "node_id"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node_id"
         ]
       }
     },

@@ -142,13 +142,14 @@ export function useFleetReach(): Record<string, boolean> {
     return data ?? {};
 }
 
-/** One Node's metrics, for its page. A Node without a WireGuard address has none. */
+/** One Node's metrics, for its page. Only a Linux Node has an exporter; a Mac does not ask. */
 export function useNodeMetrics(node: Node): NodeMetrics | null {
     const ip = node.wireguard_ip;
+    const supported = node.platform === "linux" && typeof ip === "string" && ip !== "";
     const { data } = useQuery({
         queryKey: ["metrics", "node", ip],
         queryFn: () => readMetrics(`${ip}:9100`),
-        enabled: typeof ip === "string" && ip !== "",
+        enabled: supported,
         refetchInterval: interval(10),
         retry: false,
         staleTime: 0,

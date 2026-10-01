@@ -35,6 +35,10 @@ The caller is the Node whose WireGuard address the connection comes from. There 
 
 A tool's name is the operation ID in the [API reference](/api/overview), `<family>-<verb>`, such as `node-list`, `instance-show`, or `process-restart`. Its input is one object with the operation's path parameters, query parameters, and JSON body fields. The server puts each value where the operation expects it. A `GET` tool is marked read-only, and a `DELETE` tool is marked destructive.
 
+`tool-scan` reads the enrolled account's Homebrew formulae, casks, and Vite+ global packages for one Node. Its only input is `node_id`. The call does not create a Tool row.
+
+`tool-adopt` records ownership of one installed package. Its inputs are `node_id`, `manager`, `package`, and optional `version_constraint`. The call does not install, update, or remove the package.
+
 A successful call returns the API's JSON document as text, usually `{"data": ..., "meta": {"request_id": ...}}`. A failed call returns a successful MCP transport response whose tool result has `isError: true`. Its `content` carries the API error envelope with the status added; the HTTP response itself is not the API's error status:
 
 ```json

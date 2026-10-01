@@ -1,6 +1,6 @@
 ╭─ Nav
 │  Dashboard │
-│  Nodes │ 3
+│  Nodes │ 4
 │› Projects │ 3
 │  Databases │ 2
 │  Tasks │ 1

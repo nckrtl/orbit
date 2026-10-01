@@ -1,0 +1,22 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest",
+    "route": "GET /api/v1/tool-inventory",
+    "status": 403,
+    "body": {
+        "error": {
+            "code": "node_access.required",
+            "message": "Node access is required.",
+            "details": {
+                "consumer_node": {
+                    "id": 3,
+                    "name": "scan-consumer"
+                },
+                "serving_node": {
+                    "id": 2,
+                    "name": "scan-target"
+                }
+            }
+        }
+    }
+}

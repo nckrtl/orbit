@@ -25,7 +25,8 @@ final class NativeToolManagerScopeLock implements ToolManagerScopeLock
 
     public function run(int $nodeId, ToolManagerName $manager, Closure $callback): mixed
     {
-        $key = "{$nodeId}:{$manager->value}";
+        $scope = $manager->scope();
+        $key = "{$nodeId}:{$scope->value}";
         if (($this->held[$key] ?? null) !== null) {
             $this->held[$key]['depth']++;
             try {
@@ -40,7 +41,7 @@ final class NativeToolManagerScopeLock implements ToolManagerScopeLock
         }
 
         $locks = $this->locks ?? app(NodeLocks::class);
-        $lock = $locks->lock("tool-manager:{$nodeId}:{$manager->value}", $locks->operationSeconds());
+        $lock = $locks->lock("tool-manager:{$nodeId}:{$scope->value}", $locks->operationSeconds());
 
         if (! $lock->get()) {
             throw new ToolManagerScopeLockException($nodeId, $manager);

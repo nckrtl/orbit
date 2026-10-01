@@ -1,0 +1,17 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tools\\AdoptToolRequest",
+    "route": "POST /api/v1/tools/adopt",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "tool.installed_version_constraint_violated",
+            "message": "The installed version does not satisfy the constraint.",
+            "details": {
+                "step": "adopt",
+                "outcome": "manager_failed",
+                "id": 1
+            }
+        }
+    }
+}

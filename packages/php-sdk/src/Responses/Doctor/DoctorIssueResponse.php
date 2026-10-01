@@ -11,7 +11,7 @@ final readonly class DoctorIssueResponse
 {
     private const int MAX_STRING_LENGTH = 255;
 
-    private const array KINDS = ['drift', 'unverifiable'];
+    private const array KINDS = ['informational', 'drift', 'unverifiable'];
 
     private function __construct(
         public string $code,

@@ -1,0 +1,1 @@
+{"error":{"code":"tool.constraint_invalid","message":"The version constraint is invalid.","details":{"step":"adopt","outcome":"constraint_invalid"},"request_id":null}}

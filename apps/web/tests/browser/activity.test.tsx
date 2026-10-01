@@ -120,7 +120,7 @@ it("filters by status, command and node, and a new filter clears the older page"
     await expect
         .poll(() =>
             [...document.querySelectorAll(".nav-row")].some(
-                (row) => row.textContent?.includes("Nodes") && row.textContent?.includes("3"),
+                (row) => row.textContent?.includes("Nodes") && row.textContent?.includes("4"),
             ),
         )
         .toBe(true);

@@ -338,6 +338,35 @@ body {
     text-overflow: ellipsis;
 }
 
+/* A narrow screen keeps the extra fields on their own line. Desktop columns already show them. */
+.row.has-detail {
+    height: auto;
+    min-height: var(--lh);
+    align-items: start;
+    grid-template-rows: auto auto;
+}
+
+.row > .row-detail {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    overflow: visible;
+    text-overflow: unset;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+@media (min-width: 768px) {
+    .row.has-detail {
+        height: var(--lh);
+        align-items: center;
+        grid-template-rows: auto;
+    }
+
+    .row > .row-detail {
+        display: none;
+    }
+}
+
 /* Quota rows show every reported window without clipping the next provider. */
 .quota-pane .row:not([data-head]) {
     height: auto;

@@ -96,6 +96,7 @@ final readonly class RemoveNodeAction
         }
 
         $peerRemoved = false;
+        $macos = $node->platform === 'macos';
         $result = new RemoveNodeData(
             id: $node->id,
             name: $node->name,
@@ -104,13 +105,15 @@ final readonly class RemoveNodeAction
             dnsRecordsRemoved: true,
             degradation: $shed === null ? null : ExporterDegradationReason::Unreachable->value,
             rolesShed: $shed ?? [],
-            retainedOnNode: $shed === null
-                ? []
-                : $this->residue->describe(
-                    array_map(RoleName::from(...), $shed),
-                    nodeLeavesFleet: true,
-                ),
-            followUp: $shed === null ? null : $this->residue->followUp(nodeLeavesFleet: true),
+            retainedOnNode: $macos
+                ? ['user', 'package-managers', 'host-wireguard']
+                : ($shed === null
+                    ? []
+                    : $this->residue->describe(
+                        array_map(RoleName::from(...), $shed),
+                        nodeLeavesFleet: true,
+                    )),
+            followUp: $macos || $shed === null ? null : $this->residue->followUp(nodeLeavesFleet: true),
         );
         // A failed step returns the Node to this status, so a failed Node never becomes active by rollback.
         $priorStatus = $node->status;
@@ -147,7 +150,7 @@ final readonly class RemoveNodeAction
             );
         }
 
-        if ($shed === null) {
+        if ($shed === null && ! $macos) {
             try {
                 $this->agent->remove($node);
             } catch (Throwable $exception) {
@@ -163,7 +166,7 @@ final readonly class RemoveNodeAction
         // stays reachable for `node:add` or recovery after it leaves.
         // A node without a peer never had its public path closed, and an
         // offline removal cannot change the machine at all.
-        if (! $offline && $node->wireguard_public_key !== null) {
+        if (! $offline && ! $macos && $node->wireguard_public_key !== null) {
             try {
                 $this->firewall->restorePublicSsh($node, $node->user);
             } catch (Throwable $exception) {

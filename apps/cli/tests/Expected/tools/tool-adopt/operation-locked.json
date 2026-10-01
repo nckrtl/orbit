@@ -1,0 +1,1 @@
+{"error":{"code":"tool.operation_locked","message":"A tool mutation for this package is already active.","details":{"step":"adopt","outcome":"manager_failed"},"request_id":null}}

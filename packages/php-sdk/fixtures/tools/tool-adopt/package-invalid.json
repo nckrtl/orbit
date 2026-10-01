@@ -1,0 +1,16 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tools\\AdoptToolRequest",
+    "route": "POST /api/v1/tools/adopt",
+    "status": 422,
+    "body": {
+        "error": {
+            "code": "tool.package_invalid",
+            "message": "The package coordinate is invalid.",
+            "details": {
+                "step": "adopt",
+                "outcome": "manager_failed"
+            }
+        }
+    }
+}

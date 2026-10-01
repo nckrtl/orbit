@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Doctor\CaddyBuildInspector;
 use App\Domain\Doctor\CustomProxyRouteInspector;
 use App\Domain\Doctor\GatewayVpnStateInspector;
+use App\Domain\Doctor\InstalledPackageInventory;
 use App\Domain\Doctor\InstanceStateInspector;
 use App\Domain\Doctor\NodeStateInspector;
 use App\Domain\Doctor\PrivateRouteProjectionInspector;
@@ -24,6 +25,7 @@ use App\Infrastructure\Doctor\NativeProcessStateInspector;
 use App\Infrastructure\Doctor\NativeProjectStateInspector;
 use App\Infrastructure\Doctor\NativePublicRouteEdgeInspector;
 use App\Infrastructure\Doctor\NativeRoleStateInspector;
+use App\Infrastructure\Doctor\SharedInstalledPackageInventory;
 use App\Infrastructure\Doctor\SshNodeStateInspector;
 use App\Infrastructure\Firewall\NativeUfwFirewallInspector;
 use App\Infrastructure\Metrics\NativeMetricsFirewallExpectationProvider;
@@ -50,6 +52,8 @@ it('resolves every read-only inspector through its domain contract', function ()
         ->toBeInstanceOf(NativeCustomProxyRouteInspector::class)
         ->and(app(ProcessStateInspector::class))
         ->toBeInstanceOf(NativeProcessStateInspector::class)
+        ->and(app(InstalledPackageInventory::class))
+        ->toBeInstanceOf(SharedInstalledPackageInventory::class)
         ->and(app(ToolInspector::class))
         ->toBeInstanceOf(NativeToolInspector::class)
         ->and(app(FirewallInspector::class))

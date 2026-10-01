@@ -35,6 +35,7 @@ final class GatewayFailureRenderer
         'step' => self::STEP_PATTERN,
         'teardown_step' => self::STEP_PATTERN,
         'outcome' => '/\A[a-z][a-z0-9_]{0,63}\z/D',
+        'adoption_block' => '/\A[a-z][a-z0-9_]{0,63}\z/D',
         'reason' => '/\A[a-z][a-z0-9_]{0,63}\z/D',
         'cleanup' => '/\A[a-z][a-z0-9_]{0,63}\z/D',
         'role' => '/\A[a-z][a-z0-9-]{0,63}\z/D',

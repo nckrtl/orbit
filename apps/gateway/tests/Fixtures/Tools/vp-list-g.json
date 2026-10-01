@@ -1,0 +1,53 @@
+[
+  {
+    "name": "@anthropic-ai/claude-code",
+    "version": "1.0.24",
+    "installId": "",
+    "platform": {
+      "node": "22.21.0",
+      "npm": "10.9.2"
+    },
+    "bins": ["claude"],
+    "jsBins": [],
+    "manager": "npm",
+    "installedAt": "2026-03-12T15:04:05Z"
+  },
+  {
+    "name": "@openai/codex",
+    "version": "0.150.0",
+    "installId": "",
+    "platform": {
+      "node": "22.21.0",
+      "npm": "10.9.2"
+    },
+    "bins": ["codex"],
+    "jsBins": ["codex"],
+    "manager": "npm",
+    "installedAt": "2026-03-18T09:41:12Z"
+  },
+  {
+    "name": "pnpm",
+    "version": "10.15.1",
+    "installId": "",
+    "platform": {
+      "node": "22.21.0",
+      "npm": "10.9.2"
+    },
+    "bins": ["pnpm"],
+    "jsBins": [],
+    "manager": "npm",
+    "installedAt": "2026-02-02T11:00:00Z"
+  },
+  {
+    "name": "typescript",
+    "version": "5.8.3",
+    "installId": "",
+    "platform": {
+      "node": "22.21.0"
+    },
+    "bins": ["tsc", "tsserver"],
+    "jsBins": ["tsc", "tsserver"],
+    "manager": "npm",
+    "installedAt": "2026-01-20T08:15:00Z"
+  }
+]

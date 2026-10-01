@@ -19,11 +19,16 @@ final readonly class RemoteToolCommandRunner
         private SshExecutor $ssh,
         private SshKeyProvider $keys,
         private KnownHostsStore $knownHosts,
+        private ?ToolCommandBudget $budget = null,
     ) {}
 
     /** @param non-empty-list<string> $arguments */
-    public function execute(Node $node, array $arguments, ?string $input = null): CommandResult
-    {
+    public function execute(
+        Node $node,
+        array $arguments,
+        ?string $input = null,
+        ?int $maxOutputBytes = null,
+    ): CommandResult {
         $host = $node->wireguard_ip;
 
         if (! is_string($host) || $host === '') {
@@ -40,8 +45,9 @@ final readonly class RemoteToolCommandRunner
                 port: 22,
                 identityFile: $this->keys->privateKeyPath(),
                 knownHostsFile: $this->knownHosts->path(),
+                commandTimeout: $this->budget?->seconds() ?? 900.0,
             ),
-            new RemoteCommand($arguments, $input),
+            new RemoteCommand($arguments, $input, maxOutputBytes: $maxOutputBytes),
         );
 
         if ($result->truncated) {
