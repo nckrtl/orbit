@@ -80,7 +80,14 @@ Orbit records the copy as a [database the Instance owns](/reference/database-con
 
 When the Instance has no stored configuration yet and its checkout has a `.env`, Orbit first [imports](/reference/environment-variables#import) that file, so synchronization keeps its other keys. Without a `.env`, synchronization writes only the stored keys.
 
-A source other than these two returns `instance.database_clone_unsupported` before anything changes. A copy that fails stops creation with `instance.database_clone_failed`, drops the partial copy, and removes the Instance as a failed setup does. No teardown step runs, because no setup step ran yet. When the removal cannot finish, the error has `cleanup: incomplete` and names the `instance:destroy` command that finishes it.
+The clone returns these codes.
+
+| Code | HTTP | Cause |
+| --- | --- | --- |
+| `instance.database_clone_unsupported` | 422 | The source is not MySQL on a Database server or a SQLite file inside the `default` checkout. Nothing changes. |
+| `instance.database_clone_failed` | 502 | The copy failed. Orbit drops the partial copy and removes the Instance as a failed setup does. |
+
+No teardown step runs after a failed copy, because no setup step ran yet. When the removal cannot finish, the error has `cleanup: incomplete` and names the `instance:destroy` command that finishes it.
 
 Orbit records each finished step of the copy on its connection. When a create stops before the copy finished, an identical `instance:create` finishes the copy and then runs the setup steps. It copies the data again unless the earlier copy finished, so it never keeps a partial copy.
 
