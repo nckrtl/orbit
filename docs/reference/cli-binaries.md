@@ -19,7 +19,7 @@ The `Orbit CLI Binary` workflow, `.github/workflows/orbit-cli-binary.yml`, runs 
 
 | Target | Host | Builder | Artifact | File |
 | --- | --- | --- | --- | --- |
-| Linux x86_64 | Hosted `ubuntu-latest` | `bin/orbit-build-cli-binary linux x64 <version>` | `orbit-linux-x64` | `apps/cli/builds/dist/linux/linux-x64` |
+| Linux x86_64 | Hosted `ubuntu-26.04` | `bin/orbit-build-cli-binary linux x64 <version>` | `orbit-linux-x64` | `apps/cli/builds/dist/linux/linux-x64` |
 | macOS Apple silicon | mini | `bin/orbit-build-cli-binary mac arm <version>` | `orbit-macos-arm64` | `apps/cli/builds/dist/mac/mac-arm` |
 
 Each artifact is one executable file. The version comes from `bin/orbit-version`, which runs `git describe --tags --always --dirty`. A pull-request run uses the same artifact names. Treat those binaries as packaging checks.
