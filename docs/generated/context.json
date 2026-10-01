@@ -1485,6 +1485,7 @@
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Route",
                 "Task",
                 "Task check",
@@ -1859,7 +1860,6 @@
             "title": "Tasks",
             "kind": "reference",
             "components": [
-                "apps/e2e",
                 "apps/gateway",
                 "apps/web"
             ],
