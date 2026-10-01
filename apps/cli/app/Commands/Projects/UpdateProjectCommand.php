@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Commands\Projects;
 
 use App\Commands\GatewayCommand;
+use App\Commands\Projects\Concerns\ParsesTaskWorkspaceRouted;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Projects\UpdateProjectRequest;
@@ -12,6 +13,8 @@ use Orbit\Sdk\Responses\Projects\ProjectResponse;
 
 final class UpdateProjectCommand extends GatewayCommand
 {
+    use ParsesTaskWorkspaceRouted;
+
     #[\Override]
     protected $signature = 'project:update
         {project : Numeric project ID}
@@ -22,6 +25,7 @@ final class UpdateProjectCommand extends GatewayCommand
         {--root= : New repository-relative root; package types may use .}
         {--task-check= : New task check command for task baselines and handoffs}
         {--clear-task-check : Remove the task check command so tasks run no check command}
+        {--task-workspace-routed= : Change routing for future task workspaces (true or false)}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -73,7 +77,17 @@ final class UpdateProjectCommand extends GatewayCommand
         if ($taskCheck !== null && (trim($taskCheck) === '' || strlen($taskCheck) > 4096)) {
             return $this->renderGatewayFailure('project.task_check_invalid', 'Task check command is invalid.');
         }
-        if ($type === null && $slug === null && $repositoryUrl === null && $defaultBranch === null && $root === null && $taskCheck === null && ! $clearTaskCheck) {
+
+        $taskWorkspaceRouted = $this->taskWorkspaceRouted();
+
+        if (! $taskWorkspaceRouted['valid']) {
+            return $this->renderGatewayFailure(
+                'project.task_workspace_routed_invalid',
+                'Task workspace routed must be true or false.',
+            );
+        }
+
+        if ($type === null && $slug === null && $repositoryUrl === null && $defaultBranch === null && $root === null && $taskCheck === null && ! $clearTaskCheck && $taskWorkspaceRouted['value'] === null) {
             return $this->renderGatewayFailure(
                 'project.update_required',
                 'Provide at least one Project update.',
@@ -97,6 +111,7 @@ final class UpdateProjectCommand extends GatewayCommand
                 root: $root,
                 taskCheck: $clearTaskCheck ? null : $taskCheck,
                 taskCheckProvided: $clearTaskCheck || $taskCheck !== null,
+                taskWorkspaceRouted: $taskWorkspaceRouted['value'],
             ),
             ProjectResponse::class,
             ['Update Project', 'Updating Project', 'Updated Project'],

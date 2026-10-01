@@ -20,27 +20,40 @@ beforeEach(function (): void {
     $this->fakeRepositoryBranches();
 });
 
-it('gives a new Project the task check of its type when none is sent', function (ProjectType $type, string $root, ?string $expected): void {
-    $created = $this->postJson('/api/v1/projects', [
-        'slug' => 'kit-'.$type->value,
+it('stores no task check when creation omits the command or sends null, for every type', function (ProjectType $type, string $root, bool $explicitNull): void {
+    $suffix = $explicitNull ? '-null' : '';
+    $payload = [
+        'slug' => 'kit-'.$type->value.$suffix,
         'type' => $type->value,
-        'repository_url' => 'https://github.com/acme/'.$type->value.'.git',
+        'repository_url' => 'https://github.com/acme/'.$type->value.$suffix.'.git',
         'default_branch' => 'main',
         'root' => $root,
-    ])->assertCreated()
-        ->assertJsonPath('data.task_check', $expected);
+    ];
+    if ($explicitNull) {
+        $payload['task_check'] = null;
+    }
+
+    $created = $this->postJson('/api/v1/projects', $payload)
+        ->assertCreated()
+        ->assertJsonPath('data.task_check', null);
 
     $this->getJson('/api/v1/projects/'.$created->json('data.id'))
         ->assertOk()
-        ->assertJsonPath('data.task_check', $expected);
+        ->assertJsonPath('data.task_check', null);
+
+    expect(Project::query()->findOrFail($created->json('data.id'))->taskCheckCommand())->toBeNull();
 })->with([
-    'laravel-app' => [ProjectType::LaravelApp, 'public', 'composer check'],
-    'laravel-package' => [ProjectType::LaravelPackage, '.', 'composer check'],
-    'node-package' => [ProjectType::NodePackage, '.', null],
-    'monorepo' => [ProjectType::Monorepo, 'apps/web/public', null],
+    'laravel-app omitted' => [ProjectType::LaravelApp, 'public', false],
+    'laravel-app explicit null' => [ProjectType::LaravelApp, 'public', true],
+    'laravel-package omitted' => [ProjectType::LaravelPackage, '.', false],
+    'laravel-package explicit null' => [ProjectType::LaravelPackage, '.', true],
+    'node-package omitted' => [ProjectType::NodePackage, '.', false],
+    'node-package explicit null' => [ProjectType::NodePackage, '.', true],
+    'monorepo omitted' => [ProjectType::Monorepo, 'apps/web/public', false],
+    'monorepo explicit null' => [ProjectType::Monorepo, 'apps/web/public', true],
 ]);
 
-it('stores the task check a new Project sends, including null', function (): void {
+it('stores an explicit task check, and a create retry that omits it leaves that command', function (): void {
     $this->postJson('/api/v1/projects', [
         'slug' => 'custom-check',
         'type' => ProjectType::NodePackage->value,
@@ -51,15 +64,49 @@ it('stores the task check a new Project sends, including null', function (): voi
     ])->assertCreated()
         ->assertJsonPath('data.task_check', 'vp run check');
 
-    $this->postJson('/api/v1/projects', [
-        'slug' => 'no-check',
+    $created = $this->postJson('/api/v1/projects', [
+        'slug' => 'kept-check',
         'type' => ProjectType::LaravelApp->value,
-        'repository_url' => 'https://github.com/acme/no-check.git',
+        'repository_url' => 'https://github.com/acme/kept-check.git',
         'default_branch' => 'main',
         'root' => 'public',
-        'task_check' => null,
+        'task_check' => 'composer check',
     ])->assertCreated()
+        ->assertJsonPath('data.task_check', 'composer check');
+
+    $this->postJson('/api/v1/projects', [
+        'slug' => 'kept-check',
+        'type' => ProjectType::LaravelApp->value,
+        'repository_url' => 'https://github.com/acme/kept-check.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ])->assertOk()
+        ->assertJsonPath('data.id', $created->json('data.id'))
+        ->assertJsonPath('data.task_check', 'composer check');
+});
+
+it('leaves a stored task check unchanged when an update omits it, and clears it when null is sent', function (): void {
+    $created = $this->postJson('/api/v1/projects', [
+        'slug' => 'update-check',
+        'type' => ProjectType::LaravelPackage->value,
+        'repository_url' => 'https://github.com/acme/update-check.git',
+        'default_branch' => 'main',
+        'root' => '.',
+        'task_check' => 'vp run check',
+    ])->assertCreated();
+    $id = $created->json('data.id');
+
+    $this->patchJson('/api/v1/projects/'.$id, ['code' => 'ZZZ'])
+        ->assertOk()
+        ->assertJsonPath('data.task_check', 'vp run check');
+
+    expect(Project::query()->findOrFail($id)->taskCheckCommand())->toBe('vp run check');
+
+    $this->patchJson('/api/v1/projects/'.$id, ['task_check' => null])
+        ->assertOk()
         ->assertJsonPath('data.task_check', null);
+
+    expect(Project::query()->findOrFail($id)->taskCheckCommand())->toBeNull();
 });
 
 it('still refuses a Project create without a type', function (): void {

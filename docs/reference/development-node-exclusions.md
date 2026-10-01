@@ -13,7 +13,7 @@ covers:
 
 # Development node exclusions
 
-An exclusion keeps a Project off one `app-dev` Node for development. One row records one Project and one Node. The Project commands and the Node commands read and write the same row. With no rows, a Project can use every eligible `app-dev` Node.
+An exclusion keeps a Project off one `app-dev` Node for development. One row records one Project and one Node. The Project commands and the Node commands read and write the same row. With no rows, a Project can use every eligible `app-dev` Node. The [task workspace routing setting](/reference/projects#task-workspace-routing) changes whether a new workspace gets a Route; it does not change placement or exclusions.
 
 ## Record an exclusion
 

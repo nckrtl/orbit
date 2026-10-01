@@ -285,7 +285,9 @@ it('starts a group when provisioning assigns an instance under both ceilings', f
 
         public function provision(InstanceProvisionIntent $intent): ?Instance
         {
-            expect($intent->visitable)->toBeFalse();
+            expect($intent->visitable)->toBeTrue()
+                ->and($intent->group->project->slug)->toBe('orbit')
+                ->and($intent->group->project->task_workspace_routed)->toBeTrue();
 
             return $this->instance;
         }
@@ -534,9 +536,9 @@ it('returns a provisioned group to todo on its Instance when the Node is already
         ->and($queued->fresh()?->reviewer_agent_thread_id)->toBeNull();
 });
 
-it('advances a claimed Orbit group to running when the real provisioner and T3 spawner succeed', function (): void {
+it('advances a claimed unrouted group to running when the real provisioner and T3 spawner succeed', function (): void {
     $project = scheduler_app('orbit');
-    $project->update(['root' => 'public']);
+    $project->update(['root' => 'public', 'task_workspace_routed' => false]);
     $node = scheduler_node('real-wire', '10.44.0.94');
     $node->update(['user' => 'orbit', 'tld' => 'test', 'settings' => ['apps' => ['path' => '/srv/orbit/apps']]]);
     $node->roles()->create([
@@ -608,6 +610,7 @@ it('advances a claimed Orbit group to running when the real provisioner and T3 s
         ->and($claimed?->taskable_id)->not->toBeNull()
         ->and($claimed?->taskable)->toBeInstanceOf(Instance::class)
         ->and($claimed?->taskable?->status)->toBe(InstanceState::SourceResolved)
+        ->and($claimed?->taskable?->task_workspace_routed)->toBeFalse()
         ->and($claimed?->taskable?->routes()->count())->toBe(0)
         ->and($claimed?->reviewer_agent_thread_id)->toBeNull()
         ->and($claimed?->tasks->first()?->status)->toBe(TaskStatus::Running)
@@ -971,11 +974,6 @@ it('records a missing start commit on a later tick', function (): void {
         {
             return 'task-retry';
         }
-
-        public function definesComposerCheckScript(Instance $instance): bool
-        {
-            return true;
-        }
     });
     app(TaskExtensionState::class)->enable();
 
@@ -1029,11 +1027,6 @@ it('keeps a migrated continuation on its source subtask start after the source c
         {
             return 'task-continuation';
         }
-
-        public function definesComposerCheckScript(Instance $instance): bool
-        {
-            return true;
-        }
     });
     app(TaskExtensionState::class)->enable();
 
@@ -1079,11 +1072,6 @@ it('does not record a later head after the implementer starts and commits', func
         public function currentBranch(Instance $instance): ?string
         {
             return 'task-late';
-        }
-
-        public function definesComposerCheckScript(Instance $instance): bool
-        {
-            return true;
         }
     });
     app(TaskExtensionState::class)->enable();
@@ -1137,11 +1125,6 @@ it('records a start commit on a later tick while the implementer is only reserve
         public function currentBranch(Instance $instance): ?string
         {
             return 'task-reserved';
-        }
-
-        public function definesComposerCheckScript(Instance $instance): bool
-        {
-            return true;
         }
     });
     app(TaskExtensionState::class)->enable();
@@ -1551,7 +1534,7 @@ it('runs the Project setup steps and check on the fresh workspace before the fir
         ->and($checks->commands)->toBe(['composer check'])
         ->and($check->kind)->toBe(TaskCheckKind::Baseline)
         ->and($check->task_comment_id)->toBeNull()
-        ->and($checks->setups)->toBe([[['name' => 'Install', 'command' => 'composer install', 'timeout_seconds' => 600], ['name' => '[Orbit internal] Install Composer dependencies', 'command' => 'while IFS= read -r -d "" manifest; do project="${manifest%/composer.json}"; [ "$project" = "$manifest" ] && project="."; if { [ "$project" = "." ] || [ -f "$project/composer.lock" ]; } && [ ! -f "$project/vendor/autoload.php" ]; then (cd "$project" && if [ -f composer.lock ]; then composer install --no-interaction --prefer-dist; else composer install --no-interaction --prefer-dist && rm -f composer.lock; fi) || exit $?; fi; done < <(git ls-files -z -- "composer.json" ":(glob)**/composer.json")', 'timeout_seconds' => 600]]]);
+        ->and($checks->setups)->toBe([[['name' => 'Install', 'command' => 'composer install', 'timeout_seconds' => 600]]]);
 
     test_pass_baseline();
 
@@ -1559,7 +1542,7 @@ it('runs the Project setup steps and check on the fresh workspace before the fir
         ->and($spawner->events)->toBe(['implementer:1']);
 });
 
-it('prepares Composer and JavaScript dependencies referenced by a custom baseline command', function (): void {
+it('runs a custom baseline command without inferring dependency installs', function (): void {
     $project = scheduler_app('custom-baseline-command');
     $project->update(['task_check' => 'composer test && bun run check']);
     $instance = scheduler_instance($project, scheduler_node('custom-baseline-node', '10.44.0.98'), 'custom-check');
@@ -1571,13 +1554,11 @@ it('prepares Composer and JavaScript dependencies referenced by a custom baselin
     app(TaskScheduler::class)->claimNext();
     test_pass_baseline();
 
-    expect(array_column($checks->setups[0], 'name'))->toBe([
-        '[Orbit internal] Install Composer dependencies',
-        '[Orbit internal] Install JavaScript dependencies',
-    ])->and($checks->commands)->toBe(['composer test && bun run check']);
+    expect($checks->setups)->toBe([[]])
+        ->and($checks->commands)->toBe(['composer test && bun run check']);
 });
 
-it('prepares Composer dependencies only when the baseline command runs composer or uses vendor', function (string $command, bool $installs): void {
+it('does not infer a Composer install from the baseline command', function (string $command): void {
     $project = scheduler_app('composer-trigger');
     $project->update(['task_check' => $command]);
     $instance = scheduler_instance($project, scheduler_node('composer-trigger-node', '10.44.0.99'), 'composer-trigger');
@@ -1589,13 +1570,14 @@ it('prepares Composer dependencies only when the baseline command runs composer 
     app(TaskScheduler::class)->claimNext();
     test_pass_baseline();
 
-    expect(in_array('[Orbit internal] Install Composer dependencies', array_column($checks->setups[0], 'name'), true))->toBe($installs);
+    expect($checks->setups)->toBe([[]])
+        ->and($checks->commands)->toBe([$command]);
 })->with([
-    'composer command' => ['composer test', true],
-    'composer after a shell operator' => ['cd app&&composer', true],
-    'vendor binary' => ['vendor/bin/pest', true],
-    'composer.json file name' => ['test -f composer.json && echo ok', false],
-    'composer in another word' => ['./mycomposer check', false],
+    'composer command' => ['composer test'],
+    'composer after a shell operator' => ['cd app&&composer'],
+    'vendor binary' => ['vendor/bin/pest'],
+    'composer.json file name' => ['test -f composer.json && echo ok'],
+    'composer in another word' => ['./mycomposer check'],
 ]);
 
 it('passes an unset Project baseline without a command and starts the first implementer', function (): void {
@@ -1691,11 +1673,6 @@ function scheduler_approved_subtask(string $slug, bool $last = false, ?string $r
         public function currentBranch(Instance $instance): ?string
         {
             return $this->branch;
-        }
-
-        public function definesComposerCheckScript(Instance $instance): bool
-        {
-            return true;
         }
     });
     app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([
@@ -2189,11 +2166,6 @@ function scheduler_review(array $receipts, bool $notified = true): array
         public function currentBranch(Instance $instance): ?string
         {
             return 'task-'.$this->groupId;
-        }
-
-        public function definesComposerCheckScript(Instance $instance): bool
-        {
-            return true;
         }
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner

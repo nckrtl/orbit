@@ -3,21 +3,23 @@ Fetching Instances...
 
 ┌  Project: acme
 │
-├  ID               1
+├  ID                      1
 │
-├  Name             Acme
+├  Name                    Acme
 │
-├  Type             laravel-app
+├  Type                    laravel-app
 │
-├  Repository       https://github.com/acme/site.git
+├  Repository              https://github.com/acme/site.git
 │
-├  Default branch   —
+├  Default branch          —
 │
-├  Web root         —
+├  Web root                —
 │
-├  Task check       —
+├  Task check              —
 │
-└  Excluded nodes   —
+├  Task workspace routed   yes
+│
+└  Excluded nodes          —
 
  ┌────┬──────┬─────────┬───────────────┬────────┐
  │ ID │ NAME │ NODE    │ DOMAIN        │ STATUS │

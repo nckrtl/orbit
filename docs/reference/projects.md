@@ -2,14 +2,13 @@
 title: "Projects"
 description: "How a Project records one repository, its type, and the source defaults that Instances inherit, and how create, update, and removal work."
 covers:
-  - apps/gateway/app/{Actions,Domain,Infrastructure}/Projects/**
-  - apps/gateway/app/Domain/Projects/{ProjectType,ProjectCode}.php
-  - apps/gateway/app/Domain/SourceControl/{GitRepositoryIdentity,GitRepositoryOrigin,ProjectRoot,RelativeWebRoot,RepositoryDefaultBranchResolver}.php
-  - apps/gateway/app/Infrastructure/SourceControl/NativeRepositoryDefaultBranchResolver.php
-  - apps/gateway/app/Http/{Controllers/Api/ProjectsController.php,Requests/Projects/**}
-  - apps/gateway/app/Data/Projects/**
-  - apps/gateway/app/Models/{Project,ProjectUpdate}.php
-  - apps/cli/app/Commands/Projects/**
+  - "apps/gateway/app/{Actions,Domain,Infrastructure}/Projects/**"
+  - "apps/gateway/app/Domain/SourceControl/{GitRepositoryIdentity,GitRepositoryOrigin,ProjectRoot,RelativeWebRoot,RepositoryDefaultBranchResolver}.php"
+  - "apps/gateway/app/Infrastructure/SourceControl/NativeRepositoryDefaultBranchResolver.php"
+  - "apps/gateway/app/{Http/{Controllers/Api/ProjectsController.php,Requests/Projects/**},Data/Projects/**}"
+  - "apps/gateway/app/Models/{Project,ProjectUpdate}.php"
+  - "apps/cli/app/Commands/Projects/**"
+  - "apps/gateway/database/migrations/*_{rename_app_domain_to_project_and_instance,add_task_workspace_routing}.php"
 ---
 
 # Projects
@@ -29,7 +28,8 @@ A Project stores these fields. API responses, the SDK, and CLI JSON use the same
 | `repository_url` | HTTPS or SSH Git URL that Orbit uses to fetch. |
 | `default_branch` | Branch of the `default` Instance and the base for new branches. |
 | `root` | Repository-relative path that Instances inherit. |
-| `task_check` | Command that task baselines and handoffs run. See [Project check](/reference/tasks#project-check). |
+| `task_check` | Optional command that task baselines and handoffs run. It defaults to null for every type. See [Project check](/reference/tasks#project-check). |
+| `task_workspace_routed` | Boolean, default true. Whether newly created task workspaces get a Route. See [Task workspace routing](#task-workspace-routing). |
 
 ## Project types
 
@@ -37,9 +37,9 @@ The type belongs to the Project, so every Instance of one repository behaves the
 
 | Type | Route | PHP-FPM | Root `.` allowed | Default `task_check` |
 | --- | --- | --- | --- | --- |
-| `laravel-app` | Exactly one per active Instance | Yes | No | `composer check` |
+| `laravel-app` | Exactly one per active Instance | Yes | No | none |
 | `monorepo` | Only an explicit Route | Only with a Route to a Laravel source | No | none |
-| `laravel-package` | Only an explicit Route | No | Yes | `composer check` |
+| `laravel-package` | Only an explicit Route | No | Yes | none |
 | `node-package` | Only an explicit Route | No | Yes | none |
 
 `.` means the repository root. A Route cannot target an Instance whose root is `.`. Set a relative web root first. A `laravel-package` Project does not need an `artisan` file.
@@ -76,10 +76,10 @@ When [`instance:register`](/domains/applications#register-an-existing-checkout) 
 | `repository_url` | Required repository access URL in the Gateway API and PHP SDK. |
 | `--default-branch` | Optional CLI input for `project:create`. |
 | `root` and `--root` | Required API and SDK field. A normalized repository-relative path; `.` is allowed for package types and means the repository root. |
-| `task_check` and `--task-check` | Optional command that task baselines and handoffs run ([Project check](/reference/tasks#project-check)). When omitted, `laravel-app` and `laravel-package` get `composer check`, and `monorepo` and `node-package` get null, which runs no check command. An explicit null also stores no command. |
+| `task_check` and `--task-check` | Optional command that task baselines and handoffs run ([Project check](/reference/tasks#project-check)). Omitted or null runs no check command for any type. Existing stored commands remain unchanged. |
 Registration never picks `node-package` and has no type option. Change the type afterwards with `project:update --type`.
 
-SDK Project responses and the `project:list` and `project:show` commands expose the stored type, repository, default branch, root, and task check. The task check is an ordinary setting, like setup steps, so activity records it as sent. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` compatibility name.
+SDK Project responses and the `project:list` and `project:show` commands expose the stored type, repository, default branch, root, task check, and `task_workspace_routed`. The task check is an ordinary setting, like setup steps, so activity records it as sent. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` compatibility name.
 
 A value you pass fills an unresolved value only. It must match what the Gateway verifies:
 
@@ -95,7 +95,7 @@ Valid explicit values fill only unresolved or optional values. They do not overr
 
 ## Retry creation safely
 
-Repeating `project:create` with the same name, slug, type, repository access URL, default branch, root, and any sent task check returns the existing Project. A retry does not look up an omitted branch again.
+Repeating `project:create` with the same name, slug, type, repository access URL, default branch, root, any sent task check, and any sent `task_workspace_routed` value returns the existing Project. Omitting `task_workspace_routed` keeps the stored value. A retry does not look up an omitted branch again.
 
 A retry that changes any creation value fails with `project.identity_conflict` and does not mutate the Project. A different repository access URL is a changed value even when it has the same canonical repository identity, so creation never switches the stored URL.
 
@@ -107,7 +107,7 @@ Change the code in the web app, or send `PATCH /api/v1/projects/{project}` with 
 
 ## Update a Project
 
-Use `project:update` when an existing Project must change its type, slug, repository access URL, default branch, relative web root, or task check. The Gateway API accepts `PATCH /api/v1/projects/{project}` with those same fields. The PHP SDK sends `UpdateAppRequest` to that path. Omitted fields stay unchanged; send `task_check: null` to clear the task check. The MCP `project-update` tool accepts the same fields. The [Update lifecycle](#update-lifecycle) defines source reconciliation. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
+Use `project:update` when an existing Project must change its type, slug, repository access URL, default branch, relative web root, task check, or task workspace routing. The Gateway API accepts `PATCH /api/v1/projects/{project}` with those same fields, including `task_workspace_routed`. The PHP SDK sends `UpdateProjectRequest` to that path. Omitted fields stay unchanged; send `task_check: null` to clear the task check. The CLI and the MCP `project-update` tool accept the same fields. The [Update lifecycle](#update-lifecycle) defines source reconciliation. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
 
 ```bash
 orbit project:update 3 --repository=https://github.com/acme/site.git --default-branch=stable
@@ -122,9 +122,18 @@ orbit project:update 3 --repository=https://github.com/acme/site.git --default-b
 | `repository_url` and `--repository` | Runs `git remote set-url origin` in each development checkout. Equivalent HTTPS and SSH URLs share an identity. See [Repository changes](#repository-changes). |
 | `default_branch` and `--default-branch` | Must exist on the remote. Switches every development `default` Instance without a `branch_override`. Explicit overrides stay unchanged. |
 | `root` and `--root` | Changes the effective root of every Instance without its own root. Orbit reprojects the runtime of each such Instance that has a Route. |
-| `task_check` and `--task-check` | Sets the command task baseline and handoffs run. Send null or `--clear-task-check` to run no check. |
+| `task_check` and `--task-check` | Sets the command that task baselines and handoffs run. Send null or `--clear-task-check` to run no check. |
+| `task_workspace_routed` and `--task-workspace-routed=true\|false` | Sets routing for future task workspaces. Existing workspaces keep their recorded mode and Routes. |
 
 A type change must keep a valid root. When the stored root is `.` and the new type does not allow it, validation fails on `root`. Send a web root with the type change. A type or root change that leaves a Route target with root `.` returns `route.target_web_root_unsupported`.
+
+### Task workspace routing
+
+`POST /api/v1/projects` and `PATCH /api/v1/projects/{project}` accept `task_workspace_routed` as a JSON boolean. Null, strings, and numbers fail with HTTP 422 `validation.failed`, with details for that field. Creation defaults to true; an omitted update leaves it unchanged. An explicit value participates in creation's identity check; omitting it on an identical retry preserves the existing value. API list and show responses, the SDK, CLI JSON, and MCP expose the stored boolean. CLI human detail output labels it `Task workspace routed`.
+
+The create and update commands accept `--task-workspace-routed=true` or `--task-workspace-routed=false`. An invalid CLI value returns `project.task_workspace_routed_invalid` before a request. The setting controls task provisioning only. It does not change ordinary Instances or bypass root, Route, and Project-type validation. A settings-only update does not reconcile existing sources or Routes.
+
+The migration seeds false for existing Projects with slug `orbit` and true for other existing Projects to preserve their previous creation behavior. This is a one-time migration of the legacy policy; the engine never consults the slug. It also records the mode of existing task workspaces from their actual provisioned state, so Doctor does not reinterpret them after a settings change. Renaming a Project does not change the setting.
 
 ### Update lifecycle
 
@@ -196,6 +205,10 @@ Before `publishing`, the old values are still in effect, so a rollback is safe. 
 ### Type decides capabilities
 
 Instances of one repository share one serving contract. Per-Instance route or PHP-FPM flags were rejected. A Laravel package or a monorepo must not publish a domain or keep an idle PHP-FPM master, so only `laravel-app` gets a Route by default.
+
+### A setting routes task workspaces
+
+A new task workspace is visitable only when the Project's `task_workspace_routed` setting says so. Choosing that from the slug `orbit` was rejected, because the engine would then know one repository. [Task workspace routing](#task-workspace-routing) records the one-time migration of that old result, and that a later change does not reroute a workspace that already exists.
 
 ### Project and Instance
 
