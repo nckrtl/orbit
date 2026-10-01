@@ -342,9 +342,11 @@ A failed step returns the Node record to the status it had, restores the Metrics
 
 ### Offline removal
 
-Use `--offline` only for a Node that the Gateway cannot reach. The Gateway probes the Node first. A Node that answers keeps every guard above, but the removal still skips `firewall-recovery`. So omit `--offline` for a Node that is up.
+Use `--offline` only for a Node that the Gateway cannot reach. The Gateway probes the Node first. A Node that answers keeps every guard above, but the removal still skips `firewall-recovery`. So omit `--offline` for a Node that is up. A reachable Linux removal returns an empty `retained_on_node`. The Gateway still removes the Node agent, and public SSH stays as it was because firewall recovery did not run.
 
-For a Node that does not answer, the API needs `force`, or the Gateway refuses with `node.confirmation_required`. The CLI sends it after `--force` or a yes at the prompt. The guards for Instances, Routes, Schedules, protected Nodes, and firewall rules still apply. The Gateway then removes every role on its own side, deletes the Node's Process records, removes the WireGuard peer, and deletes the record. It changes nothing on the machine. Caddy sites, checkouts, containers, Process units, Orbit UFW rules, the Metrics exporter, and the Node agent stay in place, and public SSH stays closed. The response lists what remains under `retained_on_node`.
+For a Node that does not answer, the API needs `force`, or the Gateway refuses with `node.confirmation_required`. The CLI sends it after `--force` or a yes at the prompt. The guards for Instances, Routes, Schedules, protected Nodes, and firewall rules still apply. The Gateway then removes every role on its own side, deletes the Node's Process records, removes the WireGuard peer, and deletes the record. It changes nothing on the machine. Caddy sites, checkouts, containers, Process units, Orbit UFW rules, the Metrics exporter, and the Node agent stay in place, and public SSH stays closed.
+
+`retained_on_node` lists the Node agent, the Metrics exporter, and each shed role's leftovers. `follow_up` says those leftovers stay until you clear them. macOS does not use that list. [macOS removal](#removal) always reports `user`, `package-managers`, and `host-wireguard`.
 
 ### Add the machine again
 
@@ -377,3 +379,11 @@ When `gateway` runs on another machine, that machine is itself a WireGuard peer.
 ### A kernel setting for Caddy reloads
 
 Caddy's `grace_period` and `shutdown_delay`, a reload through the admin API, and a certificate cache that survives reloads leave the reset count unchanged in measurements. Handing Caddy a systemd socket would change every listener for the same effect. `net.ipv4.tcp_migrate_req` cut the resets by about 93%. It needs Linux 5.14 or newer, which every supported Ubuntu release has.
+
+### A Mac needs no service role
+
+A Mac is a managed Node for tools, not a service host. It uses the account, WireGuard identity, and SSH access that already exist. Enrollment pins the approved host key and checks the platform, architecture, account, and tunnel before it succeeds. It creates no account, installs no Ubuntu packages, and does not change host DNS or the firewall.
+
+An application role was rejected because tools do not need application services and the role list stays empty. Package operations through the Node agent were rejected because SSH already makes the changes and the agent stays observation-only. The Ubuntu bootstrap was rejected because its packages, users, resolver, firewall, and systemd units do not apply to macOS. A second Homebrew or Vite+ install was rejected because the packages already on the machine would stay outside the scope Orbit manages.
+
+Platform support is checked per operation. Tool management and Doctor run on the enrolled Mac. Linux roles, exporters, Processes, Schedules, and the Node agent do not. A role assignment fails before any remote change. macOS OS updates, firewall management, application hosting, and a macOS Node agent are separate features. A roleless Ubuntu Node proves the same empty-role boundary on Linux, including apt adoption without a reinstall. A real Mac proves enrollment and the Homebrew and Vite+ lifecycle. Low free space on that Mac makes the Node drift with `node.disk_low` while informational package findings stay informational.

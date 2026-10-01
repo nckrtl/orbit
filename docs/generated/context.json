@@ -746,69 +746,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0183-manage-macos-tools-without-service-roles.md",
-            "title": "ADR 0183: Manage macOS tools without service roles",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/gateway",
-                "apps/web",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Doctor",
-                "Gateway",
-                "Node",
-                "Node agent",
-                "Role",
-                "Task",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0183"
-            ]
-        },
-        {
-            "path": "docs/decisions/0184-adopt-selected-tools-from-existing-managers.md",
-            "title": "ADR 0184: Adopt selected tools from existing managers",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/gateway",
-                "apps/web",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Doctor",
-                "Gateway",
-                "Node",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0184"
-            ]
-        },
-        {
-            "path": "docs/decisions/0185-report-informational-tool-discoveries-in-doctor.md",
-            "title": "ADR 0185: Report informational tool discoveries in Doctor",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/gateway",
-                "apps/web",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Doctor",
-                "Gateway",
-                "Node",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0185"
-            ]
-        },
-        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -853,10 +790,7 @@
                 "0097",
                 "0175",
                 "0178",
-                "0182",
-                "0183",
-                "0184",
-                "0185"
+                "0182"
             ]
         },
         {

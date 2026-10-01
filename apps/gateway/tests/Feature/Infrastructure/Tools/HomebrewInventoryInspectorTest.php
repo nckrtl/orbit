@@ -312,6 +312,61 @@ describe(HomebrewInventoryInspector::class, function (): void {
             ->and($scans[1]->packages[0]->adoptionBlock)->toBe(ToolInventoryPackage::BLOCK_AUTHORIZATION);
     });
 
+    it('keeps a readable non-SemVer version supported and stores no normalized version', function (): void {
+        [$inspector] = homebrew_inventory_inspector([
+            homebrew_inventory_result("/opt/homebrew\n/Users/mini\n"),
+            homebrew_inventory_result("27.0.1\n"),
+            homebrew_inventory_result(homebrew_inventory_json([
+                homebrew_inventory_formula('node', version: '25.8.1_1'),
+            ])),
+            homebrew_inventory_names(['node']),
+            homebrew_inventory_result(homebrew_inventory_json([], [
+                homebrew_inventory_cask('font-hack', '3.003'),
+            ])),
+            homebrew_inventory_names(['font-hack']),
+        ]);
+
+        $scans = $inspector->inspect(homebrew_inventory_node(saved: false));
+
+        expect($scans[0]->scanState)->toBe(ToolInventoryScanState::Complete)
+            ->and($scans[0]->packages[0]->package)->toBe('node')
+            ->and($scans[0]->packages[0]->installedVersion)->toBeNull()
+            ->and($scans[0]->packages[0]->adoption)->toBe(ToolInventoryPackage::SUPPORTED)
+            ->and($scans[0]->packages[0]->adoptionBlock)->toBeNull()
+            ->and($scans[1]->scanState)->toBe(ToolInventoryScanState::Complete)
+            ->and($scans[1]->packages[0]->package)->toBe('font-hack')
+            ->and($scans[1]->packages[0]->installedVersion)->toBeNull()
+            ->and($scans[1]->packages[0]->adoption)->toBe(ToolInventoryPackage::SUPPORTED)
+            ->and($scans[1]->packages[0]->adoptionBlock)->toBeNull();
+    });
+
+    it('keeps a non-SemVer formula blocked when its bottle is missing and a cask blocked when it needs authorization', function (): void {
+        [$inspector] = homebrew_inventory_inspector([
+            homebrew_inventory_result("/opt/homebrew\n/Users/mini\n"),
+            homebrew_inventory_result("27.0.1\n"),
+            homebrew_inventory_result(homebrew_inventory_json([
+                homebrew_inventory_formula('node', version: '25.8.1_1', files: []),
+            ])),
+            homebrew_inventory_names(['node']),
+            homebrew_inventory_result(homebrew_inventory_json([], [
+                homebrew_inventory_cask('stats', '1.0', artifacts: [[
+                    'app' => ['Stats.app'],
+                    'target' => '/Applications/Stats.app',
+                ]]),
+            ])),
+            homebrew_inventory_names(['stats']),
+        ]);
+
+        $scans = $inspector->inspect(homebrew_inventory_node(saved: false));
+
+        expect($scans[0]->packages[0]->installedVersion)->toBeNull()
+            ->and($scans[0]->packages[0]->adoption)->toBe(ToolInventoryPackage::UNSUPPORTED)
+            ->and($scans[0]->packages[0]->adoptionBlock)->toBe(ToolInventoryPackage::BLOCK_BOTTLE)
+            ->and($scans[1]->packages[0]->installedVersion)->toBe('1.0.0')
+            ->and($scans[1]->packages[0]->adoption)->toBe(ToolInventoryPackage::UNSUPPORTED)
+            ->and($scans[1]->packages[0]->adoptionBlock)->toBe(ToolInventoryPackage::BLOCK_AUTHORIZATION);
+    });
+
     it('keeps an empty finished read complete and a failed read incomplete', function (CommandResult $formula, ToolInventoryScanState $state): void {
         [$inspector] = homebrew_inventory_inspector([
             homebrew_inventory_result("/opt/homebrew\n"),

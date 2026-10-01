@@ -44,6 +44,8 @@ A missing scope is scan state `absent`. A scope with the wrong owner, a non-offi
 
 An accepted macOS Homebrew prefix is owned by the enrolled account and has origin `https://github.com/Homebrew/brew`. Apple silicon and an untar-anywhere install are the git repository: `prefix/.git` exists and `prefix/bin/brew` is a regular executable. The Intel `/usr/local` layout keeps the nested repository `prefix/Homebrew/.git` and a `prefix/bin/brew` symlink to `../Homebrew/bin/brew`. Any other shape is conflicting.
 
+The probe prints the prefix and the account home. The script accepts only `/`, ASCII letters, digits, `.`, `_`, and `-` in that home. It stops when the home contains `..` or any other character, including a space, `@`, `+`, or a non-ASCII letter, so the probe fails and no prefix is accepted. A home of `/` is ignored after a successful probe: the prefix stands and the home is unknown. A cask target is user-owned only when the home is known and contains the target. A font under that home, such as `font-fira-code`, is supported. A cask that needs an administrator prompt, such as `stats`, stays `authorization_required`.
+
 `orbit tool:manager:list --node=<id>` shows each manager the Node's platform supports, with one of these states. An unsupported manager is omitted, not listed as `uninstalled`.
 
 | State | Meaning |
@@ -98,6 +100,8 @@ Packages inside a `complete` manager are ordered by package name, ascending. A f
 | `adoption_block` | string or null | Null when adoption is supported. Otherwise a block token. |
 
 The block tokens are `protected`, `dependency`, `unsupported_artifact`, `unsupported_source`, `bottle_unavailable`, `version_unreadable`, and `authorization_required`. A dependency or a [protected package](#protected-packages) is never `supported`. An unsupported cask stays in the list with adoption unavailable and one of those tokens. Doctor and the Node's Tools page use this inspector. See [informational package discoveries](/cli/doctor#informational-package-discoveries).
+
+The scan stores a normalized SemVer version, or null. A readable formula revision such as `25.8.1_1`, and a readable cask version such as `3.003`, normalize to null and can still be `supported`. `version_unreadable` means there is no readable version string, such as `latest`. It does not mean readable text failed the SemVer check. `tool:scan` prints a null version as an em dash. The Tools page shows `unreadable`. Doctor prints `version=unknown`.
 
 Homebrew inventory uses two reads for each of `brew` and `brew-cask`. `info --json=v2 --formula --installed` and `info --json=v2 --cask --installed` supply metadata. `list --formula -1` and `list --cask -1` supply installed names without loading formulae or casks. Both use the usual Homebrew environment and do not set `HOMEBREW_FORCE_API_AUTO_UPDATE`.
 
@@ -195,6 +199,8 @@ Adoption errors use the Tool envelope. `details.step` is `adopt`. `details.id` i
 
 Install still refuses an unregistered installed package with `tool.already_installed_unmanaged` (HTTP 409). It does not adopt that package. The caller uses `tool:adopt`.
 
+On Linux, unconstrained adoption records the apt version string, such as `5.8.3-1`. A constraint is checked only when that version normalizes to SemVer. `^1.25` accepts `1.25.0-2ubuntu4`. A version that does not normalize returns `tool.installed_version_unparseable` and creates no Tool row.
+
 ## Install a Tool
 
 A caller sends only the Node, the manager, the package name, and an optional version constraint. Each manager checks the package name against its own grammar and builds a fixed command with the name in one argument position. A caller cannot send commands, options, repositories, or environment values.
@@ -203,7 +209,7 @@ The Gateway refuses a package that is already on the Node without a Tool record,
 
 A new install creates the Tool as `installing`, installs the package, and reads the installed version. A success marks the Tool `installed` and reports `applied`. A failure after the Tool exists marks it `failed` and returns its ID in the error, so you can retry or remove it. Running the same install again retries a Tool whose install failed. An install of a Tool that is already `installed`, with the same constraint, checks the package again. When the package is present, the result is `unchanged`.
 
-The optional constraint is a SemVer range, such as `^0.150`. It only stops an unsafe version. Before an install, the Gateway reads the manager's candidate version. A candidate outside the range fails with `tool.version_constraint_blocked`, and the Gateway installs nothing. The Gateway never searches for another matching version and never downgrades. When a manager's version cannot be read as SemVer, a constrained install fails. A Tool keeps its constraint: installing it again with another constraint fails with `tool.constraint_conflict`.
+The optional constraint is a SemVer range, such as `^0.150`. It only stops an unsafe version. Before an install, the Gateway reads the manager's candidate version. A candidate outside the range records the Tool as `failed` with `tool.version_constraint_blocked` (HTTP 422, outcome `blocked_by_constraint`) and installs nothing. Remove that row, or retry with a constraint the candidate satisfies. The Gateway never searches for another matching version and never downgrades. When the candidate is not SemVer, the same failed row is kept and the code is `tool.candidate_version_unparseable`. A Tool keeps its constraint: installing it again with another constraint fails with `tool.constraint_conflict`.
 
 ## Update a Tool
 
@@ -296,7 +302,7 @@ Every Tool success body and every Tool error `details.outcome` uses one of these
 | --- | --- | --- |
 | `applied` | install, update, remove, adopt | A mutation changed the package, or adopt created a Tool without changing the host. |
 | `unchanged` | install, update, adopt | The requested intent already held. |
-| `blocked_by_constraint` | update | The candidate is outside the stored constraint. The Tool stays installed. |
+| `blocked_by_constraint` | update | The candidate is outside the stored constraint. Update leaves the Tool installed. Install records `failed` and installs nothing. |
 | `constraint_invalid` | none | The constraint is not a SemVer range. |
 | `candidate_version_unavailable` | none | The manager returned no candidate. |
 | `candidate_version_unparseable` | none | A constraint is set and the candidate is not SemVer. |
@@ -323,7 +329,7 @@ Each mutation locks its Tool and its manager's scope on the Node. A busy lock fa
 
 ## Check removal with Doctor
 
-The `tool` family of [Doctor](/cli/doctor) compares each Tool record with the Node. A record whose package is absent reports `tool.not_installed`. A normalized version that violates the stored constraint reports `tool.version_mismatch`. An unconstrained Tool needs only to be installed; the recorded version is the last operation's result, not desired intent. The report never contains raw dpkg output. Unregistered discoveries are a separate informational kind. They do not replace these drift checks.
+The `tool` family of [Doctor](/cli/doctor) compares each Tool record with the Node. A record whose package is absent reports `tool.not_installed`, including a `failed` install that never placed the package. A normalized version that violates the stored constraint reports `tool.version_mismatch`. An unconstrained Tool needs only to be installed; the recorded version is the last operation's result, not desired intent. The report never contains raw dpkg output. Those drift issues use the Tool id as `resource_id` and leave `resource_name` null. Unregistered discoveries are a separate informational kind. They do not replace these drift checks.
 
 ## Why it works this way
 
@@ -344,3 +350,11 @@ A manager serves any Node that the Gateway manages. Tying `vp` and `composer` to
 ### Bottled Homebrew Core only
 
 The formula manager accepts only Homebrew Core bottles with verified checksums, on Linux and macOS. The macOS tag comes from `sw_vers` and the code-owned symbol table, never from a Homebrew developer command. Casks use a separate macOS adapter with official metadata and supported artifacts. Taps, source builds, caller options, and arbitrary installers remain outside both contracts. Separate package identities avoid formula and cask collisions; a shared prefix lock prevents concurrent mutations of their common installation.
+
+### Selected adoption
+
+Discovery shows installed packages and creates no Tool rows. Adoption is the separate choice to own one supported package that is already installed. It does not install, update, remove, or repin the manager. The CLI, MCP, and the Node Tools page call that same Gateway operation.
+
+Owning every installed package was rejected because a scan is not a request to own the machine. Silent adoption during install was rejected because installing and taking ownership are different intentions. Storing discoveries as Tools was rejected because a Tool row is selected intent, not an observation. One identity for a formula and a cask was rejected because the names can collide and the operations differ. Separate locks were rejected because both change the same Homebrew prefix. Adopting tunnel and bootstrap packages was rejected because removal would then uninstall SSH, WireGuard, DNS, Docker, the firewall, sudo, Caddy, or a manager.
+
+A readable version that is not SemVer can still be adopted when no constraint is set. A formula revision such as `25.8.1_1` and a cask version such as `3.003` are null in the scan. Doctor shows `unknown`, the Tools page shows `unreadable`, and `tool:scan` shows an em dash. A constraint cannot be checked, so adopt returns `tool.installed_version_unparseable` and install returns `tool.candidate_version_unparseable`. The package stays where it was.

@@ -289,7 +289,7 @@ orbit node:remove 7 --offline --force
 The Gateway refuses while the Node owns Instances, Routes, Schedules, roles, Processes, or firewall rules. It never removes the caller's Node, the `gateway` Node, or the `vpn` Node.
 
 <Warning>
-`--offline --force` changes nothing on the machine. Caddy sites, checkouts, containers, units, UFW rules, and the Node agent stay in place, and public SSH stays closed. The response lists them under `retained_on_node`.
+Use `--offline` when the Node does not answer. The Gateway probes first. A Node that answers follows online removal, skips `firewall-recovery`, and a Linux response has an empty `retained_on_node`. A Node that does not answer is not changed on the machine. `retained_on_node` then lists the Node agent, the Metrics exporter, and each shed role's leftovers. macOS always lists `user`, `package-managers`, and `host-wireguard`.
 </Warning>
 
 Removing a macOS Node also reports what stays on the machine. JSON includes `retained_on_node`, and the human output lists the same values: `user`, `package-managers`, and `host-wireguard`. Those are the account, the package managers, and the host WireGuard configuration. Declining the confirmation, or omitting `--force` without a terminal, cancels before the Gateway removes anything.

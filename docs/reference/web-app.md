@@ -50,7 +50,7 @@ Tools always shows every registered Tool for that Node, including failed tools a
 
 The recorded version is the last operation's result. A live scan supplies the observed version beside it: a newer install, `absent` when a completed scan did not see the package, `not scanned` when that manager is outside the inventory, and `unavailable` when no observation is loaded.
 
-A separate detected-unmanaged group shows installed Homebrew formulae, casks, and Vite+ globals from `GET /api/v1/tool-inventory` (`tool:scan`). It labels package kind, observed version, dependency status, and the support reason. A formula and a cask that share a name stay on separate rows. Discoveries are informational and do not affect Node health.
+A separate detected-unmanaged group shows installed Homebrew formulae, casks, and Vite+ globals from `GET /api/v1/tool-inventory` (`tool:scan`). It labels package kind, observed version, dependency status, and the support reason. A null scan version, including a non-SemVer formula revision or cask version, is shown as `unreadable`. A formula and a cask that share a name stay on separate rows. Discoveries are informational and do not affect Node health.
 
 The page shows inspection time and status and has an explicit Refresh action. Refresh sends only another inventory read. An active Node is read when the section opens. An unreachable Node does not start that read, and Refresh stays disabled so it cannot start one later. The inspection says no scan was started, and the registered rows stay.
 

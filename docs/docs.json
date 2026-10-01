@@ -562,10 +562,7 @@
               "decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
               "decisions/0175-docs-impact-check-in-orbit-repo",
               "decisions/0178-run-project-agnostic-tasks-without-a-planner",
-              "decisions/0182-start-tasks-from-project-task-definitions",
-              "decisions/0183-manage-macos-tools-without-service-roles",
-              "decisions/0184-adopt-selected-tools-from-existing-managers",
-              "decisions/0185-report-informational-tool-discoveries-in-doctor"
+              "decisions/0182-start-tasks-from-project-task-definitions"
             ]
           }
         ]
@@ -1307,6 +1304,18 @@
     {
       "source": "/decisions/0181-name-the-domain-project-and-instance-everywhere",
       "destination": "/reference/projects#project-and-instance"
+    },
+    {
+      "source": "/decisions/0183-manage-macos-tools-without-service-roles",
+      "destination": "/reference/node-provisioning#a-mac-needs-no-service-role"
+    },
+    {
+      "source": "/decisions/0184-adopt-selected-tools-from-existing-managers",
+      "destination": "/reference/tools#selected-adoption"
+    },
+    {
+      "source": "/decisions/0185-report-informational-tool-discoveries-in-doctor",
+      "destination": "/cli/doctor#informational-findings-stay-healthy"
     },
     {
       "source": "/decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop",

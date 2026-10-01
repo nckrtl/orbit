@@ -88,9 +88,9 @@ The scan states are the same five tokens as `tool:scan`. `complete` contributes 
 
 The Resource column shows `tool`, then the manager, then the package. For a package finding the manager is `expected`. For a scan finding the manager is `resource_name`. A formula and a cask that share a package name stay on different rows.
 
-The package `observed` value is four parts in this order, joined by semicolons: `version=14.1.1`, `dependency=no`, `adoption=supported`, and `block=none`. `dependency` is `yes` or `no`. `adoption` is `supported` or `unsupported`. The version token is 1 to 64 characters from letters, digits, and `._+:-`, or `unknown` when no such token exists. `block` is `none` when adoption is supported. Otherwise it is `protected`, `dependency`, `unsupported_artifact`, `unsupported_source`, `bottle_unavailable`, `version_unreadable`, or `authorization_required`. An unsupported cask still uses `tool.package_unregistered`.
+The package `observed` value is four parts in this order, joined by semicolons: `version=14.1.1`, `dependency=no`, `adoption=supported`, and `block=none`. `dependency` is `yes` or `no`. `adoption` is `supported` or `unsupported`. The version token is 1 to 64 characters from letters, digits, and `._+:-`, or `unknown` when no such token exists. A null scan version is `unknown`, including a formula revision such as `25.8.1_1` and a cask version such as `3.003`. `block` is `none` when adoption is supported. Otherwise it is `protected`, `dependency`, `unsupported_artifact`, `unsupported_source`, `bottle_unavailable`, `version_unreadable`, or `authorization_required`. An unsupported cask still uses `tool.package_unregistered`.
 
-Registered Tool issues sort by Tool ID. Inventory scan issues follow, in the order `brew`, `brew-cask`, `vp`. Unregistered package issues follow, in that manager order and then by package name. A report with only informational findings stays `healthy` and exits 0. Drift or unverifiable findings still exit 1.
+Registered Tool issues sort by Tool ID. Inventory scan issues follow, in the order `brew`, `brew-cask`, `vp`. Unregistered package issues follow, in that manager order and then by package name. Registered drift, including `tool.not_installed` on a `failed` row whose package was never installed, sets `resource_id` to the Tool id and leaves `resource_name` null. A report with only informational findings stays `healthy` and exits 0. Drift or unverifiable findings still exit 1.
 
 Adopt one selected package through [tool:adopt](/cli/tool#orbit-tooladopt) or the Node's [Tools page](/reference/web-app#node-detail-pages). The web app reads `tool:scan` for its package list. It does not store this report as an inventory.
 
@@ -143,6 +143,14 @@ These reasons explain the design. Check them before you propose a change.
 ### Verify only
 
 Doctor reports drift and never repairs it. A second convergence engine would compete with the commands that own each change. So Doctor uses only database reads and read-only commands. Its inspectors stay separate from the managers that change Nodes, and Doctor never calls a mutating manager or action. Code that both sides need, such as a catalog, a parser, or a renderer, moves to a shared place. Repair stays with those commands, such as `node:role:add --converge`. Restore, adoption, and interactive repair stay outside Doctor. Read-only Homebrew and Vite+ package discovery is the explicit exception to checking registered resources only. Other unmanaged host-state scans remain outside its contract.
+
+### Informational findings stay healthy
+
+An unregistered Homebrew or Vite+ package is information. Selected ownership leaves packages outside Orbit on purpose. The finding names the manager, package, version when one exists, dependency status, and whether adoption is supported. It does not make the family or the Node unhealthy, and it does not change the exit code.
+
+Marking every unmanaged package as drift was rejected because that would call a chosen boundary a failure. Hiding the packages was rejected because the operator then has no list to adopt from. Adopting them inside Doctor was rejected because a read would change ownership. Treating a failed scan as an empty inventory was rejected because that would report success without checking the host.
+
+A Linux Node with no Tools can be healthy while absent `brew` and `vp` scopes are informational, and an unmanaged Homebrew dependency stays informational beside a healthy Tool. On a Mac, those findings stay informational when `node.disk_low` makes the Node drift. Drift and unverifiable findings still exit 1. Doctor stores no inventory. The Tools page reads the scan and adopts through the adoption operation.
 
 ### No stored reports
 
