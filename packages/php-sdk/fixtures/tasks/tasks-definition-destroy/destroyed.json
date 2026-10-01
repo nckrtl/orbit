@@ -1,0 +1,28 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\DestroyTaskDefinitionRequest",
+    "route": "DELETE /api/v1/projects/{project}/task-definitions/{name}",
+    "status": 200,
+    "body": {
+        "data": {
+            "project_id": 1,
+            "name": "build-feature",
+            "title": "Build the feature",
+            "brief": "Document and build it.",
+            "parameters": [],
+            "status": "todo",
+            "schedule": null,
+            "phases": [],
+            "subtasks": [
+                {
+                    "key": "docs",
+                    "title": "Write the docs",
+                    "kind": "agent"
+                }
+            ]
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

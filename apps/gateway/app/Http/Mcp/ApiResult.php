@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Mcp;
 
+use App\Domain\Tasks\TaskDefinitionJson;
 use App\Support\ValidatedData;
-use JsonException;
+use stdClass;
 
 /** The status and body an API operation answered an MCP tool call with. */
 final readonly class ApiResult
@@ -52,10 +53,10 @@ final readonly class ApiResult
     /** @return array<string, mixed>|null */
     private function decode(string $json): ?array
     {
-        try {
-            $decoded = json_decode($json, associative: true, flags: JSON_THROW_ON_ERROR);
-        } catch (JsonException) {
-            return null;
+        $decoded = TaskDefinitionJson::decode($json);
+
+        if ($decoded instanceof stdClass) {
+            return [];
         }
 
         if (! is_array($decoded)) {

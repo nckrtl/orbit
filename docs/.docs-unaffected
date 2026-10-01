@@ -68,3 +68,8 @@ docs/reference/cli-ux.md: Copy progress and the Instance detail fields follow th
 docs/reference/web-app.md: The generated API schema now includes task workspace creation, copy mode, and fallback reason. Navigation and layout on this page are unchanged.
 docs/reference/gateway-response-fixtures.md: Task fixtures now record workspace_creation, workspace_copy_mode, and workspace_fallback_reason. The record, validate, and replay steps on this page are unchanged.
 docs/reference/cli-ux.md: Task show snapshots now include the workspace creation fields. Input, consent, and presentation rules on this page are unchanged.
+docs/reference/cli-ux.md: Task definition command snapshots follow the existing input, consent, and presentation rules. This page is unchanged.
+docs/reference/gateway-response-fixtures.md: Task definition fixtures follow the existing recording process. Fixture maintenance on this page is unchanged.
+docs/reference/web-verification.md: The feature map adds the task definition route and its controls. Web verification commands, the map schema, and the demo server are unchanged.
+docs/solutions/doctor-incus-proof.md: Guest convergence reuses the evidence-log redactor. The Doctor proof procedure on this page is unchanged.
+docs/cli/doctor.mdx: The caller-facing Doctor report is unchanged. The fleet inspection used by the outer loop is documented in /reference/tasks.

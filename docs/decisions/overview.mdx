@@ -14,7 +14,7 @@ The docs-first subtask writes an ADR when a feature needs an architectural decis
 
 The pull request that completes a decision writes its behavior into the owning page and its lasting reasons and rejected alternatives into that page's "Why it works this way" section. It deletes the ADR, removes it from Records, redirects the exact ADR path to the absorbing section, adds a Retired decisions row, and updates inbound links. A decision completed in one pull request never leaves an ADR on main; a record stays only while a decision spans multiple pull requests. Numbers are never reused. The retired table and redirects resolve old numbers and links, including those in code comments.
 
-`composer docs-lint` enforces this lifecycle: retired slugs have no matching file and each has a redirect from its exact path. Live ADRs numbered 0180 or later must say `In progress.` in their Status section and include a `Principle:` line. The committed allowlist for older live records can only shrink as those records retire. The [docs-impact check](/decisions/0175-docs-impact-check-in-orbit-repo) and `covers:` frontmatter keep pages in step with code between decisions.
+`composer docs-lint` enforces this lifecycle: retired slugs have no matching file and each has a redirect from its exact path. Live ADRs numbered 0180 or later must say `In progress.` in their Status section and include a `Principle:` line. A lower number follows those same two rules only when Retired decisions does not list it. The open gaps are 0007 and 0020. The committed allowlist for older live records can only shrink as those records retire. The [docs-impact check](/decisions/0175-docs-impact-check-in-orbit-repo) and `covers:` frontmatter keep pages in step with code between decisions.
 
 ## Why it works this way
 
@@ -207,6 +207,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0172 | Count every T3 model call in thread metrics | [Tasks: Thread token metrics](/reference/tasks#thread-token-metrics) |
 | 0173 | Record and label every Jev decision | [Tasks: Jev decision records](/reference/tasks#jev-decision-records) |
 | 0174 | Match the task gate to CI and repeated findings | [Feature delivery: The candidate gate](/reference/implementation-loop#the-candidate-gate) |
+| 0176 | File recurring production problems as repro-first bug groups | [Tasks: Outer loop](/reference/tasks#outer-loop) |
 | 0179 | Gate every extension surface with one Gateway switch | [extension: Why it works this way](/cli/extension#why-it-works-this-way) |
 | 0180 | Absorb built decisions into the documentation | [Architecture decisions: Why it works this way](/decisions/overview#why-it-works-this-way) |
 | 0181 | Name the domain Project and Instance everywhere | [Projects: Project and Instance](/reference/projects#project-and-instance) |

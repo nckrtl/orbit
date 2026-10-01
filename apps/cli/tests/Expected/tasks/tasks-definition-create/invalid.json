@@ -1,0 +1,1 @@
+{"error":{"code":"tasks.definition_invalid","message":"The task definition is invalid.","details":{"rules":[{"rule":"kind","subtask":"docs"}]},"request_id":null}}

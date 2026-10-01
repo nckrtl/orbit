@@ -79,9 +79,41 @@ Convergence runs every Orbit step that a fresh topology needs, in this order. Th
 | `converge.sample-fixtures` | Router: creates or checks the [sample resources](/reference/incus-topologies#sample-resources), then records the sample placement again, because a deployment can move the current release |
 | `normalize.permissions` | Normalizes file permissions on every Node |
 
+#### Guest script inputs
+
+Guest convergence reads Projects and Instances through the Orbit CLI. [Project and Instance](/reference/projects#project-and-instance) names those records. The scripts do not read a second name for either record.
+
+| Command | Project and Instance links |
+| --- | --- |
+| `project:list --json` | `projects`. Each Project has `id`. |
+| `instance:list --json` | `instances`. Each Instance has `id` and `project_id`. |
+| `route:list --json` and `route:create --json` | `project_id` on an app Route. `target` is `id`, `instance_id`, and `position`, so the scripts read `target.instance_id`. |
+
+The table lists the Project and Instance links only. The scripts also read other fields on the same records, including `slug`, `name`, `node_id`, and `status`.
+
+`create.sample-resources` creates the explicit sample Route with `route:create <instance> e2e-dev.orbit --publication=private`. The first argument is the Instance `id`. The app Route form does not take a Project id, `--target`, `--node`, or `--cluster`. [Create and change targets](/reference/routes#create-and-change-targets) defines that form. The custom proxy form is separate and can take `--node`. The sample Route stays private, as [Sample resources](/reference/incus-topologies#sample-resources) describes.
+
 The harness writes no Caddy file on any Node. Every Caddyfile comes from a [Node Caddy build](/reference/caddy-configuration#node-caddy-build), so Doctor reports no `role.caddy_build_drift`. The sample production site answers over TLS with the Orbit CA leaf that the Gateway publishes. Hydration and verification trust the Orbit root CA.
 
 Guest preparation points `/etc/resolv.conf` at the systemd-resolved stub. It also writes the public upstream servers `1.1.1.1` and `8.8.8.8` into a systemd-resolved drop-in, because runtime resolver settings do not survive a snapshot reboot. Orbit's private DNS routes still apply to private names.
+
+#### Failed guest scripts
+
+A guest convergence script that exits nonzero stops that step. The harness error names the script, the VM, and the exit code. It also includes the tail of that script's stderr.
+
+The harness redacts stderr the same way it redacts output in the [evidence log](/reference/incus-topologies#evidence-log). The tail is the end of that redacted text. It keeps at most the last 20 lines and 2000 characters. When those lines are longer, it keeps the last 2000 characters. A shorter stream is included whole. When stderr is empty, the error still names the script, the VM, and the exit code. Bytes that are not valid UTF-8 are replaced before the tail is cut, so a bad byte does not drop the tail.
+
+A probe that retries reports the last attempt. That error names the same script, VM, exit code, and stderr tail.
+
+A failed sample App state inspection stops verification before the probes. Its error names `converge-sample-app.sh`, the VM, and the exit code, then the same redacted stderr tail. When the inspection returns no result, the error names the script and the VM.
+
+#### Guest script drift
+
+CI checks Orbit CLI calls in the `apps/e2e/resources/guest` shell scripts against the current command signatures. It sees a call written as `"$orbit"`, as Python `orbit()`, as PHP `command([...])` passed to that binary, or as a direct path whose last two segments are `cli/orbit`. The command must exist. Each option must exist on that command. Positional arguments must fit the signature: at least as many as it requires, and no more than it accepts. When Python builds an argument list whose length is not visible in the script, CI checks the arguments it can count.
+
+CI also checks JSON fields those calls read. A PHP snippet may read a field only when the OpenAPI schema defines it on a record that snippet decodes, including a field of a nested object. A Python value that comes from `orbit()`, including a list element and a helper result such as `unique()`, may read a declared field of that value, including a nested object.
+
+A list response may use its CLI collection name and the envelope fields `data`, `meta`, and `request_id`. An object that allows additional properties may use any field. A call or a field that does not match fails CI. [API reference generation](/reference/api-reference) writes that schema.
 
 ### Readiness
 
@@ -133,3 +165,15 @@ A partial generation is never promoted. A failed refresh keeps the old generatio
 ### Recovery by exact inventory
 
 Recovery deletes only resources whose identity and metadata it has proved and journaled. A name alone never authorizes deletion, so recovery cannot remove a resource that it does not own.
+
+### Guest scripts read Project and Instance JSON
+
+Guest scripts read `project_id` and `target.instance_id`, and they create the sample Route with `route:create <instance> <domain>`. Keeping another JSON name for those fields was rejected. The CLI returns one name for each field, and a refresh stops when a script requires a field the response does not have.
+
+### A failed script shows a short redacted tail
+
+The harness error includes the script's stderr, so an operator can see why the step stopped without opening the VM. The tail stops at 20 lines and 2000 characters, so a long log does not replace the error. Keeping the whole stderr was rejected for that reason. The tail uses the same redaction as other harness evidence, so a secret on stderr is not copied into the command result. Sample App state inspection uses that same tail, because a bare inspection failure hides the script error that stopped verification.
+
+### CI compares guest scripts with the CLI and the API
+
+A guest script that calls a removed `orbit` command, passes arguments the signature does not accept, or reads a JSON field the response does not define, fails during convergence, after the VMs are already up. CI rejects that script first. The check reads the scripts and compares each visible call and field with the current signatures and schemas. A separate list of allowed commands was rejected, because that list drifts from the scripts.

@@ -1,0 +1,215 @@
+{
+    "schema": 1,
+    "route": "GET /api/v1/task-definitions",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "project_id": 1,
+                "name": "publish",
+                "title": "Publish a page",
+                "brief": "Draft a page, check it, and publish it.",
+                "parameters": [],
+                "status": "todo",
+                "schedule": null,
+                "phases": [
+                    {
+                        "key": "draft",
+                        "title": "Draft",
+                        "brief": "Write the page.",
+                        "repeat": false
+                    },
+                    {
+                        "key": "release",
+                        "title": "Release",
+                        "brief": "Check the page and publish it.",
+                        "repeat": false
+                    }
+                ],
+                "subtasks": [
+                    {
+                        "key": "write",
+                        "title": "Write the page",
+                        "kind": "agent",
+                        "brief": "Draft the page from the brief.",
+                        "phase": "draft",
+                        "implementer_model": "gpt-5.6-luna",
+                        "reviewer_model": "claude-opus-5"
+                    },
+                    {
+                        "key": "edit",
+                        "title": "Edit the page",
+                        "kind": "agent",
+                        "brief": "Revise the draft.",
+                        "phase": "draft",
+                        "implementer_model": "gpt-5.6-luna",
+                        "reviewer_model": "claude-opus-5"
+                    },
+                    {
+                        "key": "links",
+                        "title": "Check the links",
+                        "kind": "check",
+                        "brief": "Run the link checker.",
+                        "phase": "release",
+                        "deliverables": [
+                            {
+                                "id": "links",
+                                "type": "command",
+                                "description": "The link check passes",
+                                "command": "bun run check:links"
+                            }
+                        ]
+                    },
+                    {
+                        "key": "ship",
+                        "title": "Publish",
+                        "kind": "action",
+                        "brief": "Deploy the production instance.",
+                        "phase": "release",
+                        "operation": "instance:deploy",
+                        "arguments": {
+                            "instance": 1
+                        }
+                    }
+                ]
+            },
+            {
+                "project_id": 2,
+                "name": "digest",
+                "title": "Weekly report",
+                "brief": "Summarize the week's changes.",
+                "parameters": [],
+                "status": "backlog",
+                "schedule": null,
+                "phases": [],
+                "subtasks": [
+                    {
+                        "key": "write",
+                        "title": "Write the report",
+                        "kind": "agent",
+                        "brief": "Summarize what shipped.",
+                        "implementer_model": "claude-opus-5",
+                        "reviewer_model": "claude-opus-5"
+                    }
+                ]
+            },
+            {
+                "project_id": 3,
+                "name": "maintenance",
+                "title": "Weekly maintenance",
+                "brief": "Update the App, merge, deploy, and verify it.",
+                "parameters": [
+                    {
+                        "name": "app",
+                        "type": "app",
+                        "required": true
+                    }
+                ],
+                "status": "todo",
+                "schedule": {
+                    "cron": "0 3 * * 1",
+                    "values": {
+                        "app": "charlie-shop"
+                    }
+                },
+                "phases": [],
+                "subtasks": [
+                    {
+                        "key": "update",
+                        "title": "Update dependencies",
+                        "kind": "agent",
+                        "brief": "Update the dependencies and fix what the update breaks.",
+                        "implementer_model": "gpt-5.6-luna",
+                        "reviewer_model": "claude-opus-5"
+                    },
+                    {
+                        "key": "size",
+                        "title": "Major upgrade?",
+                        "kind": "decide",
+                        "brief": "Decide whether the update contains a major upgrade.",
+                        "question": "Does this update contain a major version upgrade?",
+                        "options": ["major", "minor"],
+                        "evidence": ["update"],
+                        "min_probability": 0.8,
+                        "routes": {
+                            "major": "review",
+                            "minor": "browser"
+                        }
+                    },
+                    {
+                        "key": "review",
+                        "title": "Adapt to major upgrades",
+                        "kind": "agent",
+                        "brief": "Read the changelogs of the major upgrades and adapt the App.",
+                        "implementer_model": "gpt-6-luna",
+                        "reviewer_model": "gpt-6-sol"
+                    },
+                    {
+                        "key": "browser",
+                        "title": "Browser tests",
+                        "kind": "check",
+                        "brief": "Run the end-to-end browser tests.",
+                        "deliverables": [
+                            {
+                                "id": "browser",
+                                "type": "command",
+                                "description": "The browser tests pass",
+                                "command": "bunx playwright test --project=e2e"
+                            }
+                        ]
+                    },
+                    {
+                        "key": "merge",
+                        "title": "Merge the pull request",
+                        "kind": "merge",
+                        "brief": "Merge the pull request after its required checks pass."
+                    },
+                    {
+                        "key": "deploy",
+                        "title": "Deploy production",
+                        "kind": "action",
+                        "brief": "Deploy the production instance.",
+                        "operation": "instance:deploy",
+                        "arguments": {
+                            "instance": 4
+                        }
+                    },
+                    {
+                        "key": "verify",
+                        "title": "Smoke test production",
+                        "kind": "check",
+                        "brief": "Run the smoke tests against production.",
+                        "deliverables": [
+                            {
+                                "id": "smoke",
+                                "type": "command",
+                                "description": "The smoke tests pass",
+                                "command": "bunx playwright test --project=smoke"
+                            }
+                        ],
+                        "routes": {
+                            "passed": "complete",
+                            "failed": "rollback"
+                        }
+                    },
+                    {
+                        "key": "rollback",
+                        "title": "Roll back production",
+                        "kind": "action",
+                        "brief": "Roll the production instance back.",
+                        "operation": "instance:rollback",
+                        "arguments": {
+                            "instance": 4
+                        },
+                        "routes": {
+                            "passed": "fail"
+                        }
+                    }
+                ]
+            }
+        ],
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

@@ -139,7 +139,9 @@ for ($connection = 1; $connection <= $connections; $connection++) {
     $socket = str_starts_with($mode, 'reset') || $mode === 'corrupt-after-frame' ? socket_import_stream($client) : null;
 
     if (stream_socket_enable_crypto($client, true, STREAM_CRYPTO_METHOD_TLS_SERVER) !== true) {
+        // A plaintext request to the new port is not one of the scripted clients. Keep its slot.
         fclose($client);
+        $connection--;
 
         continue;
     }

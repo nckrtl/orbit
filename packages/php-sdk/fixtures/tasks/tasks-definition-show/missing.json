@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\ShowTaskDefinitionRequest",
+    "route": "GET /api/v1/projects/{project}/task-definitions/{name}",
+    "status": 404,
+    "body": {
+        "error": {
+            "code": "http.404",
+            "message": "Resource not found.",
+            "details": {}
+        }
+    }
+}

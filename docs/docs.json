@@ -467,6 +467,11 @@
             "group": "Tasks",
             "openapi": "/openapi.json",
             "pages": [
+              "POST /api/v1/projects/{project}/task-definitions",
+              "DELETE /api/v1/projects/{project}/task-definitions/{name}",
+              "GET /api/v1/projects/{project}/task-definitions/{name}",
+              "PUT /api/v1/projects/{project}/task-definitions/{name}",
+              "GET /api/v1/task-definitions",
               "GET /api/v1/task-groups",
               "POST /api/v1/task-groups",
               "GET /api/v1/task-groups/{group}",
@@ -517,6 +522,7 @@
               "GET /api/v1/proxycli",
               "POST /api/v1/proxycli",
               "PATCH /api/v1/proxycli/accounts/{account}",
+              "GET /api/v1/proxycli/models",
               "GET /api/v1/proxycli/providers",
               "GET /api/v1/proxycli/providers/{provider}"
             ]
@@ -1335,6 +1341,10 @@
     {
       "source": "/decisions/0174-match-the-task-gate-to-ci-and-repeated-findings",
       "destination": "/reference/implementation-loop#the-candidate-gate"
+    },
+    {
+      "source": "/decisions/0176-file-repro-first-bug-groups",
+      "destination": "/reference/tasks#outer-loop"
     },
     {
       "source": "/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension",

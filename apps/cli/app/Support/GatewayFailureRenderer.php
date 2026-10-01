@@ -57,6 +57,14 @@ final class GatewayFailureRenderer
             return self::environmentConfigurationDetails($details);
         }
 
+        if ($code === 'tasks.definition_invalid') {
+            return self::definitionRuleDetails($details);
+        }
+
+        if ($code === 'tasks.definition_exists') {
+            return self::definitionNameDetails($details);
+        }
+
         if (in_array($code, ['instance.setup_step_failed', 'instance.teardown_step_failed'], true)) {
             $safe = [];
             foreach (['step', 'teardown_step'] as $field) {
@@ -160,7 +168,7 @@ final class GatewayFailureRenderer
             return;
         }
 
-        $humanDetails = $details;
+        $humanDetails = self::definitionRulesForHumans($details);
 
         // The error message already names the Node, stage, and Caddy message of a failed build.
         if (self::buildDetails($details) !== []) {
@@ -182,6 +190,98 @@ final class GatewayFailureRenderer
             self::fieldDetails($humanDetails),
             $requestId,
         ));
+    }
+
+    /**
+     * Keeps the definition rules the Gateway names: a closed rule token and, when the rule
+     * concerns one subtask, that subtask's key.
+     *
+     * @param  array<string,mixed>  $details
+     * @return array<string,mixed>
+     */
+    private static function definitionRuleDetails(array $details): array
+    {
+        $rules = $details['rules'] ?? null;
+
+        if (! is_array($rules)) {
+            return [];
+        }
+
+        $safe = [];
+
+        foreach ($rules as $rule) {
+            if (! is_array($rule)) {
+                continue;
+            }
+
+            $name = $rule['rule'] ?? null;
+            $subtask = $rule['subtask'] ?? null;
+
+            if (! is_string($name) || preg_match('/\A[a-z][a-z0-9_]{0,63}\z/D', $name) !== 1) {
+                continue;
+            }
+
+            if ($subtask !== null && (! is_string($subtask) || strlen($subtask) > 63 || preg_match('/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/D', $subtask) !== 1)) {
+                continue;
+            }
+
+            $safe[] = ['rule' => $name, 'subtask' => is_string($subtask) ? $subtask : null];
+
+            if (count($safe) >= 50) {
+                break;
+            }
+        }
+
+        return $safe === [] ? [] : ['rules' => $safe];
+    }
+
+    /**
+     * @param  array<string,mixed>  $details
+     * @return array<string,string>
+     */
+    private static function definitionNameDetails(array $details): array
+    {
+        $name = $details['name'] ?? null;
+
+        if (! is_string($name) || strlen($name) > 63 || preg_match('/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/D', $name) !== 1) {
+            return [];
+        }
+
+        return ['name' => $name];
+    }
+
+    /**
+     * Human output names each rule as text. JSON keeps the structured list from safeDetails.
+     *
+     * @param  array<string,mixed>  $details
+     * @return array<string,mixed>
+     */
+    private static function definitionRulesForHumans(array $details): array
+    {
+        $rules = $details['rules'] ?? null;
+
+        if (! is_array($rules)) {
+            return $details;
+        }
+
+        $lines = [];
+
+        foreach ($rules as $rule) {
+            if (! is_array($rule) || ! is_string($rule['rule'] ?? null)) {
+                continue;
+            }
+
+            $subtask = $rule['subtask'] ?? null;
+            $lines[] = is_string($subtask) && $subtask !== '' ? $rule['rule'].' ('.$subtask.')' : $rule['rule'];
+        }
+
+        unset($details['rules']);
+
+        if ($lines !== []) {
+            $details['rules'] = $lines;
+        }
+
+        return $details;
     }
 
     /**

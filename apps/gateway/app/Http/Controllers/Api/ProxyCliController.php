@@ -6,11 +6,14 @@ namespace App\Http\Controllers\Api;
 
 use App\Actions\ProxyCli\DisableProxyCliAction;
 use App\Actions\ProxyCli\EnableProxyCliAction;
+use App\Actions\ProxyCli\ListProxyCliModelsAction;
 use App\Actions\ProxyCli\ListProxyCliProvidersAction;
 use App\Actions\ProxyCli\ShowProxyCliProviderAction;
 use App\Actions\ProxyCli\ShowProxyCliStatusAction;
 use App\Actions\ProxyCli\UpdateProxyCliAccountAction;
+use App\Data\ProxyCli\ProxyCliModelData;
 use App\Data\ProxyCli\ProxyCliStatusData;
+use App\Domain\ProxyCli\ProxyCliModel;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
@@ -50,6 +53,14 @@ final class ProxyCliController extends Controller
     public function update(UpdateProxyCliAccountRequest $request, string $account, UpdateProxyCliAccountAction $action): JsonResponse
     {
         return $this->payload($request, $action->execute($account, $request->disabled()));
+    }
+
+    public function models(Request $request, ListProxyCliModelsAction $action): JsonResponse
+    {
+        return $this->payload($request, array_map(
+            static fn (ProxyCliModel $model): array => new ProxyCliModelData($model->id, $model->provider)->toArray(),
+            $action->execute(),
+        ));
     }
 
     private function statusResponse(Request $request, ProxyCliStatusData $result, int $status = 200): JsonResponse
