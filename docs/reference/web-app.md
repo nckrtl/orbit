@@ -111,7 +111,9 @@ The drawing also shows the stages the engine always runs around the definition. 
 
 A schedule is shown in words, such as "Weekly on Monday at 03:00 UTC".
 
-The view reports a finding when every option of a `decide` subtask leads to the same subtask. It reports a model that no driver can run when the [ProxyCli model list](/reference/proxycli#models) is available. A model is known when ProxyCli offers it through a provider Pi runs. A Claude model is not known. When that list is missing, empty, or refused, the view says that the model list is unavailable and reports no driver findings. The Gateway refuses a definition that contains a subtask no path reaches, so the view does not report that finding for a stored definition.
+The view reports a finding when every option of a `decide` subtask leads to the same subtask. The Gateway refuses a definition that contains a subtask no path reaches, so the view does not report that finding for a stored definition.
+
+The view reports a model that no driver can run when the [ProxyCli model list](/reference/proxycli#models) is available. Task agents run on Pi only. A model is known when ProxyCli offers it through a provider Pi runs. Claude models and models listed under the `claude` or `anthropic` provider are unavailable for task agents. Annotations still use the operator's T3 threads, as [Agent annotation](/reference/agent-annotation) describes. When that list is missing, empty, or refused, the view says that the model list is unavailable and reports no driver findings.
 
 ## Live Activity
 

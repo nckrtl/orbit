@@ -572,7 +572,7 @@ Orbit reserves the thread row before it starts the conversation, so the opening 
 
 A driver translates Orbit's thread operations for one agent runtime. Task agents, the implementer and the reviewer, run on the `pi` driver only. `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` and `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` select the two roles, and both default to `pi`. A new task stores those values. The Gateway registers `pi` and no other task-agent driver. Any other value returns `tasks.agent_driver_unavailable` and stores no task.
 
-A managed task whose recorded driver is not `pi` does not start or resume an agent turn. A caller never supplies a runtime URL. An unsupported operation fails explicitly. [ADR 0190](/decisions/0190-run-task-agents-on-pi-only) records this choice. Annotations are not task agents: they stay on the operator's T3 threads, and [Agent annotation](/reference/agent-annotation) owns that behavior.
+A managed task whose recorded driver is not `pi` does not start or resume an agent turn. A caller never supplies a runtime URL. An unsupported operation fails explicitly. [Task agents run on Pi](#task-agents-run-on-pi) explains why. Annotations are not task agents: they stay on the operator's T3 threads, and [Agent annotation](/reference/agent-annotation) owns that behavior.
 
 | Role | Default model | Effort |
 | --- | --- | --- |
@@ -1070,7 +1070,13 @@ The thread spent the tokens, so the split lives there. A total alone does not sh
 
 T3 task threads run as the operator's Unix user and have that user's full access. Pi task agents run as a dedicated `orbit-agent` account. The operator approved that split on 2026-10-01. T3 Code stays installed as the operator's own tool. Annotations still use the operator's T3 threads.
 
-Anthropic permits Claude subscription credentials only in its own applications, also when a proxy relays them. Task agents therefore cannot use Claude, and they do not keep a second runtime to reach it. One driver, Pi, owns implementers and reviewers. [ADR 0190](/decisions/0190-run-task-agents-on-pi-only) records the choice.
+Anthropic permits Claude subscription credentials only in its own applications, also when a proxy such as CLIProxyAPI relays them. Task agents therefore cannot use Claude, and they do not keep a second runtime to reach it. One driver, Pi, owns implementers and reviewers. This serves [one way, one name](/mission#principles) and [no exceptions and no legacy](/mission#principles).
+
+Keeping T3 as a selectable driver would keep two restart rules, two metric paths, and two archive paths. Pi owns restart recovery and reports usage on its sessions. The scheduler has no T3 metric collector or thread archive. Annotation delivery is a separate operation on the operator's existing T3 thread, not a task-agent runtime.
+
+Both roles default to `gpt-5.6-luna` at `high` effort. Keeping `claude-opus-5` as the reviewer default would make each new review fail on Pi. Each role keeps its driver setting, with a `pi` default, because deployment selects Pi explicitly. A different configured driver fails before a new task is stored.
+
+Finishing an open T3 task turn would preserve the second runtime, so a managed task that records a driver other than `pi` never starts or resumes an agent turn. The operator cancels or replaces it. Deleting its thread row, metrics, or `t3_*` columns would erase the record of work that already ran, so that history stays. A transcript request returns HTTP 409 `tasks.agent_transcript_unavailable` rather than contacting T3. Pi session files stay on the Node; Orbit keeps their thread rows and metrics too.
 
 ### Jev only checks coverage
 

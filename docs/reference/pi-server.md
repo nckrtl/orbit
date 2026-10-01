@@ -224,7 +224,7 @@ These reasons explain the design. Check them before you propose a change.
 
 ### Claude is unavailable for task agents
 
-Anthropic permits Claude subscription credentials only in its own applications, also when a proxy such as CLIProxyAPI relays them. So the `pi` driver refuses a Claude model, `pi-server login anthropic` refuses to sign in, and task agents have no other runtime that runs Claude. [ADR 0190](/decisions/0190-run-task-agents-on-pi-only) records that choice. Annotations still use the operator's T3 threads. They are not task agents.
+Anthropic permits Claude subscription credentials only in its own applications, also when a proxy such as CLIProxyAPI relays them. So the `pi` driver refuses a Claude model, `pi-server login anthropic` refuses to sign in, and task agents have no other runtime that runs Claude. [Tasks: Task agents run on Pi](/reference/tasks#task-agents-run-on-pi) explains that choice. Annotations still use the operator's T3 threads. They are not task agents.
 
 ### A long-lived server, not RPC over SSH
 

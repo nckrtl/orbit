@@ -690,8 +690,7 @@
                 "Task"
             ],
             "governing_adrs": [
-                "0177",
-                "0190"
+                "0177"
             ]
         },
         {
@@ -720,34 +719,7 @@
                 "Turn receipt"
             ],
             "governing_adrs": [
-                "0182",
-                "0190"
-            ]
-        },
-        {
-            "path": "docs/decisions/0190-run-task-agents-on-pi-only.md",
-            "title": "ADR 0190: Run task agents on Pi only",
-            "kind": "decision",
-            "components": [
-                "apps/gateway",
-                "apps/web"
-            ],
-            "concepts": [
-                "Deployment",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Project",
-                "Role",
-                "Task",
-                "Task workspace",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0177",
-                "0182",
-                "0190"
+                "0182"
             ]
         },
         {
@@ -794,8 +766,7 @@
             "governing_adrs": [
                 "0097",
                 "0175",
-                "0182",
-                "0190"
+                "0182"
             ]
         },
         {
@@ -1732,9 +1703,7 @@
                 "Task",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0190"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/private-dns.md",
@@ -1899,6 +1868,7 @@
                 "Access grant",
                 "Activity",
                 "Deliverable",
+                "Deployment",
                 "Doctor",
                 "Extension",
                 "Gateway",
@@ -1919,8 +1889,7 @@
                 "Turn receipt"
             ],
             "governing_adrs": [
-                "0182",
-                "0190"
+                "0182"
             ]
         },
         {

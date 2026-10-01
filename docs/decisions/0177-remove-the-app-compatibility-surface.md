@@ -35,7 +35,7 @@ This amends ADR 0105 as follows:
 - Instance JSON uses `project_id` and `project` only. Instance create and registration take `project_id`.
 - Remove the `--app` alias for Project selection on process, Schedule, `instance:register`, and the dependency commands; use `--project`. On `instance:dependencies:scan` and `instance:dependencies:update`, `--project` takes the Route domain of one Instance.
 - Remove `--wireguard-address`, the alias for `--wireguard-ip`, from `node:add` and Gateway console commands. `--wireguard-ip` is the supported name.
-- Remove the `ORBIT_TASKS_AGENT_DRIVER` environment fallback. `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` and `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` each select the driver for that role. [ADR 0190](/decisions/0190-run-task-agents-on-pi-only) sets both defaults to `pi`.
+- Remove the `ORBIT_TASKS_AGENT_DRIVER` environment fallback. `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` and `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` each select the driver for that role. [Tasks: Drivers](/reference/tasks#drivers) sets both defaults to `pi`.
 
 Stored table, column, and class names are [Project and Instance](/reference/projects#project-and-instance). This decision does not rename unrelated names such as the GitHub App or Node roles. There is no fleet conversion period or inert compatibility endpoint.
 
