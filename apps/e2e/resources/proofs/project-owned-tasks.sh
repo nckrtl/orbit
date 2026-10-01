@@ -7,8 +7,11 @@
 # in the current branch (task-155 -> TASK-155). ORB-155 does not match that branch,
 # so the harness issue is TASK-<number>, not the label.
 #
-# The script is safe to repeat. It reuses disposable orb155-* Projects, removes only
-# their Instances, and does not release the topology. Sample Projects stay as they are.
+# The script is safe to repeat. It reuses three verified fixtures (orb155-noncomposer,
+# orb155-null, and orb155-routed) only when the slug, type, and repository identity match.
+# Any other owner of those repositories, or a same-named Project with a different identity,
+# stops the proof. Cleanup removes only those fixtures' groups and Instances, then checks
+# they are gone. Sample Projects stay as they are. The topology is not released.
 set -eEuo pipefail
 
 label=${1:-}
@@ -108,9 +111,13 @@ marker_line() {
 }
 
 observe() {
-    local cmd=$1 id=${2:-}
+    local cmd=$1 id=${2:-} record=${3:-} projects=${4:-}
     local output
-    output=$(on_node gateway 120 bash -lc "cd /home/orbit/orbit/apps/gateway && ORB155_CMD=$(printf %q "$cmd") ORB155_ID=$(printf %q "$id") php artisan tinker --execute=\"\$(cat /tmp/orb155-observe.php)\"" 2>&1) || {
+    local -a record_arg=()
+    if [[ -n $record ]]; then
+        record_arg=(rec:"$record")
+    fi
+    output=$(on_node gateway 120 "${record_arg[@]}" bash -lc "cd /home/orbit/orbit/apps/gateway && ORB155_CMD=$(printf %q "$cmd") ORB155_ID=$(printf %q "$id") ORB155_PROJECTS=$(printf %q "$projects") php artisan tinker --execute=\"\$(cat /tmp/orb155-observe.php)\"" 2>&1) || {
         echo "observer ${cmd} ${id} failed: ${output}" >&2
         return 1
     }
@@ -248,24 +255,54 @@ if ($cmd === "clear-pr") {
     return;
 }
 if ($cmd === "prepare-cleanup") {
-    $projects = App\Models\Project::query()->where("slug", "like", "orb155-%")->get();
+    $allowed = [
+        "orb155-noncomposer" => "github.com/octocat/hello-world",
+        "orb155-null" => "github.com/octocat/spoon-knife",
+        "orb155-routed" => "github.com/laravel/quickstart-basic",
+    ];
+    $ids = [];
+    foreach (explode(",", (string) (getenv("ORB155_PROJECTS") ?: "")) as $part) {
+        $part = trim($part);
+        if ($part === "") {
+            continue;
+        }
+        if (preg_match("/\A[1-9][0-9]*\z/", $part) !== 1) {
+            throw new RuntimeException("refusing cleanup project id {$part}");
+        }
+        $ids[] = (int) $part;
+    }
+    $ids = array_values(array_unique($ids));
     $groups = [];
-    foreach ($projects as $project) {
-        foreach (App\Models\Task::topLevel()->where("project_id", $project->id)->get() as $group) {
-            $status = $enum($group->status);
-            if (in_array($status, ["cancelled", "completed"], true)) {
-                continue;
+    if ($ids !== []) {
+        $projects = App\Models\Project::query()->whereIn("id", $ids)->get();
+        if ($projects->count() !== count($ids)) {
+            throw new RuntimeException("refusing cleanup: a project id is not one of the three fixtures");
+        }
+        foreach ($projects as $project) {
+            $slug = (string) $project->slug;
+            if (!array_key_exists($slug, $allowed)) {
+                throw new RuntimeException("refusing cleanup of project {$project->id} ({$slug})");
             }
-            $group->pr_url = null;
-            $group->assistance_requested = false;
-            if ($status === "settling") {
-                $group->status = App\Domain\Tasks\TaskGroupStatus::Running;
+            $identity = App\Domain\SourceControl\GitRepositoryIdentity::derive((string) $project->repository_url);
+            if ($identity !== $allowed[$slug]) {
+                throw new RuntimeException("refusing cleanup of {$slug}: repository {$identity} is not the fixture");
             }
-            $group->save();
-            $groups[] = $group->id;
+            foreach (App\Models\Task::topLevel()->where("project_id", $project->id)->get() as $group) {
+                $status = $enum($group->status);
+                if (in_array($status, ["cancelled", "completed"], true)) {
+                    continue;
+                }
+                $group->pr_url = null;
+                $group->assistance_requested = false;
+                if ($status === "settling") {
+                    $group->status = App\Domain\Tasks\TaskGroupStatus::Running;
+                }
+                $group->save();
+                $groups[] = $group->id;
+            }
         }
     }
-    $emit(["groups" => $groups]);
+    $emit(["groups" => $groups, "projects" => $ids]);
     return;
 }
 throw new RuntimeException("unknown observer command {$cmd}");
@@ -319,6 +356,7 @@ ensure_project() {
     local slug=$1 type=$2 repo=$3 branch_name=$4 root_path=$5 routed=$6 check_mode=$7
     local json id
     json=$(project_list)
+    verify_fixtures "$json" >/dev/null
     id=$(project_id_for "$slug" "$json")
     if [[ -z $id ]]; then
         local -a check_args=()
@@ -362,57 +400,167 @@ ensure_setup() {
     on_node gateway 60 orbit instance:setup-step:create "$name" --project="$project" --command="$command" --json >/dev/null
 }
 
+fixture_slugs=(orb155-noncomposer orb155-null orb155-routed)
+
+# Print "slug id" for each of the three fixtures. Refuse a same-named Project whose
+# type or repository identity differs, and refuse any other Project that owns one of
+# those repositories. Print nothing when a fixture has not been created yet.
+verify_fixtures() {
+    local json=$1
+    printf '%s' "$json" | php -r '
+        $raw=stream_get_contents(STDIN);
+        $data=json_decode(substr($raw, strpos($raw, "{")), true, 512, JSON_THROW_ON_ERROR);
+        $identity = function (string $repository): string {
+            if (str_starts_with($repository, "git@")) {
+                if (preg_match("/\Agit@([^:]+):(.+)\z/u", $repository, $matches) !== 1) {
+                    fwrite(STDERR, "invalid repository {$repository}\n");
+                    exit(1);
+                }
+                $host = $matches[1];
+                $path = $matches[2];
+            } else {
+                $parts = parse_url($repository);
+                if (!is_array($parts) || !is_string($parts["host"] ?? null) || !is_string($parts["path"] ?? null)) {
+                    fwrite(STDERR, "invalid repository {$repository}\n");
+                    exit(1);
+                }
+                $host = $parts["host"];
+                $path = $parts["path"];
+            }
+            $path = trim($path, "/");
+            if (str_ends_with($path, ".git")) { $path = substr($path, 0, -4); }
+            return strtolower($host)."/".rtrim($path, "/");
+        };
+        $expected = [
+            "orb155-noncomposer" => ["type" => "node-package", "identity" => "github.com/octocat/hello-world"],
+            "orb155-null" => ["type" => "node-package", "identity" => "github.com/octocat/spoon-knife"],
+            "orb155-routed" => ["type" => "laravel-app", "identity" => "github.com/laravel/quickstart-basic"],
+        ];
+        $owner = [];
+        foreach ($expected as $slug => $row) { $owner[$row["identity"]] = $slug; }
+        foreach ($data["projects"] as $project) {
+            $slug = (string) ($project["slug"] ?? "");
+            $got = $identity((string) ($project["repository_url"] ?? ""));
+            if (isset($expected[$slug])) {
+                $want = $expected[$slug];
+                if (($project["type"] ?? "") !== $want["type"] || $got !== $want["identity"]) {
+                    fwrite(STDERR, "refusing {$slug}: expected {$want["type"]} {$want["identity"]}, found ".($project["type"] ?? "")." {$got}\n");
+                    exit(1);
+                }
+                echo $slug, " ", $project["id"], "\n";
+                continue;
+            }
+            if (isset($owner[$got])) {
+                fwrite(STDERR, "refusing conflict: {$slug} owns {$got}, which the proof reserves for {$owner[$got]}\n");
+                exit(1);
+            }
+        }
+    '
+}
+
 drop_teardown_steps() {
-    local project=$1 json
-    json=$(on_node gateway 60 orbit instance:teardown-step:list --project="$project" --json || true)
-    [[ -n $json ]] || return 0
-    local names
-    names=$(printf '%s' "$json" | php -r '
+    local project=$1 json names_text name
+    json=$(on_node gateway 60 orbit instance:teardown-step:list --project="$project" --json)
+    names_text=$(printf '%s' "$json" | php -r '
         $raw=stream_get_contents(STDIN);
         $start=strpos($raw, "{");
-        if ($start === false) { exit(0); }
+        if ($start === false) { fwrite(STDERR, $raw); exit(1); }
         $data=json_decode(substr($raw, $start), true, 512, JSON_THROW_ON_ERROR);
-        $steps=$data["steps"] ?? $data["teardown_steps"] ?? [];
-        if (!is_array($steps)) { exit(0); }
+        $steps=$data["steps"] ?? $data["teardown_steps"] ?? null;
+        if (!is_array($steps)) { fwrite(STDERR, $raw); exit(1); }
         foreach ($steps as $step) {
             if (is_string($step["name"] ?? null)) { echo $step["name"], "\n"; }
         }
-    ' || true)
-    local name
+    ')
     while IFS= read -r name; do
         [[ -n $name ]] || continue
-        on_node gateway 60 orbit instance:teardown-step:destroy "$name" --project="$project" --yes --json >/dev/null || true
-    done <<<"$names"
+        on_node gateway 60 orbit instance:teardown-step:destroy "$name" --project="$project" --yes --json >/dev/null
+    done <<<"$names_text"
+}
+
+destroy_owned_instances() {
+    local project=$1 instances ids_text instance_id
+    instances=$(on_node gateway 90 orbit instance:list --json)
+    ids_text=$(printf '%s' "$instances" | php -r '
+        $raw=stream_get_contents(STDIN);
+        $data=json_decode(substr($raw, strpos($raw, "{")), true, 512, JSON_THROW_ON_ERROR);
+        foreach ($data["instances"] as $instance) {
+            if ((int) $instance["project_id"] === (int) $argv[1]) { echo $instance["id"], "\n"; }
+        }
+    ' "$project")
+    while IFS= read -r instance_id; do
+        [[ -n $instance_id ]] || continue
+        on_node gateway 180 orbit instance:destroy "$instance_id" --force --yes --json >/dev/null
+    done <<<"$ids_text"
+}
+
+assert_owned_cleared() {
+    local instances groups id leftover
+    instances=$(on_node gateway 90 rec:"owned instances after cleanup" orbit instance:list --json)
+    for id in "$@"; do
+        leftover=$(printf '%s' "$instances" | php -r '
+            $raw=stream_get_contents(STDIN);
+            $data=json_decode(substr($raw, strpos($raw, "{")), true, 512, JSON_THROW_ON_ERROR);
+            $count=0;
+            foreach ($data["instances"] as $instance) {
+                if ((int) $instance["project_id"] === (int) $argv[1]) { $count++; }
+            }
+            echo $count, "\n";
+        ' "$id")
+        if [[ $leftover != 0 ]]; then
+            echo "cleanup left ${leftover} instances on fixture project ${id}" >&2
+            exit 1
+        fi
+        groups=$(on_node gateway 60 rec:"owned groups after cleanup" orbit tasks:list --project="$id" --json)
+        printf '%s' "$groups" | php -r '
+            $raw=stream_get_contents(STDIN);
+            $data=json_decode(substr($raw, strpos($raw, "{")), true, 512, JSON_THROW_ON_ERROR);
+            $rows=$data["task_groups"] ?? null;
+            if (!is_array($rows)) { fwrite(STDERR, $raw); exit(1); }
+            foreach ($rows as $group) {
+                $status=(string) ($group["status"] ?? "");
+                if (!in_array($status, ["cancelled", "completed"], true)) {
+                    fwrite(STDERR, "fixture project ".$argv[1]." still has group ".$group["id"]." in {$status}\n");
+                    exit(1);
+                }
+            }
+        ' "$id"
+    done
 }
 
 prepare_fixture_projects() {
-    local json ids
-    json=$(observe prepare-cleanup)
-    require_marker "$json" >/dev/null
-    ids=$(printf '%s' "$json" | at '["groups"]' | php -r '$v=json_decode(stream_get_contents(STDIN), true); foreach ($v as $id) echo $id, "\n";')
-    local id
-    while IFS= read -r id; do
-        [[ -n $id ]] || continue
-        on_node gateway 180 orbit tasks:cancel "$id" --yes --json >/dev/null || true
-    done <<<"$ids"
-    json=$(project_list)
-    local slug project instances
-    for slug in orb155-noncomposer orb155-null orb155-routed; do
-        project=$(project_id_for "$slug" "$json" || true)
+    local json rows slug id joined group_json group_ids
+    local -a ids=()
+    json=$(on_node gateway 90 rec:"fixture ownership" orbit project:list --json)
+    rows=$(verify_fixtures "$json")
+    while IFS=' ' read -r slug id; do
+        [[ -n ${id:-} ]] || continue
+        ids+=("$id")
+    done <<<"$rows"
+    local project
+    for project in "${ids[@]+"${ids[@]}"}"; do
         [[ -n $project ]] || continue
         drop_teardown_steps "$project"
-        instances=$(on_node gateway 90 orbit instance:list --json)
-        printf '%s' "$instances" | php -r '
-            $raw=stream_get_contents(STDIN);
-            $data=json_decode(substr($raw, strpos($raw, "{")), true, 512, JSON_THROW_ON_ERROR);
-            foreach ($data["instances"] as $instance) {
-                if ((int) $instance["project_id"] === (int) $argv[1]) { echo $instance["id"], "\n"; }
-            }
-        ' "$project" | while IFS= read -r instance_id; do
-            [[ -n $instance_id ]] || continue
-            on_node gateway 180 orbit instance:destroy "$instance_id" --force --yes --json >/dev/null || true
-        done
     done
+    joined=
+    if ((${#ids[@]} > 0)); then
+        joined=$(IFS=,; printf '%s' "${ids[*]}")
+    fi
+    group_json=$(observe prepare-cleanup "" "fixture cleanup scope" "$joined")
+    require_marker "$group_json" >/dev/null
+    group_ids=$(printf '%s' "$group_json" | at '["groups"]' | php -r '$v=json_decode(stream_get_contents(STDIN), true); if (!is_array($v)) { fwrite(STDERR, "cleanup groups were not a list\n"); exit(1); } foreach ($v as $id) echo $id, "\n";')
+    local group_id
+    while IFS= read -r group_id; do
+        [[ -n $group_id ]] || continue
+        on_node gateway 180 orbit tasks:cancel "$group_id" --yes --json >/dev/null
+    done <<<"$group_ids"
+    for project in "${ids[@]+"${ids[@]}"}"; do
+        [[ -n $project ]] || continue
+        destroy_owned_instances "$project"
+    done
+    if ((${#ids[@]} > 0)); then
+        assert_owned_cleared "${ids[@]}"
+    fi
 }
 
 ensure_t3_eligibility() {
@@ -458,6 +606,13 @@ wait_baseline() {
         require_marker "$json" >/dev/null
         state=$(printf '%s' "$json" | at '["state"]')
         if [[ $state == passed ]]; then
+            json=$(observe baseline "$subtask" "$label_text")
+            require_marker "$json" >/dev/null
+            state=$(printf '%s' "$json" | at '["state"]')
+            if [[ $state != passed ]]; then
+                echo "recorded baseline for subtask ${subtask} was ${state}: ${json}" >&2
+                exit 1
+            fi
             echo "baseline ${label_text} passed"
             printf '%s\n' "$json"
             return 0
@@ -473,14 +628,18 @@ wait_baseline() {
 }
 
 read_workspace_file() {
-    local checkout=$1 relative=$2
-    on_node app-dev 60 bash -lc "gitdir=\$(git -C $(printf %q "$checkout") rev-parse --absolute-git-dir) && cat \"\$gitdir/orbit/${relative}\""
+    local checkout=$1 relative=$2 record=${3:-}
+    local -a record_arg=()
+    if [[ -n $record ]]; then
+        record_arg=(rec:"$record")
+    fi
+    on_node app-dev 60 "${record_arg[@]}" bash -lc "gitdir=\$(git -C $(printf %q "$checkout") rev-parse --absolute-git-dir) && cat \"\$gitdir/orbit/${relative}\""
 }
 
 assert_workspace_file() {
-    local checkout=$1 relative=$2
+    local checkout=$1 relative=$2 record=${3:-}
     local body
-    body=$(read_workspace_file "$checkout" "$relative")
+    body=$(read_workspace_file "$checkout" "$relative" "$record")
     printf '%s' "$body"
 }
 
@@ -579,6 +738,18 @@ fi
 assert_contains "$status_text" "discovery " "topology was not acquired"
 attempt=${status_text##*discovery }
 attempt=${attempt%%$'\n'*}
+evidence_worktree=${status_text#*bridge worktree }
+evidence_worktree=${evidence_worktree%% of *}
+if [[ ! -d $evidence_worktree ]]; then
+    echo "could not find the bridge worktree for the evidence log in topology status" >&2
+    exit 1
+fi
+evidence_log=${evidence_worktree}/.e2e/evidence.log
+evidence_from=0
+if [[ -f $evidence_log ]]; then
+    evidence_from=$(wc -c < "$evidence_log")
+    evidence_from=${evidence_from//[[:space:]]/}
+fi
 
 prove_helper
 
@@ -592,21 +763,21 @@ sample_snapshot=$(printf '%s' "$before_projects" | php -r '
     $data=json_decode(substr($raw, strpos($raw, "{")), true, 512, JSON_THROW_ON_ERROR);
     $rows=[];
     foreach ($data["projects"] as $project) {
-        if (str_starts_with($project["slug"], "orb155-")) { continue; }
+        if (in_array($project["slug"], $argv, true)) { continue; }
         $rows[]=["id"=>$project["id"],"slug"=>$project["slug"],"task_check"=>$project["task_check"],"task_workspace_routed"=>$project["task_workspace_routed"]];
     }
     echo json_encode($rows, JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR), "\n";
-')
+' "${fixture_slugs[@]}")
 sample_instances=$(printf '%s' "$before_instances" | php -r '
     $raw=stream_get_contents(STDIN);
     $data=json_decode(substr($raw, strpos($raw, "{")), true, 512, JSON_THROW_ON_ERROR);
     $ids=[];
     foreach ($data["instances"] as $instance) {
         $slug=$instance["project"]["slug"] ?? "";
-        if (!str_starts_with((string) $slug, "orb155-")) { $ids[]=$instance["id"]; }
+        if (!in_array((string) $slug, $argv, true)) { $ids[]=$instance["id"]; }
     }
     echo json_encode($ids), "\n";
-')
+' "${fixture_slugs[@]}")
 
 prepare_fixture_projects
 write_subtasks
@@ -638,8 +809,8 @@ null_subtask=$(printf '%s' "$null_group" | at '["tasks",0,"id"]')
 noncomposer_group_id=$(printf '%s' "$noncomposer_group" | at '["id"]')
 null_group_id=$(printf '%s' "$null_group" | at '["id"]')
 
-nc_json=$(wait_baseline "$noncomposer_subtask" "noncomposer baseline")
-null_json=$(wait_baseline "$null_subtask" "null-check baseline")
+nc_json=$(wait_baseline "$noncomposer_subtask" "noncomposer baseline output")
+null_json=$(wait_baseline "$null_subtask" "null-check baseline output")
 assert_eq "$(printf '%s' "$nc_json" | at '["kind"]')" baseline "noncomposer check kind"
 assert_eq "$(printf '%s' "$nc_json" | at '["exit_code"]')" 0 "noncomposer exit"
 assert_eq "$(printf '%s' "$nc_json" | at '["failed_step"]')" null "noncomposer failed step"
@@ -651,10 +822,10 @@ assert_not_contains "$(printf '%s' "$nc_json" | at '["output"]')" 'composer inst
 assert_not_contains "$(printf '%s' "$nc_json" | at '["output"]')" 'composer check' "noncomposer baseline inferred composer check"
 assert_not_contains "$(printf '%s' "$nc_json" | at '["output"]')" '[Orbit internal]' "noncomposer baseline inferred an internal step"
 nc_checkout=$(printf '%s' "$nc_json" | at '["checkout_path"]')
-nc_setup_file=$(assert_workspace_file "$nc_checkout" setup.json)
+nc_setup_file=$(assert_workspace_file "$nc_checkout" setup.json "noncomposer workspace setup.json")
 assert_contains "$nc_setup_file" 'touch orb155-plain-setup' "workspace setup.json"
 assert_not_contains "$nc_setup_file" 'composer' "workspace setup.json inferred composer"
-nc_command=$(assert_workspace_file "$nc_checkout" check-command)
+nc_command=$(assert_workspace_file "$nc_checkout" check-command "noncomposer workspace check-command")
 assert_eq "$nc_command" "$nc_check" "workspace check command"
 on_node app-dev 30 bash -lc "test -f $(printf %q "$nc_checkout")/orb155-plain-setup && test ! -d $(printf %q "$nc_checkout")/vendor"
 
@@ -665,14 +836,14 @@ assert_contains "$(printf '%s' "$null_json" | at '["output"]')" "$null_setup" "n
 assert_not_contains "$(printf '%s' "$null_json" | at '["output"]')" 'composer' "null baseline mentioned composer"
 assert_not_contains "$(printf '%s' "$null_json" | at '["output"]')" '[Orbit internal]' "null baseline inferred an internal step"
 null_checkout=$(printf '%s' "$null_json" | at '["checkout_path"]')
-null_command=$(assert_workspace_file "$null_checkout" check-command)
+null_command=$(assert_workspace_file "$null_checkout" check-command "null workspace check-command")
 assert_eq "$null_command" "" "null check still ran a command"
 on_node app-dev 30 bash -lc "test -f $(printf %q "$null_checkout")/orb155-null-setup && test ! -s \$(git -C $(printf %q "$null_checkout") rev-parse --absolute-git-dir)/orbit/check-command"
 
 routed_group=$(create_task "$routed_project" "ORB-155 routed workspace")
 routed_subtask=$(printf '%s' "$routed_group" | at '["tasks",0,"id"]')
 routed_group_id=$(printf '%s' "$routed_group" | at '["id"]')
-routed_json=$(wait_baseline "$routed_subtask" "routed cold baseline")
+routed_json=$(wait_baseline "$routed_subtask" "routed baseline recorded mode")
 assert_eq "$(printf '%s' "$routed_json" | at '["task_workspace_routed"]')" true "routed mode was not recorded"
 assert_eq "$(printf '%s' "$routed_json" | at '["instance_status"]')" active "routed workspace did not become active"
 assert_eq "$(printf '%s' "$routed_json" | at '["root"]')" public "routed workspace root"
@@ -684,11 +855,11 @@ assert_not_contains "$(printf '%s' "$routed_json" | at '["output"]')" 'composer'
 routed_checkout=$(printf '%s' "$routed_json" | at '["checkout_path"]')
 routed_instance=$(printf '%s' "$routed_json" | at '["instance_id"]')
 on_node app-dev 30 bash -lc "test -d $(printf %q "$routed_checkout")/public && test ! -d $(printf %q "$routed_checkout")/vendor"
-routed_setup_file=$(assert_workspace_file "$routed_checkout" setup.json)
+routed_setup_file=$(assert_workspace_file "$routed_checkout" setup.json "routed workspace setup.json")
 assert_eq "$routed_setup_file" "[]" "routed baseline received setup steps"
 
 on_node gateway 60 rec:"turn routing off for future workspaces" orbit project:update "$routed_project" --task-workspace-routed=false --json >/dev/null
-stable=$(observe instance "$routed_instance")
+stable=$(observe instance "$routed_instance" "stable routed workspace after routing off")
 require_marker "$stable" >/dev/null
 assert_eq "$(printf '%s' "$stable" | at '["task_workspace_routed"]')" true "existing workspace followed the new routing setting"
 assert_eq "$(printf '%s' "$stable" | at '["status"]')" active "existing routed workspace changed status"
@@ -698,15 +869,24 @@ if [[ $(printf '%s' "$stable" | at '["route_count"]') -lt 1 ]]; then
 fi
 unrouted_group=$(create_task "$routed_project" "ORB-155 unrouted workspace")
 unrouted_subtask=$(printf '%s' "$unrouted_group" | at '["tasks",0,"id"]')
-unrouted_json=$(wait_baseline "$unrouted_subtask" "unrouted workspace after setting change")
+unrouted_json=$(wait_baseline "$unrouted_subtask" "unrouted workspace recorded mode")
 assert_eq "$(printf '%s' "$unrouted_json" | at '["task_workspace_routed"]')" false "new workspace ignored the routing setting"
 assert_eq "$(printf '%s' "$unrouted_json" | at '["instance_status"]')" source_resolved "unrouted workspace was activated"
 assert_eq "$(printf '%s' "$unrouted_json" | at '["route_count"]')" 0 "unrouted workspace gained a route"
 assert_eq "$(printf '%s' "$unrouted_json" | at '["root"]')" null "unrouted workspace stored a root"
-stable_again=$(observe instance "$routed_instance")
+stable_again=$(observe instance "$routed_instance" "stable routed workspace after new unrouted workspace")
 require_marker "$stable_again" >/dev/null
 assert_eq "$(printf '%s' "$stable_again" | at '["task_workspace_routed"]')" true "first workspace changed when the second was created"
 assert_eq "$(printf '%s' "$stable_again" | at '["route_count"]')" "$(printf '%s' "$stable" | at '["route_count"]')" "first workspace route count changed"
+routing_on=$(on_node gateway 60 rec:"turn routing on for future workspaces" orbit project:update "$routed_project" --task-workspace-routed=true --json)
+assert_eq "$(printf '%s' "$routing_on" | at '["task_workspace_routed"]')" true "routing setting did not return to true"
+unrouted_instance=$(printf '%s' "$unrouted_json" | at '["instance_id"]')
+retained=$(observe instance "$unrouted_instance" "unrouted workspace retains recorded mode")
+require_marker "$retained" >/dev/null
+assert_eq "$(printf '%s' "$retained" | at '["task_workspace_routed"]')" false "unrouted workspace followed the restored routing setting"
+assert_eq "$(printf '%s' "$retained" | at '["status"]')" source_resolved "unrouted workspace changed status when routing returned to true"
+assert_eq "$(printf '%s' "$retained" | at '["root"]')" null "unrouted workspace gained a root when routing returned to true"
+assert_eq "$(printf '%s' "$retained" | at '["route_count"]')" 0 "unrouted workspace gained a route when routing returned to true"
 
 require_marker "$(observe settle "$noncomposer_group_id")" >/dev/null
 conflict=$(observe append-conflict "$noncomposer_group_id")
@@ -726,7 +906,7 @@ shown=$(on_node gateway 60 rec:"generic fixups" orbit tasks:show "$noncomposer_g
 assert_contains "$shown" "$nc_check" "tasks:show lost the original fixup command"
 assert_contains "$shown" "$nc_check_next" "tasks:show lost the updated fixup command"
 require_marker "$(observe settle "$null_group_id")" >/dev/null
-review=$(observe append-conflict "$null_group_id")
+review=$(observe append-conflict "$null_group_id" "null-check fixup")
 require_marker "$review" >/dev/null
 assert_eq "$(printf '%s' "$review" | at '["deliverables",0,"id"]')" fixup-review "null-check fixup id"
 assert_eq "$(printf '%s' "$review" | at '["deliverables",0,"type"]')" review "null-check fixup type"
@@ -782,11 +962,11 @@ after_snapshot=$(printf '%s' "$after_projects" | php -r '
     $data=json_decode(substr($raw, strpos($raw, "{")), true, 512, JSON_THROW_ON_ERROR);
     $rows=[];
     foreach ($data["projects"] as $project) {
-        if (str_starts_with($project["slug"], "orb155-")) { continue; }
+        if (in_array($project["slug"], $argv, true)) { continue; }
         $rows[]=["id"=>$project["id"],"slug"=>$project["slug"],"task_check"=>$project["task_check"],"task_workspace_routed"=>$project["task_workspace_routed"]];
     }
     echo json_encode($rows, JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR), "\n";
-')
+' "${fixture_slugs[@]}")
 assert_eq "$after_snapshot" "$sample_snapshot" "sample projects changed task check or routing"
 after_instances=$(on_node gateway 90 orbit instance:list --json)
 missing_sample=$(php -r '
@@ -807,5 +987,33 @@ fi
 prepare_fixture_projects
 final_status=$(bin/e2e-topology status "$topology")
 assert_contains "$final_status" "discovery ${attempt}" "proof released or replaced the topology"
+if [[ ! -f $evidence_log ]]; then
+    echo "evidence log ${evidence_log} was not written" >&2
+    exit 1
+fi
+evidence_suffix=$(tail -c +$((evidence_from + 1)) "$evidence_log")
+for evidence_label in \
+    "noncomposer baseline output" \
+    "null-check baseline output" \
+    "noncomposer workspace setup.json" \
+    "noncomposer workspace check-command" \
+    "null workspace check-command" \
+    "routed baseline recorded mode" \
+    "routed workspace setup.json" \
+    "stable routed workspace after routing off" \
+    "unrouted workspace recorded mode" \
+    "stable routed workspace after new unrouted workspace" \
+    "turn routing on for future workspaces" \
+    "unrouted workspace retains recorded mode" \
+    "null-check fixup" \
+    "fixture cleanup scope" \
+    "owned instances after cleanup"
+do
+    if [[ $evidence_suffix != *" ${evidence_label} node="* ]]; then
+        echo "evidence log ${evidence_log} has no entry for [${evidence_label}] from this run" >&2
+        exit 1
+    fi
+done
 echo "proved ${label} at ${candidate} on ${topology} attempt ${attempt}"
+echo "evidence: ${evidence_log}"
 echo "limitations: no GitHub App is configured, so the pull-request watcher cannot append a fixup from a live pull request; fixups were appended by TaskScheduler::appendFixup on the Gateway and read back with tasks:show. No T3 token or server is configured; a sleep t3-code process only makes app-dev eligible, and the implementer spawn fails after the baseline. The proof does not release ${topology}."
