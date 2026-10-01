@@ -30,6 +30,7 @@ final readonly class ProblemCollector
         private GatewayLogReader $reader,
         private ProblemLogParser $parser,
         private ProblemEvidence $evidence,
+        private ProblemSuppression $suppression,
         private LogRedactor $redactor,
     ) {}
 
@@ -213,6 +214,12 @@ final readonly class ProblemCollector
                     'request_ids' => $signal->requestId === null ? [] : [$signal->requestId],
                     'log_excerpt' => $signal->excerpt,
                 ];
+                $sourcePath = $this->suppression->logFramePath($signal->frame);
+
+                if ($sourcePath !== null) {
+                    $observation['source_path'] = $sourcePath;
+                }
+
                 $this->record(
                     $this->fingerprint(ProblemSource::Log, $signal->exceptionClass.'|'.$signal->frame),
                     ProblemSource::Log,
@@ -454,6 +461,10 @@ final readonly class ProblemCollector
     /** @param array<string, mixed> $observation */
     private function record(string $fingerprint, ProblemSource $source, array $observation, ?CarbonInterface $seenAt = null): void
     {
+        if ($this->suppression->suppressesSignal($fingerprint, $observation)) {
+            return;
+        }
+
         $seenAt = Carbon::parse($seenAt ?? now())->utc();
         $row = ProblemFingerprint::query()->where('fingerprint', $fingerprint)->lockForUpdate()->first();
 

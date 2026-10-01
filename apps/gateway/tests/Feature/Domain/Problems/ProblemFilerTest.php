@@ -43,12 +43,8 @@ it('files a repro-first group when a fingerprint is over the threshold', functio
         ->and($subtasks[1]->brief)->toBe('Clone failed')
         ->and($subtasks[1]->deliverables)->toBe([[
             'id' => 'test',
-            'type' => 'command',
-            'description' => 'Reproduce the failure, then fix it.',
-            'command' => 'vendor/bin/pest',
-            'directory' => 'apps/gateway',
-            'fails_on_base' => true,
-            'paths' => ['apps/gateway/tests/Feature/OrbitProblemReproTest.php'],
+            'type' => 'review',
+            'description' => 'Replace this deliverable with a scoped fails_on_base command before moving the task to Todo.',
         ]])
         ->and($filed->task_group_id)->toBe($group->id)
         ->and($filed->filed_at)->not->toBeNull()
@@ -66,6 +62,145 @@ it('files a repro-first group when a fingerprint is over the threshold', functio
 
     expect(Artisan::call('problems:file'))->toBe(0)
         ->and(Task::topLevel()->count())->toBe(1);
+});
+
+it('files a filed template with occurrence history and a review placeholder instead of an unscoped command', function (): void {
+    problem_filer_project();
+    problem_filer_fingerprint(
+        'log|RuntimeException|app/Domain/Tasks/TaskScheduler.php:App\\Domain\\Tasks\\TaskScheduler->tick',
+        3,
+        [
+            'log_excerpt' => 'T3 subscription ended.',
+            'request_ids' => ['req-1', 'req-2'],
+            'observation_times' => [
+                '2026-10-01T00:16:06.000000Z',
+                '2026-10-01T00:01:06.000000Z',
+                '2026-10-01T00:06:06.000000Z',
+            ],
+            'observation_counts' => [2, 129, 1],
+        ],
+        Carbon::parse('2026-10-01 00:01:06', 'UTC'),
+        Carbon::parse('2026-10-01 00:16:06', 'UTC'),
+    );
+
+    expect(Artisan::call('problems:file'))->toBe(0);
+
+    $group = Task::topLevel()->sole();
+    $subtasks = $group->tasks()->get();
+
+    expect($group->status)->toBe(TaskGroupStatus::Backlog)
+        ->and($group->brief)->toBe(implode("\n\n", [
+            'Filed by the outer loop.',
+            "Symptom\nT3 subscription ended.",
+            "Fingerprint\nlog|RuntimeException|app/Domain/Tasks/TaskScheduler.php:App\\Domain\\Tasks\\TaskScheduler->tick",
+            "First seen\n2026-10-01 00:01:06 UTC",
+            "Last seen\n2026-10-01 00:16:06 UTC",
+            "Count\n3",
+            "Occurrences\n2026-10-01 00:01:06 UTC 129\n2026-10-01 00:06:06 UTC 1\n2026-10-01 00:16:06 UTC 2",
+            "Evidence\nRequest ids: req-1, req-2\nLog excerpt: T3 subscription ended.",
+            "Suspected entry point\napp/Domain/Tasks/TaskScheduler.php:App\\Domain\\Tasks\\TaskScheduler->tick",
+        ]))
+        ->and($subtasks)->toHaveCount(2)
+        ->and($subtasks[0]->title)->toBe('Document the owning page')
+        ->and($subtasks[1]->title)->toBe('Reproduce the failure and fix it')
+        ->and($subtasks[1]->deliverables)->toBe([[
+            'id' => 'test',
+            'type' => 'review',
+            'description' => 'Replace this deliverable with a scoped fails_on_base command before moving the task to Todo.',
+        ]]);
+
+    foreach ($subtasks as $subtask) {
+        expect($subtask->brief)->toBe('T3 subscription ended.');
+
+        foreach ($subtask->deliverables as $deliverable) {
+            expect($deliverable)->not->toHaveKey('command')
+                ->not->toHaveKey('directory')
+                ->not->toHaveKey('fails_on_base')
+                ->not->toHaveKey('paths');
+        }
+    }
+});
+
+it('renders the known source path in the filed template for a shortened log key before clearing it', function (): void {
+    problem_filer_project();
+    $sourcePath = 'app/Domain/Tasks/TaskScheduler.php';
+    $key = 'log|'.str_repeat('VeryLongNamespace\\', 20).'RuntimeException|'.$sourcePath.':App\\Domain\\Tasks\\TaskScheduler->tick';
+    $shortened = 'log#'.substr(hash('sha256', $key), 0, 12);
+    $fingerprint = problem_filer_fingerprint($shortened, 4, [
+        'source_path' => $sourcePath,
+        'log_excerpt' => 'T3 subscription ended.',
+        'request_ids' => ['req-shortened'],
+        ...problem_filer_windows(4, '2026-10-01 00:00:01'),
+    ], Carbon::parse('2026-10-01 00:00:01', 'UTC'), Carbon::parse('2026-10-01 00:15:01', 'UTC'));
+
+    expect(Artisan::call('problems:file'))->toBe(0);
+
+    $group = Task::topLevel()->sole();
+
+    expect($group->status)->toBe(TaskGroupStatus::Backlog)
+        ->and($group->brief)->toContain(
+            "Fingerprint\n{$shortened}",
+            "Occurrences\n2026-10-01 00:00:01 UTC 1\n2026-10-01 00:05:01 UTC 1\n2026-10-01 00:10:01 UTC 1\n2026-10-01 00:15:01 UTC 1",
+            'Request ids: req-shortened',
+            "Suspected entry point\n{$sourcePath}",
+        )
+        ->not->toContain("Suspected entry point\n{$shortened}")
+        ->and($fingerprint->refresh()->task_group_id)->toBe($group->id)
+        ->and($fingerprint->evidence)->not->toHaveKey('source_path');
+});
+
+it('keeps the newest twenty UTC windows in the filed template', function (): void {
+    problem_filer_project();
+    $windows = problem_filer_windows(21);
+    problem_filer_fingerprint('activity|instance:clone|instance.clone_failed', 21, [
+        'error_message' => 'Clone failed',
+        'observation_times' => array_reverse($windows['observation_times']),
+        'observation_counts' => array_reverse(range(1, 21)),
+    ]);
+
+    expect(Artisan::call('problems:file'))->toBe(0);
+
+    $brief = Task::topLevel()->sole()->brief;
+    $history = explode("\n\nEvidence\n", explode("Occurrences\n", $brief)[1])[0];
+
+    expect(explode("\n", $history))->toHaveCount(20)
+        ->and($history)->toStartWith('2026-09-30 10:05:00 UTC 2')
+        ->toEndWith('2026-09-30 11:40:00 UTC 21')
+        ->not->toContain('2026-09-30 10:00:00 UTC 1')
+        ->and($brief)->toContain("Evidence\nnone")
+        ->not->toContain('Request ids:');
+});
+
+it('shows none in the filed template when there is no valid occurrence history', function (mixed $times, mixed $counts): void {
+    problem_filer_project();
+    problem_filer_fingerprint('activity|instance:clone|instance.clone_failed', 10, [
+        'error_message' => 'Clone failed',
+        'observation_times' => $times,
+        'observation_counts' => $counts,
+    ]);
+
+    expect(Artisan::call('problems:file'))->toBe(0)
+        ->and(Task::topLevel()->sole()->brief)->toContain("Occurrences\nnone\n\nEvidence\nnone");
+})->with([
+    'no times' => [null, []],
+    'no counts' => [[], null],
+    'empty sample' => [[], []],
+    'invalid sample' => [
+        ['not-a-timestamp', '', 42, '2026-09-30T10:00:00Z', '2026-09-30T10:05:00Z', '2026-09-30T10:10:00Z'],
+        [1, 1, 1, 0, '1'],
+    ],
+]);
+
+it('converts occurrence times to UTC in the filed template without changing their counts', function (): void {
+    problem_filer_project();
+    problem_filer_fingerprint('activity|instance:clone|instance.clone_failed', 10, [
+        'error_message' => 'Clone failed',
+        'observation_times' => ['2026-09-30T12:00:01+02:00', '2026-09-30T11:05:01+01:00'],
+        'observation_counts' => [129, 2],
+    ]);
+
+    expect(Artisan::call('problems:file'))->toBe(0)
+        ->and(Task::topLevel()->sole()->brief)->toContain("Occurrences\n2026-09-30 10:00:01 UTC 129\n2026-09-30 10:05:01 UTC 2");
 });
 
 it('files a repro-first group when doctor sees the same issue twice', function (): void {
@@ -90,7 +225,7 @@ it('files a repro-first group when doctor sees the same issue twice', function (
         ->and($group->brief)->toContain('Symptom', 'Node 4 is still provisioning.', 'Expected: active', 'Observed: provisioning')
         ->and($group->brief)->toContain('Suspected entry point', 'node 4 node.lifecycle_not_active')
         ->and($fingerprint->refresh()->task_group_id)->toBe($group->id)
-        ->and($group->tasks()->get()[1]->deliverables[0]['fails_on_base'] ?? null)->toBeTrue();
+        ->and($group->tasks()->get()[1]->deliverables[0]['type'] ?? null)->toBe('review');
 });
 
 it('files a repro-first group when three hits land in two quarter hours', function (): void {
@@ -218,7 +353,7 @@ it('files a legacy doctor episode when two collector times are ten minutes apart
 
     expect(Artisan::call('problems:file'))->toBe(0)
         ->and(Task::topLevel()->count())->toBe(1)
-        ->and(Task::topLevel()->sole()->brief)->toContain('2026-09-30T10:00:00Z', '2026-09-30T10:10:00Z');
+        ->and(Task::topLevel()->sole()->brief)->toContain("Occurrences\n2026-09-30 10:00:00 UTC 1\n2026-09-30 10:10:00 UTC 1");
 });
 
 it('files a repro-first group for nothing while its task is still open', function (string $status): void {
@@ -378,13 +513,13 @@ it('files a repro-first group for the busiest fingerprints and skips the fourth 
         ->and(Task::topLevel()->find($earlier->task_group_id)?->brief)->toContain("Evidence\nnone");
 });
 
-it('files a repro-first group and drops Evidence lines that do not fit', function (): void {
+it('preserves occurrence history in the filed template when dropping Evidence lines that do not fit', function (): void {
     problem_filer_project();
     $path = str_repeat('p', 9000);
     problem_filer_fingerprint('activity|instance:clone|instance.clone_failed', 10, [
         'error_message' => 'Clone failed',
         'paths' => [$path],
-        ...problem_filer_marker(),
+        ...problem_filer_windows(10),
     ]);
 
     expect(Artisan::call('problems:file'))->toBe(0);
@@ -394,7 +529,7 @@ it('files a repro-first group and drops Evidence lines that do not fit', functio
     expect(mb_strlen($brief))->toBeLessThanOrEqual(8000)
         ->and($brief)->toContain("Evidence\nnone")
         ->and($brief)->not->toContain($path)
-        ->and($brief)->toContain('Suspected entry point');
+        ->and($brief)->toContain('Suspected entry point', "Occurrences\n2026-09-30 10:00:00 UTC 1", "2026-09-30 10:45:00 UTC 1\n\nEvidence");
 });
 
 it('files a repro-first group for nothing when the orbit project is missing', function (): void {
@@ -429,7 +564,18 @@ it('does not file problems while tasks are disabled', function (): void {
 
 function problem_filer_brief(): string
 {
-    $times = implode(', ', problem_filer_windows(10)['observation_times']);
+    $history = implode("\n", [
+        '2026-09-30 10:00:00 UTC 1',
+        '2026-09-30 10:05:00 UTC 1',
+        '2026-09-30 10:10:00 UTC 1',
+        '2026-09-30 10:15:00 UTC 1',
+        '2026-09-30 10:20:00 UTC 1',
+        '2026-09-30 10:25:00 UTC 1',
+        '2026-09-30 10:30:00 UTC 1',
+        '2026-09-30 10:35:00 UTC 1',
+        '2026-09-30 10:40:00 UTC 1',
+        '2026-09-30 10:45:00 UTC 1',
+    ]);
 
     return implode("\n\n", [
         'Filed by the outer loop.',
@@ -438,7 +584,8 @@ function problem_filer_brief(): string
         "First seen\n2026-09-30 10:00:00 UTC",
         "Last seen\n2026-09-30 10:45:00 UTC",
         "Count\n10",
-        "Evidence\nRequest ids: req-1, req-2\nActivity ids: 11, 12\nPaths: /resources/instance:clone\nObservation times: {$times}",
+        "Occurrences\n{$history}",
+        "Evidence\nRequest ids: req-1, req-2\nActivity ids: 11, 12\nPaths: /resources/instance:clone",
         "Suspected entry point\ninstance:clone",
     ]);
 }
@@ -494,7 +641,7 @@ function problem_filer_fingerprint(
 ): ProblemFingerprint {
     $source = match (true) {
         str_starts_with($fingerprint, 'doctor|') => ProblemSource::Doctor,
-        str_starts_with($fingerprint, 'log|') => ProblemSource::Log,
+        str_starts_with($fingerprint, 'log|') || str_starts_with($fingerprint, 'log#') => ProblemSource::Log,
         str_starts_with($fingerprint, 'assist|') => ProblemSource::Assist,
         default => ProblemSource::Activity,
     };

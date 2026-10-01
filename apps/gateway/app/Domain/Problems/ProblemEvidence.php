@@ -62,6 +62,13 @@ final readonly class ProblemEvidence
             $evidence['log_excerpt'] = mb_substr($excerpt, 0, 500);
         }
 
+        $sourcePath = $observation['source_path'] ?? null;
+        $storedPath = $evidence['source_path'] ?? null;
+
+        if (is_string($sourcePath) && $sourcePath !== '' && (! is_string($storedPath) || $storedPath === '')) {
+            $evidence['source_path'] = $sourcePath;
+        }
+
         $message = $observation['error_message'] ?? null;
 
         if (is_string($message) && $message !== '') {

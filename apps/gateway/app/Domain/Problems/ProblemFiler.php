@@ -23,7 +23,7 @@ use Throwable;
 
 /**
  * Files at most three Backlog groups a day for fingerprints that keep returning.
- * The operator edits the placeholder test and moves the group to Todo.
+ * The operator replaces the review placeholder with a scoped repro before Todo.
  */
 final readonly class ProblemFiler
 {
@@ -36,6 +36,7 @@ final readonly class ProblemFiler
     public function __construct(
         private CreateTaskGroupAction $groups,
         private ProblemEvidence $evidence,
+        private ProblemSuppression $suppression,
     ) {}
 
     /** @return list<Throwable> */
@@ -161,6 +162,10 @@ final readonly class ProblemFiler
                 return;
             }
 
+            if ($this->suppression->isUnrecoverable($row)) {
+                return;
+            }
+
             $task = Task::query()->withoutGlobalScope('subtask')->find($row->task_group_id);
 
             if ($task instanceof Task && $this->isOpen($task)) {
@@ -203,7 +208,7 @@ final readonly class ProblemFiler
             ->orderBy('fingerprint');
 
         foreach ($candidates->lazy(100) as $row) {
-            if (! $this->isReady($row)) {
+            if (! $this->isReady($row) || $this->suppression->blocksFiling($row)) {
                 continue;
             }
 
@@ -253,7 +258,7 @@ final readonly class ProblemFiler
 
     private function canFile(ProblemFingerprint $row): bool
     {
-        if (! $this->isReady($row)) {
+        if ($this->suppression->blocksFiling($row) || ! $this->isReady($row)) {
             return false;
         }
 
@@ -358,12 +363,8 @@ final readonly class ProblemFiler
                     brief: $symptom,
                     deliverables: [[
                         'id' => 'test',
-                        'type' => 'command',
-                        'description' => 'Reproduce the failure, then fix it.',
-                        'command' => 'vendor/bin/pest',
-                        'directory' => 'apps/gateway',
-                        'fails_on_base' => true,
-                        'paths' => ['apps/gateway/tests/Feature/OrbitProblemReproTest.php'],
+                        'type' => 'review',
+                        'description' => 'Replace this deliverable with a scoped fails_on_base command before moving the task to Todo.',
                     ]],
                 ),
             ],
@@ -398,6 +399,7 @@ final readonly class ProblemFiler
             "First seen\n".$this->timeLine($row->first_seen),
             "Last seen\n".$this->timeLine($row->last_seen),
             'Count'."\n".$row->occurrences,
+            "Occurrences\n".$this->occurrenceHistory($row),
         ];
         $lines = $this->evidenceLines($row);
         $entry = "Suspected entry point\n".$this->entryPoint($row);
@@ -417,6 +419,43 @@ final readonly class ProblemFiler
 
             array_pop($lines);
         }
+    }
+
+    private function occurrenceHistory(ProblemFingerprint $row): string
+    {
+        $times = $row->evidence['observation_times'] ?? null;
+        $counts = $row->evidence['observation_counts'] ?? null;
+
+        if (! is_array($times) || ! is_array($counts)) {
+            return 'none';
+        }
+
+        $occurrences = [];
+
+        foreach ($times as $index => $time) {
+            $count = $counts[$index] ?? null;
+
+            if (! is_string($time) || $time === '' || ! is_int($count) || $count < 1) {
+                continue;
+            }
+
+            try {
+                $at = Carbon::parse($time)->utc();
+            } catch (Throwable) {
+                continue;
+            }
+
+            $occurrences[] = ['at' => $at, 'count' => $count];
+        }
+
+        usort($occurrences, static fn (array $left, array $right): int => $left['at']->getTimestamp() <=> $right['at']->getTimestamp());
+        $lines = [];
+
+        foreach (array_slice($occurrences, -20) as $occurrence) {
+            $lines[] = $this->timeLine($occurrence['at']).' '.$occurrence['count'];
+        }
+
+        return $lines === [] ? 'none' : implode("\n", $lines);
     }
 
     private function symptom(ProblemFingerprint $row): string
@@ -461,7 +500,7 @@ final readonly class ProblemFiler
         $entry = match ($row->source) {
             ProblemSource::Doctor => $this->doctorEntry($row),
             ProblemSource::Activity => $this->activityParts($row)['command'] ?? $row->fingerprint,
-            ProblemSource::Log => $this->logParts($row)['frame'] ?? $row->fingerprint,
+            ProblemSource::Log => $this->logParts($row)['frame'] ?? $this->text($row, 'source_path') ?? $row->fingerprint,
             ProblemSource::Assist => $this->assistanceEntry($row),
         };
 
@@ -517,12 +556,6 @@ final readonly class ProblemFiler
 
         if ($assistanceIds !== []) {
             $lines[] = 'Assistance task ids: '.implode(', ', array_map(static fn (int $id): string => (string) $id, $assistanceIds));
-        }
-
-        $times = $this->strings($evidence['observation_times'] ?? null);
-
-        if ($times !== []) {
-            $lines[] = 'Observation times: '.implode(', ', $times);
         }
 
         return $lines;
@@ -691,6 +724,7 @@ final readonly class ProblemFiler
             $evidence['activity_ids'],
             $evidence['paths'],
             $evidence['log_excerpt'],
+            $evidence['source_path'],
         );
         $row->occurrences = 0;
         $row->first_seen = null;

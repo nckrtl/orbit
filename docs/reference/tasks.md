@@ -488,7 +488,7 @@ The finished brief is at most 8,000 characters. The Evidence and Occurrences hea
 | --- | --- | --- |
 | Doctor | `Doctor {code} on {type} {id}` | Resource type, id, and code |
 | Activity | `{command} failed with {error_code}` | The command name |
-| Log | `{exception class} at {frame}` | The app frame |
+| Log | `{exception class} at {frame}` | The app frame, or the stored `source_path` when the key is shortened |
 | Assistance | The normalized reason | The open task ids in the sample |
 
 A title longer than 160 characters is cut to 157 characters plus `...`.
