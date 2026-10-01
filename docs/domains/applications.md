@@ -71,7 +71,7 @@ The Gateway refuses these requests before it changes anything:
 
 Installing dependencies is the slowest part of a new checkout. When the Project has an active Instance named `default` on the same Node, every other new development Instance gets a copy of that Instance's `vendor` and `node_modules` directories. Orbit makes the copy after the source is ready and before the database clone and the setup steps.
 
-Orbit copies with `cp -a --reflink=auto`. On a filesystem with block cloning, such as ZFS, XFS, or btrfs, the copy shares the data blocks of the `default` Instance. It takes seconds and uses almost no extra disk space. A file gets its own blocks only when one of the two Instances changes it, so neither Instance sees the other's changes. On a filesystem without block cloning, such as ext4, `cp` makes a normal copy instead.
+Orbit copies with `cp -a --reflink=auto`. On a filesystem with block cloning, such as XFS, btrfs, or OpenZFS 2.2 or later with block cloning enabled, the copy shares the data blocks of the `default` Instance. It takes seconds and uses almost no extra disk space. A file gets its own blocks only when one of the two Instances changes it, so neither Instance sees the other's changes. On a filesystem without block cloning, such as ext4, `cp` makes a normal copy instead.
 
 Orbit copies only these two directories. The rest of the checkout comes from the clone, so the new Instance never gets the `.env`, caches, logs, or runtime files of the `default` Instance. Symlinks inside the directories stay symlinks. Composer and npm write relative links, so a link to a package inside the repository points into the new checkout.
 
@@ -81,7 +81,9 @@ Orbit skips a directory in these cases:
 - It is a symlink in the `default` Instance.
 - The new checkout already has it, for example because the repository commits `vendor`.
 
-Orbit copies each directory to a staging path next to the checkout, `.orbit-copy.<instance>.<directory>`, and then renames it into place. So a directory in the new checkout is complete or absent. A failed copy removes its staging path, logs `instance.dependency_copy_failed` in the Gateway log, and creation continues without that directory.
+Orbit copies each directory to a staging path next to the checkout, `.orbit-copy.<instance>.<directory>`, and then renames it into place. So a directory in the new checkout is complete or absent. During the copy, Orbit holds the Process admission lock of the `default` Instance, so the dependency prune and its restore wait. The copy may take 120 seconds on the Node, and then `timeout` stops it.
+
+A failed or stopped copy removes its staging path, and creation continues without the missing directories. The Gateway log gets a warning with the code `instance.dependency_copy_failed`, both Instance IDs, the exit code, and the end of the error output.
 
 The [setup steps](/reference/instance-setup) still run. `composer install` and `npm install` compare the copied directories with the lock files of the new branch and change only what differs. A setup step that deletes the directory first, such as `npm ci`, discards the copy and installs everything again.
 
@@ -96,7 +98,7 @@ When the Project has an Instance named `default` with a database attached under 
 | MySQL on a [Database server](/reference/database-servers) | A database named `<project>_<instance>` on the same server, owned by the Instance's user and filled with `mysqldump --single-transaction` piped into `mysql` inside the server's container, plus the test database `<project>_<instance>_test`. |
 | SQLite file inside the `default` checkout | A copy at the same relative path in the new checkout, also on another Node. Tests use `:memory:`. |
 
-On the same Node, Orbit holds SQLite's write lock while it takes a reflink of the SQLite database file and its `-wal` file. Without block cloning, or on another Node, Orbit copies a snapshot made with SQLite's backup API.
+On the same Node, Orbit holds SQLite's write lock while it takes a reflink of the SQLite database file and its `-wal` file. It first checks that the filesystem can clone the file, so no writer waits when it cannot. Orbit copies a snapshot made with SQLite's backup API instead in three cases: the filesystem has no block cloning, a writer holds the lock for two seconds, or the source is on another Node.
 
 Orbit records the copy as a [database the Instance owns](/reference/database-connections#owned-databases) with the connection slug `<project>-<instance>`, attaches it under prefix `DB`, and synchronizes `.env` and `.env.testing`.
 

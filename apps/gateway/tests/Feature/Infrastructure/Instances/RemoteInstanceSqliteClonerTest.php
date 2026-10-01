@@ -158,6 +158,26 @@ describe('RemoteInstanceSqliteCloner', function (): void {
         $writer = null;
     });
 
+    it('copies a snapshot instead of waiting when a writer holds the lock', function (): void {
+        $source = "{$this->root}/default/database/database.sqlite";
+        $writer = new PDO("sqlite:{$source}");
+        $writer->exec('PRAGMA journal_mode=WAL;');
+        $writer->exec('BEGIN IMMEDIATE');
+        $writer->exec("INSERT INTO users VALUES ('uncommitted')");
+        $ssh = new SqliteClonerLocalSsh;
+        $target = sqlite_cloner_instance($this->project, $this->sourceNode, 'feature', "{$this->root}/feature");
+        $started = hrtime(true);
+
+        sqlite_cloner($ssh)->copy($this->default, $source, $target, "{$this->root}/feature/database/database.sqlite");
+
+        expect(sqlite_cloner_rows("{$this->root}/feature/database/database.sqlite"))->toBe(['ada'])
+            ->and(json_decode($ssh->outputs[0], true)['copy'])->toBe('snapshot')
+            ->and((hrtime(true) - $started) / 1e9)->toBeLessThan(10.0);
+
+        $writer->exec('ROLLBACK');
+        $writer = null;
+    });
+
     it('moves the snapshot through the Gateway to another Node and removes the source snapshot', function (): void {
         $ssh = new SqliteClonerLocalSsh;
         $target = sqlite_cloner_instance($this->project, sqlite_cloner_node('target', '10.44.0.12'), 'feature', "{$this->root}/feature");

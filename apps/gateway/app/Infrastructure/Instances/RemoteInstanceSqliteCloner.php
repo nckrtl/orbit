@@ -21,8 +21,8 @@ use Throwable;
 /**
  * Runs a small Python program as the Node's managed user, who owns development checkouts. The
  * program refuses a path outside the checkout or a path through a symlink. On one Node it takes a
- * reflink of the database and its WAL while it holds SQLite's write lock, and falls back to a
- * backup snapshot when the filesystem cannot clone. Between Nodes, the Gateway moves the snapshot
+ * reflink of the database and its WAL while it holds SQLite's write lock. It falls back to a backup
+ * snapshot when the filesystem cannot clone, or when a writer keeps the lock for two seconds. Between Nodes, the Gateway moves the snapshot
  * with the protected SQLite transfer and checks its size and digest.
  */
 final readonly class RemoteInstanceSqliteCloner implements InstanceSqliteCloner
@@ -35,7 +35,7 @@ final readonly class RemoteInstanceSqliteCloner implements InstanceSqliteCloner
         class BoundaryError(Exception):
             pass
 
-        class CloneUnsupported(Exception):
+        class UseSnapshot(Exception):
             pass
 
         def normalized(path):
@@ -110,7 +110,7 @@ final readonly class RemoteInstanceSqliteCloner implements InstanceSqliteCloner
             except OSError:
                 os.close(descriptor)
                 os.unlink(temporary)
-                raise CloneUnsupported
+                raise UseSnapshot
             os.close(descriptor)
             return temporary
 
@@ -122,9 +122,14 @@ final readonly class RemoteInstanceSqliteCloner implements InstanceSqliteCloner
                 metadata = None
             if metadata is not None and not stat.S_ISREG(metadata.st_mode):
                 raise BoundaryError
-            origin = sqlite3.connect("file:" + urllib.parse.quote(source) + "?mode=rw", uri=True, isolation_level=None, timeout=30)
+            # An unlocked clone proves these filesystems can clone before any writer has to wait.
+            os.unlink(clone(source, directory))
+            origin = sqlite3.connect("file:" + urllib.parse.quote(source) + "?mode=rw", uri=True, isolation_level=None, timeout=2)
             try:
-                origin.execute("BEGIN IMMEDIATE")
+                try:
+                    origin.execute("BEGIN IMMEDIATE")
+                except sqlite3.OperationalError:
+                    raise UseSnapshot
                 try:
                     database = clone(source, directory)
                     try:
@@ -168,7 +173,7 @@ final readonly class RemoteInstanceSqliteCloner implements InstanceSqliteCloner
                 try:
                     temporary, log = reflinked(source, os.path.dirname(target))
                     copy = "reflink"
-                except CloneUnsupported:
+                except UseSnapshot:
                     temporary, log = snapshot(source, os.path.dirname(target)), None
                     copy = "snapshot"
                 place(temporary, log, target, stat.S_IMODE(metadata.st_mode))

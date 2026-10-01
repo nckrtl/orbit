@@ -107,6 +107,7 @@ describe('RemoteInstanceDependencyCopier', function (): void {
             ->and(file_get_contents("{$this->root}/acme/feature/node_modules/.bin/vite"))->toBe('vite')
             ->and(file_exists("{$this->root}/acme/feature/.env"))->toBeFalse()
             ->and(glob("{$this->root}/acme/.orbit-copy.*") ?: [])->toBe([])
+            ->and($ssh->prefix)->toBe(['timeout', '-k', '5', '120', 'sh', '-c'])
             ->and($ssh->hosts)->toBe(['10.44.0.21'])
             ->and($ssh->arguments)->toBe(["{$this->root}/acme/default", "{$this->root}/acme/feature", 'vendor', 'node_modules']);
     });
@@ -137,7 +138,9 @@ describe('RemoteInstanceDependencyCopier', function (): void {
         chmod("{$this->root}/acme/default/node_modules/vite/bin/vite.js", 0000);
 
         expect(fn () => dependency_copier(new DependencyCopierLocalSsh)->copy($this->default, $this->feature))
-            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.dependency_copy_failed'));
+            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.dependency_copy_failed')
+                ->and($exception->details['exit_code'])->toBe('1')
+                ->and($exception->details['stderr'])->toContain('vite.js'));
 
         expect(file_exists("{$this->root}/acme/feature/vendor/autoload.php"))->toBeTrue()
             ->and(file_exists("{$this->root}/acme/feature/node_modules"))->toBeFalse()
@@ -173,10 +176,14 @@ final class DependencyCopierLocalSsh implements SshExecutor
     /** @var list<string> */
     public array $arguments = [];
 
+    /** @var list<string> */
+    public array $prefix = [];
+
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
         $this->hosts[] = $connection->host;
-        $this->arguments = array_slice($command->arguments, 4);
+        $this->prefix = array_slice($command->arguments, 0, 6);
+        $this->arguments = array_slice($command->arguments, 8);
 
         return (new NativeProcessRunner)->run(new ProcessInvocation(
             arguments: $command->arguments,

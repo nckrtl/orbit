@@ -47,6 +47,7 @@ use App\Models\Process;
 use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
 use App\Models\Route;
+use Illuminate\Support\Facades\Log;
 use Tests\Support\FakeDatabaseServerAdmin;
 use Tests\Support\LifecycleSshExecutor;
 
@@ -617,9 +618,10 @@ describe('instance:create dependency copy', function (): void {
         expect(app(InstanceDependencyCopier::class)->copies)->toBe([]);
     });
 
-    it('creates the Instance and runs setup when the copy fails', function (): void {
+    it('creates the Instance, logs the failure, and runs setup when the copy fails', function (): void {
         ProjectLifecycleStep::query()->create(['project_id' => $this->project->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'composer install', 'timeout_seconds' => 30, 'position' => 0]);
         app(InstanceDependencyCopier::class)->fails = true;
+        Log::spy();
         $setupRuns = 0;
         $transport = new LifecycleSshExecutor(result: function () use (&$setupRuns): int {
             $setupRuns++;
@@ -635,6 +637,9 @@ describe('instance:create dependency copy', function (): void {
         expect($instance->status)->toBe(InstanceState::Active)
             ->and($instance->failed_step)->toBeNull()
             ->and($setupRuns)->toBe(1);
+        Log::shouldHaveReceived('warning')->once()->withArgs(fn (string $message, array $context): bool => $context['error_code'] === 'instance.dependency_copy_failed'
+            && $context['source_instance_id'] === $this->default->id
+            && $context['target_instance_id'] === $instance->id);
     });
 });
 
