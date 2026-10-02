@@ -191,5 +191,5 @@ return [
     '0187' => ['0187-ask-the-reviewer-before-the-operator'],
     '0188' => ['0188-read-private-github-repositories-through-the-gateway-github-cli'],
     '0189' => ['0189-register-instances-only-for-existing-projects'],
-    '0192' => ['0192-run-task-agents-on-pi-only'],
+    '0192' => ['0192-run-task-agents-on-pi-only', '0192-stop-a-group-whose-pull-request-ended'],
 ];

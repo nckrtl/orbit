@@ -39,6 +39,7 @@ afterEach(function (): void {
 /** @param array<string, mixed> $arguments */
 function run_task_contract(string $fixture, string $command, array $arguments, int $exitCode): void
 {
+    $fixture = Str::after($fixture, 'tasks/');
     [$family, $case] = explode('/', $fixture, 2);
 
     foreach (['human.txt' => [], 'json' => ['--json' => true]] as $extension => $mode) {
@@ -66,6 +67,10 @@ describe('tasks contract', function (): void {
         run_task_contract('tasks-show/default', 'tasks:show', ['group' => '1'], 0);
     });
 
+    it('renders a watched pull request in the group JSON without changing pr_url', function (): void {
+        run_task_contract('tasks-show/watched', 'tasks:show', ['group' => '1'], 0);
+    });
+
     it('renders a created group and a refused todo create', function (): void {
         run_task_contract('tasks-create/created', 'tasks:create', ['title' => 'Add the tasks CLI', '--project' => '1', '--brief' => 'Brief'], 0);
         run_task_contract('tasks-create/no-subtasks', 'tasks:create', ['title' => 'Empty', '--project' => '1', '--brief' => 'No subtasks.', '--status' => 'todo'], 1);
@@ -75,7 +80,12 @@ describe('tasks contract', function (): void {
         run_task_contract('tasks-update/updated', 'tasks:update', ['group' => '1', '--title' => 'Add the tasks command family'], 0);
         run_task_contract('tasks-update/not-in-backlog', 'tasks:update', ['group' => '1', '--title' => 'Too late'], 1);
         run_task_contract('tasks-cancel/cancelled', 'tasks:cancel', ['group' => '1', '--yes' => true], 0);
-        run_task_contract('tasks-complete/completed', 'tasks:complete', ['group' => '2', '--yes' => true], 0);
+        run_task_contract('tasks/tasks-complete/completed', 'tasks:complete', ['group' => '2', '--yes' => true], 0);
+    });
+
+    it('renders completion of an ended watched pull request and refusal of an open one', function (): void {
+        run_task_contract('tasks/tasks-complete/ended', 'tasks:complete', ['group' => '1', '--yes' => true], 0);
+        run_task_contract('tasks/tasks-complete/not-ready', 'tasks:complete', ['group' => '1', '--yes' => true], 1);
     });
 
     it('renders subtask create, update, and destroy', function (): void {

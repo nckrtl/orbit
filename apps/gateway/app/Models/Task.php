@@ -57,6 +57,9 @@ use LogicException;
  * @property string|null $assistance_question
  * @property string|null $assistance_reason
  * @property int $communication_failures
+ * @property int|null $ended_pr_notice_thread_id
+ * @property string|null $ended_pr_notice_key
+ * @property string|null $ended_pr_notice_state
  * @property int $pi_restart_resumes
  * @property string|null $pi_restart_key
  * @property int|null $pi_restart_thread_id
@@ -71,6 +74,10 @@ use LogicException;
  * @property string|null $taskable_type
  * @property int|null $taskable_id
  * @property string|null $pr_url
+ * @property string|null $watched_pr_url
+ * @property int|null $watched_pr_number
+ * @property string|null $watched_pr_state
+ * @property string|null $watched_pr_completion
  * @property bool $notify_coder
  * @property string $implementer_model
  * @property string $reviewer_model
@@ -111,6 +118,10 @@ final class Task extends Model
 {
     /** @var list<string> */
     private const array TOP_LEVEL_COLUMNS = [
+        'watched_pr_completion',
+        'watched_pr_url',
+        'watched_pr_number',
+        'watched_pr_state',
         'project_id',
         'taskable_type',
         'taskable_id',
@@ -129,6 +140,9 @@ final class Task extends Model
 
     /** @var list<string> */
     private const array SUBTASK_COLUMNS = [
+        'ended_pr_notice_thread_id',
+        'ended_pr_notice_key',
+        'ended_pr_notice_state',
         'position',
         'implementer_agent_thread_id',
         'type',
@@ -170,6 +184,10 @@ final class Task extends Model
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
+        'watched_pr_completion',
+        'watched_pr_url',
+        'watched_pr_number',
+        'watched_pr_state',
         'type', 'target_thread_id', 'completion_summary',
         'parent_id',
         'continuation_of_task_id',
@@ -206,6 +224,7 @@ final class Task extends Model
         'review_workspace_head',
         'review_workspace_tree',
         'assistance_requested', 'assistance_kind', 'assistance_question', 'assistance_reason', 'communication_failures', 'resolution_delivered_comment_id', 'direction_relay_comment_id', 'consult_comment_id', 'direction_answer_key', 'direction_answer_source_turn_id',
+        'ended_pr_notice_thread_id', 'ended_pr_notice_key', 'ended_pr_notice_state',
         'pi_restart_resumes', 'pi_restart_key', 'pi_restart_thread_id', 'pi_restart_source_turn_id', 'pi_restart_reservation', 'pi_restart_session_revision',
         'project_id',
         'taskable_type',
@@ -398,6 +417,7 @@ final class Task extends Model
             'status' => TaskLevelStatusCast::class,
             'execution_mode' => TaskExecutionMode::class,
             'notify_coder' => 'boolean',
+            'watched_pr_number' => 'integer',
             'agent_unavailable_since' => 'datetime',
             'agent_unavailable_notified_at' => 'datetime',
             'reserved_at' => 'datetime',
@@ -426,6 +446,7 @@ final class Task extends Model
             'communication_failures' => 'integer',
             'pi_restart_resumes' => 'integer',
             'pi_restart_thread_id' => 'integer',
+            'ended_pr_notice_thread_id' => 'integer',
             'resolution_delivered_comment_id' => 'integer',
         ];
     }

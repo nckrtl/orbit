@@ -888,6 +888,7 @@
             "components": [
                 "apps/cli",
                 "apps/gateway",
+                "apps/web",
                 "packages/php-sdk"
             ],
             "concepts": [

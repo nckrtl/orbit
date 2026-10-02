@@ -51,6 +51,22 @@ interface GitHubApi
         GitHubRepository $repository,
     ): string;
 
+    /** @throws GitHubApiException */
+    public function repositoryPullRequestReadToken(
+        GitHubAppCredentials $credentials,
+        int $installationId,
+        GitHubRepository $repository,
+    ): string;
+
+    /**
+     * One page of pull requests in GitHub's default order, in any state, with this branch as head.
+     *
+     * @return list<GitHubBranchPullRequest>
+     *
+     * @throws GitHubApiException
+     */
+    public function pullRequestsByHead(#[SensitiveParameter] string $token, GitHubRepository $repository, string $head): array;
+
     /**
      * A token that only reads the check runs of this one repository, and expires after one hour.
      * It is separate from the pull request token because GitHub refuses a whole token request that

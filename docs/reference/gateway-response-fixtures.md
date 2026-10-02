@@ -34,6 +34,8 @@ cd apps/gateway && ORBIT_FIXTURES=record vendor/bin/pest --filter=Fixtures
 
 The recorded file holds the request class, the route, the status, and the body. It holds no secrets, because fixture tests use example values. Project fixtures include source defaults and task settings such as `task_check`; update the corresponding CLI expectations when those response fields change. Task fixtures share one id sequence with their subtasks. A subtask id is greater than its task id, and creating another task does not reuse a subtask id.
 
+The `tasks/tasks-show/watched` fixture records a running task whose branch pull request was opened outside Orbit. It has `watched_pr_url`, `watched_pr_number`, and `watched_pr_state`, while `pr_url` remains null. The default task fixtures keep the watched fields null. The SDK and CLI replay both cases so a watched pull request cannot become the reviewed pull request by accident. When these fields change, re-record every response that includes a task and update its CLI JSON expectation. The [branch watch](/reference/tasks#watch-the-branch-while-subtasks-are-open) owns their meaning.
+
 ## Validate a fixture
 
 `bin/api-fixtures --check` validates every fixture body against the response schema for its route and status in `docs/openapi.json`. The `apps/docs` checks run it, so a fixture whose body differs from the API reference fails continuous integration. Regenerate the reference with `composer docs-openapi` when a response shape changes on purpose. The inputs that command reads are on [API reference generation](/reference/api-reference).
