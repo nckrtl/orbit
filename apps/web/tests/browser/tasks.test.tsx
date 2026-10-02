@@ -106,13 +106,76 @@ it("groups every status, opens details, and keeps unsuccessful outcomes visible"
     await expect.element(pane("Todo")).toBeVisible();
 });
 
-it("shows empty columns only after a successful response", async () => {
+it("shows an empty task board without lanes only after a successful response", async () => {
     await openTasks(async () => ({ status: 200, payload: { data: [] } }));
+    await expect.element(page.getByText("No tasks yet.", { exact: true })).toBeVisible();
     expect(screenText()).toContain("Tasks │ 0");
-    await expect.element(pane("Backlog")).toHaveTextContent("No tasks being prepared.");
-    await expect.element(pane("Todo")).toHaveTextContent("No tasks waiting.");
-    await expect.element(pane("In progress")).toHaveTextContent("No tasks in progress.");
-    await expect.element(pane("Done")).toHaveTextContent("No finished tasks yet.");
+    expect(document.querySelector(".kanban-board")).toBeNull();
+    for (const column of ["Backlog", "Todo", "In progress", "Done"]) {
+        expect(document.querySelector(`[aria-label="${column}"]`)).toBeNull();
+    }
+});
+
+function expectFilledLanes(board: Element, titles: string[]): void {
+    const lanes = [...board.querySelectorAll<HTMLElement>(":scope > .frame")];
+    expect(lanes.map((lane) => lane.getAttribute("aria-label"))).toEqual(titles);
+    const widths = lanes.map((lane) => lane.getBoundingClientRect().width);
+    for (const width of widths) {
+        expect(Math.abs(width - widths[0]!)).toBeLessThan(1.5);
+    }
+    const tracks = getComputedStyle(board).gridTemplateColumns.split(" ");
+    expect(tracks).toHaveLength(window.innerWidth >= 1024 ? titles.length : 1);
+}
+
+it("hides empty task lanes and shares the width as cards move between statuses", async () => {
+    let groups = [group(1, "backlog"), group(2, "failed")];
+    await openTasks(async () => ({ status: 200, payload: { data: groups } }));
+    await expect.element(pane("Backlog")).toHaveTextContent("Feature 1");
+    expectFilledLanes(document.querySelector(".kanban-board")!, ["Backlog", "Done"]);
+    expect(document.querySelector('[aria-label="Todo"]')).toBeNull();
+    expect(document.querySelector('[aria-label="In progress"]')).toBeNull();
+    try {
+        await page.viewport(390, 844);
+        expectFilledLanes(document.querySelector(".kanban-board")!, ["Backlog", "Done"]);
+    } finally {
+        await page.viewport(1280, 800);
+    }
+    groups = [group(1, "todo")];
+    await queryClient.invalidateQueries();
+    await expect.element(pane("Todo")).toHaveTextContent("Feature 1");
+    expectFilledLanes(document.querySelector(".kanban-board")!, ["Todo"]);
+    groups = [];
+    await queryClient.invalidateQueries();
+    await expect.element(page.getByText("No tasks yet.", { exact: true })).toBeVisible();
+    expect(document.querySelector(".kanban-board")).toBeNull();
+});
+
+it("hides empty subtask lanes, shares their width, and explains an empty board", async () => {
+    let task = group(1, "running");
+    task.tasks = [
+        { ...task.tasks[0]!, status: "running" },
+        { ...task.tasks[0]!, id: 2, position: 2, title: "Second step", status: "completed" },
+    ];
+    const app = await openTasks(async (_, path) => ({
+        status: 200,
+        payload: { data: path === "/api/v1/task-groups" ? [task] : task },
+    }));
+    await app.router.navigate({ to: "/tasks/$id", params: { id: "1" } });
+    await expect.element(pane("In progress")).toHaveTextContent("First step");
+    expectFilledLanes(document.querySelector('[aria-label="Subtasks"] .kanban-board')!, [
+        "In progress",
+        "Done",
+    ]);
+    expect(document.querySelector('[aria-label="Todo"]')).toBeNull();
+    task = { ...task, tasks: [task.tasks[1]!] };
+    await queryClient.invalidateQueries();
+    await expect.element(pane("In progress")).not.toBeInTheDocument();
+    await expect.element(pane("Done")).toHaveTextContent("Second step");
+    expectFilledLanes(document.querySelector('[aria-label="Subtasks"] .kanban-board')!, ["Done"]);
+    task = { ...task, tasks: [] };
+    await queryClient.invalidateQueries();
+    await expect.element(pane("Subtasks")).toHaveTextContent("No subtasks yet.");
+    expect(document.querySelector('[aria-label="Subtasks"] .kanban-board')).toBeNull();
 });
 
 it("explains a disabled extension and can retry a failed request", async () => {

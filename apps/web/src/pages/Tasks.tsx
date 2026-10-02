@@ -2,7 +2,7 @@ import { DefinitionPane } from "../definitions/definition-pane";
 import { AgentSessions } from "../tasks/AgentSessions";
 import { TaskComments } from "../tasks/TaskComments";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { Link, useParams, useRouter } from "@tanstack/react-router";
 import { extensionsQuery } from "../api/extensions";
 import { GatewayError } from "../api/client";
@@ -36,6 +36,20 @@ import { useTaskPoll } from "../realtime/polling";
 
 const columns: TaskColumn[] = ["Backlog", "Todo", "In progress", "Done"];
 const subtaskColumns: TaskColumn[] = ["Todo", "In progress", "Done"];
+
+/** Keep the lane order, but give space only to lanes with cards. */
+function filledLanes<T extends { status: TaskGroup["status"] }>(order: TaskColumn[], cards: T[]) {
+    return order
+        .map((column) => ({
+            column,
+            cards: cards.filter((card) => taskColumn(card.status) === column),
+        }))
+        .filter((lane) => lane.cards.length > 0);
+}
+
+function laneWidths(count: number): CSSProperties {
+    return { "--kanban-lanes": count } as CSSProperties;
+}
 
 /** The current time, updated every `intervalMs` while `enabled`, so an active group's duration counts forward. */
 function useNow(intervalMs: number, enabled: boolean): number {
@@ -275,6 +289,7 @@ export function TasksBoard({ instanceId }: { instanceId?: number } = {}) {
     });
     const visibleGroups =
         instanceId === undefined ? groups.data : tasksForInstance(groups.data ?? [], instanceId);
+    const lanes = filledLanes(columns, visibleGroups ?? []);
     // Cards show whole minutes, so the board ticks once a minute while a group is active.
     const now = useNow(
         60_000,
@@ -302,16 +317,19 @@ export function TasksBoard({ instanceId }: { instanceId?: number } = {}) {
             )}
             {groups.isPending && <p role="status">Loading tasks…</p>}
             {groups.error && <TaskError error={groups.error} retry={() => void groups.refetch()} />}
-            {groups.data && !groups.error && (
-                <div
-                    data-testid="tasks-board"
-                    className="kanban-board grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-4"
-                >
-                    {columns.map((column) => {
-                        const tasks = (visibleGroups ?? []).filter(
-                            (group) => taskColumn(group.status) === column,
-                        );
-                        return (
+            {groups.data &&
+                !groups.error &&
+                (lanes.length === 0 ? (
+                    <p data-testid="tasks-board" className="text-dim">
+                        No tasks yet.
+                    </p>
+                ) : (
+                    <div
+                        data-testid="tasks-board"
+                        className="kanban-board grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[repeat(var(--kanban-lanes),minmax(0,1fr))]"
+                        style={laneWidths(lanes.length)}
+                    >
+                        {lanes.map(({ column, cards: tasks }) => (
                             <Frame
                                 key={column}
                                 title={column}
@@ -319,17 +337,6 @@ export function TasksBoard({ instanceId }: { instanceId?: number } = {}) {
                                 bodyClassName="space-y-[var(--panel-padding)]"
                                 className="min-h-[160px]"
                             >
-                                {tasks.length === 0 && (
-                                    <p className="text-dim">
-                                        {column === "Backlog"
-                                            ? "No tasks being prepared."
-                                            : column === "Todo"
-                                              ? "No tasks waiting."
-                                              : column === "In progress"
-                                                ? "No tasks in progress."
-                                                : "No finished tasks yet."}
-                                    </p>
-                                )}
                                 {tasks.map((group) => (
                                     <Link
                                         key={group.id}
@@ -352,10 +359,9 @@ export function TasksBoard({ instanceId }: { instanceId?: number } = {}) {
                                     </Link>
                                 ))}
                             </Frame>
-                        );
-                    })}
-                </div>
-            )}
+                        ))}
+                    </div>
+                ))}
         </div>
     );
 }
@@ -390,6 +396,10 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
     const countsForward =
         subtaskId === undefined && task !== undefined && isActiveTaskGroup(task.status);
     const now = useNow(1_000, countsForward);
+    const subtaskLanes = filledLanes(
+        subtaskColumns,
+        [...(task?.tasks ?? [])].sort((a, b) => a.position - b.position),
+    );
     if (!tasksEnabled) {
         return (
             <Frame title="Tasks" state="warn">
@@ -466,12 +476,14 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
                             aria-label="Subtasks"
                             className="shrink-0 lg:flex lg:min-h-0 lg:flex-1 lg:basis-0 lg:flex-col"
                         >
-                            <div className="kanban-board grid grid-cols-1 lg:min-h-0 lg:flex-1 lg:grid-cols-3 lg:grid-rows-[minmax(0,1fr)]">
-                                {subtaskColumns.map((column) => {
-                                    const subtasks = task.tasks
-                                        .filter((subtask) => taskColumn(subtask.status) === column)
-                                        .sort((a, b) => a.position - b.position);
-                                    return (
+                            {subtaskLanes.length === 0 ? (
+                                <p className="text-dim">No subtasks yet.</p>
+                            ) : (
+                                <div
+                                    className="kanban-board grid grid-cols-1 lg:min-h-0 lg:flex-1 lg:grid-cols-[repeat(var(--kanban-lanes),minmax(0,1fr))] lg:grid-rows-[minmax(0,1fr)]"
+                                    style={laneWidths(subtaskLanes.length)}
+                                >
+                                    {subtaskLanes.map(({ column, cards: subtasks }) => (
                                         <Frame
                                             key={column}
                                             title={column}
@@ -479,15 +491,6 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
                                             className="min-h-[160px]"
                                             bodyClassName="space-y-[var(--panel-padding)]"
                                         >
-                                            {subtasks.length === 0 && (
-                                                <p className="text-dim">
-                                                    {column === "Todo"
-                                                        ? "No subtasks waiting."
-                                                        : column === "In progress"
-                                                          ? "No subtasks in progress."
-                                                          : "No finished subtasks yet."}
-                                                </p>
-                                            )}
                                             {subtasks.map((subtask) => (
                                                 <Link
                                                     to="/tasks/$id/subtasks/$subtaskId"
@@ -507,9 +510,9 @@ function TaskDetailView({ id, subtaskId }: { id: string; subtaskId?: string }) {
                                                 </Link>
                                             ))}
                                         </Frame>
-                                    );
-                                })}
-                            </div>
+                                    ))}
+                                </div>
+                            )}
                         </section>
                     )}
                     {"tasks" in detail ? (
