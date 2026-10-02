@@ -505,3 +505,42 @@ body {
         color: var(--fg);
     }
 }
+
+/* Annotation rows share aligned columns and dividers that reach the panel edges. */
+.annotations-panel .frame-body {
+    padding: 0;
+}
+
+.annotations-panel .frame-body > .text-dim {
+    padding: var(--panel-padding);
+}
+
+.annotations-table {
+    width: 100%;
+    min-width: 680px;
+    table-layout: fixed;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.annotations-table th,
+.annotations-table td {
+    padding: 8px var(--panel-padding);
+    text-align: left;
+    vertical-align: top;
+    overflow-wrap: anywhere;
+    border-bottom: 1px solid var(--line);
+}
+
+.annotations-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--bg);
+    color: var(--dim);
+    font-weight: 400;
+}
+
+.annotations-table tbody tr:last-child td {
+    border-bottom: 0;
+}

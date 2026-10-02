@@ -2,10 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Actions\Annotations\AnnotationStoreAction;
 use App\Actions\AppInstances\RemoveAppInstanceAction;
 use App\Actions\Processes\CascadeAppInstanceProcessesAction;
 use App\Actions\Processes\RemoveProcessAction;
 use App\Actions\Schedules\AddScheduleAction;
+use App\Data\Annotations\AnnotationInput;
 use App\Data\Schedules\AddScheduleData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
@@ -36,6 +38,8 @@ use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Domain\Schedules\ScheduleTargetType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskStatus;
 use App\Models\App as OrbitApp;
 use App\Models\AppInstance;
 use App\Models\AppInstanceRemoval;
@@ -1329,3 +1333,27 @@ final class Orb131CoordinatorProcessRuntimeManager implements ProcessRuntimeMana
         return '';
     }
 }
+
+it('cancels unfinished annotation tasks on Instance removal and preserves completed and unrelated tasks', function (): void {
+    $instance = orb181_coordinator_instance();
+    $other = orb181_coordinator_instance();
+    $store = app(AnnotationStoreAction::class);
+    $create = fn (AppInstance $owner, string $id) => $store->create($owner, new AnnotationInput(['id' => $id, 'comment' => 'Adjust heading', 'threadId' => 'annotation-thread']));
+    $pending = $create($instance, 'pending-annotation');
+    $running = $create($instance, 'running-annotation');
+    $store->transition($running, 'in_progress', null);
+    $done = $create($instance, 'done-annotation');
+    $store->transition($done, 'in_progress', null);
+    $store->transition($done, 'resolved', 'Already completed');
+    $unrelated = $create($other, 'unrelated-annotation');
+    $this->orb181Coordinator->execute($instance, false);
+    foreach ([$pending, $running] as $annotation) {
+        expect($annotation->refresh()->task->status)->toBe(TaskStatus::Cancelled);
+        expect($annotation->task->taskGroup->status)->toBe(TaskGroupStatus::Cancelled);
+        expect($annotation->delivery)->toBe('cancelled');
+        expect(fn () => $store->transition($annotation, 'resolved', 'Late reply'))->toThrow(ResourceOperationException::class);
+    }
+    expect($done->refresh()->task->status)->toBe(TaskStatus::Completed);
+    expect($done->task->completion_summary)->toBe('Already completed');
+    expect($unrelated->refresh()->task->status)->toBe(TaskStatus::Pending);
+});

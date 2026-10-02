@@ -141,6 +141,13 @@ export const taskStatusLabels: Record<TaskGroup["status"] | "pending", string> =
     cancelled: "Cancelled",
 };
 
+/** Task groups shown on an Instance's board and counted in its navigation. */
+export function tasksForInstance(groups: readonly TaskGroup[], instanceId: number): TaskGroup[] {
+    return groups.filter(
+        (group) => group.taskable_type === "instance" && group.taskable_id === instanceId,
+    );
+}
+
 export const taskGroupsQuery = queryOptions({
     queryKey: ["task-groups"],
     queryFn: () => get<TaskGroup[]>("/api/v1/task-groups"),

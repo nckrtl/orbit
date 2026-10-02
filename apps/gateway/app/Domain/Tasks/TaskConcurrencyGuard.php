@@ -50,7 +50,7 @@ final readonly class TaskConcurrencyGuard
     /** @return Builder<TaskGroup> */
     private function activeQuery(?int $exceptGroupId): Builder
     {
-        return TaskGroup::query()
+        return TaskGroup::query()->where('execution_mode', TaskExecutionMode::Managed)
             ->whereIn('status', array_map(
                 static fn (TaskGroupStatus $status): string => $status->value,
                 TaskGroupStatus::active(),

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskAgentDefaults;
+use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -18,6 +20,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $agent_unavailable_since
  * @property Carbon|null $agent_unavailable_notified_at
  * @property string $agent_driver
+ * @property TaskExecutionMode $execution_mode
  * @property int $id
  * @property int $app_id
  * @property string|null $taskable_type
@@ -49,6 +52,7 @@ final class TaskGroup extends Model
     #[\Override]
     protected $attributes = [
         'status' => 'queued',
+        'execution_mode' => 'managed',
         'agent_driver' => 't3',
         'notify_coder' => false,
         'implementer_model' => TaskAgentDefaults::ImplementerModel,
@@ -58,6 +62,7 @@ final class TaskGroup extends Model
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
+        'execution_mode',
         'agent_driver',
         'agent_unavailable_since',
         'agent_unavailable_notified_at',
@@ -81,6 +86,13 @@ final class TaskGroup extends Model
         'started_at',
         'settled_at',
     ];
+
+    public function requireManagedExecution(): void
+    {
+        if ($this->execution_mode !== TaskExecutionMode::Managed) {
+            throw new ResourceOperationException('tasks.external_execution', 'This task uses an existing thread. Use its annotation controls instead of the managed lifecycle.', 409);
+        }
+    }
 
     /** @return BelongsTo<App, $this> */
     public function app(): BelongsTo
@@ -114,6 +126,7 @@ final class TaskGroup extends Model
             'assistance_requested' => 'boolean',
             'agent_unavailable_since' => 'datetime',
             'agent_unavailable_notified_at' => 'datetime',
+            'execution_mode' => TaskExecutionMode::class,
             'status' => TaskGroupStatus::class,
             'tokens' => 'integer',
             'line_diff' => 'integer',

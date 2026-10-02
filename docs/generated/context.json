@@ -3030,6 +3030,24 @@
             ]
         },
         {
+            "path": "docs/decisions/0114-extract-agent-annotation-package.md",
+            "title": "ADR 0114: Extract the agent annotation package",
+            "kind": "decision",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0114"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -3173,7 +3191,8 @@
                 "0109",
                 "0110",
                 "0112",
-                "0113"
+                "0113",
+                "0114"
             ]
         },
         {
@@ -3262,6 +3281,25 @@
                 "Project",
                 "Route",
                 "Web root"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/agent-annotation.md",
+            "title": "Agent annotation package",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Database",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Route",
+                "Task",
+                "Task group",
+                "Tool"
             ],
             "governing_adrs": []
         },

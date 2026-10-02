@@ -87,3 +87,7 @@ bun run check
 bun run test
 bun run build
 ```
+
+## Annotation package
+
+The overlay is maintained in `packages/agent-annotation`. Vite loads its source for live edits. Run `bun install` in that package before starting the web app. Set `VITE_ANNOTATION_TRANSCRIPTION_URL` in `.env.local` to a Diction-compatible WebSocket URL or same-origin route. Speech is disabled without a URL. Set `VITE_ANNOTATION_AUTO_START=0` to start recording only from the microphone button. Restart the dev server after editing environment settings. See `docs/reference/agent-annotation.md` for installation and injection.

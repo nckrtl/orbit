@@ -1,9 +1,14 @@
-╭─ Navigation
+╭─ Nav
 │  Dashboard │
 │  Nodes │ 3
 │› Projects │ 3
 │  Databases │ 2
 │  Tasks │ 0
+╰─
+
+╭─ Menu
+│› Overview
+│  Tasks
 ╰─
 
 ╭─ Properties

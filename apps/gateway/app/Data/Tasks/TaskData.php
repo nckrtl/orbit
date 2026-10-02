@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Data\Tasks;
 
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskType;
 use App\Models\Task;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
@@ -26,11 +27,18 @@ final class TaskData extends Data
         public ?int $linesAdded,
         public ?int $linesDeleted,
         public ?int $durationMs,
+        public TaskType $type,
+        public ?string $targetThreadId,
+        public ?string $completionSummary,
     ) {}
 
     public static function fromModel(Task $task): self
     {
         return new self(
+            type: $task->type,
+            targetThreadId: $task->target_thread_id,
+            completionSummary: $task->completion_summary,
+
             id: $task->id,
             taskGroupId: $task->task_group_id,
             position: $task->position,

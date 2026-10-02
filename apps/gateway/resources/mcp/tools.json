@@ -133,6 +133,276 @@
       }
     },
     {
+      "name": "annotation-create",
+      "title": "annotation:create",
+      "description": "annotation:create",
+      "method": "POST",
+      "path": "/api/v1/instances/{instance}/annotations",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Instance ID."
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "maxLength": 128
+          },
+          "threadId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "maxLength": 128
+          },
+          "comment": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "x": {
+            "type": "number",
+            "maximum": 100,
+            "minimum": 0
+          },
+          "y": {
+            "type": "number"
+          },
+          "timestamp": {
+            "type": "number",
+            "minimum": 0
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 4096
+          },
+          "pathname": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "element": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "elementPath": {
+            "type": "string",
+            "maxLength": 10000
+          },
+          "isFixed": {
+            "type": "boolean"
+          },
+          "boundingBox": {
+            "type": "object",
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "width": {
+                "type": "number"
+              },
+              "height": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": false
+          },
+          "screenshot": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^data:image\\/(png|jpeg|webp);base64,",
+            "maxLength": 3000000
+          },
+          "component": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4096
+          },
+          "controller": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4096
+          },
+          "route": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4096
+          },
+          "screenSize": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 100
+          },
+          "scrollPosition": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 100
+          },
+          "breakpoint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 100
+          },
+          "react": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 10000
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance",
+          "id",
+          "comment",
+          "x",
+          "y",
+          "timestamp",
+          "url",
+          "pathname",
+          "element",
+          "elementPath"
+        ]
+      }
+    },
+    {
+      "name": "annotation-list",
+      "title": "annotation:list",
+      "description": "annotation:list",
+      "method": "GET",
+      "path": "/api/v1/instances/{instance}/annotations",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Instance ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance"
+        ]
+      }
+    },
+    {
+      "name": "annotation-retry",
+      "title": "annotation:retry",
+      "description": "annotation:retry",
+      "method": "POST",
+      "path": "/api/v1/instances/{instance}/annotations/{annotation}/retry",
+      "path_inputs": [
+        "instance",
+        "annotation"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Instance ID."
+          },
+          "annotation": {
+            "type": "string"
+          },
+          "threadId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 128
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance",
+          "annotation"
+        ]
+      }
+    },
+    {
+      "name": "annotation-update",
+      "title": "annotation:update",
+      "description": "annotation:update",
+      "method": "POST",
+      "path": "/api/v1/instances/{instance}/annotations/{annotation}/status",
+      "path_inputs": [
+        "instance",
+        "annotation"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Instance ID."
+          },
+          "annotation": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "in_progress",
+              "resolved"
+            ]
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 10000,
+            "description": "Conditionally required."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance",
+          "annotation",
+          "status"
+        ]
+      }
+    },
+    {
       "name": "app-create",
       "title": "Create an App (Project)",
       "description": "Create an App (Project)",

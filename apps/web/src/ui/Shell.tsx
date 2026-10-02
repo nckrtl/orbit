@@ -65,8 +65,7 @@ function Navigation({
 
     return (
         <Frame
-            title="Navigation"
-            state={hovered ? "hovered" : undefined}
+            title="Nav"
             className="w-full"
             onMouseDown={() => ui.set({ hover: "nav", focus: null })}
         >
@@ -220,7 +219,7 @@ export function Shell() {
                         }}
                     >
                         <Frame
-                            title="Navigation"
+                            title="Nav"
                             topRight={
                                 <button
                                     type="button"

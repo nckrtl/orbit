@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { configureCommander, submitOneShotTask } from "@/annotation/commander";
-import type { Annotation } from "@/annotation/types";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { configureCommander, submitOneShotTask } from "@nckrtl/annotator/commander";
+import type { Annotation } from "@nckrtl/annotator/types";
 
 const annotation: Annotation = {
     id: "ann-1",
@@ -11,6 +11,8 @@ const annotation: Annotation = {
     elementPath: "div > footer",
     timestamp: 1,
 };
+
+beforeEach(() => configureCommander({ enabled: true }));
 
 afterEach(() => {
     vi.unstubAllGlobals();

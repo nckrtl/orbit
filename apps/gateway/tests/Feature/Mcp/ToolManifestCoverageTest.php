@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Route;
 describe('MCP tool manifest', function (): void {
     // Machine callbacks that bin/mcp-tools leaves out on purpose; keep the two lists identical.
     $excluded = [
+        'annotation:events',
         'tasks:agent-stream',
         'realtime:auth',
         'metrics:grafana:authorize',

@@ -19,6 +19,7 @@ final readonly class CompleteTaskGroupAction
 
     public function execute(TaskGroup $group): TaskGroup
     {
+        $group->requireManagedExecution();
         $this->requireExtension->execute();
 
         $group->loadMissing(['app', 'tasks', 'taskable']);

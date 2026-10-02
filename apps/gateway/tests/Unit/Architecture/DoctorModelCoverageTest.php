@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Doctor\DoctorFamily;
 use App\Models\Activity;
 use App\Models\AgentThread;
+use App\Models\Annotation;
 use App\Models\App as AppModel;
 use App\Models\AppInstance;
 use App\Models\AppInstanceDependencyEdge;
@@ -73,6 +74,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         DatabaseConnectionTarget::class,
     ];
     $excluded = [
+        Annotation::class,
         DependencyPackage::class,
         AppInstanceDependencyObservation::class,
         AppInstanceDependencyResolution::class,
