@@ -189,7 +189,7 @@ it('does not send a review when git cannot produce the stat, the body, or the fi
         'status' => TaskStatus::Running,
         'subtask_start_commit' => $start,
     ]);
-    $driver = new FakeAgentDriver('t3');
+    $driver = new FakeAgentDriver('pi');
     app()->instance(TaskReviewDiff::class, review_diff_reader(new LocalShellSshExecutor));
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->forgetInstance(AgentSpawner::class);

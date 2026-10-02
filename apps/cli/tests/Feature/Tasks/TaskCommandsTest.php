@@ -13,6 +13,7 @@ use App\Support\Console\ConsoleMode;
 use App\Support\Console\PromptAborted;
 use App\Support\Console\PromptContext;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Laravel\Prompts\Key;
@@ -25,6 +26,7 @@ use Orbit\Sdk\Requests\Tasks\CreateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskCommentRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
+use Orbit\Sdk\Requests\Tasks\ListTaskQuestionsRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTasksStatusRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateSubtaskRequest;
@@ -63,7 +65,13 @@ describe('omitted and invalid input', function (): void {
             if (isset($mode['--json'])) {
                 expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe($code);
             } else {
-                expect(Artisan::output())->not->toBe('');
+                $output = Artisan::output();
+
+                expect($output)->not->toBe('');
+
+                if ($code === 'tasks.since_invalid') {
+                    expect($output)->toContain('Since must be an ISO 8601 date or time.');
+                }
             }
 
             $mock->assertNothingSent();
@@ -75,6 +83,15 @@ describe('omitted and invalid input', function (): void {
         'agents without group' => ['tasks:agents', [], 'tasks.group_required'],
         'list with invalid project' => ['tasks:list', ['--project' => '0'], 'tasks.project_invalid'],
         'list with unknown status' => ['tasks:list', ['--status' => 'queued'], 'tasks.status_invalid'],
+        'questions with invalid project' => ['tasks:question:list', ['--project' => '0'], 'tasks.project_invalid'],
+        'questions with unknown cause' => ['tasks:question:list', ['--cause' => 'nope'], 'tasks.cause_invalid'],
+        'questions with unknown status' => ['tasks:question:list', ['--status' => 'queued'], 'tasks.status_invalid'],
+        'questions with a relative since' => ['tasks:question:list', ['--since' => 'yesterday'], 'tasks.since_invalid'],
+        'questions with an impossible date' => ['tasks:question:list', ['--since' => '2026-02-31'], 'tasks.since_invalid'],
+        'questions with an offset minute of 99' => ['tasks:question:list', ['--since' => '2026-10-07T12:00:00+01:99'], 'tasks.since_invalid'],
+        'questions with an offset hour of 99' => ['tasks:question:list', ['--since' => '2026-10-07T12:00:00+99:00'], 'tasks.since_invalid'],
+        'questions with a fractional minute of 60' => ['tasks:question:list', ['--since' => '2026-10-07T12:60.5Z'], 'tasks.since_invalid'],
+        'questions with a fractional minute of 99' => ['tasks:question:list', ['--since' => '2026-10-07T12:99.5Z'], 'tasks.since_invalid'],
         'create without project' => ['tasks:create', ['title' => 'T', '--brief' => 'B'], 'tasks.project_required'],
         'create without title' => ['tasks:create', ['--project' => '1', '--brief' => 'B'], 'tasks.title_required'],
         'create without brief' => ['tasks:create', ['title' => 'T', '--project' => '1'], 'tasks.brief_required'],
@@ -173,6 +190,79 @@ describe('requests', function (): void {
             && (string) $request->body() === '{"type":"assistance_requested","body":"Stuck.","author":"nick","agent_thread_id":9}');
     });
 
+    it('filters the question list and renders an empty list', function (): void {
+        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-question-list/default'));
+
+        expect(Artisan::call('tasks:question:list', [
+            '--project' => '4',
+            '--cause' => 'contract_gap',
+            '--status' => 'answered',
+            '--since' => '2026-10-07T00:00:00Z',
+            '--json' => true,
+        ]))->toBe(0);
+
+        $json = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        expect($json['questions'])->toHaveCount(2)
+            ->and($json['questions'][0]['cause'])->toBe('contract_gap')
+            ->and($json['questions'][1]['answer'])->toBeNull();
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof ListTaskQuestionsRequest
+            && $request->query()->all() === [
+                'project_id' => 4,
+                'cause' => 'contract_gap',
+                'status' => 'answered',
+                'since' => '2026-10-07T00:00:00Z',
+            ]);
+
+        MockClient::destroyGlobal();
+        MockClient::global(gateway_fixture_mock('tasks/tasks-question-list/empty'));
+
+        expect(Artisan::call('tasks:question:list'))->toBe(0);
+        expect(Artisan::output())->toContain('No questions match.');
+    });
+
+    it('sends a reduced-precision since filter', function (string $since): void {
+        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-question-list/empty'));
+
+        expect(Artisan::call('tasks:question:list', ['--since' => $since, '--json' => true]))->toBe(0);
+
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof ListTaskQuestionsRequest
+            && $request->query()->all() === ['since' => $since]);
+    })->with([
+        'minutes' => '2026-10-07T12:00Z',
+        'hours' => '2026-10-07T12Z',
+        'fractional seconds' => '2026-10-07T12:00:00.5Z',
+        'offset' => '2026-10-07T12:00:00+01:00',
+    ]);
+
+    it('normalizes a fractional since cutoff before the Gateway parses it', function (string $since, string $cutoff, string $excluded): void {
+        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-question-list/empty'));
+
+        expect(Artisan::call('tasks:question:list', ['--since' => $since, '--json' => true]))->toBe(0);
+
+        $sent = null;
+        $mock->assertSent(static function (Request $request) use (&$sent): bool {
+            if (! $request instanceof ListTaskQuestionsRequest) {
+                return false;
+            }
+
+            $value = $request->query()->all()['since'] ?? null;
+            $sent = is_string($value) ? $value : null;
+
+            return is_string($sent);
+        });
+
+        $parsed = Carbon::parse($sent)->utc();
+        $included = Carbon::parse($cutoff)->utc();
+
+        expect($parsed->equalTo($included))->toBeTrue()
+            ->and($included->greaterThanOrEqualTo($parsed))->toBeTrue()
+            ->and(Carbon::parse($excluded)->utc()->greaterThanOrEqualTo($parsed))->toBeFalse();
+    })->with([
+        'fractional minutes' => ['2026-10-07T12:00.5Z', '2026-10-07T12:00:30Z', '2026-10-07T12:00:05Z'],
+        'fractional hours' => ['2026-10-07T12.5Z', '2026-10-07T12:30:00Z', '2026-10-07T12:05:00Z'],
+        'fractional minutes with an offset' => ['2026-10-07T12:00.5+01:00', '2026-10-07T11:00:30Z', '2026-10-07T11:00:05Z'],
+    ]);
+
     it('cancels with --yes without reading the group first', function (): void {
         $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-cancel/cancelled'));
 
@@ -266,6 +356,18 @@ describe('requests', function (): void {
         expect(Artisan::call('tasks:subtask:update', ['group' => '1', 'subtask' => '2', '--deliverables' => $path, '--json' => true]))->toBe(1)
             ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['message'])->toBe('The paths value for deliverable repro must be a list of strings.');
         $mock->assertNothingSent();
+    });
+
+    it('shows the watched pull request in JSON without changing the publication URL', function (): void {
+        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-show/watched'));
+
+        expect(Artisan::call('tasks:show', ['group' => '1', '--json' => true]))->toBe(0);
+        $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        expect($output['watched_pr_url'])->toBe('https://github.com/nckrtl/orbit/pull/451')
+            ->and($output['watched_pr_number'])->toBe(451)
+            ->and($output['watched_pr_state'])->toBe('open')
+            ->and($output['pr_url'])->toBeNull();
+        $mock->assertSent(ShowTaskGroupRequest::class);
     });
 
     it('shows fails_on_base for a test deliverable', function (): void {
@@ -460,33 +562,54 @@ final class TaskPromptsCommand extends TaskCommand
 }
 
 describe('assistance columns', function (): void {
-    it('shows the assistance reason on the list and the group', function (): void {
+    it('shows direction requests before failures, and the kind on the list and the group', function (): void {
         $columns = getenv('COLUMNS');
         putenv('COLUMNS=160');
         $recorded = json_decode((string) file_get_contents(dirname(__DIR__, 5).'/packages/php-sdk/fixtures/tasks/tasks-show/default.json'), true, flags: JSON_THROW_ON_ERROR);
         $group = $recorded['body']['data'];
         $group['assistance_requested'] = true;
+        $group['assistance_kind'] = 'direction';
+        $group['assistance_question'] = 'Which database should this use?';
         $group['assistance_reason'] = 'The implementer is blocked.';
         $group['tasks'][0]['assistance_requested'] = true;
-        $group['tasks'][0]['assistance_reason'] = 'Which database should this use?';
+        $group['tasks'][0]['assistance_kind'] = 'direction';
+        $group['tasks'][0]['assistance_question'] = 'Which database should this use?';
+        $group['tasks'][0]['assistance_reason'] = 'The implementer is blocked.';
+        $failure = $group;
+        $failure['id'] = 3;
+        $failure['title'] = 'Failed push';
+        $failure['assistance_kind'] = 'failure';
+        $failure['assistance_question'] = null;
+        $failure['assistance_reason'] = 'The push failed.';
+        $failure['tasks'][0]['assistance_kind'] = 'failure';
+        $failure['tasks'][0]['assistance_question'] = null;
+        $failure['tasks'][0]['assistance_reason'] = 'The push failed.';
         $clear = $group;
         $clear['id'] = 2;
         $clear['title'] = 'Clear';
         $clear['assistance_requested'] = false;
+        $clear['assistance_kind'] = 'direction';
+        $clear['assistance_question'] = 'An old question.';
         $clear['assistance_reason'] = 'An old reason.';
         $clear['tasks'][0]['assistance_requested'] = false;
+        $clear['tasks'][0]['assistance_kind'] = 'direction';
+        $clear['tasks'][0]['assistance_question'] = 'An old question.';
         $clear['tasks'][0]['assistance_reason'] = 'An old reason.';
         $body = static fn (array $data): array => ['data' => $data, 'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844']];
 
         MockClient::global([
-            ListTaskGroupsRequest::class => MockResponse::make($body([$group, $clear])),
+            ListTaskGroupsRequest::class => MockResponse::make($body([$failure, $group, $clear])),
         ]);
 
         expect(Artisan::call('tasks:list'))->toBe(0);
         $list = Artisan::output();
-        expect($list)->toContain('ASSISTANCE')
-            ->and($list)->toContain('The implementer is blocked.')
-            ->and($list)->not->toContain('An old reason.');
+        expect($list)->toContain('KIND')
+            ->and($list)->toContain('direction')
+            ->and($list)->toContain('failure')
+            ->and($list)->toContain('Which database should this use?')
+            ->and($list)->toContain('The push failed.')
+            ->and($list)->not->toContain('An old reason.')
+            ->and($list)->not->toContain('An old question.');
 
         MockClient::destroyGlobal();
         MockClient::global([
@@ -495,40 +618,87 @@ describe('assistance columns', function (): void {
 
         expect(Artisan::call('tasks:show', ['group' => '1']))->toBe(0);
         $shown = Artisan::output();
-        expect($shown)->toContain('The implementer is blocked.')
+        expect($shown)->toContain('Kind')
+            ->and($shown)->toContain('direction')
             ->and($shown)->toContain('Which database should this use?')
-            ->and($shown)->toContain('ASSISTANCE');
+            ->and($shown)->toContain('The implementer is blocked.')
+            ->and($shown)->toContain('KIND');
 
         MockClient::destroyGlobal();
         MockClient::global([
             ShowTasksStatusRequest::class => MockResponse::make($body([
                 'enabled' => true,
-                'assistance' => [[
-                    'id' => 4,
-                    'project_id' => 1,
-                    'project' => 'orbit',
-                    'project_code' => 'ORB',
-                    'title' => 'Blocked implementer',
-                    'status' => 'running',
-                    'assistance_reason' => 'The implementer is blocked.',
-                ]],
+                'assistance' => [
+                    [
+                        'id' => 2,
+                        'project_id' => 1,
+                        'project' => 'orbit',
+                        'project_code' => 'ORB',
+                        'title' => 'Failed push',
+                        'status' => 'running',
+                        'assistance_kind' => 'failure',
+                        'assistance_question' => null,
+                        'assistance_reason' => 'The push failed.',
+                    ],
+                    [
+                        'id' => 4,
+                        'project_id' => 1,
+                        'project' => 'orbit',
+                        'project_code' => 'ORB',
+                        'title' => 'Needs a database',
+                        'status' => 'running',
+                        'assistance_kind' => 'direction',
+                        'assistance_question' => 'Which database should this use?',
+                        'assistance_reason' => 'The implementer is blocked.',
+                    ],
+                    [
+                        'id' => 9,
+                        'project_id' => 1,
+                        'project' => 'orbit',
+                        'project_code' => 'ORB',
+                        'title' => 'Needs an ADR',
+                        'status' => 'reviewing',
+                        'assistance_kind' => 'direction',
+                        'assistance_question' => 'Which ADR applies?',
+                        'assistance_reason' => 'The reviewer is blocked.',
+                    ],
+                    [
+                        'id' => 11,
+                        'project_id' => 1,
+                        'project' => 'orbit',
+                        'project_code' => 'ORB',
+                        'title' => 'Check failed',
+                        'status' => 'settling',
+                        'assistance_kind' => 'failure',
+                        'assistance_question' => null,
+                        'assistance_reason' => 'The check failed.',
+                    ],
+                ],
             ])),
         ]);
 
         expect(Artisan::call('tasks:status'))->toBe(0);
         $status = Artisan::output();
-        expect($status)->toContain('ORB-4')
-            ->and($status)->toContain('Blocked implementer')
-            ->and($status)->toContain('The implementer is blocked.')
+        $directionAt = strpos($status, 'Needs your direction');
+        $failuresAt = strpos($status, 'Failures');
+        expect($directionAt)->not->toBeFalse()
+            ->and($failuresAt)->not->toBeFalse()
+            ->and($directionAt)->toBeLessThan($failuresAt)
+            ->and(strpos($status, 'Which database should this use?'))->toBeLessThan(strpos($status, 'Which ADR applies?'))
+            ->and(strpos($status, 'Which ADR applies?'))->toBeLessThan(strpos($status, 'The push failed.'))
+            ->and(strpos($status, 'The push failed.'))->toBeLessThan(strpos($status, 'The check failed.'))
             ->and($status)->not->toContain('An old reason.');
 
         expect(Artisan::call('tasks:status', ['--json' => true]))->toBe(0);
         $json = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
-        expect($json['assistance'][0])->toMatchArray([
-            'id' => 4,
-            'project_code' => 'ORB',
-            'assistance_reason' => 'The implementer is blocked.',
-        ]);
+        expect(array_column($json['assistance'], 'id'))->toBe([2, 4, 9, 11])
+            ->and($json['assistance'][1])->toMatchArray([
+                'id' => 4,
+                'project_code' => 'ORB',
+                'assistance_kind' => 'direction',
+                'assistance_question' => 'Which database should this use?',
+                'assistance_reason' => 'The implementer is blocked.',
+            ]);
         putenv($columns === false ? 'COLUMNS' : 'COLUMNS='.$columns);
     });
 });

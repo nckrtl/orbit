@@ -87,9 +87,15 @@ A Node can host an exporter only when the Gateway manages it. The Node must be a
 
 A selected Node runs the packaged `prometheus-node-exporter` unit with the Orbit drop-in `/etc/systemd/system/prometheus-node-exporter.service.d/orbit.conf`. The drop-in binds the exporter to the WireGuard address. It sets `Restart=always` and `RestartSec=2`, because the exporter can start before WireGuard adds that address at boot. The UFW rule `orbit:metrics-node-exporter` allows the Metrics Node to reach the port.
 
-The first convergence of a Node installs the exporter package and cAdvisor. This normally happens during `node:add`. Later reconciles only verify them. These requests reconcile Metrics before they finish: `node:add`, `node:remove`, role changes, exporter preference changes, and the Instance and Route events that [service metrics](/reference/service-metrics#lifecycle) lists. An exporter reconcile failure does not demote an active Node or fail `node:add`; the affected Node stays active and its Metrics state is degraded with the error code. `orbit metrics:status` reports the fleet summary in `reconcile_status` and `reconcile_error_code`, and reports the affected Node's `degraded_reason: reconcile_failed` and exact `degraded_error_code` in its exporter row. The [Node provisioning](/reference/node-provisioning#converge-an-existing-node) page documents these provisioning outcomes.
+The first convergence of a Node installs the exporter package and cAdvisor. This normally happens during `node:add`. Later reconciles only verify them. These requests reconcile Metrics before they finish: `node:add`, `node:remove`, role changes, exporter preference changes, and the Instance and Route events that [service metrics](/reference/service-metrics#lifecycle) lists.
 
 The node exporter and cAdvisor ports are open to every WireGuard peer, not only to the Metrics Node. Each Node keeps the rule `orbit:wireguard-members`, which admits every member on its WireGuard address, and no deny rule guards ports 9100 and 9102. WireGuard membership is the security boundary, so this is intended.
+
+### Exporter degradation
+
+An exporter reconcile failure does not demote an active Node or fail `node:add`; the affected Node stays active and its Metrics state is degraded with the error code. A service-metrics snapshot or convergence failure also degrades only the affected Node. The Gateway records the failing step and error code for that Node rather than failing the operation that triggered the reconcile. The degraded Node is skipped while the reconcile continues on the other Nodes. A later reconcile retries it and clears its degradation when reconciliation succeeds.
+
+`orbit metrics:status` reports the fleet summary in `reconcile_status` and `reconcile_error_code`, and reports the affected Node's `degraded_reason: reconcile_failed` and exact `degraded_error_code` in its exporter row. The [Node provisioning](/reference/node-provisioning#converge-an-existing-node) page documents the exporter provisioning outcomes.
 
 ## cAdvisor
 
@@ -98,6 +104,14 @@ The node exporter reports systemd unit state, but not the CPU and memory of each
 cAdvisor runs as the static binary `/usr/local/bin/orbit-cadvisor` under `orbit-cadvisor.service`, with `Restart=always`. The UFW rule `orbit:metrics-cadvisor` allows the Metrics Node to reach port 9102. Enabling or disabling the exporter on a Node does the same to cAdvisor. Disabling removes the unit, the rule, and the binary.
 
 cAdvisor collects only CPU and memory. Its flags disable every other metric kind and drop Docker container labels, because an unfiltered cAdvisor adds thousands of series per Node. A Docker Process's series uses its container name, `orbit-process-{id}-{name}`. A systemd Process's series uses its unit name, `orbit-process-{id}-{name}.service`. A Process without a series reports null CPU and memory, never zero.
+
+## Service metrics
+
+[Service metrics](/reference/service-metrics) collects Caddy traffic and PHP-FPM capacity on selected Nodes. Instance and Route changes trigger a fleet reconcile to update those services and the Prometheus targets.
+
+If a Node's service-metrics snapshot or convergence fails, the Gateway records that Node as degraded with the failing step and error code. The operation that triggered the reconcile continues. For example, an Instance removal on another Node does not fail because service metrics cannot reconcile on this Node. The Gateway skips the degraded Node and continues reconciling the rest of the fleet. It retries the Node on a later reconcile and clears the degradation when reconciliation succeeds. Inspect the Node's exporter row in `orbit metrics:status` as described under [Exporter degradation](/reference/metrics#exporter-degradation).
+
+Service degradation belongs to service metrics. Exporter and cAdvisor snapshots do not clear it. The Gateway clears it only after that Node's service reconciliation and publication succeed. Step and error-code updates are atomic. If the operation loses a Node lock, reconciliation stops and reports `node.lock_lost`. This failure affects the whole operation, not only service metrics on one Node.
 
 ## Process runtime status
 

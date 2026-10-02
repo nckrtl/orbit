@@ -6291,7 +6291,7 @@
       "name": "tasks-complete",
       "extension": "tasks",
       "title": "Complete a Task group",
-      "description": "Marks a settling Task group completed and removes its shared Instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.",
+      "description": "Completes a settling Task group without reading GitHub, or a running or reviewing group whose watched pull request has merged or closed. Stores the ended state in watched_pr_completion before cancelling open subtasks and completing the group in one transaction. Stops running agents and checks as subtask cancel does. Workspace and Route removal runs after the commit. Resume and completed-group cleanup retries do not read GitHub. A removal failure leaves the group completed with its Instance attached and asks for assistance. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.not_settling` when the group is not ready (including a missing, open, or unreadable watched PR without a completion receipt), and `tasks.subtask_interrupt_failed` when an agent or check cannot be stopped.",
       "method": "POST",
       "path": "/api/v1/task-groups/{group}/complete",
       "path_inputs": [
@@ -7081,7 +7081,7 @@
       "name": "tasks-list",
       "extension": "tasks",
       "title": "List Task groups",
-      "description": "Lists Task groups, newest first. Optional `project_id` and `status` filters. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.",
+      "description": "Lists Task groups, newest first. Optional `project_id` and `status` filters. The group and each subtask include `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason`. Returns `extension.disabled` while the extension is off.",
       "method": "GET",
       "path": "/api/v1/task-groups",
       "path_inputs": [],
@@ -7116,10 +7116,57 @@
       }
     },
     {
+      "name": "tasks-question-list",
+      "extension": "tasks",
+      "title": "List task questions",
+      "description": "Lists task questions, newest first. Optional `project_id`, `cause`, `status`, and `since` filters. `since` is an ISO date and includes questions asked at that moment. Returns `extension.disabled` while the extension is off.",
+      "method": "GET",
+      "path": "/api/v1/task-questions",
+      "path_inputs": [],
+      "query_inputs": [
+        "project_id",
+        "cause",
+        "status",
+        "since"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "cause": {
+            "type": "string",
+            "enum": [
+              "brief_unclear",
+              "contract_gap",
+              "scope",
+              "environment",
+              "missed_contract"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "escalated",
+              "answered"
+            ]
+          },
+          "since": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "tasks-show",
       "extension": "tasks",
       "title": "Show a Task group",
-      "description": "Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.",
+      "description": "Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason`. Returns `extension.disabled` while the extension is off.",
       "method": "GET",
       "path": "/api/v1/task-groups/{group}",
       "path_inputs": [
@@ -7146,7 +7193,7 @@
       "name": "tasks-status",
       "extension": null,
       "title": "Show Tasks status",
-      "description": "Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, and reason. The list is present while the extension is off.",
+      "description": "Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, `assistance_kind`, `assistance_question`, and `assistance_reason`. The list is present while the extension is off.",
       "method": "GET",
       "path": "/api/v1/tasks/status",
       "path_inputs": [],

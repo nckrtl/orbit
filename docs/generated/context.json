@@ -522,7 +522,8 @@
             "title": "tasks",
             "kind": "product",
             "components": [
-                "apps/cli"
+                "apps/cli",
+                "packages/php-sdk"
             ],
             "concepts": [
                 "Access grant",
@@ -888,6 +889,7 @@
             "components": [
                 "apps/cli",
                 "apps/gateway",
+                "apps/web",
                 "packages/php-sdk"
             ],
             "concepts": [

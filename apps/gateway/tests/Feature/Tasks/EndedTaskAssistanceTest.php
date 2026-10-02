@@ -85,6 +85,8 @@ it('stops asking for assistance when a flagged task is saved as completed or can
             'project_code' => $project->code,
             'title' => 'Still blocked',
             'status' => 'running',
+            'assistance_kind' => null,
+            'assistance_question' => null,
             'assistance_reason' => 'Still blocked.',
         ]]);
 })->with([
@@ -265,6 +267,8 @@ it('keeps an assistance comment from putting an ended group back on tasks status
             'project_code' => $project->code,
             'title' => 'Still blocked',
             'status' => 'running',
+            'assistance_kind' => null,
+            'assistance_question' => null,
             'assistance_reason' => 'Still blocked.',
         ]]);
 })->with(['completed', 'cancelled']);

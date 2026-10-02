@@ -19,6 +19,7 @@ use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\AgentThreadState;
+use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
@@ -1197,11 +1198,65 @@ it('records a review-request failure and still reviews the other group', functio
     $reason = TaskScheduler::ReviewRequestFailedReason.' (RuntimeException).';
     expect($first->fresh()?->communication_failures)->toBe(5)
         ->and($first->fresh()?->assistance_requested)->toBeTrue()
+        ->and($first->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($first->fresh()?->assistance_question)->toBeNull()
         ->and($first->fresh()?->assistance_reason)->toBe($reason)
         ->and($first->fresh()?->assistance_reason)->not->toContain($raw)
+        ->and($first->parent->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($first->parent->fresh()?->assistance_question)->toBeNull()
         ->and($first->parent->fresh()?->assistance_reason)->toBe($reason)
         ->and($second->fresh()?->review_notified_attempt)->toBe($second->review_attempt)
         ->and($second->fresh()?->assistance_requested)->toBeFalse();
+});
+
+it('does not replace an open direction request when a review request keeps failing', function (): void {
+    Exceptions::fake();
+    [, $first] = scheduler_review([], notified: false);
+    $question = 'Which reviewer should take this subtask?';
+    $reason = "The reviewer is blocked: No reviewer is available.\n\nQuestion: {$question}";
+    $first->update([
+        'assistance_requested' => true,
+        'assistance_kind' => AssistanceKind::Direction,
+        'assistance_question' => $question,
+        'assistance_reason' => $reason,
+        'communication_failures' => 4,
+    ]);
+    $first->parent->update([
+        'assistance_requested' => true,
+        'assistance_kind' => AssistanceKind::Direction,
+        'assistance_question' => $question,
+        'assistance_reason' => $reason,
+    ]);
+    app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
+    app()->instance(AgentSpawner::class, new class($first->id) implements AgentSpawner
+    {
+        public function __construct(private int $taskId) {}
+
+        public function spawnReviewer(Task $task): ?int
+        {
+            if ($task->id === $this->taskId) {
+                throw new RuntimeException('The reviewer could not be started.');
+            }
+
+            return null;
+        }
+
+        public function spawnImplementer(Task $task): ?int
+        {
+            return null;
+        }
+
+        public function requestReview(Task $task): void {}
+    });
+
+    app(TaskScheduler::class)->tick();
+
+    expect($first->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($first->fresh()?->assistance_question)->toBe($question)
+        ->and($first->fresh()?->assistance_reason)->toBe($reason)
+        ->and($first->parent->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($first->parent->fresh()?->assistance_question)->toBe($question)
+        ->and($first->parent->fresh()?->assistance_reason)->toBe($reason);
 });
 
 /**
@@ -1474,7 +1529,7 @@ it('keeps the reviewed pull request, writes settle metrics, and notifies Coder a
     {
         public function collect(Task $group): TaskSettleMetrics
         {
-            return new TaskSettleMetrics(tokens: 40, lineDiff: 12, durationMs: 1500);
+            return new TaskSettleMetrics(tokens: 40, lineDiff: 12, durationMs: 1500, questions: 3, escalations: 2);
         }
     };
     $notifier = new class implements CoderSettleNotifier
@@ -1528,6 +1583,8 @@ it('keeps the reviewed pull request, writes settle metrics, and notifies Coder a
         ->and($settled->tokens)->toBe(40)
         ->and($settled->line_diff)->toBe(12)
         ->and($settled->duration_ms)->toBe(1500)
+        ->and($settled->questions)->toBe(3)
+        ->and($settled->escalations)->toBe(2)
         ->and($settled->settled_at)->not->toBeNull()
         ->and($notifier->notified?->id)->toBe($settled->id)
         ->and($notifier->notified?->pr_url)->toBe('https://github.com/nckrtl/orbit/pull/543');
@@ -2090,7 +2147,11 @@ it('keeps retrying a failed push after the fifth failure asks for assistance', f
 
     expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
         ->and($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($task->fresh()?->assistance_question)->toBeNull()
         ->and($task->fresh()?->assistance_reason)->toBe(TaskScheduler::PublicationFailedPrefix.'The task branch could not be pushed.')
+        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($group->fresh()?->assistance_question)->toBeNull()
         ->and($group->fresh()?->assistance_requested)->toBeTrue()
         ->and($group->fresh()?->assistance_reason)->toBe(TaskScheduler::PublicationFailedPrefix.'The task branch could not be pushed.')
         ->and($task->comments()->sole()->commit_sha)->toBe($sha)
@@ -2110,6 +2171,44 @@ it('keeps retrying a failed push after the fifth failure asks for assistance', f
         ->and($group->fresh()?->assistance_requested)->toBeFalse()
         ->and($task->fresh()?->status)->toBe(TaskStatus::Completed)
         ->and(Task::query()->where('title', 'Routes')->sole()->status)->toBe(TaskStatus::Running);
+});
+
+it('does not replace an open direction request when publication fails', function (): void {
+    [$group, $task, , $publisher] = scheduler_approved_subtask('push-direction');
+    $publisher->pushFailures = 5;
+    for ($attempt = 0; $attempt < 4; $attempt++) {
+        if ($attempt > 0) {
+            $this->travel(TaskScheduler::retryDelaySeconds($attempt))->seconds();
+        }
+        app(TaskScheduler::class)->tick();
+    }
+    $question = 'Which remote should receive the branch?';
+    $reason = "The implementer is blocked: The remote rejected the push.\n\nQuestion: {$question}";
+    $task->update([
+        'assistance_requested' => true,
+        'assistance_kind' => AssistanceKind::Direction,
+        'assistance_question' => $question,
+        'assistance_reason' => $reason,
+        'communication_failures' => 4,
+    ]);
+    $group->update([
+        'assistance_requested' => true,
+        'assistance_kind' => AssistanceKind::Direction,
+        'assistance_question' => $question,
+        'assistance_reason' => $reason,
+    ]);
+
+    $this->travel(TaskScheduler::retryDelaySeconds(4))->seconds();
+    app(TaskScheduler::class)->tick();
+
+    expect($publisher->pushes)->toHaveCount(5)
+        ->and($task->fresh()?->communication_failures)->toBe(5)
+        ->and($task->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($task->fresh()?->assistance_question)->toBe($question)
+        ->and($task->fresh()?->assistance_reason)->toBe($reason)
+        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($group->fresh()?->assistance_question)->toBe($question)
+        ->and($group->fresh()?->assistance_reason)->toBe($reason);
 });
 
 it('pushes the stored commit rather than HEAD', function (): void {

@@ -8,6 +8,7 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskDeliverableType;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskTurnMode;
 use App\Domain\Tasks\TaskTurnReceipt;
 use App\Domain\Tasks\TaskTurnReceiptException;
 use App\Domain\Tasks\TaskTurnReceipts;
@@ -22,7 +23,7 @@ final readonly class RemoteTaskTurnReceipts implements TaskTurnReceipts
 {
     public function __construct(private DevelopmentSshExecutor $ssh) {}
 
-    public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?string $context = null): void
+    public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?TaskTurnMode $mode = null, ?string $context = null): void
     {
         $script = file_get_contents(resource_path('tasks/turn'));
         if ($script === false) {
@@ -45,6 +46,17 @@ final readonly class RemoteTaskTurnReceipts implements TaskTurnReceipts
         ];
         if ($threadId !== null) {
             $turnFields['thread'] = $threadId;
+        }
+        if ($mode instanceof TaskTurnMode) {
+            if ($mode->consult) {
+                $turnFields['consult'] = true;
+            }
+            if ($mode->relay) {
+                $turnFields['relay'] = true;
+            }
+            if ($mode->causeRequired) {
+                $turnFields['cause_required'] = true;
+            }
         }
         $turn = json_encode($turnFields, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $this->run($instance, [], TaskWorkspaceMetadata::operation('turn', [

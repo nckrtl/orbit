@@ -20997,7 +20997,7 @@
           }
         ],
         "x-orbit-extension": "tasks",
-        "description": "Lists Task groups, newest first. Optional `project_id` and `status` filters. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.",
+        "description": "Lists Task groups, newest first. Optional `project_id` and `status` filters. The group and each subtask include `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason`. Returns `extension.disabled` while the extension is off.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -21310,7 +21310,7 @@
           }
         ],
         "x-orbit-extension": "tasks",
-        "description": "Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.",
+        "description": "Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason`. Returns `extension.disabled` while the extension is off.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -21813,7 +21813,7 @@
           }
         ],
         "x-orbit-extension": "tasks",
-        "description": "Marks a settling Task group completed and removes its shared Instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.",
+        "description": "Completes a settling Task group without reading GitHub, or a running or reviewing group whose watched pull request has merged or closed. Stores the ended state in watched_pr_completion before cancelling open subtasks and completing the group in one transaction. Stops running agents and checks as subtask cancel does. Workspace and Route removal runs after the commit. Resume and completed-group cleanup retries do not read GitHub. A removal failure leaves the group completed with its Instance attached and asks for assistance. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.not_settling` when the group is not ready (including a missing, open, or unreadable watched PR without a completion receipt), and `tasks.subtask_interrupt_failed` when an agent or check cannot be stopped.",
         "requestBody": {
           "required": false,
           "content": {
@@ -21869,7 +21869,17 @@
             }
           },
           "409": {
-            "description": "The tasks extension is disabled (`extension.disabled`) or the Task group is not settling (`tasks.not_settling`). A disabled extension returns HTTP 409 (`extension.disabled`).",
+            "description": "The tasks extension is disabled (`extension.disabled`) or the Task group is not ready to complete (`tasks.not_settling`). Running or reviewing groups need an ended watched pull request or a stored completion receipt. A disabled extension returns HTTP 409 (`extension.disabled`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "A running agent or check could not be stopped (`tasks.subtask_interrupt_failed`). The completion receipt is kept for retry; the group and its open subtasks remain open.",
             "content": {
               "application/json": {
                 "schema": {
@@ -22951,6 +22961,123 @@
         ]
       }
     },
+    "/api/v1/task-questions": {
+      "get": {
+        "operationId": "tasks-question-list",
+        "summary": "List task questions",
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cause",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "brief_unclear",
+                "contract_gap",
+                "scope",
+                "environment",
+                "missed_contract"
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "escalated",
+                "answered"
+              ]
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-orbit-extension": "tasks",
+        "description": "Lists task questions, newest first. Optional `project_id`, `cause`, `status`, and `since` filters. `since` is an ISO date and includes questions asked at that moment. Returns `extension.disabled` while the extension is off.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TaskQuestion"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The tasks extension is disabled (`extension.disabled`). A disabled extension returns HTTP 409 (`extension.disabled`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/task-questions?project_id=4&cause=1&status=success&since=1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\ListTaskQuestionsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListTaskQuestionsRequest())->dto();\n"
+          }
+        ]
+      }
+    },
     "/api/v1/tasks/status": {
       "get": {
         "operationId": "tasks-status",
@@ -22958,7 +23085,7 @@
         "tags": [
           "Tasks"
         ],
-        "description": "Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, and reason. The list is present while the extension is off.",
+        "description": "Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, `assistance_kind`, `assistance_question`, and `assistance_reason`. The list is present while the extension is off.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -25092,7 +25219,8 @@
             ],
             "enum": [
               "cleaned",
-              "uncleaned"
+              "uncleaned",
+              null
             ]
           }
         }
@@ -25219,7 +25347,8 @@
             "enum": [
               "unreachable",
               "firewall_inactive",
-              "reconcile_failed"
+              "reconcile_failed",
+              null
             ]
           },
           "degraded_error_code": {
@@ -26001,11 +26130,46 @@
               "null"
             ]
           },
+          "watched_pr_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "watched_pr_number": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "watched_pr_state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "notify_coder": {
             "type": "boolean"
           },
           "assistance_requested": {
             "type": "boolean"
+          },
+          "assistance_kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "direction",
+              "failure",
+              null
+            ]
+          },
+          "assistance_question": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "assistance_reason": {
             "type": [
@@ -26048,6 +26212,12 @@
               "integer",
               "null"
             ]
+          },
+          "questions": {
+            "type": "integer"
+          },
+          "escalations": {
+            "type": "integer"
           },
           "tasks": {
             "type": "array",
@@ -26136,6 +26306,12 @@
               "null"
             ]
           },
+          "questions": {
+            "type": "integer"
+          },
+          "escalations": {
+            "type": "integer"
+          },
           "type": {
             "type": "string",
             "enum": [
@@ -26167,6 +26343,23 @@
           },
           "assistance_requested": {
             "type": "boolean"
+          },
+          "assistance_kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "direction",
+              "failure",
+              null
+            ]
+          },
+          "assistance_question": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "assistance_reason": {
             "type": [
@@ -26293,7 +26486,8 @@
               "working",
               "asking_for_input",
               "done",
-              "failed"
+              "failed",
+              null
             ]
           },
           "observed_at": {
@@ -26438,6 +26632,89 @@
           }
         }
       },
+      "TaskQuestion": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "task_id": {
+            "type": "integer"
+          },
+          "subtask_id": {
+            "type": "integer"
+          },
+          "attempt": {
+            "type": "integer"
+          },
+          "asked_by": {
+            "type": "string",
+            "enum": [
+              "implementer",
+              "reviewer",
+              "operator"
+            ]
+          },
+          "question": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "escalated",
+              "answered"
+            ]
+          },
+          "answered_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "implementer",
+              "reviewer",
+              "operator",
+              null
+            ]
+          },
+          "answer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cause": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "brief_unclear",
+              "contract_gap",
+              "scope",
+              "environment",
+              "missed_contract",
+              null
+            ]
+          },
+          "asked_at": {
+            "type": "string"
+          },
+          "escalated_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "answered_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "TasksStatus": {
         "type": "object",
         "properties": {
@@ -26482,6 +26759,23 @@
               "completed",
               "failed",
               "cancelled"
+            ]
+          },
+          "assistance_kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "direction",
+              "failure",
+              null
+            ]
+          },
+          "assistance_question": {
+            "type": [
+              "string",
+              "null"
             ]
           },
           "assistance_reason": {

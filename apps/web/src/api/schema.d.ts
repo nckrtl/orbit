@@ -2773,7 +2773,7 @@ export interface paths {
         };
         /**
          * List Task groups
-         * @description Lists Task groups, newest first. Optional `project_id` and `status` filters. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.
+         * @description Lists Task groups, newest first. Optional `project_id` and `status` filters. The group and each subtask include `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason`. Returns `extension.disabled` while the extension is off.
          */
         get: operations["tasks-list"];
         put?: never;
@@ -2797,7 +2797,7 @@ export interface paths {
         };
         /**
          * Show a Task group
-         * @description Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.
+         * @description Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason`. Returns `extension.disabled` while the extension is off.
          */
         get: operations["tasks-show"];
         put?: never;
@@ -2880,7 +2880,7 @@ export interface paths {
         put?: never;
         /**
          * Complete a Task group
-         * @description Marks a settling Task group completed and removes its shared Instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.
+         * @description Completes a settling Task group without reading GitHub, or a running or reviewing group whose watched pull request has merged or closed. Stores the ended state in watched_pr_completion before cancelling open subtasks and completing the group in one transaction. Stops running agents and checks as subtask cancel does. Workspace and Route removal runs after the commit. Resume and completed-group cleanup retries do not read GitHub. A removal failure leaves the group completed with its Instance attached and asks for assistance. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.not_settling` when the group is not ready (including a missing, open, or unreadable watched PR without a completion receipt), and `tasks.subtask_interrupt_failed` when an agent or check cannot be stopped.
          */
         post: operations["tasks-complete"];
         delete?: never;
@@ -2994,6 +2994,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/task-questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List task questions
+         * @description Lists task questions, newest first. Optional `project_id`, `cause`, `status`, and `since` filters. `since` is an ISO date and includes questions asked at that moment. Returns `extension.disabled` while the extension is off.
+         */
+        get: operations["tasks-question-list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tasks/status": {
         parameters: {
             query?: never;
@@ -3003,7 +3023,7 @@ export interface paths {
         };
         /**
          * Show Tasks status
-         * @description Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, and reason. The list is present while the extension is off.
+         * @description Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, `assistance_kind`, `assistance_question`, and `assistance_reason`. The list is present while the extension is off.
          */
         get: operations["tasks-status"];
         put?: never;
@@ -3733,8 +3753,14 @@ export interface components {
             status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "completed" | "failed" | "cancelled";
             reviewer_agent_thread_id?: number | null;
             pr_url?: string | null;
+            watched_pr_url?: string | null;
+            watched_pr_number?: number | null;
+            watched_pr_state?: string | null;
             notify_coder?: boolean;
             assistance_requested?: boolean;
+            /** @enum {string|null} */
+            assistance_kind?: "direction" | "failure" | null;
+            assistance_question?: string | null;
             assistance_reason?: string | null;
             implementer_model?: string;
             reviewer_model?: string;
@@ -3743,6 +3769,8 @@ export interface components {
             lines_added?: number | null;
             lines_deleted?: number | null;
             duration_ms?: number | null;
+            questions?: number;
+            escalations?: number;
             tasks?: components["schemas"]["Task"][];
             /** @enum {string} */
             execution_mode?: "managed" | "existing_thread";
@@ -3762,12 +3790,17 @@ export interface components {
             lines_added?: number | null;
             lines_deleted?: number | null;
             duration_ms?: number | null;
+            questions?: number;
+            escalations?: number;
             /** @enum {string} */
             type?: "implementation" | "annotation";
             target_thread_id?: string | null;
             completion_summary?: string | null;
             check?: components["schemas"]["TaskCheck"] | null;
             assistance_requested?: boolean;
+            /** @enum {string|null} */
+            assistance_kind?: "direction" | "failure" | null;
+            assistance_question?: string | null;
             assistance_reason?: string | null;
             fixup_problem?: string | null;
         };
@@ -3826,6 +3859,25 @@ export interface components {
             changes?: string[];
             breaking?: string[];
         };
+        TaskQuestion: {
+            id?: number;
+            task_id?: number;
+            subtask_id?: number;
+            attempt?: number;
+            /** @enum {string} */
+            asked_by?: "implementer" | "reviewer" | "operator";
+            question?: string;
+            /** @enum {string} */
+            status?: "open" | "escalated" | "answered";
+            /** @enum {string|null} */
+            answered_by?: "implementer" | "reviewer" | "operator" | null;
+            answer?: string | null;
+            /** @enum {string|null} */
+            cause?: "brief_unclear" | "contract_gap" | "scope" | "environment" | "missed_contract" | null;
+            asked_at?: string;
+            escalated_at?: string | null;
+            answered_at?: string | null;
+        };
         TasksStatus: {
             enabled?: boolean;
             assistance?: components["schemas"]["TaskAssistance"][];
@@ -3838,6 +3890,9 @@ export interface components {
             title?: string;
             /** @enum {string} */
             status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "completed" | "failed" | "cancelled";
+            /** @enum {string|null} */
+            assistance_kind?: "direction" | "failure" | null;
+            assistance_question?: string | null;
             assistance_reason?: string | null;
         };
         ToolInventory: {
@@ -15463,7 +15518,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description The tasks extension is disabled (`extension.disabled`) or the Task group is not settling (`tasks.not_settling`). A disabled extension returns HTTP 409 (`extension.disabled`). */
+            /** @description The tasks extension is disabled (`extension.disabled`) or the Task group is not ready to complete (`tasks.not_settling`). Running or reviewing groups need an ended watched pull request or a stored completion receipt. A disabled extension returns HTTP 409 (`extension.disabled`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -15474,6 +15529,15 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A running agent or check could not be stopped (`tasks.subtask_interrupt_failed`). The completion receipt is kept for retry; the group and its open subtasks remain open. */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -16023,6 +16087,52 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-question-list": {
+        parameters: {
+            query?: {
+                project_id?: number;
+                cause?: "brief_unclear" | "contract_gap" | "scope" | "environment" | "missed_contract";
+                status?: "open" | "escalated" | "answered";
+                since?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskQuestion"][];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The tasks extension is disabled (`extension.disabled`). A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

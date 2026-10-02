@@ -97,7 +97,7 @@ function turn_fetch_fetcher(bool $fail = false): TaskBaseBranchFetcher
 
 function turn_fetch_driver(object $fetcher): FakeAgentDriver
 {
-    $driver = new FakeAgentDriver('t3');
+    $driver = new FakeAgentDriver('pi');
     $driver->beforeTurn = function () use ($fetcher): void {
         $fetcher->order[] = 'turn';
     };
@@ -161,7 +161,7 @@ it('tells the agent not to fetch or push in opening and continued reviewer turns
             'task_group_id' => $group->id,
             'task_id' => $task->id,
             'node_id' => $node->id,
-            'driver' => 't3',
+            'driver' => 'pi',
             'runtime_key' => 'node:'.$node->id,
             'external_id' => 'reviewer-thread',
             'role' => 'reviewer',
@@ -203,7 +203,7 @@ it('fetches before an operator resolution is sent and still delivers it if the f
         'task_group_id' => $group->id,
         'task_id' => $task->id,
         'node_id' => $node->id,
-        'driver' => 't3',
+        'driver' => 'pi',
         'runtime_key' => 'node:'.$node->id,
         'external_id' => $role.'-thread',
         'role' => $role,

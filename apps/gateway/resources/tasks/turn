@@ -15,11 +15,14 @@ OUTCOMES = {
     'implementer': {'ready_for_review', 'blocked'},
     'reviewer': {'approved', 'changes_requested', 'blocked'},
 }
+REVIEWER_QUESTION = {'answered', 'blocked'}
 REPEATABLE = {'pr-change', 'pr-breaking', 'deliverable'}
 OUTCOME_ORDER = {
     'implementer': ['ready_for_review', 'blocked'],
     'reviewer': ['approved', 'changes_requested', 'blocked'],
 }
+QUESTION_ORDER = ['answered', 'blocked']
+CAUSES = ['brief_unclear', 'contract_gap', 'scope', 'environment', 'missed_contract']
 
 
 def refuse(message):
@@ -38,6 +41,10 @@ def main(argv):
     if role not in OUTCOMES:
         refuse('Orbit has not started a turn in this workspace.')
     final = turn.get('final') is True
+    question_turn = role == 'reviewer' and (turn.get('consult') is True or turn.get('relay') is True)
+    cause_required = role == 'reviewer' and turn.get('cause_required') is True
+    allowed = REVIEWER_QUESTION if question_turn else OUTCOMES[role]
+    order = QUESTION_ORDER if question_turn else OUTCOME_ORDER[role]
     deliverables = {}
     for item in turn.get('deliverables', []):
         if isinstance(item, dict) and isinstance(item.get('id'), str):
@@ -47,7 +54,7 @@ def main(argv):
     arguments = list(argv)
     while arguments:
         argument = arguments.pop(0)
-        match = re.fullmatch(r'--(outcome|summary|question|pr-summary|pr-change|pr-breaking|deliverable|thread)(?:=(.*))?', argument, re.S)
+        match = re.fullmatch(r'--(outcome|summary|question|cause|pr-summary|pr-change|pr-breaking|deliverable|thread)(?:=(.*))?', argument, re.S)
         if not match:
             refuse(f'unknown argument {argument}.')
         name, value = match.group(1), match.group(2)
@@ -66,14 +73,20 @@ def main(argv):
             options[name] = value
 
     outcome = options.get('outcome', '')
-    if outcome not in OUTCOMES[role]:
-        refuse('--outcome must be one of: ' + ', '.join(OUTCOME_ORDER[role]) + '.')
+    if outcome not in allowed:
+        refuse('--outcome must be one of: ' + ', '.join(order) + '.')
     if 'summary' not in options:
         refuse('--summary is required.')
     if outcome == 'blocked' and 'question' not in options:
         refuse('blocked needs --question with one specific question the operator can answer. If you can decide or find the answer yourself, keep working instead.')
     if outcome != 'blocked' and 'question' in options:
         refuse('--question is only for --outcome=blocked.')
+    needs_cause = outcome == 'answered' or (role == 'reviewer' and outcome == 'blocked') or cause_required
+    if needs_cause:
+        if options.get('cause') not in CAUSES:
+            refuse('--cause must be one of: ' + ', '.join(CAUSES) + '.')
+    elif 'cause' in options:
+        refuse('--cause is only for a reviewer answering or blocked, or the review after a direction resolution.')
 
     confirmations = {}
     for confirmation in options.get('deliverable', []):
@@ -110,6 +123,8 @@ def main(argv):
         receipt['deliverables'] = confirmations
     if outcome == 'blocked':
         receipt['question'] = options['question']
+    if 'cause' in options:
+        receipt['cause'] = options['cause']
     describes_pr = any(key in options for key in ('pr-summary', 'pr-change', 'pr-breaking'))
     if final and role == 'reviewer' and outcome == 'approved':
         if 'pr-summary' not in options:

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Tasks;
 
+use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Models\Task;
 use Spatie\LaravelData\Attributes\MapOutputName;
@@ -20,6 +21,8 @@ final class TaskAssistanceData extends Data
         public string $projectCode,
         public string $title,
         public TaskGroupStatus $status,
+        public ?AssistanceKind $assistanceKind,
+        public ?string $assistanceQuestion,
         public ?string $assistanceReason,
     ) {}
 
@@ -34,6 +37,8 @@ final class TaskAssistanceData extends Data
             projectCode: $group->project->code,
             title: $group->title,
             status: $group->groupStatus(),
+            assistanceKind: $group->assistance_kind,
+            assistanceQuestion: $group->assistance_question,
             assistanceReason: $group->assistance_reason,
         );
     }

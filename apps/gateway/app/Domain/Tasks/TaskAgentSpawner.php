@@ -26,6 +26,11 @@ final readonly class TaskAgentSpawner implements AgentSpawner
 
     public function spawnReviewer(Task $task): ?int
     {
+        return TaskExecutionHold::run($task->parent, fn (): ?int => $this->spawnAdmittedReviewer($task));
+    }
+
+    private function spawnAdmittedReviewer(Task $task): ?int
+    {
         $existing = $this->subtaskReviewer($task);
         if ($existing !== null) {
             return $existing->id;
@@ -46,8 +51,57 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         return $this->openReviewer($task);
     }
 
+    /** Sends an implementer's question to this subtask's reviewer, starting that reviewer when none exists. */
+    public function consult(Task $task, string $message, ?string $key = null): ?int
+    {
+        return $this->sendReviewer($task, $message, new TaskTurnMode(consult: true), $key);
+    }
+
+    /** Sends a direction resolution to this subtask's reviewer, starting that reviewer when none exists. */
+    public function relay(Task $task, string $message): ?int
+    {
+        return $this->sendReviewer($task, $message, new TaskTurnMode(relay: true));
+    }
+
+    /** Sends one reviewer turn, starting that reviewer when the subtask has none yet. */
+    private function sendReviewer(Task $task, string $message, TaskTurnMode $mode, ?string $key = null): ?int
+    {
+        $existing = $this->subtaskReviewer($task);
+        if ($existing instanceof AgentThread) {
+            $this->drivers->get($existing->driver)->send($existing, $this->fetchNotice->apply($message), $key);
+
+            return $existing->id;
+        }
+
+        $pending = $this->pending($task->requireGroupId(), $task->id, TaskThreadRole::Reviewer);
+        if ($pending instanceof AgentThread) {
+            if (! $this->installReviewerMcp($task)) {
+                return null;
+            }
+            $this->installReceipt($pending, $mode);
+
+            return $this->startPending($pending, $this->reviewTitle($task), $message, $key);
+        }
+
+        if (! $this->installReviewerMcp($task)) {
+            return null;
+        }
+        $thread = $this->insertPending($task->parent, $task->id, TaskThreadRole::Reviewer);
+        if (! $thread instanceof AgentThread) {
+            return null;
+        }
+        $this->installReceipt($thread, $mode);
+
+        return $this->startPending($thread, $this->reviewTitle($task), $message, $key);
+    }
+
     /** Reserves the subtask reviewer's Orbit id before the opening prompt, or returns the thread that already exists. */
     public function reserveReviewer(Task $task): ?int
+    {
+        return TaskExecutionHold::run($task->parent, fn (): ?int => $this->reserveAdmittedReviewer($task));
+    }
+
+    private function reserveAdmittedReviewer(Task $task): ?int
     {
         $existing = $this->subtaskReviewer($task) ?? $this->pending($task->requireGroupId(), $task->id, TaskThreadRole::Reviewer);
         if ($existing instanceof AgentThread) {
@@ -59,6 +113,11 @@ final readonly class TaskAgentSpawner implements AgentSpawner
 
     /** Reserves the implementer's Orbit id before the opening prompt, or returns the thread that already exists. */
     public function reserveImplementer(Task $task): ?int
+    {
+        return TaskExecutionHold::run($task->parent, fn (): ?int => $this->reserveAdmittedImplementer($task));
+    }
+
+    private function reserveAdmittedImplementer(Task $task): ?int
     {
         if ($task->implementer_agent_thread_id !== null) {
             return (int) $task->implementer_agent_thread_id;
@@ -72,6 +131,11 @@ final readonly class TaskAgentSpawner implements AgentSpawner
     }
 
     public function spawnImplementer(Task $task): ?int
+    {
+        return TaskExecutionHold::run($task->parent, fn (): ?int => $this->spawnAdmittedImplementer($task));
+    }
+
+    private function spawnAdmittedImplementer(Task $task): ?int
     {
         if ($task->implementer_agent_thread_id !== null) {
             return (int) $task->implementer_agent_thread_id;
@@ -91,6 +155,11 @@ final readonly class TaskAgentSpawner implements AgentSpawner
     }
 
     public function requestReview(Task $task): void
+    {
+        TaskExecutionHold::run($task->parent, fn () => $this->requestAdmittedReview($task));
+    }
+
+    private function requestAdmittedReview(Task $task): void
     {
         $thread = $this->subtaskReviewer($task);
         if ($thread === null) {
@@ -198,7 +267,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         ]);
     }
 
-    private function prepareReceipt(AgentThread $thread): void
+    private function prepareReceipt(AgentThread $thread, ?TaskTurnMode $mode = null): void
     {
         $group = Task::topLevel()->with(['taskable', 'project'])->find($thread->task_group_id);
         $instance = $group?->taskable;
@@ -214,15 +283,35 @@ final readonly class TaskAgentSpawner implements AgentSpawner
             $role === TaskThreadRole::Reviewer && $task instanceof Task && $task->opensPullRequest(),
             $task instanceof Task ? $task->deliverableList() : [],
             $thread->id,
+            $mode ?? $this->reviewerTurnMode($task, $role),
             $context,
         );
     }
 
+    /** A relay or a review after a direction resolution keeps that mode when the thread is replaced. */
+    private function reviewerTurnMode(?Task $task, TaskThreadRole $role): ?TaskTurnMode
+    {
+        if ($role !== TaskThreadRole::Reviewer || ! $task instanceof Task) {
+            return null;
+        }
+        if ($task->consult_comment_id !== null) {
+            return new TaskTurnMode(consult: true);
+        }
+        if ($task->direction_relay_comment_id !== null) {
+            return new TaskTurnMode(relay: true);
+        }
+        if (TaskQuestions::awaitsCause($task)) {
+            return new TaskTurnMode(causeRequired: true);
+        }
+
+        return null;
+    }
+
     /** Installs the turn file and the reviewer context, and removes the reserved row when that install fails so the replacement does not start. */
-    private function installReceipt(AgentThread $thread): void
+    private function installReceipt(AgentThread $thread, ?TaskTurnMode $mode = null): void
     {
         try {
-            $this->prepareReceipt($thread);
+            $this->prepareReceipt($thread, $mode);
         } catch (Throwable $exception) {
             if ($thread->exists) {
                 $thread->delete();
@@ -232,7 +321,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         }
     }
 
-    private function startPending(AgentThread $thread, string $title, string $prompt): ?int
+    private function startPending(AgentThread $thread, string $title, string $prompt, ?string $key = null): ?int
     {
         $prompt = $this->fetchNotice->apply($prompt);
         $group = Task::topLevel()->with('taskable')->find($thread->task_group_id);
@@ -249,13 +338,23 @@ final readonly class TaskAgentSpawner implements AgentSpawner
 
             return null;
         }
+        $driver = $this->drivers->get($thread->driver);
+        $reserved = is_string($key) && $key !== '' ? $this->openingIdentity($thread) : null;
         try {
-            $driver = $this->drivers->get($thread->driver);
             $externalId = $driver->create(new AgentThreadStart(
                 $instance->node, $instance, $title, $prompt,
                 $thread->model ?? '', $thread->effort ?? Config::string($role === TaskThreadRole::Reviewer ? 'orbit.tasks.reviewer_effort' : 'orbit.tasks.implementer_effort'), $role,
+                $key,
+                $reserved,
+                $reserved !== null,
             ));
-        } catch (AgentDriverException) {
+        } catch (AgentDriverException $exception) {
+            $created = $exception->createdThreadId;
+            if (is_string($created) && $created !== '') {
+                $thread->update(['external_id' => $created]);
+
+                throw $exception;
+            }
             Log::error('Agent conversation creation failed.', ['task_group_id' => $group->id, 'task_id' => $thread->task_id, 'role' => $thread->role]);
             $thread->delete();
 
@@ -286,9 +385,49 @@ final readonly class TaskAgentSpawner implements AgentSpawner
 
             return $conflict->id;
         }
+        if ($reserved !== null) {
+            // The id is durable before the opening turn. A lost response reconnects to this
+            // conversation instead of creating another one.
+            $this->rememberExternalId($thread, $externalId);
+            $thread->refresh();
+            try {
+                $driver->send($thread, $prompt, $key);
+            } catch (AgentDriverException $exception) {
+                $exception->createdThreadId = $externalId;
+
+                throw $exception;
+            }
+            $this->rememberExternalId($thread, $externalId);
+
+            return $thread->id;
+        }
         $thread->update(['external_id' => $externalId]);
 
         return $thread->id;
+    }
+
+    /** The same local row always names the same remote conversation. */
+    private function openingIdentity(AgentThread $thread): string
+    {
+        $hash = md5('orbit-agent-thread:'.$thread->id);
+
+        return sprintf(
+            '%s-%s-%s-%s-%s',
+            substr($hash, 0, 8),
+            substr($hash, 8, 4),
+            substr($hash, 12, 4),
+            substr($hash, 16, 4),
+            substr($hash, 20, 12),
+        );
+    }
+
+    private function rememberExternalId(AgentThread $thread, string $externalId): void
+    {
+        AgentThread::query()->whereKey($thread->id)->update([
+            'external_id' => $externalId,
+            'updated_at' => now(),
+        ]);
+        $thread->external_id = $externalId;
     }
 
     private function reviewTitle(Task $task): string

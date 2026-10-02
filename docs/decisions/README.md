@@ -36,11 +36,12 @@ Most decisions are built in one task, so their ADR is retired in the same pull r
 
 ## Retired decisions
 
-The [overview](/decisions/overview#retired-decisions) lists all retired decisions. ADRs 0192 and 0193 are absorbed into the sections below; their old paths redirect to their owning pages.
+The [overview](/decisions/overview#retired-decisions) lists all retired decisions. Their old paths redirect to the sections that absorbed them.
 
 | Record | Retired path | Now in |
 | --- | --- | --- |
 | 0192 | `/decisions/0192-run-task-agents-on-pi-only` | [Tasks: Task agents run on Pi](/reference/tasks#task-agents-run-on-pi) |
+| 0192 | `/decisions/0192-stop-a-group-whose-pull-request-ended` | [Tasks: A watched pull request is not the reviewed pull request](/reference/tasks#a-watched-pull-request-is-not-the-reviewed-pull-request) |
 | 0193 | `/decisions/0193-run-task-agents-as-a-dedicated-user` | [Pi server: One user for every task agent](/reference/pi-server#one-user-for-every-task-agent); [GitHub App: The checkout cannot inherit the token](/reference/github-app#the-checkout-cannot-inherit-the-token) |
 
 ## Record format

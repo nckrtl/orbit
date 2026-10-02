@@ -19,6 +19,10 @@ Creating subtask...
 │
 ├  Assistance           no
 │
+├  Kind                 —
+│
+├  Question             —
+│
 ├  Reason               —
 │
 ├  Type                 implementation

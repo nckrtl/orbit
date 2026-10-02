@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Tasks\CancelTaskCheckAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
+use App\Actions\Tasks\RetryTaskBaselineAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Domain\Instances\InstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
@@ -13,12 +14,18 @@ use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\AgentThreadState;
+use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\BriefCoverageLabeler;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\NullAgentSpawner;
 use App\Domain\Tasks\NullCoderSettleNotifier;
+use App\Domain\Tasks\NullTaskReviewDiff;
 use App\Domain\Tasks\NullTaskWorkspaceDiffReader;
 use App\Domain\Tasks\PrunePendingTaskThreads;
+use App\Domain\Tasks\QuestionAsker;
+use App\Domain\Tasks\QuestionCause;
+use App\Domain\Tasks\QuestionStatus;
+use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskCheckException;
@@ -32,6 +39,7 @@ use App\Domain\Tasks\TaskPullRequestDescription;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestHealth;
 use App\Domain\Tasks\TaskPullRequestPublisher;
+use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskSessionClassificationException;
 use App\Domain\Tasks\TaskSessionDecision;
@@ -42,6 +50,7 @@ use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskTurnFetchNotice;
 use App\Domain\Tasks\TaskTurnInstructions;
+use App\Domain\Tasks\TaskTurnMode;
 use App\Domain\Tasks\TaskTurnPullRequest;
 use App\Domain\Tasks\TaskTurnReceipt;
 use App\Domain\Tasks\TaskTurnReceiptException;
@@ -61,7 +70,9 @@ use App\Models\ProjectLifecycleStep;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
+use App\Models\TaskQuestion;
 use Illuminate\Database\QueryException;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
@@ -234,6 +245,176 @@ function tick_dispatcher(): AgentCommandDispatcher
             return ['sequence' => count($this->commands), 'thread_id' => (string) ($command['threadId'] ?? '')];
         }
     };
+}
+
+/** @return array{0: Task, 1: Task, 2: TaskComment, 3: TaskQuestion} */
+function tick_held_relay(): array
+{
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    AgentThread::query()->where('task_group_id', $group->id)->where('role', 'reviewer')->update(['task_id' => $task->id]);
+    $resolution = TaskComment::query()->create([
+        'task_id' => $task->id, 'task_group_id' => $group->id, 'type' => 'resolution',
+        'body' => 'Use the public mirror.', 'author' => 'operator', 'posted_at' => now(),
+    ]);
+    $task->update([
+        'direction_relay_comment_id' => $resolution->id,
+        'assistance_requested' => false, 'assistance_kind' => null, 'assistance_reason' => null,
+    ]);
+    $group->update(['assistance_requested' => false, 'assistance_kind' => null, 'assistance_reason' => null]);
+    $question = TaskQuestion::query()->create([
+        'task_id' => $group->id, 'subtask_id' => $task->id, 'attempt' => 1, 'asked_by' => QuestionAsker::Reviewer,
+        'question' => 'Which mirror?', 'status' => QuestionStatus::Escalated, 'asked_at' => now(), 'escalated_at' => now(),
+        'resolution_comment_id' => $resolution->id,
+    ]);
+
+    return [$group->fresh(['project', 'tasks', 'taskable']) ?? $group, $task->fresh() ?? $task, $resolution, $question];
+}
+
+function tick_relay_runtime(FakeTaskTurnReceipts $receipts, AgentCommandDispatcher $dispatcher, object $state): void
+{
+    app(TaskExtensionState::class)->enable();
+    app()->instance(TaskWorkspaceDiffReader::class, new NullTaskWorkspaceDiffReader);
+    app()->instance(TaskTurnReceipts::class, $receipts);
+    app()->instance(AgentCommandDispatcher::class, $dispatcher);
+    $reader = new class($state) implements AgentSnapshotReader
+    {
+        public function __construct(private object $state) {}
+
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            if ($threadId === 'implementer-thread') {
+                $turnId = isset($this->state->turnId) && is_string($this->state->turnId) ? $this->state->turnId : '';
+                $messageId = isset($this->state->messageId) && is_string($this->state->messageId) ? $this->state->messageId : null;
+                $thread = ['session' => ['status' => $this->state->implementer]];
+                if ($turnId !== '') {
+                    $thread['latestTurn'] = ['id' => $turnId, 'state' => 'done'];
+                }
+                if ($messageId !== null) {
+                    $thread['messages'] = [['id' => $messageId, 'role' => 'user', 'text' => 'Accepted.', 'createdAt' => '2026-10-08T00:00:00Z']];
+                }
+
+                return ['thread' => $thread];
+            }
+
+            $reviewer = isset($this->state->reviewer) && is_string($this->state->reviewer) ? $this->state->reviewer : 'done';
+
+            return ['thread' => [
+                'session' => ['status' => $reviewer],
+                'latestTurn' => ['id' => 'relay-turn', 'state' => 'done'],
+            ]];
+        }
+    };
+    app()->instance(AgentSnapshotReader::class, $reader);
+    app()->instance(AgentDriverRegistry::class, test_snapshot_registry(dispatcher: $dispatcher, reader: $reader));
+}
+
+/**
+ * A consult whose reviewer turn id becomes the command id of the accepted send.
+ *
+ * @return array{0: Task, 1: Task, 2: FakeTaskTurnReceipts, 3: AgentCommandDispatcher, 4: object}
+ */
+function tick_consult_exchange(bool $loseResponse, ?array $receiptContents = null): array
+{
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $answer = 'Yes. The contract allows the intl extension.';
+    $receipts = new FakeTaskTurnReceipts($receiptContents ?? [
+        FakeTaskTurnReceipts::contents('blocked', 'The intl extension is missing.', 'May I install php8.5-intl?'),
+        FakeTaskTurnReceipts::contents('answered', $answer, cause: 'missed_contract'),
+        null,
+    ]);
+    $state = (object) [
+        'implementer' => 'done',
+        'reviewer' => 'done',
+        'turnId' => '',
+        'messageId' => null,
+        'reviewerTurnId' => '',
+        'reviewerError' => null,
+        'loseResponse' => $loseResponse,
+        'unavailable' => false,
+    ];
+    $dispatcher = new class($state) implements AgentCommandDispatcher
+    {
+        /** @var list<array<string, mixed>> */
+        public array $commands = [];
+
+        public function __construct(private object $state) {}
+
+        public function dispatch(Node $node, array $command): array
+        {
+            $this->commands[] = $command;
+            if (($command['type'] ?? null) === 'send' && ($command['threadId'] ?? null) !== 'implementer-thread') {
+                $this->state->reviewerTurnId = (string) ($command['commandId'] ?? '');
+                if ($this->state->loseResponse === true) {
+                    $this->state->loseResponse = false;
+
+                    throw new AgentDriverException('response lost');
+                }
+            }
+            if (($command['type'] ?? null) === 'send' && ($command['threadId'] ?? null) === 'implementer-thread') {
+                $this->state->turnId = (string) ($command['commandId'] ?? '');
+                $this->state->messageId = (string) ($command['commandId'] ?? '');
+            }
+
+            return ['sequence' => count($this->commands), 'thread_id' => (string) ($command['threadId'] ?? '')];
+        }
+    };
+    app(TaskExtensionState::class)->enable();
+    app()->instance(TaskWorkspaceDiffReader::class, new NullTaskWorkspaceDiffReader);
+    app()->instance(TaskTurnReceipts::class, $receipts);
+    app()->instance(AgentCommandDispatcher::class, $dispatcher);
+    $reader = new class($state) implements AgentSnapshotReader
+    {
+        public function __construct(private object $state) {}
+
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            if ($this->state->unavailable === true) {
+                return null;
+            }
+            if ($threadId === 'implementer-thread') {
+                $turnId = is_string($this->state->turnId) ? $this->state->turnId : '';
+                $thread = ['session' => ['status' => $this->state->implementer]];
+                if ($turnId !== '') {
+                    $thread['latestTurn'] = ['id' => $turnId, 'state' => 'done'];
+                }
+                if (is_string($this->state->messageId) && $this->state->messageId !== '') {
+                    $thread['messages'] = [['id' => $this->state->messageId, 'role' => 'user', 'text' => 'Accepted.', 'createdAt' => '2026-10-08T00:00:00Z']];
+                }
+
+                return ['thread' => $thread];
+            }
+            $failed = $this->state->reviewer === 'error';
+            $thread = [
+                'session' => ['status' => $this->state->reviewer, 'lastError' => $this->state->reviewerError],
+                'error' => $this->state->reviewerError,
+            ];
+            if (is_string($this->state->reviewerTurnId) && $this->state->reviewerTurnId !== '') {
+                $thread['latestTurn'] = [
+                    'id' => $this->state->reviewerTurnId,
+                    'state' => $failed ? 'error' : 'done',
+                    'error' => $this->state->reviewerError,
+                ];
+                $thread['messages'] = [['id' => $this->state->reviewerTurnId, 'role' => 'user', 'text' => 'Consult.', 'createdAt' => '2026-10-08T00:00:00Z']];
+            }
+
+            return ['thread' => $thread];
+        }
+    };
+    app()->instance(AgentSnapshotReader::class, $reader);
+    app()->instance(AgentDriverRegistry::class, test_snapshot_registry(dispatcher: $dispatcher, reader: $reader));
+
+    return [$group, $task, $receipts, $dispatcher, $state];
+}
+
+/** @return list<array<string, mixed>> */
+function tick_reviewer_starts(AgentCommandDispatcher $dispatcher): array
+{
+    return array_values(array_filter(
+        $dispatcher->commands,
+        static fn (array $command): bool => ($command['type'] ?? null) === 'send' && ($command['threadId'] ?? null) !== 'implementer-thread',
+    ));
 }
 
 beforeEach(function (): void {
@@ -644,7 +825,7 @@ it('asks for assistance once per set of pull request problems and withdraws it w
     $checkReason = 'The pull request needs attention: Check Rust agent failed: https://github.com/acme/orbit/runs/1. Orbit reached the cap of 2 fixups for check:Rust agent in the current window (2 counted).';
 
     app(TaskScheduler::class)->tick();
-    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => $conflictReason]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_kind' => 'failure', 'assistance_question' => null, 'assistance_reason' => $conflictReason]);
     $requestedAt = $group->fresh()?->updated_at;
     $this->travel(1)->minute();
 
@@ -653,13 +834,13 @@ it('asks for assistance once per set of pull request problems and withdraws it w
         ->and($group->fresh()?->updated_at?->equalTo($requestedAt))->toBeTrue();
 
     app(TaskScheduler::class)->tick();
-    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'assistance_requested' => true, 'assistance_reason' => $checkReason]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'assistance_requested' => true, 'assistance_kind' => 'failure', 'assistance_question' => null, 'assistance_reason' => $checkReason]);
     expect($notifier->reasons)->toBe([$conflictReason, $checkReason]);
 
     // A re-run on the same head commit is read once the minute-long check cache expires.
     $this->travel(61)->seconds();
     app(TaskScheduler::class)->tick();
-    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => false, 'assistance_reason' => null]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => false, 'assistance_kind' => null, 'assistance_question' => null, 'assistance_reason' => null]);
     expect($notifier->reasons)->toHaveCount(2)
         ->and(Task::query()->where('parent_id', $group->id)->count())->toBe(5);
 });
@@ -682,6 +863,35 @@ it('leaves another cause of assistance on a settling group alone while its pull 
 
     $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => 'Merged pull request cleanup failed: disk full']);
     expect($notifier->reasons)->toBe([]);
+});
+
+it('does not replace an open direction request when the pull request needs attention', function (): void {
+    $group = tick_settling_group();
+    $question = 'Which base should the conflict follow?';
+    $reason = "The reviewer is blocked: The pull request conflicts.\n\nQuestion: {$question}";
+    $group->update([
+        'assistance_requested' => true,
+        'assistance_kind' => AssistanceKind::Direction,
+        'assistance_question' => $question,
+        'assistance_reason' => $reason,
+    ]);
+    $notifier = tick_assistance_notifier();
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/pulls/42' => Http::sequence()
+            ->push(['merged' => false, 'state' => 'open', 'mergeable' => false, 'base' => ['ref' => 'main']])
+            ->push(['merged' => false, 'state' => 'open', 'mergeable' => true, 'base' => ['ref' => 'main']]),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    expect($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($group->fresh()?->assistance_question)->toBe($question)
+        ->and($group->fresh()?->assistance_reason)->toBe($reason)
+        ->and($notifier->reasons)->toBe([]);
 });
 
 it('withdraws its pull request assistance request when the pull request merges', function (): void {
@@ -736,6 +946,8 @@ it('backs off a merged pull request cleanup and retries it on a later tick', fun
 
     expect($calls)->toBe(1)
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($group->fresh()?->assistance_question)->toBeNull()
         ->and($group->fresh()?->assistance_reason)->toBe('Merged pull request cleanup failed: disk full');
 
     $this->travel(TaskScheduler::AbandonedWorkspaceBackoffSeconds + 1)->seconds();
@@ -956,7 +1168,32 @@ it('replaces its pull request assistance request with the cleanup failure when a
 
     app(TaskScheduler::class)->tick();
 
-    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_reason' => 'Merged pull request cleanup failed: disk full']);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'assistance_kind' => 'failure', 'assistance_question' => null, 'assistance_reason' => 'Merged pull request cleanup failed: disk full']);
+});
+
+it('does not replace an open direction request when merged pull request cleanup fails', function (): void {
+    $group = tick_settling_group();
+    $question = 'Should the merged branch be kept?';
+    $reason = "The reviewer is blocked: The merge removed a migration.\n\nQuestion: {$question}";
+    $group->update([
+        'assistance_requested' => true,
+        'assistance_kind' => AssistanceKind::Direction,
+        'assistance_question' => $question,
+        'assistance_reason' => $reason,
+    ]);
+    mock(InstanceRemover::class)->shouldReceive('execute')->once()->andThrow(new RuntimeException('disk full'));
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response(['merged' => true, 'state' => 'closed']),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($group->fresh()?->assistance_question)->toBe($question)
+        ->and($group->fresh()?->assistance_reason)->toBe($reason);
 });
 
 it('changes nothing on a settling group when GitHub cannot report the pull request', function (): void {
@@ -1293,16 +1530,42 @@ it('does not start an appended subtask while another assistance cause is set', f
         ->and(Task::query()->whereNotNull('fixup_problem')->exists())->toBeFalse();
 });
 
+it('does not replace an open direction request when the pull request closes', function (): void {
+    $group = tick_settling_group();
+    $question = 'Which database should this use?';
+    $reason = "The implementer is blocked: Need a database.\n\nQuestion: {$question}";
+    $group->update([
+        'assistance_requested' => true,
+        'assistance_kind' => AssistanceKind::Direction,
+        'assistance_question' => $question,
+        'assistance_reason' => $reason,
+    ]);
+    tick_appended_subtask($group);
+    tick_running_agents();
+    tick_watch_pulls([['merged' => false, 'state' => 'closed']]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($group->fresh()?->assistance_question)->toBe($question)
+        ->and($group->fresh()?->assistance_reason)->toBe($reason);
+});
+
 it('asks for assistance for a closed pull request and does not start an appended subtask', function (): void {
     $group = tick_settling_group();
     $todo = tick_appended_subtask($group);
     $agents = tick_running_agents();
     tick_watch_pulls([['merged' => false, 'state' => 'closed']]);
+    Http::fake(['https://api.github.com/repos/acme/orbit/pulls?*' => Http::response([
+        ['number' => 42, 'html_url' => $group->pr_url, 'state' => 'closed', 'merged_at' => null],
+    ])]);
 
     app(TaskScheduler::class)->tick();
 
     expect($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
-        ->and($group->fresh()?->assistance_reason)->toBe('The expected pull request closed without merging.')
+        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($group->fresh()?->assistance_question)->toBeNull()
+        ->and($group->fresh()?->assistance_reason)->toBe('Watched pull request ended: '.$group->pr_url.' is closed. Open subtasks: #'.$todo->id.' '.$todo->title.'.')
         ->and($todo->fresh()?->status)->toBe(TaskStatus::Todo)
         ->and($agents->spawned)->toBe([]);
 });
@@ -1311,12 +1574,16 @@ it('does not start an appended subtask when the pull request merges', function (
     $group = tick_settling_group();
     $todo = tick_appended_subtask($group);
     $agents = tick_running_agents();
-    mock(InstanceRemover::class)->shouldReceive('execute')->once()->andReturn(new InstanceRemoval);
+    mock(InstanceRemover::class)->shouldReceive('execute')->never();
     tick_watch_pulls([['merged' => true, 'state' => 'closed']]);
+    Http::fake(['https://api.github.com/repos/acme/orbit/pulls?*' => Http::response([
+        ['number' => 42, 'html_url' => $group->pr_url, 'state' => 'closed', 'merged_at' => '2026-10-08T10:00:00Z'],
+    ])]);
 
     app(TaskScheduler::class)->tick();
 
-    expect($group->fresh()?->status)->toBe(TaskGroupStatus::Completed)
+    expect($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($group->fresh()?->assistance_reason)->toBe('Watched pull request ended: '.$group->pr_url.' is merged. Open subtasks: #'.$todo->id.' '.$todo->title.'.')
         ->and($todo->fresh()?->status)->toBe(TaskStatus::Todo)
         ->and($agents->spawned)->toBe([]);
 });
@@ -1461,7 +1728,7 @@ it('cancels an unstarted conflict fixup on merge and preserves orphaned approval
     expect($agents->spawned)->toBe([]);
 })->with(['merged approval' => false, 'approval missed merge' => true]);
 
-it('retains an orphaned approval after interruption between settling and recording its hold', function (bool $otherAssistance): void {
+it('retains an orphaned approval after interruption between settling and recording its hold', function (bool $otherAssistance, bool $direction): void {
     $group = tick_settling_group();
     $group->update(['settled_at' => now()]);
     $instanceId = $group->taskable_id;
@@ -1496,7 +1763,7 @@ it('retains an orphaned approval after interruption between settling and recordi
     $this->assertDatabaseHas('tasks', ['id' => $fixup->id, 'status' => 'cancelled', 'implementer_agent_thread_id' => null]);
     $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => false, 'taskable_id' => $instanceId]);
     if ($otherAssistance) {
-        $group->refresh()->update(['assistance_requested' => true, 'assistance_reason' => 'Another assistance cause.']);
+        TaskAssistance::apply($group, $direction ? AssistanceKind::Direction : AssistanceKind::Failure, $direction ? 'Which branch should retain the approval?' : null, 'Another assistance cause.');
     }
 
     // A fresh Gateway tick must revalidate the approval, not trust the absent hold.
@@ -1507,10 +1774,21 @@ it('retains an orphaned approval after interruption between settling and recordi
     $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'taskable_id' => $instanceId]);
     $this->assertDatabaseHas('instances', ['id' => $instanceId]);
     expect($removals)->toBe(0);
-    expect($group->fresh()?->assistance_reason)->toStartWith(TaskScheduler::OrphanedCommitPrefix.'Commit '.$commit);
-    expect($notifier->reasons)->toBe([$group->fresh()?->assistance_reason]);
+    if ($direction) {
+        expect($group->fresh()?->assistance_reason)->toBe('Another assistance cause.')
+            ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+            ->and($group->fresh()?->assistance_question)->toBe('Which branch should retain the approval?');
+        expect($notifier->reasons)->toBe([]);
+    } else {
+        expect($group->fresh()?->assistance_reason)->toStartWith(TaskScheduler::OrphanedCommitPrefix.'Commit '.$commit);
+        expect($notifier->reasons)->toBe([$group->fresh()?->assistance_reason]);
+    }
     expect($agents->spawned)->toBe([]);
-})->with(['hold missing after interruption' => false, 'another assistance cause after interruption' => true]);
+})->with([
+    'hold missing after interruption' => [false, false],
+    'another failure after interruption' => [true, false],
+    'direction request after interruption' => [true, true],
+]);
 
 it('waits without cancelling or spawning a conflict fixup when mergeability is unknown', function (): void {
     $group = tick_settling_group();
@@ -1574,8 +1852,12 @@ it('retries a failed conflict fixup fetch on the backoff and asks for assistance
     $fixup = Task::query()->where('fixup_problem', 'conflict:main')->sole();
     expect($fixup->status)->toBe(TaskStatus::Todo)
         ->and($fixup->communication_failures)->toBe(5)
+        ->and($fixup->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($fixup->assistance_question)->toBeNull()
         ->and($fixup->assistance_reason)->toBe('The base branch could not be fetched.')
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
+        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($group->fresh()?->assistance_question)->toBeNull()
         ->and($group->fresh()?->assistance_reason)->toBe('The base branch could not be fetched.')
         ->and($notifier->reasons)->toBe(['The base branch could not be fetched.']);
 
@@ -2256,7 +2538,486 @@ it('stores a receipt that was read again after a crash only once', function (): 
         ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing);
 });
 
-it('asks for assistance with the summary of a blocked receipt', function (): void {
+it('starts a consult when the implementer blocks before any reviewer exists', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $receipts = new FakeTaskTurnReceipts([FakeTaskTurnReceipts::contents('blocked', 'Installing the extension needs sudo, and sudo was denied.', 'May the Node user run sudo apt-get install php8.5-intl?')]);
+    $dispatcher = tick_dispatcher();
+    tick_relay_runtime($receipts, $dispatcher, (object) ['implementer' => 'done']);
+    $attempt = $task->completion_attempt;
+
+    app(TaskScheduler::class)->tick();
+
+    $question = TaskQuestion::query()->sole();
+    $reviewer = AgentThread::query()->where('task_id', $task->id)->where('role', 'reviewer')->where('external_id', 'not like', 'pending:%')->sole();
+    $opening = collect($dispatcher->commands)->first(fn (array $command): bool => ($command['type'] ?? null) === 'send' && ($command['threadId'] ?? null) === $reviewer->external_id);
+    expect($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Running)
+        ->and($task->fresh()?->completion_attempt)->toBe($attempt)
+        ->and($task->fresh()?->consult_comment_id)->toBe($task->comments()->sole()->id)
+        ->and($task->comments()->sole()->getRawOriginal('type'))->toBe('blocked')
+        ->and($receipts->cleared)->toHaveCount(1)
+        ->and($receipts->modes)->toContain('consult')
+        ->and($question->asked_by)->toBe(QuestionAsker::Implementer)
+        ->and($question->status)->toBe(QuestionStatus::Open)
+        ->and($question->consult)->toBeTrue()
+        ->and($question->cause)->toBeNull()
+        ->and($question->question)->toBe('May the Node user run sudo apt-get install php8.5-intl?')
+        ->and($question->escalated_at)->toBeNull()
+        ->and($task->fresh()?->questions)->toBe(1)
+        ->and($task->fresh()?->escalations)->toBe(0)
+        ->and($group->fresh()?->questions)->toBe(1)
+        ->and($group->fresh()?->escalations)->toBe(0)
+        ->and($opening['message']['text'] ?? null)->toContain('May the Node user run sudo apt-get install php8.5-intl?')
+        ->and($opening['message']['text'] ?? null)->toContain('--outcome=answered');
+});
+
+it('does not send a second consult when an accepted send lost its response', function (): void {
+    [$group, $task, $receipts, $dispatcher] = tick_consult_exchange(true);
+    $attempt = $task->completion_attempt;
+    $answer = 'Yes. The contract allows the intl extension.';
+
+    app(TaskScheduler::class)->tick();
+
+    $starts = tick_reviewer_starts($dispatcher);
+    expect($starts)->toHaveCount(1)
+        ->and($task->fresh()?->consult_comment_id)->not->toBeNull()
+        ->and($task->fresh()?->direction_answer_key)->toBe($starts[0]['commandId'])
+        ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Open)
+        ->and(collect($receipts->modes)->filter(fn (?string $mode): bool => $mode === 'consult'))->toHaveCount(2);
+
+    app(TaskScheduler::class)->tick();
+
+    $question = TaskQuestion::query()->sole();
+    expect(tick_reviewer_starts($dispatcher))->toHaveCount(1)
+        ->and(collect($receipts->modes)->filter(fn (?string $mode): bool => $mode === 'consult'))->toHaveCount(2)
+        ->and($question->status)->toBe(QuestionStatus::Answered)
+        ->and($question->answer)->toBe($answer)
+        ->and($question->cause)->toBe(QuestionCause::MissedContract)
+        ->and($question->consult)->toBeTrue()
+        ->and($task->fresh()?->consult_comment_id)->toBeNull()
+        ->and($task->fresh()?->completion_attempt)->toBe($attempt)
+        ->and(TaskQuestion::query()->count())->toBe(1);
+
+    app(TaskScheduler::class)->tick();
+
+    expect(tick_reviewer_starts($dispatcher))->toHaveCount(1)
+        ->and(TaskQuestion::query()->sole()->answer)->toBe($answer)
+        ->and(TaskQuestion::query()->count())->toBe(1);
+});
+
+it('keeps the consult answer when the marker update fails after the send', function (): void {
+    [$group, $task, $receipts, $dispatcher] = tick_consult_exchange(false);
+    $attempt = $task->completion_attempt;
+    $answer = 'Yes. The contract allows the intl extension.';
+    $inject = true;
+    DB::beforeExecuting(function (string $sql) use (&$inject): void {
+        if (! $inject || ! str_starts_with(strtolower(ltrim($sql)), 'update') || ! str_contains($sql, 'reviewer_agent_thread_id')) {
+            return;
+        }
+        $inject = false;
+
+        throw new RuntimeException('injected consult marker failure');
+    });
+
+    expect(fn () => app(TaskScheduler::class)->tick())->toThrow(RuntimeException::class, 'injected consult marker failure');
+
+    $starts = tick_reviewer_starts($dispatcher);
+    expect($starts)->toHaveCount(1)
+        ->and($task->fresh()?->consult_comment_id)->not->toBeNull()
+        ->and($task->fresh()?->direction_answer_key)->toBe($starts[0]['commandId'])
+        ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Open)
+        ->and(TaskQuestion::query()->sole()->question)->toBe('May I install php8.5-intl?');
+
+    app(TaskScheduler::class)->tick();
+
+    $question = TaskQuestion::query()->sole();
+    expect(tick_reviewer_starts($dispatcher))->toHaveCount(1)
+        ->and(collect($receipts->modes)->filter(fn (?string $mode): bool => $mode === 'consult'))->toHaveCount(2)
+        ->and($question->status)->toBe(QuestionStatus::Answered)
+        ->and($question->answer)->toBe($answer)
+        ->and($question->cause)->toBe(QuestionCause::MissedContract)
+        ->and($task->fresh()?->completion_attempt)->toBe($attempt)
+        ->and($task->fresh()?->consult_comment_id)->toBeNull();
+
+    app(TaskScheduler::class)->tick();
+
+    expect(tick_reviewer_starts($dispatcher))->toHaveCount(1)
+        ->and(TaskQuestion::query()->sole()->id)->toBe($question->id)
+        ->and(TaskQuestion::query()->sole()->answer)->toBe($answer);
+});
+
+it('reuses the fresh reviewer when saving its conversation id fails after the opening turn', function (): void {
+    [$group, $task, $receipts, $dispatcher] = tick_consult_exchange(false);
+    $answer = 'Yes. The contract allows the intl extension.';
+    $inject = true;
+    DB::beforeExecuting(function (string $sql) use (&$inject, $dispatcher): void {
+        if (! $inject || tick_reviewer_starts($dispatcher) === []) {
+            return;
+        }
+        $statement = strtolower(ltrim($sql));
+        if (str_starts_with($statement, 'update') && str_contains($sql, 'external_id')) {
+            $inject = false;
+
+            throw new RuntimeException('injected external id failure');
+        }
+    });
+
+    app(TaskScheduler::class)->tick();
+
+    expect($inject)->toBeFalse();
+
+    $created = collect($dispatcher->commands)->first(fn (array $command): bool => ($command['type'] ?? null) === 'create');
+    $externalId = is_array($created) ? (string) ($created['threadId'] ?? '') : '';
+    $reviewer = AgentThread::query()->where('task_id', $task->id)->where('role', 'reviewer')->sole();
+    expect($externalId)->not->toBe('')
+        ->and($reviewer->external_id)->toBe($externalId)
+        ->and($reviewer->external_id)->not->toStartWith('pending:')
+        ->and(collect($dispatcher->commands)->where('type', 'create'))->toHaveCount(1)
+        ->and(tick_reviewer_starts($dispatcher))->toHaveCount(1)
+        ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Open);
+
+    app(TaskScheduler::class)->tick();
+
+    expect(collect($dispatcher->commands)->where('type', 'create'))->toHaveCount(1)
+        ->and(tick_reviewer_starts($dispatcher))->toHaveCount(1)
+        ->and($reviewer->fresh()?->external_id)->toBe($externalId)
+        ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Answered)
+        ->and(TaskQuestion::query()->sole()->answer)->toBe($answer)
+        ->and($task->fresh()?->completion_attempt)->toBe($task->completion_attempt);
+});
+
+it('reuses the Pi reviewer when both opening send responses are lost', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $group->update(['reviewer_agent_driver' => 'pi', 'reviewer_model' => 'gpt-5.6-luna']);
+    $group->taskable->node->update([
+        'settings' => ['pi' => ['token' => 'pi-node-token-with-more-than-32-characters', 'url' => 'http://10.44.0.212:3774']],
+    ]);
+    $answer = 'Yes. The contract allows the intl extension.';
+    $receipts = new FakeTaskTurnReceipts([
+        FakeTaskTurnReceipts::contents('blocked', 'The intl extension is missing.', 'May I install php8.5-intl?'),
+        FakeTaskTurnReceipts::contents('answered', $answer, cause: 'missed_contract'),
+        null,
+    ]);
+    $pi = (object) ['sessions' => [], 'keys' => [], 'implementerKey' => ''];
+    app(TaskExtensionState::class)->enable();
+    app()->instance(TaskWorkspaceDiffReader::class, new NullTaskWorkspaceDiffReader);
+    app()->instance(TaskTurnReceipts::class, $receipts);
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([app(PiDriver::class)]));
+    Http::fake(function (Request $request) use ($pi): mixed {
+        if ($request->method() === 'POST' && str_ends_with(rtrim($request->url(), '/'), '/sessions')) {
+            $pi->sessions[] = (string) $request['id'];
+
+            return Http::response(['id' => $request['id']], 201);
+        }
+        if ($request->method() === 'POST' && str_contains($request->url(), '/messages')) {
+            if (str_contains($request->url(), '/implementer-thread/')) {
+                $pi->implementerKey = (string) $request['key'];
+
+                return Http::response(['key' => $request['key'], 'status' => 'accepted'], 202);
+            }
+            $pi->keys[] = (string) $request['key'];
+
+            throw new ConnectionException('response lost');
+        }
+        if ($request->method() === 'GET') {
+            $sessionId = basename(rtrim($request->url(), '/'));
+
+            return Http::response([
+                'kind' => 'snapshot', 'run' => 'run-1', 'sequence' => 2,
+                'session' => ['id' => $sessionId],
+                'state' => 'done',
+                'turnId' => $sessionId === 'implementer-thread' ? $pi->implementerKey : ($pi->keys[0] ?? ''),
+                'entries' => [],
+            ]);
+        }
+
+        return Http::response([], 404);
+    });
+
+    app(TaskScheduler::class)->tick();
+
+    $reviewer = AgentThread::query()->where('task_id', $task->id)->where('role', 'reviewer')->sole();
+    expect($pi->sessions)->toHaveCount(1)
+        ->and($reviewer->external_id)->toBe($pi->sessions[0])
+        ->and($reviewer->driver)->toBe('pi')
+        ->and(array_unique($pi->keys))->toHaveCount(1)
+        ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Open);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($pi->sessions)->toHaveCount(1)
+        ->and(array_unique($pi->keys))->toHaveCount(1)
+        ->and($reviewer->fresh()?->external_id)->toBe($pi->sessions[0])
+        ->and(TaskQuestion::query()->sole()->answer)->toBe($answer)
+        ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Answered)
+        ->and($task->fresh()?->consult_comment_id)->toBeNull();
+});
+
+it('reminds a consult reviewer that stops without a receipt, then asks for a failure', function (): void {
+    [$group, $task, $receipts, $dispatcher] = tick_consult_exchange(false, [
+        FakeTaskTurnReceipts::contents('blocked', 'The intl extension is missing.', 'May I install php8.5-intl?'),
+        null,
+        null,
+    ]);
+
+    app(TaskScheduler::class)->tick();
+    $reviewerId = $group->fresh()?->reviewer_agent_thread_id;
+
+    app(TaskScheduler::class)->tick();
+
+    $reminder = tick_reviewer_starts($dispatcher)[1]['message']['text'] ?? null;
+    expect($reminder)->toBe(TaskTurnFetchNotice::Failed."\n\nOrbit could not confirm the review is complete. No turn receipt was found. ".TaskTurnInstructions::consult(is_int($reviewerId) ? $reviewerId : null))
+        ->and($reminder)->not->toContain('--outcome=approved')
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and(collect($receipts->modes)->filter(fn (?string $mode): bool => $mode === 'consult'))->toHaveCount(3);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($task->fresh()?->assistance_question)->toBeNull()
+        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($task->fresh()?->assistance_reason)->toBe('Checks still failed after the reminder. No turn receipt was found.');
+});
+
+it('asks for a failure when the consult reviewer thread fails', function (): void {
+    [$group, $task, $receipts, $dispatcher, $state] = tick_consult_exchange(false, [
+        FakeTaskTurnReceipts::contents('blocked', 'The intl extension is missing.', 'May I install php8.5-intl?'),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+    $state->reviewer = 'error';
+    $state->reviewerError = 'The model rejected the turn.';
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($task->fresh()?->assistance_question)->toBeNull()
+        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($task->fresh()?->assistance_reason)->toBe('The reviewer thread failed.')
+        ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Open);
+});
+
+it('resumes a consult reviewer after a server restart', function (): void {
+    [$group, $task, $receipts, $dispatcher, $state] = tick_consult_exchange(false, [
+        FakeTaskTurnReceipts::contents('blocked', 'The intl extension is missing.', 'May I install php8.5-intl?'),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+    $state->reviewer = 'error';
+    $state->reviewerError = TaskScheduler::PiServerRestartError;
+
+    app(TaskScheduler::class)->tick();
+
+    $resume = tick_reviewer_starts($dispatcher)[1] ?? null;
+    expect($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($task->fresh()?->pi_restart_resumes)->toBe(1)
+        ->and($task->fresh()?->pi_restart_reservation)->toBe('pending')
+        ->and($resume['message']['text'] ?? null)->toBe(TaskTurnFetchNotice::Failed."\n\n".TaskScheduler::PiServerRestartContinue)
+        ->and($resume['commandId'] ?? null)->toBe($task->fresh()?->pi_restart_key)
+        ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Open);
+});
+
+it('uses observation grace for an unavailable consult reviewer, then asks for a failure', function (): void {
+    [$group, $task, $receipts, $dispatcher, $state] = tick_consult_exchange(false, [
+        FakeTaskTurnReceipts::contents('blocked', 'The intl extension is missing.', 'May I install php8.5-intl?'),
+    ]);
+
+    app(TaskScheduler::class)->tick();
+    $state->unavailable = true;
+
+    app(TaskScheduler::class)->tick();
+
+    expect($group->fresh()?->agent_unavailable_since)->not->toBeNull()
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($group->fresh()?->assistance_requested)->toBeFalse();
+
+    $this->travel(121)->seconds();
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($task->fresh()?->assistance_question)->toBeNull()
+        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($task->fresh()?->assistance_reason)->toBe('Agent observation unavailable beyond the grace period.')
+        ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Open);
+});
+
+it('answers a consult in the same attempt and records the reviewer cause', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $receipts = new FakeTaskTurnReceipts([
+        FakeTaskTurnReceipts::contents('blocked', 'The intl extension is missing.', 'May I install php8.5-intl?'),
+        FakeTaskTurnReceipts::contents('answered', 'Yes. The contract allows the intl extension.', cause: 'missed_contract'),
+    ]);
+    $dispatcher = tick_dispatcher();
+    $state = (object) ['implementer' => 'done', 'reviewer' => 'running'];
+    tick_relay_runtime($receipts, $dispatcher, $state);
+    $attempt = $task->completion_attempt;
+
+    app(TaskScheduler::class)->tick();
+    $reviewerId = AgentThread::query()->where('task_id', $task->id)->where('role', 'reviewer')->sole()->id;
+
+    app(TaskScheduler::class)->tick();
+
+    expect($receipts->reads())->toBe(1)
+        ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Open)
+        ->and($task->fresh()?->consult_comment_id)->not->toBeNull();
+
+    $state->reviewer = 'done';
+    app(TaskScheduler::class)->tick();
+
+    $question = TaskQuestion::query()->sole();
+    $delivered = collect($dispatcher->commands)->filter(fn (array $command): bool => ($command['threadId'] ?? null) === 'implementer-thread');
+    expect($question->status)->toBe(QuestionStatus::Answered)
+        ->and($question->answered_by)->toBe(QuestionAsker::Reviewer)
+        ->and($question->answer)->toBe('Yes. The contract allows the intl extension.')
+        ->and($question->cause)->toBe(QuestionCause::MissedContract)
+        ->and($question->consult)->toBeTrue()
+        ->and($question->escalated_at)->toBeNull()
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($task->fresh()?->consult_comment_id)->toBeNull()
+        ->and($task->fresh()?->completion_attempt)->toBe($attempt)
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Running)
+        ->and($task->fresh()?->questions)->toBe(1)
+        ->and($task->fresh()?->escalations)->toBe(0)
+        ->and(AgentThread::query()->where('task_id', $task->id)->where('role', 'reviewer')->sole()->id)->toBe($reviewerId)
+        ->and($delivered)->toHaveCount(1)
+        ->and($delivered->first()['message']['text'] ?? null)->toContain('Yes. The contract allows the intl extension.');
+});
+
+it('escalates the same consult when the reviewer blocks', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $receipts = new FakeTaskTurnReceipts([
+        FakeTaskTurnReceipts::contents('blocked', 'The brief does not name a database.', 'Which database should this subtask use?'),
+        FakeTaskTurnReceipts::contents('blocked', 'The contract does not choose a database.', 'Which database should the operator choose?', cause: 'contract_gap'),
+    ]);
+    tick_relay_runtime($receipts, tick_dispatcher(), (object) ['implementer' => 'done']);
+    $attempt = $task->completion_attempt;
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    $question = TaskQuestion::query()->sole();
+    expect($question->status)->toBe(QuestionStatus::Escalated)
+        ->and($question->asked_by)->toBe(QuestionAsker::Implementer)
+        ->and($question->consult)->toBeTrue()
+        ->and($question->question)->toBe('Which database should the operator choose?')
+        ->and($question->cause)->toBe(QuestionCause::ContractGap)
+        ->and($question->escalated_at)->not->toBeNull()
+        ->and($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($task->fresh()?->assistance_question)->toBe('Which database should the operator choose?')
+        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Running)
+        ->and($task->fresh()?->consult_comment_id)->toBeNull()
+        ->and($task->fresh()?->completion_attempt)->toBe($attempt)
+        ->and($task->fresh()?->questions)->toBe(1)
+        ->and($task->fresh()?->escalations)->toBe(1)
+        ->and(TaskQuestion::query()->where('consult', true)->count())->toBe(1);
+});
+
+it('asks for direction on the third block and a later relay does not count toward that limit', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $receipts = new FakeTaskTurnReceipts([
+        FakeTaskTurnReceipts::contents('blocked', 'First block.', 'Which mirror?'),
+        FakeTaskTurnReceipts::contents('answered', 'Use the public mirror.', cause: 'missed_contract'),
+        FakeTaskTurnReceipts::contents('blocked', 'Second block.', 'Which region?'),
+        FakeTaskTurnReceipts::contents('answered', 'Use the region in the brief.', cause: 'brief_unclear'),
+        FakeTaskTurnReceipts::contents('blocked', 'Third block.', 'May I provision a database?'),
+        FakeTaskTurnReceipts::contents('answered', 'Provision the shared database.', cause: 'environment'),
+        FakeTaskTurnReceipts::contents('blocked', 'Fourth block.', 'May I buy more disk?'),
+    ]);
+    $dispatcher = tick_dispatcher();
+    tick_relay_runtime($receipts, $dispatcher, (object) ['implementer' => 'done']);
+    $attempt = $task->completion_attempt;
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    $third = TaskQuestion::query()->where('consult', false)->sole();
+    expect(TaskQuestion::query()->where('consult', true)->count())->toBe(2)
+        ->and($third->status)->toBe(QuestionStatus::Escalated)
+        ->and($third->asked_by)->toBe(QuestionAsker::Implementer)
+        ->and($third->question)->toBe('May I provision a database?')
+        ->and($third->cause)->toBeNull()
+        ->and($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($task->fresh()?->assistance_question)->toBe('May I provision a database?')
+        ->and($task->fresh()?->assistance_reason)->toContain('Use the public mirror.')
+        ->and($task->fresh()?->assistance_reason)->toContain('Use the region in the brief.')
+        ->and($task->fresh()?->completion_attempt)->toBe($attempt)
+        ->and($task->fresh()?->consult_comment_id)->toBeNull();
+
+    $comment = app(StoreTaskCommentAction::class)->execute($task->fresh() ?? $task, [
+        'type' => 'resolution', 'body' => 'Provision the shared database.', 'author' => 'operator',
+    ]);
+    expect($task->fresh()?->direction_relay_comment_id)->toBe($comment->id)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($receipts->modes)->toContain('relay');
+
+    app(TaskScheduler::class)->tick();
+
+    expect(TaskQuestion::query()->where('consult', true)->count())->toBe(2)
+        ->and($third->fresh()?->status)->toBe(QuestionStatus::Answered)
+        ->and($third->fresh()?->answered_by)->toBe(QuestionAsker::Operator)
+        ->and($third->fresh()?->answer)->toBe('Provision the shared database.')
+        ->and($third->fresh()?->cause)->toBe(QuestionCause::Environment)
+        ->and($task->fresh()?->direction_relay_comment_id)->toBeNull()
+        ->and($task->fresh()?->completion_attempt)->toBe($attempt)
+        ->and($task->fresh()?->assistance_requested)->toBeFalse();
+
+    app(TaskScheduler::class)->tick();
+
+    expect(TaskQuestion::query()->where('consult', true)->count())->toBe(2)
+        ->and(TaskQuestion::query()->where('consult', false)->count())->toBe(2)
+        ->and($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_question)->toBe('May I buy more disk?')
+        ->and($task->fresh()?->assistance_reason)->toContain('Use the public mirror.')
+        ->and($task->fresh()?->assistance_reason)->toContain('Use the region in the brief.')
+        ->and($task->fresh()?->completion_attempt)->toBe($attempt)
+        ->and(collect($dispatcher->commands)->filter(fn (array $command): bool => ($command['threadId'] ?? null) === 'implementer-thread')->contains(
+            fn (array $command): bool => str_contains((string) ($command['message']['text'] ?? ''), 'Provision the shared database.'),
+        ))->toBeTrue();
+});
+
+it('continues the consult reviewer when the subtask reaches review', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $receipts = new FakeTaskTurnReceipts([
+        FakeTaskTurnReceipts::contents('blocked', 'The intl extension is missing.', 'May I install php8.5-intl?'),
+        FakeTaskTurnReceipts::contents('answered', 'Yes. The contract allows the intl extension.', cause: 'missed_contract'),
+        FakeTaskTurnReceipts::contents('ready_for_review', 'Installed intl.'),
+    ]);
+    $dispatcher = tick_dispatcher();
+    tick_relay_runtime($receipts, $dispatcher, (object) ['implementer' => 'done']);
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    $reviewer = AgentThread::query()->where('task_id', $task->id)->where('role', 'reviewer')->sole();
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    $reviewers = AgentThread::query()->where('task_id', $task->id)->where('role', 'reviewer')->where('external_id', 'not like', 'pending:%')->get();
+    $reviewSend = collect($dispatcher->commands)->last(fn (array $command): bool => ($command['type'] ?? null) === 'send' && ($command['threadId'] ?? null) === $reviewer->external_id);
+    expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and($reviewers)->toHaveCount(1)
+        ->and($reviewers->sole()->id)->toBe($reviewer->id)
+        ->and($task->fresh()?->review_notified_attempt)->toBe($task->fresh()?->review_attempt)
+        ->and($reviewSend['message']['text'] ?? null)->toContain('Review subtask #'.$task->id);
+});
+
+it('flags the parent when a subtask already asks and the parent does not', function (): void {
     $group = tick_group();
     $task = $group->tasks->sole();
     app(TaskExtensionState::class)->enable();
@@ -2269,17 +3030,22 @@ it('asks for assistance with the summary of a blocked receipt', function (): voi
             return ['thread' => ['session' => ['status' => 'idle']]];
         }
     });
-    $receipts = new FakeTaskTurnReceipts([FakeTaskTurnReceipts::contents('blocked', 'Installing the extension needs sudo, and sudo was denied.', 'May the Node user run sudo apt-get install php8.5-intl?')]);
-    app()->instance(TaskTurnReceipts::class, $receipts);
+    $question = 'Which database should this subtask use?';
+    $reason = "The implementer is blocked: The mirror is down.\n\nQuestion: {$question}";
+    $task->update([
+        'assistance_requested' => true,
+        'assistance_kind' => AssistanceKind::Direction,
+        'assistance_question' => $question,
+        'assistance_reason' => $reason,
+    ]);
 
     app(TaskScheduler::class)->tick();
 
-    expect($task->fresh()?->assistance_requested)->toBeTrue()
-        ->and($task->fresh()?->assistance_reason)->toBe("The implementer is blocked: Installing the extension needs sudo, and sudo was denied.\n\nQuestion: May the Node user run sudo apt-get install php8.5-intl?")
-        ->and($task->fresh()?->status)->toBe(TaskStatus::Running)
-        ->and($task->comments()->sole()->getRawOriginal('type'))->toBe('blocked')
-        ->and($receipts->cleared)->toHaveCount(1)
-        ->and($dispatcher->commands)->toBe([]);
+    expect($task->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($task->fresh()?->assistance_question)->toBe($question)
+        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($group->fresh()?->assistance_question)->toBe($question)
+        ->and($group->fresh()?->assistance_reason)->toBe($reason);
 });
 
 it('resumes a Pi implementer restarted during the turn instead of asking for assistance', function (): void {
@@ -2353,10 +3119,41 @@ it('asks for assistance when a Pi implementer fails for another reason', functio
     app(TaskScheduler::class)->tick();
 
     expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($task->fresh()?->assistance_question)->toBeNull()
         ->and($task->fresh()?->assistance_reason)->toBe('The implementer thread failed.')
+        ->and($task->parent->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($task->parent->fresh()?->assistance_question)->toBeNull()
         ->and($task->parent->fresh()?->assistance_requested)->toBeTrue()
         ->and(tick_pi_message_keys())->toBe([])
         ->and($task->fresh()?->pi_restart_resumes)->toBe(0);
+});
+
+it('does not replace an open direction request when the implementer thread fails', function (): void {
+    $task = tick_pi_implementer();
+    $question = 'May the Node user run sudo?';
+    $reason = "The implementer is blocked: sudo was denied.\n\nQuestion: {$question}";
+    $task->update([
+        'assistance_requested' => true,
+        'assistance_kind' => AssistanceKind::Direction,
+        'assistance_question' => $question,
+        'assistance_reason' => $reason,
+    ]);
+    $task->parent->update([
+        'assistance_requested' => true,
+        'assistance_kind' => AssistanceKind::Direction,
+        'assistance_question' => $question,
+        'assistance_reason' => $reason,
+    ]);
+    tick_pi_failure((object) ['turnId' => 'turn-key-1', 'error' => 'The turn was interrupted.']);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($task->fresh()?->assistance_question)->toBe($question)
+        ->and($task->fresh()?->assistance_reason)->toBe($reason)
+        ->and($task->parent->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($task->parent->fresh()?->assistance_question)->toBe($question);
 });
 
 it('asks for assistance after two reserved Pi resumes', function (): void {
@@ -3501,7 +4298,7 @@ it('does not apply a receipt from the thread named by a stale turn file', functi
     {
         public function __construct(private int $acting) {}
 
-        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?string $context = null): void {}
+        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?TaskTurnMode $mode = null, ?string $context = null): void {}
 
         public function read(Instance $instance, ?int $actingThreadId = null): ?TaskTurnReceipt
         {
@@ -3536,7 +4333,7 @@ it('does not apply an unbound legacy receipt and reissues the bound turn command
         /** @var list<int|null> */
         public array $preparedThreads = [];
 
-        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?string $context = null): void
+        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?TaskTurnMode $mode = null, ?string $context = null): void
         {
             $this->preparedThreads[] = $threadId;
             $this->legacy = false;
@@ -3576,7 +4373,7 @@ it('applies a receipt that names the acting reviewer', function (): void {
     {
         public function __construct(private int $acting) {}
 
-        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?string $context = null): void {}
+        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?TaskTurnMode $mode = null, ?string $context = null): void {}
 
         public function read(Instance $instance, ?int $actingThreadId = null): ?TaskTurnReceipt
         {
@@ -3675,14 +4472,508 @@ it('does not commit an approval while the workspace is on another branch', funct
 });
 
 it('asks for assistance with the summary of a blocked reviewer receipt', function (): void {
-    [$group, $task] = tick_review([FakeTaskTurnReceipts::contents('blocked', 'The brief contradicts ADR 0098.', 'Should the subtask follow the brief or ADR 0098?')]);
+    [$group, $task] = tick_review([FakeTaskTurnReceipts::contents('blocked', 'The brief contradicts ADR 0098.', 'Should the subtask follow the brief or ADR 0098?', [], 'contract_gap')]);
 
     app(TaskScheduler::class)->tick();
 
+    $question = TaskQuestion::query()->sole();
     expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($task->fresh()?->assistance_question)->toBe('Should the subtask follow the brief or ADR 0098?')
         ->and($task->fresh()?->assistance_reason)->toBe("The reviewer is blocked: The brief contradicts ADR 0098.\n\nQuestion: Should the subtask follow the brief or ADR 0098?")
+        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($group->fresh()?->assistance_question)->toBe('Should the subtask follow the brief or ADR 0098?')
         ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
-        ->and(app(AgentCommandDispatcher::class)->commands)->toBe([]);
+        ->and(app(AgentCommandDispatcher::class)->commands)->toBe([])
+        ->and($task->comments()->sole()->cause)->toBe(QuestionCause::ContractGap)
+        ->and($question->asked_by)->toBe(QuestionAsker::Reviewer)
+        ->and($question->cause)->toBe(QuestionCause::ContractGap)
+        ->and($question->status)->toBe(QuestionStatus::Escalated)
+        ->and($question->escalated_at)->not->toBeNull()
+        ->and($task->fresh()?->questions)->toBe(1)
+        ->and($task->fresh()?->escalations)->toBe(1)
+        ->and($group->fresh()?->questions)->toBe(1)
+        ->and($group->fresh()?->escalations)->toBe(1);
+});
+
+it('answers a direction question from the reviewer receipt that follows the operator resolution', function (): void {
+    [$group, $task] = tick_review([
+        FakeTaskTurnReceipts::contents('blocked', 'The brief contradicts ADR 0098.', 'Should the subtask follow the brief or ADR 0098?', [], 'contract_gap'),
+        FakeTaskTurnReceipts::contents('changes_requested', 'Follow the ADR.', cause: 'missed_contract'),
+    ]);
+    AgentThread::query()->where('task_group_id', $group->id)->where('role', 'reviewer')->update(['task_id' => $task->id]);
+    app(TaskScheduler::class)->tick();
+
+    app(StoreTaskCommentAction::class)->execute($task->fresh() ?? $task, [
+        'type' => 'resolution', 'body' => 'Follow ADR 0098.', 'author' => 'operator',
+    ]);
+    expect($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Escalated)
+        ->and(TaskQuestion::query()->sole()->resolution_comment_id)->not->toBeNull()
+        ->and(app(TaskTurnReceipts::class)->modes)->toContain('cause')
+        ->and(app(TaskTurnReceipts::class)->modes)->not->toContain('relay');
+    $reviewerSend = collect(app(AgentCommandDispatcher::class)->commands)->first(fn (array $command): bool => ($command['type'] ?? null) === 'send');
+    expect($reviewerSend['message']['text'] ?? null)->toContain('Follow ADR 0098.')
+        ->and($reviewerSend['message']['text'] ?? null)->not->toContain('This is a relay');
+
+    app(TaskScheduler::class)->tick();
+
+    $question = TaskQuestion::query()->sole();
+    expect($question->status)->toBe(QuestionStatus::Answered)
+        ->and($question->answered_by)->toBe(QuestionAsker::Operator)
+        ->and($question->answer)->toBe('Follow ADR 0098.')
+        ->and($question->cause)->toBe(QuestionCause::MissedContract)
+        ->and($question->escalated_at)->not->toBeNull()
+        ->and($task->fresh()?->questions)->toBe(1)
+        ->and($task->fresh()?->escalations)->toBe(1)
+        ->and($group->fresh()?->escalations)->toBe(1);
+});
+
+it('leaves a direction question escalated when the following review receipt has no cause', function (): void {
+    [$group, $task] = tick_review([
+        FakeTaskTurnReceipts::contents('blocked', 'The brief contradicts ADR 0098.', 'Should the subtask follow the brief or ADR 0098?', [], 'scope'),
+        FakeTaskTurnReceipts::contents('changes_requested', 'Follow the ADR.'),
+    ]);
+    AgentThread::query()->where('task_group_id', $group->id)->where('role', 'reviewer')->update(['task_id' => $task->id]);
+    app(TaskScheduler::class)->tick();
+    app(StoreTaskCommentAction::class)->execute($task->fresh() ?? $task, [
+        'type' => 'resolution', 'body' => 'Follow ADR 0098.', 'author' => 'operator',
+    ]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Escalated)
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
+        ->and(app(AgentCommandDispatcher::class)->commands)->not->toBe([]);
+});
+
+it('starts a reviewer for a held direction resolution and answers from the relay', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $task->update([
+        'assistance_requested' => true, 'assistance_kind' => AssistanceKind::Direction,
+        'assistance_question' => 'Which mirror?', 'assistance_reason' => 'Which mirror?',
+    ]);
+    $group->update([
+        'assistance_requested' => true, 'assistance_kind' => AssistanceKind::Direction,
+        'assistance_question' => 'Which mirror?', 'assistance_reason' => 'Which mirror?',
+    ]);
+    TaskQuestion::query()->create([
+        'task_id' => $group->id, 'subtask_id' => $task->id, 'attempt' => 1, 'asked_by' => QuestionAsker::Implementer,
+        'question' => 'Which mirror?', 'status' => QuestionStatus::Escalated, 'asked_at' => now(), 'escalated_at' => now(),
+    ]);
+    $receipts = new FakeTaskTurnReceipts([
+        FakeTaskTurnReceipts::contents('answered', 'Use the public mirror.', cause: 'contract_gap'),
+    ]);
+    $dispatcher = tick_dispatcher();
+    $state = (object) ['implementer' => 'idle'];
+    tick_relay_runtime($receipts, $dispatcher, $state);
+    $completion = $task->completion_attempt;
+    $review = $task->review_attempt;
+
+    $comment = app(StoreTaskCommentAction::class)->execute($task->fresh() ?? $task, [
+        'type' => 'resolution', 'body' => 'Use the public mirror.', 'author' => 'operator',
+    ]);
+
+    expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->direction_relay_comment_id)->toBeNull()
+        ->and(TaskQuestion::query()->sole()->resolution_comment_id)->toBe($comment->id);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and($task->fresh()?->direction_relay_comment_id)->toBe($comment->id)
+        ->and($receipts->modes)->not->toBeEmpty()
+        ->and($receipts->modes)->each->toBe('relay')
+        ->and(AgentThread::query()->where('task_id', $task->id)->where('role', 'reviewer')->where('external_id', 'not like', 'pending:%')->exists())->toBeTrue();
+
+    app(TaskScheduler::class)->tick();
+
+    $delivered = collect($dispatcher->commands)->first(fn (array $command): bool => ($command['threadId'] ?? null) === 'implementer-thread');
+    expect(TaskQuestion::query()->count())->toBe(1)
+        ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Answered)
+        ->and(TaskQuestion::query()->sole()->cause)->toBe(QuestionCause::ContractGap)
+        ->and($task->fresh()?->direction_relay_comment_id)->toBeNull()
+        ->and($task->fresh()?->completion_attempt)->toBe($completion)
+        ->and($task->fresh()?->review_attempt)->toBe($review)
+        ->and($delivered['message']['text'] ?? null)->toContain('Use the public mirror.');
+});
+
+it('keeps a relay answer while the implementer is busy and delivers it once the implementer is free', function (): void {
+    [$group, $task] = tick_held_relay();
+    $receipts = new FakeTaskTurnReceipts([
+        FakeTaskTurnReceipts::contents('answered', 'Use the public mirror.', cause: 'scope'),
+    ]);
+    $dispatcher = tick_dispatcher();
+    $state = (object) ['implementer' => 'running'];
+    tick_relay_runtime($receipts, $dispatcher, $state);
+    $completion = $task->completion_attempt;
+
+    app(TaskScheduler::class)->tick();
+
+    expect($receipts->reads())->toBe(1)
+        ->and($dispatcher->commands)->toBe([])
+        ->and($task->fresh()?->direction_relay_comment_id)->not->toBeNull()
+        ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Answered)
+        ->and(TaskQuestion::query()->sole()->cause)->toBe(QuestionCause::Scope)
+        ->and($task->fresh()?->completion_attempt)->toBe($completion);
+
+    $state->implementer = 'idle';
+    app(TaskScheduler::class)->tick();
+
+    expect(TaskQuestion::query()->count())->toBe(1)
+        ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Answered)
+        ->and(TaskQuestion::query()->sole()->cause)->toBe(QuestionCause::Scope)
+        ->and($task->fresh()?->direction_relay_comment_id)->toBeNull()
+        ->and($task->fresh()?->completion_attempt)->toBe($completion)
+        ->and(collect($dispatcher->commands)->filter(fn (array $command): bool => ($command['threadId'] ?? null) === 'implementer-thread'))->toHaveCount(1);
+});
+
+it('retries a relay answer after the implementer send fails without opening another question', function (): void {
+    [$group, $task] = tick_held_relay();
+    $receipts = new FakeTaskTurnReceipts([
+        FakeTaskTurnReceipts::contents('answered', 'Use the public mirror.', cause: 'environment'),
+    ]);
+    $dispatcher = new class implements AgentCommandDispatcher
+    {
+        public int $failuresLeft = 1;
+
+        /** @var list<array<string, mixed>> */
+        public array $commands = [];
+
+        public function dispatch(Node $node, array $command): array
+        {
+            if ($this->failuresLeft > 0 && ($command['type'] ?? null) === 'send' && ($command['threadId'] ?? null) === 'implementer-thread') {
+                $this->failuresLeft--;
+
+                throw new AgentDriverException('turn start failed');
+            }
+            $this->commands[] = $command;
+
+            return ['sequence' => count($this->commands), 'thread_id' => (string) ($command['threadId'] ?? '')];
+        }
+    };
+    tick_relay_runtime($receipts, $dispatcher, (object) ['implementer' => 'idle']);
+    $completion = $task->completion_attempt;
+    $review = $task->review_attempt;
+
+    app(TaskScheduler::class)->tick();
+
+    expect(TaskQuestion::query()->count())->toBe(1)
+        ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Answered)
+        ->and(TaskQuestion::query()->sole()->cause)->toBe(QuestionCause::Environment)
+        ->and($task->fresh()?->direction_relay_comment_id)->not->toBeNull()
+        ->and($task->fresh()?->review_handled_comment_id)->toBeNull()
+        ->and($task->fresh()?->completion_attempt)->toBe($completion)
+        ->and($task->fresh()?->review_attempt)->toBe($review)
+        ->and($dispatcher->commands)->toBe([]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect(TaskQuestion::query()->count())->toBe(1)
+        ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Answered)
+        ->and($task->fresh()?->direction_relay_comment_id)->toBeNull()
+        ->and($task->fresh()?->review_handled_comment_id)->not->toBeNull()
+        ->and($task->fresh()?->completion_attempt)->toBe($completion)
+        ->and($task->fresh()?->review_attempt)->toBe($review)
+        ->and(collect($dispatcher->commands)->filter(fn (array $command): bool => ($command['threadId'] ?? null) === 'implementer-thread'))->toHaveCount(1);
+});
+
+it('asks for help when a relay answer command stays rejected', function (): void {
+    [$group, $task] = tick_held_relay();
+    $receipts = new FakeTaskTurnReceipts([
+        FakeTaskTurnReceipts::contents('answered', 'Use the public mirror.', cause: 'missed_contract'),
+    ]);
+    $dispatcher = new class implements AgentCommandDispatcher
+    {
+        /** @var list<string> */
+        public array $rejected = [];
+
+        /** @var list<string> */
+        public array $attempts = [];
+
+        public function dispatch(Node $node, array $command): array
+        {
+            if (($command['type'] ?? null) === 'send' && ($command['threadId'] ?? null) === 'implementer-thread') {
+                $commandId = (string) ($command['commandId'] ?? '');
+                $this->attempts[] = $commandId;
+                if (in_array($commandId, $this->rejected, true)) {
+                    throw new AgentDriverException('OrchestrationCommandPreviouslyRejectedError');
+                }
+                $this->rejected[] = $commandId;
+
+                throw new AgentDriverException('command rejected');
+            }
+
+            return ['sequence' => 1, 'thread_id' => (string) ($command['threadId'] ?? '')];
+        }
+    };
+    tick_relay_runtime($receipts, $dispatcher, (object) ['implementer' => 'idle']);
+    $completion = $task->completion_attempt;
+    $review = $task->review_attempt;
+
+    foreach (range(1, 4) as $attempt) {
+        app(TaskScheduler::class)->tick();
+
+        expect($task->fresh()?->assistance_requested)->toBeFalse()
+            ->and($task->fresh()?->communication_failures)->toBe($attempt)
+            ->and(TaskQuestion::query()->count())->toBe(1)
+            ->and($task->fresh()?->completion_attempt)->toBe($completion)
+            ->and($task->fresh()?->review_attempt)->toBe($review);
+    }
+
+    app(TaskScheduler::class)->tick();
+
+    $key = $dispatcher->attempts[0];
+    expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($group->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($task->fresh()?->assistance_question)->toBeNull()
+        ->and(TaskQuestion::query()->count())->toBe(1)
+        ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Answered)
+        ->and($task->fresh()?->completion_attempt)->toBe($completion)
+        ->and($task->fresh()?->review_attempt)->toBe($review)
+        ->and($dispatcher->attempts)->toHaveCount(5)
+        ->and(array_unique($dispatcher->attempts))->toBe([$key])
+        ->and($dispatcher->rejected)->toBe([$key])
+        ->and($task->fresh()?->direction_answer_key)->toBe($key);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($dispatcher->attempts)->toHaveCount(5)
+        ->and(TaskQuestion::query()->count())->toBe(1);
+});
+
+it('delivers a relay answer that was recorded before the send was interrupted', function (): void {
+    [$group, $task, $resolution, $question] = tick_held_relay();
+    $receipt = TaskComment::query()->create([
+        'task_id' => $task->id, 'task_group_id' => $group->id, 'agent_thread_id' => $group->reviewer_agent_thread_id,
+        'review_attempt' => $task->review_attempt, 'type' => 'answered', 'body' => 'Use the public mirror.',
+        'cause' => QuestionCause::MissedContract, 'author' => 'reviewer', 'receipt_hash' => hash('sha256', 'interrupted-relay'),
+        'posted_at' => now(),
+    ]);
+    $question->update([
+        'status' => QuestionStatus::Answered, 'answered_by' => QuestionAsker::Operator, 'answer' => 'Use the public mirror.',
+        'cause' => QuestionCause::MissedContract, 'answered_at' => now(), 'answered_comment_id' => $receipt->id,
+    ]);
+    $dispatcher = tick_dispatcher();
+    tick_relay_runtime(new FakeTaskTurnReceipts([null]), $dispatcher, (object) ['implementer' => 'idle']);
+    $completion = $task->completion_attempt;
+
+    app(TaskScheduler::class)->tick();
+
+    expect(TaskQuestion::query()->count())->toBe(1)
+        ->and(TaskQuestion::query()->sole()->id)->toBe($question->id)
+        ->and(TaskQuestion::query()->sole()->answered_comment_id)->toBe($receipt->id)
+        ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Answered)
+        ->and($task->fresh()?->direction_relay_comment_id)->toBeNull()
+        ->and($task->fresh()?->review_handled_comment_id)->toBe($receipt->id)
+        ->and($task->fresh()?->completion_attempt)->toBe($completion)
+        ->and(collect($dispatcher->commands)->filter(fn (array $command): bool => ($command['threadId'] ?? null) === 'implementer-thread'))->toHaveCount(1);
+});
+
+it('replays a held direction review from the stored resolution after the flag write fails', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $task->update([
+        'status' => TaskStatus::Reviewing, 'review_attempt' => 3, 'review_notified_attempt' => null,
+        'assistance_requested' => true, 'assistance_kind' => AssistanceKind::Direction,
+        'assistance_question' => 'Which ADR?', 'assistance_reason' => 'Which ADR?',
+    ]);
+    $group->update([
+        'status' => TaskGroupStatus::Reviewing, 'assistance_requested' => true, 'assistance_kind' => AssistanceKind::Direction,
+        'assistance_question' => 'Which ADR?', 'assistance_reason' => 'Which ADR?',
+    ]);
+    TaskQuestion::query()->create([
+        'task_id' => $group->id, 'subtask_id' => $task->id, 'attempt' => 3, 'asked_by' => QuestionAsker::Reviewer,
+        'question' => 'Which ADR?', 'status' => QuestionStatus::Escalated, 'asked_at' => now(), 'escalated_at' => now(),
+    ]);
+    $questionSeen = false;
+    $inject = true;
+    DB::beforeExecuting(function (string $sql) use (&$inject, &$questionSeen): void {
+        if (! $inject) {
+            return;
+        }
+        $statement = ltrim(strtolower($sql));
+        if (str_contains($sql, 'task_questions') && str_starts_with($statement, 'update')) {
+            $questionSeen = true;
+
+            return;
+        }
+        if ($questionSeen && str_contains($sql, '"tasks"') && str_starts_with($statement, 'update')) {
+            $inject = false;
+
+            throw new RuntimeException('injected task flag failure');
+        }
+    });
+    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts);
+
+    expect(fn () => app(StoreTaskCommentAction::class)->execute($task->fresh() ?? $task, [
+        'type' => 'resolution', 'body' => 'Follow ADR 0098.', 'author' => 'operator',
+    ]))->toThrow(RuntimeException::class);
+
+    $comment = TaskComment::query()->where('type', 'resolution')->sole();
+    expect($questionSeen)->toBeTrue()
+        ->and($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($group->fresh()?->assistance_requested)->toBeTrue()
+        ->and(TaskQuestion::query()->sole()->resolution_comment_id)->toBeNull()
+        ->and(TaskComment::query()->where('type', 'resolution')->count())->toBe(1);
+
+    app(TaskExtensionState::class)->enable();
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
+    app()->instance(TaskWorkspaceDiffReader::class, new NullTaskWorkspaceDiffReader);
+    app()->instance(TaskReviewDiff::class, new NullTaskReviewDiff);
+    $dispatcher = tick_dispatcher();
+    $reader = new class implements AgentSnapshotReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => ['session' => ['status' => 'idle'], 'latestTurn' => ['id' => 'review-turn', 'state' => 'done']]];
+        }
+    };
+    app()->instance(AgentCommandDispatcher::class, $dispatcher);
+    app()->instance(AgentSnapshotReader::class, $reader);
+    app()->instance(AgentDriverRegistry::class, test_snapshot_registry(dispatcher: $dispatcher, reader: $reader));
+
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($group->fresh()?->assistance_requested)->toBeFalse()
+        ->and(TaskQuestion::query()->sole()->resolution_comment_id)->toBe($comment->id)
+        ->and(TaskComment::query()->where('type', 'resolution')->count())->toBe(1)
+        ->and($comment->fresh()?->review_attempt)->toBe(3);
+
+    app(TaskScheduler::class)->tick();
+
+    $reviewer = AgentThread::query()->where('task_id', $task->id)->where('role', 'reviewer')->where('external_id', 'not like', 'pending:%')->sole();
+    $opening = collect($dispatcher->commands)->first(fn (array $command): bool => ($command['type'] ?? null) === 'create' && ($command['threadId'] ?? null) === $reviewer->external_id);
+    expect($reviewer->id)->toBe($group->fresh()?->reviewer_agent_thread_id)
+        ->and($task->fresh()?->resolution_delivered_comment_id)->toBe($comment->id)
+        ->and(TaskQuestion::query()->count())->toBe(1)
+        ->and(data_get($opening, 'message.text'))->toContain('Follow ADR 0098.');
+});
+
+it('does not send a second implementer turn when an accepted relay answer lost its response', function (): void {
+    [$group, $task] = tick_held_relay();
+    $receipts = new FakeTaskTurnReceipts([
+        FakeTaskTurnReceipts::contents('answered', 'Use the public mirror.', cause: 'scope'),
+        null,
+        FakeTaskTurnReceipts::contents('ready_for_review', 'The mirror is wired.'),
+    ]);
+    $state = (object) ['implementer' => 'idle', 'turnId' => 'turn-before', 'messageId' => null];
+    $dispatcher = new class($state) implements AgentCommandDispatcher
+    {
+        public function __construct(private object $state) {}
+
+        /** @var list<array<string, mixed>> */
+        public array $commands = [];
+
+        public function dispatch(Node $node, array $command): array
+        {
+            if (($command['type'] ?? null) === 'send' && ($command['threadId'] ?? null) === 'implementer-thread') {
+                $this->commands[] = $command;
+                $this->state->turnId = (string) $command['commandId'];
+                $this->state->messageId = (string) $command['commandId'];
+
+                throw new AgentDriverException('response lost');
+            }
+
+            return ['sequence' => 1, 'thread_id' => (string) ($command['threadId'] ?? '')];
+        }
+    };
+    tick_relay_runtime($receipts, $dispatcher, $state);
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
+    $completion = $task->completion_attempt;
+
+    app(TaskScheduler::class)->tick();
+
+    expect($dispatcher->commands)->toHaveCount(1)
+        ->and($dispatcher->commands[0]['commandId'])->toBe($task->fresh()?->direction_answer_key)
+        ->and($task->fresh()?->direction_relay_comment_id)->not->toBeNull()
+        ->and(collect($receipts->prepared)->filter(fn (string $role): bool => $role === 'implementer'))->toHaveCount(1);
+
+    $receipts->discardImplementerReceiptOnPrepare = true;
+    app(TaskScheduler::class)->tick();
+
+    expect($dispatcher->commands)->toHaveCount(1)
+        ->and(collect($receipts->prepared)->filter(fn (string $role): bool => $role === 'implementer'))->toHaveCount(1)
+        ->and($task->fresh()?->direction_relay_comment_id)->toBeNull()
+        ->and($task->fresh()?->direction_answer_key)->toBeNull()
+        ->and(TaskQuestion::query()->count())->toBe(1)
+        ->and($task->fresh()?->completion_attempt)->toBe($completion);
+
+    app(TaskScheduler::class)->tick();
+
+    expect(TaskComment::query()->where('type', 'ready_for_review')->count())->toBe(1)
+        ->and(TaskQuestion::query()->count())->toBe(1)
+        ->and($task->fresh()?->completion_attempt)->toBe($completion)
+        ->and($dispatcher->commands)->toHaveCount(1);
+});
+
+it('keeps the implementer handoff when the relay marker update fails after the send', function (): void {
+    [$group, $task] = tick_held_relay();
+    $receipts = new FakeTaskTurnReceipts([
+        FakeTaskTurnReceipts::contents('answered', 'Use the public mirror.', cause: 'contract_gap'),
+        null,
+        FakeTaskTurnReceipts::contents('ready_for_review', 'The mirror is wired.'),
+    ]);
+    $state = (object) ['implementer' => 'idle', 'turnId' => 'turn-before', 'messageId' => null];
+    $dispatcher = new class($state) implements AgentCommandDispatcher
+    {
+        public function __construct(private object $state) {}
+
+        /** @var list<array<string, mixed>> */
+        public array $commands = [];
+
+        public function dispatch(Node $node, array $command): array
+        {
+            $this->commands[] = $command;
+            if (($command['type'] ?? null) === 'send' && ($command['threadId'] ?? null) === 'implementer-thread') {
+                $this->state->turnId = 'turn-after';
+                $this->state->messageId = null;
+            }
+
+            return ['sequence' => count($this->commands), 'thread_id' => (string) ($command['threadId'] ?? '')];
+        }
+    };
+    tick_relay_runtime($receipts, $dispatcher, $state);
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
+    $inject = true;
+    DB::beforeExecuting(function (string $sql) use (&$inject): void {
+        if ($inject && str_contains($sql, 'review_handled_comment_id')) {
+            $inject = false;
+
+            throw new RuntimeException('injected marker failure');
+        }
+    });
+    $completion = $task->completion_attempt;
+    $starts = fn (): int => collect($dispatcher->commands)->filter(fn (array $command): bool => ($command['type'] ?? null) === 'send' && ($command['threadId'] ?? null) === 'implementer-thread')->count();
+
+    expect(fn () => app(TaskScheduler::class)->tick())->toThrow(RuntimeException::class);
+
+    expect($starts())->toBe(1)
+        ->and($dispatcher->commands[0]['commandId'] ?? null)->toBe($task->fresh()?->direction_answer_key)
+        ->and($task->fresh()?->direction_relay_comment_id)->not->toBeNull()
+        ->and($task->fresh()?->review_handled_comment_id)->toBeNull();
+
+    $receipts->discardImplementerReceiptOnPrepare = true;
+    app(TaskScheduler::class)->tick();
+
+    expect($starts())->toBe(1)
+        ->and(collect($receipts->prepared)->filter(fn (string $role): bool => $role === 'implementer'))->toHaveCount(1)
+        ->and($task->fresh()?->direction_relay_comment_id)->toBeNull()
+        ->and(TaskQuestion::query()->count())->toBe(1)
+        ->and($task->fresh()?->completion_attempt)->toBe($completion);
+
+    app(TaskScheduler::class)->tick();
+
+    expect(TaskComment::query()->where('type', 'ready_for_review')->count())->toBe(1)
+        ->and(TaskQuestion::query()->count())->toBe(1)
+        ->and($dispatcher->commands)->not->toBeEmpty()
+        ->and($starts())->toBe(1);
+
 });
 
 it('reminds a reviewer that ends a turn without a receipt once, then asks for assistance', function (): void {
@@ -3696,6 +4987,10 @@ it('reminds a reviewer that ends a turn without a receipt once, then asks for as
     app(TaskScheduler::class)->tick();
 
     expect($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($task->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($task->fresh()?->assistance_question)->toBeNull()
+        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($group->fresh()?->assistance_question)->toBeNull()
         ->and($task->fresh()?->assistance_reason)->toBe('Checks still failed after the reminder. No turn receipt was found.');
     Classification::assertNothingClassified();
 });
@@ -4160,7 +5455,7 @@ function tick_thread_states(array $states): AgentSnapshotReader
 }
 
 describe('a thread that works outside the task phase', function (): void {
-    it('collects a blocked implementer receipt and asks for assistance while the shared reviewer works', function (): void {
+    it('collects a blocked implementer receipt and starts a consult while the shared reviewer works', function (): void {
         $group = tick_group();
         $task = $group->tasks->sole();
         app(TaskExtensionState::class)->enable();
@@ -4168,16 +5463,18 @@ describe('a thread that works outside the task phase', function (): void {
         app()->instance(AgentCommandDispatcher::class, $dispatcher);
         app()->instance(AgentSnapshotReader::class, tick_thread_states(['implementer-thread' => 'done', 'reviewer-thread' => 'running']));
         $receipts = new FakeTaskTurnReceipts([FakeTaskTurnReceipts::contents('blocked', 'Composer cannot reach the private package mirror.', 'Should I add the mirror credentials to auth.json?')]);
-        app()->instance(TaskTurnReceipts::class, $receipts);
+        $dispatcher = tick_dispatcher();
+        tick_relay_runtime($receipts, $dispatcher, (object) ['implementer' => 'done', 'reviewer' => 'running']);
 
         app(TaskScheduler::class)->tick();
 
         expect($task->comments()->sole()->getRawOriginal('type'))->toBe('blocked')
             ->and($receipts->cleared)->toHaveCount(1)
-            ->and($task->fresh()?->assistance_requested)->toBeTrue()
-            ->and($task->fresh()?->assistance_reason)->toBe("The implementer is blocked: Composer cannot reach the private package mirror.\n\nQuestion: Should I add the mirror credentials to auth.json?")
-            ->and($group->fresh()?->assistance_requested)->toBeTrue()
-            ->and($dispatcher->commands)->toBe([]);
+            ->and($task->fresh()?->assistance_requested)->toBeFalse()
+            ->and($group->fresh()?->assistance_requested)->toBeFalse()
+            ->and($task->fresh()?->consult_comment_id)->toBe($task->comments()->sole()->id)
+            ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Open)
+            ->and(collect($dispatcher->commands)->contains(fn (array $command): bool => ($command['type'] ?? null) === 'create'))->toBeTrue();
     });
 
     it('leaves a running task alone while its implementer works', function (string $reviewerState): void {
@@ -4711,7 +6008,8 @@ it('retries a failed baseline on resolution at the current default branch tip wi
     app(TaskScheduler::class)->tick();
     $task = $group->tasks()->sole();
     $failed = TaskCheck::query()->where('task_id', $task->id)->sole();
-    expect($task->assistance_requested)->toBeTrue();
+    expect($task->assistance_requested)->toBeTrue()
+        ->and($task->assistance_kind)->toBe(AssistanceKind::Failure);
     $task->update(['subtask_start_commit' => str_repeat('a', 40)]);
     // The remote default branch advanced after the first baseline failed.
     $tip = str_repeat('c', 40);
@@ -4726,9 +6024,13 @@ it('retries a failed baseline on resolution at the current default branch tip wi
     $this->assertDatabaseHas('tasks', [
         'id' => $task->id, 'status' => 'running', 'subtask_start_commit' => $tip,
         'assistance_requested' => false, 'assistance_reason' => null,
+        'assistance_kind' => null, 'assistance_question' => null,
         'resolution_delivered_comment_id' => $resolution->id, 'implementer_agent_thread_id' => null,
     ]);
-    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'running', 'assistance_requested' => false]);
+    $this->assertDatabaseHas('tasks', [
+        'id' => $group->id, 'status' => 'running', 'assistance_requested' => false,
+        'assistance_kind' => null, 'assistance_question' => null, 'assistance_reason' => null,
+    ]);
     expect($runner->starts)->toBe(1);
     expect($failed->fresh()?->output)->toBe("baseline failed\n");
     expect($failed->fresh()?->status)->toBe(TaskCheckStatus::Failed);
@@ -4779,6 +6081,15 @@ it('keeps baseline assistance and evidence when retry preparation fails', functi
     $this->assertDatabaseHas('tasks', ['id' => $group->id, 'assistance_requested' => true]);
     expect(TaskCheck::query()->where('task_id', $task->id)->sole()->output)->toBe("baseline failed\n");
     expect($runner->starts)->toBe(1);
+
+    // A pending failure resolution must not reset the workspace after the operator asks for direction.
+    $record = $step === 'fetch' ? $task : $group;
+    TaskAssistance::apply($record, AssistanceKind::Direction, 'Which setup should this Project use?', 'Which setup should this Project use?');
+    expect(app(RetryTaskBaselineAction::class)->recover($task))->toBeFalse();
+    $this->assertDatabaseHas('tasks', [
+        'id' => $record->id, 'assistance_requested' => true, 'assistance_kind' => 'direction',
+        'assistance_question' => 'Which setup should this Project use?',
+    ]);
 })->with(['fetch', 'reset']);
 
 it('recovers a baseline retry after an interrupted reset transition without another resolution', function (string $failure): void {
