@@ -54,6 +54,8 @@ bin/e2e-topology exec ISSUE gateway --argv='["orbit","doctor","--json"]' --recor
 
 The entry shows exit `0` and no findings. When it shows `node.disk_low`, check the affected Node with `df --output=source,avail,size,iavail,itotal -k -- / "$HOME"` as its managed user. Doctor does not free space; remove only fixtures owned by this lease, or use a fresh topology if the low-space files are not yours. Do not use a role converge to try to clear disk usage. For projection drift, converge the affected role with `orbit node:role:add NODE ROLE --converge`, and record the baseline again before you apply a fixture.
 
+An `active` systemd status alone does not prove that a Process is healthy. Doctor reports `process.crash_loop` for a Process desired running when it observes auto-restart or a growing restart count during its bounded inspection. If the baseline has this finding, record its active state, sub-state, and restart counts before changing a task-owned fixture. A stable count left by earlier restarts is not drift. The [Process runtime state](/reference/processes-and-schedules#process-runtime-state) reference owns these rules. Restore the fixture to healthy operation and record a clean baseline before the mutation scans; Doctor does not restart it for you.
+
 ### Mutation scan, before
 
 Record the Orbit home inventory, the table row counts, and the service states after the baseline and before the first fixture. The inventory excludes the SQLite sidecars and the Caddy build lock files.

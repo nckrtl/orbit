@@ -2080,6 +2080,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Role",
                 "Route",
                 "Schedule",
