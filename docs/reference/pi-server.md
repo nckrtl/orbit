@@ -149,6 +149,8 @@ sudo -u orbit-worker -H git config --global --add safe.directory /srv/orbit/apps
 
 Copy primary-checkout registrations before any task teardown runs as `orbit-worker`. [Primary registration](/reference/instance-setup#primary-registration) is the procedure. A registration left only in the managed user's home is invisible to the helper, and the helper then leaves the bridge in place.
 
+Agents that run Incus proofs also need the primary's `.e2e` directory. It holds the host locks, the topology snapshot state, and the scenario runs. Grant it the same recursive ACL as the primary's `.git`. When the primary is inside the managed home, give `orbit-worker` traverse access on the home and on the primary with `setfacl -m u:orbit-worker:x`. Do not widen their modes.
+
 Confirm a private directory of the managed home, such as `.ssh`, is mode `0700`. When the apps root is inside that home, set the home to `0711`. When the apps root is outside it, set the home to `0700`.
 
 ### Move existing sessions
